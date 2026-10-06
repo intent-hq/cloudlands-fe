@@ -80,6 +80,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/WorkspaceShellList.svelte',
     'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
+    'src/lib/components/workspace/initializer/GitLabBranchPicker.svelte',
     'src/lib/components/workspace/initializer/IssueSuggestions.svelte',
     'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
     'src/lib/components/workspace/initializer/RepoSelector.svelte',

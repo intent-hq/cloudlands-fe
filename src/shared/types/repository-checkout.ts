@@ -93,6 +93,22 @@ export const CheckoutSelectionSchema = CheckoutBindingSchema.extend({
   mode: z.enum(['direct', 'cached']),
 }).strict();
 
+export const CheckoutRepoConfigQuerySchema = CheckoutSelectionSchema.omit({ mode: true }).strict();
+
+export const CheckoutRepoConfigSchema = z
+  .object({
+    projectPath,
+    branch: nonempty,
+    commitSha,
+    config: z.record(z.string(), z.unknown()).nullable(),
+    exists: z.boolean(),
+  })
+  .strict()
+  .refine((value) => value.exists === (value.config !== null));
+
+export type CheckoutRepoConfigQuery = z.infer<typeof CheckoutRepoConfigQuerySchema>;
+export type CheckoutRepoConfig = z.infer<typeof CheckoutRepoConfigSchema>;
+
 export const CheckoutProjectsSchema = z
   .object({
     items: z.array(CheckoutProjectSchema),
@@ -187,6 +203,8 @@ export interface RepositoryCheckoutSession {
   projects(query: CheckoutPageQuery): Promise<CheckoutResult<CheckoutProjects>>;
   project(query: CheckoutProjectQuery): Promise<CheckoutResult<CheckoutProjectDetail>>;
   branches(query: CheckoutBranchesQuery): Promise<CheckoutResult<CheckoutBranches>>;
+  /** Absent when the original daemon does not advertise the config-read capability. */
+  repoConfig?(query: CheckoutRepoConfigQuery): Promise<CheckoutResult<CheckoutRepoConfig>>;
   warm(selection: CheckoutSelection): Promise<CheckoutResult<CheckoutWarm>>;
   release(): Promise<void>;
 }

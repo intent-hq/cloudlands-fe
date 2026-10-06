@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "No se pudo leer el script de configuración del repositorio. Revisa el script seleccionado antes de crear el espacio de trabajo.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Activa el acceso remoto en este dispositivo para conectar Intent Mobile.",
   "devConsole_title_label": "Consola de desarrollo",

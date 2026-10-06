@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "無法讀取儲存庫的設定指令碼。請在建立工作區之前檢查所選指令碼。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "在此裝置上啟用遠端存取以連線至 Intent Mobile。",
   "devConsole_title_label": "開發主控台",

@@ -23,6 +23,10 @@
     getTemplateContent,
     chooseDefaultSetupScript,
     createRepoConfigProbeScheduler,
+    probeIdentityKey,
+    repoIdentityKey,
+    toRepoConfigSubset,
+    type RepoIdentity,
     resolveSetupScriptParam,
     setupScriptDisplayName,
     REPO_CONFIG_SCRIPT_NAME,
@@ -133,7 +137,6 @@
     type IssueSelectionData,
   } from './initializer/IssueSuggestions.svelte';
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
-  import { Select } from '$lib/components/ui/select';
   import type {
     GitLabProjectPickerProps,
     GitLabBranchPickerProps,
@@ -147,6 +150,7 @@
   import type { RepositoryCheckoutDraft } from '$store/renderer/slices/repository-checkout/repository-checkout-types';
   import {
     opened as checkoutOpened,
+    checkoutRepoConfigRequested,
     closed as checkoutClosed,
     invalidDraftOpened,
     projectQueryChanged,
@@ -156,7 +160,6 @@
     branchQueryChanged,
     branchesMoreRequested,
     branchSelected,
-    modeChanged,
     recoveryRequested,
   } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
   import {
@@ -532,6 +535,7 @@
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const gitlabStatusReady$ = selectGitLabStatusReady();
   const checkoutForm$ = selectCheckoutForm(checkoutFormId);
+  const checkoutSelection$ = selectCheckoutSelection(checkoutFormId);
   const checkoutProjects$ = selectCheckoutProjects(checkoutFormId);
   const checkoutBranches$ = selectCheckoutBranches(checkoutFormId);
   const checkoutCanCreate$ = selectCheckoutCanCreate(checkoutFormId);
@@ -641,6 +645,7 @@
     onRecover: recoverCheckout,
   });
   const gitlabBranchPicker = $derived<GitLabBranchPickerProps>({
+    isLoading: $checkoutForm$?.resolvingBranch,
     scopeKey: checkoutScope,
     instanceBaseUrl: $checkoutForm$?.capture?.instanceBaseUrl,
     projectPath: $checkoutForm$?.project?.projectPath ?? '',
@@ -738,6 +743,8 @@
   let setupScriptName = $state('Custom');
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
+  let setupScriptExplicit = false;
+  let repoConfigError = $state(false);
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
   // read the file over IPC; GitHub repos use `github.repoConfig.get`).
@@ -746,6 +753,30 @@
   let repoConfigScriptRepo = $state<string | null>(null);
   // True while the repo-config probe is in flight (spinner on the setup-script control).
   let isRepoConfigLoading = $state(false);
+
+  const setupScriptIdentity = $derived<RepoIdentity>({
+    path: repoPath,
+    type: repoType,
+    githubUrl: repoType === 'github' ? githubUrl : null,
+    branch: repoType === 'gitlab' ? $checkoutSelection$?.branch : branch,
+    gitlab:
+      repoType === 'gitlab' &&
+      $checkoutForm$?.status === 'ready' &&
+      $checkoutForm$.capture &&
+      $checkoutForm$.project
+        ? {
+            instanceBaseUrl: $checkoutForm$.capture.instanceBaseUrl,
+            projectPath: $checkoutForm$.project.projectPath,
+            checkoutId: $checkoutForm$.capture.checkoutId,
+            revision: $checkoutForm$.capture.revision,
+            commitSha: $checkoutSelection$?.commitSha,
+          }
+        : null,
+  });
+  const setupScriptRepoKey = $derived(
+    repoType === 'gitlab' ? repoIdentityKey(setupScriptIdentity) : repoPath,
+  );
+  const setupScriptProbeKey = $derived(probeIdentityKey(setupScriptIdentity));
 
   // Helper to restore the default setup script for a repo.
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
@@ -757,7 +788,7 @@
     const lastUsed = repo ? getLastUsedSetupScript(repo, ghUrl) : undefined;
     const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     const choice = chooseDefaultSetupScript({
-      repoConfigScript: repo && repo === repoConfigScriptRepo ? repoConfigScript : null,
+      repoConfigScript: repoConfigScriptRepo === setupScriptProbeKey ? repoConfigScript : null,
       lastUsed,
       genericTemplate: genericTemplate
         ? { name: genericTemplate.name, content: getTemplateContent(genericTemplate) }
@@ -1606,18 +1637,27 @@
   // keys runs on repo identity + ref: repo switches restore and probe at
   // once, branch-only changes re-probe debounced.
   const setupScriptProbeScheduler = createRepoConfigProbeScheduler();
+  let previousSetupScriptProbeKey: string | null = null;
   onDestroy(() => setupScriptProbeScheduler.dispose());
   $effect(() => {
-    const path = repoType === 'gitlab' ? '' : repoPath;
-    const type = repoType === 'gitlab' ? 'local' : repoType;
-    // Only read githubUrl/branch for GitHub selections so the effect doesn't
-    // track them (and re-run) while a local repo is selected.
-    const identity = {
-      path,
-      type,
-      githubUrl: type === 'github' ? githubUrl : null,
-      branch: type === 'github' ? branch : null,
-    };
+    const identity = setupScriptIdentity;
+    const path = setupScriptRepoKey;
+    const key = setupScriptProbeKey;
+    const scope = checkoutScope;
+    const selected = repoType === 'gitlab' ? $checkoutSelection$ : null;
+    untrack(() => {
+      if (previousSetupScriptProbeKey !== key) {
+        showSetupScript = false;
+        previousSetupScriptProbeKey = key;
+        repoConfigScript = null;
+        repoConfigScriptRepo = null;
+        repoConfigError = false;
+        if (setupScriptNameSource === 'repo-config' && !isCustomSetupScript) {
+          setupScriptExplicit = false;
+          restoreLastUsedSetupScript(path ?? '');
+        }
+      }
+    });
 
     setupScriptProbeScheduler.onSelectionChange({
       identity,
@@ -1625,6 +1665,8 @@
         // Repo changed — invalidate any cached repo-config script
         repoConfigScript = null;
         repoConfigScriptRepo = null;
+        setupScriptExplicit = false;
+        showSetupScript = false;
 
         // On initial mount, don't override if there's already a setup script
         // set (e.g., from restored form state). On repo switches, always
@@ -1641,17 +1683,28 @@
           }
         }
       },
-      getCurrentIdentity: () =>
-        repoType === 'gitlab'
-          ? { path: '', type: 'local', githubUrl: null, branch: null }
-          : { path: repoPath, type: repoType, githubUrl, branch },
+      getCurrentIdentity: () => setupScriptIdentity,
+      readScript: selected
+        ? async () => {
+            const { mode: _mode, ...query } = selected;
+            const action = checkoutRepoConfigRequested(checkoutFormId, scope, query);
+            appStore.dispatch(action);
+            const result = await action.promise;
+            if (result.status !== 'ready') throw new Error('REPOSITORY_CONFIG_UNAVAILABLE');
+            return toRepoConfigSubset(result.value.config).setupScript;
+          }
+        : undefined,
+      onProbeError: () => {
+        repoConfigError = true;
+      },
       getSetupScript: () => setupScript,
       isSetupScriptModalOpen: () => showSetupScript,
-      isCustomSetupScript: () => isCustomSetupScript,
+      isCustomSetupScript: () => isCustomSetupScript || setupScriptExplicit,
       setLoading: (loading) => (isRepoConfigLoading = loading),
       onProbeResult: (script) => {
         repoConfigScript = script;
-        repoConfigScriptRepo = path;
+        repoConfigScriptRepo = key;
+        repoConfigError = false;
       },
       applyScript: (script) => {
         setupScript = script;
@@ -2379,17 +2432,21 @@
       // Await any in-flight repo-config probe (bounded, sub-second) so the
       // setup-script decision below sees the committed `.intent/config.json`
       // instead of racing the probe (monorepo#1862).
-      if (!repositoryCheckout) await setupScriptProbeScheduler.settled();
+      await setupScriptProbeScheduler.settled();
+      if (isRepoConfigLoading)
+        throw new Error(m.workspace_setupScript_configUnavailable_description());
       if (!current()) return;
 
       // The shown script is what runs: send it as-is, EXCEPT the unedited
-      // repo-config script — the daemon persists an explicit setupScript into
-      // the worktree's tracked .intent/config.json (PROTOCOL §5.1) and the
+      // repo-config script — the daemon executes an explicit override without
+      // persisting it (PROTOCOL §5.1), and the
       // committed file already holds it (it still executes when omitted).
       const setupScriptParam = resolveSetupScriptParam({
         setupScript,
         setupScriptName,
-        repoPath,
+        setupScriptNameSource,
+        explicitChoice: setupScriptExplicit || (repoType === 'gitlab' && repoConfigError),
+        repoPath: setupScriptProbeKey,
         repoConfigScript,
         repoConfigScriptRepo,
       });
@@ -2545,12 +2602,13 @@
       // is its source of truth, and recording a copy would shadow future
       // repo-config changes as the last-used default.
       const isUneditedRepoConfigScript =
+        setupScriptNameSource === 'repo-config' &&
         setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
-        repoConfigScriptRepo === repoPath &&
+        repoConfigScriptRepo === setupScriptProbeKey &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
-      if (!repositoryCheckout && setupScript.trim() && !isUneditedRepoConfigScript) {
+      if (setupScriptRepoKey && setupScript.trim() && !isUneditedRepoConfigScript) {
         recordLastUsedSetupScript(
-          repoPath,
+          setupScriptRepoKey,
           {
             name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
             content: setupScript,
@@ -3672,33 +3730,8 @@
         </div>
       </div>
 
-      {#if isExpanded && repoType === 'gitlab'}
+      {#if isExpanded && repoType === 'gitlab' && ($checkoutForm$?.status === 'unavailable' || $checkoutForm$?.warmStatus === 'warming' || $checkoutForm$?.contextUrl)}
         <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          <div class="w-48 max-w-full">
-            <Select.Root
-              value={$checkoutForm$?.mode ?? 'cached'}
-              disabled={isCreating || $checkoutForm$?.status !== 'ready'}
-              onchange={(value) => {
-                if (value === 'direct' || value === 'cached')
-                  appStore.dispatch(modeChanged(checkoutFormId, checkoutScope, value));
-              }}
-              items={[
-                { value: 'direct', label: m.gitlabCheckout_direct_label() },
-                { value: 'cached', label: m.gitlabCheckout_cached_label() },
-              ]}
-            >
-              <Select.Trigger aria-label={m.gitlabCheckout_mode_label()}
-                ><Select.Value /></Select.Trigger
-              >
-              <Select.Content
-                ><Select.Item value="direct" label={m.gitlabCheckout_direct_label()}
-                  >{m.gitlabCheckout_direct_label()}</Select.Item
-                ><Select.Item value="cached" label={m.gitlabCheckout_cached_label()}
-                  >{m.gitlabCheckout_cached_label()}</Select.Item
-                ></Select.Content
-              >
-            </Select.Root>
-          </div>
           {#if $checkoutForm$?.status === 'unavailable' && $checkoutForm$.unavailable}
             <p class="text-subtle">{checkoutFailureMessage($checkoutForm$.unavailable)}</p>
             <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
@@ -3706,13 +3739,6 @@
             >
           {:else if $checkoutForm$?.warmStatus === 'warming'}
             <p class="text-subtle">{m.gitlabCheckout_warming_description()}</p>
-          {:else if $checkoutForm$?.branch}
-            <p class="text-subtle">
-              {m.gitlabCheckout_exactCommit_description({
-                branch: $checkoutForm$.branch.name,
-                sha: $checkoutForm$.branch.commitSha.slice(0, 12),
-              })}
-            </p>
           {/if}
           {#if $checkoutForm$?.contextUrl}<a
               class="min-w-0 truncate text-primary-ink"
@@ -3808,15 +3834,26 @@
             expanded={showSetupScript}
             onOpen={() => (showSetupScript = true)}
           />
+          {#if repoConfigError}
+            <p class="text-sm text-subtle" role="status">
+              {m.workspace_setupScript_configUnavailable_description()}
+            </p>
+          {/if}
           <SetupScriptModal
             bind:open={showSetupScript}
-            {repoPath}
+            repoPath={repoType === 'gitlab' ? '' : repoPath}
+            repositoryKey={setupScriptRepoKey ?? undefined}
             githubUrl={repoType === 'github' ? githubUrl : null}
-            repoConfigScript={repoConfigScriptRepo === repoPath ? repoConfigScript : null}
+            repoConfigScript={repoConfigScriptRepo === setupScriptProbeKey
+              ? repoConfigScript
+              : null}
             bind:value={setupScript}
             bind:scriptName={setupScriptName}
             bind:scriptNameSource={setupScriptNameSource}
             bind:isCustomScript={isCustomSetupScript}
+            onCommit={() => {
+              setupScriptExplicit = true;
+            }}
             onClose={() => (showSetupScript = false)}
           />
         </div>

@@ -25,9 +25,9 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
-    # A healthy shard can take 27 min for tests plus setup/report/cache work.
-    # Allow completion after the 390-pass run exhausted 30 min (intent#2887).
-    timeout-minutes: 40
+    # A healthy shard takes 36 min for tests plus setup/report/cache work.
+    # Leave headroom after passing tests hit 40 min (cloudlands-fe#3251).
+    timeout-minutes: 50
     permissions:
       contents: read
     env:
@@ -411,9 +411,21 @@ jobs:
           node-version: '24'
           cache: pnpm
       - name: Install dependencies
-        # Also downloads the Electron binary (electron is in
-        # pnpm.onlyBuiltDependencies) that the harness launches.
         run: pnpm install --frozen-lockfile
+      - name: Install Electron binary
+        # Electron installs lazily; keep downloads outside native test deadlines.
+        timeout-minutes: 5
+        run: |
+          pnpm exec install-electron
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = path.dirname(require.resolve('electron/package.json'));
+          const executable = fs.readFileSync(path.join(root, 'path.txt'), 'utf8').trim();
+          const binary = path.join(root, 'dist', executable);
+          fs.accessSync(binary, fs.constants.X_OK);
+          console.log(`Electron binary ready: ${binary}`);
+          NODE
       - name: Generate i18n messages
         # The fixture renderer imports paraglide messages through the
         # production browser panel; the compiled output is gitignored.

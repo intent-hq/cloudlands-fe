@@ -7,16 +7,20 @@ import {
   clearAgentQueue,
   hydrateAgentQueueRequested,
   initialState,
+  queuedMessageMutationConsumed,
+  queuedMessageMutationFinished,
+  queuedMessageMutationRequested,
+  queuedMessageMutationsReleased,
   removeQueuedMessageFromAgentQueue,
-  removeQueuedMessageRequested,
   replaceAgentQueue,
   restoreRecentlyRemovedMessageId,
   setAgentQueueError,
   setAgentQueueHydrating,
   upsertQueuedMessageInAgentQueue,
 } from './agent-queue-slice';
-import { selectAgentQueueMessages } from './agent-queue-selectors';
-import type { AgentQueueState } from './agent-queue-types';
+import { selectAgentQueueMessages, selectQueuedMessageMutations } from './agent-queue-selectors';
+import type { AgentQueueState, QueuedMessageMutationRequest } from './agent-queue-types';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 const AGENT_ID = 'agent-1';
 
@@ -220,11 +224,116 @@ describe('agentQueueReducer', () => {
     );
   });
 
-  it('does not change state for the removeQueuedMessageRequested saga trigger', () => {
-    const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [message('m1', 0)]));
-    const next = agentQueueReducer(state, removeQueuedMessageRequested(AGENT_ID, 'm1'));
+  describe('queued message mutations', () => {
+    const request = (
+      requestId: string,
+      overrides: Partial<QueuedMessageMutationRequest> = {},
+    ): QueuedMessageMutationRequest => ({
+      requestId,
+      consumerId: 'panel-a',
+      workspaceId: 'ws-1',
+      agentId: AGENT_ID,
+      messageId: 'm1',
+      operation: { kind: 'sendNow' },
+      ...overrides,
+    });
 
-    expect(next).toBe(state);
+    it('records a pending request without touching the queue, and ignores replay', () => {
+      const queued = agentQueueReducer(
+        initialState,
+        replaceAgentQueue(AGENT_ID, [message('m1', 0)]),
+      );
+      const pending = agentQueueReducer(
+        queued,
+        queuedMessageMutationRequested(
+          request('r1', { operation: { kind: 'edit', content: 'x', editing: true } }),
+        ),
+      );
+      expect(pending.byAgentId).toBe(queued.byAgentId);
+      expect(getItem(pending.mutations, 'r1')).toEqual({
+        requestId: 'r1',
+        consumerId: 'panel-a',
+        workspaceId: 'ws-1',
+        agentId: AGENT_ID,
+        messageId: 'm1',
+        kind: 'edit',
+        editing: true,
+        status: 'pending',
+      });
+      expect(agentQueueReducer(pending, queuedMessageMutationRequested(request('r1')))).toBe(
+        pending,
+      );
+    });
+
+    it.each([
+      [{ status: 'succeeded', sendOutcome: 'delivered' }],
+      [{ status: 'failed', error: 'already drained' }],
+      [{ status: 'cancelled' }],
+    ] as const)('settles a pending request once as %o', (result) => {
+      const pending = agentQueueReducer(
+        initialState,
+        queuedMessageMutationRequested(request('r1')),
+      );
+      const settled = agentQueueReducer(pending, queuedMessageMutationFinished('r1', result));
+      expect(getItem(settled.mutations, 'r1')).toMatchObject({ ...result });
+      expect(
+        agentQueueReducer(settled, queuedMessageMutationFinished('r1', { status: 'succeeded' })),
+      ).toBe(settled);
+      expect(
+        agentQueueReducer(initialState, queuedMessageMutationFinished('unknown', result)),
+      ).toBe(initialState);
+    });
+
+    it('consumes only a settled outcome owned by the same consumer', () => {
+      let state = agentQueueReducer(initialState, queuedMessageMutationRequested(request('r1')));
+      expect(agentQueueReducer(state, queuedMessageMutationConsumed('panel-a', 'r1'))).toBe(state);
+      state = agentQueueReducer(state, queuedMessageMutationFinished('r1', { status: 'failed' }));
+      expect(agentQueueReducer(state, queuedMessageMutationConsumed('panel-b', 'r1'))).toBe(state);
+      state = agentQueueReducer(state, queuedMessageMutationConsumed('panel-a', 'r1'));
+      expect(getItem(state.mutations, 'r1')).toBeUndefined();
+    });
+
+    it('releases one consumer and clears an unmounted workspace without touching others', () => {
+      let state = initialState;
+      state = agentQueueReducer(state, queuedMessageMutationRequested(request('a1')));
+      state = agentQueueReducer(
+        state,
+        queuedMessageMutationRequested(request('b1', { consumerId: 'panel-b' })),
+      );
+      state = agentQueueReducer(
+        state,
+        queuedMessageMutationRequested(
+          request('c1', { consumerId: 'panel-c', workspaceId: 'ws-2' }),
+        ),
+      );
+      const released = agentQueueReducer(state, queuedMessageMutationsReleased('panel-a'));
+      expect(released.mutations.ids).toEqual(['b1', 'c1']);
+      expect(agentQueueReducer(released, queuedMessageMutationsReleased('panel-a'))).toBe(released);
+      const unmounted = agentQueueReducer(released, workspaceUnmounted('ws-1'));
+      expect(unmounted.mutations.ids).toEqual(['c1']);
+    });
+
+    it('selects every consumer request for one agent and workspace with a stable reference', () => {
+      let queueState = agentQueueReducer(
+        initialState,
+        queuedMessageMutationRequested(request('a1')),
+      );
+      queueState = agentQueueReducer(
+        queueState,
+        queuedMessageMutationRequested(request('b1', { consumerId: 'panel-b' })),
+      );
+      queueState = agentQueueReducer(
+        queueState,
+        queuedMessageMutationRequested(request('x1', { workspaceId: 'ws-2' })),
+      );
+      const state = storeWith(queueState);
+      const selected = selectQueuedMessageMutations.select(state, AGENT_ID, 'ws-1');
+      expect(selected.map((entry) => entry.requestId)).toEqual(['a1', 'b1']);
+      expect(selectQueuedMessageMutations.select(state, AGENT_ID, 'ws-1')).toBe(selected);
+      expect(
+        selectQueuedMessageMutations.select(storeWith(initialState), AGENT_ID, 'ws-1'),
+      ).toEqual([]);
+    });
   });
 
   it('keeps stale suppression bounded so old removed IDs can appear in future snapshots', () => {

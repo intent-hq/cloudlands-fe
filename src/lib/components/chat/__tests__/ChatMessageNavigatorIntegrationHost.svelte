@@ -9,6 +9,7 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { previousUserMessageLoadSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
   import {
     addMessage,
     bulkUpsertSessions,
@@ -32,7 +33,9 @@
   const workspaceId = 'message-navigator-integration';
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: (target) => [target.runSaga(previousUserMessageLoadSaga)],
+  });
   let {
     theme = 'light',
     messages: fixtureMessages,

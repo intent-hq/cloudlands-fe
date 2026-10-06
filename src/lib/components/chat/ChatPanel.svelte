@@ -9,7 +9,6 @@
     pendingSubmissionMessage,
     processingSubmissionMessage,
   } from './pending-submission-message';
-  import { CHAT_PAGE_SIZE } from '$shared/constants';
   import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
@@ -73,8 +72,6 @@
     agentSessionRetryWithProviderRequested,
     agentSessionStopChatRequested,
     clearHistorySegment,
-    seedHistoryAround,
-    setHistoryOldestReached,
     updateSession as updateAgentSessionFields,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -93,11 +90,6 @@
     selectCanAdministerHost,
     selectPrincipalSnapshot,
   } from '$store/renderer/slices/principal/principal-selectors';
-  import {
-    findQueuedMessageForEdit,
-    queuedMessagePermissions,
-  } from '$lib/utils/queued-message-permissions';
-  import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
@@ -131,7 +123,6 @@
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
 
   import {
-    sendQueuedMessageNowRequested,
     sendQueuedMessagesNowRequested,
     clearQueuedMessagesRequested,
     initializeChatRequested,
@@ -139,14 +130,12 @@
     chatRebindStarted,
     chatRebindEnded,
     chatTrackedWorkspaceSet,
-    chatErrorCleared,
-    chatSendFailed,
-    chatQueuedRetryRecordUpdated,
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
-    scrollbackFetchStarted,
-    scrollbackSeekSettled,
+    previousUserMessageLoadConsumed,
+    previousUserMessageLoadReleased,
+    previousUserMessageLoadRequested,
     pendingProposalRecoveryPruned,
     pendingProposalRecoveryRequested,
     pendingQuestionRecoveryRequested,
@@ -171,14 +160,15 @@
     selectHistorySeekUnsupported,
     selectPendingProposalRecovery,
     selectPendingQuestionRecovery,
+    selectPreviousUserMessageLoad,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
     selectTranscriptSnapshotMeta,
   } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
-  import { appClient } from '$lib/client';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import { chatDraftClearRequested } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
   import {
     presenceTypingPulse,
     presenceTypingStopped,
@@ -241,10 +231,24 @@
   import { reconcileAppliedProposals } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import {
-    initialWizardCollapsed,
-    saveWizardCollapsed,
-    wizardDraftKey,
-  } from './questions/wizard-draft-storage';
+    questionWizardCollapsedChanged,
+    questionWizardConsumed,
+    questionWizardDraftChanged,
+    questionWizardReleaseRequested,
+    questionWizardResolved,
+  } from '$store/renderer/slices/question-ui/question-ui-slice';
+  import { selectQuestionUiConsumer } from '$store/renderer/slices/question-ui/question-ui-selectors';
+  import type { QuestionWizardDraft } from '$store/renderer/slices/question-ui/question-ui-types';
+  import {
+    chatPanelRetryAgentRequested,
+    chatPanelUiReleased,
+    userMessageIndexRequested,
+  } from '$store/renderer/slices/chat-panel-ui/chat-panel-ui-slice';
+  import {
+    selectRetryAgentUi,
+    selectUserMessageIndexUi,
+  } from '$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors';
+  import { wizardDraftKey } from './questions/wizard-draft-key';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     appendScrollSample,
@@ -283,7 +287,6 @@
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
-  import { loadPreviousUserMessage } from '$lib/utils/previous-user-message-page';
   import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
@@ -310,7 +313,6 @@
     getUserMessageNavigationItemsFromIndex,
     mergeUserMessageNavigationItems,
     type ChatNavigationState,
-    type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
@@ -754,6 +756,13 @@
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
+  const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
+  const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
+  let wizardPersistenceRequest: {
+    messageId: string;
+    requestId: string;
+    storageKey: string;
+  } | null = null;
   // svelte-ignore state_referenced_locally -- this records the identity at instance creation.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
@@ -795,9 +804,11 @@
   // agent). Merged with the tail-derived items — tail wins by id (freshest,
   // incl. streaming) and provides instant content before the fetch resolves;
   // any fetch failure silently leaves the tail-only fallback in place.
-  let userMessageIndexItems = $state<UserMessageNavigationItem[] | null>(null);
-  let userMessageIndexUnsupported = false;
-  let userMessageIndexFetchInFlight = $state(false);
+  const userMessageIndexItems = $derived.by(() => {
+    const result = $userMessageIndexUi$?.result;
+    return result?.ok ? getUserMessageNavigationItemsFromIndex(result.items) : null;
+  });
+  const userMessageIndexFetchInFlight = $derived($userMessageIndexUi$?.status === 'pending');
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
@@ -1122,41 +1133,95 @@
     );
   });
 
-  // Collapsed (Hide) state is host-owned and persisted per question set
-  // alongside the answer draft. A newly pending set starts from its persisted
-  // value when one exists; otherwise it auto-collapses when the composer
-  // holds in-flight user input (text or attachments) so the input textbox is
-  // never replaced mid-typing — Hide semantics only, nothing is dismissed.
-  // Resolved in a $derived (not a post-render $effect) so the very first
-  // render of a newly pending set already sees the collapsed value — an
-  // effect would run after the DOM update, transiently unmounting the
-  // composer (losing editor focus/selection/IME composition) before
-  // collapsing. The initial resolution is latched per messageId in a
-  // non-reactive cache so it is decided once per set; user toggles override
-  // it reactively.
+  // Register each question set with the root-owned persistence saga. The
+  // reducer synchronously seeds the composer-input fallback; hydration may
+  // replace it with a valid persisted value unless the user already changed
+  // the draft/collapse state.
+  $effect(() => {
+    const pending = pendingQuestions;
+    if (!pending) {
+      if (wizardPersistenceRequest) {
+        appStore.dispatch(
+          questionWizardReleaseRequested(instanceId, wizardPersistenceRequest.requestId),
+        );
+        wizardPersistenceRequest = null;
+      }
+      return;
+    }
+    if (wizardPersistenceRequest?.messageId === pending.messageId) return;
+    if (wizardPersistenceRequest) {
+      appStore.dispatch(
+        questionWizardReleaseRequested(instanceId, wizardPersistenceRequest.requestId),
+      );
+    }
+    const requestId = crypto.randomUUID();
+    const storageKey = wizardDraftKey(agentId, pending.messageId);
+    wizardPersistenceRequest = { messageId: pending.messageId, requestId, storageKey };
+    appStore.dispatch(
+      questionWizardConsumed(
+        instanceId,
+        requestId,
+        storageKey,
+        pending.questions,
+        {
+          idx: 0,
+          answers: pending.questions.map(() => ({ sel: [], text: '', skipped: false })),
+        },
+        // A rejected answer can bring back the same question after the user
+        // starts another draft. Preserve that question's latched display state.
+        untrack(() => questionWizardCollapsed),
+      ),
+    );
+  });
+
+  // The fallback is latched synchronously so newly arriving questions never
+  // replace in-flight composer input while storage hydration is pending.
   let wizardCollapsedInitial: { messageId: string; collapsed: boolean } | null = null;
-  let questionWizardCollapsedOverride = $state<{ messageId: string; collapsed: boolean } | null>(
-    null,
-  );
   const questionWizardCollapsed = $derived.by(() => {
     const id = pendingQuestions?.messageId ?? null;
     if (id === null) return false;
-    if (questionWizardCollapsedOverride?.messageId === id) {
-      return questionWizardCollapsedOverride.collapsed;
-    }
     if (wizardCollapsedInitial?.messageId !== id) {
       wizardCollapsedInitial = {
         messageId: id,
-        collapsed: untrack(() =>
-          initialWizardCollapsed(
-            wizardDraftKey(agentId, id),
-            inputValue.trim() !== '' || contextItems.length > 0,
-          ),
-        ),
+        collapsed: untrack(() => inputValue.trim() !== '' || contextItems.length > 0),
       };
+    }
+    if ($questionUiConsumer$?.storageKey === wizardDraftKey(agentId, id)) {
+      return $questionUiConsumer$.collapsed;
     }
     return wizardCollapsedInitial.collapsed;
   });
+
+  // The consumer may still represent the immediately preceding question set
+  // while the registration effect switches keys. Never hand that draft to a
+  // new wizard: its answer count belongs to the old question shape.
+  const questionWizardDraft = $derived.by(() => {
+    const pending = pendingQuestions;
+    const consumer = $questionUiConsumer$;
+    return pending && consumer?.storageKey === wizardDraftKey(agentId, pending.messageId)
+      ? consumer.draft
+      : undefined;
+  });
+
+  function handleQuestionWizardCollapsed(collapsed: boolean): void {
+    const pending = pendingQuestions;
+    const consumer = selectQuestionUiConsumer.select(appStore.state, instanceId);
+    if (!pending || !consumer || consumer.storageKey !== wizardDraftKey(agentId, pending.messageId))
+      return;
+    appStore.dispatch(questionWizardCollapsedChanged(instanceId, consumer.requestId, collapsed));
+  }
+
+  function handleQuestionWizardDraftChanged(draft: QuestionWizardDraft): void {
+    const consumer = selectQuestionUiConsumer.select(appStore.state, instanceId);
+    if (!consumer) return;
+    appStore.dispatch(questionWizardDraftChanged(instanceId, consumer.requestId, draft));
+  }
+
+  function handleQuestionWizardResolved(): void {
+    const consumer = selectQuestionUiConsumer.select(appStore.state, instanceId);
+    if (!consumer) return;
+    appStore.dispatch(questionWizardResolved(instanceId, consumer.requestId));
+  }
 
   // Queue entries the user should see: user-authored ones only. Daemon-origin
   // entries (agent sends, event wakes, hook wakes, PR-monitor wakes,
@@ -1204,7 +1269,9 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      showQueue: queuedMessagesVisibility.showQueue,
+      // The queue now lives in the composer, so the transcript always owns its
+      // normal trailing inset.
+      showQueue: false,
     }),
   );
 
@@ -1230,7 +1297,7 @@
   // answeredQuestionsMessageId }` (wire contract). That structured tag — not
   // the text — resolves the pending set, so the wizard unmounts and the
   // composer restores; an untagged user message leaves the Q&A pending.
-  function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
+  function handleQuestionWizardComplete(answers: QuestionAnswer[]): boolean {
     if (!workspace || !isActive || !pendingQuestions) return false;
     const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
@@ -2058,7 +2125,6 @@
   // draft (initial inputValue + setChatDraft on value change) stays alongside
   // it as the synchronous same-process remount cache.
   const draftManager = createChatDraftManager({
-    drafts: appClient.drafts,
     active: () => isActive,
     workspaceId: () => workspace?.id,
     agentId: () => agentId,
@@ -4876,28 +4942,33 @@
   // require an anchored backward walk; a loaded prompt across a hole is unsafe.
   async function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!isActive || !scrollContainer || previousMessageLoadingId === currentMessageId) return;
-    let previousMessage = previousUserMessageTargets.get(currentMessageId);
+    let previousMessage: { id: string } | null | undefined =
+      previousUserMessageTargets.get(currentMessageId);
     const getContainer = beginScrollNavigation();
     const originAgentId = agentId;
     const originWorkspaceId = workspace.id;
     let epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
     let cancelled = false;
-    let ownsSeek = false;
-    let tokens = { nextToken: null as string | null, prevToken: null as string | null };
+    let requestId: string | null = null;
+    const ownsRequest = () =>
+      requestId === null ||
+      selectPreviousUserMessageLoad.select(appStore.state, originAgentId)?.requestId === requestId;
     const current = () =>
       !cancelled &&
       !!getContainer() &&
       agentId === originAgentId &&
       workspace.id === originWorkspaceId &&
       !!selectAgentSession.select(appStore.state, originAgentId) &&
-      selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch;
+      selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch &&
+      ownsRequest();
     const finish = () => {
       cancelled = true;
       if (cancelPreviousMessageLoad !== finish) return;
       cancelPreviousMessageLoad = null;
       previousMessageLoadingId = null;
+      if (requestId === null) return;
       if (
-        ownsSeek &&
+        ownsRequest() &&
         !!selectAgentSession.select(appStore.state, originAgentId) &&
         selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch
       ) {
@@ -4905,8 +4976,8 @@
         // owns positioning; don't run the far-flick seek's settle positioning.
         wasFetchingHistorySeek = false;
         seekLandingPending = false;
-        appStore.dispatch(scrollbackSeekSettled(originAgentId, tokens));
       }
+      appStore.dispatch(previousUserMessageLoadReleased(originAgentId, requestId));
     };
     cancelPreviousMessageLoad = finish;
     try {
@@ -4927,51 +4998,27 @@
         }
         if (!current()) return;
         cancelSeekDebounce();
-        ownsSeek = true;
         seekLandingPending = true;
-        appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
-        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
-        const historyIndex = $agentHistoryMessages$.findIndex(
-          (message) => message.id === currentMessageId,
-        );
-        const sourceOrdinal =
-          historyIndex >= 0
-            ? ($historySegmentMeta$.startOrdinalEstimate ?? 0) + historyIndex
-            : Math.max(
-                0,
-                ($transcriptSnapshotMeta$?.totalMessages ?? $agentMessages$.length) -
-                  $agentMessages$.length,
-              ) +
-              Math.max(
-                0,
-                $agentMessages$.findIndex((message) => message.id === currentMessageId),
-              );
-        const result = await loadPreviousUserMessage(
-          currentMessageId,
-          (token, anchor) =>
-            appClient.agents.getConversation(
-              originAgentId,
-              CHAT_PAGE_SIZE,
-              token,
-              anchor,
-              undefined,
-              originWorkspaceId,
-            ),
-          current,
-        );
-        if (!result || !current()) return;
-        previousMessage = result.target;
+        requestId = createAppMessageId();
+        // The saga reserves the shared seek slot synchronously in this dispatch.
         appStore.dispatch(
-          seedHistoryAround(
+          previousUserMessageLoadRequested(
+            originWorkspaceId,
             originAgentId,
-            result.page.messages,
-            result.page.nextToken === null
-              ? 0
-              : Math.max(0, sourceOrdinal - result.rowsBeforeAnchor),
+            requestId,
+            currentMessageId,
           ),
         );
-        appStore.dispatch(setHistoryOldestReached(originAgentId, result.page.nextToken === null));
-        tokens = { nextToken: result.page.nextToken, prevToken: result.page.prevToken };
+        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+        let load = selectPreviousUserMessageLoad.select(appStore.state, originAgentId);
+        while (current() && load?.status === 'loading') {
+          if (!(await waitForActiveFrame())) return;
+          load = selectPreviousUserMessageLoad.select(appStore.state, originAgentId);
+        }
+        if (!current() || !load || load.status === 'cancelled') return;
+        appStore.dispatch(previousUserMessageLoadConsumed(originAgentId, requestId));
+        if (load.status === 'error') throw new Error('Previous user message walk failed');
+        previousMessage = load.targetId ? { id: load.targetId } : null;
         await tick();
         if (!current()) return;
         const split = currentUnloadedSplit();
@@ -5146,6 +5193,13 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    if (wizardPersistenceRequest) {
+      appStore.dispatch(
+        questionWizardReleaseRequested(instanceId, wizardPersistenceRequest.requestId),
+      );
+      wizardPersistenceRequest = null;
+    }
+    if (workspace?.id) appStore.dispatch(chatPanelUiReleased(workspace.id, instanceId));
     transferPanelInterestLease(null);
     flushPendingDraftWrite();
     flushPendingSelectionWrites();
@@ -5221,75 +5275,6 @@
       !workspace ||
       selectQueueMutationBlocked.select(appStore.state, agentId, workspace.id, messageId)
     );
-  }
-
-  function queuePermissions(messageId: string) {
-    return queuedMessagePermissions(
-      $queuedMessages$.find((message) => message.id === messageId),
-      queuePrincipalId,
-      workspace?.ownerPrincipalId,
-      $isHostOwner$,
-    );
-  }
-
-  // Handle editing a queued message. The client seam folds transport errors
-  // into `{ success: false, error }`, so branching on `result.success` is safe.
-  async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
-    if (
-      queueMutationBlocked(messageId) ||
-      !queuedMessagePermissions(
-        findQueuedMessageForEdit($queuedMessages$, messageId),
-        queuePrincipalId,
-        workspace?.ownerPrincipalId,
-        $isHostOwner$,
-      ).edit
-    )
-      return { success: false };
-    const originAgentId = agentId;
-    const originWorkspaceId = workspace?.id;
-    const result = await appClient.agents.editQueued(
-      originAgentId,
-      messageId,
-      content,
-      editing,
-      originWorkspaceId,
-    );
-    if (!result.success) {
-      logger.error('Failed to edit queued message', { messageId, error: result.error });
-    } else {
-      // #1011: sync the parked retry record with what the daemon actually
-      // persisted (save applies the edit; hold/cancel echo the original) —
-      // otherwise a post-drain "Try again" resends the pre-edit text. Prefer
-      // the authoritative echoed queuedMessage.content over the local arg so
-      // the record can't drift from the daemon's entry.
-      const persistedText = result.queuedMessage?.content ?? content;
-      appStore.dispatch(chatQueuedRetryRecordUpdated(originAgentId, messageId, persistedText));
-    }
-    return result;
-  }
-
-  // Handle removing a queued message — the saga removes it optimistically from
-  // Redux (immediate UI update) and restores it if the backend removal fails.
-  function handleRemoveQueuedMessage(messageId: string) {
-    if (queueMutationBlocked(messageId) || !queuePermissions(messageId).remove) return;
-    appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
-  }
-
-  // Handle sending a queued message immediately (interrupts current stream).
-  // One atomic daemon call (`agent.sendQueuedMessageNow`, monorepo#1032): the
-  // saga needs only agentId/wsId/queuedMessageId — the daemon owns
-  // the entry's content/attachments and dequeues + delivers transactionally.
-  async function handleSendQueuedMessageNow(messageId: string) {
-    if (!workspace || queueMutationBlocked(messageId) || !queuePermissions(messageId).sendNow)
-      throw new Error(m.agent_chatSend_sendNowRejected_error());
-    logger.info('Send queued message now triggered', { messageId, agentId });
-    const outcome = await appStore.dispatch(
-      sendQueuedMessageNowRequested(agentId, workspace.id, messageId),
-    );
-    if (outcome === 'delivered') {
-      void performLocalSendCleanup({ clearInput: false, followBottom: true });
-    }
-    return outcome;
   }
 
   async function handleSendAllQueuedMessages(messageIds: string[]) {
@@ -5441,13 +5426,13 @@
     resetHistoryNavigation();
   }
 
-  async function performLocalSendCleanup(options: {
+  function performLocalSendCleanup(options: {
     clearInput?: boolean;
     followBottom?: boolean;
     historyText?: string | null;
   }) {
-    // Scroll + follow re-lock must run synchronously, before any await: a
-    // stalled or rejecting drafts.clear must never delay or skip them.
+    // Scroll + follow re-lock run synchronously: a stalled or rejecting
+    // drafts.clear must never delay or skip them.
     if (options.followBottom) {
       beginScrollNavigation();
       shouldFollowBottom = true;
@@ -5476,7 +5461,7 @@
       appStore.dispatch(presenceTypingStopped());
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
-        await appClient.drafts.clear(workspace.id, agentId);
+        appStore.dispatch(chatDraftClearRequested(workspace.id, agentId));
       }
     }
   }
@@ -5580,7 +5565,7 @@
   }
 
   // Handle retrying the last failed message
-  async function handleRetry() {
+  function handleRetry() {
     if (!workspace || !agentId) return;
 
     // When agent status is "error" (spawn failure after retries exhausted),
@@ -5588,39 +5573,11 @@
     // Otherwise fall through to the regular retry-last-message path.
     const currentStatus = $agentSession$?.status;
     if (currentStatus === AgentStatus.Error) {
-      // Capture the current error message before clearing so we can restore it on failure
-      const priorError = $chatError$ || m.chat_chatPanel_agentFailedToStart_error();
-
-      // Clear the current error so the UI shows loading state
-      appStore.dispatch(chatErrorCleared(agentId));
-
-      const result = await appClient.agents.retry(agentId, workspace.id);
-
-      if (!result.ok) {
-        // Retry was rejected - surface the error or fall back to prior error
-        const errorToShow = result.error || priorError;
-        appStore.dispatch(chatSendFailed(agentId, errorToShow));
-        void requestChatMessageRetry(agentId, workspace.id);
-        return;
-      }
-
-      // ok:true — the daemon cleared the error and emits agent:status-changed
-      // (pending when a queued message is redriven, idle when the queue was
-      // empty). Converge the local session status from the RPC ack too, so the
-      // error banner clears even if the status event is missed (STAB-54).
-      // Only an explicit `redriven: false` means idle; `undefined` (older
-      // daemon omitting the field) keeps the pre-STAB-54 pending behaviour.
+      const pending = selectRetryAgentUi.select(appStore.state, workspace.id, instanceId);
+      if (pending?.status === 'pending') return;
       appStore.dispatch(
-        updateAgentSessionFields(agentId, {
-          status: result.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
-          stopReason: null,
-        }),
+        chatPanelRetryAgentRequested(workspace.id, instanceId, crypto.randomUUID(), agentId),
       );
-      if (result.redriven === false) {
-        // Nothing was queued to redrive — the error is cleared, but no new
-        // turn starts. Tell the user what to do next instead of a silent no-op.
-        notify.info(m.chat_chatPanel_nothingToRetry_toast());
-      }
       return;
     }
 
@@ -5930,11 +5887,8 @@
     });
     if (!request || !action) return;
     if (action === 'expand-question' || action === 'collapse-question') {
-      const messageId = pendingQuestions?.messageId;
-      if (!messageId) return;
       const collapsed = action === 'collapse-question';
-      questionWizardCollapsedOverride = { messageId, collapsed };
-      saveWizardCollapsed(wizardDraftKey(agentId, messageId), collapsed);
+      handleQuestionWizardCollapsed(collapsed);
       return;
     }
     let cancelled = false;
@@ -6018,27 +5972,19 @@
    * Other failures keep the cached index (or tail-only) silently.
    */
   export function refreshUserMessageIndex(): void {
-    if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
-      return;
-    const originAgentId = agentId;
-    const originWorkspaceId = workspace?.id;
-    userMessageIndexFetchInFlight = true;
-    void appClient.agents
-      .listUserMessages(originAgentId, undefined, originWorkspaceId)
-      .then((result) => {
-        if (!isActive || agentId !== originAgentId || workspace?.id !== originWorkspaceId) return;
-        if (result.ok) {
-          userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
-        } else if (result.unsupported) {
-          userMessageIndexUnsupported = true;
-        } else {
-          logger.debug('Failed to refresh user-message index', { error: result.error });
-        }
-      })
-      .finally(() => {
-        if (agentId === originAgentId && workspace?.id === originWorkspaceId)
-          userMessageIndexFetchInFlight = false;
-      });
+    const workspaceId = workspace?.id;
+    if (!isActive || !workspaceId || !agentId) return;
+    const current = selectUserMessageIndexUi.select(appStore.state, workspaceId, instanceId);
+    if (current?.status === 'pending' || current?.unsupported) return;
+    appStore.dispatch(
+      userMessageIndexRequested(
+        workspaceId,
+        instanceId,
+        crypto.randomUUID(),
+        agentId,
+        selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch,
+      ),
+    );
   }
 
   export function getMessages() {
@@ -7449,16 +7395,17 @@
                 bind:this={queuedMessageListRef}
                 messages={visibleQueuedMessages}
                 displayRows={visibleQueueRows}
+                {agentId}
+                workspaceId={workspace?.id}
                 authors={queuedMessageAuthors}
                 ownPrincipalId={queuePrincipalId}
                 presentationPrincipalId={$presenceOwnPrincipalId$}
                 ownerPrincipalId={workspace?.ownerPrincipalId}
                 isHostOwner={$isHostOwner$}
-                onedit={handleEditQueuedMessage}
-                onremove={handleRemoveQueuedMessage}
-                onsendnow={handleSendQueuedMessageNow}
                 onsendall={handleSendAllQueuedMessages}
                 onclearall={handleClearAllQueuedMessages}
+                onsenddelivered={() =>
+                  void performLocalSendCleanup({ clearInput: false, followBottom: true })}
                 ondone={() => inputComponent?.focus?.()}
               />
             </div>
@@ -7586,21 +7533,11 @@
                     <QuestionWizard
                       bind:this={questionWizard}
                       questions={pendingQuestions.questions}
-                      draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
+                      draft={questionWizardDraft}
+                      onDraftChange={handleQuestionWizardDraftChanged}
+                      onResolved={handleQuestionWizardResolved}
                       collapsed={questionWizardCollapsed}
-                      onToggleCollapsed={(collapsed) => {
-                        // Can be invoked around the teardown frame after the
-                        // pending-questions source is already nulled.
-                        if (!pendingQuestions) return;
-                        questionWizardCollapsedOverride = {
-                          messageId: pendingQuestions.messageId,
-                          collapsed,
-                        };
-                        saveWizardCollapsed(
-                          wizardDraftKey(agentId, pendingQuestions.messageId),
-                          collapsed,
-                        );
-                      }}
+                      onToggleCollapsed={handleQuestionWizardCollapsed}
                       onComplete={handleQuestionWizardComplete}
                       onDismiss={handleQuestionWizardDismiss}
                     />

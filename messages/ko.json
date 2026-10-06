@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "저장소의 설정 스크립트를 읽을 수 없습니다. 워크스페이스를 만들기 전에 선택한 스크립트를 확인하세요.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Intent Mobile을 연결하려면 이 기기에서 원격 액세스를 활성화하세요.",
   "devConsole_title_label": "개발 콘솔",

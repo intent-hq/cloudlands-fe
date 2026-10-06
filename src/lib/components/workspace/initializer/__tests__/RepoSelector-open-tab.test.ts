@@ -215,6 +215,35 @@ function gitlabProps(): GitLabProjectPickerProps {
 }
 
 describe('RepoSelector qualified GitLab choice', () => {
+  it('uses only the selected project owner avatar and retires it with access', async () => {
+    const gitlab = gitlabProps();
+    const ownerAvatarUrl = 'https://images.example.test/namespace.png';
+    gitlab.selectedProject = {
+      projectPath: 'group/subgroup/api',
+      namespace: 'group/subgroup',
+      name: 'api',
+      ownerAvatarUrl,
+    };
+    const view = render(RepoSelector, { gitlab, gitlabSelected: true });
+    const trigger = screen.getByRole('button');
+    expect(trigger.querySelector('img')?.getAttribute('src')).toBe(ownerAvatarUrl);
+    await fireEvent.error(trigger.querySelector('img')!);
+    expect(trigger.querySelector('img')).toBeNull();
+    await view.rerender({
+      gitlab: {
+        ...gitlab,
+        selectedProject: { ...gitlab.selectedProject, ownerAvatarUrl: ownerAvatarUrl + '?new' },
+      },
+    });
+    expect(trigger.querySelector('img')?.getAttribute('src')).toBe(ownerAvatarUrl + '?new');
+    await view.rerender({
+      gitlab: { ...gitlab, page: { status: 'unavailable', message: 'Access denied' } },
+    });
+    expect(trigger.querySelector('img')).toBeNull();
+    await fireEvent.click(trigger);
+    expect(screen.queryByRole('option')).toBeNull();
+  });
+
   afterEach(() => {
     cleanup();
     mocks.dispatch.mockReset();

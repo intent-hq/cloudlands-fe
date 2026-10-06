@@ -37,6 +37,9 @@ import { transientUiReducer } from './slices/transient-ui/transient-ui-slice';
 import { workspaceOperationsReducer } from './slices/workspace-operations/workspace-operations-slice';
 import { workspaceAgentsReducer } from './slices/workspace-agents/workspace-agents-slice';
 import { agentMutationUiReducer } from './slices/agent-mutation-ui/agent-mutation-ui-slice';
+import { chatPanelUiReducer } from './slices/chat-panel-ui/chat-panel-ui-slice';
+import { chatDraftsReducer } from './slices/chat-drafts/chat-drafts-slice';
+import { questionUiReducer } from './slices/question-ui/question-ui-slice';
 import { workspaceNavigationReducer } from './slices/workspace-navigation/workspace-navigation-slice';
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
@@ -155,6 +158,9 @@ export const reducers = {
   userPreferences: userPreferencesReducer,
   workspaceAgents: workspaceAgentsReducer,
   agentMutationUi: agentMutationUiReducer,
+  chatPanelUi: chatPanelUiReducer,
+  chatDrafts: chatDraftsReducer,
+  questionUi: questionUiReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
   notePages: notePagesReducer,

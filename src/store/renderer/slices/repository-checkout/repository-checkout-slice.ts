@@ -1,4 +1,4 @@
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -9,6 +9,9 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   CheckoutBranch,
+  CheckoutRepoConfigQuery,
+  CheckoutRepoConfig,
+  CheckoutResult,
   CheckoutBranches,
   CheckoutCapture,
   CheckoutProjectDetail,
@@ -31,6 +34,11 @@ import type {
   RepositoryCheckoutForm,
   RepositoryCheckoutState,
 } from './repository-checkout-types';
+
+export const checkoutRepoConfigRequested = createAsyncAction<
+  [formId: string, scopeKey: string, query: CheckoutRepoConfigQuery],
+  CheckoutResult<CheckoutRepoConfig> | { status: 'unsupported' }
+>('repositoryCheckout/repoConfigRequested', 'repositoryCheckout/repoConfig');
 
 export const opened = createAction<[formId: string, draft?: RepositoryCheckoutDraft]>(
   'repositoryCheckout/opened',
@@ -92,6 +100,15 @@ export const checkoutBranchesReceived = createAction<
 export const checkoutBranchRestored = createAction<
   [formId: string, scopeKey: string, projectRevision: number, branch: CheckoutBranch]
 >('repositoryCheckout/branchRestored');
+export const checkoutBranchResolutionChanged = createAction<
+  [
+    formId: string,
+    scopeKey: string,
+    projectRevision: number,
+    branchesRevision: number,
+    pending: boolean,
+  ]
+>('repositoryCheckout/branchResolutionChanged');
 export const checkoutWarmChanged = createAction<
   [
     formId: string,
@@ -127,6 +144,7 @@ function emptyForm(formId: string, draft?: RepositoryCheckoutDraft): RepositoryC
     branchesCursor: null,
     branch: null,
     explicitBranch: false,
+    resolvingBranch: false,
     branchByProject: createCollection('projectPath'),
     warmStatus: 'idle',
   };
@@ -290,6 +308,7 @@ repositoryCheckoutReducer.with(branchQueryChanged, (state, { payload: [id, scope
       : {
           ...form,
           branchQuery: query,
+          resolvingBranch: false,
           branches: createCollection('name'),
           branchesCursor: null,
           branchesRevision: form.branchesRevision + 1,
@@ -300,7 +319,12 @@ repositoryCheckoutReducer.with(branchQueryChanged, (state, { payload: [id, scope
 repositoryCheckoutReducer.with(branchesMoreRequested, (state, { payload: [id, scope] }) =>
   readyChange(state, id, scope, (form) =>
     form.project && form.branchesCursor && form.branchesStatus !== 'loading'
-      ? { ...form, branchesRevision: form.branchesRevision + 1, branchesStatus: 'loading' }
+      ? {
+          ...form,
+          resolvingBranch: false,
+          branchesRevision: form.branchesRevision + 1,
+          branchesStatus: 'loading',
+        }
       : form,
   ),
 );
@@ -330,6 +354,7 @@ function chooseBranch(
     ...form,
     branch,
     explicitBranch: explicit,
+    resolvingBranch: false,
     warmStatus: 'idle',
     draft: form.draft ? { ...form.draft, branch: branch.name } : null,
   };
@@ -353,6 +378,7 @@ repositoryCheckoutReducer.with(modeChanged, (state, { payload: [id, scope, mode]
   readyChange(state, id, scope, (form) => ({
     ...form,
     mode,
+    resolvingBranch: false,
     draft: form.draft ? { ...form.draft, mode } : null,
     warmStatus: 'idle',
     branches: createCollection('name'),
@@ -360,6 +386,17 @@ repositoryCheckoutReducer.with(modeChanged, (state, { payload: [id, scope, mode]
     branchesRevision: form.branchesRevision + 1,
     branchesStatus: form.project ? 'loading' : 'idle',
   })),
+);
+repositoryCheckoutReducer.with(
+  checkoutBranchResolutionChanged,
+  (state, { payload: [id, scope, projectRevision, branchesRevision, pending] }) =>
+    readyChange(state, id, scope, (form) =>
+      form.projectRevision === projectRevision &&
+      form.branchesRevision === branchesRevision &&
+      !form.explicitBranch
+        ? { ...form, resolvingBranch: pending }
+        : form,
+    ),
 );
 repositoryCheckoutReducer.with(
   checkoutWarmChanged,
