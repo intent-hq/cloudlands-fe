@@ -326,7 +326,9 @@ test('focus pins a row until blur, and manual expansion survives eviction', asyn
   });
   await expect(group).toBeFocused();
   await expect(group).toHaveAttribute('aria-expanded', 'true');
-  await host.getByTestId('message-input').locator('.tiptap-editor').focus();
+  const editor = host.getByTestId('message-input').locator('.tiptap-editor');
+  await expect(editor).toBeEditable();
+  await editor.focus();
   await expect(group).toHaveCount(0);
   await viewport.evaluate((n, top) => {
     n.scrollTop = top;

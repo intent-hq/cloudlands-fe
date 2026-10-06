@@ -11,6 +11,10 @@
   import { store } from '$store/renderer/store';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
+    createChatDraftFixture,
+    type DraftFixtureRequest,
+  } from '../../../../test/fixtures/chat-drafts';
+  import {
     principalContextChanged,
     principalReceived,
   } from '$store/renderer/slices/principal/principal-slice';
@@ -48,6 +52,7 @@
     chief = false,
     streaming = false,
     draft = '',
+    persistedDraft = '',
     attention = null,
     queued = false,
     suggestions = false,
@@ -71,6 +76,7 @@
     chief?: boolean;
     streaming?: boolean;
     draft?: string;
+    persistedDraft?: string;
     attention?: 'blocker' | 'discussion' | null;
     queued?: boolean;
     suggestions?: boolean;
@@ -104,6 +110,7 @@
     chief,
     streaming,
     draft,
+    persistedDraft,
     suggestions,
     questions,
     transcript,
@@ -114,10 +121,17 @@
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
   const timestamp = '2026-08-23T12:00:00.000Z';
+  let draftRequests = $state<DraftFixtureRequest[]>([]);
+  const draftFixture = createChatDraftFixture((request) => {
+    draftRequests = [...draftRequests, request];
+  });
+  if (fixture.persistedDraft) draftFixture.seed(workspaceId, agentId, fixture.persistedDraft);
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: () => [] })
+    ? startRootStoreLifecycle(store, {
+        startSagas: (appStore) => [appStore.runSaga(draftFixture.saga)],
+      })
     : () => {};
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
@@ -606,6 +620,7 @@
 </script>
 
 <section style:zoom data-testid="chat-panel-composer-host">
+  <output hidden data-testid="composer-draft-requests">{JSON.stringify(draftRequests)}</output>
   <div class="relative" style:width="{width}px" style:height="{height}px">
     <div class="absolute inset-0 h-full w-full">
       <PanelLayout {workspaceId} layoutId={workspaceId} />

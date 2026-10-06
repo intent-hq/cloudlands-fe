@@ -5,23 +5,31 @@ import type { Locator } from '@playwright/test';
 test.setTimeout(120_000);
 
 async function toggleWithMotion(button: Locator, reduced: boolean) {
-  const motion = await button.evaluate(async (node: HTMLButtonElement) => {
+  const motion = await button.evaluate(async (node: HTMLButtonElement, reducedMotion) => {
     const root = node.closest('[data-question-wizard]')!;
     node.click();
-    await new Promise(requestAnimationFrame);
-    const states = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]'));
-    const frames = states.map((state) => ({
-      state: state.dataset.questionState,
-      exiting: state.inert,
-      animations: state.getAnimations().filter(
-        (animation) =>
-          // Svelte retains a 0.01ms bookkeeping animation for zero-duration transitions.
-          animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 1,
-      ).length,
-    }));
+    const deadline = performance.now() + 5_000;
+    let frames;
+    do {
+      await new Promise(requestAnimationFrame);
+      const states = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]'));
+      frames = states.map((state) => ({
+        state: state.dataset.questionState,
+        exiting: state.inert,
+        animations: state.getAnimations().filter(
+          (animation) =>
+            // Svelte retains a 0.01ms bookkeeping animation for zero-duration transitions.
+            animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 1,
+        ).length,
+      }));
+    } while (
+      !reducedMotion &&
+      frames.filter((state) => state.animations > 0).length !== 2 &&
+      performance.now() < deadline
+    );
     root.getAnimations({ subtree: true }).forEach((animation) => animation.finish());
     return frames;
-  });
+  }, reduced);
   if (reduced) expect(motion.every((state) => state.animations === 0)).toBe(true);
   else {
     expect(motion.filter((state) => state.animations > 0)).toHaveLength(2);

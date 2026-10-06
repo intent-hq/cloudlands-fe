@@ -9,6 +9,43 @@ import {
 
 test.setTimeout(120_000);
 
+test('restores a persisted draft before editing and saves the new text', async ({
+  mount,
+}, info) => {
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { persistedDraft: 'Saved before opening the composer' },
+  });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  const requests = async () =>
+    JSON.parse(await component.getByTestId('composer-draft-requests').innerText());
+  await expect(editor).toBeEditable();
+  await expect(editor).toHaveText('Saved before opening the composer');
+  expect(
+    (await requests()).filter((request: { method: string }) => request.method === 'drafts.get'),
+  ).toEqual([
+    {
+      method: 'drafts.get',
+      params: {
+        workspaceId: 'chat-panel-composer-geometry',
+        agentId: 'regular-composer-agent',
+      },
+    },
+  ]);
+  await editor.fill('Continue the restored draft');
+  await expect.poll(requests).toContainEqual({
+    method: 'drafts.set',
+    params: {
+      workspaceId: 'chat-panel-composer-geometry',
+      agentId: 'regular-composer-agent',
+      text: 'Continue the restored draft',
+    },
+  });
+  await info.attach('composer-draft-transport', {
+    body: JSON.stringify(await requests()),
+    contentType: 'application/json',
+  });
+});
+
 for (const chief of [false, true]) {
   test(`keeps ${chief ? 'Chief' : 'regular'} editing usable in a narrow panel at 200% zoom`, async ({
     mount,

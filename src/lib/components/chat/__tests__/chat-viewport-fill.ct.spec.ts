@@ -297,6 +297,8 @@ test('keeps the newest row anchored after each controlled older page', async ({
   const component = await mount(ChatViewportFillHost, {
     props: { controlled: true, height: 1600 },
   });
+  await expect(component.getByTestId('message-input').locator('.tiptap-editor')).toBeEditable();
+  await component.evaluate(() => document.fonts.ready);
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
   const result = async () => JSON.parse(await component.getByTestId('requests').innerText());
   await expect.poll(async () => (await result()).requests.length).toBe(1);
