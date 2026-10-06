@@ -3,7 +3,11 @@
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { updateNoteContent } from '$features/notes/notes-write-service';
+  import {
+    updateNoteContent,
+    hasPendingNoteContent,
+    subscribeNoteContentFailure,
+  } from '$features/notes/notes-write-service';
   import { selectLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -13,6 +17,12 @@
     content: string;
     /** Daemon rev of `content`; the base a draft typed on it is saved against. */
     rev?: number;
+    initialDraft?: {
+      content: string;
+      baseContent: string;
+      rev?: number;
+      selection: { anchor: number; head: number };
+    };
     editable?: boolean;
     isPanelFocused?: boolean;
   }
@@ -22,6 +32,7 @@
     noteId,
     content,
     rev,
+    initialDraft,
     editable = true,
     isPanelFocused = false,
   }: Props = $props();
@@ -43,7 +54,7 @@
   }
 
   function getInitialContent(): string {
-    return content ?? '';
+    return initialDraft?.content ?? content ?? '';
   }
 
   function getInitialWorkspaceId(): string {
@@ -55,11 +66,19 @@
   }
 
   function getInitialRev(): number | undefined {
-    return rev;
+    return initialDraft?.rev ?? rev;
   }
 
+  let saveFailed = $state(false);
+  $effect(() =>
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous subscription to the sanctioned write-service queue; this does not fetch domain data.
+    subscribeNoteContentFailure(workspaceId, noteId, (failure) => {
+      saveFailed = !!failure;
+    }),
+  );
   let editorContent = $state(getInitialContent());
-  let lastSavedContent = getInitialContent();
+  // svelte-ignore state_referenced_locally -- one baseline per keyed editor lifetime
+  let lastSavedContent = initialDraft?.baseContent ?? getInitialContent();
   // Rev of the store text the editor last synced from. A draft is saved
   // against it, not against the store rev at send time: a note:updated refetch
   // during the save debounce advances the store past the text the user typed
@@ -68,15 +87,33 @@
   let editorContentRev = getInitialRev();
   let editorContentWorkspaceId = getInitialWorkspaceId();
   let editorContentNoteId = getInitialNoteId();
-  let isUserEditing = $state(false);
+  // svelte-ignore state_referenced_locally -- a handoff starts with an unsaved local draft
+  let isUserEditing = $state(!!initialDraft);
   let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRawSave: PendingRawSave | null = null;
   let propsBeforeSave: { content: string; rev: number | undefined } | null = null;
 
+  // A rich-to-raw handoff is already a local edit. Preserve its original
+  // baseline and revision until the normal full-save service accepts it.
+  let initialDraftStaged = false;
+  $effect(() => {
+    if (!initialDraft || initialDraftStaged || !editable) return;
+    initialDraftStaged = true;
+    const pending = createPendingRawSave();
+    pendingRawSave = pending;
+    saveDebounceTimer = setTimeout(() => {
+      saveDebounceTimer = null;
+      saveRawContent(pending);
+      isUserEditing = false;
+    }, 1000);
+  });
+
   $effect(() => {
     const latestContent = currentContent;
     const latestRev = rev;
-    if (isUserEditing) return;
+    if (isUserEditing || saveFailed) return;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous write-queue status prevents remote echoes from replacing an unsaved draft.
+    if (hasPendingNoteContent(workspaceId, noteId) && latestContent !== editorContent) return;
     if (
       editorContentWorkspaceId === workspaceId &&
       editorContentNoteId === noteId &&
@@ -99,7 +136,7 @@
   }
 
   function setNoteContentFromEditor(nextContent: string): void {
-    if (nextContent === editorContent) return;
+    if (!editable || nextContent === editorContent) return;
     editorContent = nextContent;
     editorContentWorkspaceId = workspaceId;
     editorContentNoteId = noteId;
@@ -142,6 +179,7 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
     updateNoteContent(target.workspaceId, target.noteId, target.content, {
       immediate,
+      strict: true,
       baseRev: target.baseRev,
       baseContent: target.lastSavedContent,
     });
@@ -169,6 +207,8 @@
 <div class="flex-1 min-h-0 w-full" data-testid="raw-note-view">
   <CodeEditor
     bind:value={getNoteContentForEditor, setNoteContentFromEditor}
+    allowLargeContent={true}
+    initialSelection={initialDraft?.selection}
     language="markdown"
     readOnly={!editable}
     fileName={noteFilePath}

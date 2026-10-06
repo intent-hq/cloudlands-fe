@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
+  import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
+  import { createNoteReadingSurface } from '$features/notes/virtualized/note-reading-surface';
+  import type { CanonicalNoteHit } from '$features/notes/virtualized/note-canonical-search';
+  import { onDestroy, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
@@ -25,7 +29,7 @@
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { createNote, deleteNote } from '$features/notes/notes-write-service';
-  import { ensureNoteContentLoaded } from '$features/notes/notes-read-service';
+  import { beginFullNoteEdit, ensureNoteContentLoaded } from '$features/notes/notes-read-service';
   import { isSpecNote } from '$shared/constants/notes';
   import { isNoteContentStale } from '$shared/utils/note-content';
   import { invoke } from '$lib/electron-bridge';
@@ -36,7 +40,6 @@
     pagePanelClosed,
     pageResourceLimitsConfigured,
   } from '$store/renderer/slices/note-pages/note-pages-slice';
-  import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
   import type { NoteReadingSurface } from '$features/notes/virtualized/note-window-view';
   import NoteWithComments from '$lib/components/workspace/NoteWithComments.svelte';
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
@@ -65,8 +68,7 @@
 
   const logger = createLogger('NoteTabType');
 
-  // The default remains legacy until the document-operation owner supplies the
-  // complete paged surface. Capability alone must not enable an unfinished editor.
+  // Normal note tabs negotiate the read-only capability. Complete source is loaded only by Edit.
   let {
     tab,
     workspaceId,
@@ -80,28 +82,174 @@
 
   const headerContext = getPanelHeaderContext();
 
-  // svelte-ignore state_referenced_locally
-  const workspace = selectWorkspaceById(workspaceId);
   const scrollPositions = selectAllScrollPositions();
   const scrollPosition = $derived($scrollPositions[tab.id]);
 
-  // svelte-ignore state_referenced_locally
-  const note = selectNoteById(workspaceId, tab.noteId);
-  // svelte-ignore state_referenced_locally
-  const notesState = selectWorkspaceNotesState(workspaceId);
   // svelte-ignore state_referenced_locally - initial selector target; effects below retarget on prop changes
   const noteViewWorkspaceIdStore = writable(workspaceId);
   // svelte-ignore state_referenced_locally - initial selector target; effects below retarget on prop changes
   const noteViewNoteIdStore = writable(tab.noteId ?? '');
   $effect(() => noteViewWorkspaceIdStore.set(workspaceId));
   $effect(() => noteViewNoteIdStore.set(tab.noteId ?? ''));
+  // svelte-ignore state_referenced_locally
+  const workspace = selectWorkspaceById(noteViewWorkspaceIdStore);
+  const note = selectNoteById(noteViewWorkspaceIdStore, noteViewNoteIdStore);
+  // svelte-ignore state_referenced_locally
+  const notesState = selectWorkspaceNotesState(noteViewWorkspaceIdStore);
   const noteViewModeStore = selectNoteViewMode(noteViewWorkspaceIdStore, noteViewNoteIdStore);
   const noteViewMode = $derived($noteViewModeStore);
-  const notePageSession = selectNotePageSession(noteViewWorkspaceIdStore, noteViewNoteIdStore);
-  const pagedSurface = $derived($notePageSession?.status === 'legacy' ? undefined : readingSurface);
+  let editState = $state<'view' | 'loading' | 'editing' | 'error'>('view');
+  let editLease: ReturnType<typeof beginFullNoteEdit> | undefined;
+  let fullEditor = $state<{ finishEditing(): Promise<void> } | null>(null);
+  let leavingEdit = $state(false);
+  let showPagedFind = $state(false),
+    pagedQuery = $state(''),
+    pagedFindError = $state(false);
+  let pagedHits = $state<CanonicalNoteHit[]>([]),
+    pagedHitIndex = $state(0),
+    pagedFindExact = $state(true);
+  let findGeneration = 0;
+  let readingView:
+    import('$features/notes/virtualized/note-window-view').NoteWindowView | undefined;
+  const normalReadingSurface = $derived(
+    createNoteReadingSurface(
+      workspaceId,
+      tab.noteId ?? '',
+      tab.id,
+      () => {
+        showPagedFind = true;
+      },
+      () => {
+        pagedHits = [];
+      },
+    ),
+  );
+  const pageSession = selectNotePageSession(noteViewWorkspaceIdStore, noteViewNoteIdStore);
+  // Window/cache updates keep the same search identity. Only changing notes or
+  // invalidating the revision may retire results while navigating between pages.
+  const pagedSearchIdentity = $derived(
+    JSON.stringify([
+      workspaceId,
+      tab.noteId,
+      $pageSession?.generation,
+      $pageSession?.state?.sourceRevision,
+    ]),
+  );
+  $effect(() => {
+    void pagedSearchIdentity;
+    return () => {
+      findGeneration++;
+      pagedHits = [];
+      selectedReadingSurface?.cancelRenderedSearch?.();
+    };
+  });
+  const selectedReadingSurface = $derived(readingSurface ?? normalReadingSurface);
+  const pagedSurface = $derived(
+    editState === 'view' && $workspace ? selectedReadingSurface : undefined,
+  );
+  $effect(() => {
+    const owned = normalReadingSurface;
+    return () => owned.dispose();
+  });
+  function readingReady(view: typeof readingView) {
+    if (!view) return;
+    readingView = view;
+    pagedSurface?.ready?.(view);
+  }
+  function revealPagedHit(index: number) {
+    if (!pagedHits.length) return;
+    pagedHitIndex = (index + pagedHits.length) % pagedHits.length;
+    const { start, end } = pagedHits[pagedHitIndex].sourceRange;
+    readingView?.setSelection({ anchor: start, head: end, anchorAffinity: 1, headAffinity: -1 });
+    readingView?.reveal(start);
+  }
+  async function findPagedText() {
+    const generation = ++findGeneration,
+      surface = pagedSurface;
+    pagedHits = [];
+    surface?.cancelRenderedSearch?.();
+    pagedHitIndex = 0;
+    pagedFindError = false;
+    pagedFindExact = true;
+    if (!pagedQuery.trim() || !surface?.searchRendered) return;
+    try {
+      await surface.searchRendered(pagedQuery, async (page) => {
+        if (generation !== findGeneration) return;
+        pagedHits = [...pagedHits, ...page.hits];
+        pagedFindExact = page.count.exact;
+      });
+      if (generation === findGeneration) revealPagedHit(0);
+    } catch {
+      if (generation === findGeneration) {
+        pagedFindError = true;
+        pagedHits = [];
+        surface.cancelRenderedSearch?.();
+      }
+    }
+  }
+  function closePagedFind() {
+    findGeneration++;
+    pagedHits = [];
+    pagedSurface?.cancelRenderedSearch?.();
+    showPagedFind = false;
+  }
+
+  $effect(() => {
+    const ownerWorkspace = workspaceId,
+      ownerNote = tab.noteId;
+    return () => {
+      void ownerWorkspace;
+      void ownerNote;
+      editLease?.release();
+      editLease = undefined;
+      editState = 'view';
+    };
+  });
+
+  async function startFullEdit() {
+    if (!noteEditable || !$workspace || !tab.noteId || editState === 'loading') return;
+    editLease?.release();
+    const ownerWorkspace = workspaceId,
+      ownerNote = tab.noteId;
+    const lease = beginFullNoteEdit(ownerWorkspace, ownerNote);
+    editLease = lease;
+    editState = 'loading';
+    // Let the reading view and its panel owner retire before mounting an editor.
+    await tick();
+    const loaded = await lease.load();
+    if (editLease !== lease || workspaceId !== ownerWorkspace || tab.noteId !== ownerNote) return;
+    if (!noteEditable || !$workspace) {
+      cancelFullEdit();
+      return;
+    }
+    editState = loaded ? 'editing' : 'error';
+    if (!loaded) {
+      lease.release();
+      editLease = undefined;
+    }
+  }
+  function cancelFullEdit() {
+    editLease?.release();
+    editLease = undefined;
+    editState = 'view';
+  }
+  async function finishFullEdit() {
+    if (leavingEdit) return;
+    leavingEdit = true;
+    const lease = editLease;
+    try {
+      await fullEditor?.finishEditing?.();
+      if (editLease === lease) cancelFullEdit();
+    } catch (error) {
+      logger.warn('Full note edit remains open because saving failed', error);
+    } finally {
+      leavingEdit = false;
+    }
+  }
   $effect(() => {
     const surface = pagedSurface;
     return () => {
+      pagedHits = [];
       surface?.cancelCopy?.();
       surface?.cancelSelectionCopy?.();
       surface?.cancelRenderedSearch?.();
@@ -111,9 +259,16 @@
   // The tab owns negotiation across legacy/paged renderer changes. Keeping this
   // owner alive lets reconnect renegotiate an older daemon without a full reopen.
   $effect(() => {
-    if (!readingSurface || !workspaceId || !tab.noteId) return;
+    if (
+      !selectedReadingSurface ||
+      editState !== 'view' ||
+      !$workspace ||
+      !workspaceId ||
+      !tab.noteId
+    )
+      return;
     const owner = { workspaceId, noteId: tab.noteId, panelId: tab.id };
-    appStore.dispatch(pageResourceLimitsConfigured(readingSurface.resourceLimits));
+    appStore.dispatch(pageResourceLimitsConfigured(selectedReadingSurface.resourceLimits));
     appStore.dispatch(pagePanelOpened(owner.workspaceId, owner.noteId, owner.panelId));
     return () => appStore.dispatch(pagePanelClosed(owner.workspaceId, owner.noteId, owner.panelId));
   });
@@ -145,8 +300,10 @@
   $effect(() => {
     const noteId = tab.noteId;
     if (
+      (selectedReadingSurface && editState !== 'view') ||
       pagedSurface ||
       !isActive ||
+      !$workspace ||
       !noteId ||
       !noteContentStale ||
       contentLoadFailedNoteId === noteId
@@ -230,6 +387,9 @@
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
+    if (editState === 'loading') return 'loading';
+    if (editState === 'error') return 'error';
+    if (editState === 'editing') return 'editor';
     if (pagedSurface) return 'read-only';
     if (noteContentLoadFailed) return 'error';
     if (noteContentStale) return 'loading';
@@ -256,6 +416,7 @@
       await surface.copySelection();
     } catch (error) {
       logger.error('Failed to copy note selection', error);
+      noteCopyFeedback = m.ui_copyInput_copyFailed_ariaLabel();
     }
   }
 
@@ -272,6 +433,7 @@
       }, 2000);
     } catch (error) {
       logger.error('Failed to copy note', error);
+      noteCopyFeedback = m.ui_copyInput_copyFailed_ariaLabel();
     }
   }
 
@@ -398,18 +560,66 @@
 
 <NoteContentSurface state={noteContentState}>
   {#if tab.noteId}
-    {#if pagedSurface && $workspace}
+    {#if selectedReadingSurface && $workspace}
+      <div class="flex items-center gap-2 p-2">
+        {#if editState === 'view'}
+          <Button size="sm" onclick={startFullEdit} disabled={!noteEditable}>{m.menu_edit()}</Button
+          >
+        {:else if editState === 'editing'}
+          <Button size="sm" onclick={finishFullEdit} disabled={leavingEdit}
+            >{m.settings_devices_done_label()}</Button
+          >
+        {:else}
+          <Button size="sm" variant="outline" onclick={cancelFullEdit}
+            >{m.workspace_modals_cancel_label()}</Button
+          >
+        {/if}
+      </div>
+    {/if}
+    {#if pagedSurface && showPagedFind}
+      <PanelFindBar
+        autofocus
+        bind:query={pagedQuery}
+        currentMatchIndex={pagedHitIndex}
+        totalMatches={pagedHits.length}
+        onInput={findPagedText}
+        onPrevious={() => revealPagedHit(pagedHitIndex - 1)}
+        onNext={() => revealPagedHit(pagedHitIndex + 1)}
+        onClose={closePagedFind}
+      />
+      <p class="px-3 text-xs text-muted-foreground">{m.layout_noteTab_pagedFindLimit_label()}</p>
+      {#if !pagedFindExact && pagedHits.length === 1000}<p class="px-3 text-xs">
+          {m.layout_noteTab_pagedFindCapped_label()}
+        </p>{/if}
+      {#if pagedFindError}<p role="alert">{m.layout_noteTab_contentLoadFailed_error()}</p>{/if}
+    {/if}
+    {#if editState === 'loading'}
+      <div role="status" aria-busy="true"><Skeleton class="h-8 w-3/4" /></div>
+    {:else if editState === 'error'}
+      <div role="alert">
+        <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
+        <Button onclick={startFullEdit}>{m.ui_errorToast_retry_label()}</Button>
+      </div>
+    {:else if editState === 'editing' && $workspace}
+      {#key workspaceId + ':' + tab.noteId}
+        <NoteWithComments
+          bind:this={fullEditor}
+          workspace={$workspace}
+          noteId={tab.noteId}
+          editable={noteEditable}
+          {isPanelFocused}
+        />
+      {/key}
+    {:else if pagedSurface && $workspace}
       <NoteReadingView
         ownsPanel={false}
         {workspaceId}
         workspace={$workspace}
         noteId={tab.noteId}
         panelId={tab.id}
-        editing={pagedSurface.editing}
-        prepareEditing={pagedSurface.prepareEditing}
         onSelection={pagedSurface.selectionChanged}
         onFullOperation={handleFullNoteOperation}
-        onReady={pagedSurface.ready}
+        onReady={readingReady}
       />
     {:else if noteContentLoadFailed}
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">

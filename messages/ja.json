@@ -7466,5 +7466,7 @@
   "settings_machineName_saved": "マシン名を保存しました",
   "home_assistantThread_hooks_label": "有効なフック: {count}",
   "home_assistantThread_monitors_label": "有効な監視: {count}",
-  "home_assistantThread_subscriptions_label": "有効なサブスクリプション: {count}"
+  "home_assistantThread_subscriptions_label": "有効なサブスクリプション: {count}",
+  "layout_noteTab_pagedFindLimit_label": "動的なタスク名を除くノート本文を検索します。",
+  "layout_noteTab_pagedFindCapped_label": "最初の1,000件を表示しています。"
 }

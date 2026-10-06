@@ -7466,5 +7466,7 @@
   "settings_machineName_saved": "计算机名称已保存",
   "home_assistantThread_hooks_label": "活动钩子：{count}",
   "home_assistantThread_monitors_label": "活动监控：{count}",
-  "home_assistantThread_subscriptions_label": "活动订阅：{count}"
+  "home_assistantThread_subscriptions_label": "活动订阅：{count}",
+  "layout_noteTab_pagedFindLimit_label": "搜索笔记正文，不包括动态任务标签。",
+  "layout_noteTab_pagedFindCapped_label": "显示前 1,000 个匹配结果。"
 }

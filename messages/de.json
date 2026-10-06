@@ -7466,5 +7466,7 @@
   "settings_machineName_saved": "Computername gespeichert",
   "home_assistantThread_hooks_label": "Aktive Hooks: {count}",
   "home_assistantThread_monitors_label": "Aktive Überwachungen: {count}",
-  "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}"
+  "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}",
+  "layout_noteTab_pagedFindLimit_label": "Durchsucht den Notiztext ohne dynamische Aufgabenbeschriftungen.",
+  "layout_noteTab_pagedFindCapped_label": "Die ersten 1.000 Treffer werden angezeigt."
 }

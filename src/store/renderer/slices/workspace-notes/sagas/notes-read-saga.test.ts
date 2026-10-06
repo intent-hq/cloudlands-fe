@@ -21,6 +21,8 @@ import {
   workspaceNotesReducer,
   workspaceNotesHydrationRequested,
 } from '../workspace-notes-slice';
+import { acquireFullNoteEditLease } from '../note-full-edit-lease';
+import { notePagesReducer, pagePanelOpened } from '../../note-pages/note-pages-slice';
 import { notesReadSaga } from './notes-read-saga';
 
 const WS = 'ws-notes-read';
@@ -56,7 +58,7 @@ function note(id: string, overrides: Partial<Note> = {}): Note {
   };
 }
 
-function harness(seed: Note[] = []) {
+function harness(seed: Note[] = [], notePages?: ReturnType<typeof notePagesReducer>) {
   const channel = stdChannel();
   const actions: Parameters<typeof workspaceNotesReducer>[1][] = [];
   let workspaceNotes = workspaceNotesReducer(
@@ -70,7 +72,10 @@ function harness(seed: Note[] = []) {
     actions.push(action);
     return action;
   };
-  const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesReadSaga);
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ workspaceNotes, notePages }) },
+    notesReadSaga,
+  );
   return {
     actions,
     channel,
@@ -89,7 +94,7 @@ describe('notesReadSaga', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
+  it('hydrates slim rows without a complete fetch when read paging is unsupported', async () => {
     const spec = {
       ...note(SPEC_NOTE_ID),
       is_pinned: true,
@@ -106,7 +111,7 @@ describe('notesReadSaga', () => {
     await settle();
 
     expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
-    expect(get.mock.calls).toEqual([[SPEC_NOTE_ID, WS]]);
+    expect(get).not.toHaveBeenCalled();
     expect(run.actions).toEqual([
       loadWorkspaceNotesSucceeded([WS], { [WS]: [note(SPEC_NOTE_ID)] }),
       selectNote(WS, SPEC_NOTE_ID),
@@ -115,7 +120,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('hydrate replaces the slim spec row with the full-spec fetch result', async () => {
+  it('keeps the slim spec row when task-link paging is unsupported', async () => {
     const slimSpec = note(SPEC_NOTE_ID, { content: '', contentPreview: 'pre', contentLength: 9 });
     const fullSpec = note(SPEC_NOTE_ID, { content: 'full body' });
     vi.spyOn(appClient.notes, 'list').mockResolvedValue([slimSpec, note('other', { content: '' })]);
@@ -127,7 +132,7 @@ describe('notesReadSaga', () => {
 
     expect(run.actions).toEqual([
       loadWorkspaceNotesSucceeded([WS], {
-        [WS]: [note(SPEC_NOTE_ID, { content: 'full body' }), note('other', { content: '' })],
+        [WS]: [slimSpec, note('other', { content: '' })],
       }),
       selectNote(WS, SPEC_NOTE_ID),
     ]);
@@ -135,7 +140,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('hydrate stays fail-soft when the spec fetch rejects — slim rows land as-is', async () => {
+  it('keeps slim rows without calling an unavailable full-read service', async () => {
     const slimSpec = note(SPEC_NOTE_ID, { content: '', contentPreview: 'pre', contentLength: 9 });
     vi.spyOn(appClient.notes, 'list').mockResolvedValue([slimSpec]);
     vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
@@ -599,4 +604,38 @@ it.each(['reconnect', 'unmount'])('discards a late summary chain after %s', asyn
     links.mockRestore();
     list.mockRestore();
   }
+});
+
+describe('full spec editor alongside a paged viewer', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each([false, true])(
+    'refreshes only while the explicit edit lease remains live (cancel=%s)',
+    async (cancel) => {
+      vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+      const pending = deferred<Note | null>();
+      const get = vi.spyOn(appClient.notes, 'get').mockReturnValueOnce(pending.promise);
+      const pages = notePagesReducer(undefined, pagePanelOpened(WS, 'spec', 'viewer'));
+      const run = harness([note('spec')], pages);
+      run.channel.put(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(get).not.toHaveBeenCalled();
+      const lease = acquireFullNoteEditLease(WS, 'spec');
+      run.channel.put(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(get).toHaveBeenCalledExactlyOnceWith('spec', WS);
+      if (cancel) lease.release();
+      pending.resolve(note('spec', { content: 'new complete revision', rev: 8 }));
+      await settle();
+      expect(run.state().byWorkspaceId[WS].notes.map.spec.content).toBe(
+        cancel ? 'body' : 'new complete revision',
+      );
+      lease.release();
+      get.mockClear();
+      run.channel.put(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(get).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 });

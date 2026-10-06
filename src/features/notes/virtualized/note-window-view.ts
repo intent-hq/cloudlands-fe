@@ -1787,6 +1787,8 @@ export class NoteWindowView {
         ...config,
         element: null,
         content: projection.content,
+        // Keep read-only selection and Find/Select All reachable by keyboard.
+        coreExtensionOptions: { ...config.coreExtensionOptions, tabindex: { value: '0' } },
         ...(this.retained ? { autofocus: false } : {}),
         extensions: this.retained
           ? this.retained.router.extensions([...extensions, CommentAnchor, relay])

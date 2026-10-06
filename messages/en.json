@@ -7466,5 +7466,7 @@
   "settings_machineName_saved": "Machine name saved",
   "home_assistantThread_hooks_label": "Active hooks: {count}",
   "home_assistantThread_monitors_label": "Active monitors: {count}",
-  "home_assistantThread_subscriptions_label": "Active subscriptions: {count}"
+  "home_assistantThread_subscriptions_label": "Active subscriptions: {count}",
+  "layout_noteTab_pagedFindLimit_label": "Searches note text, excluding dynamic task labels.",
+  "layout_noteTab_pagedFindCapped_label": "Showing the first 1,000 matches."
 }

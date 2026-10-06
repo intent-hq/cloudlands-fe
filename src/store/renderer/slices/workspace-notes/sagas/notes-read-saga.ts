@@ -1,3 +1,4 @@
+import { hasFullNoteEditLease } from '../note-full-edit-lease';
 import { isMissingNote } from '$lib/client/note-page-errors';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import { pageReset } from '../../note-pages/note-pages-slice';
@@ -66,10 +67,8 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
           },
         ),
       ]);
-      if (links !== null) return { rows, links };
-      // Only an actually unsupported daemon may use the legacy complete-spec path.
-      const spec = await appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null);
-      return { rows: rows.map((n) => (spec && String(n.id) === SPEC_NOTE_ID ? spec : n)), links };
+      // Viewing never hydrates a complete body as an unsupported-capability fallback.
+      return { rows, links };
     };
     const { rows, links } = yield* call(fetchSlimListAndLinks, workspaceId);
     const latest = yield* selectWorkspaceNotesState.effect(workspaceId);
@@ -122,7 +121,7 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
     }
   }
   const paged = yield* selectNotePageSession.effect(workspaceId, noteId);
-  if (paged && paged.status !== 'legacy' && Object.keys(paged.panels).length) {
+  if (paged && Object.keys(paged.panels).length && !hasFullNoteEditLease(workspaceId, noteId)) {
     // The bounded state subscription is authoritative; legacy events contain no page epochs.
     if (eventType === 'note:deleted') yield* put(pageReset(workspaceId, noteId, 'Note deleted'));
     return;
@@ -141,7 +140,11 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
     );
     if (!found || String(found.workspaceId) !== workspaceId) return;
     const currentPage = yield* selectNotePageSession.effect(workspaceId, noteId);
-    if (currentPage && currentPage.status !== 'legacy' && Object.keys(currentPage.panels).length)
+    if (
+      currentPage &&
+      Object.keys(currentPage.panels).length &&
+      !hasFullNoteEditLease(workspaceId, noteId)
+    )
       return;
     const note = toRuntimeNote(found);
     const existing = yield* selectNoteById.effect(workspaceId, noteId);

@@ -495,10 +495,21 @@ it('holds DATA through a pending sink write and cancels before publication', asy
 });
 it('forwards cancellation while native publication acknowledgement is pending', async () => {
   const f = fixture(),
-    held = deferred();
-  f.sink.commit.mockImplementation(async () => held.promise);
+    held = deferred(),
+    committing = deferred();
+  f.sink.commit.mockImplementation(async () => {
+    committing.resolve();
+    return held.promise;
+  });
   const running = f.owner.copySelection();
-  await vi.waitFor(() => expect(f.sink.commit).toHaveBeenCalledTimes(1));
+  // Join the actual publication boundary even when suite load delays hashing.
+  // Observe rejection immediately so a failed producer cannot leak past cleanup.
+  await Promise.race([
+    committing.promise,
+    running.then(() => {
+      throw new Error('Copy completed without reaching publication');
+    }),
+  ]);
   f.owner.cancelSelectionCopy();
   expect(f.sink.abort).toHaveBeenCalledTimes(1);
   expect(f.state().resourceLedger.used.physicalReads).toBe(1);

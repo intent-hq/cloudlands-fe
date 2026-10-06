@@ -12,6 +12,8 @@ vi.mock('$lib/client', () => ({
   appClient: {
     notes: {
       create: vi.fn(() => Promise.resolve({ success: true })),
+      update: vi.fn(),
+      get: vi.fn(),
       setContent: vi.fn(() => Promise.resolve({ success: true })),
       updateMetadata: vi.fn(() => Promise.resolve({ success: true })),
       delete: vi.fn(() => Promise.resolve({ success: true })),
@@ -1174,5 +1176,101 @@ describe('notesWriteService chained to the editor external-update effect', () =>
       await flushNoteContent(WS, NOTE);
       editor.destroy();
     }
+  });
+});
+
+describe('explicit complete editor saves', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+  it.each(['', '"quoted"', '{"content":"intentional JSON"}', 'x'])(
+    'preserves exact source %j with strict loaded revision',
+    async (content) => {
+      const id = `exact-${content}`;
+      seed(makeNote(id, { content: 'old'.repeat(1000), rev: 11 }));
+      notesApi.update.mockResolvedValue(makeNote(id, { content, rev: 12 }));
+      updateNoteContent(WS, id, content, { strict: true, baseRev: 11 });
+      await flushNoteContent(WS, id);
+      expect(notesApi.update).toHaveBeenCalledWith(id, content, 11, WS);
+      expect(notesApi.setContent).not.toHaveBeenCalled();
+      expect(selectNoteById.select(appStore.state, WS, id)?.content).toBe(content);
+    },
+  );
+  it('retains a conflicting draft and refuses automatic retry or settlement', async () => {
+    const id = 'strict-conflict';
+    seed(makeNote(id, { rev: 11 }));
+    notesApi.update.mockRejectedValue(
+      Object.assign(new Error('Note changed'), { rpcCode: -32005 }),
+    );
+    updateNoteContent(WS, id, 'my draft', { strict: true, baseRev: 11 });
+    await flushNoteContent(WS, id);
+    expect(hasPendingNoteContent(WS, id)).toBe(true);
+    expect(selectNoteById.select(appStore.state, WS, id)?.content).toBe('my draft');
+    await expect(settleNoteContent(WS, id)).rejects.toThrow();
+    updateNoteContent(WS, id, 'my later draft', { strict: true, baseRev: 11 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(notesApi.update).toHaveBeenCalledTimes(1);
+    expect(selectNoteById.select(appStore.state, WS, id)?.content).toBe('my later draft');
+  });
+  it('reconciles an uncertain acknowledgement with a complete read, without recommitting', async () => {
+    const id = 'strict-lost-ack';
+    seed(makeNote(id, { rev: 11 }));
+    notesApi.update.mockRejectedValue(new Error('Disconnected'));
+    notesApi.get.mockResolvedValue(makeNote(id, { content: 'my draft', rev: 12 }));
+    updateNoteContent(WS, id, 'my draft', { strict: true, baseRev: 11 });
+    await flushNoteContent(WS, id);
+    expect(notesApi.get).toHaveBeenCalledWith(id, WS);
+    expect(notesApi.update).toHaveBeenCalledTimes(1);
+    expect(hasPendingNoteContent(WS, id)).toBe(false);
+    expect(selectNoteById.select(appStore.state, WS, id)?.rev).toBe(12);
+  });
+  it('adopts a converted final revision while retaining typing added during the save', async () => {
+    const id = 'strict-conversion';
+    seed(makeNote(id, { rev: 11, content: 'body' }));
+    let resolve!: (note: Note) => void;
+    notesApi.update.mockReturnValueOnce(
+      new Promise<Note>((r) => {
+        resolve = r;
+      }),
+    );
+    notesApi.update.mockImplementationOnce(async (_id: string, content: string, rev: number) =>
+      makeNote(id, { content, rev: rev + 1 }),
+    );
+    updateNoteContent(WS, id, 'body task', { strict: true, baseRev: 11, baseContent: 'body' });
+    const pending = flushNoteContent(WS, id);
+    await Promise.resolve();
+    updateNoteContent(WS, id, 'body task later', {
+      strict: true,
+      baseRev: 11,
+      baseContent: 'body task',
+    });
+    resolve(makeNote(id, { content: 'body converted', rev: 13 }));
+    await pending;
+    await flushNoteContent(WS, id);
+    expect(notesApi.update).toHaveBeenLastCalledWith(id, 'body converted later', 13, WS);
+    expect(selectNoteById.select(appStore.state, WS, id)).toMatchObject({
+      content: 'body converted later',
+      rev: 14,
+    });
+  });
+  it('keeps an oversized-response acknowledgement unresolved when the reread differs', async () => {
+    const id = 'strict-oversized-ack';
+    seed(makeNote(id, { rev: 11 }));
+    notesApi.update.mockRejectedValue(
+      Object.assign(new Error('Reply too large'), {
+        rpcCode: -32010,
+        data: { code: 'oversized-response' },
+      }),
+    );
+    notesApi.get.mockResolvedValue(makeNote(id, { rev: 13, content: 'different current content' }));
+    updateNoteContent(WS, id, 'complete local draft', { strict: true, baseRev: 11 });
+    await flushNoteContent(WS, id);
+    expect(selectNoteById.select(appStore.state, WS, id)?.content).toBe('complete local draft');
+    await expect(settleNoteContent(WS, id)).rejects.toThrow('Reply too large');
+    expect(notesApi.update).toHaveBeenCalledTimes(1);
   });
 });

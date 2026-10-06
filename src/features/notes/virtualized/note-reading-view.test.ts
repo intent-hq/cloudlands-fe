@@ -45,7 +45,11 @@ afterEach(() => {
 });
 it('publishes newly visible annotation ranges when composition releases a queued window', async () => {
   const window = { range: { start: 2_000_000, end: 2_000_500 } };
-  state.session = writable({ status: 'ready', windows: { panel: { value: window } } });
+  state.session = writable({
+    status: 'ready',
+    panels: { panel: {} },
+    windows: { panel: { value: window } },
+  });
   render(NoteReadingView, {
     workspaceId: 'w',
     noteId: 'n',
@@ -63,6 +67,7 @@ it('publishes newly visible annotation ranges when composition releases a queued
 it('keeps the composing native view when workspace metadata or the editing adapter changes', async () => {
   state.session = writable({
     status: 'ready',
+    panels: { panel: {} },
     windows: { panel: { value: { range: { start: 2_000_000, end: 2_000_500 } } } },
   });
   const editing = { bind: vi.fn(), undo: vi.fn(), redo: vi.fn() };
@@ -88,6 +93,7 @@ it('keeps the composing native view when workspace metadata or the editing adapt
 it('suspends editing and exposes session failure without destroying the retained composing view', async () => {
   const ready = {
     status: 'ready',
+    panels: { panel: {} },
     windows: { panel: { value: { range: { start: 0, end: 100 } } } },
   };
   state.session = writable(ready);
@@ -101,11 +107,11 @@ it('suspends editing and exposes session failure without destroying the retained
   });
   await waitFor(() => expect(state.view?.options.editing).toBe(editing));
   const original = state.view;
-  state.session.set({ status: 'connecting', windows: {} });
+  state.session.set({ status: 'connecting', panels: { panel: {} }, windows: {} });
   await waitFor(() => expect(state.view.options.editing).toBeUndefined());
   expect(component.container.querySelector('[aria-busy="true"]')).not.toBeNull();
   expect(state.view).toBe(original);
-  state.session.set({ status: 'deleted', windows: {} });
+  state.session.set({ status: 'deleted', panels: { panel: {} }, windows: {} });
   expect(await component.findByRole('alert')).toBeTruthy();
   state.session.set(ready);
   await waitFor(() => expect(state.view.options.editing).toBe(editing));
@@ -115,6 +121,7 @@ it('suspends editing and exposes session failure without destroying the retained
 it('exposes a retired native transaction failure without clearing the document session', async () => {
   const ready = {
     status: 'ready',
+    panels: { panel: {} },
     windows: { panel: { value: { range: { start: 0, end: 100 } } } },
   };
   state.session = writable(ready);
@@ -134,7 +141,11 @@ it('exposes a retired native transaction failure without clearing the document s
 it('waits for prepared edit context before showing a window and ignores superseded preparation', async () => {
   const first = { range: { start: 10, end: 20 } },
     second = { range: { start: 30, end: 40 } };
-  state.session = writable({ status: 'ready', windows: { panel: { value: first } } });
+  state.session = writable({
+    status: 'ready',
+    panels: { panel: {} },
+    windows: { panel: { value: first } },
+  });
   const offers = [first, second].map(() => {
     let resolve!: (editing: {
       bind: ReturnType<typeof vi.fn>;
@@ -156,7 +167,11 @@ it('waits for prepared edit context before showing a window and ignores supersed
   });
   await waitFor(() => expect(prepareEditing).toHaveBeenCalledExactlyOnceWith(first));
   expect(state.view.pending).toBeUndefined();
-  state.session.set({ status: 'ready', windows: { panel: { value: second } } });
+  state.session.set({
+    status: 'ready',
+    panels: { panel: {} },
+    windows: { panel: { value: second } },
+  });
   await waitFor(() => expect(prepareEditing).toHaveBeenCalledTimes(2));
   expect(offers[0].cancel).toHaveBeenCalledOnce();
   expect(offers[0].release).toHaveBeenCalledOnce();
@@ -176,7 +191,11 @@ it('waits for prepared edit context before showing a window and ignores supersed
 
 it('shows a current unsupported-edit outcome read-only', async () => {
   const window = { range: { start: 17, end: 20 } };
-  state.session = writable({ status: 'ready', windows: { panel: { value: window } } });
+  state.session = writable({
+    status: 'ready',
+    panels: { panel: {} },
+    windows: { panel: { value: window } },
+  });
   render(NoteReadingView, {
     workspaceId: 'w',
     noteId: 'n',
@@ -195,7 +214,11 @@ it.each(['synchronous', 'asynchronous'])(
   'contains %s preparation failure without treating it as read-only eligibility',
   async (kind) => {
     const window = { range: { start: 17, end: 20 } };
-    state.session = writable({ status: 'ready', windows: { panel: { value: window } } });
+    state.session = writable({
+      status: 'ready',
+      panels: { panel: {} },
+      windows: { panel: { value: window } },
+    });
     const component = render(NoteReadingView, {
       workspaceId: 'w',
       noteId: 'n',
@@ -218,7 +241,11 @@ it.each(['synchronous', 'asynchronous'])(
 it('retires delivered preparation on navigation and cancels an undelivered successor on unmount', async () => {
   const first = { range: { start: 100, end: 103 } };
   const next = { range: { start: 200, end: 203 } };
-  state.session = writable({ status: 'ready', windows: { panel: { value: first } } });
+  state.session = writable({
+    status: 'ready',
+    panels: { panel: {} },
+    windows: { panel: { value: first } },
+  });
   const delivered = {
     ready: Promise.resolve({ bind: vi.fn(), undo: vi.fn(), redo: vi.fn() }),
     cancel: vi.fn(),
@@ -240,7 +267,11 @@ it('retires delivered preparation on navigation and cancels an undelivered succe
     prepareEditing: prepare,
   });
   await waitFor(() => expect(state.view.pending).toBe(first));
-  state.session.set({ status: 'ready', windows: { panel: { value: next } } });
+  state.session.set({
+    status: 'ready',
+    panels: { panel: {} },
+    windows: { panel: { value: next } },
+  });
   await waitFor(() => expect(prepare).toHaveBeenCalledTimes(2));
   expect(delivered.retire).toHaveBeenCalledOnce();
   expect(delivered.cancel).not.toHaveBeenCalled();

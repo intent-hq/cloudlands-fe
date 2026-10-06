@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     setValue: ReturnType<typeof vi.fn>;
     getPosition: () => null;
     setPosition: ReturnType<typeof vi.fn>;
+    updateOptions: ReturnType<typeof vi.fn>;
     getModel: () => null;
     hasTextFocus: () => boolean;
     onDidChangeModelContent: ReturnType<typeof vi.fn>;
@@ -40,6 +41,7 @@ vi.mock('$lib/utils/monaco-workers', () => {
       }),
       getPosition: () => null,
       setPosition: vi.fn(),
+      updateOptions: vi.fn(),
       getModel: () => null,
       hasTextFocus: () => false,
       onDidChangeModelContent: vi.fn(),
@@ -131,6 +133,15 @@ describe('CodeEditor external content sync', () => {
     mocks.state.workspaces = {};
   });
 
+  it('locks and unlocks the mounted editor when readOnly changes', async () => {
+    const { view, editor } = await mountedEditor({ value: 'draft', readOnly: false });
+    await waitFor(() => expect(editor.updateOptions).toHaveBeenLastCalledWith({ readOnly: false }));
+    await view.rerender({ value: 'draft', readOnly: true });
+    await waitFor(() => expect(editor.updateOptions).toHaveBeenLastCalledWith({ readOnly: true }));
+    await view.rerender({ value: 'draft', readOnly: false });
+    await waitFor(() => expect(editor.updateOptions).toHaveBeenLastCalledWith({ readOnly: false }));
+  });
+
   it('syncs external value changes into the editor when no agent is followed', async () => {
     const { view, editor } = await mountedEditor({ value: 'one' });
 
@@ -217,4 +228,9 @@ describe('CodeEditor file-too-large actions', () => {
       }),
     );
   });
+});
+
+it('allows an explicit full-note editor to edit beyond the generic file preview limit', async () => {
+  const { editor } = await mountedEditor({ value: '漢'.repeat(600_000), allowLargeContent: true });
+  expect(editor.getValue()).toBe('漢'.repeat(600_000));
 });

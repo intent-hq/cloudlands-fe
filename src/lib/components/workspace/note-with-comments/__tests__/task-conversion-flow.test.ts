@@ -375,6 +375,8 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 
 vi.mock('$features/notes/notes-write-service', () => ({
   updateNoteContent: mockUpdateNoteContent,
+  subscribeNoteContentFailure: vi.fn(() => () => {}),
+  retryNoteContent: vi.fn(async () => {}),
   hasPendingNoteContent: vi.fn(() => false),
   flushNoteContent: vi.fn(async () => undefined),
   settleNoteContent: vi.fn(async () => undefined),
@@ -870,6 +872,7 @@ describe('NoteWithComments task conversion regression', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'base x1 x2', {
+        strict: true,
         immediate: false,
         baseRev: 4,
         baseContent: 'base',
@@ -916,6 +919,7 @@ describe('NoteWithComments task conversion regression', () => {
         editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' first');
         await vi.advanceTimersByTimeAsync(1000);
         expect(updateNoteContent).toHaveBeenLastCalledWith('ws-1', 'spec', 'body first', {
+          strict: true,
           immediate: false,
           baseRev: 4,
           baseContent: 'body',
@@ -939,6 +943,7 @@ describe('NoteWithComments task conversion regression', () => {
         await tick();
 
         expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', expectedDraft, {
+          strict: true,
           immediate: false,
           baseRev: 5,
           baseContent: 'body first',
@@ -1071,11 +1076,11 @@ describe('NoteWithComments task conversion regression', () => {
       resolveSecond = resolve;
     });
     const wire = vi
-      .spyOn(appClient.notes, 'setContent')
+      .spyOn(appClient.notes, 'update')
       .mockReturnValueOnce(first as never)
       .mockReturnValueOnce(second as never)
       .mockImplementation(((_id: string, content: string) =>
-        Promise.resolve({ success: true, newContent: content, noteRev: 10 })) as never);
+        Promise.resolve({ success: true, content: content, rev: 10 })) as never);
     replaceNotes([createNote('spec', 'Spec', 'body', { rev: 4 })]);
     const view = await renderInitializedNote('spec', 'body');
     const editor = (view.container.querySelector('.ProseMirror') as any).editor;
@@ -1104,7 +1109,7 @@ describe('NoteWithComments task conversion regression', () => {
       await vi.advanceTimersByTimeAsync(1000);
       editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' newest');
       replaceNotes([createNote('spec', 'Spec', 'AGENT body first LATER', { rev: 8 })]);
-      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      resolveFirst({ success: true, content: 'AGENT body first', rev: 6 });
       await tick();
       await vi.advanceTimersByTimeAsync(0);
       expect(wire).toHaveBeenCalledTimes(2);
@@ -1115,8 +1120,8 @@ describe('NoteWithComments task conversion regression', () => {
       await vi.advanceTimersByTimeAsync(1000);
       resolveSecond({
         success: true,
-        newContent: 'AGENT body first plus typing newest LATER',
-        noteRev: 9,
+        content: 'AGENT body first plus typing newest LATER',
+        rev: 9,
       });
       await tick();
       await vi.advanceTimersByTimeAsync(3000);
@@ -1127,11 +1132,11 @@ describe('NoteWithComments task conversion regression', () => {
       expect(wire.mock.calls[2]).toEqual(['spec', finalText, 9, 'ws-1']);
       expect(getNoteById('spec')).toMatchObject({ content: finalText, rev: 10 });
     } finally {
-      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      resolveFirst({ success: true, content: 'AGENT body first', rev: 6 });
       resolveSecond({
         success: true,
-        newContent: 'AGENT body first plus typing newest LATER',
-        noteRev: 9,
+        content: 'AGENT body first plus typing newest LATER',
+        rev: 9,
       });
       await service.flushNoteContent('ws-1', 'spec');
       vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
@@ -1181,6 +1186,7 @@ describe('NoteWithComments task conversion regression', () => {
       await tick();
 
       expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'note A local', {
+        strict: true,
         immediate: false,
         baseRev: 4,
         baseContent: 'note A',
@@ -1215,7 +1221,7 @@ describe('NoteWithComments task conversion regression', () => {
     );
     const { appClient } = await import('$lib/client');
     let resolveSave!: (value: unknown) => void;
-    const wire = vi.spyOn(appClient.notes, 'setContent').mockReturnValueOnce(
+    const wire = vi.spyOn(appClient.notes, 'update').mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSave = resolve;
       }) as never,
@@ -1241,7 +1247,7 @@ describe('NoteWithComments task conversion regression', () => {
       mockDispatch.mock.calls.some(
         ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
       );
-    const saveResult = { success: true, newContent: 'note A local', noteRev: 5 };
+    const saveResult = { success: true, content: 'note A local', rev: 5 };
     try {
       editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
       await vi.advanceTimersByTimeAsync(1801);
@@ -1300,7 +1306,7 @@ describe('NoteWithComments task conversion regression', () => {
       let resolveSecond: ((value: unknown) => void) | undefined;
       let resolveRestore: ((value: unknown) => void) | undefined;
       const wire = vi
-        .spyOn(appClient.notes, 'setContent')
+        .spyOn(appClient.notes, 'update')
         .mockImplementationOnce((_id, content) => {
           rpcs.push(`setContent:${content}`);
           return new Promise((resolve) => {
@@ -1355,8 +1361,8 @@ describe('NoteWithComments task conversion regression', () => {
         mockDispatch.mock.calls.some(
           ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
         );
-      const firstResult = { success: true, newContent: 'note A local', noteRev: 5 };
-      const secondResult = { success: true, newContent: 'note A local more', noteRev: 6 };
+      const firstResult = { success: true, content: 'note A local', rev: 5 };
+      const secondResult = { success: true, content: 'note A local more', rev: 6 };
       try {
         editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
         await vi.advanceTimersByTimeAsync(1801);
@@ -1480,7 +1486,7 @@ a<b>c
         WORKSPACE_ID,
         'math-note',
         source + ' edited',
-        { immediate: true, baseContent: source, baseRev: 4 },
+        { strict: true, immediate: true, baseContent: source, baseRev: 4 },
       ),
     );
   });
@@ -1500,7 +1506,7 @@ a<b>c
         WORKSPACE_ID,
         'math-boundary',
         'Intro\n\n$x$\n\n# Heading edited',
-        { immediate: true, baseContent: source, baseRev: 4 },
+        { strict: true, immediate: true, baseContent: source, baseRev: 4 },
       ),
     );
   });
@@ -1511,11 +1517,11 @@ a<b>c
     );
     const { appClient } = await import('$lib/client');
     const source = '$a<b$ and $c>d$';
-    const wire = vi.spyOn(appClient.notes, 'setContent').mockResolvedValueOnce({
+    const wire = vi.spyOn(appClient.notes, 'update').mockResolvedValueOnce({
       success: true,
-      newContent: source + ' edited',
-      noteRev: 5,
-    });
+      content: source + ' edited',
+      rev: 5,
+    } as never);
     replaceNotes([createNote('math-wire', 'Math wire', source, { rev: 4 })]);
     const view = await renderInitializedNote('math-wire', source);
     await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
@@ -1538,7 +1544,7 @@ a<b>c
   });
 
   it('flushes exact math source before the editor unmounts for another view', async () => {
-    replaceNotes([createNote('math-note', 'Math note', 'Before')]);
+    replaceNotes([createNote('math-note', 'Math note', 'Before', { rev: 4 })]);
     const view = await renderInitializedNote('math-note', 'Before');
     await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
     const editor = editorInstances.at(-1);
@@ -1556,7 +1562,7 @@ a<b>c
         WORKSPACE_ID,
         'math-note',
         String.raw`Draft $x^2$ and \(y\)`,
-        { immediate: true, baseContent: 'Before' },
+        { strict: true, immediate: true, baseContent: 'Before', baseRev: 4 },
       ),
     );
   });

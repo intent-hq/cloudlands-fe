@@ -46,6 +46,8 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 }));
 vi.mock('$features/notes/notes-write-service', () => ({
   updateNoteContent: mockState.updateNoteContent,
+  hasPendingNoteContent: vi.fn(() => false),
+  subscribeNoteContentFailure: vi.fn(() => () => {}),
 }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectLineWrapping: () => mockState.lineWrapping,
@@ -103,6 +105,7 @@ describe('RawNoteCodeEditor', () => {
 
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Updated', {
+      strict: true,
       immediate: false,
       baseContent: '# Heading',
     });
@@ -129,6 +132,7 @@ describe('RawNoteCodeEditor', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Heading local', {
+      strict: true,
       immediate: false,
       baseRev: 4,
       baseContent: '# Heading',
@@ -155,7 +159,7 @@ describe('RawNoteCodeEditor', () => {
       'ws-1',
       'note-1',
       '# AGENT\n# Heading local',
-      { immediate: false, baseRev: 5, baseContent: '# AGENT\n# Heading' },
+      { strict: true, immediate: false, baseRev: 5, baseContent: '# AGENT\n# Heading' },
     );
   });
 
@@ -204,7 +208,7 @@ $x^2$ and \[\frac{1}{2}\]`,
       String.raw`# Updated Before Toggle
 
 $x^2$ and \[\frac{1}{2}\]`,
-      { immediate: true, baseContent: '# Heading' },
+      { strict: true, immediate: true, baseContent: '# Heading' },
     );
   });
 
@@ -221,6 +225,7 @@ $x^2$ and \[\frac{1}{2}\]`,
 
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Note 1 Draft', {
+      strict: true,
       immediate: false,
       baseContent: '# Note 1',
     });
@@ -241,4 +246,22 @@ $x^2$ and \[\frac{1}{2}\]`,
       expect.anything(),
     );
   });
+});
+
+it('does not retain or flush input received while editing is locked', async () => {
+  vi.useFakeTimers();
+  mockState.noteSelect.mockReturnValue({ id: 'note-1' });
+  mockState.updateNoteContent.mockClear();
+  const view = render(RawNoteCodeEditor, {
+    workspaceId: 'ws-1',
+    noteId: 'note-1',
+    content: 'original',
+    rev: 4,
+    editable: false,
+  });
+  await fireEvent.input(screen.getByTestId('code-editor'), { target: { value: 'forbidden' } });
+  view.unmount();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(mockState.updateNoteContent).not.toHaveBeenCalled();
+  vi.useRealTimers();
 });

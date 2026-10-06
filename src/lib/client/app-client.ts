@@ -1639,6 +1639,14 @@ export interface NotesClient {
     expectedVersion?: number,
     workspaceId?: string,
   ): Promise<MutationResult>;
+  /** Exact complete editor draft; requires a loaded revision and returns the final Note.
+   * Throws on conflict or transport failure; never retries unconditionally. */
+  update(
+    noteId: string,
+    content: string,
+    expectedVersion: number,
+    workspaceId: string,
+  ): Promise<Note>;
   /** Surgical, append-safe insert (`note.add`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   add(
     noteId: string,

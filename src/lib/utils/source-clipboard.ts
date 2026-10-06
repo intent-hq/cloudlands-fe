@@ -11,6 +11,16 @@ import {
 } from '$shared/ipc/source-clipboard';
 import type { NoteSourceSink } from '$features/notes/virtualized/editing/note-source-copy';
 
+/** The caller must retain sink credits when staging cleanup has no known ACK. */
+export class SourceClipboardCleanupError extends Error {
+  constructor(
+    readonly primary: unknown,
+    readonly cleanup: unknown,
+  ) {
+    super(primary instanceof Error ? primary.message : 'SOURCE_CLIPBOARD_CLEANUP_UNKNOWN');
+    this.name = 'SourceClipboardCleanupError';
+  }
+}
 const c = IPC_CHANNELS.SYSTEM;
 async function request(channel: string, params: unknown): Promise<unknown> {
   const result = await invoke<{ success: boolean; data?: unknown; error?: { code?: string } }>(
@@ -28,6 +38,7 @@ async function request(channel: string, params: unknown): Promise<unknown> {
  */
 export async function openNoteSourceClipboardSink(
   raw: SourceClipboardBegin,
+  signal?: AbortSignal,
 ): Promise<NoteSourceSink> {
   if (!isElectron()) throw new Error('SOURCE_CLIPBOARD_UNSUPPORTED');
   const input = SourceClipboardBeginSchema.parse(raw);
@@ -35,6 +46,18 @@ export async function openNoteSourceClipboardSink(
   const abort = async () => {
     await request(c.SOURCE_CLIPBOARD_ABORT, { id: input.id, ...(token ? { token } : {}) });
   };
+  let cancelled = signal?.aborted ?? false;
+  let earlyAbort: Promise<void> | undefined;
+  let earlyAbortError: unknown;
+  const cancelBegin = () => {
+    cancelled = true;
+    // Dispatch immediately even before the begin ACK supplies the token.
+    earlyAbort ??= abort().catch((error: unknown) => {
+      earlyAbortError = error;
+    });
+  };
+  if (cancelled) throw new Error('SOURCE_CLIPBOARD_REVOKED');
+  signal?.addEventListener('abort', cancelBegin, { once: true });
   try {
     const lease = SourceClipboardLeaseSchema.parse(await request(c.SOURCE_CLIPBOARD_BEGIN, input));
     if (
@@ -44,10 +67,19 @@ export async function openNoteSourceClipboardSink(
     )
       throw new Error('SOURCE_CLIPBOARD_IDENTITY');
     token = lease.token;
+    if (cancelled) throw new Error('SOURCE_CLIPBOARD_REVOKED');
   } catch (error) {
-    // Begin may have allocated staging even when its acknowledgement was lost.
-    await abort().catch(() => undefined);
+    // Join early cleanup and then retire any late begin product. A lost begin
+    // response can still have allocated staging; cleanup uncertainty is explicit.
+    await earlyAbort;
+    try {
+      await abort();
+    } catch (cleanup) {
+      throw new SourceClipboardCleanupError(error, cleanup ?? earlyAbortError);
+    }
     throw error;
+  } finally {
+    signal?.removeEventListener('abort', cancelBegin);
   }
   const identity = { id: input.id, token };
   let sequence = 0,

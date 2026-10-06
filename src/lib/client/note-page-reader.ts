@@ -400,14 +400,14 @@ export class NotePageReader {
     const hello = (await this.request('client.hello', {})) as {
       server?: {
         capabilities?: {
-          notePaging?: number;
+          notePagingRead?: number;
           noteAnnotations?: number;
           notePagingBackendId?: string;
         };
       };
     } | null;
     const c = hello?.server?.capabilities;
-    return c?.notePaging === 1 && token(c.notePagingBackendId)
+    return c?.notePagingRead === 1 && token(c.notePagingBackendId)
       ? { backendId: c.notePagingBackendId, annotations: c.noteAnnotations === 1 }
       : null;
   }

@@ -1,3 +1,4 @@
+import { assertNoteUpdateFrame } from '$shared/note-update-frame';
 /**
  * Main-process JSON-RPC 2.0 client for the live intentd daemon.
  *
@@ -830,6 +831,7 @@ export class JsonRpcClient extends EventEmitter {
     return new Promise<T>((resolve, reject) => {
       assertScopedFileReadSupport(method, params, this.protocolVersion);
       const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
+      assertNoteUpdateFrame(method, payload.slice(0, -1));
       this.observeOutboundRequest(id, method, payload);
       const timeout = setTimeout(() => {
         this.pending.delete(id);

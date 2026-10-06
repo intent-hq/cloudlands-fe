@@ -26,12 +26,67 @@ import {
   noteEventReceived,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { createLogger } from '$lib/utils/client-logger';
+import { hasPendingNoteContent, getRetainedCompleteDraft } from './notes-write-service';
+import {
+  acquireFullNoteEditLease,
+  hasFullNoteEditLease,
+} from '$store/renderer/slices/workspace-notes/note-full-edit-lease';
 
 const logger = createLogger('NotesReadService');
 
 export function isPagedNoteSession(workspaceId: string, noteId: string): boolean {
   const n = appStore.state.notePages?.byWorkspaceId[workspaceId]?.notes[noteId];
-  return !!n && n.status !== 'legacy' && Object.keys(n.panels).length > 0;
+  return !!n && Object.keys(n.panels).length > 0;
+}
+// Only explicit Edit holds this lease. A second paged viewer must not block
+// full-editor refreshes, and releasing the last editor restores bounded reads.
+function blocksFullRead(workspaceId: string, noteId: string): boolean {
+  return isPagedNoteSession(workspaceId, noteId) && !hasFullNoteEditLease(workspaceId, noteId);
+}
+
+export function beginFullNoteEdit(workspaceId: string, noteId: string) {
+  const key = JSON.stringify([workspaceId, noteId]);
+  const lease = acquireFullNoteEditLease(workspaceId, noteId);
+  const generation = generations.get(key) ?? 0;
+  const current = () => lease.current() && generation === (generations.get(key) ?? 0);
+  return {
+    async load(): Promise<boolean> {
+      try {
+        if (!current()) return false;
+        const retained = getRetainedCompleteDraft(workspaceId, noteId);
+        const existingRows = appStore.state.workspaceNotes.byWorkspaceId[workspaceId]?.notes;
+        const existing = existingRows ? getItem(existingRows, NoteId(noteId)) : undefined;
+        if (retained && existing) {
+          dispatchNoteApply(workspaceId, { ...existing, ...retained }, 'note:updated');
+          return true;
+        }
+        // note.get returns content and rev from one snapshot. Never assemble an
+        // editable document from independently fetched view pages or a slim row.
+        const note = await appClient.notes.get(noteId, workspaceId);
+        if (
+          !current() ||
+          !note ||
+          String(note.id) !== noteId ||
+          String(note.workspaceId) !== workspaceId ||
+          isNoteContentStale(note) ||
+          typeof note.rev !== 'number' ||
+          !Number.isSafeInteger(note.rev) ||
+          note.rev < 0 ||
+          hasPendingNoteContent(workspaceId, noteId)
+        )
+          return false;
+        const rows = appStore.state.workspaceNotes.byWorkspaceId[workspaceId]?.notes;
+        const cached = rows ? getItem(rows, NoteId(noteId)) : undefined;
+        if (!cached || (cached.rev !== undefined && note.rev < cached.rev)) return false;
+        dispatchNoteApply(workspaceId, note, 'note:updated');
+        return true;
+      } catch (error) {
+        logger.error('Failed to load complete note for editing', error);
+        return false;
+      }
+    },
+    release: lease.release,
+  };
 }
 const generations = new Map<string, number>();
 
@@ -104,12 +159,12 @@ export function applyNoteFromEvent(
   const generation = generations.get(key) ?? 0;
   coalesce(`note:${workspaceId}:${noteId}`, async () => {
     if (generation !== (generations.get(key) ?? 0)) return;
-    if (isPagedNoteSession(workspaceId, noteId)) return;
+    if (blocksFullRead(workspaceId, noteId)) return;
     const note = await appClient.notes.get(noteId, workspaceId);
     if (
       !note ||
       String(note.workspaceId) !== workspaceId ||
-      isPagedNoteSession(workspaceId, noteId) ||
+      blocksFullRead(workspaceId, noteId) ||
       generation !== (generations.get(key) ?? 0)
     )
       return;
@@ -151,8 +206,7 @@ function dispatchNoteApply(
  * error/retry state instead of waiting on a store change that never comes.
  */
 export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Promise<boolean> {
-  if (!workspaceId || !noteId || isPagedNoteSession(workspaceId, noteId))
-    return Promise.resolve(false);
+  if (!workspaceId || !noteId || blocksFullRead(workspaceId, noteId)) return Promise.resolve(false);
   const ws = appStore.state.workspaceNotes.byWorkspaceId[workspaceId];
   const cached = ws?.notes ? getItem(ws.notes, NoteId(String(noteId))) : undefined;
   if (!cached) return Promise.resolve(false);
@@ -162,13 +216,12 @@ export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Pr
   return coalesce(
     `note:${workspaceId}:${noteId}`,
     async () => {
-      if (isPagedNoteSession(workspaceId, noteId) || generation !== (generations.get(key) ?? 0))
-        return;
+      if (blocksFullRead(workspaceId, noteId) || generation !== (generations.get(key) ?? 0)) return;
       const note = await appClient.notes.get(noteId, workspaceId);
       if (
         !note ||
         String(note.workspaceId) !== workspaceId ||
-        isPagedNoteSession(workspaceId, noteId) ||
+        blocksFullRead(workspaceId, noteId) ||
         generation !== (generations.get(key) ?? 0)
       )
         return;

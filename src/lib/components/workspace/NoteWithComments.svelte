@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /* eslint-disable max-lines */
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import CommentDialog from '$lib/components/tiptap/CommentDialog.svelte';
@@ -11,7 +12,9 @@
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger } from '$lib/i18n/format';
+  import { shouldUseRawNoteEditor } from '$features/notes/note-edit-policy';
+  import { mapOffsetThroughDiff } from '$lib/notes/text-rebase';
+  import { textOffsetOfDocPos } from './note-with-comments/external-update-editor';
   import { untrack, onMount, onDestroy, tick } from 'svelte';
   import { createTaskAgentStatusMountManager } from './note-with-comments/task-agent-status-mount-manager';
   import { runAssignAgentTaskMenuAction } from './note-with-comments/task-menu-assign-agent-action';
@@ -81,6 +84,8 @@
     flushNoteContent,
     hasPendingNoteContent,
     settleNoteContent,
+    subscribeNoteContentFailure,
+    retryNoteContent,
     updateNoteContent,
   } from '$features/notes/notes-write-service';
   import {
@@ -511,11 +516,18 @@
   let headingScrollHandler: ((e: any) => void) | null = null;
   let taskScrollHandler: ((e: any) => void) | null = null;
 
-  // Content size limit — notes above this threshold are shown as plain text
-  // to prevent the markdown processing pipeline from freezing the UI.
-  const MAX_NOTE_CONTENT_SIZE = 200 * 1024; // 200KB
+  // The cutoff applies to full rich editing; oversized source remains editable in Monaco.
   let isTooLargeForRichEditor = $state(false);
-  let plainTextFallbackContent = $state('');
+  let rawDraft = $state<
+    | {
+        content: string;
+        baseContent: string;
+        rev?: number;
+        selection: { anchor: number; head: number };
+      }
+    | undefined
+  >();
+  let composing = false;
 
   let isInitialized = $state(false);
   let isInitializing = $state(true);
@@ -580,7 +592,7 @@
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   let isRawNoteViewEnabled = $derived($rawNoteViewEnabled$ === true);
   let shouldShowRawNoteView = $derived(
-    isRawNoteViewEnabled && !isInitializing && !isTooLargeForRichEditor,
+    (isRawNoteViewEnabled || isTooLargeForRichEditor) && !isInitializing,
   );
 
   $effect(() => {
@@ -743,7 +755,7 @@
   });
 
   let hasActiveComments = $derived.by(() => {
-    if (isRawNoteViewEnabled) return false;
+    if (shouldShowRawNoteView) return false;
 
     // Only reserve space for comments if:
     // 1. Comments feature is enabled (showComments is true)
@@ -758,7 +770,7 @@
   let rawNoteEditorRef = $state<{ flushPendingSave: () => void } | null>(null);
 
   $effect(() => {
-    if (!isRawNoteViewEnabled) {
+    if (!isRawNoteViewEnabled && !isTooLargeForRichEditor) {
       rawNoteEditorRef?.flushPendingSave();
       if (wasRawNoteViewEnabled && !editor && element && !isComponentDestroyed) {
         wasRawNoteViewEnabled = false;
@@ -794,11 +806,93 @@
 
     lastKnownContent = currentNoteContent;
     lastKnownRev = currentNoteRev;
-    if (!isTooLargeForRichEditor) {
-      isInitializing = false;
-    }
+    isInitializing = false;
     isInitialized = true;
   });
+
+  function moveGrowingNoteToRaw(): boolean {
+    if (
+      !editor ||
+      editor.isDestroyed ||
+      composing ||
+      editor.view.composing ||
+      !editable ||
+      isInitializing
+    )
+      return false;
+    const markdown = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
+    if (!shouldUseRawNoteEditor(markdown)) return false;
+    const { doc, selection } = editor.state;
+    const plain = doc.textBetween(0, doc.content.size, '\n', '\uFFFC');
+    const sourceOffset = (position: number) =>
+      mapOffsetThroughDiff(plain, markdown, textOffsetOfDocPos(doc, position));
+    rawDraft = {
+      content: markdown,
+      baseContent: lastKnownContent,
+      rev: lastKnownRev,
+      selection: { anchor: sourceOffset(selection.anchor), head: sourceOffset(selection.head) },
+    };
+    // Monaco starts a fresh undo history at this complete draft. The handoff
+    // itself is not an undoable deletion, nor an invitation to remount rich mode.
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+    isTooLargeForRichEditor = true;
+    return true;
+  }
+  $effect(() => {
+    if (!element) return;
+    const start = () => {
+      composing = true;
+    };
+    const end = () => {
+      composing = false;
+      // ProseMirror commits its composition in the same event turn.
+      setTimeout(() => {
+        if (!isComponentDestroyed) moveGrowingNoteToRaw();
+      }, 0);
+    };
+    element.addEventListener('compositionstart', start);
+    element.addEventListener('compositionend', end);
+    return () => {
+      element.removeEventListener('compositionstart', start);
+      element.removeEventListener('compositionend', end);
+    };
+  });
+  $effect(() => {
+    if (editor && !editor.isDestroyed) editor.setEditable(editable && !finishing, false);
+  });
+  let finishing = $state(false);
+  let saveFailure = $state<Error | undefined>();
+  $effect(() => {
+    if (!noteId) return;
+    return subscribeNoteContentFailure(workspace.id, noteId, (failure) => {
+      saveFailure = failure;
+    });
+  });
+  async function retryFullSave() {
+    if (!noteId) return;
+    try {
+      await retryNoteContent(workspace.id, noteId);
+    } catch (error) {
+      saveFailure = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  export async function finishEditing(): Promise<void> {
+    if (composing || editor?.view.composing)
+      throw new Error('Finish composing before closing the editor');
+    finishing = true;
+    if (editor && !editor.isDestroyed) editor.setEditable(false, false);
+    try {
+      await tick();
+      rawNoteEditorRef?.flushPendingSave();
+      if (editor && hasUserEditedSinceLastSave) await saveEditorContent(true);
+      if (noteId) await settleNoteContent(workspace.id, noteId);
+    } finally {
+      finishing = false;
+    }
+  }
 
   // Debounce content updates
   function debounceUpdate() {
@@ -814,6 +908,7 @@
 
     isUserTyping = true;
     hasUserEditedSinceLastSave = true;
+    if (moveGrowingNoteToRaw()) return;
 
     if (userTypingTimeout) {
       clearTimeout(userTypingTimeout);
@@ -912,6 +1007,7 @@
           // deleting the rebased-in change.
           updateNoteContent(workspace.id, noteId, markdownContent, {
             immediate,
+            strict: true,
             baseRev: lastKnownRev,
             baseContent: baseline,
           });
@@ -1202,28 +1298,8 @@
 
     // Compute placeholder based on whether this is the spec note and initial spec write is in progress
 
-    // Guard: if content exceeds the safe size limit, show plain text fallback
-    // instead of running the expensive markdown processing pipeline
-    if (goalContent.length > MAX_NOTE_CONTENT_SIZE) {
-      logger.warn(
-        '[NoteWithComments] Content exceeds MAX_NOTE_CONTENT_SIZE, using plain text fallback',
-        {
-          noteId,
-          contentLength: goalContent.length,
-          limit: MAX_NOTE_CONTENT_SIZE,
-        },
-      );
-      isTooLargeForRichEditor = true;
-      plainTextFallbackContent = goalContent;
-      isInitializing = false;
-      isInitialized = true;
-      return;
-    }
-
-    isTooLargeForRichEditor = false;
-
-    if (isRawNoteViewEnabled) {
-      plainTextFallbackContent = '';
+    isTooLargeForRichEditor = shouldUseRawNoteEditor(goalContent);
+    if (isTooLargeForRichEditor || isRawNoteViewEnabled) {
       isInitializing = false;
       isInitialized = true;
       return;
@@ -1541,6 +1617,8 @@
       lastNoteId = currentNoteId;
       lastKnownContent = '';
       lastKnownRev = undefined;
+      rawDraft = undefined;
+      isTooLargeForRichEditor = shouldUseRawNoteEditor(currentNoteContent);
       hasUserEditedSinceLastSave = false;
       isRestorePending = false;
       lastSafetyNetSyncedContent = undefined;
@@ -1601,24 +1679,13 @@
           editor === conversionEditor &&
           !conversionEditor.isDestroyed;
 
-        // Guard: if new note content exceeds the safe size limit, show plain text fallback
-        if (newContent.length > MAX_NOTE_CONTENT_SIZE) {
-          logger.warn(
-            '[NoteWithComments] Switched to note exceeding MAX_NOTE_CONTENT_SIZE, using plain text fallback',
-            {
-              noteId,
-              contentLength: newContent.length,
-              limit: MAX_NOTE_CONTENT_SIZE,
-            },
-          );
-          isTooLargeForRichEditor = true;
-          plainTextFallbackContent = newContent;
+        isTooLargeForRichEditor = shouldUseRawNoteEditor(newContent);
+        if (isTooLargeForRichEditor) {
           lastKnownContent = newContent;
           lastKnownRev = newRev;
           isInitializing = false;
           return;
         }
-        isTooLargeForRichEditor = false;
 
         isInitializing = true;
 
@@ -2157,6 +2224,12 @@
   aria-label={m.workspace_noteWithComments_editor_ariaLabel()}
   tabindex="-1"
 >
+  {#if saveFailure}
+    <div role="alert" class="px-4 py-2 text-sm">
+      <p>{m.notes_writeService_saveFailed_error()} {saveFailure.message}</p>
+      <Button size="sm" onclick={retryFullSave}>{m.ui_combobox_retry_label()}</Button>
+    </div>
+  {/if}
   <!-- Search Bar -->
   {#if showSearch}
     <PanelFindBar
@@ -2239,21 +2312,6 @@
           </div>
         {/if}
 
-        <!-- Plain text fallback for notes that exceed the rich editor size limit -->
-        {#if isTooLargeForRichEditor}
-          <div class="w-full p-4">
-            <div
-              class="mb-3 rounded-md bg-warning/10 border border-warning/30 px-4 py-2 text-sm text-warning-ink"
-            >
-              {m.workspace_noteWithComments_tooLarge_label({
-                sizeKb: formatInteger(Math.round(plainTextFallbackContent.length / 1024)),
-              })}
-            </div>
-            <pre
-              class="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">{plainTextFallbackContent}</pre>
-          </div>
-        {/if}
-
         {#if shouldShowRawNoteView && noteId}
           <RawNoteCodeEditor
             bind:this={rawNoteEditorRef}
@@ -2261,7 +2319,8 @@
             {noteId}
             content={currentNoteContent}
             rev={currentNoteRev}
-            {editable}
+            initialDraft={rawDraft}
+            editable={editable && !finishing}
             {isPanelFocused}
           />
         {/if}

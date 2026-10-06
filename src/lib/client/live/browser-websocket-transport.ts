@@ -1,3 +1,4 @@
+import { assertNoteUpdateFrame } from '$shared/note-update-frame';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -368,6 +369,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
             ? { clientId: this.clientId, ...(params as Record<string, unknown>) }
             : params;
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
+        try {
+          assertNoteUpdateFrame(method, payload);
+        } catch (error) {
+          fail(error);
+          return;
+        }
         const capabilityGeneration =
           method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
         if (method === 'client.hello') this.nodeCapabilities = null;

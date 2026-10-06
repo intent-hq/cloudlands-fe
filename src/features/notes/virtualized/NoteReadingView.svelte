@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Workspace } from '$shared/types';
   import { onMount, untrack } from 'svelte';
-  import { writable, get } from 'svelte/store';
+  import { writable } from 'svelte/store';
   import { v4 as uuid } from 'uuid';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -60,7 +60,10 @@
   const session = selectNotePageSession(ws, id);
   const current = $derived($session?.windows[panelId]);
   const ready = $derived($session?.status === 'ready');
-  const unavailable = $derived($session?.status === 'error' || $session?.status === 'deleted');
+  const panelOpen = $derived(!!$session?.panels[panelId]);
+  const unavailable = $derived(
+    $session?.status === 'error' || $session?.status === 'deleted' || $session?.status === 'legacy',
+  );
   let element: HTMLDivElement;
   let view: NoteWindowView | undefined = $state();
   let mounted = $state(false);
@@ -77,12 +80,15 @@
     const openPanelHere = ownsPanel;
     if (openPanelHere)
       appStore.dispatch(pagePanelOpened(owner.workspaceId, owner.noteId, owner.panelId));
-    appStore.dispatch(pageWindowRequested(owner.workspaceId, owner.noteId, owner.panelId, 0));
     const native = new NoteWindowView(element, {
       seek: (at) =>
         appStore.dispatch(pageWindowRequested(owner.workspaceId, owner.noteId, owner.panelId, at)),
       retainWindow: (value) => {
-        const generation = untrack(() => $session?.generation);
+        const generation = selectNotePageSession.select(
+          appStore.state,
+          owner.workspaceId,
+          owner.noteId,
+        )?.generation;
         if (generation === undefined) throw new Error('Note window owner is unavailable');
         const lease = `runtime-window:${uuid()}`;
         appStore.dispatch(
@@ -95,7 +101,7 @@
             lease,
           ),
         );
-        if (!get(selectNoteResourceHeld(lease)))
+        if (!selectNoteResourceHeld.select(appStore.state, lease))
           throw new Error('Note window data admission was lost');
         return () => appStore.dispatch(pageResourcesReleased(lease));
       },
@@ -121,6 +127,15 @@
       if (openPanelHere)
         appStore.dispatch(pagePanelClosed(owner.workspaceId, owner.noteId, owner.panelId));
     };
+  });
+  // When the parent owns negotiation its opening effect may run after this
+  // child mounts. Request a window only after the panel exists in page state.
+  $effect(() => {
+    if (!mounted || !panelOpen) return;
+    const owner = { workspaceId, noteId, panelId };
+    untrack(() =>
+      appStore.dispatch(pageWindowRequested(owner.workspaceId, owner.noteId, owner.panelId, 0)),
+    );
   });
   $effect(() => {
     const native = view;

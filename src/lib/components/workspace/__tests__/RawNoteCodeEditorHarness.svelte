@@ -35,23 +35,10 @@
   const note = selectNoteById(workspaceId, noteId);
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Browser test installs a mock daemon boundary; production writes use the real service.
   installMockElectronBridge({
-    'note.setContent': (params) => {
+    'note.update': (params) => {
       requests = [...requests, params];
-      const oldContent = persisted;
       persisted = (params as { content: string }).content;
-      return {
-        ok: true,
-        noteId,
-        title: initialNote.title,
-        updatedAt: initialNote.updatedAt,
-        oldContent,
-        newContent: persisted,
-        rev: ++rev,
-        convertedCount: 0,
-        createdTaskNoteIds: [],
-        createdTasks: [],
-        warnings: [],
-      };
+      return { ...initialNote, content: persisted, rev: ++rev };
     },
   });
   function updateExternally() {

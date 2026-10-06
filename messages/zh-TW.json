@@ -7466,5 +7466,7 @@
   "settings_machineName_saved": "電腦名稱已儲存",
   "home_assistantThread_hooks_label": "作用中的掛鉤：{count}",
   "home_assistantThread_monitors_label": "作用中的監控：{count}",
-  "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}"
+  "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}",
+  "layout_noteTab_pagedFindLimit_label": "搜尋筆記內文，不包括動態任務標籤。",
+  "layout_noteTab_pagedFindCapped_label": "顯示前 1,000 個相符結果。"
 }

@@ -361,3 +361,62 @@ it('keeps the recreated owner when an ensure joins a pending event refresh', asy
   expect(notesGetMock).toHaveBeenCalledTimes(2);
   expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map[id]?.content).toBe('recreated');
 });
+
+describe('explicit complete-source editing', () => {
+  beforeEach(() => {
+    __resetNotesReadServiceForTests();
+    notesGetMock.mockReset();
+  });
+  it('loads one whole revision only after edit is requested, even with another paged panel', async () => {
+    const { beginFullNoteEdit } = await import('./notes-read-service');
+    const ws = 'full-edit',
+      id = 'body';
+    const slim = makeNote(id, ws, { content: '', contentLength: 900_000, rev: 4 });
+    appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [slim] }));
+    appStore.dispatch(pagePanelOpened(ws, id, 'viewer'));
+    expect(await ensureNoteContentLoaded(ws, id)).toBe(false);
+    expect(notesGetMock).not.toHaveBeenCalled();
+    notesGetMock.mockResolvedValueOnce(makeNote(id, ws, { content: '漢'.repeat(300_000), rev: 5 }));
+    const edit = beginFullNoteEdit(ws, id);
+    expect(await edit.load()).toBe(true);
+    expect(notesGetMock).toHaveBeenCalledExactlyOnceWith(id, ws);
+    expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map[id]).toMatchObject({
+      content: '漢'.repeat(300_000),
+      rev: 5,
+    });
+    edit.release();
+    notesGetMock.mockClear();
+    applyNoteFromEvent(ws, id, 'note:updated');
+    await flush();
+    expect(notesGetMock).not.toHaveBeenCalled();
+  });
+  it.each(['cancel', 'deleted', 'wrong-note', 'old-revision', 'failure'] as const)(
+    'rejects %s during full edit loading',
+    async (reason) => {
+      const { beginFullNoteEdit } = await import('./notes-read-service');
+      const ws = 'full-edit-' + reason,
+        id = 'body';
+      const slim = makeNote(id, ws, { content: '', contentLength: 50, rev: 5 });
+      appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [slim] }));
+      const pending = deferred<Note | null>();
+      notesGetMock.mockReturnValueOnce(pending.promise);
+      const edit = beginFullNoteEdit(ws, id);
+      const result = edit.load();
+      if (reason === 'cancel') edit.release();
+      if (reason === 'deleted') applyNoteFromEvent(ws, id, 'note:deleted');
+      if (reason === 'failure') pending.reject(new Error('Offline'));
+      else
+        pending.resolve(
+          makeNote(reason === 'wrong-note' ? 'other' : id, ws, {
+            content: 'complete',
+            rev: reason === 'old-revision' ? 4 : 6,
+          }),
+        );
+      expect(await result).toBe(false);
+      expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map[id]?.content).not.toBe(
+        'complete',
+      );
+      edit.release();
+    },
+  );
+});

@@ -72,6 +72,7 @@ interface PendingContent {
   content: string;
   /** Position in the note's local edit sequence (see `latestEditSeq`). */
   seq: number;
+  strict?: boolean;
 }
 
 // Debounce/queue state is keyed by `${workspaceId}:${noteId}` — note ids are
@@ -102,6 +103,57 @@ const unackedDrafts = new Map<string, PendingContent[]>();
 // rev as the pending draft is rebased onto that echo, and cleared once nothing
 // is pending or in flight. A save sends this as `expectedVersion`.
 const draftBaseRev = new Map<string, number>();
+// Failed complete drafts stay owned here, including after a tab unmounts.
+// A failure blocks automatic writes until the user resolves it.
+const contentFailures = new Map<string, Error>();
+export function getRetainedCompleteDraft(
+  workspaceId: string,
+  noteId: string,
+): AppliedNoteContent | undefined {
+  const key = noteKey(workspaceId, noteId),
+    draft = pendingContent.get(key);
+  if (!contentFailures.has(key) || !draft?.strict) return undefined;
+  return { content: draft.content, rev: draftBaseRev.get(key) };
+}
+const failureListeners = new Map<string, Set<(failure: Error | undefined) => void>>();
+export function subscribeNoteContentFailure(
+  workspaceId: string,
+  noteId: string,
+  listener: (failure: Error | undefined) => void,
+): () => void {
+  const key = noteKey(workspaceId, noteId);
+  const listeners = failureListeners.get(key) ?? new Set();
+  failureListeners.set(key, listeners);
+  listeners.add(listener);
+  listener(contentFailures.get(key));
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) failureListeners.delete(key);
+  };
+}
+function publishContentFailure(key: string, failure?: Error) {
+  if (failure) contentFailures.set(key, failure);
+  else contentFailures.delete(key);
+  for (const listener of failureListeners.get(key) ?? []) listener(failure);
+}
+/** User-requested retry may proceed only against the original, still-current base.
+ * A changed remote note requires resolution outside automatic saving. */
+export async function retryNoteContent(workspaceId: string, noteId: string): Promise<void> {
+  const key = noteKey(workspaceId, noteId);
+  if (!contentFailures.has(key)) return;
+  const current = await appClient.notes.get(noteId, workspaceId);
+  if (
+    !current ||
+    current.id !== noteId ||
+    current.workspaceId !== workspaceId ||
+    current.rev !== draftBaseRev.get(key)
+  ) {
+    throw contentFailures.get(key);
+  }
+  publishContentFailure(key);
+  await flushContent(key, noteId);
+  await settleNoteContent(workspaceId, noteId);
+}
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}:${noteId}`;
@@ -328,11 +380,13 @@ export function updateNoteContent(
   workspaceId: string,
   noteId: string,
   content: string,
-  options?: { immediate?: boolean; baseRev?: number; baseContent?: string },
+  options?: { immediate?: boolean; baseRev?: number; baseContent?: string; strict?: boolean },
 ): void {
   const key = noteKey(workspaceId, noteId);
   if (!draftBaseRev.has(key)) {
-    const baseRev = options?.baseRev ?? readNoteById(workspaceId, noteId)?.rev;
+    const baseRev = options?.strict
+      ? options.baseRev
+      : (options?.baseRev ?? readNoteById(workspaceId, noteId)?.rev);
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
   }
   const newest = (unackedDrafts.get(key) ?? []).at(-1);
@@ -342,7 +396,7 @@ export function updateNoteContent(
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
   latestEditSeq.set(key, seq);
-  const draft: PendingContent = { workspaceId, content, seq };
+  const draft: PendingContent = { workspaceId, content, seq, strict: options?.strict };
   // A still-debounced draft is replaced, never sent.
   const replaced = pendingContent.get(key);
   const drafts = (unackedDrafts.get(key) ?? []).filter((d) => d !== replaced);
@@ -352,6 +406,8 @@ export function updateNoteContent(
 
   const existing = contentTimers.get(key);
   if (existing) clearTimeout(existing);
+
+  if (contentFailures.has(key)) return;
 
   if (options?.immediate) {
     contentTimers.delete(key);
@@ -405,6 +461,8 @@ export function flushNoteContent(
 export async function settleNoteContent(workspaceId: string, noteId: string): Promise<void> {
   const key = noteKey(workspaceId, noteId);
   while (hasPendingNoteContent(workspaceId, noteId)) {
+    const failure = contentFailures.get(key);
+    if (failure) throw failure;
     await flushContent(key, noteId);
     const tail = noteMutationQueues.get(key);
     if (tail) await tail;
@@ -418,7 +476,7 @@ registerNoteContentSettler(settleNoteContent);
 
 async function flushContent(key: string, noteId: string): Promise<AppliedNoteContent | undefined> {
   const pending = pendingContent.get(key);
-  if (!pending) return undefined;
+  if (!pending || contentFailures.has(key)) return undefined;
   pendingContent.delete(key);
   const timer = contentTimers.get(key);
   if (timer) {
@@ -435,7 +493,59 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
       // `spec` exist in every workspace and the fallback resolver cache is
       // last-writer-wins across them. `pending.content` is read here, not at
       // flush time: an earlier save's echo may have rebased it while queued.
-      const rev = draftBaseRev.get(key) ?? readNoteById(pending.workspaceId, noteId)?.rev;
+      if (contentFailures.has(key)) return undefined;
+      const rev = pending.strict
+        ? draftBaseRev.get(key)
+        : (draftBaseRev.get(key) ?? readNoteById(pending.workspaceId, noteId)?.rev);
+      if (pending.strict) {
+        try {
+          if (rev === undefined) throw new Error('A loaded note revision is required');
+          const note = await appClient.notes.update(
+            noteId,
+            pending.content,
+            rev,
+            pending.workspaceId,
+          );
+          return applyContentSaveResult(noteId, pending, rev, {
+            success: true,
+            newContent: note.content,
+            noteRev: note.rev,
+          });
+        } catch (error) {
+          const failure = error instanceof Error ? error : new Error(String(error));
+          const rpcCode = (error as { rpcCode?: number } | null)?.rpcCode;
+          // Transport loss and oversized replies may follow a committed write.
+          // Only an exact complete reread establishes the requested draft; any
+          // other result stays unresolved and must never trigger a blind retry.
+          if (rpcCode !== -32005 && rev !== undefined) {
+            const current = await appClient.notes
+              .get(noteId, pending.workspaceId)
+              .catch(() => null);
+            if (
+              current &&
+              current.id === noteId &&
+              current.workspaceId === pending.workspaceId &&
+              current.content === pending.content &&
+              current.rev !== undefined &&
+              current.rev > rev
+            ) {
+              return applyContentSaveResult(noteId, pending, rev, {
+                success: true,
+                newContent: current.content,
+                noteRev: current.rev,
+              });
+            }
+          }
+          publishContentFailure(key, failure);
+          const newest = (unackedDrafts.get(key) ?? []).at(-1) ?? pending;
+          pendingContent.set(key, newest);
+          appStore.dispatch(
+            applyLocalNoteUpdate(pending.workspaceId, noteId, { content: newest.content }),
+          );
+          notify.error(m.notes_writeService_saveFailed_error(), { description: failure.message });
+          return undefined;
+        }
+      }
       const result = await appClient.notes.setContent(
         noteId,
         pending.content,
@@ -453,7 +563,9 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
       return applyContentSaveResult(noteId, pending, rev, result);
     });
   } finally {
-    const remaining = (unackedDrafts.get(key) ?? []).filter((d) => d !== pending);
+    const remaining = (unackedDrafts.get(key) ?? []).filter(
+      (d) => d !== pending || contentFailures.has(key),
+    );
     if (remaining.length > 0) unackedDrafts.set(key, remaining);
     else unackedDrafts.delete(key);
     const count = (inFlightContentSaves.get(key) ?? 1) - 1;

@@ -7466,5 +7466,7 @@
   "settings_machineName_saved": "Nombre del equipo guardado",
   "home_assistantThread_hooks_label": "Hooks activos: {count}",
   "home_assistantThread_monitors_label": "Monitores activos: {count}",
-  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}"
+  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}",
+  "layout_noteTab_pagedFindLimit_label": "Busca en el texto de la nota, sin incluir etiquetas dinámicas de tareas.",
+  "layout_noteTab_pagedFindCapped_label": "Se muestran las primeras 1.000 coincidencias."
 }

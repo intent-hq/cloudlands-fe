@@ -27,7 +27,10 @@ import { registerSourceClipboardBridge } from '$store/renderer/seeders/source-cl
 import { registerSourceClipboardIPC } from './source-clipboard.ipc';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import type { BrowserWindow } from 'electron';
-import { openNoteSourceClipboardSink } from '$lib/utils/source-clipboard';
+import {
+  openNoteSourceClipboardSink,
+  SourceClipboardCleanupError,
+} from '$lib/utils/source-clipboard';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 const c = IPC_CHANNELS.SYSTEM;
 const originalElectronAPI = window.electronAPI;
@@ -276,4 +279,61 @@ it.each([
   expect(mocks.invoke).not.toHaveBeenCalled();
   expect(mocks.publish).not.toHaveBeenCalled();
   expect(await fs.readdir(directory)).toEqual([]);
+});
+
+it('cancels a pending begin by id and joins its late physical cleanup', async () => {
+  let entered!: () => void, resume!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const make = fs.mkdtemp.bind(fs);
+  const spy = vi.spyOn(fs, 'mkdtemp').mockImplementation(async (...args) => {
+    entered();
+    await held;
+    return make(...args);
+  });
+  const controller = new AbortController();
+  const opening = expect(openNoteSourceClipboardSink(input(1), controller.signal)).rejects.toThrow(
+    'REVOKED',
+  );
+  try {
+    await started;
+    controller.abort();
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        c.SOURCE_CLIPBOARD_ABORT,
+        expect.objectContaining({ id: expect.any(String) }),
+      ),
+    );
+    expect(mocks.publish).not.toHaveBeenCalled();
+    resume();
+    await opening;
+    expect(await fs.readdir(directory)).toHaveLength(0);
+  } finally {
+    resume();
+    spy.mockRestore();
+  }
+});
+it('distinguishes lost begin and cleanup acknowledgements from no allocation', async () => {
+  const original = mocks.invoke.getMockImplementation()!;
+  const request = input(1);
+  mocks.invoke.mockImplementation(async (channel, params) => {
+    if (channel === c.SOURCE_CLIPBOARD_ABORT) throw new Error('lost cleanup');
+    const result = await original(channel, params);
+    if (channel === c.SOURCE_CLIPBOARD_BEGIN) throw new Error('lost begin');
+    return result;
+  });
+  try {
+    await expect(openNoteSourceClipboardSink(request)).rejects.toBeInstanceOf(
+      SourceClipboardCleanupError,
+    );
+    expect(mocks.publish).not.toHaveBeenCalled();
+    expect(await fs.readdir(directory)).toHaveLength(1);
+  } finally {
+    mocks.invoke.mockImplementation(original);
+    await original(c.SOURCE_CLIPBOARD_ABORT, { id: request.id });
+  }
 });

@@ -8,7 +8,7 @@ const identity = {
   snapshotId: 's1',
   expiresAt: '2099-01-01T00:00:00Z',
 };
-const hello = { server: { capabilities: { notePaging: 1, notePagingBackendId: 'db' } } };
+const hello = { server: { capabilities: { notePagingRead: 1, notePagingBackendId: 'db' } } };
 const taskPage = {
   kind: 'noteTaskIdsPage',
   ...identity,
@@ -114,7 +114,7 @@ import { extractOrderedSpecTaskIds } from '$shared/utils/task-stats';
 it('consumes approved ordered-link vectors through the production reader and matches legacy order', async () => {
   const v = vectors.orderedTaskIds;
   const rpc = vi.fn().mockResolvedValueOnce({
-    server: { capabilities: { notePaging: 1, notePagingBackendId: 'db-a' } },
+    server: { capabilities: { notePagingRead: 1, notePagingBackendId: 'db-a' } },
   });
   for (const frame of [...v.pages, ...v.longIdFragments]) rpc.mockResolvedValueOnce(frame.result);
   expect(await readNoteTaskLinks(new NotePageReader(rpc), 'ws-a', 'spec')).toEqual(v.expected);

@@ -124,7 +124,7 @@ it('uses bounded task links for capable daemons without a whole-spec get', async
   );
   mocks.request.mockImplementation(async (method: string, params: any) => {
     if (method === 'client.hello')
-      return { server: { capabilities: { notePaging: 1, notePagingBackendId: 'db' } } };
+      return { server: { capabilities: { notePagingRead: 1, notePagingBackendId: 'db' } } };
     if (method === 'note.list') return { notes };
     if (method === 'note.get' && params.page?.kind === 'taskIds')
       return {
@@ -169,7 +169,7 @@ it.each([true, false])(
     mocks.request.mockReset();
     mocks.request.mockImplementation(async (method: string) => {
       if (method === 'client.hello')
-        return { server: { capabilities: { notePaging: 1, notePagingBackendId: 'db' } } };
+        return { server: { capabilities: { notePagingRead: 1, notePagingBackendId: 'db' } } };
       if (method === 'note.list') return { notes: [makeTaskNote('task-1')] };
       throw missing
         ? Object.assign(new Error('missing'), { rpcCode: -32602, code: 'not-found' })

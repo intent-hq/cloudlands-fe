@@ -23,18 +23,24 @@ const page = {
   metadataRef: 'meta',
 };
 beforeEach(() => vi.clearAllMocks());
-it('requires the actual complete daemon capability and backend identity', async () => {
+it('requires the read-only daemon capability and backend identity', async () => {
   const client = new LiveNotePagesClient();
+  rpc.mockResolvedValueOnce({
+    server: { capabilities: { notePagingRead: 1, notePagingBackendId: 'db-a' } },
+  });
+  expect(await client.capabilities()).toEqual({ backendId: 'db-a', annotations: false });
+  rpc.mockResolvedValueOnce({ server: { capabilities: { notePagingRead: 1 } } });
+  expect(await client.capabilities()).toBeNull();
+  rpc.mockResolvedValueOnce({
+    server: { capabilities: { notePagingRead: true, notePagingBackendId: 'db-a' } },
+  });
+  expect(await client.capabilities()).toBeNull();
+});
+it('does not interpret the retired editing capability as read support', async () => {
   rpc.mockResolvedValueOnce({
     server: { capabilities: { notePaging: 1, notePagingBackendId: 'db-a' } },
   });
-  expect(await client.capabilities()).toEqual({ backendId: 'db-a', annotations: false });
-  rpc.mockResolvedValueOnce({ server: { capabilities: { notePaging: 1 } } });
-  expect(await client.capabilities()).toBeNull();
-  rpc.mockResolvedValueOnce({
-    server: { capabilities: { notePaging: true, notePagingBackendId: 'db-a' } },
-  });
-  expect(await client.capabilities()).toBeNull();
+  expect(await new LiveNotePagesClient().capabilities()).toBeNull();
 });
 it('sends bounded source params and retains exact Unicode and scope', async () => {
   const client = new LiveNotePagesClient();
