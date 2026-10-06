@@ -371,9 +371,11 @@ test('Home sidebar scrolls long thread history and keeps narrow tabs usable', as
   });
   await threads.getByRole('option').first().focus();
   await page.keyboard.press('End');
+  const last = threads.getByRole('option', { name: 'Assistant conversation 240', exact: true });
+  await expect(last).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(threads.getByRole('option').last()).toBeInViewport();
-  await expect(threads.getByRole('option').last()).toHaveAttribute('aria-selected', 'true');
+  await expect(last).toBeInViewport();
+  await expect(last).toHaveAttribute('aria-selected', 'true');
   await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
     'Assistant conversation 240',
   );

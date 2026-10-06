@@ -45,14 +45,18 @@ test('Assistant sidebar attributes each background activity to its thread', asyn
   await expect(rows.nth(4)).toHaveAttribute('aria-selected', 'true');
   await expect(component.getByRole('heading', { name: 'Watch workspace changes' })).toBeVisible();
   await expect(events).not.toBeFocused();
-  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
-  await rows.nth(4).focus();
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await expect(composer).toHaveAttribute('contenteditable', 'true');
+  await expect(rows.nth(4)).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(rows.nth(5)).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(rows.nth(5)).toHaveAttribute('aria-selected', 'true');
   await expect(component.getByRole('heading', { name: 'Wait for a specialist' })).toBeVisible();
-  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
+  await expect(composer).toHaveAttribute('contenteditable', 'true');
+  await expect(rows.nth(5)).toBeFocused();
+  await composer.fill('Continue watching this thread');
+  await expect(composer).toBeFocused();
   await testInfo.attach('assistant-thread-activity-wire', {
     body: JSON.stringify(calls, null, 2),
     contentType: 'application/json',
@@ -209,8 +213,9 @@ test('Assistant background reads follow virtualized thread history', async ({
   expect(initialReads.some(({ params }) => params.agentId === 'home-assistant-239')).toBe(false);
   await rows.first().focus();
   await page.keyboard.press('End');
+  const last = list.locator('[data-list-index="239"]');
+  await expect(last).toBeFocused();
   await page.keyboard.press('Enter');
-  const last = rows.last();
   await expect(last).toHaveAttribute('aria-selected', 'true');
   await expect(last.locator('[data-thread-activity="subscriptions"]')).toBeVisible();
   await expect
