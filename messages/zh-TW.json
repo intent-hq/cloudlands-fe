@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "PR 儲存庫",
+  "repository_prRemote_placeholder": "選擇遠端儲存庫",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "無法儲存 PR 儲存庫。請選擇遠端儲存庫重試。",
+  "repository_prRemote_saving_label": "正在儲存 PR 儲存庫…",
   "devConsole_title_label": "開發主控台",
   "ui_viewSettings_font_label": "字型",
   "chat_taskProgress_menu_label": "任務",

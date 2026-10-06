@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "PR のリポジトリ",
+  "repository_prRemote_placeholder": "リモートを選択",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "PR のリポジトリを保存できませんでした。リモートを選択して再試行してください。",
+  "repository_prRemote_saving_label": "PR のリポジトリを保存中…",
   "devConsole_title_label": "開発コンソール",
   "ui_viewSettings_font_label": "フォント",
   "chat_taskProgress_menu_label": "タスク",

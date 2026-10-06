@@ -7,6 +7,7 @@ import { warmImport } from '../../../../../test/warm-import';
 import { store as appStore } from '$store/renderer/store';
 import { prWorkflowReducer } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
 import { acceptWorkflowReducer } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
+import { repositoryContextReducer } from '$store/renderer/slices/repository-context/repository-context-slice';
 
 // Polyfill scrollIntoView for jsdom
 if (typeof Element.prototype.scrollIntoView !== 'function') {
@@ -685,6 +686,7 @@ async function resetMocks() {
     gitWrite: { byWorkspaceId: {} },
     prWorkflow: prWorkflowReducer(undefined, { type: 'init' }),
     acceptWorkflow: acceptWorkflowReducer(undefined, { type: 'init' }),
+    repositoryContext: repositoryContextReducer(undefined, { type: 'init' }),
   };
   mockDispatch.mockImplementation((action) => {
     const prWorkflow = prWorkflowReducer(mockStoreState.value.prWorkflow, action);

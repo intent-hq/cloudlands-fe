@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "Dépôt de la PR",
+  "repository_prRemote_placeholder": "Choisir un dépôt distant",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "Impossible d’enregistrer le dépôt de la PR. Choisissez un dépôt distant pour réessayer.",
+  "repository_prRemote_saving_label": "Enregistrement du dépôt de la PR…",
   "devConsole_title_label": "Console de développement",
   "ui_viewSettings_font_label": "Police",
   "chat_taskProgress_menu_label": "Tâches",

@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "PR 仓库",
+  "repository_prRemote_placeholder": "选择远程仓库",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "无法保存 PR 仓库。请选择远程仓库重试。",
+  "repository_prRemote_saving_label": "正在保存 PR 仓库…",
   "devConsole_title_label": "开发控制台",
   "ui_viewSettings_font_label": "字体",
   "chat_taskProgress_menu_label": "任务",

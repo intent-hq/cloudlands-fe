@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "Repositorio de la PR",
+  "repository_prRemote_placeholder": "Elige un remoto",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "No se pudo guardar el repositorio de la PR. Elige un remoto para volver a intentarlo.",
+  "repository_prRemote_saving_label": "Guardando el repositorio de la PR…",
   "devConsole_title_label": "Consola de desarrollo",
   "ui_viewSettings_font_label": "Fuente",
   "chat_taskProgress_menu_label": "Tareas",

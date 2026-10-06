@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "PR 저장소",
+  "repository_prRemote_placeholder": "리모트 선택",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "PR 저장소를 저장하지 못했습니다. 리모트를 선택하여 다시 시도하세요.",
+  "repository_prRemote_saving_label": "PR 저장소 저장 중…",
   "devConsole_title_label": "개발 콘솔",
   "ui_viewSettings_font_label": "글꼴",
   "chat_taskProgress_menu_label": "작업",

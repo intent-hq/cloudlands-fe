@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "PR-Repository",
+  "repository_prRemote_placeholder": "Remote auswählen",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "Das PR-Repository konnte nicht gespeichert werden. Wähle erneut ein Remote aus.",
+  "repository_prRemote_saving_label": "PR-Repository wird gespeichert…",
   "devConsole_title_label": "Entwicklerkonsole",
   "ui_viewSettings_font_label": "Schriftart",
   "chat_taskProgress_menu_label": "Aufgaben",

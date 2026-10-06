@@ -1,4 +1,9 @@
 {
+  "repository_prRemote_label": "PR repository",
+  "repository_prRemote_placeholder": "Choose a remote",
+  "repository_prRemote_option_label": "{remote} · {provider} · {repository}",
+  "repository_prRemote_save_error": "Couldn’t save the PR repository. Choose a remote to try again.",
+  "repository_prRemote_saving_label": "Saving PR repository…",
   "devConsole_title_label": "Dev Console",
   "ui_viewSettings_font_label": "Font",
   "chat_taskProgress_menu_label": "Tasks",
