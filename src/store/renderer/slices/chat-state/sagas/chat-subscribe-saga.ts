@@ -404,6 +404,8 @@ function isCurrentSubscription(
  * The protocol mandates discarding the cached transcript and rehydrating
  * from this snapshot as if freshly subscribed; a not-yet-echoed optimistic
  * row is dropped with them and reappears on its daemon echo.
+ * A local reconnect reset keeps unacknowledged optimistic user rows while
+ * discarding the canonical cache; it does not assert a daemon invalidation.
  */
 function* applyTranscript(
   coordinator: SubscriptionCoordinator,
@@ -429,13 +431,19 @@ function* applyTranscript(
       if (typeof message.id === 'string') transcriptIds.add(message.id);
       if (typeof message.appMessageId === 'string') transcriptIds.add(message.appMessageId);
     }
-    const storeOnly = discardStoreOnly
-      ? []
-      : (session.messages ?? []).filter(
-          (message) =>
-            !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
-            !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
-        );
+    const storeOnly = (session.messages ?? []).filter(
+      (message) =>
+        !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
+        !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)) &&
+        // Local reconnect recovery invalidates cached canonical history, not
+        // unacknowledged sends. A daemon reset still discards everything.
+        (!discardStoreOnly ||
+          (transcript.resetCachedTranscript === true &&
+            transcript.resumed !== false &&
+            message.role === 'user' &&
+            message.seq === undefined &&
+            typeof message.appMessageId === 'string')),
+    );
     // A snapshot is the authoritative newest page with the in-flight turn
     // MERGED INTO IT (§7.1), so a retained row the page does not cover cannot
     // still be in flight — settle its streaming flags, exactly as the
@@ -453,7 +461,7 @@ function* applyTranscript(
     // (which a healthy standing registration may never emit). Protecting the
     // optimistic row matters more than closing that residual window.
     const retained =
-      transcript.fromSnapshot === true && !racesLocalStart
+      transcript.fromSnapshot === true && !restoration && !racesLocalStart
         ? storeOnly.map((message) => (claimsLiveness(message) ? settleStreaming(message) : message))
         : storeOnly;
     const merged =
@@ -484,14 +492,19 @@ function* applyTranscript(
   // pre-hydration emit must not swallow the transition, so the next emit
   // against the hydrated session still sees the edge and dispatches it.
   const streamingChanged = transcript.isStreaming !== entry.wasStreaming;
+  // Hydration replay restores content, not a second idle verdict from a
+  // snapshot that may already have raced (and spared) a new local send.
   const authoritativeIdleSnapshot =
-    transcript.fromSnapshot === true && transcript.isStreaming === false;
+    transcript.fromSnapshot === true && transcript.isStreaming === false && !restoration;
   const protectsLocalStart = session
     ? authoritativeIdleSnapshot && coordinator.locallyStartedTurns.delete(agentId)
     : false;
+  // Consume the old turn's falling edge even when a newer local send keeps
+  // the session active, so replay cannot apply that edge to the new turn.
+  if (protectsLocalStart) entry.wasStreaming = transcript.isStreaming;
   if (session && transcript.isStreaming) coordinator.locallyStartedTurns.delete(agentId);
   const shouldReconcileStreaming =
-    streamingChanged || (authoritativeIdleSnapshot && !protectsLocalStart);
+    (streamingChanged || authoritativeIdleSnapshot) && !protectsLocalStart;
   if (session && shouldReconcileStreaming && isCurrentSubscription(coordinator, agentId, entry)) {
     entry.wasStreaming = transcript.isStreaming;
     yield* put(
@@ -637,10 +650,10 @@ function* handleSubscriptionEvent(
     // discarded (see applyTranscript). Snapshot emits only — the settled
     // re-apply of the same transcript must not wipe the background
     // older-history pages fetched after it.
+    const resetsCachedHistory =
+      event.transcript.resumed === false || event.transcript.resetCachedTranscript === true;
     const discardStoreOnly =
-      !event.replayed &&
-      event.transcript.fromSnapshot === true &&
-      event.transcript.resumed === false;
+      !event.replayed && event.transcript.fromSnapshot === true && resetsCachedHistory;
     yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
@@ -669,9 +682,11 @@ function* handleSubscriptionEvent(
               : {}),
             totalMessages: event.transcript.totalMessages,
             ...(oldest ? { oldestMessageId: oldest.id } : {}),
-            ...(event.transcript.resumed === undefined
-              ? {}
-              : { resumed: event.transcript.resumed }),
+            ...(resetsCachedHistory
+              ? { resumed: false }
+              : event.transcript.resumed === undefined
+                ? {}
+                : { resumed: event.transcript.resumed }),
           },
           event.replayed,
         ),
@@ -680,7 +695,7 @@ function* handleSubscriptionEvent(
       // `sinceMessageId` (unknown/pruned anchor) and served the standard
       // newest page instead — the retained older history may be stale, so
       // trigger a full rehydration through the chat-read saga.
-      if (!event.replayed && event.transcript.resumed === false && wsId) {
+      if (!event.replayed && resetsCachedHistory && wsId) {
         yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
       }
     }
