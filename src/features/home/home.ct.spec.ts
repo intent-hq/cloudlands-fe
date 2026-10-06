@@ -224,6 +224,12 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   );
   const board = component.locator('[data-home-board]');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+  expect(
+    await board.evaluate(
+      (element) =>
+        element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight,
+    ),
+  ).toBe(true);
   const card = board.getByRole('button', { name: 'Review the new onboarding flow', exact: true });
   await card.focus();
   await page.keyboard.press('Enter');
@@ -241,8 +247,150 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('combobox', { name: 'Status', exact: true }).click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await expect(board.getByRole('region')).toHaveCount(3);
+  expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
+
+test('Home board right-click menu pins the chosen card and restores focus', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  const board = component.locator('[data-home-board]');
+  const card = board.locator('[data-home-workspace="home-complete"]');
+  await card.click({ button: 'right' });
+  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Archive', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('menuitem', { name: 'Delete Workspace…', exact: true }),
+  ).toBeVisible();
+  await testInfo.attach('kanban-right-click', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-right-click.png') }),
+    contentType: 'image/png',
+  });
+  await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+  await expect(card).toBeFocused();
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeFocused();
+  await page.keyboard.press('ContextMenu');
+  await page.getByRole('menuitem', { name: 'Unpin', exact: true }).click();
+  await expect(card).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeFocused();
+  await component.getByRole('button', { name: 'List view', exact: true }).click();
+  await expect(component.getByRole('listbox', { name: 'Pinned', exact: true })).toHaveCount(0);
+  await expect(component.getByRole('option')).toHaveCount(6);
+});
+
+test('Home board menu dismissal keeps an existing preview open', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  const card = component.locator('[data-home-workspace="home-review"]');
+  await card.click();
+  const detail = component.locator('[data-home-detail]');
+  await expect(detail).toBeVisible();
+  await card.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Pin', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(detail).toBeVisible();
+  await expect(card).toBeFocused();
+  expect(
+    await component
+      .locator('[data-home-board]')
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await testInfo.attach('kanban-with-preview', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-with-preview.png') }),
+    contentType: 'image/png',
+  });
+});
+
+test('Home board archived cards offer restore', async ({ mount, page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  await component
+    .getByRole('group', { name: 'Status', exact: true })
+    .getByRole('button', { name: 'Archived', exact: true })
+    .click();
+  const board = component.locator('[data-home-board]');
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await board.locator('[data-home-workspace]').click({ button: 'right' });
+  await expect(
+    page.getByRole('menuitem', { name: 'Unarchive Workspace', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Archive', exact: true })).toHaveCount(0);
+  await testInfo.attach('kanban-archived-menu', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-archived-menu.png') }),
+    contentType: 'image/png',
+  });
+});
+
+test('Home board collaborator cards hide owner actions', async ({ mount, page }, testInfo) => {
+  const component = await mount(Preview, { props: { scenario: 'collaborator' } });
+  await component.getByRole('button', { name: 'Board view', exact: true }).click();
+  await component.locator('[data-home-workspace="home-complete"]').click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Open workspace', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Pin', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Archive', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Delete Workspace…', exact: true })).toHaveCount(
+    0,
+  );
+  await testInfo.attach('kanban-collaborator-menu', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-collaborator-menu.png') }),
+    contentType: 'image/png',
+  });
+});
+
+for (const { width, scenario, reason } of [
+  { width: 900, scenario: 'board-long-content', reason: 'long names in a narrow desktop' },
+  { width: 420, scenario: 'board-long-content', reason: 'stacked columns in a small window' },
+  { width: 900, scenario: 'board-repositories', reason: 'many repository columns' },
+] as const) {
+  test(`Home board keeps ${reason} reachable without horizontal scrolling`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const component = await mount(Preview, { props: { scenario } });
+    const board = component.locator('[data-home-board]');
+    await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+    expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    for (const card of await board.locator('[data-home-workspace]').all()) {
+      await card.scrollIntoViewIfNeeded();
+      await expect(card).toBeInViewport();
+      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await card.focus();
+      await page.keyboard.press('Shift+F10');
+      await expect(
+        page.getByRole('menuitem', { name: 'Open workspace', exact: true }),
+      ).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(card).toBeFocused();
+    }
+    await board.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await testInfo.attach(`kanban-${scenario}-${width}`, {
+      body: await page.screenshot({ path: testInfo.outputPath(`kanban-${scenario}-${width}.png`) }),
+      contentType: 'image/png',
+    });
+  });
+}
 
 test('Home keeps Assistant and owner creation hidden for collaborators', async ({
   mount,

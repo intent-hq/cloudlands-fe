@@ -113,7 +113,9 @@
     if (!position) return;
     contextMenu = {
       ...position,
-      returnFocus: position.returnFocus?.closest('[role="option"]') as HTMLElement | null,
+      returnFocus:
+        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
+        position.returnFocus,
       workspace,
     };
   }
@@ -141,7 +143,7 @@
           void tick().then(() =>
             homeElement
               ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-              ?.closest<HTMLElement>('[role="option"]')
+              ?.closest<HTMLElement>('[role="option"], button')
               ?.focus(),
           );
         },
@@ -936,6 +938,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             archived={filter === 'archived'}
+                            oncontextmenu={showWorkspaceMenu}
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}
