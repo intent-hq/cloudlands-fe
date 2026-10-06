@@ -524,6 +524,7 @@
 <div
   bind:this={homeElement}
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
+  class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
 >
   <ResizablePanel
@@ -532,7 +533,7 @@
     minWidth={160}
     maxWidth={360}
     defaultWidth={224}
-    className="home-sidebar-resizable h-full"
+    className="home-sidebar-resizable flex h-full min-h-0 flex-col"
     handleClassName="home-sidebar-resize-handle"
   >
     <nav
@@ -1099,6 +1100,7 @@
   .home-layout {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     container: home-layout / inline-size;
   }
   .home-tab-logo {
@@ -1168,6 +1170,15 @@
       margin-left: 0.75rem;
       flex: 1;
       min-height: 24rem;
+    }
+    .home-layout.home-assistant {
+      overflow: hidden;
+    }
+    .home-layout.home-assistant :global(.home-sidebar-resizable) {
+      height: min(10rem, 25%);
+    }
+    .home-layout.home-assistant :global(.home-surface) {
+      min-height: 0;
     }
   }
 </style>

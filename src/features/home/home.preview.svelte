@@ -1,7 +1,7 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  import { WorkspaceStatus, type Workspace } from '$shared/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { AgentStatus, WorkspaceStatus, type AgentMessage, type Workspace } from '$shared/types';
+  import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 
   interface Props {
     scenario?:
@@ -13,7 +13,10 @@
       | 'prs'
       | 'linear'
       | 'integration-error'
-      | 'disconnected';
+      | 'disconnected'
+      | 'assistant'
+      | 'assistant-long';
+    height?: number;
   }
   export const preview = definePreview<Props>({
     id: 'home',
@@ -29,6 +32,8 @@
       linear: { props: { scenario: 'linear' } },
       'integration-error': { props: { scenario: 'integration-error' } },
       disconnected: { props: { scenario: 'disconnected' } },
+      assistant: { props: { scenario: 'assistant' } },
+      'assistant-long': { props: { scenario: 'assistant-long' } },
     },
   });
   const fixtures: Workspace[] = [
@@ -129,6 +134,8 @@
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
     closePanel,
+    openPanel,
+    setChiefActiveAgentId,
     setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
@@ -136,18 +143,28 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-  import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    setAgents,
+    setAgentsLoaded,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    chatTranscriptSnapshotApplied,
+    transcriptHydrationSettled,
+  } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
 
-  let { scenario = 'populated' }: Props = $props();
+  let { scenario = 'populated', height = 720 }: Props = $props();
+  const assistant = $derived(scenario === 'assistant' || scenario === 'assistant-long');
   const dispose = startHomePreview(() => [setupHomeIntegrationsFixtures(store)]);
   const showCreateModal$ = selectShowCreateModal();
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
   store.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-  store.dispatch(closePanel());
   store.dispatch(setShowCreateModal(false));
   $effect.pre(() => {
     admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
+    store.dispatch(closePanel());
     store.dispatch(resetHomeWorkspaceView());
     store.dispatch(
       replaceWorkspaceList(
@@ -188,9 +205,68 @@
                 addedAt: '2026-09-01',
                 lastUsedAt: '2026-09-29',
               },
+              ...(assistant
+                ? Array.from({ length: 48 }, (_, index) => ({
+                    path: `/repos/project-${index + 1}`,
+                    name: `project-${index + 1}`,
+                    owner: index < 24 ? 'acme' : 'studio',
+                    addedAt: '2026-09-01',
+                    lastUsedAt: '2026-09-29',
+                  }))
+                : []),
             ],
       ),
     );
+    if (assistant) {
+      const timestamp = '2026-09-29T12:00:00.000Z';
+      const id = AgentId('home-assistant-fixture');
+      const messages: AgentMessage[] =
+        scenario === 'assistant-long'
+          ? Array.from({ length: 12 }, (_, index) => [
+              {
+                id: `home-assistant-user-${index}`,
+                role: 'user' as const,
+                timestamp: new Date(Date.parse(timestamp) + index * 2000).toISOString(),
+                contentBlocks: [{ type: 'text' as const, text: `Review project ${index + 1}.` }],
+              },
+              {
+                id: `home-assistant-response-${index}`,
+                role: 'assistant' as const,
+                timestamp: new Date(Date.parse(timestamp) + index * 2000 + 1000).toISOString(),
+                contentBlocks: [
+                  {
+                    type: 'text' as const,
+                    text: 'The project is ready for review.\n\nCheck the latest changes and choose the next step.',
+                  },
+                ],
+              },
+            ]).flat()
+          : [];
+      const session = {
+        id,
+        backendSessionId: null,
+        workspaceId: CHIEF_WORKSPACE_ID,
+        name: 'Home assistant',
+        status: AgentStatus.RuntimeIdle,
+        messages,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        metadata: { specialist: CHIEF_SPECIALIST_ID, chiefPromptVersion: CHIEF_PROMPT_VERSION },
+      };
+      store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
+      store.dispatch(setAgents(CHIEF_WORKSPACE_ID, [session]));
+      store.dispatch(
+        chatTranscriptSnapshotApplied(id, {
+          truncated: false,
+          totalMessages: messages.length,
+          nextToken: null,
+          resumed: false,
+        }),
+      );
+      store.dispatch(transcriptHydrationSettled(id));
+      store.dispatch(setChiefActiveAgentId(id));
+      store.dispatch(openPanel('chief'));
+    }
     if (scenario === 'board') store.dispatch(updateHomeWorkspaceView({ view: scenario }));
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
@@ -199,7 +275,11 @@
   onDestroy(dispose);
 </script>
 
-<div class="h-[720px] w-full bg-sidebar text-foreground" data-home-preview>
+<div
+  class="w-full overflow-hidden bg-sidebar text-foreground"
+  style:height="{height}px"
+  data-home-preview
+>
   <HomePage
     preview
     integrationPreview={scenario === 'integration-error'
