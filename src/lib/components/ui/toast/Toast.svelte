@@ -134,6 +134,14 @@
         }
       }
 
+      for (const toaster of regionElement.querySelectorAll<HTMLElement>('[data-sonner-toaster]')) {
+        const style = getComputedStyle(toaster);
+        const availableHeight = `calc(100dvh - ${style.getPropertyValue('--offset-top')} - ${style.getPropertyValue('--offset-bottom')})`;
+        if (toaster.style.getPropertyValue('--toast-available-height') !== availableHeight) {
+          toaster.style.setProperty('--toast-available-height', availableHeight);
+        }
+      }
+
       const heights = new Map<HTMLElement, number>();
       for (const card of activeToasts) {
         card.setAttribute('data-toast-measuring', '');
@@ -283,7 +291,7 @@
     --toast-radius: var(--radius);
     --toast-padding: 0.75rem 0.875rem;
     --toast-min-height: 2.75rem;
-    --toast-max-height: min(16rem, 50dvh, calc(100dvh - var(--offset-top) - var(--offset-bottom)));
+    --toast-max-height: min(16rem, 50dvh, var(--toast-available-height, 100dvh));
     --toast-title-size: 0.8125rem;
     --toast-description-size: 0.8125rem;
     --toast-action-height: var(--control-height-compact);
