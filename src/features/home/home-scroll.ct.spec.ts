@@ -5,6 +5,76 @@ import Preview from './home.preview.svelte';
 
 failOnConsoleErrors(test);
 
+test('Home keeps top controls reachable while navigating long lists', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const height = 360;
+  await page.setViewportSize({ width: 1200, height });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(Preview, { props: { scenario: 'assistant-long', height } });
+  const host = page.locator('[data-home-preview]');
+  const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+  await sidebar.getByRole('tab', { name: 'Workspaces', exact: true }).click();
+  const repositoryList = sidebar.getByRole('tabpanel', { name: 'Workspaces', exact: true });
+  const controls = component.locator(
+    '.home-sidebar-header, .home-header, [data-home-detail] > header',
+  );
+  const measureControls = () =>
+    host.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        top: bounds.top,
+        bottom: bounds.bottom,
+        outerScroll: element.scrollTop,
+        windowScroll: window.scrollY,
+        headers: Array.from(
+          element.querySelectorAll<HTMLElement>(
+            '.home-sidebar-header, .home-header, [data-home-detail] > header',
+          ),
+        )
+          .filter((header) => header.checkVisibility())
+          .map((header) => {
+            const { top, bottom } = header.getBoundingClientRect();
+            return { top, bottom };
+          }),
+      };
+    });
+  await expect(component.locator('.home-header')).toBeVisible();
+  const before = await measureControls();
+  await repositoryList.getByRole('button').last().focus();
+  await expect
+    .poll(() => repositoryList.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  const rows = component.locator('.workspace-list').getByRole('option');
+  await rows.last().focus();
+  await page.keyboard.press('Enter');
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await component.getByRole('button', { name: 'Back to list', exact: true }).click();
+  await expect(rows.last()).toBeFocused();
+  await rows.first().focus();
+  await page.keyboard.press('Enter');
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  for (const control of await controls.all()) {
+    await expect(control).toBeInViewport({ ratio: 1 });
+  }
+  const after = await measureControls();
+  expect(after.outerScroll).toBe(0);
+  expect(after.windowScroll).toBe(0);
+  for (const header of after.headers) {
+    expect(header.top).toBeGreaterThanOrEqual(before.top);
+    expect(header.bottom).toBeLessThanOrEqual(before.bottom);
+  }
+  await testInfo.attach('home-workspace-scroll.png', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-workspace-scroll.png') }),
+    contentType: 'image/png',
+  });
+  await testInfo.attach('home-workspace-scroll.json', {
+    body: JSON.stringify({ before, after }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
 type Locator = ReturnType<Awaited<ReturnType<ComponentFixtures['mount']>>['locator']>;
 
 async function measure(host: Locator) {
