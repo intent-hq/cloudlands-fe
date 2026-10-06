@@ -100,6 +100,10 @@ for (const outcome of ['rejected', 'uncertain'] as const) {
     await component.update({ props: { ...props, settleSubmission: outcome } });
     await expect(component.getByRole('button', { name: /try again/i })).toBeVisible();
     if (outcome === 'rejected') {
+      const expand = component.getByRole('button', { name: /Click to expand/i });
+      await expect(expand).toHaveAttribute('aria-expanded', 'false');
+      await expect(editor).toHaveText('Keep this newer draft');
+      await expand.click();
       await expect(
         component.getByRole('checkbox', { name: /Start with the smallest change/ }),
       ).toBeVisible();

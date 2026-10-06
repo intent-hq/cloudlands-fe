@@ -4,24 +4,55 @@ import type { Locator } from '@playwright/test';
 
 test.setTimeout(120_000);
 
-async function toggleWithMotion(button: Locator, reduced: boolean) {
-  const motion = await button.evaluate(async (node: HTMLButtonElement) => {
+async function toggleStates(button: Locator, finish: boolean) {
+  return button.evaluate(async (node: HTMLButtonElement, finish) => {
     const root = node.closest('[data-question-wizard]')!;
-    node.click();
-    await new Promise(requestAnimationFrame);
-    const states = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]'));
-    const frames = states.map((state) => ({
-      state: state.dataset.questionState,
-      exiting: state.inert,
-      animations: state.getAnimations().filter(
-        (animation) =>
-          // Svelte retains a 0.01ms bookkeeping animation for zero-duration transitions.
-          animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 1,
-      ).length,
-    }));
-    root.getAnimations({ subtree: true }).forEach((animation) => animation.finish());
-    return frames;
-  });
+    const started = new Set<EventTarget>();
+    let resolveStarted: () => void;
+    const ready = new Promise<void>((resolve) => (resolveStarted = resolve));
+    const onStart = (event: Event) => {
+      if (!(event.target instanceof HTMLElement) || !event.target.matches('[data-question-state]'))
+        return;
+      started.add(event.target);
+      if (started.size === 2) resolveStarted();
+    };
+    root.addEventListener('introstart', onStart, true);
+    root.addEventListener('outrostart', onStart, true);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      node.click();
+      await Promise.race([
+        ready,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Question branch motion did not start')), 5000);
+        }),
+      ]);
+      const states = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]'));
+      const frames = states.map((state) => ({
+        state: state.dataset.questionState,
+        exiting: state.inert,
+        animations: state
+          .getAnimations()
+          .filter(
+            (animation) =>
+              animation.playState === 'running' &&
+              Number(animation.effect?.getTiming().duration) > 1,
+          ).length,
+      }));
+      root
+        .getAnimations({ subtree: true })
+        .forEach((animation) => (finish ? animation.finish() : animation.pause()));
+      return frames;
+    } finally {
+      clearTimeout(timer);
+      root.removeEventListener('introstart', onStart, true);
+      root.removeEventListener('outrostart', onStart, true);
+    }
+  }, finish);
+}
+
+async function toggleWithMotion(button: Locator, reduced: boolean) {
+  const motion = await toggleStates(button, true);
   if (reduced) expect(motion.every((state) => state.animations === 0)).toBe(true);
   else {
     expect(motion.filter((state) => state.animations > 0)).toHaveLength(2);
@@ -30,13 +61,7 @@ async function toggleWithMotion(button: Locator, reduced: boolean) {
 }
 
 async function toggleBeforeSettling(button: Locator) {
-  await button.evaluate(async (node: HTMLButtonElement) => {
-    const root = node.closest('[data-question-wizard]')!;
-    node.click();
-    await new Promise(requestAnimationFrame);
-    // Hold both branches so the next click must reuse an unfinished outgoing surface.
-    root.getAnimations({ subtree: true }).forEach((animation) => animation.pause());
-  });
+  await toggleStates(button, false);
 }
 
 for (const { width, height, reducedMotion, theme = 'light' } of [
