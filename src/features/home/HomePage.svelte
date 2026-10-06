@@ -113,7 +113,9 @@
     if (!position) return;
     contextMenu = {
       ...position,
-      returnFocus: position.returnFocus?.closest('[role="option"], button') as HTMLElement | null,
+      returnFocus:
+        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
+        position.returnFocus,
       workspace,
     };
   }
@@ -886,6 +888,7 @@
                             onopen={openWorkspace}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
+                            oncontextmenu={showWorkspaceMenu}
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}
