@@ -432,8 +432,7 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
     const specialistStillOptimistic =
       (current?.metadata?.specialist ?? null) === specialistUpdate.specialist &&
       (specialistUpdate.model === undefined || current?.model === specialistUpdate.model) &&
-      (specialistUpdate.provider === undefined ||
-        current?.provider === specialistUpdate.provider);
+      (specialistUpdate.provider === undefined || current?.provider === specialistUpdate.provider);
     if (rollback && specialistStillOptimistic) {
       yield* put(updateSession(agentId, rollback));
     }
