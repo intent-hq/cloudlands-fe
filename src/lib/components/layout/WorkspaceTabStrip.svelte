@@ -1018,19 +1018,22 @@
                 showArrow={false}
                 maxWidth="none"
                 class="absolute -inset-px rounded-[inherit]"
-                contentClass="border-0 bg-transparent p-0 shadow-none"
+                contentClass="border-0! bg-transparent! p-0! shadow-none!"
                 contentContainerClass="space-y-0! p-0!"
               >
                 {#snippet content()}
                   <div data-workspace-tab-hover-content={workspaceId}>
-                    <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
-                    {#if shortcutForWorkspace(workspaceId)}
-                      <kbd
-                        class="block px-3 pb-2 text-right type-caption text-muted-foreground"
-                        data-workspace-tab-shortcut
-                        >{formatShortcut(shortcutForWorkspace(workspaceId)!)}</kbd
-                      >
-                    {/if}
+                    <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds}>
+                      {#snippet footer()}
+                        {#if shortcutForWorkspace(workspaceId)}
+                          <kbd
+                            class="block px-5 pb-3 text-right type-caption text-muted-foreground"
+                            data-workspace-tab-shortcut
+                            >{formatShortcut(shortcutForWorkspace(workspaceId)!)}</kbd
+                          >
+                        {/if}
+                      {/snippet}
+                    </WorkspaceHoverCard>
                   </div>
                 {/snippet}
                 <Button

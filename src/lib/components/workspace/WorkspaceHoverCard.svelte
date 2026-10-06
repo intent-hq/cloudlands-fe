@@ -17,7 +17,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToRoute } from '$lib/utils/navigation.client';
   import { classifyAgentScope } from '$shared/utils/agent-scope';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
@@ -55,6 +55,7 @@
     loadWorkspaceData?: boolean;
     onkeydown?: (event: KeyboardEvent) => void;
     staticData?: boolean;
+    footer?: Snippet;
   }
   let {
     workspace,
@@ -63,6 +64,7 @@
     loadAgentSessions = true,
     onkeydown,
     staticData = false,
+    footer,
   }: Props = $props();
   const workspaceIdStore = writable('');
   function createWorkspaceAgentsStore() {
@@ -556,6 +558,7 @@
           </section>{/if}
       </div>{/if}
   {/if}
+  {@render footer?.()}
 </section>
 
 <style>
