@@ -1,6 +1,7 @@
 import { selectWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 import { resolveGitHubPrefillSelection } from '$lib/components/workspace/initializer/github-prefill';
 import type { WorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import type { DraftAttachment } from '$lib/client/app-client';
 import { store as rendererStore } from '$store/renderer/store';
 import {
   installMockElectronBridge,
@@ -28,6 +29,14 @@ declare global {
 export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStore, 'runSaga'>) {
   const previous = window.electronAPI;
   const calls: HomeIntegrationWireCall[] = [];
+  const drafts = new Map<
+    string,
+    { text: string; attachments: DraftAttachment[]; updatedAt: string }
+  >();
+  const draftKey = (raw: unknown) => {
+    const params = raw as { workspaceId: string; agentId: string };
+    return JSON.stringify([params.workspaceId, params.agentId]);
+  };
   let releaseSearch = () => {};
   let pageFailed = false;
   let filePageFailed = false;
@@ -86,6 +95,23 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
   };
   const handlers: Record<string, MockBackendMethodHandler> = {
     'agent.getQueue': () => ({ success: true, queue: [] }),
+    'drafts.get': (raw) => drafts.get(draftKey(raw)) ?? null,
+    'drafts.set': (raw) => {
+      const params = raw as { text: string; attachments?: DraftAttachment[] };
+      const updatedAt = '2026-09-29T12:00:00Z';
+      if (!params.text && !params.attachments?.length) drafts.delete(draftKey(raw));
+      else
+        drafts.set(draftKey(raw), {
+          text: params.text,
+          attachments: params.attachments ?? [],
+          updatedAt,
+        });
+      return { ok: true, updatedAt };
+    },
+    'drafts.clear': (raw) => {
+      drafts.delete(draftKey(raw));
+      return { ok: true };
+    },
     'github.authStatus': () => ({
       isConfigured: true,
       oauthUrl: '',

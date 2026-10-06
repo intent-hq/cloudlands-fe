@@ -111,6 +111,12 @@ test('Sidebar fades in both directions and keeps filters, drafts, and toggle ali
       return Math.abs(indicator!.x - selected!.x);
     })
     .toBeLessThan(1);
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser?.calls ?? []))
+    .toContainEqual({
+      method: 'drafts.get',
+      params: { workspaceId: '__chief__', agentId: 'home-assistant-0' },
+    });
   const draft = component.locator('.home-surface [contenteditable="true"]').first();
   await draft.fill('Keep this draft through the animation');
   await page.evaluate(() => (window.__sidebarMotionRecords = []));
@@ -133,11 +139,33 @@ test('Sidebar fades in both directions and keeps filters, drafts, and toggle ali
   expect(assistantExit.frames.at(-1)!.x).toBeGreaterThan(0);
   expect(assistantExit.frames.at(-1)!.opacity).toBe(0);
   await expect(component.locator('.workspace-list').getByRole('option')).toHaveCount(1);
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser?.calls ?? []))
+    .toContainEqual({
+      method: 'drafts.set',
+      params: {
+        workspaceId: '__chief__',
+        agentId: 'home-assistant-0',
+        text: 'Keep this draft through the animation',
+      },
+    });
   await assistant.click();
   await expect(draft).toHaveText('Keep this draft through the animation');
   await expect(sidebar.locator('[data-home-sidebar-exiting]')).toHaveCount(0);
   await testInfo.attach('sidebar-directional-motion', {
     body: JSON.stringify({ forward, backward }, null, 2),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('sidebar-draft-wire', {
+    body: JSON.stringify(
+      await page.evaluate(() =>
+        (window.__homeIntegrationBrowser?.calls ?? []).filter(({ method }) =>
+          method.startsWith('drafts.'),
+        ),
+      ),
+      null,
+      2,
+    ),
     contentType: 'application/json',
   });
   await testInfo.attach('sidebar-motion-after', {
@@ -163,6 +191,12 @@ test('Sidebar handles rapid reversals, keyboard switching, and reduced motion wh
   });
   const assistant = tabs.getByRole('tab', { name: 'Assistant', exact: true });
   await expect(assistant).toHaveAttribute('aria-selected', 'true');
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser?.calls ?? []))
+    .toContainEqual({
+      method: 'drafts.get',
+      params: { workspaceId: '__chief__', agentId: 'home-assistant-0' },
+    });
   await expect(sidebar.locator('[data-home-sidebar-exiting]')).toHaveCount(0);
   await expect(sidebar.getByRole('listbox')).toBeVisible();
   expect(await sidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
