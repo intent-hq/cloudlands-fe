@@ -133,7 +133,7 @@ test('Assistant right panel resizes across the available content width', async (
   const open = component.getByRole('link', { name: 'Open the plan', exact: true });
   await open.click();
   const panel = component.locator('.assistant-content-resizable');
-  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Plan for the repository' })).toBeVisible();
   await exerciseResize(
     page,
     panel,

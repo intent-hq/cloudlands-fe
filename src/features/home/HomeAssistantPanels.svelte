@@ -114,6 +114,7 @@
   .assistant-content :global(.assistant-content-resize-handle) {
     left: -0.75rem;
     width: 0.75rem;
+    clip-path: none;
   }
   @container home-layout (max-width: 900px) {
     .assistant-panels {
