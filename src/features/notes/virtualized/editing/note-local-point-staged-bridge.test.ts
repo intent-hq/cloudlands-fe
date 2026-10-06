@@ -126,6 +126,23 @@ function reserveLinkedBootstrap(port: LinkedPort) {
   )
     throw new Error('Linked bootstrap admission denied before source IO');
 }
+/** Operation identity uses milliseconds; the original lexical lease remains untouched. */
+function linkedOperationExpiry(lexicalExpiresAt: string, nowMs: number): string {
+  const parts = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/.exec(lexicalExpiresAt);
+  if (!parts || !Number.isFinite(nowMs)) throw new Error('Invalid linked operation deadline');
+  // Drop sub-millisecond digits, never round up into a later lexical instant.
+  const operationExpiresAt = `${parts[1]}.${(parts[2] ?? '').padEnd(3, '0').slice(0, 3)}Z`;
+  const deadline = Date.parse(operationExpiresAt);
+  if (
+    !Number.isFinite(deadline) ||
+    new Date(deadline).toISOString() !== operationExpiresAt ||
+    deadline <= nowMs ||
+    deadline - nowMs > 86_400_000
+  )
+    throw new Error('Invalid linked operation deadline');
+  return operationExpiresAt;
+}
+
 const dataPrefix = '{"jsonrpc":"2.0",';
 const controlPrefix = '{"control":';
 const allowed = new Set([
@@ -1243,12 +1260,26 @@ it.skipIf(!captureEnabled)(
       };
       expect(producerCurrent()).toBe(true);
       releaseNative = offer.retain();
+      const operationExpiresAt = linkedOperationExpiry(first.expiresAt, Date.now());
+      const operationId = randomUUID();
+      await peer.evidence({
+        kind: 'admitted-producer-before-stage',
+        scope: accepted.scope,
+        baseRevision: accepted.baseRevision,
+        snapshotId: first.snapshotId,
+        lexicalExpiresAt: first.expiresAt,
+        operationExpiresAt,
+        operationId,
+        group: group.id,
+        identity: group.recipe.identity,
+      });
+      expect(producerCurrent()).toBe(true);
       const stage = createNoteStagedSaveOperation(
         (method, params) => peer.request(method, params, producerCurrent),
         {
           scope: accepted.scope,
-          operationId: randomUUID(),
-          expiresAt: first.expiresAt,
+          operationId,
+          expiresAt: operationExpiresAt,
           header: {
             baseRevision: accepted.baseRevision,
             editorSessionId: sessionId,
@@ -1332,6 +1363,8 @@ it.skipIf(!captureEnabled)(
         headerDigest: sealed.headerDigest,
         payloadDigest: sealed.payloadDigest,
         group: group.id,
+        lexicalExpiresAt: first.expiresAt,
+        operationExpiresAt,
         lengths: [2, 59, 3],
         nativeSteps: root?.steps.length,
         identity: group.recipe.identity,
@@ -2449,4 +2482,104 @@ it('starts actual socket cleanup while a slow diagnostic write remains unsettled
     remote?.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+// Exact immutable attempt3 expiry; these are constructor unit controls, not a new grant/group.
+const attempt3LexicalExpiry = '2026-10-06T03:58:18.496264109Z';
+const attempt3Clock = 1791258798495;
+function deadlineConstructor(expiresAt: string, now: () => number, current = () => true) {
+  const send = vi.fn(async () => {
+    throw new Error('offline RPC sentinel');
+  });
+  const operation = createNoteStagedSaveOperation(
+    send,
+    {
+      scope: {
+        backendId: 'unit-backend',
+        workspaceId: 'unit-workspace',
+        noteId: 'unit-note',
+        noteInstanceId: 'unit-instance',
+      },
+      operationId: '00000000-0000-4000-8000-000000000001',
+      expiresAt,
+      header: {
+        baseRevision: 'unit-revision',
+        editorSessionId: 'unit-session',
+        localEditSequence: 1,
+        liveGeneration: 1,
+        selectionGeneration: 0,
+        action: 'mutate',
+        output: 'source',
+        selection: 'all',
+      },
+    },
+    current,
+    now,
+  );
+  return { operation, send };
+}
+it('keeps exact attempt3 lexical expiry while deriving an earlier canonical operation deadline', async () => {
+  const source = Object.freeze({ expiresAt: attempt3LexicalExpiry });
+  expect(() => deadlineConstructor(source.expiresAt, () => attempt3Clock)).toThrow(
+    'Invalid staged source identity',
+  );
+  const operationExpiresAt = linkedOperationExpiry(source.expiresAt, attempt3Clock);
+  expect(operationExpiresAt).toBe('2026-10-06T03:58:18.496Z');
+  // Integer nanoseconds independently prove flooring, without Date.parse discarding the evidence.
+  const lexicalNanos = BigInt(Date.parse('2026-10-06T03:58:18.000Z')) * 1000000n + 496264109n;
+  expect(BigInt(Date.parse(operationExpiresAt)) * 1000000n).toBeLessThan(lexicalNanos);
+  const { operation, send } = deadlineConstructor(operationExpiresAt, () => attempt3Clock);
+  await expect(operation.begin()).rejects.toThrow('offline RPC sentinel');
+  expect(send).toHaveBeenCalledOnce();
+  expect(send.mock.calls[0]).toEqual([
+    'note.operation.begin',
+    expect.objectContaining({ expiresAt: operationExpiresAt }),
+  ]);
+  expect(source.expiresAt).toBe(attempt3LexicalExpiry);
+});
+it.each([
+  NaN,
+  Infinity,
+  Date.parse('2026-10-06T03:58:18.496Z'),
+  Date.parse('2026-10-06T03:58:18.496Z') + 1,
+  attempt3Clock - 86400000,
+])('refuses nonfinite, expired, or excessive operation interval at %s', (now) => {
+  expect(() => linkedOperationExpiry(attempt3LexicalExpiry, now)).toThrow(
+    'Invalid linked operation deadline',
+  );
+});
+it.each(['invalid', '2026-02-30T03:58:18.496Z', '2026-10-06T03:58:18.4962641090Z'])(
+  'refuses invalid lexical deadline %s without manufacturing an identity',
+  (value) => {
+    expect(() => linkedOperationExpiry(value, attempt3Clock)).toThrow(
+      'Invalid linked operation deadline',
+    );
+  },
+);
+it('floors at the expiry boundary and preserves exact millisecond and whole-second inputs', () => {
+  const end = Date.parse('2026-10-06T03:58:18.496Z');
+  expect(linkedOperationExpiry(attempt3LexicalExpiry, end - 1)).toBe('2026-10-06T03:58:18.496Z');
+  expect(linkedOperationExpiry('2026-10-06T03:58:18.496Z', end - 1)).toBe(
+    '2026-10-06T03:58:18.496Z',
+  );
+  expect(linkedOperationExpiry('2026-10-06T03:58:18Z', attempt3Clock)).toBe(
+    '2026-10-06T03:58:18.000Z',
+  );
+});
+it('rechecks operation expiry and producer loss before beginning offline', async () => {
+  let now = attempt3Clock;
+  const expiresAt = linkedOperationExpiry(attempt3LexicalExpiry, now);
+  const expired = deadlineConstructor(expiresAt, () => now);
+  now = Date.parse(expiresAt);
+  await expect(expired.operation.begin()).rejects.toThrow('expired or superseded');
+  expect(expired.send).not.toHaveBeenCalled();
+  let live = true;
+  const lost = deadlineConstructor(
+    expiresAt,
+    () => attempt3Clock,
+    () => live,
+  );
+  live = false;
+  await expect(lost.operation.begin()).rejects.toThrow('expired or superseded');
+  expect(lost.send).not.toHaveBeenCalled();
 });
