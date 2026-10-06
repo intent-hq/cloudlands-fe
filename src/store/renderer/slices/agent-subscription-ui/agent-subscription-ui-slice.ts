@@ -12,6 +12,7 @@ import type {
   AgentSubscriptionUIEntry,
   AgentStatus,
   Subscription,
+  EventSubscription,
   DelegationGroupStatus,
   WokenUpInfo,
 } from './agent-subscription-ui-types';
@@ -48,6 +49,7 @@ export const setSubscriptionSnapshot = createAction(
     agentId: string,
     data: {
       subscriptions: Subscription[];
+      eventSubscriptions?: EventSubscription[];
       delegationGroups: DelegationGroupStatus[];
       agentStatuses: Record<string, AgentStatus>;
       waitingState: 'idle' | 'waiting' | 'woken' | 'completed';
@@ -132,6 +134,10 @@ agentSubscriptionUIReducer.with(setSubscriptionSnapshot, (state, { payload }) =>
       [key]: {
         ...existing,
         subscriptions: payload.data.subscriptions,
+        ...(payload.data.eventSubscriptions !== undefined ||
+        existing.eventSubscriptions !== undefined
+          ? { eventSubscriptions: payload.data.eventSubscriptions ?? [] }
+          : {}),
         delegationGroups: payload.data.delegationGroups,
         agentStatuses: payload.data.agentStatuses,
         waitingState: payload.data.waitingState,

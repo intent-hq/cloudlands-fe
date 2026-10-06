@@ -1,6 +1,21 @@
 import { store } from '$store/renderer/store';
 import { getRendererStore } from '$store/renderer/renderer-store-bridge';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
+import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-browser-fixtures';
+
+export function startHomePreviewFixtures() {
+  return startHomePreview(() => {
+    const stopIntegrations = setupHomeIntegrationsFixtures(store);
+    const stopActivity = setupHomeAssistantActivityFixtures();
+    return [
+      () => {
+        stopActivity();
+        stopIntegrations();
+      },
+    ];
+  });
+}
 
 export function startHomePreview(startSagas: () => Array<() => void>) {
   let initialized = false;

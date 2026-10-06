@@ -56,7 +56,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function harness(capability: unknown = 1, avatarCapability?: unknown) {
+async function harness(
+  capability: unknown = 1,
+  avatarCapability?: unknown,
+  configCapability?: unknown,
+) {
   const socket = new Socket();
   const client = new JsonRpcClient({
     socketFactory: () => socket as unknown as Duplex,
@@ -74,7 +78,11 @@ async function harness(capability: unknown = 1, avatarCapability?: unknown) {
   socket.result(1, {
     clientId: 'original',
     server: {
-      capabilities: { gitlabCheckout: capability, gitlabCheckoutOwnerAvatar: avatarCapability },
+      capabilities: {
+        gitlabCheckout: capability,
+        gitlabCheckoutOwnerAvatar: avatarCapability,
+        gitlabCheckoutRepoConfig: configCapability,
+      },
     },
   });
   await vi.waitFor(() => expect(client.getRepositoryConnection()).not.toBeNull());
@@ -96,6 +104,85 @@ async function harness(capability: unknown = 1, avatarCapability?: unknown) {
 }
 
 describe('qualified checkout on the original JSON-RPC socket', () => {
+  it.each([undefined, null, false, '1', 2])(
+    'does not issue a config read without exact capability %j',
+    async (capability) => {
+      const h = await harness(1, undefined, capability);
+      const session = await h.lease();
+      const { mode: _mode, ...query } = selection;
+      const count = h.socket.frames.length;
+      expect(session.repoConfigSupported).toBe(false);
+      expect(await session.repoConfig(query)).toEqual({ status: 'unavailable', reason: 'retired' });
+      expect(h.socket.frames).toHaveLength(count);
+    },
+  );
+
+  it.each([null, {}, { setupScript: 'echo committed' }])(
+    'reads config at the selected commit on the original binding (%j)',
+    async (config) => {
+      const h = await harness(1, undefined, 1);
+      const session = await h.lease();
+      const { mode: _mode, ...query } = selection;
+      const reading = session.repoConfig(query);
+      expect(h.socket.last()).toMatchObject({
+        method: 'sourceControl.checkout.repoConfig',
+        params: query,
+      });
+      expect(h.socket.last().params).not.toHaveProperty('mode');
+      const value = {
+        projectPath: query.projectPath,
+        branch: query.branch,
+        commitSha: query.commitSha,
+        exists: config !== null,
+        config,
+      };
+      h.socket.result(h.socket.last().id, ready(value));
+      await expect(reading).resolves.toEqual(ready(value));
+      expect(session.repoConfigSupported).toBe(true);
+    },
+  );
+
+  it.each(['projectPath', 'branch', 'commitSha'])(
+    'rejects a config reply for a different %s',
+    async (field) => {
+      const h = await harness(1, undefined, 1);
+      const session = await h.lease();
+      const { mode: _mode, ...query } = selection;
+      const reading = session.repoConfig(query);
+      const failed = expect(reading).rejects.toThrow('REPOSITORY_CHECKOUT_RESULT_MISMATCH');
+      h.socket.result(
+        h.socket.last().id,
+        ready({
+          projectPath: query.projectPath,
+          branch: query.branch,
+          commitSha: query.commitSha,
+          [field]: field === 'commitSha' ? 'b'.repeat(40) : 'other/project',
+          config: {},
+          exists: true,
+        }),
+      );
+      await failed;
+      expect(session.isCurrent()).toBe(false);
+    },
+  );
+
+  it('does not turn an unavailable config read into an absent file', async () => {
+    const h = await harness(1, undefined, 1);
+    const session = await h.lease();
+    const { mode: _mode, ...query } = selection;
+    const reading = session.repoConfig(query);
+    h.socket.result(h.socket.last().id, {
+      status: 'unavailable',
+      reason: 'rate-limited',
+      retryAfterMs: 5000,
+    });
+    await expect(reading).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'rate-limited',
+      retryAfterMs: 5000,
+    });
+  });
+
   it.each([undefined, null, false, '1', 2, 1])(
     'negotiates owner avatars only on the original exact capability %j',
     async (avatarCapability) => {

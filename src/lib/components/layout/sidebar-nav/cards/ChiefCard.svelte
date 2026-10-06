@@ -73,7 +73,8 @@
   // withheld in a guest window.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
 
-  let { isActive = true }: { isActive?: boolean } = $props();
+  let { isActive = true, threadPicker = true }: { isActive?: boolean; threadPicker?: boolean } =
+    $props();
 
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
@@ -94,6 +95,15 @@
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
   let hasActivatedChat = $state(false);
+  let hadThreads = false;
+
+  $effect(() => {
+    const hasThreads = $chiefThreads$.length > 0;
+    // Removing the last thread should return Assistant to its first-start flow.
+    // Reset only on that transition so a failed creation cannot retry forever.
+    if (hadThreads && !hasThreads) hasAutoStartedRef = false;
+    hadThreads = hasThreads;
+  });
 
   const activeChiefThread = $derived(
     $chiefActiveAgentId$
@@ -143,6 +153,10 @@
     if (selectedAgentId && $chiefThreads$.some((thread) => thread.agentId === selectedAgentId))
       return;
     selectedAgentId = defaultThread?.agentId ?? null;
+    if ($chiefActiveAgentId$ && selectedAgentId !== $chiefActiveAgentId$) {
+      appStore.dispatch(setChiefActiveAgentId(selectedAgentId));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, selectedAgentId));
+    }
   });
 
   $effect(() => {
@@ -261,57 +275,69 @@
   }
 </script>
 
-<div class="flex h-full min-h-0 flex-col">
+<div
+  class="flex h-full min-h-0 flex-col"
+  style:--chief-aurora-left="-1.5rem"
+  style:--chief-aurora-right="-1.5rem"
+  style:--chief-aurora-bottom="-1.25rem"
+  style:--chief-aurora-radius="calc(var(--radius-large) * 1.5)"
+>
   <div
-    class="flex shrink-0 items-center justify-between gap-1 border-b border-border px-6 py-3"
+    class="home-assistant-header flex shrink-0 items-center justify-between gap-1 border-b border-border px-6"
     data-chief-header-row
   >
     <div class="flex min-w-0 flex-1 items-center gap-1.5">
-      <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
-        <Select.Trigger
-          variant="ghost"
-          aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
-          class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
-        >
-          <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
-            {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
-          </span>
-          <Fa icon={faChevronDown} class="shrink-0 text-muted-foreground" />
-        </Select.Trigger>
-        <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
-          {#each $chiefThreads$ as thread (thread.agentId)}
-            <Select.Item value={thread.agentId} label={thread.title}>
-              <span class="flex min-w-0 items-center gap-1.5">
-                {#if thread.isActive}
-                  <span
-                    class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                    aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
-                  ></span>
-                {/if}
-                <span class="truncate">{thread.title}</span>
-              </span>
-            </Select.Item>
-          {:else}
-            <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
-              {m.layout_chiefCard_noThreads_label()}
-            </div>
-          {/each}
-        </Select.Content>
-      </Select.Root>
-      {#if activeThread && !$hidesAgentLifecycleActions$}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
-          title={m.layout_chiefCard_deleteThread_tooltip()}
-          onclick={(event) => {
-            if (activeThread) handleDeleteThread(event, activeThread.agentId, activeThread.title);
-          }}
-        >
-          <Fa icon={faTrash} size="xs" />
-        </Button>
+      {#if threadPicker}
+        <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
+          <Select.Trigger
+            variant="ghost"
+            aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
+            class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
+          >
+            <span class="type-body min-w-0 flex-1 truncate text-left font-medium">
+              {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
+            </span>
+            <Fa icon={faChevronDown} class="shrink-0 text-muted-foreground" />
+          </Select.Trigger>
+          <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
+            {#each $chiefThreads$ as thread (thread.agentId)}
+              <Select.Item value={thread.agentId} label={thread.title}>
+                <span class="flex min-w-0 items-center gap-1.5">
+                  {#if thread.isActive}
+                    <span
+                      class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                      aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+                    ></span>
+                  {/if}
+                  <span class="truncate">{thread.title}</span>
+                </span>
+              </Select.Item>
+            {:else}
+              <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
+                {m.layout_chiefCard_noThreads_label()}
+              </div>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {:else}
+        <h2 class="min-w-0 truncate type-body font-medium" title={activeThread?.title}>
+          {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
+        </h2>
       {/if}
     </div>
+    {#if activeThread && !$hidesAgentLifecycleActions$}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
+        title={m.layout_chiefCard_deleteThread_tooltip()}
+        onclick={(event) => {
+          if (activeThread) handleDeleteThread(event, activeThread.agentId, activeThread.title);
+        }}
+      >
+        <Fa icon={faTrash} size="xs" />
+      </Button>
+    {/if}
     {#if !$hidesAgentLifecycleActions$}
       <div class="flex w-6 shrink-0 items-center">
         <Button
@@ -333,7 +359,7 @@
     {/if}
   </div>
 
-  <div class="min-h-0 flex-1 overflow-clip px-6 py-5 [overflow-clip-margin:0.5rem]">
+  <div class="min-h-0 flex-1 overflow-clip px-6 pt-4 pb-5 [overflow-clip-margin:0.5rem]">
     <section class="flex h-full min-h-0 flex-col">
       {#if hasActivatedChat && activeAgentId}
         {#key activeAgentId}

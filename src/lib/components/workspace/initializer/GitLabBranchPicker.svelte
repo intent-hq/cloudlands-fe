@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/ui/button';
   import * as Popover from '$lib/components/ui/popover';
@@ -12,19 +15,43 @@
     placeholder,
     protectedLabel,
     triggerClass,
+    isLoading = false,
+    showTriggerChevron = false,
+    triggerChevronClass,
     onSelect,
     onOpenChange,
     ...list
   }: GitLabBranchPickerProps = $props();
   let open = $state(false);
   const dialogPortalTarget = useDialogPortalTarget();
+  const loading = $derived(isLoading || list.page.status === 'loading');
 </script>
 
 <Popover.Root bind:open onOpenChange={(next) => onOpenChange?.(next, list.scopeKey)}>
   <Popover.Trigger>
     {#snippet child({ props })}
-      <Button {...props} variant="ghost" type="button" class={triggerClass}>
-        <span class="truncate">{selectedBranch?.name || placeholder}</span>
+      <Button
+        {...props}
+        variant="ghost"
+        type="button"
+        class={`min-w-0 max-w-full text-muted-foreground ${triggerClass ?? ''}`}
+        aria-busy={loading}
+      >
+        <span class="flex min-w-0 items-center gap-0.75 truncate">
+          {#if !selectedBranch && loading}
+            <IntentMarkLoader size={14} class="text-ghost" />
+            <span class="sr-only">{list.copy.loadingLabel}</span>
+          {:else}
+            <span class="flex-1 min-w-0 text-left truncate"
+              >{selectedBranch?.name || placeholder}</span
+            >
+          {/if}
+          {#if showTriggerChevron && !loading}<Fa
+              icon={faChevronDown}
+              size={10}
+              class={triggerChevronClass}
+            />{/if}
+        </span>
       </Button>
     {/snippet}
   </Popover.Trigger>

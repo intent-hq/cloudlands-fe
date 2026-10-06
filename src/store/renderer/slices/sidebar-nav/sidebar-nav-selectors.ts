@@ -8,6 +8,19 @@ import type { AgentMessage, AgentSession } from '$shared/types';
 import { CHIEF_WORKSPACE_ID, type ChiefThreadSummary } from './sidebar-nav-types';
 import { getChiefThreadTitle } from './chief-thread-title';
 import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+import {
+  selectBackgroundHooks,
+  selectBackgroundHooksSnapshotStatus,
+} from '../background-hooks/background-hooks-selectors';
+import {
+  selectAgentPrMonitors,
+  selectPrMonitorsSnapshotStatus,
+} from '../pr-monitor/pr-monitor-selectors';
+import { selectScriptMonitors } from '../script-monitor/script-monitor-selectors';
+import {
+  selectAgentEventSubscriptions,
+  selectAgentSubscriptions,
+} from '../agent-subscription-ui/agent-subscription-ui-selectors';
 
 function getMessageTimestamp(message: AgentMessage | undefined): number {
   const value = message?.timestamp;
@@ -101,6 +114,46 @@ export const selectWorkspaceCollapsedNoteIds = store.createSelector(
 export const selectChiefActiveAgentId = store.createSelector(
   (state): string | null => state.sidebarNav.chiefActiveAgentId,
 );
+
+export const selectAssistantThreadActivity = store.createSelector((state, agentId: string) => {
+  const session = state.agentSessions.byAgentId[agentId];
+  if (session?.workspaceId !== CHIEF_WORKSPACE_ID)
+    return { hooks: 0, monitors: 0, subscriptions: 0 };
+  const hooks =
+    selectBackgroundHooksSnapshotStatus.select(state, CHIEF_WORKSPACE_ID) === 'ready'
+      ? selectBackgroundHooks
+          .select(state, CHIEF_WORKSPACE_ID)
+          .filter(
+            (hook) =>
+              hook.agentId === agentId && (hook.state === 'scheduled' || hook.state === 'running'),
+          ).length
+      : (session.waitingOnHooks?.length ?? 0);
+  const prs =
+    selectPrMonitorsSnapshotStatus.select(state, CHIEF_WORKSPACE_ID) === 'ready'
+      ? selectAgentPrMonitors
+          .select(state, CHIEF_WORKSPACE_ID, agentId)
+          .filter((monitor) => monitor.state === 'active').length
+      : (session.waitingOnPrMonitors?.length ?? 0);
+  const scripts = selectScriptMonitors.select(state, CHIEF_WORKSPACE_ID);
+  const scriptCount =
+    scripts.status === 'unsupported'
+      ? 0
+      : scripts.status === 'ready'
+        ? scripts.monitors.filter(
+            (monitor) => monitor.agentId === agentId && monitor.state === 'active',
+          ).length
+        : (session.waitingOnScriptMonitors?.length ?? 0);
+  const watches =
+    session.isWaitingForOtherAgents === false
+      ? 0
+      : (session.waitingForAgentIds?.length ??
+        (selectAgentSubscriptions.select(state, CHIEF_WORKSPACE_ID, agentId).length ||
+          (session.isWaitingForOtherAgents ? 1 : 0)));
+  const events = selectAgentEventSubscriptions
+    .select(state, CHIEF_WORKSPACE_ID, agentId)
+    .filter((subscription) => subscription.subscriberAgentId === agentId).length;
+  return { hooks, monitors: prs + scriptCount, subscriptions: watches + events };
+});
 
 export const selectStatsOverlayOpen = store.createSelector(
   (state): boolean => state.sidebarNav.statsOverlayOpen,

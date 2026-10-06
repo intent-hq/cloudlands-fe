@@ -256,7 +256,7 @@ describe('sidebar nav Chief selectors', () => {
             messageCount,
             metadata: {
               specialist: CHIEF_SPECIALIST_ID,
-              chiefPromptVersion: 3,
+              chiefPromptVersion: CHIEF_PROMPT_VERSION,
             },
           },
         ],
@@ -357,9 +357,21 @@ describe('sidebar nav Chief selectors', () => {
       version: undefined,
       createdAt: '2099-01-01T00:00:00Z',
     },
-    { label: 'old marker on a future chat', version: 2, createdAt: '2099-01-01T00:00:00Z' },
-    { label: 'newer unsupported marker', version: 4, createdAt: '2099-01-01T00:00:00Z' },
-    { label: 'numeric string', version: '3', createdAt: '2099-01-01T00:00:00Z' },
+    {
+      label: 'old marker on a future chat',
+      version: CHIEF_PROMPT_VERSION - 1,
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    {
+      label: 'newer unsupported marker',
+      version: CHIEF_PROMPT_VERSION + 1,
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    {
+      label: 'numeric string',
+      version: String(CHIEF_PROMPT_VERSION),
+      createdAt: '2099-01-01T00:00:00Z',
+    },
     { label: 'null marker', version: null, createdAt: '2099-01-01T00:00:00Z' },
     { label: 'boolean marker', version: true, createdAt: '2099-01-01T00:00:00Z' },
   ])('fails closed after reloading $label', async ({ version, createdAt }) => {
@@ -401,7 +413,7 @@ describe('sidebar nav Chief selectors', () => {
       CHIEF_WORKSPACE_ID,
       [],
       '2099-01-01T00:00:00Z',
-      { metadata: { specialist, chiefPromptVersion: 3 } },
+      { metadata: { specialist, chiefPromptVersion: CHIEF_PROMPT_VERSION } },
     );
     expect(selectCurrentChiefThread.select(stateWithSessions([chief]))).toBeNull();
     expect(selectReusableChiefThread.select(stateWithSessions([chief]))).toBeNull();
@@ -423,9 +435,9 @@ describe('sidebar nav Chief selectors', () => {
     try {
       for (const [incoming, expectedId] of [
         [undefined, null],
-        [3, 'chief-wire'],
+        [CHIEF_PROMPT_VERSION, 'chief-wire'],
         [2, null],
-        [3, 'chief-wire'],
+        [CHIEF_PROMPT_VERSION, 'chief-wire'],
         [undefined, null],
       ] as const) {
         version = incoming;
@@ -516,7 +528,7 @@ function wireChief(overrides: Record<string, unknown> = {}) {
     createdAt: '2026-09-24T00:00:00Z',
     updatedAt: '2026-09-24T00:00:00Z',
     messageCount: 0,
-    metadata: { specialist: 'chief-of-staff', chiefPromptVersion: 3 },
+    metadata: { specialist: 'chief-of-staff', chiefPromptVersion: CHIEF_PROMPT_VERSION },
     ...overrides,
   };
 }

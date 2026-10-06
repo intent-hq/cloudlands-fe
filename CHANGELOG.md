@@ -4,6 +4,44 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.210.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.3...v2.210.4) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.25 ([#3255](https://github.com/intent-hq/cloudlands-fe/issues/3255)) ([e5c1770](https://github.com/intent-hq/cloudlands-fe/commit/e5c1770615a3d204f21e9a1933e697957fec4bf7))
+* match GitLab workspace creation to GitHub ([#3244](https://github.com/intent-hq/cloudlands-fe/issues/3244)) ([6a80306](https://github.com/intent-hq/cloudlands-fe/commit/6a803060341109090d3ddae33688c0e2c8b0d68e))
+* **ui:** Render update toast confetti in neutral grey ([#3186](https://github.com/intent-hq/cloudlands-fe/issues/3186)) ([2c0b142](https://github.com/intent-hq/cloudlands-fe/commit/2c0b1426353f7b70107017408b2141a01eab2ccb))
+
+## [2.210.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.2...v2.210.3) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.24 ([#3247](https://github.com/intent-hq/cloudlands-fe/issues/3247)) ([b6440f7](https://github.com/intent-hq/cloudlands-fe/commit/b6440f7841e7102c81e4af9b54eb052306fa3ced))
+
+## [2.210.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.1...v2.210.2) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.23 ([#3246](https://github.com/intent-hq/cloudlands-fe/issues/3246)) ([c175452](https://github.com/intent-hq/cloudlands-fe/commit/c175452703a4e1d26fe270d293741c8636dab8fd))
+* make backend lifecycle fixture ownership platform explicit ([#3241](https://github.com/intent-hq/cloudlands-fe/issues/3241)) ([4c5a70a](https://github.com/intent-hq/cloudlands-fe/commit/4c5a70aafd61c7382abcb50b05b40f737cc0e294))
+
+## [2.210.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.0...v2.210.1) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.22 ([#3242](https://github.com/intent-hq/cloudlands-fe/issues/3242)) ([512d56b](https://github.com/intent-hq/cloudlands-fe/commit/512d56b8f4d8a850703e80cac43a484ed55e8834))
+
+## [2.210.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.209.2...v2.210.0) (2026-10-06)
+
+
+### 🚀 Features
+
+* restore Home sidebar tabs and Assistant panels ([#3237](https://github.com/intent-hq/cloudlands-fe/issues/3237)) ([cf8b81a](https://github.com/intent-hq/cloudlands-fe/commit/cf8b81a8e2174d1dc1f0a8a6a7e1b2751a080c2f))
+
 ## [2.209.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.209.1...v2.209.2) (2026-10-06)
 
 

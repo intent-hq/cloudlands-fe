@@ -250,7 +250,11 @@
         return m.chat_shared_spec_label();
       }
       // Look up the note from the store
-      const note = selectNoteById.select(appStore.state, workspaceId, tab.noteId);
+      const note = selectNoteById.select(
+        appStore.state,
+        tab.workspaceId ?? workspaceId,
+        tab.noteId,
+      );
       if (note) {
         return note.title || m.layout_panelLayout_untitled_fallback();
       }

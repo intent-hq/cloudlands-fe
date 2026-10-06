@@ -180,7 +180,7 @@ describe('Chief card migration contract', () => {
           CHIEF_WORKSPACE_ID,
           {
             agentType: 'workspace',
-            metadata: { chiefPromptVersion: 3, specialist: 'chief-of-staff' },
+            metadata: { chiefPromptVersion: CHIEF_PROMPT_VERSION, specialist: 'chief-of-staff' },
           },
           { openAgent: false },
         ],
@@ -208,7 +208,7 @@ describe('Chief card migration contract', () => {
         legacy,
         makeChiefSession(CURRENT_THREAD_ID, {
           createdAt: '2026-09-24T00:00:00.000Z',
-          chiefPromptVersion: 3,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
         }),
       ]),
     );
@@ -233,7 +233,7 @@ describe('Chief card migration contract', () => {
   it('creates on New chat rather than reusing a current nonempty thread', async () => {
     const current = makeChiefSession(CURRENT_THREAD_ID, {
       createdAt: '2026-09-24T00:00:00.000Z',
-      chiefPromptVersion: 3,
+      chiefPromptVersion: CHIEF_PROMPT_VERSION,
     });
     current.messageCount = 1;
     appStore.dispatch(bulkUpsertSessions([current]));

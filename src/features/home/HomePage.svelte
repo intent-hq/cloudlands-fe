@@ -1,6 +1,7 @@
 <script lang="ts">
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
+  import { homeSidebarMotion } from './home-sidebar-motion';
   import './home.css';
   import { goto } from '$app/navigation';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
@@ -26,7 +27,7 @@
     faTrash,
     faArrowUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
   import HomeWorkspaceControls from './HomeWorkspaceControls.svelte';
@@ -34,8 +35,10 @@
   import { ListRow, ListView, SectionedList } from '$lib/components/patterns/collection';
   import { Screen, EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import HomeLoading from './HomeLoading.svelte';
-  import { fly, animatedHeight } from '$lib/motion';
+  import { springIn, crispOut, animatedHeight } from '$lib/motion';
   import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
+  import HomeAssistantThreads from './HomeAssistantThreads.svelte';
+  import HomeAssistantPanels from './HomeAssistantPanels.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
@@ -186,13 +189,33 @@
   $effect(() => {
     if (!preview && !$collaborator$ && !$knownReposLoaded$) store.dispatch(loadKnownRepos());
   });
-  const destination = $derived($panelItem$ === 'chief' ? 'assistant' : 'workspaces');
+  const destination = $derived(
+    !$collaborator$ && $panelItem$ === 'chief' ? 'assistant' : 'workspaces',
+  );
+  let mainDirection = $state(1);
+  let previousDestination = untrack(() => destination);
+  $effect.pre(() => {
+    const next = destination;
+    untrack(() => {
+      if (next !== previousDestination) {
+        mainDirection = next === 'assistant' ? 1 : -1;
+        previousDestination = next;
+      }
+    });
+  });
+  let assistantActivated = $state(false);
+  $effect(() => {
+    if (destination === 'assistant') assistantActivated = true;
+  });
+  function chooseDestination(value: string) {
+    if (value === 'assistant' && !$collaborator$) store.dispatch(openPanel('chief'));
+    else if (value === 'workspaces') store.dispatch(closePanel());
+  }
   const view$ = selectHomeWorkspaceView();
   const workspaceError$ = selectHomeWorkspaceError();
   const repoKey = $derived($view$.repoKey);
   const filter = $derived($view$.filter);
   const tab = $derived($view$.tab);
-  let tabDirection = $state(1);
   const query = $derived($view$.query);
   const selectedId = $derived($view$.selectedId);
   function updateView(changes: Parameters<typeof updateHomeWorkspaceView>[0]) {
@@ -526,33 +549,21 @@
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
   class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
+  use:homeSidebarMotion={destination}
 >
   <ResizablePanel
     storageKey="home-repository-sidebar-width"
     side="left"
-    minWidth={160}
+    minWidth={200}
     maxWidth={360}
     defaultWidth={224}
     className="home-sidebar-resizable flex h-full min-h-0 flex-col"
     handleClassName="home-sidebar-resize-handle"
   >
     <nav
-      class="home-sidebar h-full min-h-0 overflow-y-auto px-2 py-3"
+      class="home-sidebar flex h-full min-h-0 flex-col px-2 py-3"
       aria-label={m.home_navigation_label()}
     >
-      {#if !$collaborator$}
-        <Button
-          variant="ghost"
-          active={destination === 'assistant'}
-          aria-current={destination === 'assistant' ? 'page' : undefined}
-          class="mb-1 h-9 w-full justify-start px-2 py-2"
-          onclick={() => {
-            store.dispatch(openPanel('chief'));
-          }}
-        >
-          <span class="flex-1 text-left">{m.home_assistant()}</span>
-        </Button>
-      {/if}
       {#snippet sidebarCounts(items: readonly Workspace[], showStatus = true)}
         {@const needsYou = countNeedsYou(items) > 0}
         {@const running = items.some((workspace) => matchesHomeFilter(workspace, 'running'))}
@@ -599,586 +610,581 @@
           </Button>
         </Tooltip.Tooltip>
       {/snippet}
-      <Button
-        variant="ghost"
-        active={repoKey === null && destination === 'workspaces'}
-        class="mb-1 h-9 w-full justify-start px-2 py-2"
-        onclick={() => chooseRepo(null)}
-        ><span class="flex-1 text-left">{m.home_all_repositories()}</span>{@render sidebarCounts(
-          workspaces,
-          false,
-        )}</Button
+      <Tabs.Root
+        value={destination}
+        onValueChange={chooseDestination}
+        size="compact"
+        class="flex min-h-0 flex-1 flex-col"
       >
-      {#each sidebar.groups as group (group.key)}
-        {@const expansionKey = `sidebar:${group.key}`}
-        {@const expanded = $view$.expandedGroups[expansionKey] !== false}
-        <div class="mt-4" data-home-repository-group={group.owner ?? group.key}>
-          <div class="group/org relative flex items-center">
+        {#if !$collaborator$}
+          <div class="home-sidebar-header flex shrink-0 items-center">
+            <Tabs.List
+              aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
+              class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1"
+            >
+              <Tabs.Trigger value="workspaces" class="min-w-0 px-1 font-medium">
+                {m.home_tab_workspaces()}
+              </Tabs.Trigger>
+              <Tabs.Trigger value="assistant" class="min-w-0 px-1 font-medium">
+                {m.home_assistant()}
+              </Tabs.Trigger>
+            </Tabs.List>
+          </div>
+        {/if}
+        <div class="home-sidebar-contents">
+          <Tabs.Content
+            value="workspaces"
+            class="home-sidebar-content mt-0 min-h-0 overflow-y-auto"
+            inert={destination !== 'workspaces'}
+            aria-hidden={destination !== 'workspaces'}
+          >
             <Button
               variant="ghost"
-              active={repoKey === expansionKey && destination === 'workspaces'}
-              class="h-9 w-full justify-start gap-2 pl-9 pr-2 text-muted-foreground"
-              onclick={() => chooseRepo(expansionKey)}
+              active={repoKey === null && destination === 'workspaces'}
+              class="mb-1 h-9 w-full justify-start px-2 py-2"
+              onclick={() => chooseRepo(null)}
+              ><span class="flex-1 text-left">{m.home_all_repositories()}</span
+              >{@render sidebarCounts(workspaces, false)}</Button
             >
-              <Tooltip.Provider
-                ><Tooltip.Root
-                  ><Tooltip.Trigger
-                    >{#snippet child({ props: homeTooltipProps })}<span
-                        {...homeTooltipProps}
-                        class="min-w-0 flex-1 truncate text-left font-medium">{group.label}</span
-                      >{/snippet}</Tooltip.Trigger
-                  ><Tooltip.Content>{group.label}</Tooltip.Content></Tooltip.Root
-                ></Tooltip.Provider
+            {#each sidebar.groups as group (group.key)}
+              {@const expansionKey = `sidebar:${group.key}`}
+              {@const expanded = $view$.expandedGroups[expansionKey] !== false}
+              <div class="mt-4" data-home-repository-group={group.owner ?? group.key}>
+                <div class="group/org relative flex items-center">
+                  <Button
+                    variant="ghost"
+                    active={repoKey === expansionKey && destination === 'workspaces'}
+                    class="h-9 w-full justify-start gap-2 pl-9 pr-2 text-muted-foreground"
+                    onclick={() => chooseRepo(expansionKey)}
+                  >
+                    <Tooltip.Provider
+                      ><Tooltip.Root
+                        ><Tooltip.Trigger
+                          >{#snippet child({ props: homeTooltipProps })}<span
+                              {...homeTooltipProps}
+                              class="min-w-0 flex-1 truncate text-left font-medium"
+                              >{group.label}</span
+                            >{/snippet}</Tooltip.Trigger
+                        ><Tooltip.Content>{group.label}</Tooltip.Content></Tooltip.Root
+                      ></Tooltip.Provider
+                    >
+                    {#if !expanded}{@render sidebarCounts(
+                        group.items.flatMap((repo) => repo.workspaces),
+                      )}{/if}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="absolute left-1 size-7"
+                    aria-label={group.label}
+                    aria-expanded={expanded}
+                    onclick={() =>
+                      updateView({
+                        expandedGroups: { ...$view$.expandedGroups, [expansionKey]: !expanded },
+                      })}
+                  >
+                    <span
+                      class="flex size-5 items-center justify-center group-hover/org:opacity-0 group-focus-within/org:opacity-0"
+                    >
+                      {#if group.owner}<GitHubAvatar
+                          identity={group.owner}
+                          size={20}
+                          class="shrink-0 rounded-sm"
+                        />{:else}<Fa icon={faFolder} />{/if}
+                    </span>
+                    <span
+                      class="absolute flex items-center justify-center opacity-0 group-hover/org:opacity-100 group-focus-within/org:opacity-100"
+                    >
+                      <Fa
+                        icon={faChevronRight}
+                        class={expanded ? 'size-3! rotate-90' : 'size-3!'}
+                        size={12}
+                      />
+                    </span>
+                  </Button>
+                </div>
+                <div use:animatedHeight={expanded} inert={!expanded} aria-hidden={!expanded}>
+                  <div class="pl-7">
+                    {#each group.items as repo (repo.key)}
+                      {@render repoButton(repo)}
+                    {/each}
+                  </div>
+                </div>
+              </div>
+            {/each}
+            {#if sidebar.unassigned.length}
+              <div class="mt-4">
+                {#each sidebar.unassigned as repo (repo.key)}
+                  {@render repoButton(repo)}
+                {/each}
+              </div>
+            {/if}
+            {#if repositoryGroups.length === 0 && $hasLoaded$}<p
+                class="px-2 py-3 type-caption text-muted-foreground"
               >
-              {#if !expanded}{@render sidebarCounts(
-                  group.items.flatMap((repo) => repo.workspaces),
-                )}{/if}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="absolute left-1 size-7"
-              aria-label={group.label}
-              aria-expanded={expanded}
-              onclick={() =>
-                updateView({
-                  expandedGroups: { ...$view$.expandedGroups, [expansionKey]: !expanded },
-                })}
+                {m.home_no_repositories()}
+              </p>{/if}
+          </Tabs.Content>
+          {#if !$collaborator$}
+            <Tabs.Content
+              value="assistant"
+              class="home-sidebar-content mt-0 flex min-h-0 flex-col"
+              inert={destination !== 'assistant'}
+              aria-hidden={destination !== 'assistant'}
             >
-              <span
-                class="flex size-5 items-center justify-center group-hover/org:opacity-0 group-focus-within/org:opacity-0"
-              >
-                {#if group.owner}<GitHubAvatar
-                    identity={group.owner}
-                    size={20}
-                    class="shrink-0 rounded-sm"
-                  />{:else}<Fa icon={faFolder} />{/if}
-              </span>
-              <span
-                class="absolute flex items-center justify-center opacity-0 group-hover/org:opacity-100 group-focus-within/org:opacity-100"
-              >
-                <Fa
-                  icon={faChevronRight}
-                  class={expanded ? 'size-3! rotate-90' : 'size-3!'}
-                  size={12}
-                />
-              </span>
-            </Button>
-          </div>
-          <div use:animatedHeight={expanded} inert={!expanded} aria-hidden={!expanded}>
-            <div class="pl-7">
-              {#each group.items as repo (repo.key)}
-                {@render repoButton(repo)}
-              {/each}
-            </div>
-          </div>
+              <HomeAssistantThreads />
+            </Tabs.Content>
+          {/if}
         </div>
-      {/each}
-      {#if sidebar.unassigned.length}
-        <div class="mt-4">
-          {#each sidebar.unassigned as repo (repo.key)}
-            {@render repoButton(repo)}
-          {/each}
-        </div>
-      {/if}
-      {#if repositoryGroups.length === 0 && $hasLoaded$}<p
-          class="px-2 py-3 type-caption text-muted-foreground"
-        >
-          {m.home_no_repositories()}
-        </p>{/if}
+      </Tabs.Root>
     </nav>
   </ResizablePanel>
   <Screen class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
-    {#if destination === 'assistant' && !$collaborator$}
-      <div class="min-h-0 flex-1 overflow-hidden home-panel bg-background">
-        <ChiefCard isActive />
-      </div>
-    {:else}
-      {#key tab}
-        <Tabs.Root
-          value={tab}
-          onValueChange={(value) => {
-            if (value === 'workspaces' || value === 'prs' || value === 'linear') {
-              const order = ['workspaces', 'prs', 'linear'];
-              tabDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
-              pendingTabFocus = value;
-              updateView({ tab: value });
-            }
-          }}
-          variant="underline"
-          class="flex min-h-0 flex-1 flex-col"
+    <div class="home-main-contents">
+      {#if assistantActivated && !$collaborator$}
+        <div
+          class="home-destination-content min-h-0 flex-1 overflow-hidden"
+          data-home-destination="assistant"
+          hidden={destination !== 'assistant'}
+          inert={destination !== 'assistant'}
+          aria-hidden={destination !== 'assistant'}
         >
-          {#snippet children()}
-            {#snippet homeHeader()}
-              <header
-                use:restoreTabFocus
-                class="home-header flex shrink-0 flex-wrap items-center gap-x-6 border-b border-border px-5"
-              >
-                <Tabs.List class="home-tabs shrink-0 gap-5 px-0" aria-label={m.home_views()}>
-                  <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
-                  <Tooltip.Provider
-                    ><Tooltip.Root
-                      ><Tooltip.Trigger
-                        >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                            {...homeTooltipProps}
-                            value="prs"
-                            aria-label={m.home_tab_prs()}
-                          >
-                            <span class="home-tab-label">{m.home_tab_prs()}</span>
-                            <span class="home-tab-logo" aria-hidden="true"
-                              ><GitHubIcon size={18} /></span
-                            >
-                          </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                      ><Tooltip.Content>{m.home_tab_prs()}</Tooltip.Content></Tooltip.Root
-                    ></Tooltip.Provider
+          <HomeAssistantPanels isActive={destination === 'assistant'}>
+            <ChiefCard threadPicker={false} isActive={destination === 'assistant'} />
+          </HomeAssistantPanels>
+        </div>
+      {/if}
+      {#if destination === 'workspaces'}
+        {#key tab}
+          {@const renderedTab = untrack(() => tab)}
+          <div
+            class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
+            data-home-destination="workspaces"
+            data-home-view={renderedTab}
+            in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
+            out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
+            onoutrostart={(event) => {
+              event.currentTarget.inert = true;
+              event.currentTarget.setAttribute('aria-hidden', 'true');
+            }}
+            onintrostart={(event) => {
+              event.currentTarget.inert = false;
+              event.currentTarget.removeAttribute('aria-hidden');
+            }}
+          >
+            <Tabs.Root
+              bind:value={() => renderedTab, () => undefined}
+              onValueChange={(value) => {
+                if (
+                  value !== tab &&
+                  (value === 'workspaces' || value === 'prs' || value === 'linear')
+                ) {
+                  const order = ['workspaces', 'prs', 'linear'];
+                  mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
+                  pendingTabFocus = value;
+                  updateView({ tab: value });
+                }
+              }}
+              variant="underline"
+              class="flex min-h-0 flex-1 flex-col"
+            >
+              {#snippet children()}
+                {#snippet homeHeader()}
+                  <header
+                    use:restoreTabFocus
+                    class="home-header flex shrink-0 items-center gap-x-6 border-b border-border px-6"
                   >
-                  <Tooltip.Provider
-                    ><Tooltip.Root
-                      ><Tooltip.Trigger
-                        >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                            {...homeTooltipProps}
-                            value="linear"
-                            aria-label={m.home_tab_linear()}
-                          >
-                            <span class="home-tab-label">{m.home_tab_linear()}</span>
-                            <span class="home-tab-logo" aria-hidden="true"
-                              ><LinearIcon size={18} /></span
-                            >
-                          </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                      ><Tooltip.Content>{m.home_tab_linear()}</Tooltip.Content></Tooltip.Root
-                    ></Tooltip.Provider
-                  >
-                </Tabs.List>
-                <div class="home-header-actions ml-auto flex items-center gap-2 py-2">
-                  {#if selectedRepositoryGithubUrl}
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={m.home_repository_metadata_open_github()}
-                      tooltip={m.home_repository_metadata_open_github()}
-                      onclick={() => {
-                        if (selectedRepositoryGithubUrl)
-                          store.dispatch(openHomeIntegrationUrl(selectedRepositoryGithubUrl));
-                      }}><GitHubIcon size={16} /></Button
+                    <Tabs.List
+                      class="home-tabs min-w-0 flex-1 gap-5 px-0"
+                      aria-label={m.home_views()}
                     >
-                  {/if}
-                  {#if !$collaborator$}<div class="home-create">
-                      <Button variant="primary" size="sm" onclick={createWorkspace}
-                        >{#snippet leadingIcon()}<Fa
-                            icon={faPlus}
-                          />{/snippet}{m.home_new_workspace()}</Button
+                      <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
+                      <Tooltip.Provider
+                        ><Tooltip.Root
+                          ><Tooltip.Trigger
+                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
+                                {...homeTooltipProps}
+                                value="prs"
+                                aria-label={m.home_tab_prs()}
+                              >
+                                <span class="home-tab-label">{m.home_tab_prs()}</span>
+                                <span class="home-tab-logo" aria-hidden="true"
+                                  ><GitHubIcon size={18} /></span
+                                >
+                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
+                          ><Tooltip.Content>{m.home_tab_prs()}</Tooltip.Content></Tooltip.Root
+                        ></Tooltip.Provider
                       >
-                    </div>{/if}
-                </div>
-              </header>
-            {/snippet}
-            <Tabs.Content value="workspaces" class="mt-0 min-h-0 flex-1 overflow-hidden">
-              {#if tab === 'workspaces'}
-                <div
-                  in:fly={{ axis: 'x', distance: tabDirection * 12, tier: 'fast' }}
-                  class="workspace-content h-full min-h-0"
-                  class:has-selection={!!selectedWorkspace}
-                >
-                  <section
-                    class="workspace-list flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
-                    aria-label={m.home_tab_workspaces()}
-                  >
-                    {@render homeHeader()}
-                    {#snippet workspaceSettings()}
-                      <HomeWorkspaceSettings view={$view$} onchange={updateView} />
-                    {/snippet}
-                    {#snippet workspaceControls()}
-                      <HomeWorkspaceControls
-                        {query}
-                        {filter}
-                        view={$view$.view}
-                        {filters}
-                        onquery={(query) => updateView({ query })}
-                        onfilter={chooseFilter}
-                        onview={(view) => updateView({ view })}
-                        settings={workspaceSettings}
-                      />
-                    {/snippet}
-                    <div
-                      class="flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto px-6 py-4"
-                    >
-                      {@render workspaceControls()}
-                    </div>
-                    {#if $workspaceError$}<ErrorState
-                        retryLabel={m.home_retry()}
-                        onRetry={() => store.dispatch(loadWorkspacesRequested())}
-                        >{#snippet message()}{$workspaceError$}{/snippet}</ErrorState
+                      <Tooltip.Provider
+                        ><Tooltip.Root
+                          ><Tooltip.Trigger
+                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
+                                {...homeTooltipProps}
+                                value="linear"
+                                aria-label={m.home_tab_linear()}
+                              >
+                                <span class="home-tab-label">{m.home_tab_linear()}</span>
+                                <span class="home-tab-logo" aria-hidden="true"
+                                  ><LinearIcon size={18} /></span
+                                >
+                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
+                          ><Tooltip.Content>{m.home_tab_linear()}</Tooltip.Content></Tooltip.Root
+                        ></Tooltip.Provider
                       >
-                    {:else if !$hasLoaded$}<HomeLoading
-                        view={$view$.view}
-                        grouped={$view$.groupBy !== 'none'}
-                      />
-                    {:else if filteredWorkspaces.length === 0}
-                      <EmptyState class="flex-1" emphasis="prominent">
-                        {#snippet title()}<h2>
-                            {workspaces.length === 0 ? m.home_empty_title() : m.home_no_matches()}
-                          </h2>{/snippet}
-                        {#snippet description()}<p>
-                            {workspaces.length === 0
-                              ? m.home_empty_description()
-                              : m.home_no_matches_description()}
-                          </p>{/snippet}
-                        {#snippet actions()}
-                          {#if workspaces.length === 0 && !$collaborator$}<Button
-                              variant="primary"
-                              onclick={createWorkspace}>{m.home_new_workspace()}</Button
-                            >
-                          {:else if workspaces.length > 0}<Button
-                              variant="outline"
-                              onclick={() => {
-                                updateView({
-                                  query: '',
-                                  filter: 'all',
-                                  repoKey: null,
-                                  updatedWithin: 'all',
-                                });
-                              }}>{m.home_clear_filters()}</Button
-                            >{/if}
-                        {/snippet}
-                      </EmptyState>
-                    {:else if $view$.view === 'board'}
-                      <HomeWorkspaceBoard
-                        workspaces={filteredWorkspaces}
-                        groups={boardGroups}
-                        showRepository={!selectedRepository}
-                        {selectedId}
-                        onselect={(id) => updateView({ selectedId: selectedId === id ? null : id })}
-                        archived={filter === 'archived'}
-                      />
-                    {:else}
-                      {#snippet workspaceRow({ item }: { item: Workspace })}
-                        <ListRow
-                          class="home-list-row h-12 items-center border-b border-border px-3 py-1"
-                          data-home-workspace={item.id}
-                          oncontextmenu={(event) => showWorkspaceMenu(event, item)}
+                    </Tabs.List>
+                    <div class="home-header-actions ml-auto flex items-center gap-2 py-2">
+                      {#if selectedRepositoryGithubUrl}
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={m.home_repository_metadata_open_github()}
+                          tooltip={m.home_repository_metadata_open_github()}
+                          onclick={() => {
+                            if (selectedRepositoryGithubUrl)
+                              store.dispatch(openHomeIntegrationUrl(selectedRepositoryGithubUrl));
+                          }}><GitHubIcon size={16} /></Button
                         >
-                          {#snippet leading()}
-                            {#if !selectedRepository && item.repositoryOwner}
-                              <Tooltip.Provider
-                                ><Tooltip.Root
-                                  ><Tooltip.Trigger
-                                    >{#snippet child({ props: homeTooltipProps })}<span
-                                        {...homeTooltipProps}
-                                      >
-                                        <GitHubAvatar
-                                          identity={item.repositoryOwner ?? ''}
-                                          size={20}
-                                          class="shrink-0 rounded-sm"
-                                        />
-                                      </span>{/snippet}</Tooltip.Trigger
-                                  ><Tooltip.Content
-                                    >{[item.repositoryOwner, item.repositoryName]
-                                      .filter(Boolean)
-                                      .join('/')}</Tooltip.Content
-                                  ></Tooltip.Root
-                                ></Tooltip.Provider
-                              >
-                            {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
-                              <Tooltip.Provider
-                                ><Tooltip.Root
-                                  ><Tooltip.Trigger
-                                    >{#snippet child({ props: homeTooltipProps })}<span
-                                        {...homeTooltipProps}
-                                        class="flex size-5 items-center justify-center text-muted-foreground"
-                                        ><Fa icon={faFolder} /></span
-                                      >{/snippet}</Tooltip.Trigger
-                                  ><Tooltip.Content
-                                    >{item.repositoryName || item.repositoryPath}</Tooltip.Content
-                                  ></Tooltip.Root
-                                ></Tooltip.Provider
-                              >
-                            {/if}
-                          {/snippet}
-                          {#snippet title()}
-                            <span class="home-row-line">
-                              <Tooltip.Provider
-                                ><Tooltip.Root
-                                  ><Tooltip.Trigger
-                                    >{#snippet child({ props: homeTooltipProps })}<span
-                                        {...homeTooltipProps}
-                                        class="home-row-title truncate font-medium"
-                                        >{item.title}</span
-                                      >{/snippet}</Tooltip.Trigger
-                                  ><Tooltip.Content>{item.title}</Tooltip.Content></Tooltip.Root
-                                ></Tooltip.Provider
-                              >
-                              <span class="home-row-description flex min-w-0 items-center gap-2">
-                                <HomeWorkspacePullBadge workspace={item} />
-                                {#if item.pullRequests && item.pullRequests.length > 1}
-                                  <span
-                                    class="shrink-0 rounded-full border border-border px-2 py-0.5 type-caption tabular-nums"
-                                    >+{formatInteger(item.pullRequests.length - 1)}</span
+                      {/if}
+                      {#if !$collaborator$}<div class="home-create">
+                          <Button variant="primary" size="sm" onclick={createWorkspace}
+                            >{#snippet leadingIcon()}<Fa
+                                icon={faPlus}
+                              />{/snippet}{m.home_new_workspace()}</Button
+                          >
+                        </div>{/if}
+                    </div>
+                  </header>
+                {/snippet}
+                <Tabs.Content value="workspaces" class="mt-0 min-h-0 flex-1 overflow-hidden">
+                  {#if renderedTab === 'workspaces'}
+                    <div
+                      class="workspace-content h-full min-h-0"
+                      class:has-selection={!!selectedWorkspace}
+                    >
+                      <section
+                        class="workspace-list flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
+                        aria-label={m.home_tab_workspaces()}
+                      >
+                        {@render homeHeader()}
+                        {#snippet workspaceSettings()}
+                          <HomeWorkspaceSettings view={$view$} onchange={updateView} />
+                        {/snippet}
+                        {#snippet workspaceControls()}
+                          <HomeWorkspaceControls
+                            {query}
+                            {filter}
+                            view={$view$.view}
+                            {filters}
+                            onquery={(query) => updateView({ query })}
+                            onfilter={chooseFilter}
+                            onview={(view) => updateView({ view })}
+                            settings={workspaceSettings}
+                          />
+                        {/snippet}
+                        <div
+                          class="flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto px-6 py-4"
+                        >
+                          {@render workspaceControls()}
+                        </div>
+                        {#if $workspaceError$}<ErrorState
+                            retryLabel={m.home_retry()}
+                            onRetry={() => store.dispatch(loadWorkspacesRequested())}
+                            >{#snippet message()}{$workspaceError$}{/snippet}</ErrorState
+                          >
+                        {:else if !$hasLoaded$}<HomeLoading
+                            view={$view$.view}
+                            grouped={$view$.groupBy !== 'none'}
+                          />
+                        {:else if filteredWorkspaces.length === 0}
+                          <EmptyState class="flex-1" emphasis="prominent">
+                            {#snippet title()}<h2>
+                                {workspaces.length === 0
+                                  ? m.home_empty_title()
+                                  : m.home_no_matches()}
+                              </h2>{/snippet}
+                            {#snippet description()}<p>
+                                {workspaces.length === 0
+                                  ? m.home_empty_description()
+                                  : m.home_no_matches_description()}
+                              </p>{/snippet}
+                            {#snippet actions()}
+                              {#if workspaces.length === 0 && !$collaborator$}<Button
+                                  variant="primary"
+                                  onclick={createWorkspace}>{m.home_new_workspace()}</Button
+                                >
+                              {:else if workspaces.length > 0}<Button
+                                  variant="outline"
+                                  onclick={() => {
+                                    updateView({
+                                      query: '',
+                                      filter: 'all',
+                                      repoKey: null,
+                                      updatedWithin: 'all',
+                                    });
+                                  }}>{m.home_clear_filters()}</Button
+                                >{/if}
+                            {/snippet}
+                          </EmptyState>
+                        {:else if $view$.view === 'board'}
+                          <HomeWorkspaceBoard
+                            workspaces={filteredWorkspaces}
+                            groups={boardGroups}
+                            showRepository={!selectedRepository}
+                            {selectedId}
+                            onselect={(id) =>
+                              updateView({ selectedId: selectedId === id ? null : id })}
+                            archived={filter === 'archived'}
+                          />
+                        {:else}
+                          {#snippet workspaceRow({ item }: { item: Workspace })}
+                            <ListRow
+                              class="home-list-row h-12 items-center border-b border-border px-3 py-1"
+                              data-home-workspace={item.id}
+                              oncontextmenu={(event) => showWorkspaceMenu(event, item)}
+                            >
+                              {#snippet leading()}
+                                {#if !selectedRepository && item.repositoryOwner}
+                                  <Tooltip.Provider
+                                    ><Tooltip.Root
+                                      ><Tooltip.Trigger
+                                        >{#snippet child({ props: homeTooltipProps })}<span
+                                            {...homeTooltipProps}
+                                          >
+                                            <GitHubAvatar
+                                              identity={item.repositoryOwner ?? ''}
+                                              size={20}
+                                              class="shrink-0 rounded-sm"
+                                            />
+                                          </span>{/snippet}</Tooltip.Trigger
+                                      ><Tooltip.Content
+                                        >{[item.repositoryOwner, item.repositoryName]
+                                          .filter(Boolean)
+                                          .join('/')}</Tooltip.Content
+                                      ></Tooltip.Root
+                                    ></Tooltip.Provider
+                                  >
+                                {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
+                                  <Tooltip.Provider
+                                    ><Tooltip.Root
+                                      ><Tooltip.Trigger
+                                        >{#snippet child({ props: homeTooltipProps })}<span
+                                            {...homeTooltipProps}
+                                            class="flex size-5 items-center justify-center text-muted-foreground"
+                                            ><Fa icon={faFolder} /></span
+                                          >{/snippet}</Tooltip.Trigger
+                                      ><Tooltip.Content
+                                        >{item.repositoryName ||
+                                          item.repositoryPath}</Tooltip.Content
+                                      ></Tooltip.Root
+                                    ></Tooltip.Provider
                                   >
                                 {/if}
-                                <Tooltip.Provider
-                                  ><Tooltip.Root
-                                    ><Tooltip.Trigger
-                                      >{#snippet child({ props: homeTooltipProps })}<span
-                                          {...homeTooltipProps}
-                                          class="home-workspace-summary min-w-0 truncate type-caption"
-                                          >{item.statusMessage || ''}</span
-                                        >{/snippet}</Tooltip.Trigger
-                                    ><Tooltip.Content>{item.statusMessage || ''}</Tooltip.Content
-                                    ></Tooltip.Root
-                                  ></Tooltip.Provider
-                                >
-                              </span>
-                            </span>
-                          {/snippet}
-                          {#snippet trailing()}<span
-                              class="workspace-row-meta flex items-center gap-2 text-muted-foreground"
-                            >
-                              {#if $pinnedIds$.includes(item.id)}<Tooltip.Provider
-                                  ><Tooltip.Root
-                                    ><Tooltip.Trigger
-                                      >{#snippet child({ props: homeTooltipProps })}<span
-                                          {...homeTooltipProps}
-                                          aria-label={m.layout_activeCard_pinned_header()}
-                                          ><Fa icon={faThumbtack} /></span
-                                        >{/snippet}</Tooltip.Trigger
-                                    ><Tooltip.Content
-                                      >{m.layout_activeCard_pinned_header()}</Tooltip.Content
-                                    ></Tooltip.Root
-                                  ></Tooltip.Provider
-                                >{/if}
-                              <HomeWorkspaceStatus workspace={item} />
-                              <span
-                                class="inline-flex w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
-                                data-home-row-time
-                              >
-                                <HomeActivityTime workspace={item} />
-                              </span>
-                              <SidebarOverflowMenu
-                                items={workspaceMenu(item)}
-                                ariaLabel={m.workspace_sidebarHeader_actions_ariaLabel()}
-                              />
-                            </span>{/snippet}
-                        </ListRow>
-                      {/snippet}
-                      {#snippet workspaceList(items: Workspace[], label: string, scroll: boolean)}
-                        <ListView
-                          onkeydown={(event) => {
-                            const option =
-                              event.target instanceof HTMLElement
-                                ? event.target.closest<HTMLElement>('[role="option"]')
-                                : null;
-                            const id =
-                              option?.querySelector<HTMLElement>('[data-home-workspace]')?.dataset
-                                .homeWorkspace;
-                            const workspace = items.find((item) => item.id === id);
-                            if (workspace) {
-                              showWorkspaceMenu(event, workspace);
-                              if (
-                                contextMenu &&
-                                option &&
-                                (event.key === 'ContextMenu' ||
-                                  (event.shiftKey && event.key === 'F10'))
-                              ) {
-                                const bounds = option.getBoundingClientRect();
-                                contextMenu = {
-                                  ...contextMenu,
-                                  x: bounds.left,
-                                  y: bounds.bottom,
-                                  returnFocus: option,
-                                };
-                              }
-                            }
-                          }}
-                          {items}
-                          rowHeight={48}
-                          virtualize={scroll ? 'auto' : false}
-                          getKey={(workspace) => workspace.id}
-                          getText={(workspace) => workspace.title}
-                          selectable="single"
-                          selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
-                          onSelectedKeysChange={(keys) =>
-                            updateView({ selectedId: keys[0] ? String(keys[0]) : null })}
-                          ariaLabel={label}
-                          class={scroll
-                            ? 'min-h-0 flex-1 overflow-y-auto px-5 pb-4'
-                            : 'overflow-visible'}
-                          row={workspaceRow}
-                        />
-                      {/snippet}
-                      {#if listGroups.length > 0}
-                        <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-                          <SectionedList
-                            sections={listGroups}
-                            getKey={(group) => group.id}
-                            inset={false}
-                          >
-                            {#snippet header(group)}
-                              <h3
-                                class="home-group-header flex min-h-8 items-center gap-2 px-2"
-                                data-home-group={group.id}
-                              >
-                                <Button
-                                  variant="plain"
-                                  size="sm"
-                                  class="w-full justify-start px-2"
-                                  aria-expanded={group.expanded}
-                                  aria-label={group.label}
-                                  onclick={() =>
-                                    setGroupExpanded(group.id, !group.expanded, group.items)}
-                                >
-                                  <span class="flex-1 text-left font-medium text-foreground"
-                                    >{group.label}</span
+                              {/snippet}
+                              {#snippet title()}
+                                <span class="home-row-line">
+                                  <Tooltip.Provider
+                                    ><Tooltip.Root
+                                      ><Tooltip.Trigger
+                                        >{#snippet child({ props: homeTooltipProps })}<span
+                                            {...homeTooltipProps}
+                                            class="home-row-title truncate font-medium"
+                                            >{item.title}</span
+                                          >{/snippet}</Tooltip.Trigger
+                                      ><Tooltip.Content>{item.title}</Tooltip.Content></Tooltip.Root
+                                    ></Tooltip.Provider
                                   >
-                                  {#snippet trailingIcon()}<Fa
-                                      icon={group.expanded ? faChevronDown : faChevronRight}
-                                    />{/snippet}
-                                </Button>
-                              </h3>
-                            {/snippet}
-                            {#snippet children(group)}
-                              {#if group.expanded}
-                                {@render workspaceList(group.items, group.label, false)}
-                              {/if}
-                            {/snippet}
-                          </SectionedList>
-                        </div>
-                      {:else}
-                        {@render workspaceList(filteredWorkspaces, m.home_tab_workspaces(), true)}
+                                  <span
+                                    class="home-row-description flex min-w-0 items-center gap-2"
+                                  >
+                                    <HomeWorkspacePullBadge workspace={item} />
+                                    {#if item.pullRequests && item.pullRequests.length > 1}
+                                      <span
+                                        class="shrink-0 rounded-full border border-border px-2 py-0.5 type-caption tabular-nums"
+                                        >+{formatInteger(item.pullRequests.length - 1)}</span
+                                      >
+                                    {/if}
+                                    <Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                              class="home-workspace-summary min-w-0 truncate type-caption"
+                                              >{item.statusMessage || ''}</span
+                                            >{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{item.statusMessage || ''}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >
+                                  </span>
+                                </span>
+                              {/snippet}
+                              {#snippet trailing()}<span
+                                  class="workspace-row-meta flex items-center gap-2 text-muted-foreground"
+                                >
+                                  {#if $pinnedIds$.includes(item.id)}<Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                              aria-label={m.layout_activeCard_pinned_header()}
+                                              ><Fa icon={faThumbtack} /></span
+                                            >{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{m.layout_activeCard_pinned_header()}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >{/if}
+                                  <HomeWorkspaceStatus workspace={item} />
+                                  <span
+                                    class="inline-flex w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
+                                    data-home-row-time
+                                  >
+                                    <HomeActivityTime workspace={item} />
+                                  </span>
+                                  <SidebarOverflowMenu
+                                    items={workspaceMenu(item)}
+                                    ariaLabel={m.workspace_sidebarHeader_actions_ariaLabel()}
+                                  />
+                                </span>{/snippet}
+                            </ListRow>
+                          {/snippet}
+                          {#snippet workspaceList(
+                            items: Workspace[],
+                            label: string,
+                            scroll: boolean,
+                          )}
+                            <ListView
+                              onkeydown={(event) => {
+                                const option =
+                                  event.target instanceof HTMLElement
+                                    ? event.target.closest<HTMLElement>('[role="option"]')
+                                    : null;
+                                const id =
+                                  option?.querySelector<HTMLElement>('[data-home-workspace]')
+                                    ?.dataset.homeWorkspace;
+                                const workspace = items.find((item) => item.id === id);
+                                if (workspace) {
+                                  showWorkspaceMenu(event, workspace);
+                                  if (
+                                    contextMenu &&
+                                    option &&
+                                    (event.key === 'ContextMenu' ||
+                                      (event.shiftKey && event.key === 'F10'))
+                                  ) {
+                                    const bounds = option.getBoundingClientRect();
+                                    contextMenu = {
+                                      ...contextMenu,
+                                      x: bounds.left,
+                                      y: bounds.bottom,
+                                      returnFocus: option,
+                                    };
+                                  }
+                                }
+                              }}
+                              {items}
+                              rowHeight={48}
+                              virtualize={scroll ? 'auto' : false}
+                              getKey={(workspace) => workspace.id}
+                              getText={(workspace) => workspace.title}
+                              selectable="single"
+                              selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
+                              onSelectedKeysChange={(keys) =>
+                                updateView({ selectedId: keys[0] ? String(keys[0]) : null })}
+                              ariaLabel={label}
+                              class={scroll
+                                ? 'min-h-0 flex-1 overflow-y-auto px-5 pb-4'
+                                : 'overflow-visible'}
+                              row={workspaceRow}
+                            />
+                          {/snippet}
+                          {#if listGroups.length > 0}
+                            <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                              <SectionedList
+                                sections={listGroups}
+                                getKey={(group) => group.id}
+                                inset={false}
+                              >
+                                {#snippet header(group)}
+                                  <h3
+                                    class="home-group-header flex min-h-8 items-center gap-2 px-2"
+                                    data-home-group={group.id}
+                                  >
+                                    <Button
+                                      variant="plain"
+                                      size="sm"
+                                      class="w-full justify-start px-2"
+                                      aria-expanded={group.expanded}
+                                      aria-label={group.label}
+                                      onclick={() =>
+                                        setGroupExpanded(group.id, !group.expanded, group.items)}
+                                    >
+                                      <span class="flex-1 text-left font-medium text-foreground"
+                                        >{group.label}</span
+                                      >
+                                      {#snippet trailingIcon()}<Fa
+                                          icon={group.expanded ? faChevronDown : faChevronRight}
+                                        />{/snippet}
+                                    </Button>
+                                  </h3>
+                                {/snippet}
+                                {#snippet children(group)}
+                                  {#if group.expanded}
+                                    {@render workspaceList(group.items, group.label, false)}
+                                  {/if}
+                                {/snippet}
+                              </SectionedList>
+                            </div>
+                          {:else}
+                            {@render workspaceList(
+                              filteredWorkspaces,
+                              m.home_tab_workspaces(),
+                              true,
+                            )}
+                          {/if}
+                        {/if}
+                      </section>
+                      {#if selectedWorkspace}
+                        <HomePreviewPane>
+                          {#key selectedWorkspace.id}<HomeWorkspaceDetail
+                              workspace={selectedWorkspace}
+                              onclose={closePreview}
+                              {preview}
+                            />{/key}
+                        </HomePreviewPane>
                       {/if}
-                    {/if}
-                  </section>
-                  {#if selectedWorkspace}
-                    <HomePreviewPane>
-                      {#key selectedWorkspace.id}<HomeWorkspaceDetail
-                          workspace={selectedWorkspace}
-                          onclose={closePreview}
-                          {preview}
-                        />{/key}
-                    </HomePreviewPane>
+                    </div>
                   {/if}
-                </div>
-              {/if}
-            </Tabs.Content>
-            <Tabs.Content value="prs" class="mt-0 min-h-0 flex-1 overflow-hidden"
-              >{#if tab === 'prs'}<div
-                  class="h-full min-h-0"
-                  in:fly={{ axis: 'x', distance: tabDirection * 12, tier: 'fast' }}
+                </Tabs.Content>
+                <Tabs.Content value="prs" class="mt-0 min-h-0 flex-1 overflow-hidden"
+                  >{#if renderedTab === 'prs'}<div class="h-full min-h-0">
+                      <HomeIntegrations
+                        header={homeHeader}
+                        kind="prs"
+                        scopedWorkspaceIds={scopedWorkspaces.map((workspace) => workspace.id)}
+                        organization={selectedOrg?.owner}
+                        preview={integrationPreview?.prs}
+                        {repositories}
+                        workspaceId={integrationWorkspaceId}
+                      />
+                    </div>{/if}</Tabs.Content
                 >
-                  <HomeIntegrations
-                    header={homeHeader}
-                    kind="prs"
-                    scopedWorkspaceIds={scopedWorkspaces.map((workspace) => workspace.id)}
-                    organization={selectedOrg?.owner}
-                    preview={integrationPreview?.prs}
-                    {repositories}
-                    workspaceId={integrationWorkspaceId}
-                  />
-                </div>{/if}</Tabs.Content
-            >
-            <Tabs.Content value="linear" class="mt-0 min-h-0 flex-1 overflow-hidden"
-              >{#if tab === 'linear'}<div
-                  class="h-full min-h-0"
-                  in:fly={{ axis: 'x', distance: tabDirection * 12, tier: 'fast' }}
+                <Tabs.Content value="linear" class="mt-0 min-h-0 flex-1 overflow-hidden"
+                  >{#if renderedTab === 'linear'}<div class="h-full min-h-0">
+                      <HomeIntegrations
+                        header={homeHeader}
+                        kind="linear"
+                        preview={integrationPreview?.linear}
+                        {repositories}
+                        workspaceId={integrationWorkspaceId}
+                      />
+                    </div>{/if}</Tabs.Content
                 >
-                  <HomeIntegrations
-                    header={homeHeader}
-                    kind="linear"
-                    preview={integrationPreview?.linear}
-                    {repositories}
-                    workspaceId={integrationWorkspaceId}
-                  />
-                </div>{/if}</Tabs.Content
-            >
-          {/snippet}
-        </Tabs.Root>
-      {/key}
-    {/if}
+              {/snippet}
+            </Tabs.Root>
+          </div>
+        {/key}
+      {/if}
+    </div>
   </Screen>
 </div>
-
-<style>
-  .home-layout {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-    container: home-layout / inline-size;
-  }
-  .home-tab-logo {
-    display: none;
-  }
-  @container home-panel (max-width: 700px) {
-    .home-tab-label {
-      display: none;
-    }
-    .home-tab-logo {
-      display: flex;
-    }
-  }
-  .home-sidebar {
-    font-weight: 500;
-  }
-  .home-sidebar :global([data-slot='button']) {
-    border-radius: 0.75rem;
-    font-weight: 500;
-  }
-  .home-sidebar p,
-  .home-header :global([role='tab']) {
-    font-weight: 500;
-  }
-  .home-sidebar :global([data-state='active'] > [data-slot='button-surface']) {
-    background: hsl(var(--card));
-    box-shadow: none;
-  }
-  .workspace-content {
-    display: flex;
-  }
-  .workspace-list {
-    flex: 1;
-  }
-  @container (max-width: 1000px) {
-    .home-header {
-      column-gap: 1rem;
-    }
-    .workspace-content.has-selection .workspace-list {
-      display: none;
-    }
-  }
-  @media (max-width: 700px) {
-    .home-sidebar {
-      padding-inline: 0.25rem;
-    }
-  }
-  @media (max-width: 480px) {
-    .home-layout {
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-    }
-    .home-layout :global(.home-sidebar-resizable) {
-      width: 100% !important;
-      max-width: 100% !important;
-      height: auto;
-    }
-    .home-layout :global(.home-sidebar-resize-handle) {
-      display: none;
-    }
-    .home-sidebar {
-      max-height: 10rem;
-      flex: none;
-    }
-    .home-layout :global(.home-surface) {
-      margin-left: 0.75rem;
-      flex: 1;
-      min-height: 24rem;
-    }
-    .home-layout.home-assistant {
-      overflow: hidden;
-    }
-    .home-layout.home-assistant :global(.home-sidebar-resizable) {
-      height: min(10rem, 25%);
-    }
-    .home-layout.home-assistant :global(.home-surface) {
-      min-height: 0;
-    }
-  }
-</style>
