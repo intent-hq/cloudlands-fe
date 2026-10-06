@@ -1,0 +1,793 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 811ad6006be79db6f50f4f2accde2861b554bdb6..92ae7b59dfd69464a9373aabfc0320449044821a 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -505,37 +505,52 @@ function isSafari() {
+ //#endregion
+ //#region src/commands/focus.ts
+ const focus = (position = null, options = {}) => ({ editor, view, tr, dispatch }) => {
+-	options = {
+-		scrollIntoView: true,
+-		...options
+-	};
+-	const delayedFocus = () => {
+-		if (isiOS() || isAndroid()) view.dom.focus();
+-		if (isSafari() && !isiOS() && !isAndroid()) view.dom.focus({ preventScroll: true });
+-		requestAnimationFrame(() => {
+-			if (!editor.isDestroyed) {
+-				view.focus();
+-				if (options === null || options === void 0 ? void 0 : options.scrollIntoView) editor.commands.scrollIntoView();
+-			}
+-		});
+-	};
+-	try {
+-		if (view.hasFocus() && position === null || position === false) return true;
+-	} catch {
+-		return false;
+-	}
+-	if (dispatch && position === null && !isTextSelection(editor.state.selection)) {
+-		delayedFocus();
+-		return true;
+-	}
+-	const selection = resolveFocusPosition(tr.doc, position) || editor.state.selection;
+-	const isSameSelection = editor.state.selection.eq(selection);
+-	if (dispatch) {
+-		if (!isSameSelection) tr.setSelection(selection);
+-		if (isSameSelection && tr.storedMarks) tr.setStoredMarks(tr.storedMarks);
+-		delayedFocus();
+-	}
+-	return true;
++  const scope = editor.captureDeferredTasks(view);
++  const execute = () => {
++    options = { scrollIntoView: true, ...options };
++    scope?.assertOpen();
++    const delayedFocus = () => {
++      scope?.assertOpen();
++      if (isiOS() || isAndroid()) view.dom.focus();
++      scope?.assertOpen();
++      if (isSafari() && !isiOS() && !isAndroid()) view.dom.focus({ preventScroll: true });
++      scope?.assertOpen();
++      const applyFocus = () => {
++        scope?.assertOpen();
++        if (!editor.isDestroyed) {
++          view.focus();
++          scope?.assertOpen();
++          if (options?.scrollIntoView) editor.commands.scrollIntoView();
++          scope?.assertOpen();
++        }
++      };
++      if (scope) scope.enqueue('focus-frame', applyFocus);
++      else requestAnimationFrame(applyFocus);
++    };
++    let focused;
++    try { focused = view.hasFocus(); }
++    catch { scope?.assertOpen(); return false; }
++    scope?.assertOpen();
++    if ((focused && position === null) || position === false) return true;
++    if (dispatch && position === null && !isTextSelection(editor.state.selection)) {
++      scope?.assertOpen();
++      delayedFocus();
++      return true;
++    }
++    const selection = resolveFocusPosition(tr.doc, position) || editor.state.selection;
++    scope?.assertOpen();
++    const isSameSelection = editor.state.selection.eq(selection);
++    scope?.assertOpen();
++    if (dispatch) {
++      if (!isSameSelection) tr.setSelection(selection);
++      scope?.assertOpen();
++      if (isSameSelection && tr.storedMarks) tr.setStoredMarks(tr.storedMarks);
++      scope?.assertOpen();
++      delayedFocus();
++    }
++    return true;
++  };
++  return scope ? scope.run(execute) : execute();
+ };
+ //#endregion
+ //#region src/commands/forEach.ts
+@@ -6151,6 +6166,7 @@ img.ProseMirror-separator {
+ }`;
+ //#endregion
+ //#region src/Editor.ts
++const deferredTaskEditors = new WeakMap();
+ var Editor = class extends EventEmitter {
+ 	constructor(options = {}) {
+ 		super();
+@@ -6204,7 +6220,11 @@ var Editor = class extends EventEmitter {
+ 			getUpdatedPosition,
+ 			createMappablePosition
+ 		};
+-		this.setOptions(options);
++        const descriptor = Object.getOwnPropertyDescriptor(options, 'deferredTasks');
++        if (descriptor && !('value' in descriptor)) throw new Error('Editor deferredTasks must be own data');
++        deferredTaskEditors.set(this, { port: descriptor?.value, fixed: false });
++        this.setOptions(options);
++        deferredTaskEditors.get(this).fixed = true;
+ 		this.createExtensionManager();
+ 		this.createCommandManager();
+ 		this.createSchema();
+@@ -6240,20 +6260,59 @@ var Editor = class extends EventEmitter {
+ 	*/
+ 	mount(el) {
+ 		if (typeof document === "undefined") throw new Error(`[tiptap error]: The editor cannot be mounted because there is no 'document' defined in this environment.`);
+-		this.createView(el);
++        const ownership = deferredTaskEditors.get(this);
++        this.captureDeferredTasks();
++        const scope = ownership.port?.beginMount(this);
++        ownership.scope = scope;
++        const mount = () => {
++        this.createView(el);
++        if (scope) {
++          scope.assertOpen();
++          ownership.port.bindView(scope, this, this.editorView);
++          scope.assertOpen();
++        }
+ 		this.emit("mount", { editor: this });
++        scope?.assertOpen();
+ 		if (this.css && !document.head.contains(this.css)) document.head.appendChild(this.css);
+-		window.setTimeout(() => {
++		const create = () => {
++            scope?.assertOpen();
+ 			if (this.isDestroyed) return;
+ 			if (this.options.autofocus !== false && this.options.autofocus !== null) this.commands.focus(this.options.autofocus);
++            scope?.assertOpen();
+ 			this.emit("create", { editor: this });
++            scope?.assertOpen();
+ 			this.isInitialized = true;
+-		}, 0);
+-	}
+-	/**
+-	* Remove the editor from the DOM, but still allow remounting at a different point in time
++        };
++        if (scope) scope.enqueue('mount-create', create);
++        else window.setTimeout(create, 0);
++        };
++        if (scope) scope.run(mount);
++        else mount();
++    }
++    /**
++    * Remove the editor from the DOM, but still allow remounting at a different point in time
+ 	*/
+-	unmount() {
++    unmount() {
++      const ownership = deferredTaskEditors.get(this);
++      const scope = ownership.scope;
++      if (!scope) { this.unmountView(); return; }
++      if (ownership.unmounting || ownership.unmountFailed) throw new Error('Editor unmount is not admitted');
++      const view = this.editorView;
++      ownership.unmounting = true;
++      try {
++        scope.close(() => {
++          this.unmountView();
++          if (view) ownership.port.unbindView(scope, this, view);
++        });
++        ownership.scope = undefined;
++      } catch (error) {
++        ownership.unmountFailed = true;
++        throw error;
++      } finally {
++        ownership.unmounting = false;
++      }
++    }
++    unmountView() {
+ 		if (this.editorView) {
+ 			this.editorState = this.editorView.state;
+ 			const dom = this.editorView.dom;
+@@ -6308,7 +6367,17 @@ var Editor = class extends EventEmitter {
+ 	*
+ 	* @param options A list of options
+ 	*/
+-	setOptions(options = {}) {
++    captureDeferredTasks(view) {
++      const ownership = deferredTaskEditors.get(this);
++      const descriptor = Object.getOwnPropertyDescriptor(this.options, 'deferredTasks');
++      if ((descriptor && !('value' in descriptor)) || descriptor?.value !== ownership.port) throw new Error('Editor deferredTasks cannot change');
++      return view ? ownership.port?.capture(this, view) : undefined;
++    }
++    setOptions(options = {}) {
++      const ownership = deferredTaskEditors.get(this);
++      const descriptor = Object.getOwnPropertyDescriptor(options, 'deferredTasks');
++      if (descriptor && (!('value' in descriptor) || (ownership.fixed && descriptor.value !== ownership.port))) throw new Error('Editor deferredTasks cannot change');
++      if (ownership.fixed) this.captureDeferredTasks();
+ 		this.options = {
+ 			...this.options,
+ 			...options
+@@ -8058,4 +8127,4 @@ exports.textblockTypeInputRule = textblockTypeInputRule;
+ exports.updateMarkViewAttributes = updateMarkViewAttributes;
+ exports.wrappingInputRule = wrappingInputRule;
+ 
+-//# sourceMappingURL=index.cjs.map
+\ No newline at end of file
++// Local scheduling patch: source map omitted because emitted bytes changed.
+\ No newline at end of file
+diff --git a/dist/index.cjs.map b/dist/index.cjs.map
+deleted file mode 100644
+index 623fe0e4f9ec4734106e24510ccbd1697a7ef77f..0000000000000000000000000000000000000000
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index ce98a19de44f6c8f6befe34e7d5e357c3843dd6d..6ce9481a61944a3c3888f350f2fb5e9e20c2f004 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -1625,6 +1625,21 @@ type DispatchTransactionProps = {
+ };
+ type EnableRules = (AnyExtension | string)[] | boolean;
+ interface EditorOptions {
++  /** Optional fixed per-editor ownership for the named deferred callbacks. */
++  deferredTasks?: {
++    beginMount(editor: Editor): {
++      run<T>(body: () => T): T;
++      enqueue(kind: 'mount-create' | 'focus-frame' | 'selection-focus' | 'selection-blur' | 'update-focus', body: () => void): void;
++      assertOpen(): void;
++      whenIdle(): Promise<void>;
++      close(body?: () => void): void;
++      readonly settled: Promise<void>;
++    };
++    bindView(scope: ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>, editor: Editor, view: EditorView): void;
++    unbindView(scope: ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>, editor: Editor, view: EditorView): void;
++    capture(editor: Editor, view: EditorView): ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>;
++  };
++
+   /**
+    * The element to bind the editor to:
+    * - If an `Element` is passed, the editor will be mounted appended to that element
+@@ -4318,6 +4333,7 @@ declare class Editor extends EventEmitter<EditorEvents> {
+    * Remove the editor from the DOM, but still allow remounting at a different point in time
+    */
+   unmount(): void;
++  private unmountView;
+   /**
+    * Returns the editor storage.
+    */
+@@ -4343,6 +4359,7 @@ declare class Editor extends EventEmitter<EditorEvents> {
+    *
+    * @param options A list of options
+    */
++  captureDeferredTasks(view?: EditorView): ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']> | undefined;
+   setOptions(options?: Partial<EditorOptions>): void;
+   /**
+    * Update editable state of the editor.
+@@ -5756,4 +5773,4 @@ declare function removeDuplicates<T>(array: T[], by?: {
+ }): T[];
+ //#endregion
+ export { AllowedAttribute, AnyCommands, AnyConfig, AnyExtension, AtomBlockMarkdownSpecOptions, Attribute, Attributes, type BaseDecorationSpec, BlockMarkdownSpecOptions, BlockParserConfig, CanCommands, ChainedCommands, ChangedRange, type ChangedRangesDecorationSpec, Command, CommandManager, CommandProps, CommandSpec, Commands, Content, CreateNodeFromContentOptions, type CreateWidgetDecorationOptions, DECORATION_MANAGER_PLUGIN_KEY, DOMNode, DOMOutputSpecArray, Decoration, type DecorationCreateProps, DecorationManager, type DecorationManagerEntry, type DecorationManagerState, type DecorationRangeProps, type DecorationShouldUpdateProps, type DecorationSpec, DecorationType, type DecorationUpdateStrategy, DecorationWithType, Diff, Dispatch, DispatchTransactionProps, type DocumentDecorationSpec, DocumentType, Editor, EditorEvents, EditorOptions, EnableRules, Extendable, ExtendableConfig, ExtendedRegExpMatchArray, Extension, ExtensionAttribute, ExtensionConfig, Extensions, FocusPosition, Fragment, FullMarkdownHelpers, GetUpdatedPositionResult, GlobalAttributes, HTMLContent, InlineDecoration, InlineMarkdownSpecOptions, InputRule, InputRuleFinder, InputRuleMatch, type InsertContentAtOptions, type InsertContentOptions, type InsertDefaultBlockOptions, JSONContent, KeyboardShortcutCommand, KeysWithTypeOf, type ManualDecorationSpec, MappablePosition, Mark, MarkConfig, MarkLike, MarkRange, MarkType, MarkView, MarkViewProps, MarkViewRenderer, MarkViewRendererOptions, MarkViewRendererProps, MarkdownExtensionSpec, MarkdownHelpers, MarkdownLexerConfiguration, MarkdownParseHelpers, MarkdownParseResult, MarkdownRendererHelpers, MarkdownToken, MarkdownTokenizer, MaybeReturnType, MaybeThisParameterType, Node, NodeConfig, NodeDecoration, NodePos, NodeRange, NodeType, NodeView, NodeViewProps, NodeViewRenderer, NodeViewRendererOptions, NodeViewRendererProps, NodeWithPos, Overwrite, ParentConfig, ParsedBlock, PasteRule, PasteRuleFinder, PasteRuleMatch, PickValue, Predicate, Primitive, Range, RawCommands, RemoveThis, RenderContext, ResizableNodeDimensions, ResizableNodeView, ResizableNodeViewDirection, ResizableNodeViewOptions, ResizableNodeview, type ResolvedDecorationEntry, type SetContentOptions, SingleCommands, Storage, TextSerializer, TextType, TiptapEditorHTMLElement, Tracker, TrackerResult, UnionCommands, UnionToIntersection, Utils, ValuesOf, WidgetDecoration, type WidgetDecorationOptions, type WidgetRenderer, attrsEqual, type blur, callOrReturn, canInsertNode, type clearContent, type clearNodes, combineTransactionSteps, type command, index_d_exports as commands, createAtomBlockMarkdownSpec, createBlockMarkdownSpec, createChainableState, createDocument, h as createElement, h, createInlineMarkdownSpec, createMappablePosition, createNodeFromContent, type createParagraphNear, createStyleTag, createWidgetDecoration, type cut, decodeHtmlEntities, defaultBlockAt, type deleteCurrentNode, type deleteNode, deleteProps, type deleteRange, type deleteSelection, elementFromString, encodeHtmlEntities, type enter, escapeForRegEx, type exitCode, type extendMarkRange, index_d_exports$1 as extensions, findChildren, findChildrenInRange, findDuplicates, findParentNode, findParentNodeClosestToPos, type first, flattenExtensions, type focus, type forEach, fromString, generateHTML, generateJSON, generateText, getAttributes, getAttributesFromExtensions, getChangedRanges, getDebugJSON, getExtensionField, getHTMLFromFragment, getMarkAttributes, getMarkRange, getMarkType, getMarksBetween, getNodeAtPosition, getNodeAttributes, getNodeType, getPreviousBlockSibling, getRenderedAttributes, getSchema, getSchemaByResolvedExtensions, getSchemaTypeByName, getSchemaTypeNameByName, getSplittedAttributes, getStyleProperty, getText, getTextBetween, getTextContentFromNodes, getTextSerializersFromSchema, getUpdatedPosition, injectExtensionAttributesToParseRule, inputRulesPlugin, type insertContent, type insertContentAt, type insertDefaultBlock, isActive, isAndroid, isAtEndOfNode, isAtStartOfNode, isEmptyObject, isExtensionRulesEnabled, isFirefox, isFunction, isList, isMacOS, isMarkActive, isNodeActive, isNodeEmpty, isNodeSelection, isNodeViewSelected, isNumber, isPlainObject, isProseMirrorAddMarkStep, isProseMirrorAddNodeMarkStep, isProseMirrorAttrStep, isProseMirrorCellSelection, isProseMirrorDocAttrStep, isProseMirrorFragment, isProseMirrorNodeSelection, isProseMirrorRemoveMarkStep, isProseMirrorRemoveNodeMarkStep, isProseMirrorReplaceAroundStep, isProseMirrorReplaceStep, isProseMirrorSlice, isProseMirrorStep, isProseMirrorStepResult, isRegExp, isSafari, isString, isTextSelection, isiOS, type joinBackward, type joinDown, type joinForward, type joinItemBackward, type joinItemForward, type joinTextblockBackward, type joinTextblockForward, type joinUp, type keyboardShortcut, type lift, type liftEmptyBlock, type liftListItem, liveWidgetKeys, markInputRule, markPasteRule, index_d_exports$2 as markdown, marksEqual, mergeAttributes, mergeDeep, minMax, type newlineInCode, nodeInputRule, nodePasteRule, objectIncludes, parseAttributes, parseIndentedBlocks, pasteRulesPlugin, posToDOMRect, removeDuplicates, renderNestedMarkdownContent, type resetAttributes, resolveExtensions, resolveFocusPosition, rewriteUnknownContent, type scrollIntoView, type selectAll, type selectNodeBackward, type selectNodeForward, type selectParentNode, type selectTextblockEnd, type selectTextblockStart, selectionToInsertionEnd, serializeAttributes, type setContent, type setMark, type setMeta, type setNode, type setNodeSelection, type setTextDirection, type setTextSelection, type sinkListItem, sortExtensions, type splitBlock, splitExtensions, type splitListItem, textInputRule, textPasteRule, textblockTypeInputRule, type toggleList, type toggleMark, type toggleNode, type toggleWrap, type undoInputRule, type unsetAllMarks, type unsetMark, type unsetTextDirection, type updateAttributes, type updateDecorations, updateMarkViewAttributes, type wrapIn, type wrapInList, wrappingInputRule };
+-//# sourceMappingURL=index.d.cts.map
+\ No newline at end of file
++// Local scheduling patch: declaration map omitted because declarations changed.
+\ No newline at end of file
+diff --git a/dist/index.d.cts.map b/dist/index.d.cts.map
+deleted file mode 100644
+index 3d7c89a73948f107e7ca9f7a579236d4f3dbf593..0000000000000000000000000000000000000000
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 58e2ead6cd9e91e950c134c3c533886a27107ea7..e9080da053b607145b53bd9a9b791dc6e38dd43e 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1624,6 +1624,21 @@ type DispatchTransactionProps = {
+ };
+ type EnableRules = (AnyExtension | string)[] | boolean;
+ interface EditorOptions {
++  /** Optional fixed per-editor ownership for the named deferred callbacks. */
++  deferredTasks?: {
++    beginMount(editor: Editor): {
++      run<T>(body: () => T): T;
++      enqueue(kind: 'mount-create' | 'focus-frame' | 'selection-focus' | 'selection-blur' | 'update-focus', body: () => void): void;
++      assertOpen(): void;
++      whenIdle(): Promise<void>;
++      close(body?: () => void): void;
++      readonly settled: Promise<void>;
++    };
++    bindView(scope: ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>, editor: Editor, view: EditorView): void;
++    unbindView(scope: ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>, editor: Editor, view: EditorView): void;
++    capture(editor: Editor, view: EditorView): ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>;
++  };
++
+   /**
+    * The element to bind the editor to:
+    * - If an `Element` is passed, the editor will be mounted appended to that element
+@@ -4317,6 +4332,7 @@ declare class Editor extends EventEmitter<EditorEvents> {
+    * Remove the editor from the DOM, but still allow remounting at a different point in time
+    */
+   unmount(): void;
++  private unmountView;
+   /**
+    * Returns the editor storage.
+    */
+@@ -4342,6 +4358,7 @@ declare class Editor extends EventEmitter<EditorEvents> {
+    *
+    * @param options A list of options
+    */
++  captureDeferredTasks(view?: EditorView): ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']> | undefined;
+   setOptions(options?: Partial<EditorOptions>): void;
+   /**
+    * Update editable state of the editor.
+@@ -5755,4 +5772,4 @@ declare function removeDuplicates<T>(array: T[], by?: {
+ }): T[];
+ //#endregion
+ export { AllowedAttribute, AnyCommands, AnyConfig, AnyExtension, AtomBlockMarkdownSpecOptions, Attribute, Attributes, type BaseDecorationSpec, BlockMarkdownSpecOptions, BlockParserConfig, CanCommands, ChainedCommands, ChangedRange, type ChangedRangesDecorationSpec, Command, CommandManager, CommandProps, CommandSpec, Commands, Content, CreateNodeFromContentOptions, type CreateWidgetDecorationOptions, DECORATION_MANAGER_PLUGIN_KEY, DOMNode, DOMOutputSpecArray, Decoration, type DecorationCreateProps, DecorationManager, type DecorationManagerEntry, type DecorationManagerState, type DecorationRangeProps, type DecorationShouldUpdateProps, type DecorationSpec, DecorationType, type DecorationUpdateStrategy, DecorationWithType, Diff, Dispatch, DispatchTransactionProps, type DocumentDecorationSpec, DocumentType, Editor, EditorEvents, EditorOptions, EnableRules, Extendable, ExtendableConfig, ExtendedRegExpMatchArray, Extension, ExtensionAttribute, ExtensionConfig, Extensions, FocusPosition, Fragment, FullMarkdownHelpers, GetUpdatedPositionResult, GlobalAttributes, HTMLContent, InlineDecoration, InlineMarkdownSpecOptions, InputRule, InputRuleFinder, InputRuleMatch, type InsertContentAtOptions, type InsertContentOptions, type InsertDefaultBlockOptions, JSONContent, KeyboardShortcutCommand, KeysWithTypeOf, type ManualDecorationSpec, MappablePosition, Mark, MarkConfig, MarkLike, MarkRange, MarkType, MarkView, MarkViewProps, MarkViewRenderer, MarkViewRendererOptions, MarkViewRendererProps, MarkdownExtensionSpec, MarkdownHelpers, MarkdownLexerConfiguration, MarkdownParseHelpers, MarkdownParseResult, MarkdownRendererHelpers, MarkdownToken, MarkdownTokenizer, MaybeReturnType, MaybeThisParameterType, Node, NodeConfig, NodeDecoration, NodePos, NodeRange, NodeType, NodeView, NodeViewProps, NodeViewRenderer, NodeViewRendererOptions, NodeViewRendererProps, NodeWithPos, Overwrite, ParentConfig, ParsedBlock, PasteRule, PasteRuleFinder, PasteRuleMatch, PickValue, Predicate, Primitive, Range, RawCommands, RemoveThis, RenderContext, ResizableNodeDimensions, ResizableNodeView, ResizableNodeViewDirection, ResizableNodeViewOptions, ResizableNodeview, type ResolvedDecorationEntry, type SetContentOptions, SingleCommands, Storage, TextSerializer, TextType, TiptapEditorHTMLElement, Tracker, TrackerResult, UnionCommands, UnionToIntersection, Utils, ValuesOf, WidgetDecoration, type WidgetDecorationOptions, type WidgetRenderer, attrsEqual, type blur, callOrReturn, canInsertNode, type clearContent, type clearNodes, combineTransactionSteps, type command, index_d_exports as commands, createAtomBlockMarkdownSpec, createBlockMarkdownSpec, createChainableState, createDocument, h as createElement, h, createInlineMarkdownSpec, createMappablePosition, createNodeFromContent, type createParagraphNear, createStyleTag, createWidgetDecoration, type cut, decodeHtmlEntities, defaultBlockAt, type deleteCurrentNode, type deleteNode, deleteProps, type deleteRange, type deleteSelection, elementFromString, encodeHtmlEntities, type enter, escapeForRegEx, type exitCode, type extendMarkRange, index_d_exports$1 as extensions, findChildren, findChildrenInRange, findDuplicates, findParentNode, findParentNodeClosestToPos, type first, flattenExtensions, type focus, type forEach, fromString, generateHTML, generateJSON, generateText, getAttributes, getAttributesFromExtensions, getChangedRanges, getDebugJSON, getExtensionField, getHTMLFromFragment, getMarkAttributes, getMarkRange, getMarkType, getMarksBetween, getNodeAtPosition, getNodeAttributes, getNodeType, getPreviousBlockSibling, getRenderedAttributes, getSchema, getSchemaByResolvedExtensions, getSchemaTypeByName, getSchemaTypeNameByName, getSplittedAttributes, getStyleProperty, getText, getTextBetween, getTextContentFromNodes, getTextSerializersFromSchema, getUpdatedPosition, injectExtensionAttributesToParseRule, inputRulesPlugin, type insertContent, type insertContentAt, type insertDefaultBlock, isActive, isAndroid, isAtEndOfNode, isAtStartOfNode, isEmptyObject, isExtensionRulesEnabled, isFirefox, isFunction, isList, isMacOS, isMarkActive, isNodeActive, isNodeEmpty, isNodeSelection, isNodeViewSelected, isNumber, isPlainObject, isProseMirrorAddMarkStep, isProseMirrorAddNodeMarkStep, isProseMirrorAttrStep, isProseMirrorCellSelection, isProseMirrorDocAttrStep, isProseMirrorFragment, isProseMirrorNodeSelection, isProseMirrorRemoveMarkStep, isProseMirrorRemoveNodeMarkStep, isProseMirrorReplaceAroundStep, isProseMirrorReplaceStep, isProseMirrorSlice, isProseMirrorStep, isProseMirrorStepResult, isRegExp, isSafari, isString, isTextSelection, isiOS, type joinBackward, type joinDown, type joinForward, type joinItemBackward, type joinItemForward, type joinTextblockBackward, type joinTextblockForward, type joinUp, type keyboardShortcut, type lift, type liftEmptyBlock, type liftListItem, liveWidgetKeys, markInputRule, markPasteRule, index_d_exports$2 as markdown, marksEqual, mergeAttributes, mergeDeep, minMax, type newlineInCode, nodeInputRule, nodePasteRule, objectIncludes, parseAttributes, parseIndentedBlocks, pasteRulesPlugin, posToDOMRect, removeDuplicates, renderNestedMarkdownContent, type resetAttributes, resolveExtensions, resolveFocusPosition, rewriteUnknownContent, type scrollIntoView, type selectAll, type selectNodeBackward, type selectNodeForward, type selectParentNode, type selectTextblockEnd, type selectTextblockStart, selectionToInsertionEnd, serializeAttributes, type setContent, type setMark, type setMeta, type setNode, type setNodeSelection, type setTextDirection, type setTextSelection, type sinkListItem, sortExtensions, type splitBlock, splitExtensions, type splitListItem, textInputRule, textPasteRule, textblockTypeInputRule, type toggleList, type toggleMark, type toggleNode, type toggleWrap, type undoInputRule, type unsetAllMarks, type unsetMark, type unsetTextDirection, type updateAttributes, type updateDecorations, updateMarkViewAttributes, type wrapIn, type wrapInList, wrappingInputRule };
+-//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
++// Local scheduling patch: declaration map omitted because declarations changed.
+\ No newline at end of file
+diff --git a/dist/index.d.ts.map b/dist/index.d.ts.map
+deleted file mode 100644
+index 227970170f27c122a97998699934aecd71db1ae6..0000000000000000000000000000000000000000
+diff --git a/dist/index.js b/dist/index.js
+index 883243a77051c7666ffb368abceaaf757567608c..0c2aa79a8c3530d9e14391cebc7110ab0c62ef12 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -493,37 +493,52 @@ function isSafari() {
+ //#endregion
+ //#region src/commands/focus.ts
+ const focus = (position = null, options = {}) => ({ editor, view, tr, dispatch }) => {
+-	options = {
+-		scrollIntoView: true,
+-		...options
+-	};
+-	const delayedFocus = () => {
+-		if (isiOS() || isAndroid()) view.dom.focus();
+-		if (isSafari() && !isiOS() && !isAndroid()) view.dom.focus({ preventScroll: true });
+-		requestAnimationFrame(() => {
+-			if (!editor.isDestroyed) {
+-				view.focus();
+-				if (options === null || options === void 0 ? void 0 : options.scrollIntoView) editor.commands.scrollIntoView();
+-			}
+-		});
+-	};
+-	try {
+-		if (view.hasFocus() && position === null || position === false) return true;
+-	} catch {
+-		return false;
+-	}
+-	if (dispatch && position === null && !isTextSelection(editor.state.selection)) {
+-		delayedFocus();
+-		return true;
+-	}
+-	const selection = resolveFocusPosition(tr.doc, position) || editor.state.selection;
+-	const isSameSelection = editor.state.selection.eq(selection);
+-	if (dispatch) {
+-		if (!isSameSelection) tr.setSelection(selection);
+-		if (isSameSelection && tr.storedMarks) tr.setStoredMarks(tr.storedMarks);
+-		delayedFocus();
+-	}
+-	return true;
++  const scope = editor.captureDeferredTasks(view);
++  const execute = () => {
++    options = { scrollIntoView: true, ...options };
++    scope?.assertOpen();
++    const delayedFocus = () => {
++      scope?.assertOpen();
++      if (isiOS() || isAndroid()) view.dom.focus();
++      scope?.assertOpen();
++      if (isSafari() && !isiOS() && !isAndroid()) view.dom.focus({ preventScroll: true });
++      scope?.assertOpen();
++      const applyFocus = () => {
++        scope?.assertOpen();
++        if (!editor.isDestroyed) {
++          view.focus();
++          scope?.assertOpen();
++          if (options?.scrollIntoView) editor.commands.scrollIntoView();
++          scope?.assertOpen();
++        }
++      };
++      if (scope) scope.enqueue('focus-frame', applyFocus);
++      else requestAnimationFrame(applyFocus);
++    };
++    let focused;
++    try { focused = view.hasFocus(); }
++    catch { scope?.assertOpen(); return false; }
++    scope?.assertOpen();
++    if ((focused && position === null) || position === false) return true;
++    if (dispatch && position === null && !isTextSelection(editor.state.selection)) {
++      scope?.assertOpen();
++      delayedFocus();
++      return true;
++    }
++    const selection = resolveFocusPosition(tr.doc, position) || editor.state.selection;
++    scope?.assertOpen();
++    const isSameSelection = editor.state.selection.eq(selection);
++    scope?.assertOpen();
++    if (dispatch) {
++      if (!isSameSelection) tr.setSelection(selection);
++      scope?.assertOpen();
++      if (isSameSelection && tr.storedMarks) tr.setStoredMarks(tr.storedMarks);
++      scope?.assertOpen();
++      delayedFocus();
++    }
++    return true;
++  };
++  return scope ? scope.run(execute) : execute();
+ };
+ //#endregion
+ //#region src/commands/forEach.ts
+@@ -6139,6 +6154,7 @@ img.ProseMirror-separator {
+ }`;
+ //#endregion
+ //#region src/Editor.ts
++const deferredTaskEditors = new WeakMap();
+ var Editor = class extends EventEmitter {
+ 	constructor(options = {}) {
+ 		super();
+@@ -6192,7 +6208,11 @@ var Editor = class extends EventEmitter {
+ 			getUpdatedPosition,
+ 			createMappablePosition
+ 		};
+-		this.setOptions(options);
++        const descriptor = Object.getOwnPropertyDescriptor(options, 'deferredTasks');
++        if (descriptor && !('value' in descriptor)) throw new Error('Editor deferredTasks must be own data');
++        deferredTaskEditors.set(this, { port: descriptor?.value, fixed: false });
++        this.setOptions(options);
++        deferredTaskEditors.get(this).fixed = true;
+ 		this.createExtensionManager();
+ 		this.createCommandManager();
+ 		this.createSchema();
+@@ -6228,20 +6248,59 @@ var Editor = class extends EventEmitter {
+ 	*/
+ 	mount(el) {
+ 		if (typeof document === "undefined") throw new Error(`[tiptap error]: The editor cannot be mounted because there is no 'document' defined in this environment.`);
+-		this.createView(el);
++        const ownership = deferredTaskEditors.get(this);
++        this.captureDeferredTasks();
++        const scope = ownership.port?.beginMount(this);
++        ownership.scope = scope;
++        const mount = () => {
++        this.createView(el);
++        if (scope) {
++          scope.assertOpen();
++          ownership.port.bindView(scope, this, this.editorView);
++          scope.assertOpen();
++        }
+ 		this.emit("mount", { editor: this });
++        scope?.assertOpen();
+ 		if (this.css && !document.head.contains(this.css)) document.head.appendChild(this.css);
+-		window.setTimeout(() => {
++		const create = () => {
++            scope?.assertOpen();
+ 			if (this.isDestroyed) return;
+ 			if (this.options.autofocus !== false && this.options.autofocus !== null) this.commands.focus(this.options.autofocus);
++            scope?.assertOpen();
+ 			this.emit("create", { editor: this });
++            scope?.assertOpen();
+ 			this.isInitialized = true;
+-		}, 0);
+-	}
+-	/**
+-	* Remove the editor from the DOM, but still allow remounting at a different point in time
++        };
++        if (scope) scope.enqueue('mount-create', create);
++        else window.setTimeout(create, 0);
++        };
++        if (scope) scope.run(mount);
++        else mount();
++    }
++    /**
++    * Remove the editor from the DOM, but still allow remounting at a different point in time
+ 	*/
+-	unmount() {
++    unmount() {
++      const ownership = deferredTaskEditors.get(this);
++      const scope = ownership.scope;
++      if (!scope) { this.unmountView(); return; }
++      if (ownership.unmounting || ownership.unmountFailed) throw new Error('Editor unmount is not admitted');
++      const view = this.editorView;
++      ownership.unmounting = true;
++      try {
++        scope.close(() => {
++          this.unmountView();
++          if (view) ownership.port.unbindView(scope, this, view);
++        });
++        ownership.scope = undefined;
++      } catch (error) {
++        ownership.unmountFailed = true;
++        throw error;
++      } finally {
++        ownership.unmounting = false;
++      }
++    }
++    unmountView() {
+ 		if (this.editorView) {
+ 			this.editorState = this.editorView.state;
+ 			const dom = this.editorView.dom;
+@@ -6296,7 +6355,17 @@ var Editor = class extends EventEmitter {
+ 	*
+ 	* @param options A list of options
+ 	*/
+-	setOptions(options = {}) {
++    captureDeferredTasks(view) {
++      const ownership = deferredTaskEditors.get(this);
++      const descriptor = Object.getOwnPropertyDescriptor(this.options, 'deferredTasks');
++      if ((descriptor && !('value' in descriptor)) || descriptor?.value !== ownership.port) throw new Error('Editor deferredTasks cannot change');
++      return view ? ownership.port?.capture(this, view) : undefined;
++    }
++    setOptions(options = {}) {
++      const ownership = deferredTaskEditors.get(this);
++      const descriptor = Object.getOwnPropertyDescriptor(options, 'deferredTasks');
++      if (descriptor && (!('value' in descriptor) || (ownership.fixed && descriptor.value !== ownership.port))) throw new Error('Editor deferredTasks cannot change');
++      if (ownership.fixed) this.captureDeferredTasks();
+ 		this.options = {
+ 			...this.options,
+ 			...options
+@@ -7884,4 +7953,4 @@ var Tracker = class {
+ //#endregion
+ export { CommandManager, DECORATION_MANAGER_PLUGIN_KEY, Decoration, DecorationManager, Editor, Extendable, Extension, Fragment, InlineDecoration, InputRule, MappablePosition, Mark, MarkView, Node, NodeDecoration, NodePos, NodeView, PasteRule, ResizableNodeView, ResizableNodeview, Tracker, WidgetDecoration, attrsEqual, callOrReturn, canInsertNode, combineTransactionSteps, commands_exports as commands, createAtomBlockMarkdownSpec, createBlockMarkdownSpec, createChainableState, createDocument, h as createElement, h, createInlineMarkdownSpec, createMappablePosition, createNodeFromContent, createStyleTag, createWidgetDecoration, decodeHtmlEntities, defaultBlockAt, deleteProps, elementFromString, encodeHtmlEntities, escapeForRegEx, extensions_exports as extensions, findChildren, findChildrenInRange, findDuplicates, findParentNode, findParentNodeClosestToPos, flattenExtensions, fromString, generateHTML, generateJSON, generateText, getAttributes, getAttributesFromExtensions, getChangedRanges, getDebugJSON, getExtensionField, getHTMLFromFragment, getMarkAttributes, getMarkRange, getMarkType, getMarksBetween, getNodeAtPosition, getNodeAttributes, getNodeType, getPreviousBlockSibling, getRenderedAttributes, getSchema, getSchemaByResolvedExtensions, getSchemaTypeByName, getSchemaTypeNameByName, getSplittedAttributes, getStyleProperty, getText, getTextBetween, getTextContentFromNodes, getTextSerializersFromSchema, getUpdatedPosition, injectExtensionAttributesToParseRule, inputRulesPlugin, isActive, isAndroid, isAtEndOfNode, isAtStartOfNode, isEmptyObject, isExtensionRulesEnabled, isFirefox, isFunction, isList, isMacOS, isMarkActive, isNodeActive, isNodeEmpty, isNodeSelection, isNodeViewSelected, isNumber, isPlainObject, isProseMirrorAddMarkStep, isProseMirrorAddNodeMarkStep, isProseMirrorAttrStep, isProseMirrorCellSelection, isProseMirrorDocAttrStep, isProseMirrorFragment, isProseMirrorNodeSelection, isProseMirrorRemoveMarkStep, isProseMirrorRemoveNodeMarkStep, isProseMirrorReplaceAroundStep, isProseMirrorReplaceStep, isProseMirrorSlice, isProseMirrorStep, isProseMirrorStepResult, isRegExp, isSafari, isString, isTextSelection, isiOS, liveWidgetKeys, markInputRule, markPasteRule, markdown_exports as markdown, marksEqual, mergeAttributes, mergeDeep, minMax, nodeInputRule, nodePasteRule, objectIncludes, parseAttributes, parseIndentedBlocks, pasteRulesPlugin, posToDOMRect, removeDuplicates, renderNestedMarkdownContent, resolveExtensions, resolveFocusPosition, rewriteUnknownContent, selectionToInsertionEnd, serializeAttributes, sortExtensions, splitExtensions, textInputRule, textPasteRule, textblockTypeInputRule, updateMarkViewAttributes, wrappingInputRule };
+ 
+-//# sourceMappingURL=index.js.map
+\ No newline at end of file
++// Local scheduling patch: source map omitted because emitted bytes changed.
+\ No newline at end of file
+diff --git a/dist/index.js.map b/dist/index.js.map
+deleted file mode 100644
+index 7f50d04e11ae2aec74593a848bb7694327aa9c47..0000000000000000000000000000000000000000
+diff --git a/src/Editor.ts b/src/Editor.ts
+index a7a9f5250cc44a9cabf24800fed84a621e6dc769..dd71745de6b3b95d749db37d1acd3bed1bed1483 100644
+--- a/src/Editor.ts
++++ b/src/Editor.ts
+@@ -56,6 +56,14 @@ export interface TiptapEditorHTMLElement extends HTMLElement {
+   editor?: Editor
+ }
+ 
++const deferredTaskEditors = new WeakMap<Editor, {
++  port: EditorOptions['deferredTasks'];
++  scope?: ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>;
++  fixed: boolean;
++  unmounting?: boolean;
++  unmountFailed?: boolean;
++}>()
++
+ export class Editor extends EventEmitter<EditorEvents> {
+   private commandManager!: CommandManager
+ 
+@@ -127,7 +135,11 @@ export class Editor extends EventEmitter<EditorEvents> {
+ 
+   constructor(options: Partial<EditorOptions> = {}) {
+     super()
++    const descriptor = Object.getOwnPropertyDescriptor(options, 'deferredTasks')
++    if (descriptor && !('value' in descriptor)) throw new Error('Editor deferredTasks must be own data')
++    deferredTaskEditors.set(this, { port: descriptor?.value, fixed: false })
+     this.setOptions(options)
++    deferredTaskEditors.get(this)!.fixed = true
+     this.createExtensionManager()
+     this.createCommandManager()
+     this.createSchema()
+@@ -176,14 +188,26 @@ export class Editor extends EventEmitter<EditorEvents> {
+         `[tiptap error]: The editor cannot be mounted because there is no 'document' defined in this environment.`,
+       )
+     }
++    const ownership = deferredTaskEditors.get(this)!
++    this.captureDeferredTasks()
++    const scope = ownership.port?.beginMount(this)
++    ownership.scope = scope
++    const mount = () => {
+     this.createView(el)
++    if (scope) {
++      scope.assertOpen()
++      ownership.port!.bindView(scope, this, this.editorView!)
++      scope.assertOpen()
++    }
+     this.emit('mount', { editor: this })
++    scope?.assertOpen()
+ 
+     if (this.css && !document.head.contains(this.css)) {
+       document.head.appendChild(this.css)
+     }
+ 
+-    window.setTimeout(() => {
++    const create = () => {
++      scope?.assertOpen()
+       if (this.isDestroyed) {
+         return
+       }
+@@ -191,15 +215,43 @@ export class Editor extends EventEmitter<EditorEvents> {
+       if (this.options.autofocus !== false && this.options.autofocus !== null) {
+         this.commands.focus(this.options.autofocus)
+       }
++      scope?.assertOpen()
+       this.emit('create', { editor: this })
++      scope?.assertOpen()
+       this.isInitialized = true
+-    }, 0)
++    }
++    if (scope) scope.enqueue('mount-create', create)
++    else window.setTimeout(create, 0)
++    }
++    if (scope) scope.run(mount)
++    else mount()
+   }
+ 
+   /**
+    * Remove the editor from the DOM, but still allow remounting at a different point in time
+    */
+   public unmount() {
++    const ownership = deferredTaskEditors.get(this)!
++    const scope = ownership.scope
++    if (!scope) { this.unmountView(); return }
++    if (ownership.unmounting || ownership.unmountFailed) throw new Error('Editor unmount is not admitted')
++    const view = this.editorView
++    ownership.unmounting = true
++    try {
++      scope.close(() => {
++        this.unmountView()
++        if (view) ownership.port!.unbindView(scope, this, view)
++      })
++      ownership.scope = undefined
++    } catch (error) {
++      ownership.unmountFailed = true
++      throw error
++    } finally {
++      ownership.unmounting = false
++    }
++  }
++
++  private unmountView() {
+     if (this.editorView) {
+       // Keep the cached state in sync so plugin state stays available after unmount.
+       this.editorState = this.editorView.state
+@@ -284,7 +336,22 @@ export class Editor extends EventEmitter<EditorEvents> {
+    *
+    * @param options A list of options
+    */
++  public captureDeferredTasks(view?: EditorView) {
++    const ownership = deferredTaskEditors.get(this)!
++    const descriptor = Object.getOwnPropertyDescriptor(this.options, 'deferredTasks')
++    if ((descriptor && !('value' in descriptor)) || descriptor?.value !== ownership.port) {
++      throw new Error('Editor deferredTasks cannot change')
++    }
++    return view ? ownership.port?.capture(this, view) : undefined
++  }
++
+   public setOptions(options: Partial<EditorOptions> = {}): void {
++    const ownership = deferredTaskEditors.get(this)!
++    const descriptor = Object.getOwnPropertyDescriptor(options, 'deferredTasks')
++    if (descriptor && (!('value' in descriptor) || (ownership.fixed && descriptor.value !== ownership.port))) {
++      throw new Error('Editor deferredTasks cannot change')
++    }
++    if (ownership.fixed) this.captureDeferredTasks()
+     this.options = {
+       ...this.options,
+       ...options,
+diff --git a/src/commands/focus.ts b/src/commands/focus.ts
+index 61201b5e09d0e6d09355d8d5765247691670c0a5..3b41197a8e5d54fb1266aca81d44cd0f0971994f 100644
+--- a/src/commands/focus.ts
++++ b/src/commands/focus.ts
+@@ -33,76 +33,51 @@ declare module '@tiptap/core' {
+   }
+ }
+ 
+-export const focus: RawCommands['focus'] =
+-  (position = null, options = {}) =>
+-  ({ editor, view, tr, dispatch }) => {
+-    options = {
+-      scrollIntoView: true,
+-      ...options,
+-    }
+-
++export const focus: RawCommands['focus'] = (position = null, options = {}) => ({ editor, view, tr, dispatch }) => {
++  const scope = editor.captureDeferredTasks(view);
++  const execute = () => {
++    options = { scrollIntoView: true, ...options };
++    scope?.assertOpen();
+     const delayedFocus = () => {
+-      // focus within `requestAnimationFrame` breaks focus on iOS and Android
+-      // so we have to call this
+-      if (isiOS() || isAndroid()) {
+-        ;(view.dom as HTMLElement).focus()
+-      }
+-
+-      // Safari requires preventScroll to avoid the browser scrolling to the
+-      // top of the editor when focus is called before the selection is set.
+-      // We exclude iOS and Android since they are already handled above.
+-      // see: https://github.com/ueberdosis/tiptap/issues/7318
+-      if (isSafari() && !isiOS() && !isAndroid()) {
+-        ;(view.dom as HTMLElement).focus({ preventScroll: true })
+-      }
+-
+-      // For React we have to focus asynchronously. Otherwise wild things happen.
+-      // see: https://github.com/ueberdosis/tiptap/issues/1520
+-      requestAnimationFrame(() => {
++      scope?.assertOpen();
++      if (isiOS() || isAndroid()) view.dom.focus();
++      scope?.assertOpen();
++      if (isSafari() && !isiOS() && !isAndroid()) view.dom.focus({ preventScroll: true });
++      scope?.assertOpen();
++      const applyFocus = () => {
++        scope?.assertOpen();
+         if (!editor.isDestroyed) {
+-          view.focus()
+-
+-          if (options?.scrollIntoView) {
+-            editor.commands.scrollIntoView()
+-          }
++          view.focus();
++          scope?.assertOpen();
++          if (options?.scrollIntoView) editor.commands.scrollIntoView();
++          scope?.assertOpen();
+         }
+-      })
+-    }
+-
+-    try {
+-      if ((view.hasFocus() && position === null) || position === false) {
+-        return true
+-      }
+-    } catch {
+-      // if view.hasFocus fails (view not mounted yet)
+-      // we will return false because there's nothing to focus
+-      return false
+-    }
+-
+-    // we don’t try to resolve a NodeSelection or CellSelection
++      };
++      if (scope) scope.enqueue('focus-frame', applyFocus);
++      else requestAnimationFrame(applyFocus);
++    };
++    let focused;
++    try { focused = view.hasFocus(); }
++    catch { scope?.assertOpen(); return false; }
++    scope?.assertOpen();
++    if ((focused && position === null) || position === false) return true;
+     if (dispatch && position === null && !isTextSelection(editor.state.selection)) {
+-      delayedFocus()
+-      return true
++      scope?.assertOpen();
++      delayedFocus();
++      return true;
+     }
+-
+-    // pass through tr.doc instead of editor.state.doc
+-    // since transactions could change the editors state before this command has been run
+-    const selection = resolveFocusPosition(tr.doc, position) || editor.state.selection
+-    const isSameSelection = editor.state.selection.eq(selection)
+-
++    const selection = resolveFocusPosition(tr.doc, position) || editor.state.selection;
++    scope?.assertOpen();
++    const isSameSelection = editor.state.selection.eq(selection);
++    scope?.assertOpen();
+     if (dispatch) {
+-      if (!isSameSelection) {
+-        tr.setSelection(selection)
+-      }
+-
+-      // `tr.setSelection` resets the stored marks
+-      // so we’ll restore them if the selection is the same as before
+-      if (isSameSelection && tr.storedMarks) {
+-        tr.setStoredMarks(tr.storedMarks)
+-      }
+-
+-      delayedFocus()
++      if (!isSameSelection) tr.setSelection(selection);
++      scope?.assertOpen();
++      if (isSameSelection && tr.storedMarks) tr.setStoredMarks(tr.storedMarks);
++      scope?.assertOpen();
++      delayedFocus();
+     }
+-
+-    return true
+-  }
++    return true;
++  };
++  return scope ? scope.run(execute) : execute();
++};
+diff --git a/src/types.ts b/src/types.ts
+index 0fdbb9f8a835b3bb43310ce5ebc1ef4b10595558..baf8fcf32e9a1174203649cca063ce250242a416 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -287,6 +287,21 @@ export type DispatchTransactionProps = {
+ export type EnableRules = (AnyExtension | string)[] | boolean
+ 
+ export interface EditorOptions {
++  /** Optional fixed per-editor ownership for the named deferred callbacks. */
++  deferredTasks?: {
++    beginMount(editor: Editor): {
++      run<T>(body: () => T): T;
++      enqueue(kind: 'mount-create' | 'focus-frame' | 'selection-focus' | 'selection-blur' | 'update-focus', body: () => void): void;
++      assertOpen(): void;
++      whenIdle(): Promise<void>;
++      close(body?: () => void): void;
++      readonly settled: Promise<void>;
++    };
++    bindView(scope: ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>, editor: Editor, view: EditorView): void;
++    unbindView(scope: ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>, editor: Editor, view: EditorView): void;
++    capture(editor: Editor, view: EditorView): ReturnType<NonNullable<EditorOptions['deferredTasks']>['beginMount']>;
++  };
++
+   /**
+    * The element to bind the editor to:
+    * - If an `Element` is passed, the editor will be mounted appended to that element
