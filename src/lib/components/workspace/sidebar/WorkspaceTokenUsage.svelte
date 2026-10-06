@@ -14,7 +14,6 @@
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Button } from '$lib/components/ui/button';
-  import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { portal } from '$lib/actions/portal';
   import {
@@ -43,8 +42,6 @@
     title: string;
     tokens: number;
     totals: TokenUsageTotals;
-    humanMessages: number;
-    agentMessages: number;
   }
   interface ScopeTarget {
     kind: BreakdownKind;
@@ -162,8 +159,6 @@
         title: model,
         tokens: tokenCount(modelTotals),
         totals: modelTotals,
-        humanMessages: 0,
-        agentMessages: 0,
       }))
       .filter((row) => row.tokens > 0)
       .sort((a, b) => b.tokens - a.tokens),
@@ -186,8 +181,6 @@
           m.workspace_tokenUsage_agentFallback_label({ id: agentId.substring(0, 8) }),
         tokens: tokenCount(entry),
         totals: entry,
-        humanMessages: 0,
-        agentMessages: 0,
       }))
       .filter((row) => row.tokens > 0)
       .sort((a, b) => b.tokens - a.tokens),
@@ -240,31 +233,16 @@
           title: kind === 'agent' ? label : id,
           tokens: tokenCount(summary.totals),
           totals: summary.totals,
-          humanMessages: summary.humanMessages,
-          agentMessages: summary.agentMessages,
         };
       })
-      .filter(
-        (row) =>
-          row.tokens > 0 ||
-          row.humanMessages > 0 ||
-          row.agentMessages > 0 ||
-          row.totals.cost !== undefined,
-      )
+      .filter((row) => row.tokens > 0)
       .sort((a, b) => b.tokens - a.tokens || a.label.localeCompare(b.label));
   }
 
   const modelRows = $derived(crossFilterAvailable ? matrixBreakdownRows('model') : legacyModelRows);
   const agentRows = $derived(crossFilterAvailable ? matrixBreakdownRows('agent') : legacyAgentRows);
-  const modelSegmentRows = $derived(modelRows.filter((row) => row.tokens > 0));
-  const agentSegmentRows = $derived(agentRows.filter((row) => row.tokens > 0));
-  const messageOnlyModelRows = $derived(modelRows.filter((row) => row.tokens === 0));
-  const messageOnlyAgentRows = $derived(agentRows.filter((row) => row.tokens === 0));
-  function firstNonzeroRow(rows: BreakdownRow[]): BreakdownRow | undefined {
-    return rows.find((row) => row.tokens > 0);
-  }
   function defaultRow(rows: BreakdownRow[]): BreakdownRow | undefined {
-    return firstNonzeroRow(rows) ?? rows[0];
+    return rows[0];
   }
 
   function persistedTargetForKind(kind: BreakdownKind): ScopeTarget | null {
@@ -811,7 +789,7 @@
                 </h4>
                 {#if selectedAgentRow && previewAgentRow}
                   <div
-                    class={`navigator-row grid min-w-0 ${messageOnlyAgentRows.length ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
+                    class="navigator-row grid min-w-0 grid-cols-1 items-center gap-y-3"
                     role="radiogroup"
                     aria-labelledby={`${detailsId}-agents`}
                   >
@@ -831,15 +809,15 @@
                         />
                       </span>
                     </div>
-                    {#if agentSegmentRows.length > 0}
+                    {#if agentRows.length > 0}
                       <ol
                         class="breakdown-stack col-span-full row-start-2 flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
                       >
-                        {#each agentSegmentRows as row (row.id)}
+                        {#each agentRows as row (row.id)}
                           <li
                             class="breakdown-stack-item h-full"
                             role="presentation"
-                            style={`width: ${segmentWidth(share(row.tokens, agentTokenTotal), agentSegmentRows.length)}`}
+                            style={`flex: ${row.tokens} 1 0%`}
                           >
                             <Button
                               variant="plain"
@@ -877,60 +855,6 @@
                         {/each}
                       </ol>
                     {/if}
-                    {#if messageOnlyAgentRows.length > 0}
-                      <ul
-                        class="message-only-options col-start-2 row-start-1 flex max-w-16 flex-wrap justify-end gap-1"
-                      >
-                        {#each messageOnlyAgentRows as row, index (row.id)}
-                          <li class="min-w-0 max-w-full">
-                            <Button
-                              variant="plain"
-                              size="icon-compact"
-                              iconOnly
-                              role="radio"
-                              class="message-only-control text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground aria-checked:bg-active"
-                              data-preview-active={rowKey(rowTarget(row)) ===
-                              rowKey(rowTarget(previewAgentRow))
-                                ? 'true'
-                                : undefined}
-                              aria-checked={rowKey(rowTarget(row)) ===
-                              rowKey(rowTarget(selectedAgentRow))
-                                ? 'true'
-                                : 'false'}
-                              tabindex={rowKey(rowTarget(row)) ===
-                              rowKey(rowTarget(selectedAgentRow))
-                                ? 0
-                                : -1}
-                              aria-label={m.workspace_tokenUsage_segment_ariaLabel({
-                                scope: row.kindLabel,
-                                category: row.label,
-                                tokens: compactWholeNumber(row.tokens),
-                                share: shareLabel(0),
-                              })}
-                              aria-describedby={`${detailsId}-agent-message-only-${index}`}
-                              tooltip={row.label}
-                              onpointerenter={(event) => handleRowPointerEnter(row, event)}
-                              onpointerleave={() => handleRowPointerLeave(row)}
-                              onpointerdown={(event) => handleRowPointerDown(row, event)}
-                              onfocus={() => handleRowFocus(row)}
-                              onblur={(event) => handleRowBlur(row, event)}
-                              onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
-                              onclick={(event) => handleRowClick(row, event)}
-                            >
-                              <ChatTextIcon
-                                size={14}
-                                weight="regular"
-                                mirrored={false}
-                                aria-hidden="true"
-                              />
-                            </Button>
-                            <span id={`${detailsId}-agent-message-only-${index}`} class="sr-only">
-                              {messageCountsLabel(row.humanMessages, row.agentMessages)}
-                            </span>
-                          </li>
-                        {/each}
-                      </ul>
-                    {/if}
                   </div>
                 {/if}
               </section>
@@ -947,7 +871,7 @@
                 </h4>
                 {#if selectedModelRow && previewModelRow}
                   <div
-                    class={`navigator-row grid min-w-0 ${messageOnlyModelRows.length ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
+                    class="navigator-row grid min-w-0 grid-cols-1 items-center gap-y-3"
                     role="radiogroup"
                     aria-labelledby={`${detailsId}-models`}
                   >
@@ -967,15 +891,15 @@
                         />
                       </span>
                     </div>
-                    {#if modelSegmentRows.length > 0}
+                    {#if modelRows.length > 0}
                       <ol
                         class="breakdown-stack col-span-full row-start-2 flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
                       >
-                        {#each modelSegmentRows as row (row.id)}
+                        {#each modelRows as row (row.id)}
                           <li
                             class="breakdown-stack-item h-full"
                             role="presentation"
-                            style={`width: ${segmentWidth(share(row.tokens, modelTokenTotal), modelSegmentRows.length)}`}
+                            style={`flex: ${row.tokens} 1 0%`}
                           >
                             <Button
                               variant="plain"
@@ -1012,60 +936,6 @@
                           </li>
                         {/each}
                       </ol>
-                    {/if}
-                    {#if messageOnlyModelRows.length > 0}
-                      <ul
-                        class="message-only-options col-start-2 row-start-1 flex max-w-16 flex-wrap justify-end gap-1"
-                      >
-                        {#each messageOnlyModelRows as row, index (row.id)}
-                          <li class="min-w-0 max-w-full">
-                            <Button
-                              variant="plain"
-                              size="icon-compact"
-                              iconOnly
-                              role="radio"
-                              class="message-only-control text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground aria-checked:bg-active"
-                              data-preview-active={rowKey(rowTarget(row)) ===
-                              rowKey(rowTarget(previewModelRow))
-                                ? 'true'
-                                : undefined}
-                              aria-checked={rowKey(rowTarget(row)) ===
-                              rowKey(rowTarget(selectedModelRow))
-                                ? 'true'
-                                : 'false'}
-                              tabindex={rowKey(rowTarget(row)) ===
-                              rowKey(rowTarget(selectedModelRow))
-                                ? 0
-                                : -1}
-                              aria-label={m.workspace_tokenUsage_segment_ariaLabel({
-                                scope: row.kindLabel,
-                                category: row.label,
-                                tokens: compactWholeNumber(row.tokens),
-                                share: shareLabel(0),
-                              })}
-                              aria-describedby={`${detailsId}-model-message-only-${index}`}
-                              tooltip={row.label}
-                              onpointerenter={(event) => handleRowPointerEnter(row, event)}
-                              onpointerleave={() => handleRowPointerLeave(row)}
-                              onpointerdown={(event) => handleRowPointerDown(row, event)}
-                              onfocus={() => handleRowFocus(row)}
-                              onblur={(event) => handleRowBlur(row, event)}
-                              onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
-                              onclick={(event) => handleRowClick(row, event)}
-                            >
-                              <ChatTextIcon
-                                size={14}
-                                weight="regular"
-                                mirrored={false}
-                                aria-hidden="true"
-                              />
-                            </Button>
-                            <span id={`${detailsId}-model-message-only-${index}`} class="sr-only">
-                              {messageCountsLabel(row.humanMessages, row.agentMessages)}
-                            </span>
-                          </li>
-                        {/each}
-                      </ul>
                     {/if}
                   </div>
                 {/if}
@@ -1121,11 +991,22 @@
     padding-inline-start: 0.875rem;
   }
   .breakdown-stack-item {
+    position: relative;
     min-width: 0;
+    /* Keep fractional hit areas from extending into the previous segment. */
+    clip-path: inset(0);
+  }
+  .breakdown-stack-item + .breakdown-stack-item::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 1px;
+    background: hsl(var(--border));
+    pointer-events: none;
   }
   .breakdown-stack {
     border-radius: 2px;
-    gap: 1px;
     background: hsl(var(--border));
   }
   .composition-strip {
