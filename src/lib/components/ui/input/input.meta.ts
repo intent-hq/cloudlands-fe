@@ -36,7 +36,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/browser/BrowserViewportDialog.svelte',
     'src/lib/components/browser/EmbeddedBrowser.svelte',
     'src/lib/components/chat/AgentCard.svelte',
-    'src/lib/components/chat/AssistantThreadRenameDialog.svelte',
+    'src/lib/components/chat/AssistantThreadTitle.svelte',
     'src/lib/components/chat/ChatMessageNavigator.svelte',
     'src/lib/components/chat/TaskProgressControl.svelte',
     'src/lib/components/chat/input/ContextPickerButton.svelte',

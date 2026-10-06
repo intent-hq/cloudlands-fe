@@ -1,10 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { ListRow, ListView } from '$lib/components/patterns/collection';
-  import { Button } from '$lib/components/ui/button';
-  import { faPen } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import AssistantThreadRenameDialog from '$lib/components/chat/AssistantThreadRenameDialog.svelte';
+  import AssistantThreadTitle from '$lib/components/chat/AssistantThreadTitle.svelte';
+  import { createAssistantThreadRename } from '$lib/components/chat/assistant-thread-rename.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -15,7 +13,7 @@
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
-  import type { ChiefThreadSummary } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import {
     backgroundHooksSubscribeRequested,
     backgroundHooksUnsubscribeRequested,
@@ -33,9 +31,9 @@
   const threads$ = selectChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
   const hidesActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
-  let renaming = $state<{ thread: ChiefThreadSummary; returnFocus: HTMLButtonElement } | null>(
-    null,
-  );
+  const renameConsumerId = crypto.randomUUID();
+  const renameOutcome$ = selectAgentMutationUi(CHIEF_WORKSPACE_ID, renameConsumerId);
+  const rename = createAssistantThreadRename(renameConsumerId, renameOutcome$, hidesActions$);
   let selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
 
   onMount(() => {
@@ -70,7 +68,13 @@
 >
   {#snippet row({ item: thread })}
     <ListRow class="min-h-9 px-2 py-2" role="group" aria-label={thread.title}>
-      {#snippet title()}<span title={thread.title}>{thread.title}</span>{/snippet}
+      {#snippet title()}
+        {#if !$hidesActions$}
+          <AssistantThreadTitle {thread} {rename} class="h-5! type-caption font-normal" />
+        {:else}
+          <span title={thread.title}>{thread.title}</span>
+        {/if}
+      {/snippet}
       {#snippet trailing()}
         <HomeAssistantThreadActivity agentId={thread.agentId} />
         {#if thread.isActive}
@@ -79,20 +83,6 @@
             role="img"
             aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
           ></span>
-        {/if}
-        {#if !$hidesActions$}
-          <Button
-            variant="ghost"
-            size="icon-compact"
-            aria-label={m.layout_chiefCard_renameThread_ariaLabel({ title: thread.title })}
-            title={m.layout_chiefCard_renameThread_title()}
-            onclick={(event) => {
-              if (event.currentTarget instanceof HTMLButtonElement)
-                renaming = { thread, returnFocus: event.currentTarget };
-            }}
-          >
-            <Fa icon={faPen} size="xs" />
-          </Button>
         {/if}
       {/snippet}
     </ListRow>
@@ -104,6 +94,6 @@
   {/snippet}
 </ListView>
 
-{#if renaming}
-  <AssistantThreadRenameDialog {...renaming} onClose={() => (renaming = null)} />
+{#if rename.error}
+  <p role="alert" class="type-caption shrink-0 px-2 py-2 text-danger">{rename.error}</p>
 {/if}
