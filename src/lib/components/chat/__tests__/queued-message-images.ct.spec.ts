@@ -22,8 +22,63 @@ type Locator = ReturnType<CtPage['getByTestId']>;
 async function queueScreenshot(component: Locator) {
   const queue = component.getByTestId('queued-messages-container');
   if (!(await queue.count())) return component.screenshot();
-  const showAll = queue.getByRole('button', { name: 'Show all queued messages', exact: true });
-  if (await showAll.count()) await showAll.click();
+  const settledPreview = async () => {
+    let previous = '';
+    let mode = 'pending';
+    await expect
+      .poll(async () => {
+        const geometry = await queue.evaluate((element) => {
+          const expanded = element
+            .querySelector('[data-testid="queued-messages-disclosure"]')
+            ?.getAttribute('aria-expanded');
+          const viewport = element.querySelector<HTMLElement>(
+            '[data-testid="queued-messages-viewport"]',
+          );
+          const body = viewport?.firstElementChild;
+          const expander = element.querySelector('[aria-label="Show all queued messages"]');
+          const showLess = element.querySelector('[data-testid="queued-messages-show-less"]');
+          const box = viewport?.getBoundingClientRect();
+          return {
+            expanded,
+            viewport: !!viewport,
+            width: box?.width ?? 0,
+            height: box?.height ?? 0,
+            bodyHeight: body?.getBoundingClientRect().height ?? 0,
+            scrollHeight: viewport?.scrollHeight ?? 0,
+            clientHeight: viewport?.clientHeight ?? 0,
+            expander: !!expander,
+            showLess: !!showLess,
+          };
+        });
+        const sample = JSON.stringify(geometry);
+        const stable = sample === previous;
+        previous = sample;
+        mode = 'pending';
+        if (stable && geometry.expanded === 'false' && !geometry.viewport && !geometry.expander)
+          mode = 'collapsed';
+        if (
+          stable &&
+          geometry.expanded === 'true' &&
+          geometry.width > 0 &&
+          geometry.height > 0 &&
+          geometry.bodyHeight > 0
+        ) {
+          const clipped = geometry.scrollHeight > geometry.clientHeight + 1;
+          if (!geometry.expander && geometry.showLess) mode = 'expanded';
+          else if (!geometry.expander && !clipped) mode = 'unclipped';
+          else if (geometry.expander && clipped) mode = 'clipped';
+        }
+        return mode;
+      })
+      .not.toBe('pending');
+    return mode;
+  };
+  // The expander can disappear as the measured preview catches up with a new row.
+  // Only act on settled clipping; an already-unclipped preview needs no click.
+  if ((await settledPreview()) === 'clipped') {
+    await queue.getByRole('button', { name: 'Show all queued messages', exact: true }).click();
+    expect(await settledPreview()).toBe('expanded');
+  }
   return queue.screenshot();
 }
 
