@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.210.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.209.2...v2.210.0) (2026-10-06)
+
+
+### 🚀 Features
+
+* restore Home sidebar tabs and Assistant panels ([#3237](https://github.com/intent-hq/cloudlands-fe/issues/3237)) ([cf8b81a](https://github.com/intent-hq/cloudlands-fe/commit/cf8b81a8e2174d1dc1f0a8a6a7e1b2751a080c2f))
+
 ## [2.209.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.209.1...v2.209.2) (2026-10-06)
 
 
