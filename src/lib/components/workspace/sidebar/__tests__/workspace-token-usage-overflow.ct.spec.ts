@@ -30,9 +30,9 @@ for (const scenario of [
         outerScroll: element.scrollHeight - element.clientHeight,
         horizontalOverflow: element.scrollWidth - element.clientWidth,
         navigators: [...element.querySelectorAll('.navigator-row')].map((group) => {
-          const label = group
-            .querySelector('.navigator-selection > [title]')!
-            .getBoundingClientRect();
+          const labelElement = group.querySelector('.navigator-selection > span:first-child');
+          if (!labelElement) throw new Error('Missing navigator selection label');
+          const label = labelElement.getBoundingClientRect();
           const bar = group.querySelector('.breakdown-stack')!.getBoundingClientRect();
           return {
             labelVisible: label.width > 0 && label.top >= box.top && label.bottom <= box.bottom,
