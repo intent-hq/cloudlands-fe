@@ -311,7 +311,12 @@ repositoryCheckoutReducer.with(branchQueryChanged, (state, { payload: [id, scope
 repositoryCheckoutReducer.with(branchesMoreRequested, (state, { payload: [id, scope] }) =>
   readyChange(state, id, scope, (form) =>
     form.project && form.branchesCursor && form.branchesStatus !== 'loading'
-      ? { ...form, branchesRevision: form.branchesRevision + 1, branchesStatus: 'loading' }
+      ? {
+          ...form,
+          resolvingBranch: false,
+          branchesRevision: form.branchesRevision + 1,
+          branchesStatus: 'loading',
+        }
       : form,
   ),
 );

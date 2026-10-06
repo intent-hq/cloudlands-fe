@@ -146,6 +146,35 @@ async function open() {
 }
 
 describe('qualified project and branch selection in the real renderer store', () => {
+  it('clears default loading when branch pagination invalidates the pending lookup', async () => {
+    const s = await open();
+    const automatic =
+      Promise.withResolvers<
+        CheckoutResult<{ items: ReturnType<typeof branch>[]; cached: boolean }>
+      >();
+    s.branches.mockImplementation(async (query) => {
+      if (query.query === 'trunk') return automatic.promise;
+      return query.cursor
+        ? ready({ items: [branch('release/page-two')], cached: true })
+        : ready({ items: [branch('release/next')], nextCursor: 'page-2', cached: true });
+    });
+    store.dispatch(projectSelected('form', scope(), 'group/target'));
+    await advance();
+    expect(form().branchesStatus).toBe('ready');
+    expect(form().resolvingBranch).toBe(true);
+    const originalRevision = form().branchesRevision;
+    store.dispatch(branchesMoreRequested('form', scope()));
+    await advance();
+    expect(form().branchesRevision).toBeGreaterThan(originalRevision);
+    expect(form().branchesStatus).toBe('ready');
+    expect(getItems(form().branches).map((b) => b.name)).toContain('release/page-two');
+    automatic.resolve(ready({ items: [], cached: true }));
+    await advance();
+    expect(form().branch).toBeNull();
+    expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(false);
+    expect(form().resolvingBranch).toBe(false);
+  });
+
   it('keeps default resolution visibly loading after the branch list arrives, then exposes a missing default', async () => {
     const s = await open();
     const automatic =
