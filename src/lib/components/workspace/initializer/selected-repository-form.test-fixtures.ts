@@ -9,12 +9,13 @@ import { setGitLabAuthStatus } from '$store/renderer/slices/gitlab-auth/gitlab-a
 import { setGitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-slice';
 import type { RepositoryCheckoutSession } from '$shared/types/repository-checkout';
 
-export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab') {
+export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab', configAvailable = true) {
   const restore = setupRecentRepositoriesPreview();
   const instanceBaseUrl = 'https://git.example.test/Forge';
   const projectPath = 'fixture-owner/app';
   const originalCapture = appClient.integrations.captureRepositoryCheckout;
   const originalBranches = appClient.integrations.githubBranches;
+  const originalConfig = appClient.integrations.githubRepoConfig;
   const originalCached = appClient.integrations.githubBranchesCached;
   const branches = [
     { name: 'trunk', commitSha: 'a'.repeat(40) },
@@ -60,6 +61,19 @@ export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab') {
         cached: true,
       },
     }),
+    repoConfig: async (query) =>
+      configAvailable
+        ? {
+            status: 'ready',
+            value: {
+              projectPath: query.projectPath,
+              branch: query.branch,
+              commitSha: query.commitSha,
+              config: { setupScript: 'echo selected repo config' },
+              exists: true,
+            },
+          }
+        : { status: 'unavailable', reason: 'unreachable' },
     release: async () => {},
   };
   appClient.integrations.captureRepositoryCheckout = async () => ({
@@ -69,6 +83,10 @@ export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab') {
   appClient.integrations.githubBranches = async () => ({
     branches: branches.map((b) => b.name),
     defaultBranch: 'trunk',
+  });
+  appClient.integrations.githubRepoConfig = async () => ({
+    config: { setupScript: 'echo selected repo config' },
+    exists: true,
   });
   appClient.integrations.githubBranchesCached = async () => ({ cached: false, branches: [] });
   appStore.dispatch(setLabsGitLabEnabled(true));
@@ -115,5 +133,6 @@ export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab') {
     appClient.integrations.captureRepositoryCheckout = originalCapture;
     appClient.integrations.githubBranches = originalBranches;
     appClient.integrations.githubBranchesCached = originalCached;
+    appClient.integrations.githubRepoConfig = originalConfig;
   };
 }

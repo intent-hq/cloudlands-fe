@@ -642,3 +642,99 @@ describe('createRepoConfigProbeScheduler', () => {
     });
   });
 });
+
+describe('qualified GitLab config probe', () => {
+  const identity: RepoIdentity = {
+    path: '/same/unused/path',
+    type: 'gitlab',
+    branch: 'release/next',
+    gitlab: {
+      instanceBaseUrl: 'https://forge.example:8443/Forge',
+      projectPath: 'group/nested/project',
+      checkoutId: 'capture-A',
+      revision: 'account-A',
+      commitSha: 'a'.repeat(40),
+    },
+  };
+  it.each(['instanceBaseUrl', 'projectPath', 'checkoutId', 'revision', 'commitSha'] as const)(
+    'rejects stale %s results',
+    async (field) => {
+      const held = deferred<string | null>();
+      let current = identity;
+      const options = makeOptions(identity, {
+        readScript: () => held.promise,
+        getCurrentIdentity: () => current,
+      });
+      const read = probeRepoConfigSetupScript(options);
+      current = { ...identity, gitlab: { ...identity.gitlab!, [field]: 'changed' } };
+      held.resolve('echo wrong identity');
+      await read;
+      expect(options.onProbeResult).not.toHaveBeenCalled();
+      expect(options.applyScript).not.toHaveBeenCalled();
+    },
+  );
+  it('rejects a stale branch and reads no local or GitHub source', async () => {
+    const held = deferred<string | null>();
+    let current = identity;
+    const readScript = vi.fn(() => held.promise);
+    const options = makeOptions(identity, { readScript, getCurrentIdentity: () => current });
+    const read = probeRepoConfigSetupScript(options);
+    current = { ...identity, branch: 'other' };
+    held.resolve('echo old branch');
+    await read;
+    expect(options.onProbeResult).not.toHaveBeenCalled();
+    expect(fetches.local).not.toHaveBeenCalled();
+    expect(fetches.github).not.toHaveBeenCalled();
+  });
+  it('keeps repository storage identity across captures but separates instances and projects', () => {
+    expect(repoIdentityKey(identity)).toBe(
+      repoIdentityKey({
+        ...identity,
+        branch: 'other',
+        gitlab: { ...identity.gitlab!, checkoutId: 'new', revision: 'new' },
+      }),
+    );
+    expect(repoIdentityKey(identity)).not.toBe(
+      repoIdentityKey({
+        ...identity,
+        gitlab: { ...identity.gitlab!, instanceBaseUrl: 'https://other.example/Forge' },
+      }),
+    );
+    expect(repoIdentityKey(identity)).not.toBe(
+      repoIdentityKey({
+        ...identity,
+        gitlab: { ...identity.gitlab!, projectPath: 'other/project' },
+      }),
+    );
+  });
+  it('caches absence separately from an unavailable read', async () => {
+    const missing = makeOptions(identity, { readScript: async () => null });
+    await probeRepoConfigSetupScript(missing);
+    expect(missing.onProbeResult).toHaveBeenCalledExactlyOnceWith(null);
+    const onProbeError = vi.fn();
+    const unavailable = makeOptions(identity, {
+      readScript: async () => {
+        throw new Error('unavailable');
+      },
+      onProbeError,
+    });
+    await probeRepoConfigSetupScript(unavailable);
+    expect(onProbeError).toHaveBeenCalledOnce();
+    expect(unavailable.onProbeResult).not.toHaveBeenCalled();
+    expect(unavailable.setLoading).toHaveBeenLastCalledWith(false);
+  });
+  it('caches committed content without overwriting a newer explicit choice', async () => {
+    const held = deferred<string | null>();
+    let explicit = false;
+    const options = makeOptions(identity, {
+      readScript: () => held.promise,
+      isCustomSetupScript: () => explicit,
+    });
+    const read = probeRepoConfigSetupScript(options);
+    explicit = true;
+    held.resolve('echo repo');
+    await read;
+    expect(options.onProbeResult).toHaveBeenCalledExactlyOnceWith('echo repo');
+    expect(options.applyScript).not.toHaveBeenCalled();
+  });
+});

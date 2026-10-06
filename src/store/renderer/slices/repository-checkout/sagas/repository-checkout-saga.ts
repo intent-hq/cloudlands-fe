@@ -1,5 +1,14 @@
 import { eventChannel, buffers } from 'redux-saga';
-import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancelled,
+  delay,
+  fork,
+  put,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
@@ -16,6 +25,7 @@ import {
 } from '../repository-checkout-selectors';
 import {
   opened,
+  checkoutRepoConfigRequested,
   closed,
   invalidDraftOpened,
   projectQueryChanged,
@@ -394,6 +404,38 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
     yield* takeEvery([closed, invalidDraftOpened], function* ({ payload: [id] }) {
       const runtime = runtimes.get(id);
       if (runtime) dispose(runtime);
+    });
+    yield* takeEvery(checkoutRepoConfigRequested, function* (action) {
+      const [id, scope, query] = action.payload;
+      const runtime = runtimeFor(id, scope);
+      const matches = (form: RepositoryCheckoutForm | null) =>
+        form?.capture?.checkoutId === query.checkoutId &&
+        form.capture.revision === query.revision &&
+        form.project?.projectPath === query.projectPath &&
+        form.branch?.name === query.branch &&
+        form.branch.commitSha === query.commitSha;
+      try {
+        if (!runtime || !matches(yield* current(runtime))) {
+          yield* put(action.success(retired));
+          return;
+        }
+        if (!runtime.session?.repoConfig) {
+          yield* put(action.success({ status: 'unsupported' }));
+          return;
+        }
+        const value = yield* call([runtime.session, runtime.session.repoConfig], query);
+        if (!matches(yield* current(runtime))) {
+          yield* put(action.success(retired));
+          return;
+        }
+        yield* put(action.success(value));
+        yield* authorityFailure(runtime, value);
+      } catch {
+        yield* put(action.success(unreachable));
+      } finally {
+        // A cancelled root must also settle the initializer's bounded probe.
+        if (yield* cancelled()) yield* put(action.success(retired));
+      }
     });
     yield* takeEvery(recoveryRequested, function* ({ payload: [id, scope] }) {
       const form = yield* selectCheckoutForm.effect(id);

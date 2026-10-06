@@ -1,4 +1,4 @@
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -9,6 +9,9 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   CheckoutBranch,
+  CheckoutRepoConfigQuery,
+  CheckoutRepoConfig,
+  CheckoutResult,
   CheckoutBranches,
   CheckoutCapture,
   CheckoutProjectDetail,
@@ -31,6 +34,11 @@ import type {
   RepositoryCheckoutForm,
   RepositoryCheckoutState,
 } from './repository-checkout-types';
+
+export const checkoutRepoConfigRequested = createAsyncAction<
+  [formId: string, scopeKey: string, query: CheckoutRepoConfigQuery],
+  CheckoutResult<CheckoutRepoConfig> | { status: 'unsupported' }
+>('repositoryCheckout/repoConfigRequested', 'repositoryCheckout/repoConfig');
 
 export const opened = createAction<[formId: string, draft?: RepositoryCheckoutDraft]>(
   'repositoryCheckout/opened',

@@ -2,9 +2,17 @@
   import { onDestroy, untrack } from 'svelte';
   import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
   import { setupSelectedRepositoryForm } from './selected-repository-form.test-fixtures';
-  let { provider }: { provider: 'github' | 'gitlab' } = $props();
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only fixture installs mock clients and starts production sagas; it makes no live data reads.
-  onDestroy(setupSelectedRepositoryForm(untrack(() => provider)));
+  let {
+    provider,
+    configAvailable = true,
+  }: { provider: 'github' | 'gitlab'; configAvailable?: boolean } = $props();
+  onDestroy(
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only fixture installs mock clients and starts production sagas; it makes no live data reads.
+    setupSelectedRepositoryForm(
+      untrack(() => provider),
+      untrack(() => configAvailable),
+    ),
+  );
 </script>
 
 <div

@@ -14,6 +14,7 @@ import {
 import { gitlabAuthChanged } from '../../gitlab-auth/gitlab-auth-slice';
 import {
   opened,
+  checkoutRepoConfigRequested,
   closed,
   projectSelected,
   projectQueryChanged,
@@ -61,6 +62,7 @@ function session() {
   const listeners = new Set<() => void>();
   const result = {
     capture,
+    repoConfig: undefined as RepositoryCheckoutSession['repoConfig'],
     onRetired: (listener: () => void) => {
       listeners.add(listener);
       return () => {
@@ -146,6 +148,46 @@ async function open() {
 }
 
 describe('qualified project and branch selection in the real renderer store', () => {
+  it('keeps config reads on the existing session and rejects a result after project replacement', async () => {
+    const s = await open();
+    store.dispatch(projectSelected('form', scope(), 'group/target'));
+    await advance();
+    const selected = selectCheckoutSelection.select(store.state, 'form')!;
+    const { mode: _mode, ...query } = selected;
+    const held =
+      Promise.withResolvers<
+        Awaited<ReturnType<NonNullable<RepositoryCheckoutSession['repoConfig']>>>
+      >();
+    s.repoConfig = vi.fn().mockReturnValue(held.promise);
+    const action = checkoutRepoConfigRequested('form', scope(), query);
+    store.dispatch(action);
+    expect(s.repoConfig).toHaveBeenCalledExactlyOnceWith(query);
+    store.dispatch(projectSelected('form', scope(), 'group/other'));
+    held.resolve(
+      ready({
+        projectPath: query.projectPath,
+        branch: query.branch,
+        commitSha: query.commitSha,
+        config: { setupScript: 'echo old' },
+        exists: true,
+      }),
+    );
+    await advance();
+    await expect(action.promise).resolves.toEqual({ status: 'unavailable', reason: 'retired' });
+    expect(captureSpy).toHaveBeenCalledOnce();
+  });
+
+  it('reports missing config capability without acquiring a replacement session', async () => {
+    await open();
+    store.dispatch(projectSelected('form', scope(), 'group/target'));
+    await advance();
+    const { mode: _mode, ...query } = selectCheckoutSelection.select(store.state, 'form')!;
+    const action = checkoutRepoConfigRequested('form', scope(), query);
+    store.dispatch(action);
+    await expect(action.promise).resolves.toEqual({ status: 'unsupported' });
+    expect(captureSpy).toHaveBeenCalledOnce();
+  });
+
   it('clears default loading when branch pagination invalidates the pending lookup', async () => {
     const s = await open();
     const automatic =
