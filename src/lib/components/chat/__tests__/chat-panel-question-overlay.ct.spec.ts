@@ -4,39 +4,51 @@ import type { Locator } from '@playwright/test';
 
 test.setTimeout(120_000);
 
-async function toggleWithMotion(button: Locator, reduced: boolean) {
-  const motion = await button.evaluate(async (node: HTMLButtonElement) => {
-    const root = node.closest('[data-question-wizard]')!;
-    node.click();
-    await new Promise(requestAnimationFrame);
-    const states = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]'));
-    const frames = states.map((state) => ({
-      state: state.dataset.questionState,
-      exiting: state.inert,
-      animations: state.getAnimations().filter(
-        (animation) =>
-          // Svelte retains a 0.01ms bookkeeping animation for zero-duration transitions.
-          animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 1,
-      ).length,
-    }));
-    root.getAnimations({ subtree: true }).forEach((animation) => animation.finish());
-    return frames;
-  });
+async function toggleWithMotion(button: Locator, reduced: boolean, settle = true) {
+  const motion = await button.evaluate(
+    async (node: HTMLButtonElement, { reduced, settle }) => {
+      const root = node.closest('[data-question-wizard]')!;
+      node.click();
+      const deadline = performance.now() + 2_000;
+      let frames: { state: string | undefined; exiting: boolean; animations: number }[] = [];
+      do {
+        await new Promise(requestAnimationFrame);
+        frames = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]')).map(
+          (state) => {
+            const animations = state
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  ['running', 'paused'].includes(animation.playState) &&
+                  Number(animation.effect?.getTiming().duration) > 1,
+              );
+            // Hold real transitions as they appear after Svelte's bookkeeping animation.
+            if (!reduced) animations.forEach((animation) => animation.pause());
+            return {
+              state: state.dataset.questionState,
+              exiting: state.inert,
+              animations: animations.length,
+            };
+          },
+        );
+        if (
+          reduced
+            ? frames.length === 1
+            : frames.length === 2 && frames.every((state) => state.animations > 0)
+        )
+          break;
+      } while (performance.now() < deadline);
+      if (settle) root.getAnimations({ subtree: true }).forEach((animation) => animation.finish());
+      return frames;
+    },
+    { reduced, settle },
+  );
   if (reduced) expect(motion.every((state) => state.animations === 0)).toBe(true);
   else {
     expect(motion.filter((state) => state.animations > 0)).toHaveLength(2);
     expect(motion.filter((state) => state.exiting)).toHaveLength(1);
   }
-}
-
-async function toggleBeforeSettling(button: Locator) {
-  await button.evaluate(async (node: HTMLButtonElement) => {
-    const root = node.closest('[data-question-wizard]')!;
-    node.click();
-    await new Promise(requestAnimationFrame);
-    // Hold both branches so the next click must reuse an unfinished outgoing surface.
-    root.getAnimations({ subtree: true }).forEach((animation) => animation.pause());
-  });
+  return motion;
 }
 
 for (const { width, height, reducedMotion, theme = 'light' } of [
@@ -48,7 +60,8 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
   test(`centers a single-boundary question and keeps collapsed actions inline inside ${width}x${height} in ${theme} with ${reducedMotion} motion`, async ({
     mount,
     page,
-  }) => {
+  }, info) => {
+    const motionSamples: Array<Awaited<ReturnType<typeof toggleWithMotion>>> = [];
     await page.emulateMedia({ reducedMotion });
     const component = await mount(ChatPanelComposerGeometryHost, {
       props: { width, height, theme, questions: true },
@@ -140,9 +153,15 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     await component.getByRole('checkbox').first().focus();
     await page.keyboard.press('Space');
     await expect(component.getByRole('checkbox').first()).toHaveAttribute('aria-checked', 'true');
-    await toggleWithMotion(
-      component.getByRole('button', { name: 'Hide', exact: true }),
-      reducedMotion === 'reduce',
+    await page.screenshot({
+      animations: 'disabled',
+      path: info.outputPath('question-expanded.png'),
+    });
+    motionSamples.push(
+      await toggleWithMotion(
+        component.getByRole('button', { name: 'Hide', exact: true }),
+        reducedMotion === 'reduce',
+      ),
     );
     await expect(card).toHaveCount(0);
     await expect(composer).not.toHaveAttribute('inert', '');
@@ -175,6 +194,10 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     }
     expect(expandBox!.x + expandBox!.width).toBeLessThanOrEqual(dismissBox!.x);
     expect(barBox!.height).toBeLessThanOrEqual(48);
+    await page.screenshot({
+      animations: 'disabled',
+      path: info.outputPath('question-collapsed.png'),
+    });
     await expand.hover();
     expect(
       await expand
@@ -189,7 +212,7 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     await expect(card).toHaveCount(0);
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await toggleWithMotion(expand, reducedMotion === 'reduce');
+    motionSamples.push(await toggleWithMotion(expand, reducedMotion === 'reduce'));
     await expect(component.getByRole('checkbox').first()).toHaveAttribute('aria-checked', 'true');
     await expect(component.getByRole('checkbox').first()).toBeFocused();
     await expect(composer).toHaveAttribute('inert', '');
@@ -206,9 +229,9 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     await expect(editor).toBeFocused();
     if (reducedMotion === 'no-preference') {
       const hide = component.getByRole('button', { name: 'Hide', exact: true });
-      await toggleBeforeSettling(expand);
-      await toggleBeforeSettling(hide);
-      await toggleBeforeSettling(expand);
+      motionSamples.push(await toggleWithMotion(expand, false, false));
+      motionSamples.push(await toggleWithMotion(hide, false, false));
+      motionSamples.push(await toggleWithMotion(expand, false, false));
       const expandedState = component.locator('[data-question-state="expanded"]');
       await expect(expandedState).not.toHaveAttribute('inert', '');
       await expect(expandedState).not.toHaveAttribute('aria-hidden', 'true');
@@ -230,5 +253,9 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     await component.update({ props: { width, height, questions: false } });
     await expect(collapsed).toHaveCount(0);
     await expect(editor).toContainText('Draft survives expansion.');
+    await info.attach('question-motion.json', {
+      body: JSON.stringify({ width, height, theme, reducedMotion, motionSamples }, null, 2),
+      contentType: 'application/json',
+    });
   });
 }
