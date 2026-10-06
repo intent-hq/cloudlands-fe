@@ -152,7 +152,7 @@
       backendSessionId: null,
       workspaceId: CHIEF_WORKSPACE_ID,
       name,
-      status: AgentStatus.Active,
+      status: AgentStatus.RuntimeIdle,
       createdAt: timestamp,
       updatedAt: timestamp,
       lastActivity: timestamp,
@@ -251,7 +251,12 @@
     store.dispatch(
       bulkUpsertSessions(
         scenario === 'assistant-streaming'
-          ? threads.map((thread) => ({ ...thread, isStreaming: true, isProcessing: true }))
+          ? threads.map((thread) => ({
+              ...thread,
+              status: AgentStatus.Active,
+              isStreaming: true,
+              isProcessing: true,
+            }))
           : threads,
       ),
     );

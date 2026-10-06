@@ -138,21 +138,22 @@ for (const direction of ['up', 'down'] as const) {
   });
 }
 
-test('disables both vertical directions for a lone pane', async ({ mount, page }, testInfo) => {
+test('omits unavailable movement controls for a lone pane', async ({ mount, page }, testInfo) => {
   const component = await mount(PanelVerticalMovementHarness, { props: { lone: true } });
-  await component
+  const trigger = component
     .locator('[data-panel-tabless-header]')
-    .getByTestId('panel-actions-trigger')
-    .click();
-  for (const direction of ['up', 'down']) {
-    await expect(
-      page.getByRole('menuitem', { name: `Move panel ${direction}`, exact: true }),
-    ).toBeDisabled();
-  }
-  await testInfo.attach('lone-pane-disabled-arrows.png', {
+    .getByTestId('panel-actions-trigger');
+  await trigger.click();
+  const menu = page.locator('.panel-actions-menu-content');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: /^Move panel / })).toHaveCount(0);
+  await testInfo.attach('lone-pane-menu.png', {
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });
 
 for (const direction of ['up', 'down'] as const) {
