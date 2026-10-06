@@ -15,8 +15,8 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
-  import { startChatDraftFixture } from '../../../../test/fixtures/chat-drafts';
   import {
     bulkUpsertSessions,
     replaceMessages,
@@ -93,7 +93,7 @@
   const watchedFixture = untrack(() => watchedAgent);
   const disposeStore = startRootStoreLifecycle(store, {
     startSagas: (appStore) => [
-      startChatDraftFixture(appStore),
+      ...startChatFixtureSagas(appStore),
       ...(watchedFixture
         ? [
             appStore.runSaga(appLayoutNavigationSaga),

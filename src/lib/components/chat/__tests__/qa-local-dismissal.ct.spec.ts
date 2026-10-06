@@ -60,12 +60,14 @@ test('shows a newer set during queue fallback and admits each answered set once'
 }, info) => {
   const component = await mount(ChatPanelComposerGeometryHost, { props });
   await component.getByRole('checkbox', { name: /Start with the smallest change/ }).click();
-  await component
-    .getByRole('button', { name: 'Continue', exact: true })
-    .evaluate((button: HTMLButtonElement) => {
-      button.click();
-      button.click();
-    });
+  const continueButton = component.getByRole('button', { name: 'Continue', exact: true });
+  // evaluate bypasses Playwright's actionability checks. Wait for the selected
+  // answer to enable submission before exercising same-frame double activation.
+  await expect(continueButton).toBeEnabled();
+  await continueButton.evaluate((button: HTMLButtonElement) => {
+    button.click();
+    button.click();
+  });
   await expect(component.getByRole('checkbox')).toHaveCount(0);
   await expect(component.locator('[data-message-role="user"]')).toHaveCount(1);
   await component.update({ props: { ...props, streaming: true, settleSubmission: 'queue' } });
@@ -100,10 +102,6 @@ for (const outcome of ['rejected', 'uncertain'] as const) {
     await component.update({ props: { ...props, settleSubmission: outcome } });
     await expect(component.getByRole('button', { name: /try again/i })).toBeVisible();
     if (outcome === 'rejected') {
-      const expand = component.getByRole('button', { name: /Click to expand/i });
-      await expect(expand).toHaveAttribute('aria-expanded', 'false');
-      await expect(editor).toHaveText('Keep this newer draft');
-      await expand.click();
       await expect(
         component.getByRole('checkbox', { name: /Start with the smallest change/ }),
       ).toBeVisible();

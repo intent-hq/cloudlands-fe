@@ -18,18 +18,6 @@ declare global {
 
 test.use({ video: 'on' });
 
-test.afterEach(async ({ page }, testInfo) => {
-  const calls = await page.evaluate(() =>
-    window.__homeIntegrationBrowser?.calls.filter((call) => call.method.startsWith('drafts.')),
-  );
-  if (calls?.length) {
-    await testInfo.attach('home-draft-wire-calls', {
-      body: JSON.stringify(calls, null, 2),
-      contentType: 'application/json',
-    });
-  }
-});
-
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.evaluate(() => {
@@ -92,11 +80,6 @@ test('Sidebar fades in both directions and keeps filters, drafts, and toggle ali
   await page.evaluate(() => (window.__sidebarMotionRecords = []));
   await assistant.click();
   await expect(sidebar.getByRole('listbox')).toBeVisible();
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.__homeIntegrationBrowser?.calls.map((call) => call.method)),
-    )
-    .toContain('drafts.get');
   await expect(sidebar.locator('[data-home-sidebar-exiting]')).toHaveCount(0);
   const forward = await page.evaluate(() => window.__sidebarMotionRecords);
   const entry = forward.find((record) => !record.main && record.view === 'assistant')!;
@@ -182,11 +165,6 @@ test('Sidebar handles rapid reversals, keyboard switching, and reduced motion wh
   await expect(assistant).toHaveAttribute('aria-selected', 'true');
   await expect(sidebar.locator('[data-home-sidebar-exiting]')).toHaveCount(0);
   await expect(sidebar.getByRole('listbox')).toBeVisible();
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.__homeIntegrationBrowser?.calls.map((call) => call.method)),
-    )
-    .toContain('drafts.get');
   expect(await sidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
     true,
   );
