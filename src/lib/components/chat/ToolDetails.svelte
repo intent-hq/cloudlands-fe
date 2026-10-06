@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { commentAuthorLabel } from '$features/comments/comment-attribution';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -839,7 +840,7 @@
                       <span
                         data-comment-author
                         aria-label={authorLabel}
-                        title={authorLabel}
+                        use:truncatedTitle={authorLabel}
                         class="text-xs text-subtle truncate"
                       >
                         {authorLabel}

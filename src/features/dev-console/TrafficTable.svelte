@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { formatInteger, formatNumber, formatDatePattern } from '$lib/i18n/format';
   import { tick, untrack } from 'svelte';
   import type { DevConsoleRow } from '$shared/types/dev-console';
@@ -174,17 +175,19 @@
           <span role="cell">{formatDatePattern(row.timestamp, 'HH:mm:ss.SSS')}</span>
           {#if combined}
             {@const stream = trafficStream(row)}
-            <span role="cell" title={stream ? trafficTabLabel(stream) : ''}
+            <span role="cell" use:truncatedTitle={stream ? trafficTabLabel(stream) : ''}
               >{stream ? trafficTabLabel(stream) : '—'}</span
             >
           {/if}
-          <span role="cell" class="method" title={row.method}>{row.method}</span>
+          <span role="cell" class="method" use:truncatedTitle={row.method}>{row.method}</span>
           <span role="cell"
             >{row.kind === 'request'
               ? m.devConsole_request_label()
               : m.devConsole_event_label()}</span
           >
-          <span role="cell" title={String(row.requestId ?? '')}>{row.requestId ?? '—'}</span>
+          <span role="cell" use:truncatedTitle={String(row.requestId ?? '')}
+            >{row.requestId ?? '—'}</span
+          >
           <span
             role="cell"
             class:error={['error', 'timeout', 'disconnected', 'send-error'].includes(row.status)}

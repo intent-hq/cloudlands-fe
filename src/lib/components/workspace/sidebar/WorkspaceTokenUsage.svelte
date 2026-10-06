@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * Compact token disclosure with on-demand composition and agent/model details.
    * Reasoning tokens are display-only; accounting remains daemon-owned.
@@ -817,7 +818,7 @@
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-                        title={previewAgentRow.title}>{previewAgentRow.label}</span
+                        use:truncatedTitle={previewAgentRow.title}>{previewAgentRow.label}</span
                       >
                       <span
                         class="shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"
@@ -953,7 +954,7 @@
                     <div class="navigator-selection flex min-w-0 items-baseline gap-1.5">
                       <span
                         class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-                        title={previewModelRow.title}>{previewModelRow.label}</span
+                        use:truncatedTitle={previewModelRow.title}>{previewModelRow.label}</span
                       >
                       <span
                         class="shrink-0 text-right text-xs font-normal tabular-nums text-muted-foreground"

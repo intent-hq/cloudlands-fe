@@ -71,6 +71,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/ui/select/select.test-harness.svelte',
     'src/lib/components/ui/sidebar/sidebar-input.svelte',
     'src/lib/components/ui/text-entry-focus.preview.svelte',
+    'src/lib/components/ui/tooltip/tooltip-audit.preview.svelte',
     'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
     'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',

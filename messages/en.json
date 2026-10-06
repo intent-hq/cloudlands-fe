@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "File Manager",
   "layout_panelTabBar_paneStack_ariaLabel": "Pane stack size: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "Show pane list. Total panes: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. Show pane list. Total panes: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "Panes in this stack",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. Needs attention.",
   "layout_panelTabBar_openPaneAbove_label": "Open panel above",

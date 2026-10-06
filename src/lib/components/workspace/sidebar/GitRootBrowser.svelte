@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * GitRootBrowser - Changes tab git-root dropdown + read-only per-root
    * browsing (multi git root tracking, monorepo#2053).
@@ -121,8 +122,9 @@
         {#each $gitRootEntries$ ?? [] as entry (entry.key)}
           <Select.Item value={entry.key} label={rootDisplayLabel(entry)}>
             <span class="block truncate">{rootDisplayLabel(entry)}</span>
-            <span class="block truncate text-muted-foreground type-caption" title={entry.path}
-              >{entry.path}</span
+            <span
+              class="block truncate text-muted-foreground type-caption"
+              use:truncatedTitle={entry.path}>{entry.path}</span
             >
           </Select.Item>
         {/each}

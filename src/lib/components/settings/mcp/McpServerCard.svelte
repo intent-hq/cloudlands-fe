@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { crispOut, springIn } from '$lib/motion';
   import type { McpServerWithStatus } from './types';
   import { getMcpServerKey, serverToJson } from './types';
@@ -174,7 +175,9 @@
       </div>
     {/snippet}
     {#snippet title()}
-      <span class="type-body font-medium" title={matchedPreset ? matchedPreset.label : server.name}
+      <span
+        class="block truncate type-body font-medium"
+        use:truncatedTitle={matchedPreset ? matchedPreset.label : server.name}
         >{matchedPreset ? matchedPreset.label : server.name}</span
       >
     {/snippet}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { commentAuthorLabel } from '$features/comments/comment-attribution';
   import type { CommentAttribution } from '$shared/types/comment.types';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
@@ -294,7 +295,7 @@
         <span
           data-comment-author
           aria-label={authorLabel}
-          title={authorLabel}
+          use:truncatedTitle={authorLabel}
           class="compact-author">{authorLabel}</span
         >
         {#if !focused}

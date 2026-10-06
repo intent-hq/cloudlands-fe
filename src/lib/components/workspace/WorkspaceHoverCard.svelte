@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
     getAvatarStateForSession,
@@ -396,7 +397,7 @@
         </div>
         {#if summary}<p
             class="type-caption mt-1 min-w-0 line-clamp-3 text-muted-foreground"
-            title={summary}
+            use:truncatedTitle={summary}
             data-workspace-hover-card-summary
           >
             {summary}
@@ -450,11 +451,12 @@
                     >
                     <span
                       class="agent-detail type-caption flex min-w-0 items-start gap-1.5 text-muted-foreground"
-                      title={row.context}
                       data-workspace-hover-card-agent-detail
                       data-workspace-hover-card-agent-preview={row.contextIsPreview || undefined}
-                      ><span class="min-w-0 truncate" data-workspace-hover-card-agent-context
-                        >{row.context}</span
+                      ><span
+                        class="min-w-0 truncate"
+                        use:truncatedTitle={row.context}
+                        data-workspace-hover-card-agent-context>{row.context}</span
                       >{#if row.questionMeta}<span
                           class="shrink-0 text-muted-foreground"
                           aria-label={row.questionMeta.accessible}

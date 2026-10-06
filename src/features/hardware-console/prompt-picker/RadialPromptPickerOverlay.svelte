@@ -72,7 +72,7 @@
             class="radial-item absolute max-w-64 -translate-x-1/2 -translate-y-1/2 rounded-lg px-3 py-2 text-sm"
             class:radial-item-active={$radial$.sector === item.index}
             style="left: {item.x}px; top: {item.y}px;"
-            title={item.text}
+            title={item.text.length > MAX_LABEL_CHARS ? item.text : undefined}
           >
             {truncate(item.text)}
           </div>

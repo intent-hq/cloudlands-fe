@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -75,6 +76,7 @@
   let branchInputRef: HTMLInputElement | null = $state(null);
   let isSavingBranch = $state(false);
 
+  const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
   const repositoryLabel = $derived(
     workspace?.repositoryOwner && workspace?.repositoryName
@@ -529,8 +531,7 @@
     {:else if workspace}
       <Button
         variant="ghost"
-        truncateLabel={false}
-        labelClass="line-clamp-3"
+        wrapContent={false}
         class="type-body h-auto cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
           ? 'italic text-ghost'
           : ''}
@@ -541,13 +542,20 @@
                focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                disabled:cursor-default disabled:opacity-50"
         onclick={startEditingStatusMessage}
-        title={currentStatusMessage || m.workspace_sidebarHeader_addStatus_tooltip()}
+        title={currentStatusMessage ? undefined : m.workspace_sidebarHeader_addStatus_tooltip()}
         aria-label={currentStatusMessage
           ? m.workspace_sidebarHeader_editStatus_ariaLabel()
           : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+        aria-describedby={currentStatusMessage ? statusDescriptionId : undefined}
         disabled={!workspace}
       >
-        {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
+        <span
+          id={statusDescriptionId}
+          class="min-w-0 line-clamp-3"
+          use:truncatedTitle={currentStatusMessage}
+        >
+          {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
+        </span>
       </Button>
     {/if}
 
@@ -559,7 +567,7 @@
       {#if repositoryLabel}
         <span
           class="flex h-5 min-w-0 max-w-[45%] shrink items-center truncate leading-5"
-          title={repositoryLabel}
+          use:truncatedTitle={repositoryLabel}
           data-sidebar-repository
         >
           {repositoryLabel}
@@ -608,7 +616,8 @@
                 <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
                   <p
                     class="truncate text-sm font-medium text-popover-foreground"
-                    title={workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
+                    use:truncatedTitle={workspace.branch ||
+                      m.workspace_sidebarHeader_noBranch_label()}
                   >
                     {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
                   </p>
