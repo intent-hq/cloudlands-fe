@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.210.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.3...v2.210.4) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.25 ([#3255](https://github.com/intent-hq/cloudlands-fe/issues/3255)) ([e5c1770](https://github.com/intent-hq/cloudlands-fe/commit/e5c1770615a3d204f21e9a1933e697957fec4bf7))
+* match GitLab workspace creation to GitHub ([#3244](https://github.com/intent-hq/cloudlands-fe/issues/3244)) ([6a80306](https://github.com/intent-hq/cloudlands-fe/commit/6a803060341109090d3ddae33688c0e2c8b0d68e))
+* **ui:** Render update toast confetti in neutral grey ([#3186](https://github.com/intent-hq/cloudlands-fe/issues/3186)) ([2c0b142](https://github.com/intent-hq/cloudlands-fe/commit/2c0b1426353f7b70107017408b2141a01eab2ccb))
+
 ## [2.210.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.2...v2.210.3) (2026-10-06)
 
 
