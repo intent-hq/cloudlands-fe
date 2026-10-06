@@ -551,6 +551,52 @@
       class="home-sidebar flex h-full min-h-0 flex-col px-2 py-3"
       aria-label={m.home_navigation_label()}
     >
+      {#snippet sidebarCounts(items: readonly Workspace[], showStatus = true)}
+        {@const needsYou = countNeedsYou(items) > 0}
+        {@const running = items.some((workspace) => matchesHomeFilter(workspace, 'running'))}
+        {#if showStatus && (needsYou || running)}
+          <Tooltip.Provider
+            ><Tooltip.Root
+              ><Tooltip.Trigger
+                >{#snippet child({ props: homeTooltipProps })}<span
+                    {...homeTooltipProps}
+                    class="size-1.5 shrink-0 rounded-full"
+                    style:background={needsYou
+                      ? 'hsl(var(--workspace-status-unread))'
+                      : 'hsl(var(--warning))'}
+                    role="img"
+                    aria-label={needsYou ? m.home_filter_attention() : m.home_filter_running()}
+                  ></span>{/snippet}</Tooltip.Trigger
+              ><Tooltip.Content
+                >{needsYou ? m.home_filter_attention() : m.home_filter_running()}</Tooltip.Content
+              ></Tooltip.Root
+            ></Tooltip.Provider
+          >
+        {/if}
+        <span class="shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
+          >{formatInteger(items.filter(isActive).length)}</span
+        >
+      {/snippet}
+      {#snippet repoButton(repo: (typeof repositoryGroups)[number])}
+        <Tooltip.Tooltip content={repo.label} class="flex w-full">
+          <Button
+            variant="ghost"
+            active={repoKey === repo.key && destination === 'workspaces'}
+            class="w-full justify-start px-2"
+            aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
+              ? m.fileTracking_startNew_noRepository_label()
+              : repo.label}
+            onclick={() => chooseRepo(repo.key)}
+          >
+            <span class="flex-1 truncate text-left font-normal"
+              >{repo.key === m.workspace_grouping_unknownRepository_label()
+                ? m.fileTracking_startNew_noRepository_label()
+                : repo.name || repo.label}</span
+            >
+            {@render sidebarCounts(repo.workspaces)}
+          </Button>
+        </Tooltip.Tooltip>
+      {/snippet}
       <Tabs.Root
         value={destination}
         onValueChange={chooseDestination}
@@ -571,54 +617,6 @@
           </Tabs.List>
         {/if}
         <Tabs.Content value="workspaces" class="mt-0 min-h-0 flex-1 overflow-y-auto">
-          {#snippet sidebarCounts(items: readonly Workspace[], showStatus = true)}
-            {@const needsYou = countNeedsYou(items) > 0}
-            {@const running = items.some((workspace) => matchesHomeFilter(workspace, 'running'))}
-            {#if showStatus && (needsYou || running)}
-              <Tooltip.Provider
-                ><Tooltip.Root
-                  ><Tooltip.Trigger
-                    >{#snippet child({ props: homeTooltipProps })}<span
-                        {...homeTooltipProps}
-                        class="size-1.5 shrink-0 rounded-full"
-                        style:background={needsYou
-                          ? 'hsl(var(--workspace-status-unread))'
-                          : 'hsl(var(--warning))'}
-                        role="img"
-                        aria-label={needsYou ? m.home_filter_attention() : m.home_filter_running()}
-                      ></span>{/snippet}</Tooltip.Trigger
-                  ><Tooltip.Content
-                    >{needsYou
-                      ? m.home_filter_attention()
-                      : m.home_filter_running()}</Tooltip.Content
-                  ></Tooltip.Root
-                ></Tooltip.Provider
-              >
-            {/if}
-            <span class="shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
-              >{formatInteger(items.filter(isActive).length)}</span
-            >
-          {/snippet}
-          {#snippet repoButton(repo: (typeof repositoryGroups)[number])}
-            <Tooltip.Tooltip content={repo.label} class="flex w-full">
-              <Button
-                variant="ghost"
-                active={repoKey === repo.key && destination === 'workspaces'}
-                class="w-full justify-start px-2"
-                aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
-                  ? m.fileTracking_startNew_noRepository_label()
-                  : repo.label}
-                onclick={() => chooseRepo(repo.key)}
-              >
-                <span class="flex-1 truncate text-left font-normal"
-                  >{repo.key === m.workspace_grouping_unknownRepository_label()
-                    ? m.fileTracking_startNew_noRepository_label()
-                    : repo.name || repo.label}</span
-                >
-                {@render sidebarCounts(repo.workspaces)}
-              </Button>
-            </Tooltip.Tooltip>
-          {/snippet}
           <Button
             variant="ghost"
             active={repoKey === null && destination === 'workspaces'}
