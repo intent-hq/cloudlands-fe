@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.210.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.4...v2.210.5) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* remove redundant home tab tooltips ([#3262](https://github.com/intent-hq/cloudlands-fe/issues/3262)) ([ef2e88b](https://github.com/intent-hq/cloudlands-fe/commit/ef2e88b4f30a434d673228904a6c39f11658699d))
+
 ## [2.210.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.3...v2.210.4) (2026-10-06)
 
 

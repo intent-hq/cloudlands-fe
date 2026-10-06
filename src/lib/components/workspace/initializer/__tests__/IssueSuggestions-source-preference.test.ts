@@ -17,13 +17,16 @@ const mocks = vi.hoisted(() => {
     },
   });
   const selector = <T>(value: T) => Object.assign(() => readable(value), { select: () => value });
-  return { readable, selector };
+  return { readable, selector, dispatch: vi.fn() };
 });
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({ theme: { name: 'dark' } }) });
+  return createAppStoreMockModule({
+    state: () => ({ theme: { name: 'dark' } }),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
@@ -121,6 +124,7 @@ describe('IssueSuggestions source preference + provider ordering', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    mocks.dispatch.mockClear();
     storage = new Map();
     vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
     vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
@@ -142,6 +146,15 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   async function settle(ms = 200): Promise<void> {
     await vi.advanceTimersByTimeAsync(ms);
   }
+
+  it('starts Linear setup when Connect is clicked in the disconnected source', async () => {
+    render(IssueSuggestions, { props: { initiallyExpanded: true, initialSource: 'linear' } });
+    await settle();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Connect', exact: true }));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'linear-auth/start' });
+  });
 
   it('orders tabs GitHub, Linear, Sentry on a fresh install (nothing connected)', async () => {
     render(IssueSuggestions, { props: { initiallyExpanded: true } });

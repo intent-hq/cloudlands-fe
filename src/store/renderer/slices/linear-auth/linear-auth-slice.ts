@@ -35,12 +35,7 @@ export const connectLinear = createAction(
   ) => ({ apiKey, request }),
 );
 
-/**
- * Legacy trigger kept for surfaces with a one-click "Connect" button
- * (LinearPicker, IssueSuggestions). §5.28 has no OAuth flow to launch, so the
- * saga maps this to a status re-probe; the real connect is
- * `connectLinear(apiKey)` from the settings panel.
- */
+/** Open the settings API-key flow from a Linear Connect button. */
 export const startLinearAuth = createAction('linearAuth/startAuth');
 
 /** Trigger: logout — clears the daemon-held API key and re-probes */

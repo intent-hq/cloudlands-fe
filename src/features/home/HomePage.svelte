@@ -799,38 +799,18 @@
                       aria-label={m.home_views()}
                     >
                       <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
-                      <Tooltip.Provider
-                        ><Tooltip.Root
-                          ><Tooltip.Trigger
-                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                                {...homeTooltipProps}
-                                value="prs"
-                                aria-label={m.home_tab_prs()}
-                              >
-                                <span class="home-tab-label">{m.home_tab_prs()}</span>
-                                <span class="home-tab-logo" aria-hidden="true"
-                                  ><GitHubIcon size={18} /></span
-                                >
-                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                          ><Tooltip.Content>{m.home_tab_prs()}</Tooltip.Content></Tooltip.Root
-                        ></Tooltip.Provider
-                      >
-                      <Tooltip.Provider
-                        ><Tooltip.Root
-                          ><Tooltip.Trigger
-                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                                {...homeTooltipProps}
-                                value="linear"
-                                aria-label={m.home_tab_linear()}
-                              >
-                                <span class="home-tab-label">{m.home_tab_linear()}</span>
-                                <span class="home-tab-logo" aria-hidden="true"
-                                  ><LinearIcon size={18} /></span
-                                >
-                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                          ><Tooltip.Content>{m.home_tab_linear()}</Tooltip.Content></Tooltip.Root
-                        ></Tooltip.Provider
-                      >
+                      <Tabs.Trigger value="prs" aria-label={m.home_tab_prs()}>
+                        <span class="home-tab-label">{m.home_tab_prs()}</span>
+                        <span class="home-tab-logo" aria-hidden="true"
+                          ><GitHubIcon size={18} /></span
+                        >
+                      </Tabs.Trigger>
+                      <Tabs.Trigger value="linear" aria-label={m.home_tab_linear()}>
+                        <span class="home-tab-label">{m.home_tab_linear()}</span>
+                        <span class="home-tab-logo" aria-hidden="true"
+                          ><LinearIcon size={18} /></span
+                        >
+                      </Tabs.Trigger>
                     </Tabs.List>
                     <div class="home-header-actions ml-auto flex items-center gap-2 py-2">
                       {#if selectedRepositoryGithubUrl}
@@ -1113,17 +1093,19 @@
                                     <Button
                                       variant="plain"
                                       size="sm"
-                                      class="w-full justify-start px-2"
+                                      class="w-full justify-start gap-1.5 px-2"
+                                      labelClass="flex-initial"
                                       aria-expanded={group.expanded}
                                       aria-label={group.label}
                                       onclick={() =>
                                         setGroupExpanded(group.id, !group.expanded, group.items)}
                                     >
-                                      <span class="flex-1 text-left font-medium text-foreground"
+                                      <span class="text-left font-medium text-foreground"
                                         >{group.label}</span
                                       >
                                       {#snippet trailingIcon()}<Fa
                                           icon={group.expanded ? faChevronDown : faChevronRight}
+                                          class="size-3 text-muted-foreground"
                                         />{/snippet}
                                     </Button>
                                   </h3>

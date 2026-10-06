@@ -2,7 +2,6 @@ import { selectWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/
 import { resolveGitHubPrefillSelection } from '$lib/components/workspace/initializer/github-prefill';
 import type { WorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { store as rendererStore } from '$store/renderer/store';
-import type { DraftsClient } from '$lib/client/app-client';
 import {
   installMockElectronBridge,
   type MockBackendMethodHandler,
@@ -32,9 +31,6 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
   let releaseSearch = () => {};
   let pageFailed = false;
   let filePageFailed = false;
-  const drafts = new Map<string, Awaited<ReturnType<DraftsClient['get']>>>();
-  const draftKey = (params: { workspaceId: string; agentId: string }) =>
-    `${params.workspaceId}\u0000${params.agentId}`;
   window.__homeIntegrationBrowser = {
     calls,
     releaseSearch: () => releaseSearch(),
@@ -89,30 +85,6 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
     updatedAt: '2026-09-28T22:00:00Z',
   };
   const handlers: Record<string, MockBackendMethodHandler> = {
-    'drafts.get': (raw) => {
-      const params = raw as { workspaceId: string; agentId: string };
-      return drafts.get(draftKey(params)) ?? null;
-    },
-    'drafts.set': (raw) => {
-      const params = raw as {
-        workspaceId: string;
-        agentId: string;
-        text: string;
-        attachments?: Parameters<DraftsClient['set']>[3];
-      };
-      const updatedAt = new Date().toISOString();
-      drafts.set(draftKey(params), {
-        text: params.text,
-        attachments: params.attachments,
-        updatedAt,
-      });
-      return { ok: true, updatedAt };
-    },
-    'drafts.clear': (raw) => {
-      const params = raw as { workspaceId: string; agentId: string };
-      drafts.delete(draftKey(params));
-      return { ok: true };
-    },
     'agent.getQueue': () => ({ success: true, queue: [] }),
     'github.authStatus': () => ({
       isConfigured: true,
