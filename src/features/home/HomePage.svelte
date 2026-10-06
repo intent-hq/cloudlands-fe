@@ -21,13 +21,12 @@
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-  import { formatShortcut } from '$lib/utils/shortcuts';
   import {
     faThumbtack,
     faBoxArchive,
     faBoxOpen,
     faTrash,
-    faArrowUpRightFromSquare,
+    faArrowRight,
   } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -143,8 +142,8 @@
       {
         id: 'open',
         label: m.home_open_workspace(),
-        icon: faArrowUpRightFromSquare,
-        shortcut: formatShortcut(`Mod+${m.chat_toolClassifier_click_label()}`),
+        icon: faArrowRight,
+        shortcut: `cmd+${m.chat_toolClassifier_click_label().toLowerCase()}`,
         onClick: () => openWorkspace(workspace.id),
       },
       {

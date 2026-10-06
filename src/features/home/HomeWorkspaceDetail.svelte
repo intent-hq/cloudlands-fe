@@ -19,7 +19,7 @@
     faXmark,
     faChevronDown,
     faFolder,
-    faArrowUpRightFromSquare,
+    faArrowRight,
   } from '@fortawesome/free-solid-svg-icons';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store } from '$store/renderer/store';
@@ -89,7 +89,7 @@
           onclick={openWorkspace}
         >
           <span class="min-w-0 line-clamp-2 break-words">{workspace.title}</span>
-          <Fa icon={faArrowUpRightFromSquare} class="shrink-0 text-muted-foreground" size="sm" />
+          <Fa icon={faArrowRight} class="shrink-0 text-muted-foreground" size="sm" />
         </Button>
       </h2>
       {#if repositoryLabel}
