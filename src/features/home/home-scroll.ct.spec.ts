@@ -52,9 +52,19 @@ test('Home keeps top controls reachable while navigating long lists', async ({
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   await component.getByRole('button', { name: 'Back to list', exact: true }).click();
   await expect(rows.last()).toBeFocused();
-  await rows.first().focus();
+  await rows.filter({ hasText: 'Keep the selected workspace visible' }).focus();
   await page.keyboard.press('Enter');
   await expect(component.locator('[data-home-detail]')).toBeVisible();
+  const title = component.getByRole('button', { name: 'Open workspace', exact: true });
+  const close = component.getByRole('button', { name: 'Back to list', exact: true });
+  const titleTextRight = await title.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return range.getBoundingClientRect().right;
+  });
+  const closeBounds = await close.boundingBox();
+  expect(titleTextRight).toBeLessThanOrEqual(closeBounds!.x);
+  await expect(close).toBeInViewport({ ratio: 1 });
   for (const control of await controls.all()) {
     await expect(control).toBeInViewport({ ratio: 1 });
   }
