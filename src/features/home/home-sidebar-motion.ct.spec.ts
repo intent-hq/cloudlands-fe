@@ -5,6 +5,7 @@ interface SidebarMotionRecord {
   view: string | null;
   toggle: boolean;
   main: boolean;
+  headerDisplayed?: boolean;
   frames: { x: number; y: number; opacity: number }[];
   duration: number;
 }
@@ -41,6 +42,9 @@ test.beforeEach(async ({ page }) => {
             this.getAttribute('data-home-destination'),
           toggle: this.hasAttribute('data-tabs-indicator'),
           main: this.matches('.home-destination-content, .home-tab-content'),
+          headerDisplayed: this.hasAttribute('data-home-view')
+            ? (this.querySelector<HTMLElement>('.home-header')?.offsetWidth ?? 0) > 0
+            : undefined,
           frames: frames.map((frame) => ({
             x:
               !frame.transform || frame.transform === 'none'
@@ -96,6 +100,7 @@ test('Sidebar fades in both directions and keeps filters, drafts, and toggle ali
   expect(main.frames.at(-1)).toEqual({ x: 0, y: 0, opacity: 1 });
   expect(main.duration).toBe(entry.duration);
   const mainExit = forward.find((record) => record.main && record.view === 'workspaces')!;
+  expect(mainExit.headerDisplayed).toBe(true);
   expect(mainExit.frames.at(-1)!.y).toBe(0);
   expect(mainExit.frames.at(-1)!.x).toBeLessThan(0);
   expect(mainExit.frames.at(-1)!.opacity).toBe(0);
@@ -223,6 +228,10 @@ test('Home content enters and exits horizontally in the direction of its tabs', 
     expect(Math.sign(record.frames[0].x)).toBe(view === 'workspaces' ? -1 : 1);
     expect(record.frames[0].opacity).toBe(0);
     expect(record.frames.at(-1)).toMatchObject({ x: 0, y: 0, opacity: 1 });
+    expect(record.headerDisplayed).toBe(true);
+    await expect(
+      component.locator('.home-header').getByRole('tab', { name, exact: true }),
+    ).toBeVisible();
     records.push(record);
   }
   await testInfo.attach('home-content-horizontal-motion', {

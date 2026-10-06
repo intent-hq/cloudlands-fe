@@ -316,6 +316,8 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
     'Plan the next release',
   );
   await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
+  await expect(threads.getByRole('option')).toHaveCount(1);
+  await expect(threads.getByRole('option', { selected: true })).toHaveCount(1);
   await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
   await expect(sidebar.getByRole('status')).toContainText('No Assistant threads');
 });

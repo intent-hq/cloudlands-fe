@@ -756,7 +756,7 @@
       {/if}
       {#if destination === 'workspaces'}
         {#key tab}
-          {@const renderedTab = tab}
+          {@const renderedTab = untrack(() => tab)}
           <div
             class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
             data-home-destination="workspaces"
@@ -773,9 +773,12 @@
             }}
           >
             <Tabs.Root
-              value={renderedTab}
+              bind:value={() => renderedTab, () => undefined}
               onValueChange={(value) => {
-                if (value === 'workspaces' || value === 'prs' || value === 'linear') {
+                if (
+                  value !== tab &&
+                  (value === 'workspaces' || value === 'prs' || value === 'linear')
+                ) {
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
                   pendingTabFocus = value;
