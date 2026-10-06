@@ -7,6 +7,7 @@
   import { WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import {
     bulkUpsertSessions,
@@ -186,7 +187,7 @@
     },
   });
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () => [store.runSaga(chatScrollbackSaga)],
+    startSagas: () => [...startChatFixtureSagas(store), store.runSaga(chatScrollbackSaga)],
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));
