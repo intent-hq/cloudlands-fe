@@ -4,11 +4,23 @@
 
 import { store } from '../../store';
 import type { StoreState } from '../../types';
-import { extractAllContent, type AgentMessage, type AgentSession } from '$shared/types';
-import { CHIEF_WORKSPACE_ID, type ChiefThreadPreview } from './sidebar-nav-types';
+import type { AgentMessage, AgentSession } from '$shared/types';
+import { CHIEF_WORKSPACE_ID, type ChiefThreadSummary } from './sidebar-nav-types';
 import { getChiefThreadTitle } from './chief-thread-title';
-import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+import {
+  selectBackgroundHooks,
+  selectBackgroundHooksSnapshotStatus,
+} from '../background-hooks/background-hooks-selectors';
+import {
+  selectAgentPrMonitors,
+  selectPrMonitorsSnapshotStatus,
+} from '../pr-monitor/pr-monitor-selectors';
+import { selectScriptMonitors } from '../script-monitor/script-monitor-selectors';
+import {
+  selectAgentEventSubscriptions,
+  selectAgentSubscriptions,
+} from '../agent-subscription-ui/agent-subscription-ui-selectors';
 
 function getMessageTimestamp(message: AgentMessage | undefined): number {
   const value = message?.timestamp;
@@ -21,14 +33,6 @@ function getSessionTimestamp(session: AgentSession): number {
   const timestamp = new Date(value).getTime() || 0;
   const latestMessage = session.messages.at(-1);
   return Math.max(timestamp, getMessageTimestamp(latestMessage));
-}
-
-function getMessagePreview(message: AgentMessage | undefined): string {
-  if (!message) return m.layout_sidebarNav_noMessages_label();
-  const text = extractAllContent(message).trim();
-  if (text) return text;
-  if (message.role === 'assistant') return m.layout_sidebarNav_chiefWorking_label();
-  return m.layout_sidebarNav_openChief_label();
 }
 
 function getChiefSessions(state: StoreState): AgentSession[] {
@@ -65,17 +69,10 @@ function getChiefSessionMessageCount(session: AgentSession): number {
   return Math.max(session.messages.length, session.messageCount ?? 0);
 }
 
-function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
-  const latestMessage = session.messages.at(-1);
+function toChiefThreadSummary(session: AgentSession): ChiefThreadSummary {
   return {
     agentId: session.id,
     title: getChiefThreadTitle(session),
-    preview: getMessagePreview(latestMessage),
-    updatedAt: latestMessage?.timestamp
-      ? new Date(latestMessage.timestamp).toISOString()
-      : typeof session.updatedAt === 'string'
-        ? session.updatedAt
-        : session.updatedAt?.toISOString(),
     isActive:
       session.isStreaming === true ||
       session.isProcessing === true ||
@@ -85,15 +82,7 @@ function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
 }
 
 // ── Direct state selectors ──
-export const selectIsCardPinned = store.createSelector((state) => state.sidebarNav.isCardPinned);
-
 export const selectPanelItem = store.createSelector((state) => state.sidebarNav.panelItem);
-
-export const selectPanelWidth = store.createSelector((state) => state.sidebarNav.panelWidth);
-
-export const selectCombinedPanelSplit = store.createSelector(
-  (state) => state.sidebarNav.combinedPanelSplit,
-);
 
 export const selectOnboardingActive = store.createSelector(
   (state) => state.sidebarNav.onboardingActive,
@@ -101,26 +90,6 @@ export const selectOnboardingActive = store.createSelector(
 
 export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
-);
-
-export const selectAllSpacesViewMode = store.createSelector(
-  (state) => state.sidebarNav.allSpacesViewMode,
-);
-
-export const selectShowArchivedWorkspaces = store.createSelector(
-  (state) => state.sidebarNav.showArchivedWorkspaces,
-);
-
-export const selectCollapsedStatusGroupIds = store.createSelector(
-  (state) => state.sidebarNav.collapsedStatusGroupIds,
-);
-
-export const selectCollapsedRepoGroupKeys = store.createSelector(
-  (state) => state.sidebarNav.collapsedRepoGroupKeys,
-);
-
-export const selectIsChiefCollapsed = store.createSelector(
-  (state) => state.sidebarNav.isChiefCollapsed,
 );
 
 export const selectPinnedWorkspaceIds = store.createSelector(
@@ -146,41 +115,72 @@ export const selectChiefActiveAgentId = store.createSelector(
   (state): string | null => state.sidebarNav.chiefActiveAgentId,
 );
 
+export const selectAssistantThreadActivity = store.createSelector((state, agentId: string) => {
+  const session = state.agentSessions.byAgentId[agentId];
+  if (session?.workspaceId !== CHIEF_WORKSPACE_ID)
+    return { hooks: 0, monitors: 0, subscriptions: 0 };
+  const hooks =
+    selectBackgroundHooksSnapshotStatus.select(state, CHIEF_WORKSPACE_ID) === 'ready'
+      ? selectBackgroundHooks
+          .select(state, CHIEF_WORKSPACE_ID)
+          .filter(
+            (hook) =>
+              hook.agentId === agentId && (hook.state === 'scheduled' || hook.state === 'running'),
+          ).length
+      : (session.waitingOnHooks?.length ?? 0);
+  const prs =
+    selectPrMonitorsSnapshotStatus.select(state, CHIEF_WORKSPACE_ID) === 'ready'
+      ? selectAgentPrMonitors
+          .select(state, CHIEF_WORKSPACE_ID, agentId)
+          .filter((monitor) => monitor.state === 'active').length
+      : (session.waitingOnPrMonitors?.length ?? 0);
+  const scripts = selectScriptMonitors.select(state, CHIEF_WORKSPACE_ID);
+  const scriptCount =
+    scripts.status === 'unsupported'
+      ? 0
+      : scripts.status === 'ready'
+        ? scripts.monitors.filter(
+            (monitor) => monitor.agentId === agentId && monitor.state === 'active',
+          ).length
+        : (session.waitingOnScriptMonitors?.length ?? 0);
+  const watches =
+    session.isWaitingForOtherAgents === false
+      ? 0
+      : (session.waitingForAgentIds?.length ??
+        (selectAgentSubscriptions.select(state, CHIEF_WORKSPACE_ID, agentId).length ||
+          (session.isWaitingForOtherAgents ? 1 : 0)));
+  const events = selectAgentEventSubscriptions
+    .select(state, CHIEF_WORKSPACE_ID, agentId)
+    .filter((subscription) => subscription.subscriberAgentId === agentId).length;
+  return { hooks, monitors: prs + scriptCount, subscriptions: watches + events };
+});
+
 export const selectStatsOverlayOpen = store.createSelector(
   (state): boolean => state.sidebarNav.statsOverlayOpen,
 );
 
 // ── Derived selectors ──
 
-/** Latest Chief thread preview for the sidebar hover card. */
-export const selectChiefThreadPreview = store.createSelector((state): ChiefThreadPreview | null => {
-  const latest = getChiefSessions(state)
-    .slice()
-    .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))[0];
-
-  return latest ? toChiefThreadPreview(latest) : null;
-});
-
 /** Chief thread history sorted by latest activity. */
-export const selectChiefThreads = store.createSelector((state): ChiefThreadPreview[] =>
+export const selectChiefThreads = store.createSelector((state): ChiefThreadSummary[] =>
   getChiefSessions(state)
     .slice()
     .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))
-    .map(toChiefThreadPreview),
+    .map(toChiefThreadSummary),
 );
 
 /** Latest Chief thread created with the current runtime identity contract. */
-export const selectCurrentChiefThread = store.createSelector((state): ChiefThreadPreview | null => {
+export const selectCurrentChiefThread = store.createSelector((state): ChiefThreadSummary | null => {
   const current = getChiefSessions(state)
     .filter(hasCurrentChiefIdentity)
     .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))[0];
 
-  return current ? toChiefThreadPreview(current) : null;
+  return current ? toChiefThreadSummary(current) : null;
 });
 
 /** Latest blank Chief thread created with the current prompt identity contract. */
 export const selectReusableChiefThread = store.createSelector(
-  (state): ChiefThreadPreview | null => {
+  (state): ChiefThreadSummary | null => {
     const reusable = getChiefSessions(state)
       .filter(
         (session) =>
@@ -190,6 +190,6 @@ export const selectReusableChiefThread = store.createSelector(
       )
       .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))[0];
 
-    return reusable ? toChiefThreadPreview(reusable) : null;
+    return reusable ? toChiefThreadSummary(reusable) : null;
   },
 );

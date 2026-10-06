@@ -1,5 +1,8 @@
+import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
+import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
 import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
+import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
 import { invitationAccountSearchReducer } from './slices/invitation-account-search/invitation-account-search-slice';
 import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
@@ -119,7 +122,10 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  homeIntegrations: homeIntegrationsReducer,
+  homeWorkspaces: homeWorkspacesReducer,
   repositoryContext: repositoryContextReducer,
+  repositoryCheckout: repositoryCheckoutReducer,
   providerSettings: providerSettingsReducer,
   settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,

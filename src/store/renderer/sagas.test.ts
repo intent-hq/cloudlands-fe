@@ -1,4 +1,6 @@
+import { hardwareConsoleSettingsHydrationStarted } from './slices/hardware-console/hardware-console-slice';
 import { hardwareConsoleSaga } from './slices/principal/sagas/host-owner-services-saga';
+import { publishWindowCyclePreferenceSaga } from './slices/hardware-console/sagas/shared-window-cycle-saga';
 import { describe, expect, it, vi } from 'vitest';
 
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
@@ -14,6 +16,8 @@ describe('renderer app saga registry', () => {
     return [
       'modelNameCacheSaga',
       'pendingRetentionSaga',
+      'homeIntegrationsSaga',
+      'homeWorkspacesSaga',
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',
@@ -23,6 +27,7 @@ describe('renderer app saga registry', () => {
       'principalSaga',
       'hostExecutionSaga',
       'repositoryContextSaga',
+      'repositoryCheckoutSaga',
       'settingsHydrationSaga',
       'activeStreamsSaga',
       'agentReadSaga',
@@ -78,6 +83,7 @@ describe('renderer app saga registry', () => {
       'modelBootSaga',
       'modelReloadSaga',
       'providerAvailabilitySaga',
+      'providerAdapterPreparationSaga',
       'setupPromptSaga',
       'backgroundHooksSaga',
       'hostOwnerServicesSaga',
@@ -155,6 +161,10 @@ describe('renderer app saga registry', () => {
 
   it('starts every hardware-console owner exactly once under one cancellable composition', () => {
     const iterator = hardwareConsoleSaga();
+    expect(iterator.next().value).toMatchObject({
+      type: 'PUT',
+      payload: { action: hardwareConsoleSettingsHydrationStarted() },
+    });
     const effect = iterator.next().value as {
       type: string;
       payload: Array<Generator>;
@@ -168,8 +178,8 @@ describe('renderer app saga registry', () => {
     );
 
     expect(effect.type).toBe('ALL');
-    expect(effect.payload).toHaveLength(6);
-    expect(childEffects.map((child) => child.type)).toEqual(Array(6).fill('CALL'));
+    expect(effect.payload).toHaveLength(7);
+    expect(childEffects.map((child) => child.type)).toEqual(Array(7).fill('CALL'));
     expect(childEffects.map((child) => child.payload.fn)).toEqual([
       hardwareConsoleDeviceSaga,
       encoderPreferenceSaga,
@@ -177,6 +187,7 @@ describe('renderer app saga registry', () => {
       keyPinPersistenceSaga,
       promptPickerSaga,
       voiceTranscriptionSaga,
+      publishWindowCyclePreferenceSaga,
     ]);
     expect(iterator.next().done).toBe(true);
   });

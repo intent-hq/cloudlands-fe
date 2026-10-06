@@ -595,6 +595,66 @@ describe('HardwareConsoleManager', () => {
     expect(device.opened).toBe(true);
   });
 
+  it.each(['restart', 'requestConnect'] as const)(
+    '%s waits for an asynchronous close before reusing the HID device',
+    async (operation) => {
+      const { hid, manager } = makeManager();
+      const device = new FakeHidDevice(CODEX.vendorId, CODEX.productId);
+      hid.devices = [device];
+      hid.requestDeviceResult = [device];
+      await manager.start();
+      let releaseClose!: () => void;
+      const close = vi.spyOn(device, 'close').mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseClose = () => {
+              device.opened = false;
+              resolve();
+            };
+          }),
+      );
+      const stopping = manager.stop();
+      expect(close).toHaveBeenCalledOnce();
+      const restarting = operation === 'restart' ? manager.start() : manager.requestConnect();
+      await flushMicrotasks(20);
+      releaseClose();
+      await Promise.all([stopping, restarting]);
+      expect(device.opened).toBe(true);
+      expect(manager.status).toBe('connected');
+      const messages = vi.fn();
+      manager.onRawMessage(messages);
+      device.emitRpc({ m: 'v.oai.hid', p: { k: 'ACT07', act: 1 } });
+      expect(messages).toHaveBeenCalledOnce();
+      await manager.stop();
+    },
+  );
+
+  it('does not reopen a cancelled restart after the pending close settles', async () => {
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CODEX.vendorId, CODEX.productId);
+    hid.devices = [device];
+    await manager.start();
+    let releaseClose!: () => void;
+    vi.spyOn(device, 'close').mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseClose = () => {
+            device.opened = false;
+            resolve();
+          };
+        }),
+    );
+    const stopping = manager.stop();
+    const restarting = manager.start();
+    await flushMicrotasks(20);
+    const stoppedAgain = manager.stop();
+    releaseClose();
+    await Promise.all([stopping, restarting, stoppedAgain]);
+    expect(device.opened).toBe(false);
+    expect(manager.client).toBeNull();
+    expect(manager.status).toBe('disconnected');
+  });
+
   it('stop closes the device and unsubscribes from hotplug', async () => {
     const { hid, manager } = makeManager();
     const device = new FakeHidDevice(CM2.vendorId, CM2.productId);

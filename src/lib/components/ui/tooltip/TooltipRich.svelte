@@ -87,7 +87,8 @@
     onclick,
   }: Props = $props();
 
-  // Variant configurations
+  // Floating surfaces must be opaque so content underneath cannot bleed through.
+  // Semantic variants keep their status color in the text, icon, and border.
   const variantConfig = {
     default: {
       bg: 'bg-popover',
@@ -97,21 +98,21 @@
       iconColor: '',
     },
     info: {
-      bg: 'bg-info/10',
+      bg: 'bg-popover',
       text: 'text-info',
       border: 'border border-info/40',
       icon: faInfo,
       iconColor: 'text-info',
     },
     success: {
-      bg: 'bg-success/10',
+      bg: 'bg-popover',
       text: 'text-success',
       border: 'border border-success/40',
       icon: faCircleCheck,
       iconColor: 'text-success',
     },
     warning: {
-      bg: 'bg-warning/10',
+      bg: 'bg-popover',
       text: 'text-warning-ink',
       border: 'border border-warning/40',
       icon: faTriangleExclamation,

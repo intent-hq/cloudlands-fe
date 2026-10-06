@@ -1,3 +1,4 @@
+import type { NodeCapabilities } from '$features/agent/services/node-execution';
 import type {
   AgentSession,
   AgentMessage,
@@ -131,6 +132,8 @@ export interface WorkspaceAgentState {
 export type LazyAgentListBin = Exclude<AgentListBin, 'topLevel'>;
 
 export interface WorkspaceAgentsState {
+  nodeSupport?: { generation: number; capabilities: NodeCapabilities };
+  nodeOperationBusy?: boolean;
   creationOutcomes?: Collection<AgentCreationOutcome, 'id'>;
   /** Connection-scoped read-through capability, invalidated by daemon reconnects. */
   retirementSupport?: { connectionGeneration: number; supported: boolean };
@@ -296,6 +299,17 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   backgroundAgentsLoaded: false,
   isLoadingBackgroundAgents: false,
 };
+
+export const nodeCapabilitiesRequested = createAction('workspaceAgents/nodeCapabilitiesRequested');
+export const nodeCapabilitiesReceived = createAction<
+  [generation: number, capabilities: NodeCapabilities]
+>('workspaceAgents/nodeCapabilitiesReceived');
+export const agentHubActionRequested = createAction<
+  [workspaceId: string, agentId: string, action: 'merge' | 'discard']
+>('workspaceAgents/agentHubActionRequested');
+export const nodeOperationBusyChanged = createAction<[busy: boolean]>(
+  'workspaceAgents/nodeOperationBusyChanged',
+);
 
 export const initialState: WorkspaceAgentsState = {
   byWorkspaceId: {},
@@ -643,6 +657,18 @@ export const restoreRetiredAgentRequested = createAsyncAction<
 >('workspaceAgents/restoreRetiredAgent', 'workspaceAgents/restoreRetiredAgentRequested');
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState);
+
+workspaceAgentsReducer.with(
+  nodeCapabilitiesReceived,
+  (state, { payload: [generation, capabilities] }) => ({
+    ...state,
+    nodeSupport: { generation, capabilities },
+  }),
+);
+workspaceAgentsReducer.with(nodeOperationBusyChanged, (state, { payload: [busy] }) => ({
+  ...state,
+  nodeOperationBusy: busy,
+}));
 workspaceAgentsReducer.with(createAgentFromConfigRequested, (state, action) => {
   const request = action as ReturnType<typeof createAgentFromConfigRequested>;
   const [workspaceId, , options] = action.payload;

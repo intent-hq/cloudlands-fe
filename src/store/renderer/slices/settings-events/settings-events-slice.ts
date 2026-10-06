@@ -238,7 +238,10 @@ settingsEventsReducer.with(settingsFormRequestSettled, (state, { payload: [reque
     for (const entry of outcome.entries ?? []) entries = upsertItem(entries, entry);
   }
   const drafts = { ...form.drafts };
-  if (outcome.status === 'succeeded' || form.kind !== 'git-workspace') {
+  if (
+    outcome.status === 'succeeded' ||
+    !['git-workspace', 'collaboration-machine-name'].includes(form.kind)
+  ) {
     for (const [path, value] of Object.entries(operation.submittedDrafts ?? {})) {
       if (drafts[path] === value) delete drafts[path];
     }

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { commentAuthorLabel } from '$features/comments/comment-attribution';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -643,6 +645,7 @@
                   class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                   onclick={(e) => {
                     if (!workspaceId) return;
+                    if (openAssistantAgentFromEvent(e, workspaceId, agent.agentId)) return;
                     appStore.dispatch(
                       openAgentTabRequested(workspaceId, {
                         agentId: agent.agentId,
@@ -766,6 +769,7 @@
                     class="inline-flex items-center gap-1 text-foreground font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
                     onclick={(e) => {
                       if (!workspaceId) return;
+                      if (openAssistantAgentFromEvent(e, workspaceId, agentId)) return;
                       appStore.dispatch(
                         openAgentTabRequested(workspaceId, {
                           agentId,
@@ -839,7 +843,7 @@
                       <span
                         data-comment-author
                         aria-label={authorLabel}
-                        title={authorLabel}
+                        use:truncatedTitle={authorLabel}
                         class="text-xs text-subtle truncate"
                       >
                         {authorLabel}

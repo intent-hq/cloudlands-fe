@@ -8,7 +8,7 @@ import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-sta
  * the auto-start effect retries and fires exactly one launch.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { render, cleanup, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
@@ -18,7 +18,6 @@ import {
   setAgentsLoaded,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
-import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -78,7 +77,7 @@ describe('ChiefCard auto-start provider gate', () => {
   });
 
   it('skips the launch while provider-less, then fires exactly once when configured', async () => {
-    render(ChiefCard, { props: { expanded: true } });
+    render(ChiefCard, { props: {} });
 
     // Provider-less: the auto-start effect must skip without dispatching.
     await tick();
@@ -95,34 +94,18 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(launchActions).toHaveLength(1);
   });
 
-  it('preserves the collapsed preference when auto-start creates the first thread', async () => {
-    appStore.dispatch(setChiefCollapsed(true));
-    appStore.dispatch(hydrateDefaultProvider('auggie'));
-    dispatchSpy.mockClear();
-
-    render(ChiefCard, {
-      props: { expanded: true, embedded: true, collapsed: true, ontoggle: vi.fn() },
-    });
-
-    await waitFor(() => expect(launchActions).toHaveLength(1));
-    expect(
-      dispatchSpy.mock.calls.some(([action]) => action?.type === 'sidebarNav/setChiefCollapsed'),
-    ).toBe(false);
-    expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(true);
-  });
-
   it('does not auto-start in an inactive tab and starts once when Intent becomes active', async () => {
     appStore.dispatch(hydrateDefaultProvider('auggie'));
     const { rerender } = render(ChiefCard, {
-      props: { expanded: true, embedded: true, isActive: false },
+      props: { isActive: false },
     });
     await tick();
     expect(launchActions).toHaveLength(0);
 
-    await rerender({ expanded: true, embedded: true, isActive: true });
+    await rerender({ isActive: true });
     await waitFor(() => expect(launchActions).toHaveLength(1));
-    await rerender({ expanded: true, embedded: true, isActive: false });
-    await rerender({ expanded: true, embedded: true, isActive: true });
+    await rerender({ isActive: false });
+    await rerender({ isActive: true });
     expect(launchActions).toHaveLength(1);
   });
 
@@ -166,7 +149,7 @@ describe('ChiefCard auto-start provider gate', () => {
     admitLegacyPrincipal('guest');
     appStore.dispatch(hydrateDefaultProvider('auggie'));
 
-    render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
+    render(ChiefCard, { props: {} });
 
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -174,29 +157,5 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(
       screen.queryByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
     ).toBeNull();
-  });
-
-  it('expands the preference and creates a thread when the expanded + is clicked', async () => {
-    appStore.dispatch(setChiefCollapsed(true));
-    dispatchSpy.mockClear();
-    render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
-
-    const newThreadButton = screen.getByRole('button', {
-      name: m.layout_chiefCard_newThread_tooltip(),
-    });
-    // The Button component boundary can give auto-start time to acquire the
-    // double-submit guard before this test acts. Wait for that creation to
-    // settle so the click below is the launch under assertion.
-    await waitFor(() => expect((newThreadButton as HTMLButtonElement).disabled).toBe(false));
-    launchActions = [];
-    dispatchSpy.mockClear();
-
-    await fireEvent.click(newThreadButton);
-
-    await waitFor(() => expect(launchActions).toHaveLength(1));
-    expect(
-      dispatchSpy.mock.calls.some(([action]) => action?.type === 'sidebarNav/setChiefCollapsed'),
-    ).toBe(true);
-    expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(false);
   });
 });

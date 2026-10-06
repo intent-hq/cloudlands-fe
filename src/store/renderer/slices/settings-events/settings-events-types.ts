@@ -39,6 +39,7 @@ export interface SettingsFormOutcome {
 }
 
 export type SettingsFormKind =
+  | 'collaboration-machine-name'
   | 'personal-devices'
   | 'agent-backend'
   | 'agent-features'

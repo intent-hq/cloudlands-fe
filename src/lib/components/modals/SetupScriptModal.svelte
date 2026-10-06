@@ -14,6 +14,8 @@
     static?: boolean;
     editor?: Snippet<[string, (value: string) => void]>;
     repoPath?: string;
+    /** Qualified repository identity for last-used defaults, separate from a filesystem path. */
+    repositoryKey?: string;
     /** Source URL for GitHub selections (last-used keys on path + URL). */
     githubUrl?: string | null;
     projectType?: ProjectType;
@@ -25,6 +27,7 @@
     scriptNameSource?: SetupScriptNameSource;
     isCustomScript?: boolean;
     onClose?: () => void;
+    onCommit?: () => void;
   }
 
   let {
@@ -32,6 +35,7 @@
     static: staticPosition = false,
     editor,
     repoPath = '',
+    repositoryKey,
     githubUrl = null,
     projectType = undefined,
     repoConfigScript = null,
@@ -40,6 +44,7 @@
     scriptNameSource = $bindable('named'),
     isCustomScript = $bindable(false),
     onClose,
+    onCommit,
   }: Props = $props();
 
   // Local state — edits happen here, only committed on Done
@@ -69,8 +74,13 @@
   function handleDone() {
     value = localValue;
     scriptName = localScriptName;
-    scriptNameSource = localScriptNameSource;
+    scriptNameSource =
+      localIsCustomScript && localScriptNameSource === 'repo-config'
+        ? 'custom'
+        : localScriptNameSource;
+    if (scriptNameSource === 'custom') scriptName = 'Custom';
     isCustomScript = localIsCustomScript;
+    onCommit?.();
     open = false;
     onClose?.();
   }
@@ -115,6 +125,7 @@
     {#await import('$lib/components/workspace/initializer/SetupScriptEditor.svelte') then { default: SetupScriptEditor }}
       <SetupScriptEditor
         {repoPath}
+        {repositoryKey}
         {githubUrl}
         {projectType}
         {repoConfigScript}

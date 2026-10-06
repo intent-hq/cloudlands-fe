@@ -23,6 +23,7 @@ export const listMetadata = parseUiComponentMetadata({
     'src/lib/components/file-explorer/file-tree-view.svelte',
     'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
     'src/lib/components/terminal/TerminalSidebar.svelte',
+    'src/lib/components/ui/tooltip/tooltip-audit.preview.svelte',
     'src/lib/components/workspace/WorkspaceAgentsList.svelte',
     'src/lib/components/workspace/list-labels.preview.svelte',
     'src/lib/components/workspace/sidebar/ContextPanel.svelte',

@@ -274,8 +274,8 @@ function* renderSnapshot(
  * `openAgentTabRequested` so the app-layout navigation saga hydrates the
  * session and opens/focuses the agent's conversation tab (query params alone
  * are not read back into drawer state on workspace load). Chief-of-staff
- * failures (the hidden chief virtual workspace) open the sidebar Assistant
- * panel and select the chat thread instead — mirrors
+ * failures (the hidden chief virtual workspace) open the homepage Assistant
+ * and select the chat thread instead — mirrors
  * `handleNotificationNavigate`'s chief branch. Never throws; errors are
  * logged.
  */
@@ -284,6 +284,7 @@ function* navigateToFailedAgent(entry: AgentFailureEntry): SagaGenerator<void> {
     if (entry.workspaceId === CHIEF_WORKSPACE_ID) {
       yield* put(setChiefActiveAgentId(entry.agentId));
       yield* put(openPanel('chief'));
+      yield* call(navigateToRoute, '/');
       return;
     }
     yield* call(navigateToRoute, `/workspace/${entry.workspaceId}`);

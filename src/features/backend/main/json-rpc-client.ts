@@ -40,6 +40,9 @@ export interface RepositoryConnection {
   readonly identity: object;
   readonly repositoryContext: boolean;
   readonly repositoryResourceRead?: boolean;
+  readonly gitlabCheckout?: boolean;
+  readonly gitlabCheckoutOwnerAvatar?: boolean;
+  readonly gitlabCheckoutRepoConfig?: boolean;
   readonly repositorySelection: boolean;
   readonly nativeReview: boolean;
   readonly nativeReviewCompanion: boolean;
@@ -199,6 +202,7 @@ export class JsonRpcClient extends EventEmitter {
   private repositoryConnection: RepositoryConnection | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
+  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -479,6 +483,11 @@ export class JsonRpcClient extends EventEmitter {
       : null;
   }
 
+  /** Observe only the current acknowledged identity; never send or renew hello. */
+  getNodeCapabilities(): Readonly<Record<string, number>> | null {
+    return this.getRepositoryConnection() ? this.nodeCapabilities : null;
+  }
+
   /** Subscribe before start: no replay can establish a missed physical feed. */
   onRepositoryConnectionEvent(listener: (event: RepositoryConnectionEvent) => void): () => void {
     this.repositoryObservers.add(listener);
@@ -492,6 +501,7 @@ export class JsonRpcClient extends EventEmitter {
   private retireRepositoryIdentity(): void {
     const connection = this.repositoryConnection;
     this.repositoryConnection = null;
+    this.nodeCapabilities = null;
     if (connection) this.emitRepositoryEvent({ type: 'identity-retired', connection });
   }
 
@@ -551,6 +561,13 @@ export class JsonRpcClient extends EventEmitter {
       result.clientId.length === 0
     )
       return;
+    const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
+      ?.capabilities;
+    this.nodeCapabilities = Object.freeze({
+      agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
+      localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
+      agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
+    });
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
       identity: Object.freeze({}),
@@ -566,6 +583,15 @@ export class JsonRpcClient extends EventEmitter {
       repositoryResourceRead:
         (result as { server?: { capabilities?: { repositoryResourceRead?: unknown } } }).server
           ?.capabilities?.repositoryResourceRead === 1,
+      gitlabCheckout:
+        (result as { server?: { capabilities?: { gitlabCheckout?: unknown } } }).server
+          ?.capabilities?.gitlabCheckout === 1,
+      gitlabCheckoutRepoConfig:
+        (result as { server?: { capabilities?: { gitlabCheckoutRepoConfig?: unknown } } }).server
+          ?.capabilities?.gitlabCheckoutRepoConfig === 1,
+      gitlabCheckoutOwnerAvatar:
+        (result as { server?: { capabilities?: { gitlabCheckoutOwnerAvatar?: unknown } } }).server
+          ?.capabilities?.gitlabCheckoutOwnerAvatar === 1,
       repositoryContext:
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,
@@ -746,6 +772,38 @@ export class JsonRpcClient extends EventEmitter {
     parent?: object,
   ): Promise<T> {
     if (this.disposed) return Promise.reject(new Error('JSON-RPC client disposed'));
+    if (
+      [
+        'sourceControl.authStatus',
+        'sourceControl.connect',
+        'sourceControl.cancelAuth',
+        'sourceControl.revoke',
+        'sourceControl.getUser',
+      ].includes(method) &&
+      params !== null &&
+      typeof params === 'object' &&
+      (params as { provider?: unknown }).provider === 'gitlab' &&
+      Object.prototype.hasOwnProperty.call(params, 'instanceBaseUrl')
+    ) {
+      const connection = this.getRepositoryConnection();
+      if (connection?.gitlabCheckout !== true) {
+        return Promise.reject(
+          Object.assign(new Error('GITLAB_INSTANCE_SETUP_UNSUPPORTED'), {
+            code: 'gitlab-instance-unsupported',
+          }),
+        );
+      }
+      // New full-root operands must never be ignored by an older parser or
+      // migrate onto a replacement socket after capability admission.
+      return this.requestOnCapturedConnectionOriginal<T>(connection, method, params, options).then(
+        (result) => {
+          if (connection !== this.getRepositoryConnection()) {
+            throw new Error('GITLAB_INSTANCE_SETUP_RETIRED');
+          }
+          return result;
+        },
+      );
+    }
     const override = options?.timeoutMs;
     const timeoutMs =
       typeof override === 'number' && Number.isFinite(override) && override > 0

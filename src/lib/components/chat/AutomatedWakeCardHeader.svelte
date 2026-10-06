@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { observeOverflow, truncatedTitle } from '$lib/actions/observe-overflow';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * AutomatedWakeCardHeader
@@ -54,6 +55,7 @@
     ontoggle,
     onPinnedActivate,
   }: Props = $props();
+  let hookNameOverflow = $state(false);
   const workspaceRepo = $derived(
     workspace?.repositoryOwner && workspace?.repositoryName
       ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
@@ -129,7 +131,12 @@
     {#if presentation.kind === 'hook'}
       <span
         class="min-w-0 max-w-full truncate text-muted-foreground"
-        title={presentation.attribution.rawName}
+        use:observeOverflow={(overflow) => (hookNameOverflow = overflow)}
+        title={presentation.attribution.rawName !== presentation.attribution.displayName
+          ? presentation.attribution.rawName
+          : hookNameOverflow
+            ? presentation.attribution.displayName
+            : undefined}
         data-testid="automated-wake-primary-label"
       >
         {presentation.attribution.displayName}
@@ -137,7 +144,8 @@
     {:else if presentation.kind === 'script'}
       <span
         class="min-w-0 truncate text-muted-foreground"
-        title={presentation.attribution.scriptName}>{presentation.attribution.scriptName}</span
+        use:truncatedTitle={presentation.attribution.scriptName}
+        >{presentation.attribution.scriptName}</span
       >
     {:else}
       {@const chipLabel = getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
@@ -159,7 +167,7 @@
     <span
       class="type-body min-w-0 truncate whitespace-nowrap font-normal text-muted-foreground"
       data-testid="wake-status"
-      title={statusLabel}
+      use:truncatedTitle={statusLabel}
     >
       {statusLabel}
     </span>

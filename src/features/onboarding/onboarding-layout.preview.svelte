@@ -14,6 +14,8 @@
     compact?: boolean;
     forge?: ForgeScenario;
     gitlabEnabled?: boolean;
+    gitlabSetupSupported?: boolean;
+    gitlabInstanceBaseUrl?: string;
     settings?: boolean;
     verificationUri?: string;
     onOpenExternal?: (payload: unknown) => void;
@@ -26,6 +28,9 @@
       welcome: { props: { step: 'welcome' } },
       forge: { props: { step: 'forge' } },
       'forge-gitlab-enabled': { props: { step: 'forge', gitlabEnabled: true } },
+      'forge-gitlab-update-required': {
+        props: { step: 'forge', gitlabEnabled: true, gitlabSetupSupported: false },
+      },
       'forge-github-device': { props: { step: 'forge', forge: 'github-device' } },
       'forge-gitlab-device': {
         props: { step: 'forge', forge: 'gitlab-device', gitlabEnabled: true },
@@ -92,12 +97,19 @@
     setGitLabDeviceFlowInfo,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
+  import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
 
   let {
     step = 'configuring',
     compact = false,
     forge = 'idle',
     gitlabEnabled = false,
+    gitlabSetupSupported = true,
+    gitlabInstanceBaseUrl = 'https://gitlab.example.com',
     settings = false,
     verificationUri,
     onOpenExternal,
@@ -113,6 +125,7 @@
   const previousLoading = selectProviderLoadingMap.select(appStore.state);
   const previousGitHub: GitHubAuthState = appStore.state.githubAuth;
   const previousGitLab: GitLabAuthState = appStore.state.gitlabAuth;
+  const previousPrincipal = appStore.state.principal;
 
   const DEVICE_CODES = {
     userCode: 'WDJB-MJHT',
@@ -141,6 +154,7 @@
     appStore.dispatch(
       setGitLabAuthStatus({
         host: state.host,
+        ...(state.instanceBaseUrl ? { instanceBaseUrl: state.instanceBaseUrl } : {}),
         isConfigured: state.isConfigured,
         deviceGrantSupported: state.deviceGrantSupported,
         user: state.user,
@@ -204,13 +218,16 @@
       case 'idle':
         break;
     }
+    const instance = untrack(() => gitlabInstanceBaseUrl);
+    gitlab.host = new URL(instance).host;
+    gitlab.instanceBaseUrl = instance;
     applyGitHub(github);
     applyGitLab(gitlab);
   }
   const seededForge = untrack(() => step === 'forge');
   if (seededForge) {
-    // The browser mock intentionally advertises no protocol capabilities.
-    // These scenes exercise a daemon that can serve GitLab authentication.
+    // The browser mock advertises no setup capability. These fixture scenes
+    // explicitly admit the selected host and declare its support independently.
     appStore.dispatch(
       systemStatusSuccess(
         {
@@ -221,6 +238,20 @@
         },
         new Date().toISOString(),
         appStore.state.daemonHealth.connectionGeneration,
+      ),
+    );
+    admitLegacyPrincipal();
+    const { context, invalidation, presentationVersion, snapshot } = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        { context: context!, invalidation, presentationVersion },
+        {
+          ...snapshot!,
+          capabilities: {
+            ...snapshot!.capabilities,
+            gitlabCheckout: untrack(() => gitlabSetupSupported),
+          },
+        },
       ),
     );
     appStore.dispatch(setLabsGitLabEnabled(untrack(() => gitlabEnabled)));
@@ -254,6 +285,15 @@
       applyGitHub(previousGitHub);
       applyGitLab(previousGitLab);
       appStore.dispatch(setLabsGitLabEnabled(previousGitLabEnabled));
+      appStore.dispatch(principalContextChanged(previousPrincipal.context));
+      if (previousPrincipal.context && previousPrincipal.snapshot) {
+        appStore.dispatch(
+          principalReceived(
+            { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+            previousPrincipal.snapshot,
+          ),
+        );
+      }
     }
   });
 </script>

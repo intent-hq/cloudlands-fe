@@ -31,7 +31,8 @@
     draftKey?: string;
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
-    onComplete?: (answers: QuestionAnswer[]) => void;
+    /** Return false to decline admission; legacy notification callbacks remain valid. */
+    onComplete?: ((answers: QuestionAnswer[]) => boolean) | ((answers: QuestionAnswer[]) => void);
     onDismiss?: () => Promise<void> | void;
   }
 
@@ -199,9 +200,10 @@
     if (completed) return;
     const completedAnswers = toDraftAnswers(next);
     answers = completedAnswers;
+    // A declined local admission must leave this draft editable and retryable.
+    if (onComplete?.(buildAnswers(completedAnswers)) === false) return;
     completed = true;
     resolveDraft();
-    onComplete?.(buildAnswers(completedAnswers));
   }
 
   function handleBack(currentIndex: number) {
@@ -217,6 +219,17 @@
     // Keep the outgoing surface at its last screen position while the host reflows.
     previousBounds = (collapsed ? expandedElement : collapsedElement)?.getBoundingClientRect();
   });
+
+  /** Focus never selects an answer or changes the saved draft. */
+  export function focusQuestion(): boolean {
+    if (collapsed || completed || confirmingDismiss) return false;
+    const control = expandedElement?.querySelector<HTMLElement>(
+      '[role="radio"]:not([aria-disabled="true"]), [role="checkbox"]:not([aria-disabled="true"]), textarea:not(:disabled), button:not(:disabled)',
+    );
+    if (!control) return false;
+    control.focus({ preventScroll: true });
+    return document.activeElement === control;
+  }
 
   function enterState(node: HTMLElement, expanded: boolean) {
     // Svelte can reuse an outgoing branch when a disclosure is toggled rapidly.

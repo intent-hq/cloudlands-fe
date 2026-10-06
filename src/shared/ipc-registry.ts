@@ -256,6 +256,7 @@ export const IPC_CHANNELS = {
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
+    PREPARE_ADAPTERS: 'providers:prepare-adapters',
     GET_PATHS: 'providers:get-paths',
     CHECK_SINGLE: 'providers:check-single',
   },
@@ -940,6 +941,12 @@ export const IPC_CHANNELS = {
       RELEASE: 'backend:repository-selection:release',
       RETIRED: 'backend:repository-selection:retired',
     },
+    REPOSITORY_CHECKOUT: {
+      CAPTURE: 'backend:repository-checkout:capture',
+      REQUEST: 'backend:repository-checkout:request',
+      RELEASE: 'backend:repository-checkout:release',
+      RETIRED: 'backend:repository-checkout:retired',
+    },
     REPOSITORY_RESOURCE: {
       CAPTURE: 'backend:repository-resource:capture',
       DETAIL: 'backend:repository-resource:detail',
@@ -955,6 +962,7 @@ export const IPC_CHANNELS = {
     SUBSCRIBE: 'backend:subscribe',
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
+    NODE_CAPABILITIES: 'backend:node-capabilities',
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
@@ -1080,6 +1088,7 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
   IPC_CHANNELS.BACKEND.NATIVE_REVIEW.RETIRED,

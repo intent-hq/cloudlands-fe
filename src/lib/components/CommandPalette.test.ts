@@ -267,10 +267,10 @@ import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
 const reduxActions = [
-  { label: 'Agent Chat', actionCreator: createAgentRequested },
-  { label: 'Terminal', actionCreator: createTerminalRequested },
-  { label: 'Note', actionCreator: createNoteRequested },
-  { label: 'File', actionCreator: commandPaletteNewFileRequested },
+  { label: 'New Agent Chat', actionCreator: createAgentRequested },
+  { label: 'New Terminal', actionCreator: createTerminalRequested },
+  { label: 'New Note', actionCreator: createNoteRequested },
+  { label: 'New File', actionCreator: commandPaletteNewFileRequested },
 ] as const;
 
 describe('CommandPalette new actions', () => {
@@ -483,9 +483,9 @@ describe('CommandPalette new actions', () => {
 
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
 
-    await screen.findByRole('button', { name: 'Note' });
-    expect(screen.queryByRole('button', { name: 'Agent Chat' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull();
+    await screen.findByRole('button', { name: 'New Note' });
+    expect(screen.queryByRole('button', { name: 'New Agent Chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New Terminal' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Open URL in Browser/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /New Workspace/i })).toBeNull();
 
@@ -507,9 +507,9 @@ describe('CommandPalette new actions', () => {
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Agent Chat' }).getAttribute('aria-current')).toBe(
-        'true',
-      );
+      expect(
+        screen.getByRole('button', { name: 'New Agent Chat' }).getAttribute('aria-current'),
+      ).toBe('true');
     });
 
     const input = screen.getByRole('textbox');

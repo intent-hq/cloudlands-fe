@@ -4,6 +4,7 @@
   import { faImage } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
 
   interface Props {
     /** Path or asset name of the image being loaded. */
@@ -19,7 +20,7 @@
   data-testid="media-loading-placeholder"
 >
   <Fa icon={faImage} class="size-3.5 shrink-0" />
-  <span class="type-caption min-w-0 truncate" title={name}>
+  <span class="type-caption min-w-0 truncate" use:truncatedTitle={name}>
     {name || m.ui_mediaLoadingPlaceholder_title_label()}
   </span>
 </span>

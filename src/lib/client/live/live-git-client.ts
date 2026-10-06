@@ -479,6 +479,18 @@ function cleanExplicitPaths(
 }
 
 export class LiveGitClient implements GitClient {
+  async originUrl(repoPath: string): Promise<string | null> {
+    try {
+      const result = await backendRequest<{ url?: unknown }>('git.getRemoteUrl', {
+        repoPath,
+        remoteName: 'origin',
+      });
+      return typeof result?.url === 'string' ? result.url : null;
+    } catch {
+      return null;
+    }
+  }
+
   async status(
     workspaceId: string,
     options?: { forceRefresh?: boolean },
@@ -685,9 +697,15 @@ export class LiveGitClient implements GitClient {
   // divergence, folded to null like any malformed response); the BE-owned
   // `prStatus`/`pullRequests` payloads pass through unhealed per the
   // thin-presenter rules.
-  async prRefresh(workspaceId: string): Promise<PrRefreshResult | null> {
+  async prRefresh(
+    workspaceId: string,
+    options?: { automatic: boolean },
+  ): Promise<PrRefreshResult | null> {
     try {
-      const result = await backendRequest<Record<string, unknown>>('pr.refresh', { workspaceId });
+      const result = await backendRequest<Record<string, unknown>>('pr.refresh', {
+        workspaceId,
+        ...options,
+      });
       if (!result || typeof result !== 'object' || typeof result.outcome !== 'string') return null;
       const outcomes: readonly string[] = ['skipped', 'unchanged', 'linked', 'updated', 'unlinked'];
       if (!outcomes.includes(result.outcome)) return null;

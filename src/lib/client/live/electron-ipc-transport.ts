@@ -10,6 +10,7 @@ import {
 } from '$shared/types/native-review-operation';
 import { z } from 'zod';
 import { createRepositoryResourceTransport } from './repository-resource-transport';
+import { createRepositoryCheckoutTransport } from './repository-checkout-transport';
 import {
   SelectionRootSchema,
   SelectionPreviewSchema,
@@ -191,8 +192,17 @@ export function createElectronIpcBackendTransport(): BackendTransport {
 
   return {
     captureRepositorySelection,
+    async observeNodeCapabilities() {
+      const api = electronAPI();
+      if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
+      const response = await api.invoke(BACKEND.NODE_CAPABILITIES);
+      if (electronAPI() !== api)
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge changed' });
+      return unwrap(response);
+    },
     prepareNativeReview,
     captureRepositoryResource: createRepositoryResourceTransport(electronAPI),
+    captureRepositoryCheckout: createRepositoryCheckoutTransport(electronAPI),
 
     async captureRepositoryRoute(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute> {
       const api = electronAPI();

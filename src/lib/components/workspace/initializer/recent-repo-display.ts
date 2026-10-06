@@ -1,3 +1,6 @@
+import type { RepositoryTarget } from '$shared/types/repository-context';
+import { parseGitLabProjectLink } from '$shared/utils/gitlab-resource-link';
+
 /**
  * Pure helpers for rendering and filtering the RepoSelector "Recent" list.
  *
@@ -12,6 +15,40 @@ export interface RecentRepoEntry {
   type: 'local' | 'github';
   name: string;
   owner?: string;
+  githubUrl?: string;
+  /** Null marks legacy workspace metadata without an observed forge URL. */
+  repositoryIdentity?: RepositoryTarget | null;
+}
+
+/** A saved URL or explicit producer identity, never the selected forge or owner/name alone. */
+export function getRecentRepoIdentity(
+  repo: RecentRepoEntry,
+  gitlabInstance?: string,
+): RepositoryTarget | null {
+  if (repo.repositoryIdentity === null) return null;
+  if (repo.repositoryIdentity) {
+    const { provider, instanceBaseUrl, projectPath } = repo.repositoryIdentity;
+    const parsed = getRecentRepoIdentity(
+      { ...repo, repositoryIdentity: undefined, githubUrl: `${instanceBaseUrl}/${projectPath}` },
+      provider === 'gitlab' ? instanceBaseUrl : undefined,
+    );
+    return parsed?.provider === provider ? parsed : null;
+  }
+  const url = repo.githubUrl;
+  if (!url) return null;
+  const github =
+    /^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i.exec(
+      url,
+    );
+  if (github && !github.slice(1).some((part) => part === '.' || part === '..'))
+    return {
+      provider: 'github',
+      instanceBaseUrl: 'https://github.com',
+      projectPath: `${github[1]}/${github[2]}`,
+    };
+  return gitlabInstance
+    ? parseGitLabProjectLink(url.replace(/\.git\/?$/, ''), gitlabInstance)
+    : null;
 }
 
 export interface RecentRepoLabel {

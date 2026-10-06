@@ -24,7 +24,7 @@ for (const { state, lines, fullValue } of scenarios) {
       window.__INTENT_GEOMETRY_CT__.waitForCaptureStability(element),
     );
     const row = panel.getByText('Connection', { exact: true }).locator('..');
-    const value = row.locator('[title]');
+    const value = row.locator('span').last();
     const geometry = await value.evaluate((element) => {
       const box = (node: Element) => {
         const { left, right, top, bottom, height } = node.getBoundingClientRect();

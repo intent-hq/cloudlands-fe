@@ -1,5 +1,6 @@
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
+import { readRepositoryCheckoutDraft } from '../repository-checkout/repository-checkout-draft';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -132,6 +133,25 @@ workspaceInitializerReducer.with(
   workspaceInitializerGitCheckResolved,
   (state, { payload: [context, available] }) => ({ ...state, gitCheck: { context, available } }),
 );
+function compactIntent(form: CompactWorkspaceInitializerFormState | null | undefined) {
+  if (!form) return null;
+  const repositoryCheckoutDraft = readRepositoryCheckoutDraft(form.repositoryCheckoutDraft);
+  return {
+    ...form,
+    repositoryCheckoutDraft,
+    ...(form.repoType === 'gitlab'
+      ? {
+          repoPath: '',
+          branch: '',
+          githubUrl: '',
+          remoteSetup: null,
+          isNewRepo: false,
+          isValidPath: false,
+          skipIsolation: false,
+        }
+      : {}),
+  };
+}
 workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload: [hydration] }) => {
   const dismissedRecentRepoKeys = {
     ...(hydration.dismissedRecentRepoKeys ?? state.dismissedRecentRepoKeys),
@@ -143,7 +163,7 @@ workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload:
     hydrated: true,
     // A form edit made during the read belongs to this session, even if it
     // only changes effort (or explicitly clears it). Keep the paired model.
-    compactFormState: state.compactFormState ?? hydration.compactFormState ?? null,
+    compactFormState: compactIntent(state.compactFormState ?? hydration.compactFormState),
     onboardingFormState: hydration.onboardingFormState ?? state.onboardingFormState,
     lastSelectedRepo: hydration.lastSelectedRepo ?? state.lastSelectedRepo,
     branchByRepo: hydration.branchByRepo ?? state.branchByRepo,
@@ -166,7 +186,7 @@ workspaceInitializerReducer.with(
   setCompactWorkspaceInitializerFormState,
   (state, { payload: [compactFormState] }) => ({
     ...state,
-    compactFormState,
+    compactFormState: compactIntent(compactFormState),
   }),
 );
 workspaceInitializerReducer.with(

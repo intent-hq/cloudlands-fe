@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
@@ -1092,7 +1093,6 @@
               <!-- Status badge -->
               <span
                 class="{selectedScriptStatusInfo.textClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
-                title={selectedScriptStatusInfo.label}
               >
                 <Fa icon={faCircle} size="0.45em" />
                 {selectedScriptStatusInfo.label}
@@ -1105,10 +1105,11 @@
                   variant="plain"
                   class="text-blue-400 hover:underline text-xs flex items-center gap-1 cursor-pointer flex-shrink-0"
                   onclick={handleScriptOpenUrl}
-                  title={shownUrl}
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" />
-                  <span class="max-w-[200px] truncate">{shownUrl}</span>
+                  <span class="max-w-[200px] truncate" use:truncatedTitle={shownUrl}
+                    >{shownUrl}</span
+                  >
                 </Button>
               {/if}
             </div>

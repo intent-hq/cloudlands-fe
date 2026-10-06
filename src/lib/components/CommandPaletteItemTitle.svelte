@@ -1,8 +1,3 @@
-<!--
-  First title line of a regular command-palette result row: an optional
-  archived-workspace pill (chat-message and note rows), the item label, the
-  message row's workspace/repo segments, and the relative-time suffix.
--->
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
 
@@ -10,6 +5,9 @@
     item: {
       type?: string;
       label?: string;
+      description?: string;
+      breadcrumbs?: string;
+      path?: string;
       workspaceName?: string;
       repoLabel?: string;
       isArchivedWorkspace?: boolean;
@@ -18,23 +16,43 @@
   }
 
   let { item }: Props = $props();
+  const context = $derived(
+    item.type === 'note' && item.breadcrumbs
+      ? item.breadcrumbs
+      : item.type === 'change' || item.type === 'file'
+        ? item.path || item.description
+        : item.description,
+  );
+  const detail = $derived(
+    [
+      ...((item.type === 'message' || item.type === 'note') && item.workspaceName
+        ? [item.workspaceName, item.repoLabel]
+        : []),
+      context,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  );
 </script>
 
-<span class="flex min-w-0 items-baseline gap-2">
+<span
+  class="flex min-w-0 items-center gap-2 whitespace-nowrap"
+  title={[item.label, detail].filter(Boolean).join(' — ')}
+>
   {#if (item.type === 'message' || item.type === 'note') && item.isArchivedWorkspace}
     <span class="shrink-0 rounded bg-muted px-1.5 py-0.5 type-caption text-muted-foreground">
       {m.lib_commandPalette_archivedWorkspace_pill()}
     </span>
   {/if}
-  <span class="min-w-0 truncate type-caption text-foreground">{item.label}</span>
-  {#if (item.type === 'message' || item.type === 'note') && item.workspaceName}
-    <span class="min-w-0 truncate type-caption text-muted-foreground">
-      <span aria-hidden="true">·</span>
-      {item.workspaceName}
-      {#if item.repoLabel}
+  <span class="min-w-0 truncate type-body text-foreground {detail ? 'min-[480px]:max-w-[65%]' : ''}"
+    >{item.label}</span
+  >
+  {#if detail}
+    <span class="min-w-0 flex-1 truncate type-caption text-muted-foreground max-[479px]:sr-only">
+      {#if (item.type === 'message' || item.type === 'note') && item.workspaceName}
         <span aria-hidden="true">·</span>
-        {item.repoLabel}
       {/if}
+      {detail}
     </span>
   {/if}
   {#if item._time}

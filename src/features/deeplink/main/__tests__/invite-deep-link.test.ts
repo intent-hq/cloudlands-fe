@@ -1163,6 +1163,22 @@ describe('handleInviteDeepLink — older local daemon recovery', () => {
 });
 
 describe('handleInviteDeepLink — consent prompt labels', () => {
+  it('uses the collaboration name for consent and identity proof without changing the address', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    challenge.mockResolvedValue({
+      ...CHALLENGE,
+      hostname: 'studio.local',
+      prettyHostname: 'Studio',
+      collaborationName: 'Team machine',
+    });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ hostLabel: 'Team machine' });
+    expect(localCalls('github.identityProof.create')[0][1]).toMatchObject({
+      hostLabel: 'Team machine',
+    });
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ host: '192.168.1.10' }));
+  });
+
   it('names the host by its pretty name when the challenge carries one, in the modal and the gist', async () => {
     showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
     challenge.mockResolvedValue({
@@ -3721,6 +3737,25 @@ describe('host-scoped invitations (controlled FE protocol fixtures)', () => {
     prove.mockResolvedValue(granted);
     showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
   });
+  it('uses the shared machine name in an instance invitation preview and proof', async () => {
+    inspect.mockResolvedValue({ ...preview, collaborationName: 'Design host' });
+    challenge.mockResolvedValue({
+      ...preview,
+      collaborationName: 'Design host',
+      nonce: CHALLENGE.nonce,
+      nonceExpiresAt: CHALLENGE.nonceExpiresAt,
+    });
+    await handleInviteDeepLink(`${LINK}&scope=host`);
+    expect(showInviteConsent).toHaveBeenCalledWith(
+      expect.objectContaining({ hostLabel: 'Design host' }),
+      expect.anything(),
+    );
+    expect(localCalls('github.identityProof.create')[0][1]).toMatchObject({
+      hostLabel: 'Design host',
+    });
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ hostRole: 'member' }));
+  });
+
   it('inspects before consent/proof, saves the remote principal and opens an empty host with no invented workspace', async () => {
     await handleInviteDeepLink(`${LINK}&scope=host`);
     expect(inspect.mock.invocationCallOrder[0]).toBeLessThan(challenge.mock.invocationCallOrder[0]);

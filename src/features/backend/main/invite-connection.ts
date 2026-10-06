@@ -105,6 +105,8 @@ export interface InviteInspection {
   workspaceTitle?: string;
   hostname?: string;
   prettyHostname?: string;
+  /** Optional on older daemons; null means use the real friendly hostname. */
+  collaborationName?: string | null;
   /** Required account; null means unpinned. Older hosts omit this field. */
   pinIdentity?: PrincipalIdentity | null;
 }

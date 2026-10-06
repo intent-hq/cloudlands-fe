@@ -24,7 +24,7 @@
   import AIBehaviorSidebar, { type AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   let { narrow = false, guest = false }: { narrow?: boolean; guest?: boolean } = $props();
-  let activeTab = $state<SettingsTab>('display');
+  let activeTab = $state<SettingsTab>('agent-behavior');
   let activeView = $state<AIBehaviorView>({ type: 'system-prompt' });
   let backCount = $state(0);
 

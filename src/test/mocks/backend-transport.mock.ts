@@ -211,6 +211,7 @@ export const mockBackendTransportModule = {
       });
     return state.repositoryCapture(structuredClone(root));
   },
+  observeBackendNodeCapabilities: () => mockBackendRequest('client.hello', {}),
   backendRequest: mockBackendRequest,
   backendSubscribe: mockBackendSubscribe,
   backendUnsubscribe: mockBackendUnsubscribe,

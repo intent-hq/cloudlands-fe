@@ -819,6 +819,23 @@ describe('QuestionWizard draft persistence', () => {
     expect(window.localStorage.getItem(KEY)).toBeNull();
   });
 
+  it('keeps answers editable and persisted when local admission declines completion', async () => {
+    const onComplete = vi.fn().mockReturnValue(false);
+    const view = render(QuestionWizard, {
+      props: { questions: [LAST], draftKey: KEY, onComplete },
+    });
+    const input = currentOtherInput();
+    await fireEvent.input(input, { target: { value: 'Keep this answer' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledOnce();
+    await fireEvent.input(input, { target: { value: 'Corrected answer' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledTimes(2);
+    expect(onComplete.mock.calls[1][0][0].freeText).toBe('Corrected answer');
+    view.unmount();
+    expect(JSON.parse(window.localStorage.getItem(KEY)!).answers[0].text).toBe('Corrected answer');
+  });
+
   it('confirmed Dismiss clears the stored draft once onDismiss resolves', async () => {
     seedDraft(0, [{ sel: [], text: 'draft', skipped: false }]);
     const view = render(QuestionWizard, {

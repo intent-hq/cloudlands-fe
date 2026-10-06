@@ -501,7 +501,11 @@ describe('acceptWorkflowSaga', () => {
       commitTitle: undefined,
       commitMessage: undefined,
     });
-    expect(run.actions.some((a) => a.type === 'prStatus/refreshRequested')).toBe(true);
+    expect(run.actions.find((a) => a.type === 'prStatus/refreshRequested')?.payload).toEqual([
+      'a',
+      true,
+      true,
+    ]);
     expect(mocks.confetti).toHaveBeenCalledTimes(1);
   });
 

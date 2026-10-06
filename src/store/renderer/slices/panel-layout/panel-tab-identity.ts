@@ -1,5 +1,14 @@
 import type { PanelState, PanelTab, WorkspacePanelLayoutState } from './panel-layout-types';
 import { getPanelOrder } from './panel-layout-tabless';
+import { isAssistantPanelLayout } from '$shared/assistant-panel-layout';
+
+/** Assistant content can include resources from another workspace; other layouts stay scoped. */
+export function panelTabBelongsToLayout(
+  workspaceId: string,
+  tab: Pick<PanelTab, 'type' | 'workspaceId'>,
+): boolean {
+  return !tab.workspaceId || tab.workspaceId === workspaceId || isAssistantPanelLayout(workspaceId);
+}
 
 export type EquivalentPanelTab = { panelId: string; tab: PanelTab };
 
@@ -29,6 +38,12 @@ export function panelTabsAreEquivalent(
   requested: Omit<PanelTab, 'id'>,
 ): boolean {
   if (existing.type !== requested.type) return false;
+  if (
+    existing.workspaceId &&
+    requested.workspaceId &&
+    existing.workspaceId !== requested.workspaceId
+  )
+    return false;
   switch (requested.type) {
     case 'agent':
       return !!requested.agentId && existing.agentId === requested.agentId;
@@ -84,6 +99,7 @@ export function panelTabsAreEquivalent(
     case 'activity':
     case 'code-review':
     case 'settings':
+    case 'workspace':
     case 'overview':
     case 'agent-overview':
     case 'local-changes':
@@ -99,7 +115,7 @@ export function findEquivalentPanelTab(
   requested: Omit<PanelTab, 'id'>,
   referencePanelId?: string | null,
 ): EquivalentPanelTab | null {
-  if (requested.workspaceId && requested.workspaceId !== workspaceId) return null;
+  if (!panelTabBelongsToLayout(workspaceId, requested)) return null;
   const panelOrder = getPanelOrder(workspace.root);
   const stableOrder = [
     ...panelOrder,
@@ -118,7 +134,8 @@ export function findEquivalentPanelTab(
   stableOrder.forEach((panelId, order) => {
     const panel: PanelState | undefined = workspace.panels[panelId];
     panel?.tabs.forEach((tab, tabOrder) => {
-      if (tab.workspaceId && tab.workspaceId !== workspaceId) return;
+      if (!panelTabBelongsToLayout(workspaceId, tab)) return;
+      if ((tab.workspaceId ?? workspaceId) !== (requested.workspaceId ?? workspaceId)) return;
       if (!panelTabsAreEquivalent(tab, requested)) return;
       candidates.push({
         panelId,

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import type { GitClient } from '$lib/client/app-client';
 const mocks = vi.hoisted(() => ({
   selector: <T>(getter: () => T) =>
     Object.assign(
@@ -20,6 +21,7 @@ vi.mock('$lib/electron-bridge', async () => ({
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
+    git: { originUrl: vi.fn<GitClient['originUrl']>().mockResolvedValue(null) },
     workspaces: { recentViews: vi.fn(async () => ({})) },
     settings: { get: vi.fn(async () => null), update: vi.fn(async () => []) },
   },

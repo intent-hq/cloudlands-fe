@@ -1,3 +1,4 @@
+import { AgentPlacementRequestSchema } from '$shared/types/agent-node';
 import type {
   NativeReviewOwner,
   NativeReviewInput,
@@ -97,8 +98,12 @@ function toWorkspaceStatus(value: unknown): WorkspaceStatus {
 function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
   const now = new Date().toISOString();
   const id = String(raw.id ?? raw.workspaceId ?? '');
+  const { defaultAgentPlacement, ...fields } = raw;
   return {
-    ...(raw as Partial<Workspace>),
+    ...(fields as Partial<Workspace>),
+    ...(defaultAgentPlacement === undefined
+      ? {}
+      : { defaultAgentPlacement: AgentPlacementRequestSchema.parse(defaultAgentPlacement) }),
     id: createWorkspaceId(id),
     title: String(raw.title ?? raw.name ?? id),
     branch: String(raw.branch ?? ''),

@@ -35,7 +35,7 @@ import {
   goBack,
 } from '../../panel-layout/panel-layout-slice';
 import { presenceFollowSaga } from './presence-follow-saga';
-import { setAgents } from '../../workspace-agents/workspace-agents-slice';
+import { setAgents, setAgentsLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
 import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 
@@ -301,6 +301,7 @@ describe('following authorized presence', () => {
         updatedAt: '2026-10-03T00:00:00Z',
       } as AgentSession;
       store.dispatch(bulkUpsertSessions([primary]));
+      store.dispatch(setAgentsLoaded(workspaceId, true));
       store.dispatch(setAgents(workspaceId, [primary]));
       const key = `panel-layout-${workspaceId}`;
       if (stored === 'tabless')

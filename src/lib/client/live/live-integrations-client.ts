@@ -25,7 +25,11 @@ import type {
 import type { GitHubUser } from '$features/github-auth/types';
 import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
 import type { SentryIssueResult } from '$features/sentry-auth/types';
-import { captureBackendRepositoryResource, backendRequest } from './backend-transport';
+import {
+  captureBackendRepositoryCheckout,
+  captureBackendRepositoryResource,
+  backendRequest,
+} from './backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('LiveIntegrationsClient');
@@ -87,6 +91,11 @@ function pullRequestState(pull: GithubPullWire): GitHubPullRequestState {
 }
 
 export class LiveIntegrationsClient implements IntegrationsClient {
+  captureRepositoryCheckout(
+    query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
+  ) {
+    return captureBackendRepositoryCheckout(query);
+  }
   async githubUser(workspaceId?: string): Promise<GitHubUser | null> {
     try {
       const result = await backendRequest<GithubGetUserResult>(

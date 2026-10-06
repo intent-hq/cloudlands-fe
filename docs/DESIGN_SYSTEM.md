@@ -65,7 +65,13 @@ Import `ListView` and `ListRow` from `$lib/components/patterns/collection`; insp
 <ListView {items} getKey={(item) => item.id}>{#snippet row({ item })}<ListRow>{#snippet title()}{item.name}{/snippet}</ListRow>{/snippet}</ListView>
 ```
 
-Inside dialogs, use flush, unfilled rows (`ListRow class="px-0"`), not nested cards or wells.
+Inside dialogs, use unfilled rows rather than nested cards or wells. Flush spacing
+(`ListRow class="px-0"`) is only appropriate for noninteractive content without a hover or
+selected surface. Interactive rows, buttons, and select triggers must retain internal
+padding on every edge, including around trailing chevrons. Preserve the primitive’s
+default padding; align controls through the surrounding layout instead of removing
+their padding. Inspect hover and keyboard-focus states to ensure the background extends
+beyond the text and icons.
 Keep informational agents and PRs to one line; avoid redundant status badges. Render
 warnings and empty-state guidance as muted text. For an icon beside a title and wrapping
 description, use `ListRow`: leading icons, avatars, and trailing symbols are always centered
