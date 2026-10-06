@@ -45,7 +45,11 @@ const mockState = vi.hoisted(() => {
     scrollPositions: store<Record<string, number>>({}),
     initialSpecWriteInProgress: store(false),
     notesState: store({ loading: false, initialized: true }),
-    workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
+    workspace: store<{ id: string; path: string; branchName: string } | undefined>({
+      id: 'ws-1',
+      path: '/tmp/ws-1',
+      branchName: 'main',
+    }),
     defaultNote,
     note: store<typeof defaultNote | undefined>(defaultNote),
   };
@@ -144,7 +148,10 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
-  closeTab: () => ({ type: 'panelLayout/closeTab' }),
+  closeTab: (layoutId: string, tabId: string) => ({
+    type: 'panelLayout/closeTab',
+    payload: [layoutId, tabId],
+  }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectNoteViewMode: () => mockState.noteViewMode,
@@ -163,6 +170,7 @@ describe('NoteTabType note view modes', () => {
     mockState.dispatch.mockClear();
     mockState.loadContent.mockClear();
     mockState.pageSession.set(undefined);
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
     mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
@@ -263,6 +271,23 @@ $$\frac{1}{2}$$
     expect(preview.textContent).toContain('External update');
 
     mockState.noteViewMode.set('editor');
+    await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
+    expect(screen.getByTestId('mock-component')).toBeTruthy();
+  });
+
+  it('uses the rendered preview without a workspace while preserving the editor preference', async () => {
+    mockState.workspace.set(undefined);
+    const { container } = render(NoteTabTypeHeaderHarness, {
+      props: {
+        tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' },
+        layoutId: 'assistant-layout',
+      },
+    });
+    const preview = await screen.findByRole('document', { name: 'Rendered note preview' });
+    expect(preview.textContent).toContain('Note content');
+    expect(container.querySelector('[contenteditable="true"]')).toBeNull();
+    expect(mockState.noteViewMode.get()).toBe('editor');
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
     await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
     expect(screen.getByTestId('mock-component')).toBeTruthy();
   });
@@ -477,18 +502,29 @@ $$\frac{1}{2}$$
     });
   });
 
-  it('preserves spec protection while exposing deletion only for ordinary notes', async () => {
-    const { rerender } = render(NoteTabTypeHeaderHarness, {
-      props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' } },
-    });
-    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
-    expect(screen.queryByRole('menuitem', { name: 'Delete note' })).toBeNull();
-    await rerender({ tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } });
-    const deletion = await screen.findByRole('menuitem', { name: 'Delete note' });
-    await fireEvent.click(deletion);
-    const { deleteNote } = await import('$features/notes/notes-write-service');
-    expect(deleteNote).toHaveBeenCalledExactlyOnceWith('ws-1', 'note-1');
-  });
+  it.each([undefined, 'assistant-layout'])(
+    'preserves spec protection and deletes from the owning layout %s',
+    async (layoutId) => {
+      const { deleteNote } = await import('$features/notes/notes-write-service');
+      vi.mocked(deleteNote).mockClear();
+      const { rerender } = render(NoteTabTypeHeaderHarness, {
+        props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' }, layoutId },
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+      expect(screen.queryByRole('menuitem', { name: 'Delete note' })).toBeNull();
+      await rerender({
+        tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' },
+        layoutId,
+      });
+      const deletion = await screen.findByRole('menuitem', { name: 'Delete note' });
+      await fireEvent.click(deletion);
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'panelLayout/closeTab',
+        payload: [layoutId ?? 'ws-1', 'tab-1'],
+      });
+      expect(deleteNote).toHaveBeenCalledExactlyOnceWith('ws-1', 'note-1');
+    },
+  );
 
   it('clears pending copy feedback timer when unmounted', async () => {
     const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
@@ -526,6 +562,7 @@ $$\frac{1}{2}$$
     };
     render(NoteTabTypeHeaderHarness, {
       tab: { id: 'tab-paged', type: 'note', noteId: 'note-1' },
+      layoutId: 'assistant-layout',
       readingSurface: surface,
     });
     await new Promise<void>((resolve) => queueMicrotask(resolve));

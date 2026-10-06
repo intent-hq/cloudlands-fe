@@ -115,7 +115,7 @@ test('pins automated triggers without shifting the transcript and returns to eac
     const before = await geometry(scroll, anchor, source);
     await scroll.evaluate((node, top) => node.scrollTo(0, top), entry);
     await expect(pinned).toBeVisible();
-    await expect(pinned).toHaveAttribute('title', new RegExp(labels[index]));
+    await expect(pinned).toContainText(labels[index]);
     const after = await geometry(scroll, anchor, source);
     measurements.push({ trigger: turnMessages[index].id, before, after });
     expect(after.scrollHeight).toBe(before.scrollHeight);

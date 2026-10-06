@@ -11,7 +11,6 @@ import {
   WORKSPACE_TAB_CORNER_RADIUS_PX,
   WORKSPACE_TAB_FLARE_RADIUS_PX,
   WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
-  WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
 } from './titlebar-geometry';
 
 describe('shared title-bar geometry', () => {
@@ -26,17 +25,10 @@ describe('shared title-bar geometry', () => {
   ])('counter-scales the %sx zoom band to %spx', (zoomFactor, expectedHeight) => {
     expect(getCounterScaledTitlebarHeight(zoomFactor)).toBeCloseTo(expectedHeight);
   });
-  it('keeps the closed and open tab insets outside the leading flare', () => {
-    expect(getWorkspaceTabLeadingInsetPx(false)).toBe(16);
-    expect(getWorkspaceTabLeadingInsetPx(true)).toBe(22);
-    expect(getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(false))).toBe(6);
-    expect(getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(true))).toBe(10);
-    expect(
-      WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX +
-        getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(true)),
-    ).toBe(18);
-    expect(getWorkspaceTabScrollerMarginLeftPx(true)).toBe(WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX);
-    expect(getWorkspaceTabScrollerMarginLeftPx(false)).toBe(-6);
+  it('keeps the tab inset outside the leading flare', () => {
+    expect(getWorkspaceTabLeadingInsetPx()).toBe(16);
+    expect(getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx())).toBe(6);
+    expect(getWorkspaceTabScrollerMarginLeftPx()).toBe(-6);
   });
 
   it('shows edge fades only where scrolling hides tabs', () => {

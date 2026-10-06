@@ -580,6 +580,23 @@
     selectedPRNumber = null;
     appStore.dispatch(projectSelected(checkoutFormId, scopeKey, path));
   }
+  function pickRecentCheckoutProject(projectPath: string, instanceBaseUrl: string) {
+    if (
+      !$labsGitLab$ ||
+      !$gitlabStatusReady$ ||
+      !$gitlabConfigured$ ||
+      instanceBaseUrl !== $gitlabInstance$
+    )
+      return;
+    const form = selectCheckoutForm.select(appStore.state, checkoutFormId);
+    if (form?.status === 'unavailable') return;
+    if (form?.scopeKey) {
+      if (form.status === 'ready' && form.capture?.instanceBaseUrl === instanceBaseUrl)
+        pickCheckoutProject(projectPath, form.scopeKey);
+      return;
+    }
+    restoreCheckout({ instanceBaseUrl, projectPath, mode: form?.mode });
+  }
   const gitlabPicker = $derived<GitLabProjectPickerProps>({
     authenticated: $gitlabStatusReady$ && $gitlabConfigured$,
     scopeKey: checkoutScope,
@@ -588,6 +605,11 @@
     page: checkoutPickerPage($checkoutForm$, $checkoutProjects$, 'projects'),
     copy: checkoutPickerCopy('projects'),
     selectedProjectPath: $checkoutForm$?.project?.projectPath,
+    selectedProject:
+      $checkoutForm$?.status === 'ready' &&
+      $checkoutForm$.capture?.instanceBaseUrl === $gitlabInstance$
+        ? ($checkoutForm$.project ?? undefined)
+        : undefined,
     onOpenChange: (open) => {
       if (open) ensureCheckout();
     },
@@ -615,6 +637,7 @@
       : undefined,
     onMore: (scopeKey) => appStore.dispatch(projectsMoreRequested(checkoutFormId, scopeKey)),
     onSelect: pickCheckoutProject,
+    onSelectRecent: pickRecentCheckoutProject,
     onRecover: recoverCheckout,
   });
   const gitlabBranchPicker = $derived<GitLabBranchPickerProps>({

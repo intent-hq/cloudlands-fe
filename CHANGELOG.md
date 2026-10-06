@@ -4,6 +4,34 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.209.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.209.1...v2.209.2) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* blend empty panel headers and allow column shortcuts while typing ([#3226](https://github.com/intent-hq/cloudlands-fe/issues/3226)) ([3c4db1a](https://github.com/intent-hq/cloudlands-fe/commit/3c4db1a998cd18ee2da97caeaa3017b7a288640a))
+* bump intentd sidecar to v0.10.21 ([#3236](https://github.com/intent-hq/cloudlands-fe/issues/3236)) ([161ee49](https://github.com/intent-hq/cloudlands-fe/commit/161ee493e89b0681e76c943457f7619e5dee0e23))
+* contain Home assistant scrolling ([#3230](https://github.com/intent-hq/cloudlands-fe/issues/3230)) ([e022644](https://github.com/intent-hq/cloudlands-fe/commit/e0226445a8de92e5ea7e84ecdb3c053323397d2a))
+* keep queued images with their source messages ([#3229](https://github.com/intent-hq/cloudlands-fe/issues/3229)) ([f4fa829](https://github.com/intent-hq/cloudlands-fe/commit/f4fa829f8f7ce96d6f79ae49e4537035a0f960cf))
+* remove message-only token usage icons ([#3221](https://github.com/intent-hq/cloudlands-fe/issues/3221)) ([1f12210](https://github.com/intent-hq/cloudlands-fe/commit/1f12210087815dcd16df4ec4879c322a3eb5eb4e))
+* remove redundant tooltips across the interface ([#3224](https://github.com/intent-hq/cloudlands-fe/issues/3224)) ([3aba939](https://github.com/intent-hq/cloudlands-fe/commit/3aba939a5a424278e4ab4f345e5b7a4266c030e6))
+* remove the retired navigation sidebar ([#3231](https://github.com/intent-hq/cloudlands-fe/issues/3231)) ([e8679ee](https://github.com/intent-hq/cloudlands-fe/commit/e8679ee30da400027a7e065615e4b12044354bc4))
+* unify forge repository lists and recents ([#6823](https://github.com/intent-hq/cloudlands-fe/issues/6823)) ([#3219](https://github.com/intent-hq/cloudlands-fe/issues/3219)) ([8284187](https://github.com/intent-hq/cloudlands-fe/commit/8284187797ed0a23d23dbd7c8289ee0f94d5a2cb))
+
+## [2.209.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.209.0...v2.209.1) (2026-10-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.20 ([#3232](https://github.com/intent-hq/cloudlands-fe/issues/3232)) ([98b0eea](https://github.com/intent-hq/cloudlands-fe/commit/98b0eeaa92f869f5ad4d8ce71cf2d3202e30c3a1))
+
+## [2.209.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.208.0...v2.209.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* simplify command palette layout and filters ([#3225](https://github.com/intent-hq/cloudlands-fe/issues/3225)) ([e471efb](https://github.com/intent-hq/cloudlands-fe/commit/e471efbd1b5b69da29acd1d7d2ed70580c65c825))
+
 ## [2.208.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.207.0...v2.208.0) (2026-10-05)
 
 

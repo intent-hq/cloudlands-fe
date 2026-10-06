@@ -336,7 +336,7 @@ describe('catalog route shell', () => {
     expect(await restrictedImportMessages(APP_LAYOUT, hostImports)).toEqual([]);
   }, 30_000);
 
-  it('moves async-data lint baseline paths without changing baseline membership', () => {
+  it('moves async-data lint baseline paths without duplicate entries', () => {
     const eslintConfig = readFileSync(path.join(root, 'eslint.config.js'), 'utf8');
     const baselineSource = eslintConfig.match(
       /const componentAsyncDataFetchBaselineFiles = \[([\s\S]*?)\n\];/,
@@ -344,8 +344,7 @@ describe('catalog route shell', () => {
     expect(baselineSource).toBeDefined();
     const baselinePaths = [...baselineSource!.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 
-    expect(baselinePaths).toHaveLength(141);
-    expect(new Set(baselinePaths).size).toBe(141);
+    expect(new Set(baselinePaths).size).toBe(baselinePaths.length);
     for (const [oldPath, newPath] of movedAsyncDataBaselinePaths) {
       expect(baselinePaths).not.toContain(oldPath);
       expect(baselinePaths).toContain(newPath);

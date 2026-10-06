@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "文件管理器",
   "layout_panelTabBar_paneStack_ariaLabel": "窗格堆栈大小：{count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "显示窗格列表。窗格总数：{count}。",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}。显示窗格列表。窗格总数：{count}。",
   "layout_panelTabBar_paneMenu_ariaLabel": "此堆栈中的窗格",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}。需要注意。",
   "layout_panelTabBar_openPaneAbove_label": "打开上方窗格",
@@ -5505,7 +5506,11 @@
   "lib_commandPalette_close_ariaLabel": "关闭",
   "lib_commandPalette_quickActions_ariaLabel": "快捷操作",
   "lib_commandPalette_goToLine_placeholder": "输入要跳转的行号…",
-  "lib_commandPalette_filter_placeholder": "输入 @ # > ~ / * 进行筛选…",
+  "lib_commandPalette_filter_placeholder": "搜索或跳转到…",
+  "lib_commandPalette_all_label": "全部",
+  "lib_commandPalette_workspaces_label": "工作区",
+  "lib_commandPalette_filters_ariaLabel": "筛选结果",
+  "lib_commandPalette_emptyFilter_message": "这里暂无内容，请尝试其他分类。",
   "lib_commandPalette_resultsCount_status": "{count} 个结果",
   "lib_commandPalette_esc_label": "ESC",
   "lib_commandPalette_goToLine_label": "转到第 {line} 行",
@@ -7458,5 +7463,8 @@
   "settings_machineName_invalid_error": "最多输入100个字符，不能包含控制字符。",
   "settings_machineName_load_error": "无法加载计算机名称，请重试。",
   "settings_machineName_save_error": "无法保存计算机名称，请重试。",
-  "settings_machineName_saved": "计算机名称已保存"
+  "settings_machineName_saved": "计算机名称已保存",
+  "home_assistantThread_hooks_label": "活动钩子：{count}",
+  "home_assistantThread_monitors_label": "活动监控：{count}",
+  "home_assistantThread_subscriptions_label": "活动订阅：{count}"
 }

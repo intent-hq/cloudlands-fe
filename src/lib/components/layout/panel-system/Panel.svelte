@@ -567,7 +567,7 @@
           >
             <PanelContentRenderer
               {tab}
-              {workspaceId}
+              workspaceId={tab.workspaceId ?? workspaceId}
               {layoutId}
               {isActive}
               isPanelFocused={isFocused && isActive}

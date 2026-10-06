@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { observeOverflow } from '$lib/actions/observe-overflow';
   import { tick, untrack } from 'svelte';
   import { Popover } from 'bits-ui';
   import { Input } from '$lib/components/ui/input';
@@ -39,6 +40,7 @@
     embedded = false,
   }: Props = $props();
   let open = $state(false);
+  let messageOverflow = $state<Record<string, boolean>>({});
   let query = $state('');
   let activeIndex = $state(0);
   // While true the newest (last) item stays active even as async index rows
@@ -258,6 +260,7 @@
         {#each filteredMessages as message, index (message.id)}
           <Tooltip
             content={message.text}
+            disabled={!messageOverflow[message.id]}
             side="left"
             align="center"
             delayDuration={300}
@@ -300,6 +303,7 @@
               data-panel-menu-row={embedded || undefined}
             >
               <span
+                use:observeOverflow={(overflow) => (messageOverflow[message.id] = overflow)}
                 class="block min-w-0 max-w-full flex-1 overflow-hidden whitespace-nowrap text-left text-ellipsis font-normal"
               >
                 {message.text}

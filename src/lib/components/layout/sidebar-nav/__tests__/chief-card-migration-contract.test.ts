@@ -108,7 +108,7 @@ describe('Chief card migration contract', () => {
 
   it('waits for daemon hydration before creating a Chief thread', async () => {
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, false));
-    render(ChiefCard, { props: { expanded: true } });
+    render(ChiefCard, { props: {} });
 
     await settle();
     expect(launchActions).toHaveLength(0);
@@ -129,7 +129,7 @@ describe('Chief card migration contract', () => {
       ]),
     );
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-    render(ChiefCard, { props: { expanded: true } });
+    render(ChiefCard, { props: {} });
 
     await settle();
     expect(launchActions).toHaveLength(0);
@@ -144,7 +144,7 @@ describe('Chief card migration contract', () => {
       ]),
     );
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-    render(ChiefCard, { props: { expanded: true } });
+    render(ChiefCard, { props: {} });
 
     await waitFor(() => expect(launchActions).toHaveLength(1));
     await settle();
@@ -164,7 +164,7 @@ describe('Chief card migration contract', () => {
       // The same requested-agent state is used for manual selection and deep links.
       appStore.dispatch(setChiefActiveAgentId(STALE_THREAD_ID));
       appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-      render(ChiefCard, { props: { expanded: true } });
+      render(ChiefCard, { props: {} });
 
       await settle();
       expect(launchActions).toHaveLength(0);
@@ -180,7 +180,7 @@ describe('Chief card migration contract', () => {
           CHIEF_WORKSPACE_ID,
           {
             agentType: 'workspace',
-            metadata: { chiefPromptVersion: 3, specialist: 'chief-of-staff' },
+            metadata: { chiefPromptVersion: CHIEF_PROMPT_VERSION, specialist: 'chief-of-staff' },
           },
           { openAgent: false },
         ],
@@ -208,13 +208,13 @@ describe('Chief card migration contract', () => {
         legacy,
         makeChiefSession(CURRENT_THREAD_ID, {
           createdAt: '2026-09-24T00:00:00.000Z',
-          chiefPromptVersion: 3,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
         }),
       ]),
     );
     appStore.dispatch(setChiefActiveAgentId(STALE_THREAD_ID));
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-    render(ChiefCard, { props: { expanded: true } });
+    render(ChiefCard, { props: {} });
     await waitFor(() =>
       expect(screen.getByTestId('mock-chat-panel').textContent).toBe(STALE_THREAD_ID),
     );
@@ -233,12 +233,12 @@ describe('Chief card migration contract', () => {
   it('creates on New chat rather than reusing a current nonempty thread', async () => {
     const current = makeChiefSession(CURRENT_THREAD_ID, {
       createdAt: '2026-09-24T00:00:00.000Z',
-      chiefPromptVersion: 3,
+      chiefPromptVersion: CHIEF_PROMPT_VERSION,
     });
     current.messageCount = 1;
     appStore.dispatch(bulkUpsertSessions([current]));
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-    render(ChiefCard, { props: { expanded: true } });
+    render(ChiefCard, { props: {} });
     await settle();
     expect(launchActions).toHaveLength(0);
 
@@ -247,41 +247,6 @@ describe('Chief card migration contract', () => {
     );
     await waitFor(() => expect(launchActions).toHaveLength(1));
     expect(appStore.state.sidebarNav.chiefActiveAgentId).toBe('agent-chief-created');
-  });
-
-  it('docks the embedded Chief chat to the bottom without an extra wrapper inset', () => {
-    const { container } = render(ChiefCard, {
-      props: { expanded: true, embedded: true, collapsed: false, ontoggle: vi.fn() },
-    });
-
-    const content = container.querySelector<HTMLElement>('#combined-panel-chief-content')!;
-    expect(content).not.toBeNull();
-    for (const token of ['min-h-0', 'flex-1', 'overflow-clip', 'px-2', 'pt-0']) {
-      expect(content.classList.contains(token)).toBe(true);
-    }
-    expect([...content.classList].some((token) => /^pb-/.test(token))).toBe(false);
-  });
-
-  it('clips at the padded wrapper with a clip margin so the composer aurora reaches the window edges', () => {
-    const { container } = render(ChiefCard, {
-      props: { expanded: true, embedded: true, collapsed: false, ontoggle: vi.fn() },
-    });
-
-    const content = container.querySelector<HTMLElement>('#combined-panel-chief-content')!;
-    expect(content.classList.contains('[overflow-clip-margin:0.5rem]')).toBe(true);
-    const section = content.querySelector<HTMLElement>(':scope > section')!;
-    expect(section).not.toBeNull();
-    for (const token of ['flex', 'h-full', 'min-h-0', 'flex-col']) {
-      expect(section.classList.contains(token)).toBe(true);
-    }
-    expect(section.classList.contains('overflow-hidden')).toBe(false);
-    // No clip-path utility here: it would clip fixed-position dialogs rendered
-    // in this subtree (e.g. RulesInspector), since clip-path clips all painted
-    // descendants including position:fixed ones.
-    const clipPathUser = [...container.querySelectorAll<HTMLElement>('*')].find((element) =>
-      [...element.classList].some((token) => token.startsWith('[clip-path:')),
-    );
-    expect(clipPathUser).toBeUndefined();
   });
 
   it('goes directly to a blank chat instead of rendering a Chief empty state', async () => {
@@ -294,7 +259,7 @@ describe('Chief card migration contract', () => {
       ]),
     );
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-    const { container } = render(ChiefCard, { props: { expanded: true, embedded: true } });
+    const { container } = render(ChiefCard, { props: {} });
     await settle();
 
     const content = container.querySelector<HTMLElement>('section')!;
@@ -305,8 +270,8 @@ describe('Chief card migration contract', () => {
 
   it('shares one in-flight Chief launch across mounted card hosts', async () => {
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
-    render(ChiefCard, { props: { expanded: true } });
-    render(ChiefCard, { props: { expanded: true, embedded: true } });
+    render(ChiefCard, { props: {} });
+    render(ChiefCard, { props: {} });
 
     await waitFor(() => expect(createAgentMock).toHaveBeenCalledTimes(1));
     await settle();

@@ -17,12 +17,15 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
+  import { observeOverflow } from '$lib/actions/observe-overflow';
   import type { Snippet } from 'svelte';
   import { tick } from 'svelte';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { BreadcrumbItem } from './types';
   import { m } from '$shared/paraglide/messages.js';
   import { SHORTCUTS } from '$lib/utils/shortcuts';
+
+  let titleOverflow = $state(false);
 
   interface Props {
     /** Main title - displayed after breadcrumbs */
@@ -166,9 +169,16 @@
                 : 'cursor-default'}"
               onclick={startEditingTitle}
               disabled={!editableTitle}
-              title={editableTitle ? m.ui_contentHeader_clickToEdit_tooltip() : title}
+              wrapContent={false}
+              title={editableTitle
+                ? m.ui_contentHeader_clickToEdit_tooltip()
+                : titleOverflow
+                  ? title
+                  : undefined}
             >
-              {title}
+              <span class="truncate" use:observeOverflow={(overflow) => (titleOverflow = overflow)}
+                >{title}</span
+              >
             </Button>
           {/if}
           <span

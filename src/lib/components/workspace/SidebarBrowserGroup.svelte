@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * One owner group in the sidebar browser list (monorepo#2857): a
    * collapsible header (agent display name or "Unclaimed") over the group's
@@ -56,7 +57,7 @@
             <span class="min-w-0 flex-1 opacity-60">
               <span
                 class="block truncate type-body font-normal text-muted-foreground"
-                title={entry.tab.title}>{entry.tab.title}</span
+                use:truncatedTitle={entry.tab.title}>{entry.tab.title}</span
               >
             </span>
             <span
@@ -84,7 +85,7 @@
             <span class="min-w-0 flex-1">
               <span
                 class="block truncate type-body font-normal text-foreground"
-                title={entry.tab.title}>{entry.tab.title}</span
+                use:truncatedTitle={entry.tab.title}>{entry.tab.title}</span
               >
             </span>
           </Button>

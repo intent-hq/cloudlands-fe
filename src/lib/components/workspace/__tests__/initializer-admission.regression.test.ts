@@ -263,7 +263,10 @@ import type {
   CheckoutSelection,
 } from '$shared/types/repository-checkout';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import {
+  gitlabAuthChanged,
+  setGitLabAuthStatus,
+} from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
 import { urlSubmitted } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
 import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -503,6 +506,50 @@ describe('actual initializer qualified GitLab workspace creation', () => {
     };
     mocks.captureCheckout.mockResolvedValue({ status: 'ready', value: session });
     stopCheckout = store.runSaga(repositoryCheckoutSaga);
+  });
+
+  it('captures a mixed recent against its verified root, then selects through the existing checkout owner', async () => {
+    store.dispatch(
+      setGitLabAuthStatus({
+        host: 'forge.example:8443',
+        instanceBaseUrl,
+        isConfigured: true,
+        deviceGrantSupported: false,
+        user: null,
+        method: 'pat',
+      }),
+    );
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByTestId('select-wrong-root-recent'));
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByTestId('select-gitlab-recent'));
+    await waitFor(() => expect(session.project).toHaveBeenCalledWith({ projectPath }));
+    expect(mocks.captureCheckout).toHaveBeenCalledExactlyOnceWith({
+      provider: 'gitlab',
+      instanceBaseUrl,
+    });
+    const form = getItems(store.state.repositoryCheckout.forms)[0];
+    expect(form.capture?.instanceBaseUrl).toBe(instanceBaseUrl);
+    expect(form.project?.projectPath).toBe(projectPath);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('does not use a recent to bypass revoked GitLab admission', async () => {
+    store.dispatch(
+      setGitLabAuthStatus({
+        host: 'forge.example:8443',
+        instanceBaseUrl,
+        isConfigured: false,
+        deviceGrantSupported: false,
+        user: null,
+        method: null,
+      }),
+    );
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await fireEvent.click(screen.getByTestId('select-gitlab-recent'));
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
+    expect(session.project).not.toHaveBeenCalled();
   });
 
   async function renderCheckout(

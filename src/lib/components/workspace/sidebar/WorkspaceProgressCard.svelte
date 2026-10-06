@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -194,6 +195,7 @@
       ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
       : ($workspace?.repositoryPath?.split('/').pop() ?? 'Repository'),
   );
+  const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
 
   // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
@@ -1111,7 +1113,7 @@
               <div class="flex min-w-0 items-center gap-2">
                 <p
                   class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                  title={repositoryLabel}
+                  use:truncatedTitle={repositoryLabel}
                 >
                   {repositoryLabel}
                 </p>
@@ -1126,12 +1128,13 @@
                 <Button
                   variant="plain"
                   class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
-                  title={workspacePath}
                   aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
                   onclick={copyRepoPath}
                   data-sidebar-repository-path-copy
                 >
-                  <span class="block min-w-0 truncate">{workspacePath}</span>
+                  <span class="block min-w-0 truncate" use:truncatedTitle={workspacePath}
+                    >{workspacePath}</span
+                  >
                 </Button>
               {/if}
               {#if $workspace?.checkoutMode}
@@ -1176,7 +1179,7 @@
                 <div class="flex min-w-0 items-center gap-2">
                   <p
                     class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                    title={$workspace.branch}
+                    use:truncatedTitle={$workspace.branch}
                   >
                     {$workspace.branch}
                   </p>
@@ -1327,20 +1330,25 @@
           {:else if $workspace && currentStatusMessage}
             <Button
               variant="plain"
-              truncateLabel={false}
-              labelClass="line-clamp-3"
+              wrapContent={false}
               class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
               onclick={startEditingStatusMessage}
-              title={currentStatusMessage}
               aria-label={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_ariaLabel()
                 : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+              aria-describedby={statusDescriptionId}
               disabled={!$workspace}
             >
-              {currentStatusMessage}
+              <span
+                id={statusDescriptionId}
+                class="min-w-0 line-clamp-3"
+                use:truncatedTitle={currentStatusMessage}
+              >
+                {currentStatusMessage}
+              </span>
             </Button>
           {/if}
           <span

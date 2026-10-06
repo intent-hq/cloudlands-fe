@@ -23,6 +23,7 @@
     contentClass = '',
     subContentClass,
     contentMaxHeight,
+    onOpenChangeComplete,
     class: className = '',
   }: {
     open?: boolean;
@@ -36,6 +37,7 @@
     contentClass?: string;
     subContentClass?: string;
     contentMaxHeight?: string;
+    onOpenChangeComplete?: (open: boolean) => void;
     class?: string;
   } = $props();
 
@@ -94,7 +96,7 @@
 <svelte:document onpointerdown={handleDocumentPointerDown} />
 
 <div bind:this={rootElement} class="relative inline-block {className}">
-  <Menu.Root bind:open>
+  <Menu.Root bind:open {onOpenChangeComplete}>
     <Menu.Trigger>
       {#snippet child({ props })}
         {@render trigger?.({ toggle, open, props })}

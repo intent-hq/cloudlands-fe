@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "File Manager",
   "layout_panelTabBar_paneStack_ariaLabel": "Pane stack size: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "Show pane list. Total panes: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. Show pane list. Total panes: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "Panes in this stack",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. Needs attention.",
   "layout_panelTabBar_openPaneAbove_label": "Open panel above",
@@ -5505,7 +5506,11 @@
   "lib_commandPalette_close_ariaLabel": "Close",
   "lib_commandPalette_quickActions_ariaLabel": "Quick actions",
   "lib_commandPalette_goToLine_placeholder": "Type a line number to go to...",
-  "lib_commandPalette_filter_placeholder": "Type @ # > ~ / * to filter...",
+  "lib_commandPalette_filter_placeholder": "Search or jump to…",
+  "lib_commandPalette_all_label": "All",
+  "lib_commandPalette_workspaces_label": "Workspaces",
+  "lib_commandPalette_filters_ariaLabel": "Filter results",
+  "lib_commandPalette_emptyFilter_message": "Nothing here yet. Try another category.",
   "lib_commandPalette_resultsCount_status": "{count} results",
   "lib_commandPalette_esc_label": "ESC",
   "lib_commandPalette_goToLine_label": "Go to line {line}",
@@ -7458,5 +7463,8 @@
   "settings_machineName_invalid_error": "Use up to 100 characters without control characters.",
   "settings_machineName_load_error": "Could not load the machine name. Try again.",
   "settings_machineName_save_error": "Could not save the machine name. Try again.",
-  "settings_machineName_saved": "Machine name saved"
+  "settings_machineName_saved": "Machine name saved",
+  "home_assistantThread_hooks_label": "Active hooks: {count}",
+  "home_assistantThread_monitors_label": "Active monitors: {count}",
+  "home_assistantThread_subscriptions_label": "Active subscriptions: {count}"
 }

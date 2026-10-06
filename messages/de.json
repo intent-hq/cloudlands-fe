@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "Dateimanager",
   "layout_panelTabBar_paneStack_ariaLabel": "Größe des Bereichsstapels: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "Bereichsliste anzeigen. Bereiche insgesamt: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. Bereichsliste anzeigen. Bereiche insgesamt: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "Bereiche in diesem Stapel",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. Erfordert Aufmerksamkeit.",
   "layout_panelTabBar_openPaneAbove_label": "Panel darüber öffnen",
@@ -5505,7 +5506,11 @@
   "lib_commandPalette_close_ariaLabel": "Schließen",
   "lib_commandPalette_quickActions_ariaLabel": "Schnellaktionen",
   "lib_commandPalette_goToLine_placeholder": "Zeilennummer eingeben, um dorthin zu springen...",
-  "lib_commandPalette_filter_placeholder": "@ # > ~ / * eingeben zum Filtern...",
+  "lib_commandPalette_filter_placeholder": "Suchen oder wechseln zu…",
+  "lib_commandPalette_all_label": "Alle",
+  "lib_commandPalette_workspaces_label": "Arbeitsbereiche",
+  "lib_commandPalette_filters_ariaLabel": "Ergebnisse filtern",
+  "lib_commandPalette_emptyFilter_message": "Hier ist noch nichts. Versuche eine andere Kategorie.",
   "lib_commandPalette_resultsCount_status": "{count} Ergebnisse",
   "lib_commandPalette_esc_label": "ESC",
   "lib_commandPalette_goToLine_label": "Zu Zeile {line} gehen",
@@ -7458,5 +7463,8 @@
   "settings_machineName_invalid_error": "Verwenden Sie höchstens 100 Zeichen ohne Steuerzeichen.",
   "settings_machineName_load_error": "Der Computername konnte nicht geladen werden. Versuchen Sie es erneut.",
   "settings_machineName_save_error": "Der Computername konnte nicht gespeichert werden. Versuchen Sie es erneut.",
-  "settings_machineName_saved": "Computername gespeichert"
+  "settings_machineName_saved": "Computername gespeichert",
+  "home_assistantThread_hooks_label": "Aktive Hooks: {count}",
+  "home_assistantThread_monitors_label": "Aktive Überwachungen: {count}",
+  "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}"
 }

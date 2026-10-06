@@ -2,7 +2,7 @@ import { expect, test } from '../../../test/ct-test';
 import WorkspaceTabDragRegionHarness from './WorkspaceTabDragRegionHarness.svelte';
 
 for (const admittedOwner of [false, true]) {
-  for (const width of [720, 1200]) {
+  for (const width of [640, 1200]) {
     test(`tab geometry stays stable at ${width}px with ${admittedOwner ? 'an admitted owner' : 'no admitted caller'}`, async ({
       mount,
       page,
@@ -46,7 +46,7 @@ for (const admittedOwner of [false, true]) {
         contentType: 'image/png',
       });
       expect(samples.map(({ scrollWidth, clientWidth }) => scrollWidth > clientWidth)).toEqual(
-        Array(60).fill(width === 720),
+        Array(60).fill(width === 640),
       );
       expect(new Set(samples.map(({ clientWidth }) => clientWidth)).size).toBe(1);
       expect(new Set(samples.map(({ controlsWidth }) => controlsWidth)).size).toBe(1);

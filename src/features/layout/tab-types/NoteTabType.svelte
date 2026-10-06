@@ -70,6 +70,7 @@
   let {
     tab,
     workspaceId,
+    layoutId,
     isActive,
     isPanelFocused,
     readingSurface,
@@ -222,7 +223,9 @@
     if (isSpecNote(tab.noteId)) return !isInitialSpecWriteInProgress;
     return true;
   });
-  const showRenderedPreview = $derived(noteViewMode === 'preview' && !showSpecOnboarding);
+  const showRenderedPreview = $derived(
+    (noteViewMode === 'preview' || !$workspace) && !showSpecOnboarding,
+  );
 
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
@@ -285,7 +288,7 @@
     const noteTitle = $note?.title || m.layout_tabTypes_note_title();
     isNoteDeleting = true;
     try {
-      appStore.dispatch(closeTab(workspaceId, tab.id));
+      appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id));
       void deleteNote(workspaceId, noteIdToDelete);
 
       // Show undo toast

@@ -6,6 +6,7 @@
   let {
     tab,
     workspaceId = 'ws-1',
+    layoutId = undefined,
     isActive = true,
     isPanelFocused = true,
     readingSurface = undefined,
@@ -14,7 +15,7 @@
   const header = createPanelHeaderContext();
 </script>
 
-<NoteTabType {tab} {workspaceId} {isActive} {isPanelFocused} {readingSurface} />
+<NoteTabType {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {readingSurface} />
 
 {#if header.actions.current}
   <div data-testid="header-primary">

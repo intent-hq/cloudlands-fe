@@ -55,12 +55,15 @@ const mocks = vi.hoisted(() => {
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: {
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
     dispatch: mocks.dispatch,
     state: { uiHighlight: { activeById: {}, durationMsById: {} } },
-  },
-}));
+  });
+});
 
 vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   getReduxStore: () => ({

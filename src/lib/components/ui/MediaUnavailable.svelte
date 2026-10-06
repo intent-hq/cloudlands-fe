@@ -12,6 +12,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { Button } from '$lib/components/ui/button';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
 
   type MediaUnavailableReason = 'missing' | 'unsupported' | 'load-failed';
@@ -58,7 +59,7 @@
 >
   <Fa icon={faTriangleExclamation} class="size-3.5 shrink-0" />
   <span class="min-w-0 flex-1">
-    <span class="type-caption block truncate font-medium text-foreground" title={name}>
+    <span class="type-caption block truncate font-medium text-foreground" use:truncatedTitle={name}>
       {name || m.ui_mediaUnavailable_title_label()}
     </span>
     <span class="type-caption block">{reasonText}</span>

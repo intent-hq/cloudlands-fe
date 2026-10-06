@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   /**
    * AgentMessageAttributionHeader
    *
@@ -97,6 +98,7 @@
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
 
     if (workspaceId) {
+      if (openAssistantAgentFromEvent(e, workspaceId, attribution.fromAgentId)) return;
       appStore.dispatch(
         openAgentTabRequested(workspaceId, {
           agentId: attribution.fromAgentId,

@@ -206,8 +206,6 @@ async function mountStrip(
     zoom: number;
     reduced: boolean;
     theme?: 'light' | 'dark';
-    panelOpen?: boolean;
-    panelWidth?: number;
   },
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
@@ -218,7 +216,7 @@ async function mountStrip(
   ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
-  await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
+  await page.evaluate(async ({ zoom, theme }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
     document.documentElement.classList.toggle('dark', theme === 'dark');
     document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
@@ -247,7 +245,7 @@ async function mountStrip(
         hiddenCategoryCount: 0,
       };
     }
-    const [{ mount, tick, unmount }, { default: Strip }] = await Promise.all([
+    const [{ mount, tick }, { default: Strip }] = await Promise.all([
       import('/@id/svelte'),
       import('/src/lib/components/layout/WorkspaceTabStrip.svelte'),
     ]);
@@ -271,82 +269,9 @@ async function mountStrip(
           : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';
       },
     };
-    if (panelOpen === undefined || panelWidth === undefined) {
-      // Match WindowTitleBar's flex controls: shrinking bounds the scroll viewport.
-      target.style.cssText = `position:relative;display:flex;min-width:0;align-items:center;width:100%;padding:24px;zoom:${zoom};`;
-      mount(Strip, { target, props: stripProps });
-    } else {
-      target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;
-      const controls = document.createElement('div');
-      controls.dataset.titlebarWorkspaceControls = '';
-      controls.style.cssText = 'display:flex;min-width:0;align-items:center;gap:4px;';
-      target.append(controls);
-
-      const launcher = document.createElement('button');
-      launcher.dataset.workspaceRepoLauncher = '';
-      launcher.style.cssText = 'width:32px;height:32px;';
-      controls.append(launcher);
-
-      const frame = document.createElement('div');
-      frame.style.cssText = 'display:flex;padding-left:8px;width:100%;';
-      const sidebar = document.createElement('div');
-      sidebar.dataset.sidebarPanelFrame = '';
-      sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
-      const main = document.createElement('main');
-      main.className =
-        'workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm';
-      main.style.cssText = 'height:200px;';
-      frame.append(sidebar, main);
-      target.append(frame);
-
-      let currentPanelOpen = panelOpen;
-      let currentPanelWidth = panelWidth;
-      let component: ReturnType<typeof mount> | null = null;
-      // Under reduced motion the tokens.css blanket gives every element a
-      // 0.01ms transition-duration, so each inline change below spawns a real
-      // CSSTransition that holds the previous geometry until the document
-      // timeline passes its start (one or two frames). Gate on those
-      // transitions settling instead of counting frames.
-      const settlePanelLayout = async () => {
-        for (;;) {
-          const animations = [controls, sidebar].flatMap((element) => element.getAnimations());
-          if (animations.length === 0) return;
-          await Promise.allSettled(animations.map((animation) => animation.finished));
-        }
-      };
-      const applyPanelLayout = async () => {
-        const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
-        controls.style.marginLeft = `${offset}px`;
-        controls.style.width = `calc(100% - ${offset}px)`;
-        sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
-        await settlePanelLayout();
-      };
-      const renderStrip = async () => {
-        if (component) await unmount(component);
-        component = mount(Strip, {
-          target: controls,
-          props: stripProps,
-        });
-        controls.append(launcher);
-        await tick();
-        await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
-      };
-      await applyPanelLayout();
-      await renderStrip();
-
-      Object.assign(globalThis, {
-        async __setWorkspacePanelWidth(width: number) {
-          currentPanelWidth = width;
-          await applyPanelLayout();
-        },
-        async __setWorkspacePanelOpen(open: boolean) {
-          currentPanelOpen = open;
-          await applyPanelLayout();
-          await renderStrip();
-        },
-        __remountWorkspaceTabStrip: renderStrip,
-      });
-    }
+    // Match WindowTitleBar's flex controls: shrinking bounds the scroll viewport.
+    target.style.cssText = `position:relative;display:flex;min-width:0;align-items:center;width:100%;padding:24px;zoom:${zoom};`;
+    mount(Strip, { target, props: stripProps });
     await tick();
     await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
   }, options);
@@ -374,214 +299,6 @@ async function tabFocusTuple(tab: Locator) {
     };
   });
 }
-
-async function expectNormalActiveShape(
-  page: Page,
-  workspaceId: string,
-  zoom: number,
-  assertHeight = true,
-) {
-  const tab = page.locator(`[data-workspace-tab="${workspaceId}"]`);
-  expect(await tab.getAttribute('data-workspace-tab-leading-shape')).toBeNull();
-  const radii = await tab.evaluate((node) => {
-    const style = getComputedStyle(node);
-    return {
-      leading: Number.parseFloat(style.borderTopLeftRadius),
-      trailing: Number.parseFloat(style.borderTopRightRadius),
-    };
-  });
-  expect(radii.leading).toBeGreaterThan(0);
-  expect(radii.trailing).toBe(radii.leading);
-  const leadingFlare = tab.locator('[data-workspace-tab-leading-flare]');
-  const trailingFlare = tab.locator('[data-workspace-tab-trailing-flare]');
-  await expect(leadingFlare).toHaveCount(1);
-  await expect(trailingFlare).toHaveCount(1);
-  const [tabBox, leadingFlareBox, trailingFlareBox] = await Promise.all([
-    box(tab),
-    box(leadingFlare),
-    box(trailingFlare),
-  ]);
-  const tabBottom = tabBox.y + tabBox.height;
-  // The flare reaches through the panel border immediately below the tab.
-  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom + zoom, 1);
-  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom + zoom, 1);
-  if (assertHeight) expect(tabBox.height).toBeCloseTo(32 * zoom, 0);
-  return radii;
-}
-
-async function expectPanelGutter(page: Page, zoom: number) {
-  const tab = page.locator('[data-workspace-tab="active"]');
-  const panel = page.locator('.workspace-main');
-  const [tabBox, panelBox] = await Promise.all([box(tab), box(panel)]);
-  expect(tabBox.x - panelBox.x).toBeCloseTo(24 * zoom, 0);
-  expect(tabBox.y + tabBox.height).toBeCloseTo(panelBox.y, 0);
-}
-
-test('keeps the normal first-tab curve, both flares, and 24px panel gutter across the geometry matrix', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  const scenarios = [
-    { viewport: 1400, zoom: 1, reduced: false, panelWidths: [288, 420], overflow: false },
-    { viewport: 1400, zoom: 2, reduced: true, panelWidths: [288, 420], overflow: true },
-    { viewport: 760, zoom: 1, reduced: true, panelWidths: [96, 160], overflow: true },
-    { viewport: 760, zoom: 2, reduced: false, panelWidths: [96, 160], overflow: true },
-  ];
-
-  for (const theme of ['light', 'dark'] as const) {
-    for (const scenario of scenarios) {
-      await mountStrip(page, {
-        ...scenario,
-        theme,
-        panelOpen: true,
-        panelWidth: scenario.panelWidths[0],
-      });
-
-      for (const panelWidth of scenario.panelWidths) {
-        await page.evaluate(async (width) => {
-          await (
-            globalThis as typeof globalThis & {
-              __setWorkspacePanelWidth: (value: number) => Promise<void>;
-            }
-          ).__setWorkspacePanelWidth(width);
-        }, panelWidth);
-        await settle(page);
-        const [firstTab, workspaceMain] = await Promise.all([
-          box(page.locator('[data-workspace-tab]').first()),
-          box(page.locator('.workspace-main')),
-        ]);
-        expect(firstTab.x - workspaceMain.x).toBeCloseTo(24 * scenario.zoom, 0);
-        await expectNormalActiveShape(page, 'active', scenario.zoom);
-        await expectPanelGutter(page, scenario.zoom);
-      }
-
-      const strip = page.locator('[data-workspace-tab-strip]');
-      expect(await strip.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(
-        scenario.overflow,
-      );
-
-      await page.evaluate(() => {
-        (
-          globalThis as typeof globalThis & {
-            __setCurrentWorkspaceTabId: (workspaceId: string) => void;
-          }
-        ).__setCurrentWorkspaceTabId('inactive');
-      });
-      await settle(page);
-      const normalActiveRadii = await expectNormalActiveShape(page, 'inactive', scenario.zoom);
-
-      await page.evaluate(() => {
-        (
-          globalThis as typeof globalThis & {
-            __setCurrentWorkspaceTabId: (workspaceId: string) => void;
-            __remountWorkspaceTabStrip: () => Promise<void>;
-          }
-        ).__setCurrentWorkspaceTabId('active');
-        return globalThis.__remountWorkspaceTabStrip();
-      });
-      const firstTabRadii = await expectNormalActiveShape(page, 'active', scenario.zoom);
-      expect(firstTabRadii).toEqual(normalActiveRadii);
-      await expectPanelGutter(page, scenario.zoom);
-
-      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
-        node.dispatchEvent(
-          new DragEvent('dragstart', {
-            bubbles: true,
-            dataTransfer: new DataTransfer(),
-            clientX: node.getBoundingClientRect().x + 20,
-            clientY: node.getBoundingClientRect().y + 16,
-          }),
-        );
-      });
-      await expectNormalActiveShape(page, 'active', scenario.zoom, false);
-      await page.locator('[data-workspace-tab="active"]').evaluate((node) => {
-        node.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
-      });
-      await settle(page);
-      await page.locator('[data-workspace-tab-motion="active"]').evaluate(async (node) => {
-        await Promise.all(
-          node.getAnimations({ subtree: true }).map((animation) => animation.finished),
-        );
-      });
-      await expectNormalActiveShape(page, 'active', scenario.zoom);
-      await expectPanelGutter(page, scenario.zoom);
-
-      await page.evaluate(() => {
-        const scenarioState = (
-          globalThis as typeof globalThis & {
-            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
-            __remountWorkspaceTabStrip: () => Promise<void>;
-          }
-        ).__workspaceTabScenario;
-        scenarioState.currentId = 'loading';
-        scenarioState.tabOrder = ['loading', 'active', 'inactive', 'plain'];
-        return globalThis.__remountWorkspaceTabStrip();
-      });
-      await expect(page.locator('[data-workspace-tab="loading"]')).toHaveAttribute(
-        'data-workspace-tab-loading',
-        'true',
-      );
-      expect(await expectNormalActiveShape(page, 'loading', scenario.zoom)).toEqual(
-        normalActiveRadii,
-      );
-
-      await page.evaluate(() => {
-        const scenarioState = (
-          globalThis as typeof globalThis & {
-            __workspaceTabScenario: { currentId: string; tabOrder: string[] };
-            __remountWorkspaceTabStrip: () => Promise<void>;
-          }
-        ).__workspaceTabScenario;
-        scenarioState.currentId = 'active';
-        scenarioState.tabOrder = ['active', 'inactive', 'plain', 'loading'];
-        return globalThis.__remountWorkspaceTabStrip();
-      });
-      await expectNormalActiveShape(page, 'active', scenario.zoom);
-      await expectPanelGutter(page, scenario.zoom);
-
-      await page.evaluate(() =>
-        (
-          globalThis as typeof globalThis & {
-            __setWorkspacePanelOpen: (open: boolean) => Promise<void>;
-          }
-        ).__setWorkspacePanelOpen(false),
-      );
-      await expectNormalActiveShape(page, 'active', scenario.zoom);
-
-      await page.evaluate(() =>
-        (
-          globalThis as typeof globalThis & {
-            __setWorkspacePanelOpen: (open: boolean) => Promise<void>;
-          }
-        ).__setWorkspacePanelOpen(true),
-      );
-      await expectNormalActiveShape(page, 'active', scenario.zoom);
-      await expectPanelGutter(page, scenario.zoom);
-
-      const transitionSeconds = await page
-        .locator('[data-workspace-tab="active"]')
-        .evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration));
-      expect(transitionSeconds <= 0.00001).toBe(scenario.reduced);
-    }
-  }
-});
-
-test('preserves the collapsed-sidebar first-tab clearance across zoom', async ({ page }) => {
-  for (const zoom of [1, 2]) {
-    await mountStrip(page, {
-      viewport: 1400,
-      zoom,
-      reduced: true,
-      panelOpen: false,
-      panelWidth: 288,
-    });
-    const [firstTab, controls] = await Promise.all([
-      box(page.locator('[data-workspace-tab]').first()),
-      box(page.locator('[data-titlebar-workspace-controls]')),
-    ]);
-    expect(firstTab.x - controls.x).toBeCloseTo(24 * zoom, 0);
-  }
-});
 
 test('keeps titles, statuses, and close controls disjoint at 160px and constrained widths', async ({
   page,

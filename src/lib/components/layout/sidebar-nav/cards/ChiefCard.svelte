@@ -1,8 +1,5 @@
 <script lang="ts" module>
   import { Button } from '$lib/components/ui/button';
-  // The Chief chat can render in two sidebar hosts at once (the hover card and
-  // combined workspace panel). The chief virtual workspace is shared, so
-  // mount/unmount is refcounted: only the last live instance unmounts it.
   let chiefMountCount = 0;
 </script>
 
@@ -17,14 +14,12 @@
   import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
   import {
+    closePanel,
     setChiefActiveAgentId,
-    openPanel,
-    setChiefCollapsed,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
     selectCurrentChiefThread,
-    selectChiefThreadPreview,
     selectChiefThreads,
     selectReusableChiefThread,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -62,7 +57,6 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
 
-  const chiefPreview$ = selectChiefThreadPreview();
   const chiefThreads$ = selectChiefThreads();
   const currentChiefThread$ = selectCurrentChiefThread();
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
@@ -79,27 +73,8 @@
   // withheld in a guest window.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
 
-  interface Props {
-    expanded?: boolean;
-    /** Rendered inside the combined Home panel: the panel owns the close
-        button and height, so hide the close X and don't force a min height. */
-    embedded?: boolean;
-    /** Full-page Assistant uses one thread-switching header and roomier chat insets. */
-    pageLayout?: boolean;
-    /** Mount chat on first activation, then retain drafts without claiming focus or read state. */
-    isActive?: boolean;
-    collapsed?: boolean;
-    ontoggle?: () => void;
-  }
-
-  let {
-    expanded = false,
-    embedded = false,
-    pageLayout = false,
-    isActive = true,
-    collapsed = false,
-    ontoggle,
-  }: Props = $props();
+  let { isActive = true, threadPicker = true }: { isActive?: boolean; threadPicker?: boolean } =
+    $props();
 
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
@@ -120,6 +95,15 @@
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
   let hasActivatedChat = $state(false);
+  let hadThreads = false;
+
+  $effect(() => {
+    const hasThreads = $chiefThreads$.length > 0;
+    // Removing the last thread should return Assistant to its first-start flow.
+    // Reset only on that transition so a failed creation cannot retry forever.
+    if (hadThreads && !hasThreads) hasAutoStartedRef = false;
+    hadThreads = hasThreads;
+  });
 
   const activeChiefThread = $derived(
     $chiefActiveAgentId$
@@ -141,10 +125,6 @@
   // ChatPanel prop/key expressions re-evaluate lazily, so they must never
   // dereference a possibly-null activeThread (it can empty while mounted).
   const activeAgentId = $derived(activeThread?.agentId ?? null);
-  const currentPreview = $derived(activeThread ?? $chiefPreview$);
-  const title = $derived(currentPreview?.title ?? m.layout_chiefCard_startThread_label());
-  const preview = $derived(currentPreview?.preview ?? m.layout_chiefCard_preview_description());
-
   function ensureChiefWorkspaceRegistered() {
     if (isWorkspaceRegistered) return;
     appStore.dispatch(setWorkspaceEntity(chiefWorkspace));
@@ -162,7 +142,7 @@
   $effect.pre(() => {
     // ChatPanel initializes its transcript on mount, even when inactive.
     // Defer that first mount until selection, then keep the draft alive on tab changes.
-    if (expanded && isActive && activeAgentId) hasActivatedChat = true;
+    if (isActive && activeAgentId) hasActivatedChat = true;
   });
 
   $effect(() => {
@@ -173,11 +153,14 @@
     if (selectedAgentId && $chiefThreads$.some((thread) => thread.agentId === selectedAgentId))
       return;
     selectedAgentId = defaultThread?.agentId ?? null;
+    if ($chiefActiveAgentId$ && selectedAgentId !== $chiefActiveAgentId$) {
+      appStore.dispatch(setChiefActiveAgentId(selectedAgentId));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, selectedAgentId));
+    }
   });
 
   $effect(() => {
     if (
-      !expanded ||
       !isActive ||
       !isWorkspaceRegistered ||
       !$chiefAgentsLoaded$ ||
@@ -215,22 +198,10 @@
     if (!isWorkspaceRegistered) return;
     chiefMountCount = Math.max(0, chiefMountCount - 1);
     if (chiefMountCount === 0) {
+      appStore.dispatch(closePanel());
       appStore.dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
     }
   });
-
-  function openChiefPanel() {
-    appStore.dispatch(openPanel('chief'));
-  }
-
-  function handleHeaderRowClick() {
-    if (collapsed) ontoggle?.();
-  }
-
-  function handleToggleClick(event: MouseEvent) {
-    event.stopPropagation();
-    ontoggle?.();
-  }
 
   function handleThreadChange(value: string | string[]) {
     if (typeof value === 'string') {
@@ -242,7 +213,6 @@
 
   function handleNewThreadClick() {
     if ($hidesAgentLifecycleActions$) return;
-    appStore.dispatch(setChiefCollapsed(false));
     void createNewThread();
   }
 
@@ -305,171 +275,105 @@
   }
 </script>
 
-{#if !expanded}
-  <div class="p-3">
-    <Button
-      variant="ghost"
-      type="button"
-      class="block w-full cursor-pointer rounded-sm text-left outline-none"
-      onclick={openChiefPanel}
-      aria-label={m.layout_chiefCard_open_ariaLabel()}
-    >
-      <p class="type-body truncate font-medium text-foreground">{title}</p>
-      <p class="type-caption mt-1 text-muted-foreground line-clamp-3">{preview}</p>
-    </Button>
-  </div>
-{:else}
-  <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
-    <!-- Keyboard users can use either child button; the row click expands empty space. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="flex shrink-0 items-center justify-between gap-1 {pageLayout
-        ? 'border-b border-border px-6 py-3'
-        : 'px-2 pb-1.5 pt-2'} {collapsed ? 'cursor-pointer' : ''}"
-      data-chief-header-row
-      onclick={handleHeaderRowClick}
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-1.5">
-        {#if collapsed && ontoggle}
-          <Button
-            type="button"
+<div
+  class="flex h-full min-h-0 flex-col"
+  style:--chief-aurora-left="-1.5rem"
+  style:--chief-aurora-right="-1.5rem"
+  style:--chief-aurora-bottom="-1.25rem"
+  style:--chief-aurora-radius="calc(var(--radius-large) * 1.5)"
+>
+  <div
+    class="home-assistant-header flex shrink-0 items-center justify-between gap-1 border-b border-border px-6"
+    data-chief-header-row
+  >
+    <div class="flex min-w-0 flex-1 items-center gap-1.5">
+      {#if threadPicker}
+        <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
+          <Select.Trigger
             variant="ghost"
-            size="xs"
-            class="flex h-7! min-w-0 max-w-full flex-1 items-center justify-start px-1.5! text-foreground"
-            aria-expanded="false"
-            aria-controls="combined-panel-chief-content"
+            aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
+            class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
           >
-            <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
+            <span class="type-body min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
-          </Button>
-        {:else}
-          <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
-            <Select.Trigger
-              variant="ghost"
-              aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
-              class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
-            >
-              <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
-                {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
-              </span>
-              {#if pageLayout}<Fa
-                  icon={faChevronDown}
-                  class="shrink-0 text-muted-foreground"
-                />{/if}
-            </Select.Trigger>
-            <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
-              {#each $chiefThreads$ as thread (thread.agentId)}
-                <Select.Item value={thread.agentId} label={thread.title}>
-                  <span class="flex min-w-0 items-center gap-1.5">
-                    {#if thread.isActive}
-                      <span
-                        class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
-                      ></span>
-                    {/if}
-                    <span class="truncate">{thread.title}</span>
-                  </span>
-                </Select.Item>
-              {:else}
-                <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
-                  {m.layout_chiefCard_noThreads_label()}
-                </div>
-              {/each}
-            </Select.Content>
-          </Select.Root>
-          {#if activeThread && !$hidesAgentLifecycleActions$}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
-              title={m.layout_chiefCard_deleteThread_tooltip()}
-              onclick={(event) => {
-                if (activeThread)
-                  handleDeleteThread(event, activeThread.agentId, activeThread.title);
-              }}
-            >
-              <Fa icon={faTrash} size="xs" />
-            </Button>
-          {/if}
-        {/if}
-      </div>
-      {#if !$hidesAgentLifecycleActions$}
-        <div
-          class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {collapsed
-            ? 'pointer-events-none -mr-1 w-0 opacity-0'
-            : 'mr-0 w-6 opacity-100'}"
-        >
-          <Button
-            variant="ghost"
-            size="icon-compact"
-            class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            onclick={handleNewThreadClick}
-            disabled={isCreatingThread || collapsed}
-            tabindex={collapsed ? -1 : undefined}
-            aria-hidden={collapsed ? 'true' : undefined}
-            aria-label={m.layout_chiefCard_newThread_tooltip()}
-            title={m.layout_chiefCard_newThread_tooltip()}
-          >
-            {#if isCreatingThread}
-              <IntentMarkLoader size={12} />
+            <Fa icon={faChevronDown} class="shrink-0 text-muted-foreground" />
+          </Select.Trigger>
+          <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
+            {#each $chiefThreads$ as thread (thread.agentId)}
+              <Select.Item value={thread.agentId} label={thread.title}>
+                <span class="flex min-w-0 items-center gap-1.5">
+                  {#if thread.isActive}
+                    <span
+                      class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                      aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+                    ></span>
+                  {/if}
+                  <span class="truncate">{thread.title}</span>
+                </span>
+              </Select.Item>
             {:else}
-              <Fa icon={faPlus} size="xs" />
-            {/if}
-          </Button>
-        </div>
+              <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
+                {m.layout_chiefCard_noThreads_label()}
+              </div>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {:else}
+        <h2 class="min-w-0 truncate type-body font-medium" title={activeThread?.title}>
+          {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
+        </h2>
       {/if}
-      {#if ontoggle}
+    </div>
+    {#if activeThread && !$hidesAgentLifecycleActions$}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
+        title={m.layout_chiefCard_deleteThread_tooltip()}
+        onclick={(event) => {
+          if (activeThread) handleDeleteThread(event, activeThread.agentId, activeThread.title);
+        }}
+      >
+        <Fa icon={faTrash} size="xs" />
+      </Button>
+    {/if}
+    {#if !$hidesAgentLifecycleActions$}
+      <div class="flex w-6 shrink-0 items-center">
         <Button
-          type="button"
-          variant="ghost-light"
-          size="icon-xs"
-          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
-          aria-label={m.layout_chiefCard_title()}
-          aria-expanded={!collapsed}
-          aria-controls="combined-panel-chief-content"
-          data-chief-section-toggle
-          onclick={handleToggleClick}
+          variant="ghost"
+          size="icon-compact"
+          class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          onclick={handleNewThreadClick}
+          disabled={isCreatingThread}
+          aria-label={m.layout_chiefCard_newThread_tooltip()}
+          title={m.layout_chiefCard_newThread_tooltip()}
         >
-          <Fa
-            icon={faChevronDown}
-            size="xs"
-            class="shrink-0 transition-transform {collapsed ? 'rotate-90' : ''}"
-          />
+          {#if isCreatingThread}
+            <IntentMarkLoader size={12} />
+          {:else}
+            <Fa icon={faPlus} size="xs" />
+          {/if}
         </Button>
-      {/if}
-    </div>
-
-    <!-- Clip on the padded wrapper (not the inner section) with an 8px clip
-         margin so the composer's streaming aurora can bleed across the px-2
-         inset and the app frame's window inset, while transcript content
-         still cannot overflow the panel. The margin is omnidirectional (no
-         per-side form exists, and a clip-path here would clip fixed-position
-         dialogs rendered in this subtree), so a very short pane can overdraw
-         up to 8px above — accepted as cosmetic. -->
-    <div
-      id={ontoggle ? 'combined-panel-chief-content' : undefined}
-      class="min-h-0 flex-1 overflow-clip {pageLayout
-        ? 'px-6 py-5'
-        : 'px-2 pt-0'} [overflow-clip-margin:0.5rem]"
-      hidden={Boolean(ontoggle && collapsed)}
-    >
-      <section class="flex h-full min-h-0 flex-col">
-        {#if hasActivatedChat && activeAgentId}
-          {#key activeAgentId}
-            <div class="min-h-0 flex-1">
-              <ChatPanel
-                workspace={chiefWorkspace}
-                agentId={activeAgentId}
-                agentName={m.layout_chiefCard_title()}
-                isActive={isActive && !collapsed}
-                autoFocus={isActive && !collapsed && !embedded}
-              />
-            </div>
-          {/key}
-        {/if}
-      </section>
-    </div>
+      </div>
+    {/if}
   </div>
-{/if}
+
+  <div class="min-h-0 flex-1 overflow-clip px-6 pt-4 pb-5 [overflow-clip-margin:0.5rem]">
+    <section class="flex h-full min-h-0 flex-col">
+      {#if hasActivatedChat && activeAgentId}
+        {#key activeAgentId}
+          <div class="min-h-0 flex-1">
+            <ChatPanel
+              workspace={chiefWorkspace}
+              agentId={activeAgentId}
+              agentName={m.layout_chiefCard_title()}
+              {isActive}
+              autoFocus={false}
+            />
+          </div>
+        {/key}
+      {/if}
+    </section>
+  </div>
+</div>

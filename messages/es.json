@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "Administrador de archivos",
   "layout_panelTabBar_paneStack_ariaLabel": "Tamaño de la pila de paneles: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "Mostrar la lista de paneles. Total de paneles: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. Mostrar la lista de paneles. Total de paneles: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "Paneles de esta pila",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. Requiere atención.",
   "layout_panelTabBar_openPaneAbove_label": "Abrir el panel de arriba",
@@ -5505,7 +5506,11 @@
   "lib_commandPalette_close_ariaLabel": "Cerrar",
   "lib_commandPalette_quickActions_ariaLabel": "Acciones rápidas",
   "lib_commandPalette_goToLine_placeholder": "Escriba un número de línea para ir...",
-  "lib_commandPalette_filter_placeholder": "Escriba @ # > ~ / * para filtrar...",
+  "lib_commandPalette_filter_placeholder": "Buscar o ir a…",
+  "lib_commandPalette_all_label": "Todo",
+  "lib_commandPalette_workspaces_label": "Espacios de trabajo",
+  "lib_commandPalette_filters_ariaLabel": "Filtrar resultados",
+  "lib_commandPalette_emptyFilter_message": "Aún no hay nada aquí. Prueba otra categoría.",
   "lib_commandPalette_resultsCount_status": "{count} resultados",
   "lib_commandPalette_esc_label": "ESC",
   "lib_commandPalette_goToLine_label": "Ir a la línea {line}",
@@ -7458,5 +7463,8 @@
   "settings_machineName_invalid_error": "Usa hasta 100 caracteres sin caracteres de control.",
   "settings_machineName_load_error": "No se pudo cargar el nombre del equipo. Inténtalo de nuevo.",
   "settings_machineName_save_error": "No se pudo guardar el nombre del equipo. Inténtalo de nuevo.",
-  "settings_machineName_saved": "Nombre del equipo guardado"
+  "settings_machineName_saved": "Nombre del equipo guardado",
+  "home_assistantThread_hooks_label": "Hooks activos: {count}",
+  "home_assistantThread_monitors_label": "Monitores activos: {count}",
+  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}"
 }
