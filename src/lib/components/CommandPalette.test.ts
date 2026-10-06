@@ -50,7 +50,11 @@ const {
     createSelectorReadable,
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
-    collaboratorState: { workspace: false, client: false },
+    collaboratorState: {
+      workspace: false,
+      client: false,
+      subscribers: new Set<(value: boolean) => void>(),
+    },
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
@@ -117,8 +121,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
+      collaboratorState.subscribers.add(fn);
       fn(collaboratorState.client);
-      return () => {};
+      return () => collaboratorState.subscribers.delete(fn);
     },
   }),
 }));
@@ -286,6 +291,127 @@ describe('CommandPalette new actions', () => {
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
+  });
+
+  it.each([
+    ['agent defaults', /Agent defaults/i, 'agent-behavior'],
+    ['providers', /Providers/i, 'providers'],
+    ['connections', /Connections/i, 'connections'],
+    ['machines', /Machines/i, 'devices'],
+    ['mobile', /Mobile/i, 'mobile'],
+    ['collaboration', /Collaboration/i, 'collaboration'],
+    ['appearance', /Appearance/i, 'display'],
+    ['general', /General/i, 'app-behavior'],
+    ['input shortcuts', /Input and shortcuts/i, 'input'],
+    ['workspace setup', /Workspace setup/i, 'setup'],
+    ['advanced', /Advanced/i, 'advanced'],
+    ['specialists', /Specialists/i, 'specialists'],
+    ['Linear', /Connections/i, 'connections'],
+    ['settings linear', /Connections/i, 'connections'],
+    ['keyboard', /Input and shortcuts/i, 'input'],
+    ['notifications', /General/i, 'app-behavior'],
+    ['theme', /Appearance/i, 'display'],
+  ] as const)(
+    'opens the settings destination for %s without a workspace',
+    async (query, name, tab) => {
+      multiplayerState.enabled = true;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, initialQuery: query, onClose } });
+
+      await fireEvent.click(await screen.findByRole('button', { name }));
+
+      expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab });
+      expect(reduxDispatchMock).toHaveBeenCalledWith({
+        type: 'sidebarNav/setShowCreateModal',
+        payload: [false],
+      });
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('opens Linear settings with Enter from a workspace and dismisses the create form', async () => {
+    const onClose = vi.fn();
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'Linear', workspaceId: 'tiny-owl', onClose },
+    });
+    await screen.findByRole('button', { name: /Connections/i });
+
+    await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'connections' });
+    expect(reduxDispatchMock).toHaveBeenCalledWith({
+      type: 'sidebarNav/setShowCreateModal',
+      payload: [false],
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('dismisses the create form when opening the general Settings command', async () => {
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'settings', onClose: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: /^Settings/i }));
+
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith();
+    expect(reduxDispatchMock).toHaveBeenCalledWith({
+      type: 'sidebarNav/setShowCreateModal',
+      payload: [false],
+    });
+  });
+
+  it.each([
+    ['Linear', /Connections/i, 'connections'],
+    ['providers', /Providers/i, 'providers'],
+  ] as const)(
+    'withholds administrator settings for collaborator-only clients searching %s',
+    async (query, name, tab) => {
+      render(CommandPalette, {
+        props: { isOpen: true, initialQuery: query, onClose: vi.fn() },
+      });
+      await screen.findByRole('button', { name });
+
+      collaboratorState.client = true;
+      collaboratorState.subscribers.forEach((subscriber) => subscriber(true));
+      await waitFor(() => expect(screen.queryByRole('button', { name })).toBeNull());
+      await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(navigateToSettingsMock).not.toHaveBeenCalledWith({ tab });
+    },
+  );
+
+  it('keeps personal settings accessible for collaborator-only clients', async () => {
+    collaboratorState.client = true;
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'theme', onClose: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: /Appearance/i }));
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'display' });
+  });
+
+  it('keeps administrator settings available to a host administrator in a shared workspace', async () => {
+    collaboratorState.workspace = true;
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'Linear', workspaceId: 'tiny-owl', onClose: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: /Connections/i }));
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'connections' });
+  });
+
+  it('refreshes collaboration settings results when multiplayer is enabled or disabled', async () => {
+    multiplayerState.enabled = true;
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'sharing', onClose: vi.fn() },
+    });
+    await screen.findByRole('button', { name: /Collaboration/i });
+
+    multiplayerState.enabled = false;
+    storeEvents.emit();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Collaboration/i })).toBeNull(),
+    );
+    multiplayerState.enabled = true;
+    storeEvents.emit();
+    await fireEvent.click(await screen.findByRole('button', { name: /Collaboration/i }));
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'collaboration' });
   });
 
   it.each([undefined, false, true])(
