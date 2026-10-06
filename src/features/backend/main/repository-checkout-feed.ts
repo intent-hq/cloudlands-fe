@@ -134,7 +134,15 @@ export function createRepositoryCheckoutFeed(client: JsonRpcClient) {
     let captureTimer: ReturnType<typeof setTimeout> | undefined;
     const work = (async () => {
       try {
-        const raw = await request(PREFIX + 'capture', query, 15_000);
+        const raw = await request(
+          PREFIX + 'capture',
+          {
+            ...query,
+            // Older daemons reject unknown capture fields. Negotiate on this original socket only.
+            ...(original.gitlabCheckoutOwnerAvatar ? { includeOwnerAvatar: true } : {}),
+          },
+          15_000,
+        );
         // A malformed result can still name an allocated lease. Release that
         // known lease on the original socket even when its other fields fail.
         const reference = z.object({ value: CheckoutBindingSchema.passthrough() }).safeParse(raw);

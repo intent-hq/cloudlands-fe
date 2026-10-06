@@ -75,6 +75,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
     'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
     'src/lib/components/workspace/initializer/GitLabPickerList.svelte',
+    'src/lib/components/workspace/initializer/GitLabProjectPicker.svelte',
     'src/lib/components/workspace/initializer/IssueSuggestions.svelte',
     'src/lib/components/workspace/initializer/RepoSelector.svelte',
     'src/lib/components/workspace/sidebar/BranchDisplay.svelte',
