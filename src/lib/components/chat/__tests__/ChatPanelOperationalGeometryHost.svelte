@@ -16,6 +16,8 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
+  import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
   import {
     bulkUpsertSessions,
     replaceMessages,
@@ -91,13 +93,15 @@
   const timestamp = '2026-08-17T12:00:00.000Z';
   const watchedFixture = untrack(() => watchedAgent);
   const disposeStore = startRootStoreLifecycle(store, {
-    startSagas: (appStore) =>
-      watchedFixture
+    startSagas: (appStore) => [
+      appStore.runSaga(() => chatDraftsSaga(createDraftsFixture())),
+      ...(watchedFixture
         ? [
             appStore.runSaga(appLayoutNavigationSaga),
             appStore.runSaga(watchRightmostColumnRequests),
           ]
-        : [],
+        : []),
+    ],
   });
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>

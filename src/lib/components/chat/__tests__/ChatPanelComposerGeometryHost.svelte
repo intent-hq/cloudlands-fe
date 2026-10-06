@@ -9,7 +9,7 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
-  import type { DraftsClient } from '$lib/client/app-client';
+  import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
   import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
@@ -118,20 +118,7 @@
   const timestamp = '2026-08-23T12:00:00.000Z';
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
-  let savedDraft: Awaited<ReturnType<DraftsClient['get']>> = fixture.draft
-    ? { text: fixture.draft, updatedAt: timestamp }
-    : null;
-  const drafts: DraftsClient = {
-    get: async () => savedDraft,
-    set: async (_workspaceId, _agentId, text, attachments) => {
-      savedDraft = text || attachments?.length ? { text, attachments, updatedAt: timestamp } : null;
-      return { ok: true, updatedAt: timestamp };
-    },
-    clear: async () => {
-      savedDraft = null;
-      return { ok: true };
-    },
-  };
+  const drafts = createDraftsFixture({ workspaceId, agentId, text: fixture.draft });
   const disposeStore = ownsStore
     ? startRootStoreLifecycle(store, {
         startSagas: () => [store.runSaga(() => chatDraftsSaga(drafts))],

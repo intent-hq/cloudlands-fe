@@ -8,6 +8,8 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
+  import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
   import {
     bulkUpsertSessions,
     replaceMessages,
@@ -186,7 +188,10 @@
     },
   });
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () => [store.runSaga(chatScrollbackSaga)],
+    startSagas: () => [
+      store.runSaga(chatScrollbackSaga),
+      store.runSaga(() => chatDraftsSaga(createDraftsFixture())),
+    ],
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));
