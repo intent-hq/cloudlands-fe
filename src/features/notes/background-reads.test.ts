@@ -394,9 +394,9 @@ describe('background reads through the real store, sagas, clients and event brid
     pending.resolve({ note: note('older') });
     await settle();
     expect(await loaded).toBe(true);
-    // The initial content demand and the event's leading fetch are distinct
-    // sources; the second event contributes one coalesced trailing refresh.
-    expect(reads('note.get')).toHaveLength(3);
+    // Content demand and events share one per-note coordinator, so the burst
+    // contributes exactly one trailing refresh after the in-flight read.
+    expect(reads('note.get')).toHaveLength(2);
     expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
       'newer',
     );

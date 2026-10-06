@@ -1,8 +1,13 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const mocks = vi.hoisted(() => ({ backendRequest: vi.fn() }));
+
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: vi.fn(), warning: vi.fn() },
+}));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
 }));
 
 import { appClient } from '$lib/client';
@@ -10,6 +15,7 @@ import { notify } from '$lib/components/patterns/notify';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+import { commentsReducer, loadCommentsAction } from '../../comments/comments-slice';
 import {
   createNoteRequested,
   markNoteRead,
@@ -23,6 +29,7 @@ import {
   createNote,
   deleteNote,
   loadWorkspaceNotesSucceeded,
+  resolveCommentRequested,
   updateNote,
   updateNoteContent,
   updateNoteTitle,
@@ -59,7 +66,7 @@ function note(overrides: Partial<Note> = {}): Note {
   };
 }
 
-function harness(seed: Note | Note[] = note()) {
+function harness(seed: Note | Note[] = note(), comments: CommentV2[] = []) {
   const channel = stdChannel();
   const actions: Parameters<typeof workspaceNotesReducer>[1][] = [];
   const notesByWorkspace: Record<string, Note[]> = {};
@@ -71,12 +78,17 @@ function harness(seed: Note | Note[] = note()) {
     undefined,
     loadWorkspaceNotesSucceeded(Object.keys(notesByWorkspace), notesByWorkspace),
   );
+  let commentState = commentsReducer(undefined, loadCommentsAction(comments));
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
+    commentState = commentsReducer(commentState, action);
     actions.push(action);
     return action;
   };
-  const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesWriteSaga);
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ workspaceNotes, comments: commentState }) },
+    notesWriteSaga,
+  );
   return { actions, channel, dispatch, getState: () => workspaceNotes, task };
 }
 
@@ -148,6 +160,33 @@ describe('notesWriteSaga', () => {
       ['note-2', 'other note', 9, WS],
       [NOTE, 'other workspace', 12, WS2],
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not let a blocked save delay a different note', async () => {
+    let resolveFirst!: (result: { success: true }) => void;
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ success: true });
+    const run = harness([note(), note({ id: NoteId('note-2'), rev: 9 })]);
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'blocked', true));
+    await settle();
+    run.channel.put(updateNoteContent(WS, 'note-2', 'independent', true));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([
+      [NOTE, 'blocked', 4, WS],
+      ['note-2', 'independent', 9, WS],
+    ]);
+    resolveFirst({ success: true });
+    await settle();
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -856,6 +895,36 @@ describe('notesWriteSaga', () => {
     await vi.advanceTimersByTimeAsync(0);
     await settle();
     expect(setContent).toHaveBeenCalledWith(NOTE, 'draft', 4, WS);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps the mutation owner alive after comment resolution rejects', async () => {
+    mocks.backendRequest.mockRejectedValueOnce(new Error('offline'));
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });
+    const comment = {
+      id: 'comment-1',
+      noteId: NOTE,
+      workspaceId: WS,
+      threadId: 'thread-1',
+      content: 'review',
+      author: 'User',
+      authorType: 'user',
+      type: 'comment',
+      status: 'open',
+      createdAt: NOW,
+      updatedAt: NOW,
+    } as CommentV2;
+    const run = harness(note(), [comment]);
+    const request = resolveCommentRequested(WS, NOTE, comment.id);
+
+    run.channel.put(request);
+    await expect(request.promise).resolves.toBe(false);
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'saved after rejection', true));
+    await settle();
+    expect(setContent).toHaveBeenCalledWith(NOTE, 'saved after rejection', 4, WS);
+    expect(run.task.isRunning()).toBe(true);
     run.task.cancel();
     await run.task.toPromise();
   });

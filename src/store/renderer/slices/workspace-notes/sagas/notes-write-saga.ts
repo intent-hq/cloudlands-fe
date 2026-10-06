@@ -4,6 +4,7 @@ import {
   cancelled,
   delay,
   flush,
+  join,
   put,
   race,
   take,
@@ -33,6 +34,7 @@ import {
 } from '../../note-read-tracking/note-read-tracking-slice';
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
 import {
@@ -120,7 +122,11 @@ type MutationCommand =
   | ResolveCommentCommand
   | BarrierCommand;
 type MutationCompletion = { value: unknown };
-type MutationEnvelope = { command: MutationCommand; completion?: Channel<MutationCompletion> };
+type MutationEnvelope = {
+  command: MutationCommand;
+  generation: number;
+  completion?: Channel<MutationCompletion>;
+};
 type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
@@ -139,10 +145,15 @@ const unackedDrafts = new Map<string, PendingContent[]>();
 // advanced to each echo's rev as the pending drafts are rebased onto it, and
 // sent as `expectedVersion`.
 const draftBaseRev = new Map<string, number>();
+const workspaceMutationGenerations = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}:${noteId}`;
+}
+
+function workspaceMutationGeneration(workspaceId: string): number {
+  return workspaceMutationGenerations.get(workspaceId) ?? 0;
 }
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
@@ -399,13 +410,18 @@ function* deleteComment(command: DeleteCommentCommand): SagaGenerator<boolean> {
 }
 
 function* resolveComment(command: ResolveCommentCommand): SagaGenerator<boolean> {
-  yield* call(backendRequest, 'comment.resolveThread', {
-    workspaceId: command.workspaceId,
-    noteId: command.noteId,
-    commentId: command.commentId,
-    resolved: true,
-  });
-  return true;
+  try {
+    yield* call(backendRequest, 'comment.resolveThread', {
+      workspaceId: command.workspaceId,
+      noteId: command.noteId,
+      commentId: command.commentId,
+      resolved: true,
+    });
+    return true;
+  } catch (error) {
+    logger.error('Failed to resolve comment', error);
+    return false;
+  }
 }
 
 function* saveMetadata(command: MetadataCommand) {
@@ -480,13 +496,14 @@ function* enqueueMutation(
   command: MutationCommand,
   waitForCompletion = false,
 ) {
+  const envelope = { command, generation: workspaceMutationGeneration(command.workspaceId) };
   if (!waitForCompletion) {
-    yield* put(queue, { command });
+    yield* put(queue, envelope);
     return;
   }
   const completion = channel<MutationCompletion>(buffers.fixed(1));
   try {
-    yield* put(queue, { command, completion });
+    yield* put(queue, { ...envelope, completion });
     const result = yield* take(completion);
     return result.value;
   } finally {
@@ -878,8 +895,9 @@ function* createRequestedNote(
   );
 }
 
-function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCleanupAction) {
+function* cleanupWorkspace(action: WorkspaceCleanupAction) {
   const [workspaceId] = action.payload;
+  workspaceMutationGenerations.set(workspaceId, workspaceMutationGeneration(workspaceId) + 1);
   for (const key of pendingContent.keys()) {
     if (key.startsWith(`${workspaceId}:`)) pendingContent.delete(key);
   }
@@ -892,26 +910,33 @@ function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCl
   for (const key of unackedDrafts.keys()) {
     if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
   }
-  const queued = yield* flush(queue);
-  for (const envelope of queued) {
-    if (envelope.command.workspaceId === workspaceId) {
-      if (envelope.completion) yield* put(envelope.completion, { value: undefined });
-    } else {
-      yield* put(queue, envelope);
-    }
+}
+
+function* settleDiscardedMutation(envelope: MutationEnvelope) {
+  if (envelope.completion) yield* put(envelope.completion, { value: undefined });
+}
+
+function* consumeMutation(envelope: MutationEnvelope) {
+  const { command, completion, generation } = envelope;
+  if (generation !== workspaceMutationGeneration(command.workspaceId)) {
+    yield* call(settleDiscardedMutation, envelope);
+    return;
   }
+  const { mutation } = yield* race({
+    mutation: call(runMutation, command),
+    cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
+  });
+  if (completion) yield* put(completion, { value: mutation });
 }
 
 function* consumeMutations(queue: Channel<MutationEnvelope>) {
-  while (true) {
-    const envelope = yield* take(queue);
-    const { command, completion } = envelope;
-    const { mutation } = yield* race({
-      mutation: call(runMutation, command),
-      cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
-    });
-    if (completion) yield* put(completion, { value: mutation });
-  }
+  const task = yield* takeEveryByContextFIFO(
+    queue,
+    ({ command }) => noteKey(command.workspaceId, command.noteId),
+    consumeMutation,
+    { onDiscardPending: settleDiscardedMutation },
+  );
+  yield* join(task);
 }
 
 export function* notesWriteSaga() {
@@ -936,7 +961,7 @@ export function* notesWriteSaga() {
     yield* takeEvery(respondToCommentRequested, handleRespondComment, queue);
     yield* takeEvery(deleteCommentRequested, handleDeleteComment, queue);
     yield* takeEvery(resolveCommentRequested, handleResolveComment, queue);
-    yield* takeEvery(workspaceUnmounted, cleanupWorkspace, queue);
+    yield* takeEvery(workspaceUnmounted, cleanupWorkspace);
     yield* call(consumeMutations, queue);
   } finally {
     const queued = yield* flush(queue);
@@ -947,6 +972,7 @@ export function* notesWriteSaga() {
     latestEditSeq.clear();
     draftBaseRev.clear();
     unackedDrafts.clear();
+    workspaceMutationGenerations.clear();
     queue.close();
     if (noteMutationQueue === queue) noteMutationQueue = undefined;
   }

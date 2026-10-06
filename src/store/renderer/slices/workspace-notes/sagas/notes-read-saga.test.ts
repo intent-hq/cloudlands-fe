@@ -11,6 +11,7 @@ import {
   applyNoteDeleted,
   applyNoteUpdated,
   commentEventReceived,
+  ensureNoteContentLoadedRequested,
   loadNoteCommentsRequested,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
@@ -27,6 +28,9 @@ const NOW = '2026-01-01T00:00:00.000Z';
 const workspaceMounted = (workspaceId: string) =>
   workspaceNotesHydrationRequested(workspaceId, 1, false);
 const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
@@ -195,6 +199,90 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
+  it('settles every concurrent full-content request while sharing one note read', async () => {
+    const pending = deferred<Note>();
+    const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
+    const run = harness([note('note-1', { content: '', contentLength: 4 })]);
+    const first = ensureNoteContentLoadedRequested(WS, 'note-1');
+    const second = ensureNoteContentLoadedRequested(WS, 'note-1');
+    const third = ensureNoteContentLoadedRequested(WS, 'note-1');
+
+    run.channel.put(first);
+    run.channel.put(second);
+    run.channel.put(third);
+    await settle();
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
+
+    pending.resolve(note('note-1', { content: 'body', contentLength: 4 }));
+    await expect(Promise.all([first.promise, second.promise, third.promise])).resolves.toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('shares a note read between hydration and event refresh, then applies one trailing fetch', async () => {
+    const first = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(note('note-1', { content: 'final', contentLength: 5, rev: 6 }));
+    const run = harness([note('note-1', { content: '', contentLength: 4, rev: 4 })]);
+    const ensure = ensureNoteContentLoadedRequested(WS, 'note-1');
+
+    run.channel.put(ensure);
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
+
+    first.resolve(note('note-1', { content: 'intermediate', contentLength: 12, rev: 5 }));
+    await expect(ensure.promise).resolves.toBe(true);
+    await settle();
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-1', WS],
+    ]);
+    expect(run.actions.filter((action) => action.type === applyNoteUpdated.type).at(-1)).toEqual(
+      applyNoteUpdated(
+        WS,
+        'note-1',
+        note('note-1', { content: 'final', contentLength: 5, rev: 6 }),
+      ),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a successful leading note refresh when its trailing read fails', async () => {
+    const first = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(first.promise)
+      .mockRejectedValueOnce(new Error('offline'));
+    const run = harness([note('note-1')]);
+
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    first.resolve(note('note-1', { title: 'Leading result' }));
+
+    await vi.waitFor(() => {
+      expect(get).toHaveBeenCalledTimes(2);
+      expect(run.actions).toEqual([
+        applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Leading result' })),
+      ]);
+    });
+    expect(run.task.isRunning()).toBe(true);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('isolates cleanup to one workspace, suppresses its stale result, and permits a retry', async () => {
     const secondWorkspaceId = 'ws-notes-read-second';
     const firstAttempt = deferred<Note[]>();
@@ -359,10 +447,30 @@ describe('notesReadSaga', () => {
       ['note-1', WS],
       ['note-1', WS],
     ]);
-    expect(run.actions).toEqual([
-      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Intermediate' })),
-      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Final' })),
-    ]);
+    await vi.waitFor(() => {
+      expect(run.actions).toEqual([
+        applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Intermediate' })),
+        applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Final' })),
+      ]);
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not resurrect a deleted note when an earlier event read finishes late', async () => {
+    const pending = deferred<Note>();
+    vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
+    const run = harness([note('note-1')]);
+
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:deleted'));
+    await settle();
+    expect(run.actions).toEqual([applyNoteDeleted(WS, 'note-1')]);
+
+    pending.resolve(note('note-1', { title: 'Stale result' }));
+    await settle();
+    expect(run.actions).toEqual([applyNoteDeleted(WS, 'note-1')]);
     run.task.cancel();
     await run.task.toPromise();
   });
