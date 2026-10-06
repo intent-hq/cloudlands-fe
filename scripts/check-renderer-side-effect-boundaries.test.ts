@@ -325,6 +325,7 @@ describe('renderer side-effect boundary guard', () => {
   it('pins backend bridges including native desktop permissions without allowing further expansion', () => {
     const channels = [
       'backend:get-status',
+      'backend:node-capabilities',
       'backend:spawn-sidecar',
       'backend:open-local-and-spawn',
       'backend:restart-orphaned-sidecar',
