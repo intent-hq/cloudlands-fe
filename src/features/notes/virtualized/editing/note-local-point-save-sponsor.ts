@@ -127,6 +127,8 @@ type SponsorSlot = {
   finalCheck?: (time: number) => boolean;
   allocations: Array<{ owner: string; id: string; cost: NoteResourceCost }>;
   certificateUsed: boolean;
+  contextClaimed?: boolean;
+  contextControl?: { ticket: Ticket; transferred: boolean };
   certificate?: object;
   off?: () => void;
   subscriptionUnknown: boolean;
@@ -143,6 +145,25 @@ type SponsorSlot = {
 };
 const sponsorSlots = new WeakMap<object, SponsorSlot>();
 const certificates = new WeakMap<object, { slot: SponsorSlot; summary?: Summary }>();
+type AfterRevisionCapture = {
+  scope: NoteCommitReceipt['scope'];
+  revision: string;
+  receiptExpiry: string;
+  resources: NoteLocalPointSponsorCapture['resources'];
+  current(): boolean;
+  finalCheck(): ((time: number) => boolean) | undefined;
+  now(): number;
+  register(owner: string, cost: NoteResourceCost): void;
+  retire(): void;
+};
+const afterRevisionCaptures = new WeakMap<object, AfterRevisionCapture>();
+/** Only the exact upload/certificate issuer below can create this one-use key. */
+export function takePointAfterRevisionCapture(key: unknown): AfterRevisionCapture {
+  const capture = key && typeof key === 'object' ? afterRevisionCaptures.get(key) : undefined;
+  if (!capture) return fail();
+  afterRevisionCaptures.delete(key as object);
+  return capture;
+}
 function fail(): never {
   throw new Error('Local point save sponsor unavailable');
 }
@@ -587,6 +608,10 @@ function sponsorAPI(slot: SponsorSlot, input: NoteStagedSaveInput): PointSaveSpo
             if (slot.subscriptionUnknown)
               errors.push(new Error('Sponsor subscription cleanup unknown'));
             if (errors.length) throw new AggregateError(errors, 'Sponsor cleanup incomplete');
+            if (slot.contextControl && !slot.contextControl.transferred) {
+              slot.contextControl.ticket.release();
+              slot.contextControl = undefined;
+            }
             cleanup.capture.dropBorrow();
             cleanup.transcript?.release();
             cleanup.certificate?.release();
@@ -679,6 +704,7 @@ interface PointSaveUploadAccess {
   observer(): LiveNoteSaveObserver;
   transition(next: NoteLocalPointSaveRecord | undefined): (installed: boolean) => void;
   receive(dispatch: LiveNoteSaveDispatch): ReturnType<typeof liveNoteDispatchOutcome>;
+  claimAfterRevision(certificate: unknown): { key: object; releaseControl(): void };
   retire(): void;
   retirement(): Promise<void>;
 }
@@ -739,6 +765,77 @@ export function openPointSaveUpload(owner: PointUploadOwnerCapture): PointSaveUp
         d.phase = 'receiptBound';
       }
       return receipt;
+    },
+    claimAfterRevision(value: unknown) {
+      const cert = value && typeof value === 'object' ? certificates.get(value) : undefined;
+      if (
+        !cert?.summary ||
+        cert.slot !== slot ||
+        slot.contextClaimed ||
+        d.upload?.record?.phase !== 'committed' ||
+        !d.receipt ||
+        !d.observer ||
+        !d.quarantine ||
+        d.quarantine.state.sourceRevision !== d.receipt.afterRevision
+      )
+        return fail();
+      slot.contextClaimed = true; // Irreversible BEFORE clock/read/ledger callbacks.
+      if (!current(slot)) return fail();
+      const receipt = d.receipt;
+      const cost = Object.freeze({
+        payloadBytes: 65536,
+        stringUnits: 65536,
+        objectNodes: 8192,
+        physicalReads: 0,
+        assemblies: 1,
+        domNodes: 0,
+      });
+      const owner = `point-after-revision:${uuid()}`;
+      const ticket = createNoteResourceOwner(d.capture.resources).reservation(owner, cost);
+      slot.contextControl = { ticket, transferred: false }; // Own BEFORE dispatch/reentry.
+      try {
+        if (
+          !ticket.construct(
+            () => Object.freeze({}),
+            () => {},
+          )
+        )
+          return fail();
+        allocation(slot, owner, cost);
+        if (!current(slot)) return fail();
+      } catch (error) {
+        retire(slot);
+        throw error;
+      }
+      const key = Object.freeze({});
+      afterRevisionCaptures.set(key, {
+        scope: receipt.scope,
+        revision: receipt.afterRevision,
+        receiptExpiry: receipt.receiptExpiresAt,
+        resources: d.capture.resources,
+        current: () => cert.summary !== undefined && slot.data === d && current(slot),
+        finalCheck() {
+          const check = slot.finalCheck;
+          slot.finalCheck = undefined;
+          return check;
+        },
+        now: d.capture.now,
+        register(owner, cost) {
+          if (slot.data !== d) return fail();
+          allocation(slot, owner, cost);
+        },
+        retire: () => retire(slot),
+      });
+      slot.contextControl.transferred = true;
+      return Object.freeze({
+        key,
+        releaseControl() {
+          retire(slot);
+          afterRevisionCaptures.delete(key);
+          ticket.release();
+          slot.contextControl = undefined;
+        },
+      });
     },
     retire: () => retire(slot),
     retirement: owner.sponsor.release,

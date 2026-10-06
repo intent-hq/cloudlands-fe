@@ -178,6 +178,7 @@ export interface LiveNoteSaveObserver {
 }
 type LiveSaveSlot = {
   bound?: NoteSaveConnection;
+  contextClaimed?: boolean;
   data?: {
     identity: NoteSealedSaveIdentity;
     loss: LiveNoteSaveLoss;
@@ -1033,4 +1034,148 @@ export class LiveNotePagesClient extends NotePageReader implements NotePagesClie
       if (id) unsubscribe(id);
     };
   }
+}
+
+/** Lazy native-side issuer: importing the Live client must not load a DOM resolver. */
+export async function openLiveAfterRevisionIO(key: unknown) {
+  const { takeLocalPointAfterRevisionArm } =
+    await import('$features/notes/virtualized/editing/note-local-point-staged-save');
+  const arm = takeLocalPointAfterRevisionArm(key);
+  const dispatch = dispatches.get(arm.dispatch),
+    slot = liveSaveObservers.get(arm.observer);
+  const receipt = dispatch?.result;
+  if (
+    !dispatch ||
+    dispatch.observer !== arm.observer ||
+    dispatch.retired ||
+    dispatch.unknown ||
+    !dispatch.entered ||
+    receipt?.kind !== 'noteCommitReceipt' ||
+    !slot?.bound ||
+    slot.contextClaimed ||
+    slot.unknownCleanup ||
+    slot.data?.receipt !== receipt
+  )
+    throw new Error('After revision IO unavailable');
+  slot.contextClaimed = true;
+  const bound = slot.bound;
+  let retired = false,
+    usedSource = false,
+    requests = 0,
+    pending: Promise<unknown> | undefined;
+  let unknown = false,
+    release: Promise<void> | undefined;
+  const current = () =>
+    !retired &&
+    !dispatch.retired &&
+    slot.bound === bound &&
+    slot.data?.receipt === receipt &&
+    saveObserverCurrent(slot) &&
+    !retired;
+  const reader = new NotePageReader(async (method, params) => {
+    const page = params.page as import('../note-pages').NotePageRequest;
+    if (
+      method !== 'note.get' ||
+      params.workspaceId !== receipt.scope.workspaceId ||
+      params.noteId !== receipt.scope.noteId ||
+      page.maxWireBytes !== 8192 ||
+      page.maxItems !== 64
+    )
+      throw new Error('After revision request mismatch');
+    let command: Parameters<NoteSaveConnection['request']>[0];
+    if (page.kind === 'source') {
+      if (
+        usedSource ||
+        page.at !== 0 ||
+        page.maxSourceBytes !== 4096 ||
+        page.snapshotId ||
+        page.cursor ||
+        page.sourceRevision !== receipt.afterRevision ||
+        page.noteInstanceId !== receipt.scope.noteInstanceId
+      )
+        throw new Error('After revision source unavailable');
+      usedSource = true;
+      command = { kind: 'source' };
+    } else if (page.kind === 'context' && usedSource) {
+      command = {
+        kind: 'context',
+        contextRef: page.contextRef,
+        ...(page.cursor ? { cursor: page.cursor } : {}),
+      };
+    } else throw new Error('After revision request unsupported');
+    if (++requests > 96 || !current()) throw new Error('After revision IO lost');
+    let entered = false,
+      settled = false;
+    try {
+      entered = true;
+      const result = await bound.request(command);
+      settled = true;
+      if (result.settlement.status === 'rejected') {
+        const error = new Error(result.settlement.error.message);
+        Object.assign(error, { code: result.settlement.error.rpcCode });
+        throw error;
+      }
+      const data = copyObservedData(result.settlement.value, 8192);
+      if (!result.current || !current()) throw new Error('After revision result retired');
+      return data;
+    } catch (error) {
+      // Only a returned settlement envelope proves this request finished. A
+      // rejected IPC Promise stays unknown even if its Error carries a numeric code.
+      if (entered && !settled) unknown = true;
+      throw error;
+    }
+  });
+  return Object.freeze({
+    captureCurrent() {
+      if (!current()) return undefined;
+      const check = bound.captureCurrent();
+      return () =>
+        !retired &&
+        !dispatch.retired &&
+        slot.bound === bound &&
+        slot.data?.receipt === receipt &&
+        !slot.retired &&
+        check?.() === true;
+    },
+    read(page: import('../note-pages').NotePageRequest) {
+      if (retired || slot.busy || pending)
+        return Promise.reject(new Error('After revision IO busy'));
+      slot.busy = true;
+      let yes!: (v: import('../note-pages').NoteReadPage) => void, no!: (e: unknown) => void;
+      const work = new Promise<import('../note-pages').NoteReadPage>((a, b) => {
+        yes = a;
+        no = b;
+      });
+      pending = slot.pending = work;
+      void (async () => {
+        try {
+          if (!current()) throw new Error('After revision IO lost');
+          const value = await reader.read(receipt.scope.workspaceId, receipt.scope.noteId, page);
+          if (!current()) throw new Error('After revision decode retired');
+          yes(value);
+        } catch (error) {
+          retired = true;
+          no(error);
+        } finally {
+          slot.busy = false;
+          if (slot.pending === work) slot.pending = undefined;
+          pending = undefined;
+        }
+      })();
+      return work;
+    },
+    release() {
+      if (release) return release;
+      retired = true;
+      release = (async () => {
+        try {
+          await pending;
+        } catch {
+          /* Primary failure is retained by caller. */
+        }
+        if (unknown) throw new Error('After revision IO settlement unknown');
+      })();
+      return release;
+    },
+  });
 }

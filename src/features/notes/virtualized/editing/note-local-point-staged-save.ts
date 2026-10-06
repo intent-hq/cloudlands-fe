@@ -66,6 +66,17 @@ export function takeLocalPointDispatchArm(key: unknown): DispatchArm {
   arms.delete(key as object);
   return arm;
 }
+type AfterRevisionArm = { dispatch: LiveNoteSaveDispatch; observer: LiveNoteSaveObserver };
+const afterRevisionArms = new WeakMap<object, AfterRevisionArm>();
+export function takeLocalPointAfterRevisionArm(key: unknown): AfterRevisionArm {
+  const arm = key && typeof key === 'object' ? afterRevisionArms.get(key) : undefined;
+  if (!arm) throw new Error('Unknown after revision IO key');
+  afterRevisionArms.delete(key as object);
+  return arm;
+}
+type ContextChild = ReturnType<
+  typeof import('./note-local-point-after-revision-context').createAfterRevisionContext
+>;
 const fail = (): never => {
   throw new Error('Local point upload unavailable');
 };
@@ -77,6 +88,7 @@ interface PointLocalUpload {
   outcome(): NoteSaveOutcome | undefined;
   observe(): Promise<NoteSaveOutcome>;
   certificate: PointSaveSponsor['certificate'];
+  acquireAfterRevisionContext(certificate: unknown): ContextChild;
   cancel(): void;
   release(): Promise<void>;
 }
@@ -160,6 +172,8 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
   let pending: Promise<NoteSaveOutcome> | undefined;
   let releasing: Promise<void> | undefined;
   let certificateWork: Promise<unknown> | undefined;
+  let contextChild: ContextChild | undefined;
+  let contextUsed = false;
   let lastOutcome: NoteSaveOutcome | undefined;
   let boundTicket:
     ReturnType<ReturnType<typeof createNoteResourceOwner>['reservation']> | undefined;
@@ -494,7 +508,7 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
     runBound: () => run(true),
     outcome: () => lastOutcome,
     observe(): Promise<NoteSaveOutcome> {
-      if (busy || cancelled || !dispatch?.entered() || !access)
+      if (busy || cancelled || contextUsed || !dispatch?.entered() || !access)
         return Promise.reject(new Error('Status unavailable'));
       busy = true;
       const d = dispatch,
@@ -534,7 +548,7 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
       return work;
     },
     certificate() {
-      if (busy || cancelled || !access || record?.phase !== 'committed')
+      if (busy || cancelled || contextUsed || !access || record?.phase !== 'committed')
         return Promise.reject(new Error('Certificate unavailable'));
       busy = true;
       let yes!: (
@@ -564,12 +578,89 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
       })();
       return work;
     },
+    acquireAfterRevisionContext(certificate: unknown) {
+      if (
+        busy ||
+        cancelled ||
+        contextUsed ||
+        !boundTicket ||
+        !dispatch ||
+        !access ||
+        record?.phase !== 'committed'
+      )
+        return fail();
+      busy = true;
+      let claim: ReturnType<NonNullable<typeof access>['claimAfterRevision']> | undefined;
+      try {
+        claim = access.claimAfterRevision(certificate);
+      } catch (error) {
+        busy = false;
+        throw error;
+      }
+      contextUsed = true;
+      const armKey = Object.freeze({});
+      afterRevisionArms.set(armKey, { dispatch, observer: access.observer() });
+      let child: ContextChild | undefined,
+        retired = false;
+      let yes!: (v: Awaited<ContextChild['ready']>) => void, no!: (e: unknown) => void;
+      const ready = new Promise<Awaited<ContextChild['ready']>>((a, b) => {
+        yes = a;
+        no = b;
+      });
+      let cleanup: Promise<void> | undefined;
+      const retire = () => {
+        retired = true;
+        cancelled = true;
+        access?.retire();
+        child?.cancel();
+      };
+      contextChild = Object.freeze({
+        ready,
+        cancel: retire,
+        release() {
+          if (cleanup) return cleanup;
+          retire();
+          cleanup = (async () => {
+            try {
+              await ready;
+            } catch {
+              /* Still join known child cleanup. */
+            }
+            await child?.release();
+            claim?.releaseControl();
+            claim = undefined;
+            child = undefined;
+          })();
+          return cleanup;
+        },
+      });
+      void (async () => {
+        try {
+          const module = await import('./note-local-point-after-revision-context');
+          if (retired || cancelled) throw new Error('After revision preparation retired');
+          child = module.createAfterRevisionContext(claim!.key, armKey);
+          const result = await child.ready;
+          if (retired || cancelled || !result.current())
+            throw new Error('After revision preparation retired');
+          yes(result);
+        } catch (error) {
+          retire();
+          no(error);
+        } finally {
+          afterRevisionArms.delete(armKey);
+          busy = false;
+        }
+      })();
+      return contextChild;
+    },
     cancel() {
+      contextChild?.cancel();
       cancelled = true;
       access?.retire();
     },
     release() {
       if (releasing) return releasing;
+      contextChild?.cancel();
       cancelled = true;
       access?.retire();
       releasing = (async () => {
@@ -580,6 +671,11 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
           /* Preserve primary and inspect independent debt. */
         }
         const errors: unknown[] = [];
+        try {
+          await contextChild?.release();
+        } catch (e) {
+          errors.push(e);
+        }
         try {
           await dispatch?.release();
         } catch (e) {
@@ -618,6 +714,7 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
         }
         // Successful retirement retains only bounded serializable recovery DATA.
         // The original owner/Editor/context graph must not be pinned by this API.
+        contextChild = undefined;
         captured = undefined;
         document = undefined;
         port = undefined;

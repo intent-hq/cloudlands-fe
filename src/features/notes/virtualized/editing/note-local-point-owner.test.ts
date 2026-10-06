@@ -278,6 +278,7 @@ async function fixture(
   sponsor = false,
   upload = false,
   bound = false,
+  afterRevision = false,
 ) {
   const calls = plainLocal.calls as unknown as Array<{
     request: NotePageRequest;
@@ -340,15 +341,23 @@ async function fixture(
             })[0].cost.payloadBytes +
           100
         : upload
-          ? 21_827_584 + (bound ? 131072 : 0)
+          ? 21_827_584 + (bound ? 131072 : 0) + (afterRevision ? 6365184 : 0)
           : sponsor
             ? 19_140_608
             : 100_000_000,
-      stringUnits: upload ? 21_827_584 + (bound ? 131072 : 0) : sponsor ? 19_140_608 : 100_000_000,
-      objectNodes: upload ? 13_705_216 + (bound ? 16384 : 0) : sponsor ? 13_692_928 : 100_000_000,
+      stringUnits: upload
+        ? 21_827_584 + (bound ? 131072 : 0) + (afterRevision ? 6365184 : 0)
+        : sponsor
+          ? 19_140_608
+          : 100_000_000,
+      objectNodes: upload
+        ? 13_705_216 + (bound ? 16384 : 0) + (afterRevision ? 6307840 : 0)
+        : sponsor
+          ? 13_692_928
+          : 100_000_000,
       domNodes: 10000,
-      physicalReads: upload ? 5 + (bound ? 1 : 0) : sponsor ? 4 : 16,
-      assemblies: upload ? 10 + (bound ? 1 : 0) : sponsor ? 8 : 16,
+      physicalReads: upload ? 5 + (bound ? 1 : 0) + (afterRevision ? 1 : 0) : sponsor ? 4 : 16,
+      assemblies: upload ? 10 + (bound ? 1 : 0) + (afterRevision ? 2 : 0) : sponsor ? 8 : 16,
     }),
   );
   dispatch(
@@ -3117,5 +3126,710 @@ it.each(['cancel', 'panel-loss', 'loader-rejection'])(
     load.mockRestore();
     publication?.mockRestore();
     await f.destroy();
+  },
+);
+
+/** Controlled NEW bound commit and lexical snapshot, not attempt4, a real socket,
+ * or evidence that the original staged/grant calls shared its principal. */
+async function afterRevisionFixture(bound = true) {
+  const f = await fixture('normal', false, true, true, bound, true);
+  f.insert();
+  const upload = f.owner.prepareUpload();
+  let stage: ReturnType<LiveNotePagesClient['createGuardedSaveOperation']> | undefined;
+  const create = LiveNotePagesClient.prototype.createGuardedSaveOperation;
+  const spy = vi
+    .spyOn(LiveNotePagesClient.prototype, 'createGuardedSaveOperation')
+    .mockImplementation(function (...args) {
+      stage = create.apply(this, args);
+      return stage;
+    });
+  configurePointUpload(upload.input);
+  let controlled: Awaited<ReturnType<typeof controlledReceipt>>;
+  const ordinary = vi.mocked(backendRequest).getMockImplementation()!;
+  vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+    if (method === 'note.operation.commit') {
+      controlled = await controlledReceipt(stage!, upload.input.header.localEditSequence);
+      return controlled.receipt;
+    }
+    if (method === 'note.operation.read') return controlled.respond(method, params);
+    return ordinary(method, params);
+  });
+  let live = true;
+  const commands: Array<
+    Parameters<import('$shared/types/note-save-connection').NoteSaveConnection['request']>[0]
+  > = [];
+  let hook:
+    ((kind: string, value: Record<string, unknown>) => unknown | Promise<unknown>) | undefined;
+  const release = vi.fn(async () => {
+    live = false;
+  });
+  let rejectRead: 'throw-code' | 'service-code' | undefined;
+  const lexicalIdentity = {
+    scope: upload.input.scope,
+    sourceRevision: 'controlled-after',
+    snapshotId: 'controlled-new-snapshot',
+    expiresAt: new Date(Date.parse(upload.input.expiresAt) + 300000).toISOString(),
+  };
+  const boundary = {
+    kind: 'boundary',
+    id: 'paragraph',
+    sourceRange: { start: 0, end: 3 },
+    construct: 'paragraph',
+    continuationBefore: false,
+    continuationAfter: false,
+    entryPath: 'markdown',
+    detailRef: 'new-detail',
+  };
+  vi.mocked(captureNoteSaveConnection).mockImplementation(async () => ({
+    current: () => live,
+    captureCurrent: () => () => live,
+    release,
+    request: async (command) => {
+      commands.push(command);
+      if (command.kind === 'source' && rejectRead) {
+        if (rejectRead === 'throw-code')
+          throw Object.assign(new Error('coded transport rejection'), { code: -123 });
+        return {
+          id: 'controlled-new-lexical',
+          current: live,
+          settlement: {
+            status: 'rejected',
+            error: { code: 'RPC_ERROR', message: 'coded service rejection', rpcCode: -123 },
+          },
+        };
+      }
+      let value: unknown;
+      if (command.kind === 'commit') {
+        controlled = await controlledReceipt(stage!, upload.input.header.localEditSequence);
+        value = controlled.receipt;
+      } else if (command.kind === 'receipt') {
+        value = await controlled!.respond('note.operation.read', {
+          kind: command.output,
+          ref: command.ref,
+          cursor: command.cursor,
+          textId: command.textId,
+          offset: command.offset,
+        });
+      } else if (command.kind === 'source')
+        value = {
+          ...lexicalIdentity,
+          kind: 'noteSourcePage',
+          sourceLength: 3,
+          range: { start: 0, end: 3 },
+          text: 'aXb',
+          metadataRef: 'new-metadata',
+          contextRef: 'new-context',
+          nextCursor: null,
+          previousCursor: null,
+        };
+      else if (command.kind === 'context') {
+        const items =
+          command.contextRef === 'new-context'
+            ? [boundary]
+            : command.contextRef === 'new-detail'
+              ? ['openingSource', 'closingSource'].map((field) => ({
+                  kind: 'fragment',
+                  id: field,
+                  field,
+                  offset: 0,
+                  text: '',
+                  nextRef: `new-${field}`,
+                }))
+              : ['openingSource', 'closingSource'].some(
+                    (field) => command.contextRef === `new-${field}`,
+                  )
+                ? [
+                    {
+                      kind: 'fragment',
+                      id: command.contextRef,
+                      field: command.contextRef.slice(4),
+                      offset: 0,
+                      text: '',
+                      nextRef: null,
+                    },
+                  ]
+                : undefined;
+        if (!items) throw new Error('Foreign controlled lexical ref');
+        value = { ...lexicalIdentity, kind: 'noteContextPage', items, nextCursor: null };
+      } else throw new Error('Unexpected controlled bound command');
+      if (hook && (command.kind === 'source' || command.kind === 'context'))
+        value = await hook(command.kind, value as Record<string, unknown>);
+      return {
+        id: 'controlled-new-lexical',
+        current: live,
+        settlement: { status: 'fulfilled', value },
+      };
+    },
+  }));
+  try {
+    await (bound ? upload.runBound() : upload.run());
+    const n = f.note();
+    f.port.dispatch(
+      a.pageStateReceived(upload.input.scope.workspaceId, upload.input.scope.noteId, n.generation, {
+        ...n.state!,
+        stateGeneration: '2',
+        sourceRevision: controlled!.receipt.afterRevision,
+      }),
+    );
+    const certificate = await upload.certificate();
+    spy.mockRestore();
+    return {
+      f,
+      upload,
+      certificate,
+      commands,
+      lexicalIdentity,
+      rejectRead: (mode: typeof rejectRead) => {
+        rejectRead = mode;
+      },
+      release,
+      lose: () => {
+        live = false;
+      },
+      hook: (h?: typeof hook) => {
+        hook = h;
+      },
+      async destroy() {
+        spy.mockRestore();
+        await upload.release().catch(() => {});
+        await f.destroy();
+      },
+    };
+  } catch (error) {
+    spy.mockRestore();
+    await upload.release().catch(() => {});
+    await f.destroy();
+    throw error;
+  }
+}
+it('retains private afterRevision DATA from this genuine G without adopting it', async () => {
+  const c = await afterRevisionFixture();
+  const before = c.f.note(),
+    document = before.document,
+    history = before.history,
+    drafts = before.drafts;
+  try {
+    expect(c.f.ledger().limit).toMatchObject({
+      payloadBytes: 28323840,
+      objectNodes: 20029440,
+      physicalReads: 7,
+      assemblies: 13,
+    });
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    const value = await child.ready;
+    expect(value.current()).toBe(true);
+    expect(Object.keys(value)).toEqual(['current']);
+    expect(c.commands.filter((q) => q.kind === 'source')).toEqual([{ kind: 'source' }]);
+    expect(c.commands.filter((q) => q.kind === 'context')).toEqual([
+      { kind: 'context', contextRef: 'new-context' },
+      { kind: 'context', contextRef: 'new-detail' },
+      { kind: 'context', contextRef: 'new-openingSource' },
+      { kind: 'context', contextRef: 'new-closingSource' },
+    ]);
+    expect(c.f.note()).toMatchObject({
+      needsReconcile: true,
+      localPointSave: { phase: 'committed' },
+    });
+    expect(c.f.note().document).toBe(document);
+    expect(c.f.note().history).toBe(history);
+    expect(c.f.note().drafts).toBe(drafts);
+    expect(c.f.owner.current()).toBe(false);
+    expect(() => c.upload.acquireAfterRevisionContext(c.certificate)).toThrow();
+    await child.release();
+    expect(value.current()).toBe(false);
+    expect(currentPointCanonicalCertificate(c.certificate)).toBe(false);
+    expect(c.release).not.toHaveBeenCalled();
+    expect(c.f.ledger().owners[c.f.note().localPointSave!.controlOwner]).toBeDefined();
+    await c.upload.release();
+    expect(c.release).toHaveBeenCalledTimes(1);
+  } finally {
+    await c.destroy();
+  }
+});
+it.each(['copy', 'plain', 'missing'] as const)(
+  'rejects %s afterRevision certificate before IO',
+  async (mode) => {
+    const c = await afterRevisionFixture();
+    try {
+      const value =
+        mode === 'copy' ? { ...c.certificate } : mode === 'plain' ? c.upload.outcome() : undefined;
+      expect(() => c.upload.acquireAfterRevisionContext(value)).toThrow();
+      expect(c.commands.some((q) => q.kind === 'source')).toBe(false);
+    } finally {
+      await c.destroy();
+    }
+  },
+);
+it.each([
+  'scope',
+  'revision',
+  'snapshot',
+  'expiry',
+  'source',
+  'canonical',
+  'expired',
+  'lost',
+] as const)('refuses afterRevision %s without retry or old-owner revival', async (mode) => {
+  const c = await afterRevisionFixture();
+  try {
+    c.hook((kind, value) => {
+      if (kind === 'source') {
+        if (mode === 'scope')
+          return { ...value, scope: { ...c.lexicalIdentity.scope, noteInstanceId: 'foreign' } };
+        if (mode === 'revision') return { ...value, sourceRevision: 'foreign' };
+        if (mode === 'source') return { ...value, text: 'abc' };
+        if (mode === 'expired')
+          return { ...value, expiresAt: new Date(c.f.now() - 1).toISOString() };
+        if (mode === 'lost') c.lose();
+      } else {
+        if (mode === 'snapshot') return { ...value, snapshotId: 'foreign' };
+        if (mode === 'expiry')
+          return { ...value, expiresAt: new Date(c.f.now() + 1).toISOString() };
+        if (mode === 'canonical')
+          return {
+            ...value,
+            items: [
+              {
+                kind: 'boundary',
+                id: 'bad',
+                sourceRange: { start: 0, end: 3 },
+                construct: 'paragraph',
+                entryPath: 'canonical',
+                continuationBefore: false,
+                continuationAfter: false,
+              },
+            ],
+          };
+      }
+      return value;
+    });
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    await expect(child.ready).rejects.toThrow();
+    await child.release();
+    expect(c.commands.filter((q) => q.kind === 'source')).toHaveLength(1);
+    expect(c.f.note().needsReconcile).toBe(true);
+    expect(c.f.owner.current()).toBe(false);
+    expect(() => c.upload.acquireAfterRevisionContext(c.certificate)).toThrow();
+  } finally {
+    await c.destroy();
+  }
+});
+it.each(['source', 'context'] as const)(
+  'joins held afterRevision %s before parent bound release',
+  async (kind) => {
+    const c = await afterRevisionFixture();
+    let settle!: () => void;
+    c.hook((k, v) =>
+      k === kind && !settle
+        ? new Promise((resolve) => {
+            settle = () => resolve(v);
+          })
+        : v,
+    );
+    try {
+      const child = c.upload.acquireAfterRevisionContext(c.certificate);
+      const failed = expect(child.ready).rejects.toThrow();
+      await vi.waitFor(() => expect(settle).toBeTypeOf('function'));
+      const held = c.f.ledger().used.payloadBytes;
+      const release = c.upload.release();
+      let done = false;
+      void release.then(() => {
+        done = true;
+      });
+      await Promise.resolve();
+      expect(done).toBe(false);
+      expect(c.release).not.toHaveBeenCalled();
+      expect(c.f.ledger().used.payloadBytes).toBe(held);
+      settle();
+      await failed;
+      await release;
+      expect(done).toBe(true);
+      expect(c.release).toHaveBeenCalledTimes(1);
+      expect(c.f.note().localPointSave?.phase).toBe('committed');
+    } finally {
+      settle?.();
+      await c.destroy();
+    }
+  },
+);
+it('retains unknown afterRevision debt while independently releasing the bound parent', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    c.hook(() => {
+      throw new Error('controlled unknown IO');
+    });
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    await expect(child.ready).rejects.toThrow('controlled unknown IO');
+    await expect(child.release()).rejects.toThrow('settlement unknown');
+    await expect(c.upload.release()).rejects.toThrow();
+    expect(c.release).toHaveBeenCalledTimes(1);
+    expect(
+      Object.keys(c.f.ledger().owners).filter((k) => k.startsWith('point-after-revision:')),
+    ).toHaveLength(3);
+  } finally {
+    await c.destroy();
+  }
+});
+it('owns afterRevision cancellation during the lazy import before any source send', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    child.cancel();
+    await expect(child.ready).rejects.toThrow();
+    await child.release();
+    expect(c.commands.some((q) => q.kind === 'source')).toBe(false);
+  } finally {
+    await c.destroy();
+  }
+});
+it('admits afterRevision control before keys and refuses an insufficient assembly without IO', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    const used = c.f.ledger().used,
+      limit = c.f.ledger().limit;
+    const amount = limit.payloadBytes - used.payloadBytes - (6365184 - 1);
+    expect(amount).toBeGreaterThan(0);
+    c.f.port.dispatch(
+      a.pageResourcesRequested('after-revision-filler', [
+        {
+          id: 'after-revision-filler',
+          cost: {
+            payloadBytes: amount,
+            stringUnits: 0,
+            objectNodes: 0,
+            physicalReads: 0,
+            assemblies: 0,
+            domNodes: 0,
+          },
+        },
+      ]),
+    );
+    expect(c.f.ledger().owners['after-revision-filler']).toEqual(['after-revision-filler']);
+    expect(c.f.ledger().limit.payloadBytes - c.f.ledger().used.payloadBytes).toBe(6365183);
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    await expect(child.ready).rejects.toThrow('budget');
+    expect(c.commands.some((q) => q.kind === 'source')).toBe(false);
+    await child.release();
+    expect(
+      Object.keys(c.f.ledger().owners).filter((k) => k.startsWith('point-after-revision:')),
+    ).toEqual([]);
+    expect(c.f.ledger().owners[c.f.note().localPointSave!.controlOwner]).toBeDefined();
+  } finally {
+    c.f.port.dispatch(a.pageResourcesReleased('after-revision-filler'));
+    await c.destroy();
+  }
+});
+it('owns installed afterRevision control when the admission subscriber throws', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    let fired = false;
+    const off = c.f.port.subscribe(() => {
+      if (
+        !fired &&
+        Object.keys(c.f.ledger().owners).some((k) => k.startsWith('point-after-revision:'))
+      ) {
+        fired = true;
+        throw new Error('controlled child admission');
+      }
+    });
+    expect(() => c.upload.acquireAfterRevisionContext(c.certificate)).toThrow(
+      'controlled child admission',
+    );
+    off();
+    expect(c.commands.some((q) => q.kind === 'source')).toBe(false);
+    await c.upload.release();
+    expect(
+      Object.keys(c.f.ledger().owners).filter((k) => k.startsWith('point-after-revision:')),
+    ).toEqual([]);
+  } finally {
+    await c.destroy();
+  }
+});
+it('refuses reentrant afterRevision acquisition and status during the exact source read', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    c.hook(async (kind, value) => {
+      if (kind === 'source') {
+        expect(() => c.upload.acquireAfterRevisionContext(c.certificate)).toThrow();
+        await expect(c.upload.observe()).rejects.toThrow();
+        await expect(c.upload.certificate()).rejects.toThrow();
+      }
+      return value;
+    });
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    expect((await child.ready).current()).toBe(true);
+    await child.release();
+  } finally {
+    await c.destroy();
+  }
+});
+it.each(['panel', 'revision', 'evidence-expiry', 'last-clock'] as const)(
+  'irreversibly retires afterRevision on %s while keeping the committed journal',
+  async (mode) => {
+    const c = await afterRevisionFixture();
+    const document = c.f.note().document,
+      journal = c.f.note().history;
+    try {
+      const child = c.upload.acquireAfterRevisionContext(c.certificate);
+      const value = await child.ready;
+      if (mode === 'panel') {
+        const panels = c.f.note().panels;
+        c.f.note().panels = {};
+        expect(value.current()).toBe(false);
+        c.f.note().panels = panels;
+      } else if (mode === 'revision') {
+        const n = c.f.note();
+        c.f.port.dispatch(
+          a.pageStateReceived(
+            c.upload.input.scope.workspaceId,
+            c.upload.input.scope.noteId,
+            n.generation,
+            { ...n.state!, sourceRevision: 'controlled-later', stateGeneration: '3' },
+          ),
+        );
+      } else if (mode === 'evidence-expiry') {
+        const time = c.f.now();
+        c.f.setTime(Date.parse(c.upload.input.expiresAt) + 1);
+        expect(value.current()).toBe(false);
+        c.f.setTime(time);
+      } else c.f.armClock(() => c.lose());
+      expect(value.current()).toBe(false);
+      expect(value.current()).toBe(false);
+      expect(c.f.note().document).toBe(document);
+      expect(c.f.note().history).toBe(journal);
+      expect(c.f.note().needsReconcile).toBe(true);
+      await child.release();
+    } finally {
+      await c.destroy();
+    }
+  },
+);
+it('runs the afterRevision final connection check after the last lexical callback', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    c.hook((kind, value) => {
+      if (kind === 'context' && c.commands.filter((q) => q.kind === 'context').length === 4)
+        c.f.armClock(() => c.lose());
+      return value;
+    });
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    await expect(child.ready).rejects.toThrow();
+    await child.release();
+    expect(c.commands.filter((q) => q.kind === 'source')).toHaveLength(1);
+  } finally {
+    await c.destroy();
+  }
+});
+
+it('revalidates afterRevision in the actual outer ready microtask gap', async () => {
+  const module = await import('./note-local-point-after-revision-context');
+  const create = module.createAfterRevisionContext;
+  const c = await afterRevisionFixture();
+  let triggered = false;
+  const spy = vi.spyOn(module, 'createAfterRevisionContext').mockImplementation((...args) => {
+    const child = create(...args);
+    return {
+      ...child,
+      ready: child.ready.then((value) => {
+        expect(value.current()).toBe(true);
+        queueMicrotask(() => {
+          triggered = true;
+          c.lose();
+        });
+        return value;
+      }),
+    };
+  });
+  try {
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    await expect(child.ready).rejects.toThrow('retired');
+    expect(triggered).toBe(true);
+    await child.release();
+  } finally {
+    spy.mockRestore();
+    await c.destroy();
+  }
+});
+it.each(['throw-code', 'service-code'] as const)(
+  'distinguishes afterRevision %s settlement provenance',
+  async (mode) => {
+    const c = await afterRevisionFixture();
+    try {
+      c.rejectRead(mode);
+      const child = c.upload.acquireAfterRevisionContext(c.certificate);
+      await expect(child.ready).rejects.toThrow('coded');
+      if (mode === 'throw-code') {
+        await expect(child.release()).rejects.toThrow('unknown');
+        expect(
+          Object.keys(c.f.ledger().owners).filter((k) => k.startsWith('point-after-revision:')),
+        ).toHaveLength(3);
+        const held = Object.keys(c.f.ledger().owners)
+          .filter((k) => k.startsWith('point-after-revision:'))
+          .map((owner) => {
+            const ids = c.f.ledger().owners[owner];
+            expect(ids).toHaveLength(1);
+            return { owner, id: ids[0], resource: c.f.ledger().resources[ids[0]] };
+          });
+        expect(held.map((x) => x.resource.cost.payloadBytes).sort((a, b) => a - b)).toEqual([
+          8192, 65536, 6291456,
+        ]);
+        await expect(c.upload.release()).rejects.toThrow();
+        for (const h of held) {
+          expect(c.f.ledger().owners[h.owner]).toEqual([h.id]);
+          expect(c.f.ledger().resources[h.id]).toBe(h.resource);
+        }
+      } else {
+        await child.release();
+        expect(
+          Object.keys(c.f.ledger().owners).filter((k) => k.startsWith('point-after-revision:')),
+        ).toEqual([]);
+        await c.upload.release();
+      }
+      expect(c.release).toHaveBeenCalledTimes(1);
+    } finally {
+      await c.destroy();
+    }
+  },
+);
+it.each(['nativeRef', 'sourceMapRef', 'codeSource'] as const)(
+  'refuses afterRevision canonical %s before following it',
+  async (field) => {
+    const c = await afterRevisionFixture();
+    try {
+      c.hook((kind, value) =>
+        kind === 'context'
+          ? {
+              ...value,
+              items: (value.items as Array<Record<string, unknown>>).map((item) => ({
+                ...item,
+                [field]: 'controlled-canonical-ref',
+              })),
+            }
+          : value,
+      );
+      const child = c.upload.acquireAfterRevisionContext(c.certificate);
+      await expect(child.ready).rejects.toThrow('After revision context mismatch');
+      await child.release();
+      expect(c.commands.filter((q) => q.kind === 'context')).toEqual([
+        { kind: 'context', contextRef: 'new-context' },
+      ]);
+    } finally {
+      await c.destroy();
+    }
+  },
+);
+it('shares the afterRevision 96 request ceiling across window and detail traversal', async () => {
+  const c = await afterRevisionFixture();
+  let pages = 0;
+  try {
+    c.hook((kind, value) => {
+      const last = c.commands.at(-1)!;
+      if (kind === 'context' && last.kind === 'context' && last.contextRef === 'new-context') {
+        pages++;
+        return { ...value, nextCursor: pages < 93 ? `cursor-${pages}` : null };
+      }
+      return value;
+    });
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    await expect(child.ready).rejects.toThrow('budget');
+    await child.release();
+    expect(pages).toBe(93);
+    expect(c.commands.filter((q) => q.kind === 'source' || q.kind === 'context')).toHaveLength(96);
+    expect(
+      c.commands.some((q) => q.kind === 'context' && q.contextRef === 'new-closingSource'),
+    ).toBe(false);
+  } finally {
+    await c.destroy();
+  }
+});
+it('pins afterRevision child cost through the final clock callback', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    const value = await child.ready;
+    const owner = Object.keys(c.f.ledger().owners).find((k) =>
+      k.startsWith('point-after-revision:'),
+    )!;
+    const cost = c.f.ledger().resources[c.f.ledger().owners[owner][0]].cost;
+    const before = cost.payloadBytes;
+    c.f.armClock(() => {
+      cost.payloadBytes++;
+    });
+    expect(value.current()).toBe(false);
+    cost.payloadBytes = before;
+    expect(value.current()).toBe(false);
+    await child.release();
+  } finally {
+    await c.destroy();
+  }
+});
+
+it('refuses afterRevision for an actually unbound committed upload', async () => {
+  const c = await afterRevisionFixture(false);
+  try {
+    expect(currentPointCanonicalCertificate(c.certificate)).toBe(true);
+    expect(() => c.upload.acquireAfterRevisionContext(c.certificate)).toThrow();
+    expect(c.commands).toEqual([]);
+  } finally {
+    await c.destroy();
+  }
+});
+it('rejects a different genuine afterRevision certificate before source IO', async () => {
+  const first = await afterRevisionFixture();
+  const second = await afterRevisionFixture();
+  try {
+    expect(() => first.upload.acquireAfterRevisionContext(second.certificate)).toThrow();
+    expect(first.commands.some((q) => q.kind === 'source')).toBe(false);
+  } finally {
+    await second.destroy();
+    await first.destroy();
+  }
+});
+it('intersects afterRevision lexical expiry with the still-current original evidence', async () => {
+  const c = await afterRevisionFixture();
+  try {
+    const deadline = new Date(c.f.now() + 10).toISOString();
+    c.hook((_kind, value) => ({ ...value, expiresAt: deadline }));
+    const child = c.upload.acquireAfterRevisionContext(c.certificate);
+    const value = await child.ready;
+    expect(value.current()).toBe(true);
+    c.f.setTime(c.f.now() + 11);
+    expect(c.f.now()).toBeLessThan(Date.parse(c.upload.input.expiresAt));
+    expect(value.current()).toBe(false);
+    await child.release();
+  } finally {
+    await c.destroy();
+  }
+});
+it.each(['nativeRef', 'sourceMapRef', 'codeSource'] as const)(
+  'rejects afterRevision text span %s before native traversal',
+  async (field) => {
+    const c = await afterRevisionFixture();
+    try {
+      c.hook((kind, value) =>
+        kind === 'context'
+          ? {
+              ...value,
+              items: [
+                {
+                  kind: 'span',
+                  id: 'span',
+                  role: 'text',
+                  sourceRange: { start: 0, end: 3 },
+                  [field]: 'controlled-ref',
+                },
+              ],
+            }
+          : value,
+      );
+      const child = c.upload.acquireAfterRevisionContext(c.certificate);
+      await expect(child.ready).rejects.toThrow('After revision context mismatch');
+      await child.release();
+      expect(c.commands.filter((q) => q.kind === 'context')).toEqual([
+        { kind: 'context', contextRef: 'new-context' },
+      ]);
+    } finally {
+      await c.destroy();
+    }
   },
 );
