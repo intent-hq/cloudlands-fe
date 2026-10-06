@@ -957,6 +957,12 @@ export const IPC_CHANNELS = {
       RELEASE: 'backend:repository-resource:release',
       RETIRED: 'backend:repository-resource:retired',
     },
+    NOTE_SAVE_CONNECTION: {
+      CAPTURE: 'backend:note-save-connection:capture',
+      REQUEST: 'backend:note-save-connection:request',
+      RELEASE: 'backend:note-save-connection:release',
+      RETIRED: 'backend:note-save-connection:retired',
+    },
     REPOSITORY: {
       CAPTURE: 'backend:repository:capture',
       RETIRED: 'backend:repository:retired',
@@ -1092,6 +1098,7 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.BACKEND.NOTE_SAVE_CONNECTION.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

@@ -18,6 +18,14 @@ import {
   prepareNodeRequest,
 } from './node-placement-policy';
 import { resolveBackendTransport } from './backend-transport-factory';
+import type { NoteSaveConnectionIdentity } from '$shared/types/note-save-connection';
+
+/** Prospectively capture one transport. Never route a missing binding generically. */
+export function captureNoteSaveConnection(identity: NoteSaveConnectionIdentity) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureNoteSaveConnection) throw new Error('Bound note save unavailable');
+  return transport.captureNoteSaveConnection(identity);
+}
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
 import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 

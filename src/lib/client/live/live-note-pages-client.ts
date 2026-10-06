@@ -24,7 +24,13 @@ import type {
   NoteSaveStageState,
   NoteSaveOutcome,
 } from '../note-pages';
-import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
+import {
+  backendRequest,
+  onBackendNotification,
+  onBackendReconnected,
+  captureNoteSaveConnection,
+} from './backend-transport';
+import { parseNoteSaveCommand, type NoteSaveConnection } from '$shared/types/note-save-connection';
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 const token = (s: unknown): s is string =>
@@ -171,6 +177,7 @@ export interface LiveNoteSaveObserver {
   release(): Promise<void>;
 }
 type LiveSaveSlot = {
+  bound?: NoteSaveConnection;
   data?: {
     identity: NoteSealedSaveIdentity;
     loss: LiveNoteSaveLoss;
@@ -203,6 +210,9 @@ function saveObserverCurrent(slot: LiveSaveSlot) {
   const d = slot.data;
   if (!d || slot.retired) return false;
   try {
+    const bound = slot.bound,
+      bindingCheck = bound?.captureCurrent();
+    if (bound && !bindingCheck) throw new Error('Save connection lost');
     const receipt = d.receipt;
     const valid = d.current();
     const finalCheck = d.captureFinalCheck?.();
@@ -220,6 +230,8 @@ function saveObserverCurrent(slot: LiveSaveSlot) {
       throw new Error('Save observer lost');
     if (d.receipt && time >= Date.parse(d.receipt.receiptExpiresAt))
       throw new Error('Save receipt expired');
+    if (slot.bound !== bound || (bound && !bindingCheck?.()))
+      throw new Error('Save connection lost');
     return true;
   } catch {
     retireSaveObserver(slot);
@@ -402,12 +414,14 @@ function saveObserverAPI(
       run(async (d) => {
         let raw: unknown;
         try {
-          raw = await backendRequest('note.operationStatus', {
-            ...d.identity.scope,
-            operationId: d.identity.operationId,
-            headerDigest: d.identity.headerDigest,
-            payloadDigest: d.identity.payloadDigest,
-          });
+          raw = slot.bound
+            ? await boundValue(slot.bound, { kind: 'status' })
+            : await backendRequest('note.operationStatus', {
+                ...d.identity.scope,
+                operationId: d.identity.operationId,
+                headerDigest: d.identity.headerDigest,
+                payloadDigest: d.identity.payloadDigest,
+              });
         } catch (error) {
           slot.unknownCleanup = true;
           throw error;
@@ -436,7 +450,19 @@ function saveObserverAPI(
               throw new Error('Save observer lost before read');
             let raw: unknown;
             try {
-              raw = await backendRequest('note.operation.read', params);
+              raw = slot.bound
+                ? await boundValue(
+                    slot.bound,
+                    parseNoteSaveCommand({
+                      kind: 'receipt',
+                      output: params.kind,
+                      ref: params.ref,
+                      ...(params.cursor === undefined ? {} : { cursor: params.cursor }),
+                      ...(params.textId === undefined ? {} : { textId: params.textId }),
+                      ...(params.offset === undefined ? {} : { offset: params.offset }),
+                    }),
+                  )
+                : await backendRequest('note.operation.read', params);
             } catch (error) {
               slot.unknownCleanup = true;
               throw error;
@@ -505,6 +531,7 @@ export function claimLiveNoteStagedSave(
 const dispatchBrand = Symbol('live note dispatch');
 export interface LiveNoteSaveDispatch {
   readonly [dispatchBrand]: true;
+  prepareBinding(): Promise<void>;
   invoke(): Promise<NoteSaveOutcome>;
   status(): Promise<NoteSaveOutcome>;
   entered(): boolean;
@@ -522,6 +549,17 @@ type DispatchSlot = {
 };
 const dispatches = new WeakMap<object, DispatchSlot>();
 const dispatchedObservers = new WeakSet<object>();
+async function boundValue(
+  connection: NoteSaveConnection,
+  command: Parameters<NoteSaveConnection['request']>[0],
+) {
+  const result = await connection.request(command);
+  if (result.settlement.status === 'rejected')
+    throw Object.assign(new Error(result.settlement.error.message), {
+      code: result.settlement.error.rpcCode,
+    });
+  return result.settlement.value;
+}
 /** A local fixed-path invocation receipt is NOT evidence of server delivery. */
 export async function loadLiveNoteSaveDispatch() {
   const { takeLocalPointDispatchArm } =
@@ -539,6 +577,9 @@ function createLiveNoteSaveDispatch(
   if (!observed?.data || dispatchedObservers.has(observer) || !saveObserverCurrent(observed))
     throw new Error('Live save dispatch unavailable');
   dispatchedObservers.add(observer);
+  const requiresBinding = arm.bound === true;
+  let bindingWork: Promise<void> | undefined,
+    bindingStarted = false;
   const slot: DispatchSlot = {
     observer,
     identity: observed.data.identity,
@@ -562,24 +603,30 @@ function createLiveNoteSaveDispatch(
       try {
         if (!saveObserverCurrent(observed) || slot.retired)
           throw new Error('Live save dispatch lost');
+        const bindingCheck = requiresBinding ? observed.bound?.captureCurrent() : undefined;
+        if (requiresBinding && !bindingCheck) throw new Error('Live save connection lost');
         const owned = arm;
         if (!owned || !owned.current()) throw new Error('Live dispatch arm lost');
         const finalCheck = owned.finalCheck(),
           time = owned.now();
-        if (arm !== owned || slot.retired || !finalCheck?.(time))
+        if (
+          arm !== owned ||
+          slot.retired ||
+          !finalCheck?.(time) ||
+          (requiresBinding && !bindingCheck?.())
+        )
           throw new Error('Live dispatch final check lost');
         const op = slot.identity;
         if (commit) slot.entered = true;
         started = true;
-        const raw = await backendRequest(
-          commit ? 'note.operation.commit' : 'note.operationStatus',
-          {
-            ...op.scope,
-            operationId: op.operationId,
-            headerDigest: op.headerDigest,
-            payloadDigest: op.payloadDigest,
-          },
-        );
+        const raw = requiresBinding
+          ? await boundValue(observed.bound!, { kind: commit ? 'commit' : 'status' })
+          : await backendRequest(commit ? 'note.operation.commit' : 'note.operationStatus', {
+              ...op.scope,
+              operationId: op.operationId,
+              headerDigest: op.headerDigest,
+              payloadDigest: op.payloadDigest,
+            });
         // Authentication/data recovery survives authority loss after actual invocation.
         const result = outcome(copyDispatchOutcome(raw), op);
         if (
@@ -604,6 +651,44 @@ function createLiveNoteSaveDispatch(
   let releasing: Promise<void> | undefined;
   const api: LiveNoteSaveDispatch = Object.freeze({
     [dispatchBrand]: true as const,
+    prepareBinding() {
+      if (!requiresBinding || bindingStarted || slot.retired || slot.entered)
+        return Promise.reject(new Error('Bound save capture unavailable'));
+      bindingStarted = true;
+      let yes!: () => void, no!: (e: unknown) => void;
+      bindingWork = new Promise<void>((resolve, reject) => {
+        yes = resolve;
+        no = reject;
+      });
+      void (async () => {
+        let awaitingCapture = false;
+        try {
+          if (!arm?.current() || slot.retired || !saveObserverCurrent(observed))
+            throw new Error('Bound save capture lost');
+          const op = slot.identity;
+          const acquisition = captureNoteSaveConnection({
+            scope: op.scope,
+            operationId: op.operationId,
+            baseRevision: op.baseRevision,
+            headerDigest: op.headerDigest,
+            payloadDigest: op.payloadDigest,
+            expiresAt: op.expiresAt,
+            viewLength: 59,
+          });
+          awaitingCapture = true;
+          const bound = await acquisition;
+          observed.bound = bound; // Own returned product even if acquisition revoked the issuer.
+          awaitingCapture = false;
+          if (slot.retired || !arm?.current() || !saveObserverCurrent(observed))
+            throw new Error('Bound save capture lost');
+          yes();
+        } catch (e) {
+          if (awaitingCapture) slot.unknown = true;
+          no(e);
+        }
+      })();
+      return bindingWork;
+    },
     invoke: () => request(true),
     status: () => request(false),
     entered: () => slot.entered,
@@ -612,11 +697,17 @@ function createLiveNoteSaveDispatch(
       slot.retired = true;
       releasing = (async () => {
         try {
+          await bindingWork;
+        } catch {
+          /* Missing capture/release evidence retains charge. */
+        }
+        try {
           await slot.pending;
         } catch {
           /* Unknown debt remains independently latched. */
         }
         arm = undefined;
+        if (observed.bound) await observed.bound.release();
         if (slot.unknown) throw new Error('Live save dispatch cleanup unknown');
       })();
       return releasing;

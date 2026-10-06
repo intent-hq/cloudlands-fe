@@ -58,6 +58,7 @@ import {
 } from './transfer-connections';
 import { JsonRpcError } from './json-rpc-errors';
 import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
+import { registerNoteSaveConnectionHandlers } from './note-save-connection';
 import { createRepositoryResourceFeed } from './repository-resource-feed';
 import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
 import { registerRepositoryCheckoutHandlers } from './repository-checkout-lifecycle';
@@ -415,6 +416,7 @@ let selectionRoutes: ReturnType<typeof registerRepositorySelectionHandlers> | un
 const nativeReviewFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createNativeReviewFeed>>();
 let nativeReviewRoutes: ReturnType<typeof registerNativeReviewHandlers> | undefined;
 let repositoryRoutes: ReturnType<typeof registerRepositoryRouteHandlers> | undefined;
+let noteSaveConnections: ReturnType<typeof registerNoteSaveConnectionHandlers> | undefined;
 
 type PoolObservation =
   | { phase: 'enrolled'; scope: symbol }
@@ -810,6 +812,7 @@ function retireOriginalMember(
   };
   try {
     repositoryRoutes?.retireBackend(member.id);
+    noteSaveConnections?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
     checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
@@ -995,6 +998,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         keychainSyncLifecycle?.dispose();
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
+        noteSaveConnections?.dispose();
         resourceRoutes?.dispose();
         checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
@@ -1625,6 +1629,7 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
+  noteSaveConnections?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
   checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
@@ -4284,6 +4289,10 @@ export function registerBackendHandlers(): void {
       return feed.capture(connection, workspaceId);
     },
   });
+  noteSaveConnections = registerNoteSaveConnectionHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    credentialGeneration: (id) => backendCredentialGenerations.get(id) ?? 0,
+  });
   repositoryRoutes = registerRepositoryRouteHandlers(ipcMain, {
     // Explicit pool lookup only: do not instantiate local or follow focus.
     readBackend: (id) => backendClients.get(id),
@@ -5348,6 +5357,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 /** Dispose every pooled backend client (app shutdown). */
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
+  noteSaveConnections?.dispose();
   resourceRoutes?.dispose();
   checkoutRoutes?.dispose();
   selectionRoutes?.dispose();

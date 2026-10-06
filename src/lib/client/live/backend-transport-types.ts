@@ -124,6 +124,9 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  captureNoteSaveConnection?(
+    identity: import('$shared/types/note-save-connection').NoteSaveConnectionIdentity,
+  ): Promise<import('$shared/types/note-save-connection').NoteSaveConnection>;
   /** Read the current acknowledged hello; never initiate a replacement handshake. */
   observeNodeCapabilities?(): Promise<unknown>;
   captureRepositoryCheckout?(

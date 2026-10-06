@@ -9,6 +9,17 @@ import {
   type NativeReviewObservation,
 } from '$shared/types/native-review-operation';
 import { z } from 'zod';
+import {
+  copyNoteSaveData,
+  noteSaveRecord,
+  noteSaveToken,
+  noteSaveUnavailable,
+  parseNoteSaveCommand,
+  parseNoteSaveIdentity,
+  type NoteSaveConnection,
+  type NoteSaveConnectionCommand,
+  type NoteSaveConnectionResult,
+} from '$shared/types/note-save-connection';
 import { createRepositoryResourceTransport } from './repository-resource-transport';
 import { createRepositoryCheckoutTransport } from './repository-checkout-transport';
 import {
@@ -47,6 +58,8 @@ import {
 } from './backend-transport-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
+// Also bound pre-IPC subscription/capture reentry; unknown cleanup cannot mint capacity.
+let noteCapture: object | undefined;
 
 interface BackendResult<T> {
   ok: boolean;
@@ -192,6 +205,195 @@ export function createElectronIpcBackendTransport(): BackendTransport {
 
   return {
     captureRepositorySelection,
+    async captureNoteSaveConnection(identity): Promise<NoteSaveConnection> {
+      const api = electronAPI();
+      if (!api || noteCapture) noteSaveUnavailable();
+      const claim = {};
+      noteCapture = claim;
+      let op: ReturnType<typeof parseNoteSaveIdentity>;
+      try {
+        op = parseNoteSaveIdentity(identity);
+      } catch (e) {
+        if (noteCapture === claim) noteCapture = undefined;
+        throw e;
+      }
+      const channels = BACKEND.NOTE_SAVE_CONNECTION;
+      const decode = (raw: unknown) =>
+        noteSaveRecord(unwrap(copyNoteSaveData(raw) as BackendResult<unknown>));
+      let captureEntered = false;
+      let id: string | undefined,
+        retired = false,
+        unknown = false;
+      let early: string | undefined,
+        overflow = false;
+      let checkpointGeneration = 0;
+      let pending: Promise<NoteSaveConnectionResult> | undefined,
+        releasing: Promise<void> | undefined;
+      const current = () => {
+        if (electronAPI() !== api) retired = true;
+        return !retired;
+      };
+      const listener = api.on(channels.RETIRED, (raw: unknown) => {
+        try {
+          const v = noteSaveRecord(copyNoteSaveData(raw, 1024));
+          if (!noteSaveToken(v.id)) noteSaveUnavailable();
+          if (id === undefined) {
+            if (early !== undefined && early !== v.id) {
+              overflow = true;
+              retired = true;
+            } else early = v.id;
+          } else if (v.id === id) retired = true;
+        } catch {
+          retired = true;
+        }
+      });
+      const release = () => {
+        if (releasing) return releasing;
+        retired = true;
+        let yes!: () => void, no!: (e: unknown) => void;
+        releasing = new Promise<void>((resolve, reject) => {
+          yes = resolve;
+          no = reject;
+        });
+        void (async () => {
+          try {
+            try {
+              await pending;
+            } catch {
+              /* Unknown flag is independent. */
+            }
+            try {
+              api.offById(channels.RETIRED, listener);
+            } catch {
+              unknown = true;
+            }
+            if (!id && !captureEntered && !unknown) {
+              if (noteCapture !== claim) noteSaveUnavailable();
+              noteCapture = undefined;
+              yes();
+              return;
+            }
+            if (!id) noteSaveUnavailable();
+            const ack = decode(await api.invoke(channels.RELEASE, { id }));
+            if (
+              ack.id !== id ||
+              ack.operationId !== op.operationId ||
+              ack.released !== true ||
+              unknown
+            )
+              noteSaveUnavailable();
+            if (noteCapture !== claim) noteSaveUnavailable();
+            noteCapture = undefined;
+            yes();
+          } catch (e) {
+            unknown = true;
+            no(e);
+          }
+        })();
+        return releasing;
+      };
+      try {
+        if (!current()) noteSaveUnavailable();
+        captureEntered = true;
+        const result = decode(await api.invoke(channels.CAPTURE, op));
+        if (!noteSaveToken(result.id)) noteSaveUnavailable();
+        id = result.id;
+        if (early === id) retired = true;
+        early = undefined;
+        if (overflow || !current()) noteSaveUnavailable();
+      } catch (error) {
+        // The producer keeps its ticket if a handle/release acknowledgement is lost.
+        try {
+          await release();
+        } catch {
+          /* Never invent settlement for the failed capture. */
+        }
+        throw error;
+      }
+      return Object.freeze({
+        current,
+        captureCurrent() {
+          const generation = ++checkpointGeneration;
+          if (!Number.isSafeInteger(generation) || !current()) return undefined;
+          const win = window,
+            descriptor = Object.getOwnPropertyDescriptor(win, 'electronAPI');
+          const root = Object.getOwnPropertyDescriptor(globalThis, 'window');
+          if (!descriptor || !('value' in descriptor) || descriptor.value !== api) {
+            retired = true;
+            return undefined;
+          }
+          const capturedId = id,
+            capturedPending = pending;
+          const { enumerable, configurable, writable } = descriptor;
+          return () => {
+            const d = Object.getOwnPropertyDescriptor(win, 'electronAPI');
+            const actualRoot = Object.getOwnPropertyDescriptor(globalThis, 'window');
+            const valid =
+              !retired &&
+              !releasing &&
+              noteCapture === claim &&
+              id === capturedId &&
+              pending === capturedPending &&
+              checkpointGeneration === generation &&
+              !!root &&
+              !!actualRoot &&
+              actualRoot.value === root.value &&
+              actualRoot.get === root.get &&
+              actualRoot.set === root.set &&
+              !!d &&
+              'value' in d &&
+              d.value === api &&
+              d.enumerable === enumerable &&
+              d.configurable === configurable &&
+              d.writable === writable;
+            if (!valid) retired = true;
+            return valid;
+          };
+        },
+        release,
+        request(command: NoteSaveConnectionCommand) {
+          if (pending || releasing || !current())
+            return Promise.reject(new Error('Bound note request unavailable'));
+          let yes!: (v: NoteSaveConnectionResult) => void, no!: (e: unknown) => void;
+          const work = new Promise<NoteSaveConnectionResult>((resolve, reject) => {
+            yes = resolve;
+            no = reject;
+          });
+          pending = work; // Before validation/IPC callbacks can reenter.
+          void (async () => {
+            let entered = false;
+            try {
+              const copied = parseNoteSaveCommand(command);
+              if (!current()) noteSaveUnavailable();
+              entered = true;
+              const result = decode(await api.invoke(channels.REQUEST, { id, command: copied }));
+              const settlement = noteSaveRecord(result.settlement);
+              if (
+                result.id !== id ||
+                typeof result.current !== 'boolean' ||
+                !['fulfilled', 'rejected'].includes(String(settlement.status))
+              )
+                noteSaveUnavailable();
+              if (!result.current) retired = true;
+              // A late own result survives retirement; only authority currentness changes.
+              yes({
+                ...result,
+                current: result.current && current(),
+              } as unknown as NoteSaveConnectionResult);
+            } catch (error) {
+              if (entered) {
+                unknown = true;
+                retired = true;
+              }
+              no(error);
+            } finally {
+              if (pending === work) pending = undefined;
+            }
+          })();
+          return work;
+        },
+      });
+    },
     async observeNodeCapabilities() {
       const api = electronAPI();
       if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });

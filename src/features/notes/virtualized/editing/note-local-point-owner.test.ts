@@ -9,11 +9,17 @@ import { EditorState, Plugin, TextSelection } from '@tiptap/pm/state';
 import { expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 vi.mock('$lib/client/live/backend-transport', () => ({
+  captureNoteSaveConnection: vi.fn(),
   backendRequest: vi.fn(),
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
 }));
-import { backendRequest, onBackendReconnected } from '$lib/client/live/backend-transport';
+import {
+  backendRequest,
+  onBackendReconnected,
+  captureNoteSaveConnection,
+} from '$lib/client/live/backend-transport';
+import { noteSaveConnectionCost } from '$shared/types/note-save-connection';
 import {
   LiveNotePagesClient,
   loadLiveNoteSaveDispatch,
@@ -271,6 +277,7 @@ async function fixture(
   underBudget = false,
   sponsor = false,
   upload = false,
+  bound = false,
 ) {
   const calls = plainLocal.calls as unknown as Array<{
     request: NotePageRequest;
@@ -333,15 +340,15 @@ async function fixture(
             })[0].cost.payloadBytes +
           100
         : upload
-          ? 21_827_584
+          ? 21_827_584 + (bound ? 131072 : 0)
           : sponsor
             ? 19_140_608
             : 100_000_000,
-      stringUnits: upload ? 21_827_584 : sponsor ? 19_140_608 : 100_000_000,
-      objectNodes: upload ? 13_705_216 : sponsor ? 13_692_928 : 100_000_000,
+      stringUnits: upload ? 21_827_584 + (bound ? 131072 : 0) : sponsor ? 19_140_608 : 100_000_000,
+      objectNodes: upload ? 13_705_216 + (bound ? 16384 : 0) : sponsor ? 13_692_928 : 100_000_000,
       domNodes: 10000,
-      physicalReads: upload ? 5 : sponsor ? 4 : 16,
-      assemblies: upload ? 10 : sponsor ? 8 : 16,
+      physicalReads: upload ? 5 + (bound ? 1 : 0) : sponsor ? 4 : 16,
+      assemblies: upload ? 10 + (bound ? 1 : 0) : sponsor ? 8 : 16,
     }),
   );
   dispatch(
@@ -2043,12 +2050,242 @@ function configurePointUpload(
   });
   return calls;
 }
-async function uploadFixture() {
-  const f = await fixture('normal', false, true, true);
+async function uploadFixture(bound = false) {
+  const f = await fixture('normal', false, true, true, bound);
   f.insert();
   expect(f.note().document?.history[0].kind).toBe('local-point');
   return f;
 }
+it.each(['known', 'lost-release', 'late-retired'] as const)(
+  'binds genuine local G prospectively through controlled connection (%s)',
+  async (mode) => {
+    const f = await uploadFixture(true);
+    expect(f.ledger().limit).toMatchObject({
+      payloadBytes: 21958656,
+      stringUnits: 21958656,
+      objectNodes: 13721600,
+      physicalReads: 6,
+      assemblies: 11,
+    });
+    const upload = f.owner.prepareUpload();
+    const calls = configurePointUpload(upload.input);
+    const respond = vi.mocked(backendRequest).getMockImplementation()!;
+    let current = true;
+    const release = vi.fn(async () => {
+      current = false;
+      if (mode === 'lost-release') throw new Error('controlled lost release ACK');
+    });
+    const commands: string[] = [];
+    let retained:
+      | {
+          connectionOwner: string;
+          connectionResource: string;
+          connection: ReturnType<typeof f.ledger>['resources'][string];
+          controlOwner: string;
+          controlResource: string;
+          control: ReturnType<typeof f.ledger>['resources'][string];
+        }
+      | undefined;
+    vi.mocked(captureNoteSaveConnection).mockImplementation(async (identity) => {
+      expect(identity.operationId).toBe(upload.input.operationId);
+      expect(identity.baseRevision).toBe(upload.input.header.baseRevision);
+      expect(
+        Object.keys(f.ledger().owners).some((k) => k.startsWith('local-point-connection:')),
+      ).toBe(true);
+      return {
+        current: () => current,
+        captureCurrent: () => () => current,
+        release,
+        request: async (command) => {
+          commands.push(command.kind);
+          const value = await respond('note.operation.commit', {
+            ...identity.scope,
+            operationId: identity.operationId,
+            headerDigest: identity.headerDigest,
+            payloadDigest: identity.payloadDigest,
+          });
+          if (mode === 'late-retired') current = false;
+          return { id: 'controlled-bound', current, settlement: { status: 'fulfilled', value } };
+        },
+      };
+    });
+    try {
+      const result = await upload.runBound();
+      expect(result.outcome).toBe('committed');
+      expect(commands).toEqual(['commit']);
+      expect(calls.filter((c) => c.method === 'note.operation.commit')).toHaveLength(1);
+      expect(f.note().needsReconcile).toBe(true);
+      expect(f.note().localPointSave?.group).toBe(f.note().document?.history[0].id);
+      await expect(upload.run()).rejects.toThrow();
+      if (mode === 'late-retired') await expect(upload.certificate()).rejects.toThrow();
+      if (mode === 'lost-release') {
+        const connectionOwner = Object.keys(f.ledger().owners).find((k) =>
+          k.startsWith('local-point-connection:'),
+        )!;
+        const connectionResource = f.ledger().owners[connectionOwner][0];
+        const record = f.note().localPointSave!;
+        retained = {
+          connectionOwner,
+          connectionResource,
+          connection: f.ledger().resources[connectionResource],
+          controlOwner: record.controlOwner,
+          controlResource: record.controlResource,
+          control: f.ledger().resources[record.controlResource],
+        };
+        expect(retained.connection.cost).toEqual(noteSaveConnectionCost);
+        await expect(upload.release()).rejects.toThrow();
+        expect(
+          Object.keys(f.ledger().owners).some((k) => k.startsWith('local-point-connection:')),
+        ).toBe(true);
+      } else {
+        await upload.release();
+        expect(
+          Object.keys(f.ledger().owners).some((k) => k.startsWith('local-point-connection:')),
+        ).toBe(false);
+      }
+      expect(release).toHaveBeenCalledOnce();
+    } finally {
+      await upload.release().catch(() => {});
+      await f.destroy();
+      if (mode === 'lost-release') {
+        // The original native/context borrower settled independently. The lost
+        // connection ACK keeps its separate reservation and recovery control.
+        expect(f.refs()).toBe(0);
+        expect(retained).toBeDefined();
+        expect(f.ledger().owners[retained!.connectionOwner]).toEqual([
+          retained!.connectionResource,
+        ]);
+        expect(f.ledger().resources[retained!.connectionResource]).toBe(retained!.connection);
+        expect(f.ledger().resources[retained!.connectionResource].cost).toEqual(
+          noteSaveConnectionCost,
+        );
+        expect(f.ledger().owners[retained!.controlOwner]).toEqual([retained!.controlResource]);
+        expect(f.ledger().resources[retained!.controlResource]).toBe(retained!.control);
+      }
+    }
+  },
+);
+it('refuses bound acquisition without its separately admitted resource slot', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  const left = f.ledger().limit.payloadBytes - f.ledger().used.payloadBytes;
+  f.port.dispatch(
+    a.pageResourcesRequested('bound-block', [
+      {
+        id: 'bound-block',
+        cost: {
+          payloadBytes: left,
+          stringUnits: 0,
+          objectNodes: 0,
+          physicalReads: 0,
+          assemblies: 0,
+          domNodes: 0,
+        },
+      },
+    ]),
+  );
+  expect(f.ledger().used.payloadBytes).toBe(f.ledger().limit.payloadBytes);
+  const calls = configurePointUpload(upload.input);
+  vi.mocked(captureNoteSaveConnection).mockClear();
+  try {
+    await expect(upload.runBound()).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+    expect(captureNoteSaveConnection).not.toHaveBeenCalled();
+  } finally {
+    await upload.release();
+    f.port.dispatch(a.pageResourcesReleased('bound-block'));
+    await f.destroy();
+  }
+});
+it.each(['cost', 'owner-link'] as const)(
+  'repins the new bound allocation after the final clock (%s)',
+  async (mode) => {
+    const f = await uploadFixture(true),
+      upload = f.owner.prepareUpload();
+    const restore = () => {
+      f.setObservationSnapshot();
+      f.setResourceSnapshot();
+    };
+    configurePointUpload(upload.input, (method) => {
+      if (method === 'note.operation.cancel') restore();
+    });
+    let reached = false,
+      armed = false;
+    const request = vi.fn(),
+      release = vi.fn(async () => {});
+    vi.mocked(captureNoteSaveConnection).mockImplementation(async () => {
+      const root = f.port.read(),
+        original = f.ledger();
+      const ledger = {
+        ...original,
+        resources: { ...original.resources },
+        owners: { ...original.owners },
+      };
+      const owner = Object.keys(ledger.owners).find((k) =>
+        k.startsWith('local-point-connection:'),
+      )!;
+      const resource = ledger.owners[owner][0];
+      f.setResourceSnapshot(ledger);
+      f.setObservationSnapshot({ ...root, resourceLedger: ledger });
+      return {
+        current: () => true,
+        release,
+        request,
+        captureCurrent: () => {
+          if (!armed) {
+            armed = true;
+            f.armClockAfter(2, () => {
+              reached = true;
+              if (mode === 'cost')
+                ledger.resources[resource] = {
+                  ...ledger.resources[resource],
+                  cost: { ...ledger.resources[resource].cost, payloadBytes: 0 },
+                };
+              else ledger.owners[owner] = ['foreign'];
+            });
+          }
+          return () => true;
+        },
+      };
+    });
+    try {
+      await expect(upload.runBound()).rejects.toThrow();
+      expect(reached).toBe(true);
+      expect(request).not.toHaveBeenCalled();
+      restore();
+      await expect(upload.run()).rejects.toThrow('consumed');
+    } finally {
+      restore();
+      await upload.release();
+      await f.destroy();
+    }
+  },
+);
+it('owns an installed bound reservation when its admission subscriber throws', async () => {
+  const f = await uploadFixture(true),
+    upload = f.owner.prepareUpload();
+  configurePointUpload(upload.input);
+  const dispatch = f.port.dispatch;
+  // Real reducer installation occurs first; this controlled subscriber failure is not a refusal.
+  const access = f.port;
+  const off = access.subscribe(() => {
+    if (Object.keys(f.ledger().owners).some((k) => k.startsWith('local-point-connection:')))
+      throw new Error('controlled bound subscriber');
+  });
+  const before = f.ledger().used.payloadBytes;
+  try {
+    await expect(upload.runBound()).rejects.toThrow('controlled bound subscriber');
+    expect(f.port.dispatch).toBe(dispatch);
+    expect(
+      Object.keys(f.ledger().owners).some((k) => k.startsWith('local-point-connection:')),
+    ).toBe(false);
+    expect(f.ledger().used.payloadBytes).toBeLessThanOrEqual(before);
+  } finally {
+    off();
+    await upload.release();
+    await f.destroy();
+  }
+});
 it('uploads the genuine local group through the fixed live path and preserves unreconciled journals', async () => {
   const f = await uploadFixture();
   const document = f.note().document,

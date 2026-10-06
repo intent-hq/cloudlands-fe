@@ -8,12 +8,18 @@ import {
   guardedNoteSaveCleanupKnown,
 } from '$lib/client/live/live-note-pages-client';
 import { stageTextDigest } from '$lib/client/note-source-operation';
+import { v4 as uuid } from 'uuid';
+import { noteSaveConnectionCost } from '$shared/types/note-save-connection';
+import { createNoteResourceOwner } from '../note-resource-owner';
 import type { NoteSaveOutcome } from '$lib/client/note-pages';
 import type {
   NoteLocalPointSaveRecord,
   NotePageSession,
 } from '$store/renderer/slices/note-pages/note-pages-types';
-import { pageLocalPointSavePublished } from '$store/renderer/slices/note-pages/note-pages-slice';
+import {
+  pageLocalPointSavePublished,
+  pageResourcesRequested,
+} from '$store/renderer/slices/note-pages/note-pages-slice';
 import { loadLocalPointSavePublication } from '$store/renderer/slices/note-pages/note-local-point-save-publication';
 export { pointUploadControlCost } from '$store/renderer/slices/note-pages/note-local-point-save-publication';
 import type { NoteResourceLedger } from '../note-resource-ledger';
@@ -45,6 +51,7 @@ export function takeLocalPointPublicationIntent(key: unknown): Intent {
   return value;
 }
 type DispatchArm = {
+  bound?: boolean;
   observer: LiveNoteSaveObserver;
   current(): boolean;
   finalCheck(): ((time: number) => boolean) | undefined;
@@ -66,6 +73,7 @@ const fail = (): never => {
 interface PointLocalUpload {
   readonly input: PointSaveSponsor['input'];
   run(): Promise<NoteSaveOutcome>;
+  runBound(): Promise<NoteSaveOutcome>;
   outcome(): NoteSaveOutcome | undefined;
   observe(): Promise<NoteSaveOutcome>;
   certificate: PointSaveSponsor['certificate'];
@@ -153,17 +161,71 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
   let releasing: Promise<void> | undefined;
   let certificateWork: Promise<unknown> | undefined;
   let lastOutcome: NoteSaveOutcome | undefined;
-  const check = () => !cancelled && !!access && access.current() && !cancelled;
+  let boundTicket:
+    ReturnType<ReturnType<typeof createNoteResourceOwner>['reservation']> | undefined;
+  let boundOwner: string | undefined, boundResource: string | undefined;
+  let boundEpoch = 0,
+    boundLost = false;
+  let stopBound: (() => void) | undefined;
+  let boundAllocation: NoteResourceLedger['resources'][string] | undefined;
+  const boundProof = (): (() => boolean) | undefined => {
+    if (!boundTicket) return () => !boundLost;
+    try {
+      if (!boundOwner || !boundResource || !boundAllocation) fail();
+      const pins: Array<{ object: object; key: string; value: unknown }> = [];
+      const own = (object: unknown, key: string): unknown => {
+        if (!object || typeof object !== 'object') return fail();
+        const d = Object.getOwnPropertyDescriptor(object, key);
+        if (!d || !('value' in d)) return fail();
+        pins.push({ object, key, value: d.value });
+        return d.value;
+      };
+      const root = port!.read(),
+        ledger = resources!.read();
+      if (own(root, 'resourceLedger') !== ledger) fail();
+      const entries = own(ledger, 'resources'),
+        owners = own(ledger, 'owners');
+      if (own(entries, boundResource!) !== boundAllocation) fail();
+      const ids = own(owners, boundOwner!);
+      if (own(ids, 'length') !== 1 || own(ids, '0') !== boundResource) fail();
+      const heldBy = own(boundAllocation, 'owners');
+      if (own(heldBy, 'length') !== 1 || own(heldBy, '0') !== boundOwner) fail();
+      const cost = own(boundAllocation, 'cost');
+      for (const k of Object.keys(noteSaveConnectionCost) as Array<
+        keyof typeof noteSaveConnectionCost
+      >)
+        if (own(cost, k) !== noteSaveConnectionCost[k]) fail();
+      const epoch = boundEpoch;
+      return () => {
+        const valid =
+          !boundLost &&
+          epoch === boundEpoch &&
+          pins.every((p) => {
+            const d = Object.getOwnPropertyDescriptor(p.object, p.key);
+            return !!d && 'value' in d && d.value === p.value;
+          });
+        if (!valid) boundLost = true;
+        return valid;
+      };
+    } catch {
+      boundLost = true;
+      return undefined;
+    }
+  };
+  const boundHeld = () => boundProof()?.() === true;
+  const check = () => !cancelled && !!access && access.current() && boundHeld() && !cancelled;
   const finalCheck = () => {
     const a = access,
       proof = a?.finalCheck(),
       expected = record;
+    const held = boundProof();
     return (time: number) =>
       !cancelled &&
       access === a &&
       record === expected &&
       !!proof?.(time) &&
-      (!!dispatch?.entered() || !!a?.nativeCurrent());
+      (!!dispatch?.entered() || !!a?.nativeCurrent()) &&
+      !!held?.();
   };
   const makeRecord = (phase: NoteLocalPointSaveRecord['phase'], result?: NoteSaveOutcome) => {
     const sealed = record?.sealed ?? (phase === 'sealed' ? stage?.sealedSave() : undefined);
@@ -232,7 +294,7 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
       throw primary ?? new Error('Local point save publication refused');
     }
   };
-  const run = (): Promise<NoteSaveOutcome> => {
+  const run = (bound = false): Promise<NoteSaveOutcome> => {
     if (consumed || busy || cancelled)
       return Promise.reject(new Error('Local point upload consumed'));
     consumed = true;
@@ -257,6 +319,67 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
         preparePublication = publication.value;
         createDispatch = dispatchFactory.value;
         if (!check() || !access) fail();
+        if (bound) {
+          // Reserve the independent IPC slot before capture or its callbacks.
+          boundOwner = `local-point-connection:${uuid()}`;
+          const ticket = createNoteResourceOwner({
+            read: resources!.read,
+            dispatch(action) {
+              if (action.type === pageResourcesRequested.type) {
+                const [owner, requests] = (action as ReturnType<typeof pageResourcesRequested>)
+                  .payload;
+                if (owner !== boundOwner || requests.length !== 1 || boundResource) fail();
+                boundResource = requests[0].id; // Generated by our own reservation, before dispatch.
+              }
+              return resources!.dispatch(action);
+            },
+          }).reservation(boundOwner, noteSaveConnectionCost);
+          boundTicket = ticket; // Own admission before Redux subscribers run.
+          let allocation: object | undefined;
+          try {
+            allocation = ticket.construct(
+              () => Object.freeze({}),
+              () => {},
+            );
+          } catch (primary) {
+            // Before any IPC/listener construction, this ticket owns only empty DATA.
+            try {
+              const ledger = resources!.read(),
+                ids = ledger.owners[boundOwner];
+              if (
+                ids &&
+                (ids.length !== 1 ||
+                  ids[0] !== boundResource ||
+                  !ledger.resources[ids[0]] ||
+                  !Object.entries(noteSaveConnectionCost).every(
+                    ([k, v]) =>
+                      ledger.resources[ids[0]].cost[k as keyof typeof noteSaveConnectionCost] === v,
+                  ))
+              )
+                throw primary;
+              boundTicket = undefined; // one cleanup attempt, including subscriber throw
+              ticket.release();
+            } catch {
+              cleanupUnknown = true;
+            }
+            throw primary;
+          }
+          if (!allocation) fail();
+          const ledger = resources!.read();
+          const ids = ledger.owners[boundOwner];
+          if (!ids || ids.length !== 1 || ids[0] !== boundResource) fail();
+          boundAllocation = ledger.resources[boundResource!];
+          try {
+            stopBound = port!.subscribe(() => {
+              boundEpoch++;
+              boundHeld();
+            });
+          } catch (e) {
+            cleanupUnknown = true;
+            throw e;
+          }
+          if (!check()) fail();
+        }
         publish(makeRecord('preparing'));
         const a = access ?? fail();
         stage = new LiveNotePagesClient().createGuardedSaveOperation(
@@ -289,8 +412,12 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
         if (!check()) fail();
         publish(makeRecord('sealed'));
         const arm = Object.freeze({});
-        arms.set(arm, { observer: a.observer(), current: check, finalCheck, now: a.now });
+        arms.set(arm, { observer: a.observer(), current: check, finalCheck, now: a.now, bound });
         dispatch = createDispatch(arm);
+        if (bound) {
+          await dispatch.prepareBinding();
+          if (!check()) fail();
+        }
         captured!.sponsor.handoffForOutcomeObservation();
         if (!check()) fail();
         const reply = dispatch.invoke();
@@ -363,7 +490,8 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
   };
   return Object.freeze({
     input,
-    run,
+    run: () => run(false),
+    runBound: () => run(true),
     outcome: () => lastOutcome,
     observe(): Promise<NoteSaveOutcome> {
       if (busy || cancelled || !dispatch?.entered() || !access)
@@ -470,8 +598,18 @@ export function createNoteLocalPointUpload(owner: unknown): PointLocalUpload {
         access = undefined;
         preparePublication = undefined;
         createDispatch = undefined;
+        const stop = stopBound;
+        stopBound = undefined;
+        try {
+          stop?.();
+        } catch (e) {
+          errors.push(e);
+        }
         if (cleanupUnknown || errors.length)
           throw new AggregateError(errors, 'Local point upload cleanup unknown');
+        boundTicket?.release();
+        boundTicket = undefined;
+        boundAllocation = undefined;
         captured!.upload.release();
         // Pending DATA survives runtime retirement. Only known preinvoke cancellation removes it.
         if (!record && !dispatch?.entered()) {
