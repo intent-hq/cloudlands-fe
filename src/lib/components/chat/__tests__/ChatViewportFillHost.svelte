@@ -7,10 +7,8 @@
   import { WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
-  // eslint-disable-next-line themis/forbidden-component-import -- CT owns the production draft lifecycle.
-  import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
-  import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
   import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
   import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
   import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
@@ -193,10 +191,7 @@
     },
   });
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () => [
-      store.runSaga(chatScrollbackSaga),
-      store.runSaga(() => chatDraftsSaga(createDraftsFixture())),
-    ],
+    startSagas: () => [...startChatFixtureSagas(store), store.runSaga(chatScrollbackSaga)],
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));

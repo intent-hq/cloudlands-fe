@@ -1,7 +1,8 @@
 import { store } from '$store/renderer/store';
 import { getRendererStore } from '$store/renderer/renderer-store-bridge';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
+import { appClient } from '$lib/client';
+import { startChatFixtureSagas } from '../../test/chat-fixture-sagas';
 import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
 import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-browser-fixtures';
 
@@ -29,7 +30,7 @@ export function startHomePreview(startSagas: () => Array<() => void>) {
     return startRootStoreLifecycle(store, {
       startSagas: () => {
         const stops = startSagas();
-        return [store.runSaga(chatDraftsSaga), ...stops];
+        return [...startChatFixtureSagas(store, appClient.drafts), ...stops];
       },
     });
   const stops = startSagas();

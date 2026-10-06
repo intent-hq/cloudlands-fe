@@ -8,9 +8,12 @@ async function toggleWithMotion(button: Locator, reduced: boolean, settle = true
   const motion = await button.evaluate(
     async (node: HTMLButtonElement, { reduced, settle }) => {
       const root = node.closest('[data-question-wizard]')!;
+      const current = node.closest<HTMLElement>('[data-question-state]')!.dataset.questionState;
+      const next = current === 'expanded' ? 'collapsed' : 'expanded';
       node.click();
       const deadline = performance.now() + 2_000;
       let frames: { state: string | undefined; exiting: boolean; animations: number }[] = [];
+      let ready = false;
       do {
         await new Promise(requestAnimationFrame);
         frames = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]')).map(
@@ -31,13 +34,18 @@ async function toggleWithMotion(button: Locator, reduced: boolean, settle = true
             };
           },
         );
-        if (
-          reduced
+        ready =
+          frames.some((state) => state.state === next && !state.exiting) &&
+          (reduced
             ? frames.length === 1
-            : frames.length === 2 && frames.every((state) => state.animations > 0)
-        )
-          break;
+            : frames.length === 2 && frames.every((state) => state.animations > 0));
+        if (ready) break;
       } while (performance.now() < deadline);
+      if (!ready)
+        throw new Error(
+          'Question toggle did not render its next state and transitions: ' +
+            JSON.stringify(frames),
+        );
       if (settle) root.getAnimations({ subtree: true }).forEach((animation) => animation.finish());
       return frames;
     },

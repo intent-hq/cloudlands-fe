@@ -8,10 +8,9 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
-  // eslint-disable-next-line themis/forbidden-component-import -- CT owns the production draft lifecycle.
-  import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     principalContextChanged,
@@ -122,9 +121,10 @@
   const drafts = createDraftsFixture({ workspaceId, agentId, text: fixture.draft });
   const disposeStore = ownsStore
     ? startRootStoreLifecycle(store, {
-        startSagas: () => [store.runSaga(() => chatDraftsSaga(drafts))],
+        startSagas: (appStore) => startChatFixtureSagas(appStore, drafts),
       })
     : () => {};
+  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store, drafts);
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -598,6 +598,7 @@
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
   onDestroy(() => {
+    stopChatSagas.forEach((stop) => stop());
     disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
