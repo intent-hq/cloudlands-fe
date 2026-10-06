@@ -8,8 +8,13 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT owns the production draft lifecycle.
   import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
+  import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+  import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import { scriptMonitorsUpdated } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import {
     bulkUpsertSessions,
     replaceMessages,
@@ -195,7 +200,21 @@
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));
+  store.dispatch(backgroundHooksUpdated(workspace.id, []));
+  store.dispatch(prMonitorsUpdated(workspace.id, []));
+  store.dispatch(
+    scriptMonitorsUpdated(workspace.id, { monitors: [], scripts: [], status: 'ready' }),
+  );
   for (const id of ['primary', 'secondary']) {
+    store.dispatch(
+      setSubscriptionSnapshot(workspace.id, id, {
+        subscriptions: [],
+        eventSubscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
     store.dispatch(
       bulkUpsertSessions([
         {

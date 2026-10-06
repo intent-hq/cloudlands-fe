@@ -16,6 +16,7 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT owns the production draft lifecycle.
   import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
   import {

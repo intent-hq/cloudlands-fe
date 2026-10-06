@@ -10,6 +10,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT owns the production draft lifecycle.
   import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
