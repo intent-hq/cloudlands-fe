@@ -3535,7 +3535,7 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       : undefined;
 
   import('$lib/utils/navigation.client')
-    .then(({ navigateToRoute }) => navigateToRoute(route))
+    .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -3607,7 +3607,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
             error: 'error' in result ? result.error : undefined,
           });
           const { navigateToRoute } = await import('$lib/utils/navigation.client');
-          return navigateToRoute(route);
+          return navigateToRoute(route, { assistantContent: true });
         }
       })
       .catch(async (error: unknown) => {
@@ -3616,14 +3616,14 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           error,
         });
         const { navigateToRoute } = await import('$lib/utils/navigation.client');
-        return navigateToRoute(route);
+        return navigateToRoute(route, { assistantContent: true });
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
     import('$lib/utils/navigation.client')
-      .then(({ navigateToRoute }) => navigateToRoute(route))
+      .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
       .catch((error: unknown) => {
         logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
       });

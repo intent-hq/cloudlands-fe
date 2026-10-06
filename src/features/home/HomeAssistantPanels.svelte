@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Panel from '$lib/components/layout/panel-system/Panel.svelte';
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
@@ -9,16 +9,33 @@
     selectFocusedPanelId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
+    panelLayoutScopeMounted,
+    panelLayoutScopeUnmounted,
     closeTab,
     closePanel,
     focusPanel,
     setActiveTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { ASSISTANT_CONTENT_PANEL_ID } from './assistant-panels';
+  import { writable } from 'svelte/store';
+  import { ASSISTANT_CONTENT_PANEL_ID, selectAssistantPanelLayoutId } from './assistant-panels';
 
   let { children, isActive = true }: { children: Snippet; isActive?: boolean } = $props();
-  const panel$ = selectPanel(CHIEF_WORKSPACE_ID, ASSISTANT_CONTENT_PANEL_ID);
-  const focused$ = selectFocusedPanelId(CHIEF_WORKSPACE_ID);
+  const layoutId$ = selectAssistantPanelLayoutId();
+  const layoutIdStore = writable($layoutId$);
+  $effect(() => layoutIdStore.set($layoutId$));
+  const panel$ = selectPanel(layoutIdStore, ASSISTANT_CONTENT_PANEL_ID);
+  const focused$ = selectFocusedPanelId(layoutIdStore);
+  const mountedLayouts = new Set<string>();
+  $effect(() => {
+    const id = $layoutId$;
+    if (!mountedLayouts.has(id)) {
+      mountedLayouts.add(id);
+      store.dispatch(panelLayoutScopeMounted(id));
+    }
+  });
+  onDestroy(() => {
+    for (const id of mountedLayouts) store.dispatch(panelLayoutScopeUnmounted(id));
+  });
   const hasContent = $derived(!!$panel$?.tabs.length);
 </script>
 
@@ -40,19 +57,17 @@
         <Panel
           panel={$panel$}
           workspaceId={CHIEF_WORKSPACE_ID}
-          layoutId={CHIEF_WORKSPACE_ID}
+          layoutId={$layoutId$}
           active={isActive}
           contained
           canCreateColumn={false}
           isRightmostPanel
           isFocused={isActive && $focused$ === ASSISTANT_CONTENT_PANEL_ID}
-          onFocus={() => store.dispatch(focusPanel(CHIEF_WORKSPACE_ID, ASSISTANT_CONTENT_PANEL_ID))}
+          onFocus={() => store.dispatch(focusPanel($layoutId$, ASSISTANT_CONTENT_PANEL_ID))}
           onTabClick={(id) =>
-            store.dispatch(setActiveTab(CHIEF_WORKSPACE_ID, id, ASSISTANT_CONTENT_PANEL_ID))}
-          onTabClose={(id) =>
-            store.dispatch(closeTab(CHIEF_WORKSPACE_ID, id, ASSISTANT_CONTENT_PANEL_ID))}
-          onClosePanel={() =>
-            store.dispatch(closePanel(CHIEF_WORKSPACE_ID, ASSISTANT_CONTENT_PANEL_ID))}
+            store.dispatch(setActiveTab($layoutId$, id, ASSISTANT_CONTENT_PANEL_ID))}
+          onTabClose={(id) => store.dispatch(closeTab($layoutId$, id, ASSISTANT_CONTENT_PANEL_ID))}
+          onClosePanel={() => store.dispatch(closePanel($layoutId$, ASSISTANT_CONTENT_PANEL_ID))}
         />
       </ResizablePanel>
     </div>

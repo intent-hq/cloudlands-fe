@@ -1,4 +1,5 @@
 import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
+import { assistantPanelLayoutId } from '$shared/assistant-panel-layout';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { store } from '$store/renderer/store';
 import { clearPanelLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -9,7 +10,7 @@ import { navigateToRoute } from '$lib/utils/navigation.client';
 export function setupAssistantPanelsFixture() {
   const previousBridge = window.electronAPI;
   registerAllTabTypes();
-  store.dispatch(clearPanelLayout(CHIEF_WORKSPACE_ID));
+  store.dispatch(clearPanelLayout(assistantPanelLayoutId(null)));
   for (const id of ['plan', 'second'])
     store.dispatch(setNoteViewMode(CHIEF_WORKSPACE_ID, id, 'preview'));
   store.dispatch(setNoteViewMode('example-workspace', 'plan', 'preview'));

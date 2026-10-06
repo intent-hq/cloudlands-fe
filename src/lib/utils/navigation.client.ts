@@ -39,12 +39,15 @@ export function isHudWindowRenderer(): boolean {
  * @param route - The route to navigate to (e.g., '/settings', '/workspace/ws-123')
  * @returns Promise that resolves when navigation completes
  */
-export async function navigateToRoute(route: string): Promise<void> {
+export async function navigateToRoute(
+  route: string,
+  options: { assistantContent?: boolean } = {},
+): Promise<void> {
   if (isHudWindowRenderer()) {
     logger.debug('Ignoring navigation in HUD window', { route });
     return;
   }
-  if (route.startsWith('intent://') || /^https?:\/\//.test(route)) {
+  if (options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route)) {
     const { showAssistantContent } = await import('$features/home/assistant-panels');
     if (await showAssistantContent(route, true)) {
       const { openPanel } = await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');

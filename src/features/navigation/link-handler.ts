@@ -80,7 +80,8 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 
     if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal) {
       const { showAssistantContent } = await import('$features/home/assistant-panels');
-      if (await showAssistantContent(url)) return true;
+      const target = options.rawHref?.startsWith('/workspace/') ? options.rawHref : url;
+      if (await showAssistantContent(target)) return true;
     }
 
     // Handle intent:// links (internal navigation to notes/tasks)

@@ -58,6 +58,8 @@ export interface OpenMessageOptions {
   messageId: string;
   /** Search query whose matched terms get highlighted inside the message. */
   query?: string;
+  /** The caller already opened a conversation viewer in another layout. */
+  contentAlreadyOpen?: boolean;
 }
 
 /** Detail payload of the 'chat:open-message' window event ChatPanel consumes. */
@@ -195,6 +197,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   const isChiefMessage = workspaceId === CHIEF_WORKSPACE_ID;
 
   if (
+    !options.contentAlreadyOpen &&
     !isChiefMessage &&
     typeof window !== 'undefined' &&
     window.location.pathname !== `/workspace/${workspaceId}`
@@ -213,11 +216,11 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     }
   }
 
-  if (isChiefMessage) {
+  if (!options.contentAlreadyOpen && isChiefMessage) {
     appStore.dispatch(setChiefActiveAgentId(agentId));
     appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
     appStore.dispatch(openPanel('chief'));
-  } else {
+  } else if (!options.contentAlreadyOpen) {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 

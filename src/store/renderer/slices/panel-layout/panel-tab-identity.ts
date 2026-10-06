@@ -1,17 +1,13 @@
 import type { PanelState, PanelTab, WorkspacePanelLayoutState } from './panel-layout-types';
 import { getPanelOrder } from './panel-layout-tabless';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { isAssistantPanelLayout } from '$shared/assistant-panel-layout';
 
-/** Assistant content can include notes from another workspace; other layouts stay scoped. */
+/** Assistant content can include resources from another workspace; other layouts stay scoped. */
 export function panelTabBelongsToLayout(
   workspaceId: string,
   tab: Pick<PanelTab, 'type' | 'workspaceId'>,
 ): boolean {
-  return (
-    !tab.workspaceId ||
-    tab.workspaceId === workspaceId ||
-    (workspaceId === CHIEF_WORKSPACE_ID && tab.type === 'note')
-  );
+  return !tab.workspaceId || tab.workspaceId === workspaceId || isAssistantPanelLayout(workspaceId);
 }
 
 export type EquivalentPanelTab = { panelId: string; tab: PanelTab };
@@ -103,6 +99,7 @@ export function panelTabsAreEquivalent(
     case 'activity':
     case 'code-review':
     case 'settings':
+    case 'workspace':
     case 'overview':
     case 'agent-overview':
     case 'local-changes':
