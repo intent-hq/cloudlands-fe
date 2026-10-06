@@ -373,6 +373,7 @@ it('retains unknown allocation debt when registration throws after allocating', 
   reject = true;
   const body = vi.fn();
   expect(() => scope!.enqueue('selection-focus', body)).toThrow(/registration/);
+  reject = false; // The selected registration threw; unrelated host timers keep their semantics.
   let settled = false;
   void scope!.settled.then(() => {
     settled = true;
@@ -415,3 +416,24 @@ for (const [name, module] of [
     },
   );
 }
+
+it('invalidates a private idle witness after task activity even when it returns to idle', async () => {
+  const { editor, owner, scope } = fixture();
+  await vi.runAllTimersAsync();
+  const witness = owner.captureIdle(scope!, editor, editor.view);
+  expect(owner.validateIdle(witness)).toBe(true);
+  scope!.run(() => {});
+  expect(owner.validateIdle(witness)).toBe(false);
+  const newer = owner.captureIdle(scope!, editor, editor.view);
+  expect(owner.validateIdle(witness)).toBe(false);
+  expect(owner.validateIdle(newer)).toBe(true);
+  editor.unmount();
+  expect(owner.validateIdle(newer)).toBe(false);
+});
+it('refuses pending and foreign-view idle witnesses', () => {
+  const a = fixture(),
+    b = fixture();
+  expect(() => a.owner.captureIdle(a.scope!, a.editor, a.editor.view)).toThrow();
+  expect(() => a.owner.captureIdle(a.scope!, a.editor, b.editor.view)).toThrow();
+  expect(a.owner.validateIdle(Object.freeze({}))).toBe(false);
+});

@@ -11,8 +11,8 @@ type Port = Args[0] &
   };
 type Tail = Args extends [unknown, ...infer T] ? T : never;
 
-/** Explicit single-mount local producer. No detached editor, remount materializer,
- * canonical authority or reconstruction from a serialized local group. */
+/** Explicit local producer bound to one original Editor and context. Physical
+ * reattachment is opt-in; serialized groups never reconstruct native authority. */
 export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
   const [port, window, panel, signal, now = Date.now] = args;
   const read = () =>
@@ -35,6 +35,21 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
   let owner: ReturnType<typeof createNoteLocalPointOwner> | undefined;
   let revoked = false,
     borrowed = false;
+  let suspended = false,
+    dependents = 0;
+  let settlement: { promise: Promise<void>; resolve(): void } | undefined;
+  const suspend = () => {
+    suspended = true;
+    if (!dependents) return Promise.resolve();
+    if (!settlement) {
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      settlement = { promise, resolve };
+    }
+    return settlement.promise;
+  };
   let holdNative: (() => void) | undefined;
   const revoke = () => {
     revoked = true;
@@ -68,12 +83,18 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
       let bound = false,
         released = false;
       return {
+        suspend,
+        resume() {
+          if (revoked || released || dependents)
+            throw new Error('Local point dependencies unsettled');
+          suspended = false;
+        },
         initialSelection() {
           if (revoked || released || read()?.document !== origin || !context.current())
             throw new Error('Stale local point selection');
           return origin.selection;
         },
-        bind(target, projection, doc, state) {
+        bind(target, projection, doc, state, retainedInitial) {
           if (
             bound ||
             released ||
@@ -99,6 +120,7 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
           };
           owner = createNoteLocalPointOwner({
             base,
+            retainInitial: retainedInitial,
             initialState: state,
             identity: {
               scope: window.scope,
@@ -144,6 +166,7 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
               return local.initial;
             },
             current: local.current,
+            retainedEndpoint: local.retainedEndpoint,
             prepare(transaction, before) {
               if (prepared || revoked) return undefined;
               const candidate = local.prepare(transaction, before);
@@ -177,6 +200,7 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
           revoke();
           holdNative?.();
           holdNative = undefined;
+          owner?.releaseInitial();
           owner = undefined;
           baseBorrow.release();
         },
@@ -198,8 +222,33 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
       return offer.release();
     },
     retain() {
-      if (revoked || !owner) throw new Error('Local point session unavailable');
-      return owner.retain();
+      if (revoked || suspended || !owner || dependents >= 16)
+        throw new Error('Local point session unavailable');
+      const original = owner;
+      dependents++;
+      let release: (() => void) | undefined,
+        done = false;
+      const drop = () => {
+        if (done) return;
+        done = true;
+        try {
+          release?.();
+        } finally {
+          if (--dependents === 0) {
+            settlement?.resolve();
+            settlement = undefined;
+          }
+        }
+      };
+      try {
+        release = original.retain();
+        if (revoked || suspended || owner !== original)
+          throw new Error('Local point dependency lost');
+        return drop;
+      } catch (error) {
+        drop();
+        throw error;
+      }
     },
   };
 }

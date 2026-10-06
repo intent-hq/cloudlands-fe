@@ -105,6 +105,10 @@ export class NoteNativeLifetime {
       finish();
     }
   }
+  /** Captures this exact lifetime; a closed wrapper never routes to a successor. */
+  wrapFactory<A, T extends NodeView>(factory: (args: A) => T): (args: A) => T {
+    return (args) => this.construct(() => factory(args));
+  }
   extensions(extensions: Extensions): Extensions {
     // Flatten once, then suppress each copied extension's re-expansion. Nested
     // native factories receive the same lifecycle as top-level factories.

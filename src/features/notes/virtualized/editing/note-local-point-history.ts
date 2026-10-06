@@ -355,7 +355,10 @@ type ContentWitness = Array<{
 }>;
 // Snapshot only the newly built, bounded plain JSON graph, before it is exposed
 // to the configured schema callback. Neither toJSON nor a getter is executed.
-function contentWitness(root: object): ContentWitness {
+function contentWitness(
+  root: object,
+  fieldLimit: number = noteLocalPointLimits.mappingEntries,
+): ContentWitness {
   const witness: ContentWitness = [],
     pending = [root],
     seen = new Set<object>();
@@ -375,7 +378,7 @@ function contentWitness(root: object): ContentWitness {
       throw unsupported();
     const keys = Reflect.ownKeys(object);
     count += keys.length;
-    if (count > noteLocalPointLimits.mappingEntries) throw unsupported();
+    if (count > fieldLimit) throw unsupported();
     const captured: Array<readonly [string, unknown, boolean]> = [];
     for (const key of keys) {
       if (typeof key !== 'string') throw unsupported();
@@ -417,6 +420,124 @@ function currentContent(witness: ContentWitness) {
     }
   }
 }
+// Internal owner readiness witness, not an edit grant or a transferable credential.
+// The owner reserves its separate initial DATA allowance before calling this.
+function baseReadinessData(base: NoteEditAuthority) {
+  const source = ownData(base, 'source');
+  if (
+    typeof source !== 'string' ||
+    !/^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$/.test(source) ||
+    source.length > noteLocalPointLimits.parentUnits
+  )
+    throw unsupported();
+  const keys = [
+    'doc',
+    'scope',
+    'sourceRevision',
+    'snapshotId',
+    'generation',
+    'source',
+    'start',
+    'baseLength',
+    'positions',
+    'ends',
+    'boundaries',
+    'content',
+    'lexical',
+    'navigation',
+  ] as const;
+  const pins: Array<readonly [object, PropertyKey, unknown]> = keys.map((key) => [
+    base,
+    key,
+    ownData(base, key),
+  ]);
+  for (const key of ['backendId', 'workspaceId', 'noteId', 'noteInstanceId'])
+    pins.push([base.scope, key, ownData(base.scope, key)]);
+  if (base.start !== 0 || base.baseLength !== source.length) throw unsupported();
+  const lexical = lexicalData(base, source);
+  const tokens = ownData(base, 'lexical') as object[];
+  for (let i = 0; i < tokens.length; i++) {
+    pins.push([tokens, String(i), ownData(tokens, String(i))]);
+    for (const key of ['pm', 'start', 'end', 'text', 'owner', 'encoding', 'construct'])
+      pins.push([tokens[i], key, ownData(tokens[i], key)]);
+  }
+  const navigation = ownData(base, 'navigation') as object;
+  for (const key of ['original', 'changes', 'forward', 'backward'])
+    pins.push([navigation, key, ownData(navigation, key)]);
+  const maps = ['positions', 'ends', 'boundaries'].map((key) => {
+    const map = ordinaryMap(base, key);
+    if (mapSize!.call(map) > noteLocalPointLimits.parentUnits + 3) throw unsupported();
+    const pairs: Array<readonly [number, number]> = [];
+    mapForEach.call(map, (value: number, key: number) => pairs.push([key, value]));
+    return { key, map, pairs };
+  });
+  return {
+    base,
+    source,
+    pins,
+    lexical,
+    maps,
+    native: shape(base.doc, source),
+    content: contentWitness(base.content, 8192),
+  };
+}
+function checkBaseReadiness(h: ReturnType<typeof baseReadinessData>) {
+  for (const [object, key, value] of h.pins)
+    if (ownData(object, key) !== value) throw unsupported();
+  const base = h.base;
+  for (const key of ['sourceAt', 'pmAt', 'replace', 'table', 'mixed'] as const) {
+    const d = Object.getOwnPropertyDescriptor(base, key);
+    if (d && !('value' in d)) throw unsupported();
+  }
+  if (
+    base.sourceAt !== baseMethods.sourceAt ||
+    base.pmAt !== baseMethods.pmAt ||
+    base.replace !== baseMethods.replace ||
+    base.table ||
+    base.mixed
+  )
+    throw unsupported();
+  sameShape(shape(base.doc, h.source), h.native);
+  sameShape(lexicalData(base, h.source), h.lexical);
+  currentContent(h.content);
+  for (const { key, map, pairs } of h.maps) {
+    if (ordinaryMap(base, key) !== map || mapSize!.call(map) !== pairs.length) throw unsupported();
+    let i = 0;
+    mapForEach.call(map, (value: number, key: number) => {
+      const pair = pairs[i++];
+      if (!pair || pair[0] !== key || pair[1] !== value) throw unsupported();
+    });
+  }
+  for (let at = 0; at <= h.source.length; at++)
+    if (
+      mapGet.call(base.positions, at + 1) !== at ||
+      (mapGet.call(base.ends, at + 1) ?? mapGet.call(base.positions, at + 1)) !== at
+    )
+      throw unsupported();
+}
+function baseReadinessLifetime(slot: { held?: ReturnType<typeof baseReadinessData> }) {
+  return Object.freeze({
+    current() {
+      if (!slot.held) return false;
+      try {
+        checkBaseReadiness(slot.held);
+        return true;
+      } catch {
+        slot.held = undefined;
+        return false;
+      }
+    },
+    release() {
+      slot.held = undefined;
+    },
+  });
+}
+export function captureLocalPointBase(base: NoteEditAuthority) {
+  const held = baseReadinessData(base);
+  checkBaseReadiness(held);
+  return baseReadinessLifetime({ held });
+}
+
 function exactStep(step: ReplaceStep, from: number, text?: string, point?: PMNode) {
   if (
     Object.getPrototypeOf(step) !== ReplaceStep.prototype ||
@@ -587,7 +708,12 @@ function verify(h: Held) {
 // owner admits both slots before replay and releases an obsolete endpoint only
 // after CAS, or a rejected candidate on cancellation. No unbounded history of
 // output closures is retained here.
-type OutputRecord = { check: () => void; doc: PMNode; projection: SourceProjection };
+type OutputRecord = {
+  check: () => void;
+  doc: PMNode;
+  projection: SourceProjection;
+  originalCallerDoc?: PMNode;
+};
 type Slot = { held?: Held; outputs: Map<object, OutputRecord> };
 // Keys are the frozen emitted objects. Values retain only revocable indirection,
 // so keeping a public credential alive cannot pin released hidden native proof.
@@ -652,6 +778,27 @@ export function validateLocalPointOutput(
   } catch {
     return false;
   }
+}
+/** Existing private endpoint/original-root correspondence only. No same-shaped
+ * foreign tree, source parse or new native authority can satisfy this check. */
+export function validateLocalPointMountedOutput(
+  output: unknown,
+  candidate: { readonly doc: PMNode; readonly projection: SourceProjection },
+  installed: PMNode,
+): boolean {
+  if (!validateLocalPointOutput(output, candidate)) return false;
+  const credential = outputCredentials.get(output as object);
+  if (!credential) return false;
+  const { slot, key } = credential;
+  const record = slot.outputs.get(key),
+    h = slot.held;
+  if (!record || !h) return false;
+  if (
+    installed !== record.doc &&
+    !(record.originalCallerDoc === installed && installed === h.after)
+  )
+    return false;
+  return validateOutput(slot, key);
 }
 const proofs = new WeakMap<NoteLocalPointProof, Slot>();
 function live(slot: Slot) {
@@ -984,7 +1131,17 @@ export function replayLocalPoint(
   if (slot.held !== h || slot.outputs.size >= noteLocalPointLimits.replayOutputs)
     throw unsupported();
   const key = {};
-  slot.outputs.set(key, { check: endpointCheck, doc, projection });
+  slot.outputs.set(key, {
+    check: endpointCheck,
+    doc,
+    projection,
+    originalCallerDoc:
+      direction === 'redo' &&
+      pinnedGeneration === recipe.identity.documentGeneration &&
+      pinnedDoc === h.before
+        ? h.after
+        : undefined,
+  });
   const output = Object.freeze({
     doc,
     projection,

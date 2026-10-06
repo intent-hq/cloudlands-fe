@@ -2,9 +2,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { NoteTransactionOwner } from '../note-transaction-relay';
 import type { Workspace } from '$shared/types';
-import { Plugin, TextSelection } from '@tiptap/pm/state';
-import { Extension } from '@tiptap/core';
+import { EditorState, Plugin, TextSelection } from '@tiptap/pm/state';
+import { Editor, Extension } from '@tiptap/core';
 import { NoteNativeLifetime } from '../note-native-lifetime';
+import { NoteRetainedNativeLifetime } from '../note-retained-native-lifetime';
 import type { Node as TiptapNode } from '@tiptap/core';
 import { runSaga, stdChannel } from 'redux-saga';
 import { appClient } from '$lib/client';
@@ -28,7 +29,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
-async function fixture() {
+async function fixture(withData = false) {
   const calls = plainLocal.calls as unknown as Array<{
     request: NotePageRequest;
     response: NoteReadPage;
@@ -70,6 +71,9 @@ async function fixture() {
     listeners = new Set<() => void>();
   let clockHook: (() => void) | undefined;
   let publishedHook: (() => void) | undefined;
+  let changedHook: (() => void) | undefined;
+  let retainHook: (() => void) | undefined;
+  let dataReleases = 0;
   const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
     pages = a.notePagesReducer(pages, action);
     for (const fn of listeners) fn();
@@ -119,10 +123,17 @@ async function fixture() {
 
   let time = plainLocal.capturedAtMs;
   vi.spyOn(Date, 'now').mockImplementation(() => time);
+  const resizeCallbacks: Array<() => void> = [];
+  let observations = 0;
   vi.stubGlobal(
     'ResizeObserver',
     class {
-      observe() {}
+      constructor(callback: () => void) {
+        resizeCallbacks.push(callback);
+      }
+      observe() {
+        observations++;
+      }
       disconnect() {}
     },
   );
@@ -166,7 +177,22 @@ async function fixture() {
   document.body.append(host);
   const view = new NoteWindowView(host, {
     workspace: { id: ws } as Workspace,
+    ...(withData
+      ? {
+          retainWindow(target: typeof window) {
+            const owner = 'retained-host-window';
+            dispatch(a.pageWindowRetained(ws, id, 'panel', note().generation, target, owner));
+            expect(pages.resourceLedger.owners[owner]).toBeDefined();
+            retainHook?.();
+            return () => {
+              dataReleases++;
+              dispatch(a.pageResourcesReleased(owner));
+            };
+          },
+        }
+      : {}),
     editing,
+    changed: () => changedHook?.(),
     seek: vi.fn(),
     fullOperation: vi.fn(),
     selectionChanged(selection) {
@@ -177,12 +203,21 @@ async function fixture() {
   });
   return {
     view,
+    resize: () => resizeCallbacks.at(-1)!(),
+    observations: () => observations,
     window,
     offer,
     note,
     dispatch,
     ledger: () => pages.resourceLedger,
+    onRetain(fn: () => void) {
+      retainHook = fn;
+    },
+    dataReleases: () => dataReleases,
     editing,
+    onChanged(fn?: () => void) {
+      changedHook = fn;
+    },
     onClock(fn?: () => void) {
       clockHook = fn;
     },
@@ -699,3 +734,560 @@ it('rejects configured plugin replacement during native state installation', asy
     await f.cleanup();
   }
 });
+
+it('reattaches the retained original Editor with actual local history and new physical views', async () => {
+  const f = await fixture();
+  try {
+    const pending = f.view.prepareRetained(f.window);
+    expect(f.view.history('undo')).toBe(false);
+    await pending.ready;
+    const editor = f.view.editor!,
+      schema = editor.schema;
+    expect(editor.options.autofocus).toBe(false);
+    expect(editor.chain().insertContent('X').insertPointAnchor(pointId).run()).toBe(true);
+    const group = f.note().document!.history[0];
+    expect(f.note().document!.length).toBe(59);
+    for (let i = 0; i < 3; i++) {
+      const previous = editor.view;
+      const oldDispatch = previous.props.dispatchTransaction!;
+      const oldTransaction = previous.state.tr;
+      const token = await f.view.detachRetained();
+      expect(previous.isDestroyed).toBe(true);
+      expect(f.view.editor).toBeUndefined();
+      expect(f.view.history('undo')).toBe(false);
+      const mount = f.view.attachRetained(token);
+      expect(() => f.view.attachRetained(token)).toThrow();
+      await mount.ready;
+      expect(f.view.editor).toBe(editor);
+      expect(editor.schema).toBe(schema);
+      expect(editor.view).not.toBe(previous);
+      expect(() => oldDispatch.call(previous, oldTransaction)).toThrow();
+      expect(f.note().document!.history[0]).toBe(group);
+      expect(f.view.history('undo')).toBe(true);
+      expect(f.note().document!.length).toBe(2);
+      const undone = await f.view.detachRetained();
+      await f.view.attachRetained(undone).ready;
+      expect(f.view.history('redo')).toBe(true);
+      expect(f.note().document!.length).toBe(59);
+    }
+  } finally {
+    await f.cleanup();
+  }
+});
+it('cancels retained initial readiness before the actual create task and preserves original state', async () => {
+  const f = await fixture();
+  try {
+    const before = f.note().document;
+    const pending = f.view.prepareRetained(f.window);
+    pending.cancel();
+    await expect(pending.ready).rejects.toThrow();
+    expect(f.note().document).toBe(before);
+    expect(() => f.view.prepareRetained(f.window)).toThrow();
+  } finally {
+    await f.cleanup();
+  }
+});
+it('refuses retained reattachment after expiry without discarding unsaved history', async () => {
+  const f = await fixture();
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    const token = await f.view.detachRetained(),
+      before = f.note().document;
+    f.expire();
+    await expect(f.view.attachRetained(token).ready).rejects.toThrow();
+    expect(f.note().document).toBe(before);
+    expect(before!.history).toHaveLength(1);
+    expect(() => f.view.attachRetained(token)).toThrow();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('refuses reentrant public show during initial retained setup', async () => {
+  const f = await fixture();
+  try {
+    let nested: boolean | undefined;
+    f.onChanged(() => {
+      f.onChanged();
+      nested = f.view.show(f.window);
+    });
+    await f.view.prepareRetained(f.window).ready;
+    expect(nested).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('waits for admitted dependent work before issuing a detach token', async () => {
+  const f = await fixture();
+  let drop: (() => void) | undefined;
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    drop = f.offer.retain();
+    let settled = false;
+    const pending = f.view.detachRetained().then((token) => {
+      settled = true;
+      return token;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    expect(() => f.offer.retain()).toThrow();
+    expect(() => f.view.attachRetained({})).toThrow();
+    drop();
+    drop = undefined;
+    const token = await pending;
+    await f.view.attachRetained(token).ready;
+    expect(f.view.history('undo')).toBe(true);
+  } finally {
+    drop?.();
+    await f.cleanup();
+  }
+});
+
+it('cannot revive a detached token when the owner callback cancels attachment', async () => {
+  const f = await fixture();
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    const token = await f.view.detachRetained();
+    const before = f.note().document;
+    f.onClock(() => {
+      f.onClock();
+      f.view.destroy();
+    });
+    await expect(f.view.attachRetained(token).ready).rejects.toThrow();
+    expect(f.note().document).toBe(before);
+    expect(() => f.view.attachRetained(token)).toThrow();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('blocks scroller commands before readiness and while detached', async () => {
+  const f = await fixture();
+  try {
+    const pending = f.view.prepareRetained(f.window);
+    const before = f.view.getSelection();
+    const command = () => {
+      f.view.scroller.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }),
+      );
+      f.view.scroller.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
+      );
+    };
+    command();
+    expect(f.view.getSelection()).toEqual(before);
+    await pending.ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    const selection = f.view.getSelection();
+    const token = await f.view.detachRetained();
+    command();
+    expect(f.view.getSelection()).toEqual(selection);
+    const mount = f.view.attachRetained(token);
+    command();
+    expect(f.view.getSelection()).toEqual(selection);
+    await mount.ready;
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('rejects initial base mutation from the last readiness callback', async () => {
+  const f = await fixture();
+  try {
+    const pending = f.view.prepareRetained(f.window);
+    const editor = f.view.editor!;
+    f.onChanged(() => {
+      f.onChanged();
+      Reflect.set(editor.state.doc.firstChild!.attrs, 'alien', true);
+    });
+    await expect(pending.ready).rejects.toThrow();
+    expect(f.note().document!.history).toHaveLength(0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('retains physical cleanup debt while a mounted point destroy is held', async () => {
+  const f = await fixture();
+  let resolve!: () => void;
+  const held = new Promise<void>((done) => {
+    resolve = done;
+  });
+  const destroy = vi.fn(() => held);
+  const products = retainedPointCleanup(destroy);
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    const charged = f.ledger().used.payloadBytes;
+    let settled = false;
+    const pending = f.view.detachRetained().then((token) => {
+      settled = true;
+      return token;
+    });
+    await new Promise((done) => setTimeout(done, 10));
+    expect(products.length).toBeGreaterThan(0);
+    expect(destroy).toHaveBeenCalledTimes(products.length);
+    for (const product of products) expect(product).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+    expect(f.ledger().used.payloadBytes).toBe(charged);
+    expect(() => f.view.attachRetained({})).toThrow();
+    resolve();
+    await f.view.attachRetained(await pending).ready;
+  } finally {
+    resolve();
+    await f.cleanup();
+  }
+});
+
+it('keeps unsaved state and refuses revival after failed physical detach cleanup', async () => {
+  const f = await fixture();
+  const destroy = vi.fn(() => Promise.reject(new Error('controlled retained cleanup failure')));
+  const products = retainedPointCleanup(destroy);
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    const before = f.note().document,
+      charged = f.ledger().used.payloadBytes;
+    await expect(f.view.detachRetained()).rejects.toThrow();
+    expect(products.length).toBeGreaterThan(0);
+    expect(products.length).toBeGreaterThan(0);
+    expect(destroy).toHaveBeenCalledTimes(products.length);
+    for (const product of products) expect(product).toHaveBeenCalledOnce();
+    expect(f.note().document).toBe(before);
+    expect(f.ledger().used.payloadBytes).toBe(charged);
+    expect(() => f.view.attachRetained({})).toThrow();
+  } finally {
+    await f.cleanup(true);
+  }
+});
+
+function retainedPointCleanup(cleanup: () => Promise<void>, constructed?: () => void) {
+  const products: Array<ReturnType<typeof vi.fn>> = [];
+  const original = NoteRetainedNativeLifetime.prototype.extensions;
+  vi.spyOn(NoteRetainedNativeLifetime.prototype, 'extensions').mockImplementation(function (items) {
+    return original.call(
+      this,
+      items.map((e) =>
+        e.name === 'commentAnchor'
+          ? (e as TiptapNode).extend({
+              addNodeView() {
+                const factory = this.parent?.();
+                if (!factory) throw new Error('Missing configured point renderer');
+                return (props) => {
+                  const view = factory(props),
+                    destroy = view.destroy;
+                  const owned = vi.fn(() => {
+                    destroy?.call(view);
+                    return cleanup();
+                  });
+                  products.push(owned);
+                  view.destroy = owned;
+                  constructed?.();
+                  return view;
+                };
+              },
+            })
+          : e,
+      ),
+    );
+  });
+  return products;
+}
+
+it('cancels stale core focus and nested scheduling before a new physical mount', async () => {
+  const f = await fixture();
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+  });
+  try {
+    const pending = f.view.prepareRetained(f.window);
+    await vi.runAllTimersAsync();
+    await pending.ready;
+    const editor = f.view.editor!,
+      old = editor.view;
+    editor.chain().insertContent('X').insertPointAnchor(pointId).run();
+    const scope = editor.captureDeferredTasks(old)!,
+      stale = vi.fn();
+    scope.enqueue('selection-focus', () => {
+      stale();
+      scope.enqueue('selection-focus', stale);
+    });
+    const focus = vi.spyOn(old, 'focus');
+    editor.commands.focus();
+    const token = await f.view.detachRetained();
+    await scope.settled;
+    const mount = f.view.attachRetained(token);
+    await vi.runAllTimersAsync();
+    await mount.ready;
+    expect(stale).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
+    expect(() => scope.enqueue('selection-focus', stale)).toThrow();
+    expect(editor.view).not.toBe(old);
+    expect(f.view.history('undo')).toBe(true);
+  } finally {
+    vi.useRealTimers();
+    await f.cleanup();
+  }
+});
+
+it('rejects new scheduled work from the final readiness callback', async () => {
+  const f = await fixture();
+  try {
+    const pending = f.view.prepareRetained(f.window),
+      work = vi.fn();
+    f.onChanged(() => {
+      f.onChanged();
+      const editor = f.view.editor!;
+      editor.captureDeferredTasks(editor.view)!.enqueue('selection-focus', work);
+    });
+    await expect(pending.ready).rejects.toThrow();
+    await new Promise((done) => setTimeout(done, 10));
+    expect(work).not.toHaveBeenCalled();
+    expect(f.note().document!.history).toHaveLength(0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('does not reconnect observers after cancellation inside actual measurement', async () => {
+  const f = await fixture();
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    // jsdom has no layout hit testing; the actual measurement proceeds with no anchor hit.
+    vi.spyOn(f.view.editor!.view, 'posAtCoords').mockReturnValue(null);
+    const host = f.view.scroller.querySelector('.note-window-native') as HTMLElement;
+    const before = f.observations();
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementationOnce(() => {
+      f.view.destroy();
+      return new DOMRect(0, 0, 10, 10);
+    });
+    f.resize();
+    expect(f.observations()).toBe(before);
+    expect(f.view.editor).toBeUndefined();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('refuses native update after a genuine selection borrower retires the mount', async () => {
+  const f = await fixture(true);
+  let borrow: ReturnType<NoteWindowView['borrowSelectionMarkdown']> | undefined;
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    const native = f.view.editor!.view,
+      before = native.state;
+    borrow = f.view.borrowSelectionMarkdown(
+      {
+        scope: f.window.scope,
+        sourceRevision: f.window.sourceRevision,
+        snapshotId: f.window.snapshotId,
+        expiresAt: f.window.expiresAt!,
+        documentGeneration: f.note().document!.generation,
+        liveGeneration: f.view.selectionCaptureGeneration,
+        selectionGeneration: 0,
+      },
+      () => true,
+    );
+    expect(borrow.current()).toBe(true);
+    const lost = vi.fn(() => f.view.destroy());
+    borrow.subscribe(lost);
+    expect(lost).not.toHaveBeenCalled();
+    const next = EditorState.create({
+      schema: before.schema,
+      doc: before.doc,
+      plugins: before.plugins,
+      selection: TextSelection.create(before.doc, 1),
+    });
+    expect(next).not.toBe(before);
+    expect(lost).not.toHaveBeenCalled();
+    expect(() => native.updateState(next)).toThrow();
+    expect(lost).toHaveBeenCalledOnce();
+    expect(native.state).toBe(before);
+    expect(f.note().document!.history).toHaveLength(0);
+  } finally {
+    borrow?.release();
+    await f.cleanup();
+  }
+});
+
+it('does not invoke native hit testing after a geometry callback retires the mount', async () => {
+  const f = await fixture();
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    const native = f.view.editor!.view;
+    const hit = vi.spyOn(native, 'posAtCoords').mockReturnValue(null);
+    vi.spyOn(f.view.scroller, 'getBoundingClientRect').mockImplementationOnce(() => {
+      f.view.destroy();
+      return new DOMRect();
+    });
+    f.resize();
+    expect(hit).not.toHaveBeenCalled();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('destroys a returned original Editor when initial binding throws before mounting', async () => {
+  const f = await fixture();
+  const borrow = f.editing.borrow!;
+  vi.spyOn(f.editing, 'borrow').mockImplementation((window) => {
+    const original = borrow(window);
+    return {
+      ...original,
+      bind() {
+        throw new Error('Controlled initial binding failure');
+      },
+    };
+  });
+  const destroy = vi.spyOn(Editor.prototype, 'destroy');
+  try {
+    await expect(f.view.prepareRetained(f.window).ready).rejects.toThrow();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(f.note().document!.history).toHaveLength(0);
+  } finally {
+    await f.cleanup(true);
+  }
+});
+
+it('owns a returned Editor after cancellation inside its actual constructor callback', async () => {
+  const f = await fixture();
+  const extensions = NoteRetainedNativeLifetime.prototype.extensions;
+  const beforeCreate = vi.fn();
+  vi.spyOn(NoteRetainedNativeLifetime.prototype, 'extensions').mockImplementation(function (items) {
+    return extensions.call(this, [
+      ...items,
+      Extension.create({
+        name: 'cancelInitialConstruction',
+        onBeforeCreate() {
+          beforeCreate();
+          f.view.destroy();
+        },
+      }),
+    ]);
+  });
+  const destroy = vi.spyOn(Editor.prototype, 'destroy');
+  try {
+    await expect(f.view.prepareRetained(f.window).ready).rejects.toThrow();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(beforeCreate).toHaveBeenCalledOnce();
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(f.view.editor).toBeUndefined();
+    expect(f.note().document!.history).toHaveLength(0);
+  } finally {
+    await f.cleanup(true);
+  }
+});
+it('denies retained initial reservation before readiness and destroys the returned Editor', async () => {
+  const f = await fixture();
+  const destroy = vi.spyOn(Editor.prototype, 'destroy');
+  const used = f.ledger().used;
+  f.dispatch(
+    a.pageResourcesRequested(
+      'deny-initial',
+      [
+        {
+          id: 'deny-initial-data',
+          cost: {
+            payloadBytes: 100_000_000 - used.payloadBytes - 1,
+            stringUnits: 0,
+            objectNodes: 0,
+            domNodes: 0,
+            physicalReads: 0,
+            assemblies: 0,
+          },
+        },
+      ],
+      1,
+    ),
+  );
+  expect(f.ledger().owners['deny-initial']).toBeDefined();
+  try {
+    await expect(f.view.prepareRetained(f.window).ready).rejects.toThrow();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(f.note().document!.history).toHaveLength(0);
+    expect(f.view.editor).toBeUndefined();
+  } finally {
+    await f.cleanup(true);
+  }
+});
+it('owns actual point products returned after reentrant cancellation during reattachment', async () => {
+  const f = await fixture();
+  let armed = false;
+  const products = retainedPointCleanup(
+    () => Promise.resolve(),
+    () => {
+      if (armed) f.view.destroy();
+    },
+  );
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    const token = await f.view.detachRetained(),
+      before = f.note().document;
+    const previous = products.length;
+    armed = true;
+    await expect(f.view.attachRetained(token).ready).rejects.toThrow();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(products.length).toBeGreaterThan(previous);
+    for (const destroy of products) expect(destroy).toHaveBeenCalledOnce();
+    expect(f.note().document).toBe(before);
+    expect(() => f.view.attachRetained(token)).toThrow();
+  } finally {
+    await f.cleanup(true);
+  }
+});
+it('refuses saves after physical reattachment and permanently refuses a closed panel token', async () => {
+  const f = await fixture();
+  const save = vi.spyOn(appClient.notes.pages, 'applySplices');
+  try {
+    await f.view.prepareRetained(f.window).ready;
+    f.view.editor!.chain().insertContent('X').insertPointAnchor(pointId).run();
+    await f.view.attachRetained(await f.view.detachRetained()).ready;
+    const before = f.note().document;
+    f.dispatch(a.pageSaveDraftsRequested(f.window.scope.workspaceId, f.window.scope.noteId));
+    await new Promise((done) => setTimeout(done, 0));
+    expect(save).not.toHaveBeenCalled();
+    expect(f.note().document).toBe(before);
+    const token = await f.view.detachRetained();
+    f.dispatch(a.pagePanelClosed(f.window.scope.workspaceId, f.window.scope.noteId, 'panel'));
+    await expect(f.view.attachRetained(token).ready).rejects.toThrow();
+    expect(f.note().document?.history).toEqual(before!.history);
+    expect(() => f.view.attachRetained(token)).toThrow();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it.each(['data', 'borrow'] as const)(
+  'owns the returned %s lease when acquisition cancels retained setup',
+  async (stage) => {
+    const f = await fixture(true);
+    const extensions = vi.spyOn(NoteRetainedNativeLifetime.prototype, 'extensions');
+    if (stage === 'data') f.onRetain(() => f.view.destroy());
+    else {
+      const borrow = f.editing.borrow!;
+      vi.spyOn(f.editing, 'borrow').mockImplementation((window) => {
+        const result = borrow(window);
+        f.view.destroy();
+        return result;
+      });
+    }
+    try {
+      await expect(f.view.prepareRetained(f.window).ready).rejects.toThrow();
+      await new Promise((done) => setTimeout(done, 0));
+      expect(extensions).not.toHaveBeenCalled();
+      expect(f.dataReleases()).toBe(1);
+      expect(f.view.editor).toBeUndefined();
+      expect(f.note().document!.history).toHaveLength(0);
+      expect(() => f.view.prepareRetained(f.window)).toThrow();
+    } finally {
+      await f.cleanup(true);
+    }
+  },
+);

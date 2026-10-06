@@ -13,10 +13,12 @@ import { readNoteWindow } from '../note-window-reader';
 import { projectNoteWindow } from '../note-window-projection';
 import {
   noteLocalPointLimits,
+  captureLocalPointBase,
   prepareLocalPointInsertion,
   replayLocalPoint,
   validateLocalPoint,
   validateLocalPointOutput,
+  validateLocalPointMountedOutput,
   type NoteLocalPointInput,
 } from './note-local-point-history';
 import {
@@ -794,5 +796,93 @@ it('rejects a distinct same-document two-step root despite equal configured sour
   expect(validateLocalPointOutput(output, output, other)).toBe(false);
   expect(validateLocalPointOutput(output, output, original)).toBe(true);
   output.release();
+  proof.release();
+});
+
+it('binds mounted output only to its exact accepted command document or emitted endpoint', async () => {
+  const { input } = await admitted();
+  const { recipe, proof } = prepareLocalPointInsertion(input);
+  const output = replayLocalPoint(
+    proof,
+    recipe,
+    'redo',
+    current(input, input.beforeState.doc, 'abc', 0),
+  );
+  const accepted = input.candidateTransaction.doc;
+  expect(output.doc).not.toBe(accepted);
+  expect(output.doc.eq(accepted)).toBe(true);
+  expect(validateLocalPointMountedOutput(output, output, accepted)).toBe(true);
+  expect(validateLocalPointMountedOutput(output, output, output.doc)).toBe(true);
+  const other = accepted.type.schema.nodeFromJSON(accepted.toJSON());
+  expect(other.eq(accepted)).toBe(true);
+  expect(validateLocalPointMountedOutput(output, output, other)).toBe(false);
+  expect(validateLocalPointMountedOutput(output, output, input.beforeState.doc)).toBe(false);
+  Reflect.set(accepted.nodeAt(3)!.attrs, 'commentId', 'changed');
+  expect(validateLocalPointMountedOutput(output, output, accepted)).toBe(false);
+  proof.release();
+});
+
+it('does not associate an undone output with the original caller document', async () => {
+  const { input } = await admitted();
+  const { recipe, proof } = prepareLocalPointInsertion(input);
+  const output = replayLocalPoint(proof, recipe, 'undo', current(input));
+  expect(validateLocalPointMountedOutput(output, output, output.doc)).toBe(true);
+  expect(validateLocalPointMountedOutput(output, output, input.candidateTransaction.doc)).toBe(
+    false,
+  );
+  proof.release();
+});
+
+it.each(['map', 'lexical', 'content', 'native', 'accessor'] as const)(
+  'revokes initial readiness witness on %s drift without restoring it',
+  async (kind) => {
+    const { input } = await admitted();
+    const base = input.base;
+    const guard = captureLocalPointBase(base);
+    expect(guard.current()).toBe(true);
+    const restore =
+      kind === 'map'
+        ? () => {
+            base.positions.set(1, 0);
+          }
+        : kind === 'lexical'
+          ? () => {
+              Reflect.get(base, 'lexical')[0].text = 'a';
+            }
+          : kind === 'content'
+            ? () => {
+                base.content.content![0].content![0].text = 'abc';
+              }
+            : kind === 'native'
+              ? () => {
+                  delete base.doc.firstChild!.attrs.alien;
+                }
+              : () => {
+                  Object.defineProperty(base, 'source', { value: 'abc', configurable: true });
+                };
+    const getter = vi.fn(() => 'abc');
+    if (kind === 'map') base.positions.set(1, 99);
+    if (kind === 'lexical') Reflect.get(base, 'lexical')[0].text = 'z';
+    if (kind === 'content') base.content.content![0].content![0].text = 'xyz';
+    if (kind === 'native') Reflect.set(base.doc.firstChild!.attrs, 'alien', true);
+    if (kind === 'accessor')
+      Object.defineProperty(base, 'source', { get: getter, configurable: true });
+    expect(guard.current()).toBe(false);
+    expect(getter).not.toHaveBeenCalled();
+    restore();
+    expect(guard.current()).toBe(false);
+    guard.release();
+  },
+);
+
+it('does not permit stale accepted-root association on a subsequent redo', async () => {
+  const { input } = await admitted();
+  const { recipe, proof } = prepareLocalPointInsertion(input);
+  const undone = replayLocalPoint(proof, recipe, 'undo', current(input));
+  const redone = replayLocalPoint(proof, recipe, 'redo', current(input, undone.doc, 'abc', 2));
+  expect(validateLocalPointMountedOutput(redone, redone, redone.doc)).toBe(true);
+  expect(validateLocalPointMountedOutput(redone, redone, input.candidateTransaction.doc)).toBe(
+    false,
+  );
   proof.release();
 });

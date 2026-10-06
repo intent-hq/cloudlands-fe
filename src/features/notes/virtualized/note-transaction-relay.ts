@@ -30,6 +30,9 @@ interface Candidate {
 export interface NoteTransactionOwner {
   readonly initial: Candidate;
   current(): boolean;
+  /** Existing local endpoint only; does not issue history or replay authority. */
+  retainedEndpoint?():
+    { initial: Candidate; selection: NoteSourceSelection; nativeOutput: LocalOutput } | undefined;
   /** Pure document-history admission; native adoption is owned by the view. */
   history?(direction: 'undo' | 'redo'):
     | {
@@ -84,7 +87,10 @@ interface Provisional {
 
 /** ProseMirror filters can run before another plugin rejects a transaction. Keep
  * their results private until TipTap reports the actual accepted transaction chain. */
-export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner | undefined) {
+export function createNoteTransactionRelay(
+  getOwner: () => NoteTransactionOwner | undefined,
+  filterRoot?: (transaction: Transaction, state: EditorState) => boolean,
+) {
   const key = new PluginKey<Provisional | undefined>('noteDocumentTransaction');
   const prepared = new WeakMap<Transaction, Prepared>();
   const finalized = new WeakMap<Candidate, Candidate>();
@@ -126,6 +132,7 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
       },
     },
     filterTransaction(transaction, state) {
+      if (filterRoot && !filterRoot(transaction, state)) return false;
       if (!transaction.docChanged) return true;
       prepared.delete(transaction);
       const owner = getOwner();

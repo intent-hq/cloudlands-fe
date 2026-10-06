@@ -10,6 +10,7 @@ type Epoch = {
   bind(view: EditorView): void;
   unbind(view: EditorView): void;
   matches(view: EditorView): boolean;
+  idleRevision(): number | undefined;
 };
 type Task = {
   body: (() => void) | null;
@@ -31,6 +32,7 @@ export function createEditorDeferredTasks() {
   let retired = false;
   let epoch: Epoch | null = null;
   const frames: Scope[] = [];
+  let idleWitness: { key: object; epoch: Epoch; view: EditorView; revision: number } | undefined;
 
   function createEpoch(): Epoch {
     let view: EditorView | null = null;
@@ -40,6 +42,16 @@ export function createEditorDeferredTasks() {
     let bound = false;
     let failure: Error | null = null;
     let depth = 0;
+    let revision = 0;
+    function activity() {
+      idleWitness = undefined;
+      if (revision === Number.MAX_SAFE_INTEGER) {
+        failure ??= new Error('Editor task activity exhausted');
+        closed = true;
+        throw failure;
+      }
+      revision++;
+    }
     let drained = false;
     const tasks = new Set<Task>();
     let idle: { promise: Promise<void>; resolve(): void; reject(error: Error): void } | null = null;
@@ -74,6 +86,7 @@ export function createEditorDeferredTasks() {
     }
     function cancel(task: Task) {
       if (task.state !== 'queued' || task.handle === null) return;
+      activity();
       task.state = 'canceling';
       try {
         if (task.kind === 'focus-frame' || task.kind === 'update-focus') cancelFrame(task.handle);
@@ -106,6 +119,7 @@ export function createEditorDeferredTasks() {
         finish();
         throw failure;
       }
+      activity();
       depth++;
       frames.push(scope);
       try {
@@ -143,6 +157,7 @@ export function createEditorDeferredTasks() {
           finish();
           throw failure;
         }
+        activity();
         const task: Task = { body, kind, handle: null, state: 'allocating' };
         tasks.add(task);
         const invoke = () => {
@@ -218,6 +233,7 @@ export function createEditorDeferredTasks() {
       bind(actual: EditorView) {
         scope.assertOpen();
         if (bound) throw new Error('Editor task view is already bound');
+        activity();
         bound = true;
         view = actual;
       },
@@ -225,10 +241,15 @@ export function createEditorDeferredTasks() {
         if (!closed || view !== actual || detached || !actual.isDestroyed) {
           throw new Error('Editor task view is not detached');
         }
+        activity();
         detached = true;
         finish();
       },
       matches: (actual: EditorView) => view === actual && !detached,
+      idleRevision: () =>
+        !closed && !retired && !failure && !tasks.size && !depth && bound && !detached
+          ? revision
+          : undefined,
     };
   }
 
@@ -272,10 +293,36 @@ export function createEditorDeferredTasks() {
   });
   return Object.freeze({
     port,
+    captureIdle(scope: Scope, actual: Editor, view: EditorView): object {
+      const revision = epoch?.idleRevision();
+      if (
+        !epoch ||
+        epoch.scope !== scope ||
+        actual !== editor ||
+        !epoch.matches(view) ||
+        revision === undefined
+      )
+        throw new Error('Editor task scope is not idle');
+      const key = Object.freeze({});
+      idleWitness = { key, epoch, view, revision };
+      return key;
+    },
+    validateIdle(key: object): boolean {
+      const witness = idleWitness;
+      return (
+        !!witness &&
+        witness.key === key &&
+        epoch === witness.epoch &&
+        epoch.matches(witness.view) &&
+        epoch.idleRevision() === witness.revision
+      );
+    },
     retire() {
+      idleWitness = undefined;
       retired = true;
       epoch?.scope.close();
       if (!epoch || epoch.reusable()) editor = null;
+      return epoch?.scope.settled ?? Promise.resolve();
     },
   });
 }

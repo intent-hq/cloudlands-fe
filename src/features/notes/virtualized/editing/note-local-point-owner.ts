@@ -9,6 +9,7 @@ import type { NoteEditAuthority } from './note-edit-authority';
 import type { NoteDocumentSession } from './note-document-edit-session';
 import {
   noteLocalPointLimits,
+  captureLocalPointBase,
   prepareLocalPointInsertion,
   replayLocalPoint,
   validateLocalPoint,
@@ -32,6 +33,7 @@ interface Options {
   /** Genuine prepared edit-context lifetime, independent of the mounted view. */
   context: { current(): boolean; retain(): () => void };
   now?: () => number;
+  retainInitial?: boolean;
 }
 function fail(): never {
   throw new Error('Unsupported local point owner');
@@ -40,11 +42,13 @@ function fail(): never {
 /** Explicit producer-only owner. Its runtime proof stays with the local group,
  * never Redux, the native undo plugin, a receipt or an ordinary text authority. */
 export function createNoteLocalPointOwner(options: Options): NoteTransactionOwner & {
+  releaseInitial(): void;
   retain(): () => void;
   retainPrepared(candidate: Candidate, transaction: Transaction): () => void;
   dispose(): void;
 } {
   const { read, publish, admit, resources } = options;
+  const retainedInitial = options.retainInitial === true;
   let context: Options['context'] | undefined = options.context;
   const now = options.now ?? Date.now;
   const original = read();
@@ -108,6 +112,25 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       return !!descriptor && 'value' in descriptor && descriptor.value === value;
     });
   const allocator = createNoteResourceOwner(resources);
+  const initialOwner = `local-point-base:${uuid()}`;
+  const initialTicket = allocator.reservation(initialOwner, {
+    payloadBytes: 8 * noteLocalPointLimits.recipeBytes,
+    stringUnits: 8 * noteLocalPointLimits.recipeBytes,
+    objectNodes: 8 * (noteLocalPointLimits.mappingEntries + noteLocalPointLimits.nativeNodes),
+    domNodes: 0,
+    physicalReads: 0,
+    assemblies: 1,
+  });
+  let initialGuard: ReturnType<typeof captureLocalPointBase> | undefined;
+  let initialPhysical = retainedInitial;
+  let initialDrop: (() => void) | undefined;
+  let initialConstructing = true;
+  const dropInitial = () => {
+    if (!retainedInitial || initialConstructing || initialPhysical || borrowers) return;
+    initialDrop?.();
+    initialDrop = undefined;
+    initialTicket.release();
+  };
   type Allocation = {
     owner: string;
     ticket: ReturnType<typeof allocator.reservation>;
@@ -156,6 +179,8 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     accepted = undefined;
     pending = undefined;
     finalized = undefined;
+    initialGuard?.release();
+    initialGuard = undefined;
     native = undefined;
     endpoint = undefined;
     endpointOutput = undefined;
@@ -163,6 +188,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     context = undefined;
     if (p && p !== a) close(p);
     if (a) close(a);
+    dropInitial();
   };
   const rawCurrent = () => {
     if (retired || !native || !context) return false;
@@ -170,7 +196,9 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       const valid = context.current();
       const time = now();
       const owner = accepted?.owner ?? pending?.allocation.owner ?? preparingOwner;
-      const granted = !owner || !!resources.read().owners[owner];
+      const ledger = resources.read();
+      const granted =
+        (!retainedInitial || !!ledger.owners[initialOwner]) && (!owner || !!ledger.owners[owner]);
       const latest = read();
       if (
         !valid ||
@@ -201,6 +229,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
         retired ||
         latest !== committed ||
         !originalCurrent() ||
+        (retainedInitial && !initialGuard?.current()) ||
         (output && (!candidate || !validateLocalPointOutput(output, candidate)))
       ) {
         dispose();
@@ -322,15 +351,58 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
         const release = releaseDeferred;
         releaseDeferred = undefined;
         release?.();
+        if (retired) dropInitial();
       }
     };
   };
+  if (retainedInitial)
+    try {
+      const granted = initialTicket.construct(
+        () => {
+          if (!context) fail();
+          initialDrop = context.retain();
+          if (!context.current() || read() !== origin || retired) fail();
+          initialGuard = captureLocalPointBase(options.base);
+          if (!current()) fail();
+          return {};
+        },
+        () => {
+          initialGuard?.release();
+          initialGuard = undefined;
+          initialDrop?.();
+          initialDrop = undefined;
+        },
+      );
+      if (!granted) {
+        initialPhysical = false;
+        initialTicket.release();
+        fail();
+      }
+    } catch (error) {
+      initialPhysical = false;
+      throw error;
+    } finally {
+      initialConstructing = false;
+    }
   return {
+    releaseInitial() {
+      if (!initialPhysical) return;
+      initialPhysical = false;
+      if (retired) dropInitial();
+    },
     get initial() {
       if (!current() || !endpoint) return fail();
       return endpoint;
     },
     current,
+    retainedEndpoint() {
+      if (!accepted || !endpoint || !endpointOutput || !current()) return undefined;
+      return Object.freeze({
+        initial: endpoint,
+        selection: committed.selection,
+        nativeOutput: endpointOutput,
+      });
+    },
     prepare(transaction, before) {
       if (preparingOwner || borrowers || releaseDeferred) return undefined;
       if (
@@ -361,14 +433,22 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
         const token = ticket.construct(
           () => {
             if (!context) fail();
-            const drop = context.retain();
-            let dropped = false;
-            dropContext = () => {
-              if (!dropped) {
-                dropped = true;
-                drop();
-              }
-            };
+            // The initial guard already owns the second and final context borrow.
+            // It remains held until both initial physical use and point borrowers
+            // settle; point capture shares that exact lifetime, never a third borrow.
+            if (retainedInitial) {
+              if (!initialDrop) fail();
+              dropContext = () => {};
+            } else {
+              const drop = context.retain();
+              let dropped = false;
+              dropContext = () => {
+                if (!dropped) {
+                  dropped = true;
+                  drop();
+                }
+              };
+            }
             if (!rawCurrent() || !native) fail();
             capture = prepareLocalPointInsertion({
               origin,

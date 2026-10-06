@@ -7,6 +7,8 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { NoteNativeLifetime } from './note-native-lifetime';
+import { NoteRetainedNativeLifetime } from './note-retained-native-lifetime';
+import { createEditorDeferredTasks } from '$lib/utils/editor-deferred-tasks';
 import { logger } from '$lib/utils/client-logger';
 import { measureNoteProjection } from './note-view-cost';
 import { validateNoteNativeOutput } from './note-native-output-validation';
@@ -18,7 +20,10 @@ import type { NoteResourceCost } from './note-resource-ledger';
 import { createNoteTransactionRelay, type NoteTransactionOwner } from './note-transaction-relay';
 
 import { NoteEditAuthority } from './editing/note-edit-authority';
-import { validateLocalPointOutput } from './editing/note-local-point-history';
+import {
+  validateLocalPointOutput,
+  validateLocalPointMountedOutput,
+} from './editing/note-local-point-history';
 import {
   captureNoteSelectionMarkdown,
   type NoteSelectionMarkdownIdentity,
@@ -52,9 +57,12 @@ export interface NoteViewEditing {
     projection: SourceProjection,
     doc: PMNode,
     state?: EditorState,
+    retainedInitial?: boolean,
   ): NoteTransactionOwner | undefined;
   /** A retained prepared context belongs to one pending/mounted native view. */
   borrow?(window: NoteWindow): {
+    suspend?(): Promise<void>;
+    resume?(): void;
     bind: NoteViewEditing['bind'];
     initialSelection?(): NoteSourceSelection;
     retire?(): void;
@@ -210,11 +218,27 @@ interface WindowLease {
   initialSelection?: () => NoteSourceSelection;
   retire?: () => void;
   borrowed: boolean;
+  suspend(): Promise<void>;
+  resume(): void;
   retain(): () => void;
   release(): void;
 }
 export class NoteWindowView {
   editor?: Editor;
+  private retained?: {
+    phase: 'preparing' | 'mounted' | 'detaching' | 'detached' | 'retired';
+    setup: boolean;
+    tasks: ReturnType<typeof createEditorDeferredTasks>;
+    router: NoteRetainedNativeLifetime;
+    editor?: Editor;
+    ticket?: ReturnType<NoteRetainedNativeLifetime['begin']>;
+    scope?: ReturnType<NonNullable<Editor['options']['deferredTasks']>['beginMount']>;
+    token?: object;
+    cleanup?: Promise<void>;
+    failed?: boolean;
+    construction?: { lifetime: NoteNativeLifetime; settled: Promise<void> };
+    taskSettlement?: Promise<void>;
+  };
   private selectionBorrowEpoch = 0;
   private selectionBorrowExhausted = false;
   private restoreSelectionObserver?: () => void;
@@ -881,9 +905,13 @@ export class NoteWindowView {
     scroller.addEventListener('copy', this.copy, true);
     this.host.addEventListener('compositionstart', this.compositionStart);
     this.host.addEventListener('compositionend', this.compositionEnd);
-    this.observer = new ResizeObserver(() => this.measure());
+    this.observer = new ResizeObserver(() => {
+      if (!this.retained) this.measure();
+    });
     this.observer.observe(this.host);
-    this.domObserver = new MutationObserver(this.scheduleDomMeasurement);
+    this.domObserver = new MutationObserver(() => {
+      if (!this.retained) this.scheduleDomMeasurement();
+    });
     this.observeDom();
   }
   private observeDom(root: Node = this.host) {
@@ -895,23 +923,47 @@ export class NoteWindowView {
     });
   }
   private scheduleDomMeasurement = () => {
-    if (this.disposed || this.domFrame) return;
+    if (this.disposed || this.domFrame || (this.retained && this.retained.phase !== 'mounted'))
+      return;
+    const ticket = this.retained?.ticket;
     this.domFrame = requestAnimationFrame(() => {
+      if (ticket && (this.retained?.ticket !== ticket || this.retained.phase !== 'mounted')) return;
       this.domFrame = 0;
       this.measureDom();
     });
   };
+  private measurementBinding() {
+    const r = this.retained,
+      ticket = r?.ticket,
+      editor = this.editor,
+      phase = r?.phase;
+    return () =>
+      !this.disposed &&
+      (!r ||
+        (this.retained === r &&
+          r.ticket === ticket &&
+          !!ticket?.open &&
+          r.phase === phase &&
+          (phase === 'preparing' || phase === 'mounted') &&
+          this.editor === editor));
+  }
   private measureDom() {
-    if (this.disposed) return;
+    const current = this.measurementBinding();
+    if (!current()) return;
     const measured = measureNoteDom(this.host);
+    if (!current()) return;
     this.cost.mountedDomNodes = measured.nodes;
     this.cost.domPayloadBytes = measured.payloadBytes;
     this.cost.domPeakBytes = Math.max(this.cost.domPeakBytes, measured.payloadBytes);
     this.cost.domMeasurementNodes += measured.nodes;
     // Releasing old roots prevents detached primitive output from staying owned.
     this.domObserver.disconnect();
+    if (!current()) return;
     this.observeDom();
-    for (const root of measured.shadowRoots) this.observeDom(root);
+    for (const root of measured.shadowRoots) {
+      if (!current()) return;
+      this.observeDom(root);
+    }
   }
   updateEditing(editing?: NoteViewEditing) {
     this.invalidateSelectionBorrows();
@@ -937,6 +989,7 @@ export class NoteWindowView {
     }
   }
   private publishSelection() {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     this.invalidateSelectionBorrows();
     if (this.historyBusy) return;
     const selection = this.getSelection();
@@ -947,7 +1000,7 @@ export class NoteWindowView {
     return { ...this.selection };
   }
   private command(kind: 'copy' | 'search' | 'selectAll') {
-    if (this.historyBusy) return;
+    if (this.historyBusy || (this.retained && this.retained.phase !== 'mounted')) return;
     if (kind === 'selectAll' && this.coordinates) {
       this.selection = {
         anchor: 0,
@@ -972,6 +1025,7 @@ export class NoteWindowView {
     this.options.fullOperation(kind, this.getSelection());
   }
   private physicalIntent = () => {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     // A user scroll wins over a pending resize correction and over programmatic
     // scroll-event suppression. The next scroll event captures the new anchor.
     this.anchor = undefined;
@@ -989,7 +1043,11 @@ export class NoteWindowView {
     }
   };
   private copy = (event: Event) => {
-    if (this.historyBusy || this.transactionRelay?.busy) {
+    if (
+      this.historyBusy ||
+      this.transactionRelay?.busy ||
+      (this.retained && this.retained.phase !== 'mounted')
+    ) {
       event.preventDefault();
       return;
     }
@@ -1007,18 +1065,23 @@ export class NoteWindowView {
     return () => this.release(owner);
   }
   private compositionStart = () => {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     this.invalidateSelectionBorrows();
     this.pins.add(this.compositionPin);
   };
   private compositionEnd = () => {
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    const ticket = this.retained?.ticket;
     // ProseMirror's final composition transaction runs before the next animation frame.
     cancelAnimationFrame(this.frame);
     this.frame = requestAnimationFrame(() => {
+      if (ticket && (this.retained?.ticket !== ticket || this.retained.phase !== 'mounted')) return;
       this.frame = 0;
       this.release(this.compositionPin);
     });
   };
   pin(reason: string | symbol) {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     this.pins.add(reason);
   }
   release(reason: string | symbol) {
@@ -1034,6 +1097,7 @@ export class NoteWindowView {
     }
   }
   reveal(position: number) {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     this.navigationAnchor = { source: position, offset: this.scroller.clientHeight / 3 };
     if (
       this.coordinates &&
@@ -1046,6 +1110,7 @@ export class NoteWindowView {
     } else this.seekCurrent(Math.max(0, position - 1024));
   }
   setSelection(selection: NoteSourceSelection) {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     this.invalidateSelectionBorrows();
     if (this.historyBusy) return;
     if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
@@ -1081,13 +1146,20 @@ export class NoteWindowView {
   }
   private captureAnchor() {
     const e = this.editor,
-      p = this.projection;
-    if (!e || !p) return undefined;
+      p = this.projection,
+      current = this.measurementBinding();
+    if (!e || !p || !current()) return undefined;
+    const view = e.view;
     const rect = this.scroller.getBoundingClientRect();
-    const hit = e.view.posAtCoords({ left: rect.left + 24, top: rect.top + 4 });
-    if (!hit) return undefined;
+    if (!current()) return undefined;
+    const hit = view.posAtCoords({ left: rect.left + 24, top: rect.top + 4 });
+    if (!hit || !current()) return undefined;
     try {
-      return { source: p.sourceAt(hit.pos), offset: e.view.coordsAtPos(hit.pos).top - rect.top };
+      const source = p.sourceAt(hit.pos);
+      if (!current()) return undefined;
+      const offset = view.coordsAtPos(hit.pos).top - rect.top;
+      if (!current()) return undefined;
+      return { source, offset };
     } catch {
       return undefined;
     }
@@ -1103,11 +1175,20 @@ export class NoteWindowView {
     const data = this.options.retainWindow?.(window);
     const editing = this.options.editing;
     try {
+      if (this.retained && (this.disposed || this.retained.phase !== 'preparing'))
+        throw new Error('Retained acquisition lost');
       const borrow = editing?.borrow?.(window);
       let released = false,
         references = 1;
+      let suspended = false;
+      let waiter: { promise: Promise<void>; resolve(): void } | undefined;
       const drop = () => {
-        if (--references !== 0) return;
+        --references;
+        if (references === 1) {
+          waiter?.resolve();
+          waiter = undefined;
+        }
+        if (references !== 0) return;
         try {
           borrow?.release();
         } finally {
@@ -1120,8 +1201,27 @@ export class NoteWindowView {
         initialSelection: borrow?.initialSelection,
         retire: borrow?.retire,
         borrowed: !!borrow,
+        suspend() {
+          suspended = true;
+          const dependent = borrow?.suspend?.();
+          if (references === 1) return Promise.resolve(dependent);
+          if (!waiter) {
+            let resolve!: () => void;
+            const promise = new Promise<void>((done) => {
+              resolve = done;
+            });
+            waiter = { promise, resolve };
+          }
+          return Promise.all([waiter.promise, dependent]).then(() => undefined);
+        },
+        resume() {
+          if (released || references !== 1) throw new Error('Native lease is not settled');
+          borrow?.resume?.();
+          if (released || references !== 1) throw new Error('Native lease lost');
+          suspended = false;
+        },
         retain() {
-          if (released || references === Number.MAX_SAFE_INTEGER)
+          if (released || suspended || references === Number.MAX_SAFE_INTEGER)
             throw new Error('Native window lease unavailable');
           references++;
           let done = false;
@@ -1142,6 +1242,336 @@ export class NoteWindowView {
       throw error;
     }
   }
+  /** Explicit opt-in before the first schema/grant is issued. */
+  prepareRetained(window: NoteWindow) {
+    if (this.retained || this.editor || this.disposed)
+      throw new Error('Retained host already used');
+    let constructed!: () => void;
+    const construction = {
+      lifetime: new NoteNativeLifetime(),
+      settled: new Promise<void>((done) => {
+        constructed = done;
+      }),
+    };
+    const r = {
+      construction,
+      phase: 'preparing' as const,
+      setup: true,
+      tasks: createEditorDeferredTasks(),
+      router: new NoteRetainedNativeLifetime(),
+    };
+    this.retained = r;
+    const ready = (async () => {
+      try {
+        let shown: boolean;
+        try {
+          shown = this.show(window);
+        } finally {
+          constructed();
+        }
+        if (!shown || !this.currentLease?.initialSelection)
+          throw new Error('Retained host requires a genuine local context');
+        r.setup = false;
+        await this.finishRetainedMount(true);
+      } catch (error) {
+        this.retireRetained();
+        throw error;
+      }
+    })();
+    return Object.freeze({ ready, cancel: () => this.retireRetained() });
+  }
+  private bindRetainedPhysicalView() {
+    const r = this.retained!,
+      editor = r.editor!,
+      ticket = r.ticket!,
+      view = editor.view;
+    r.router.assert(ticket, view);
+    this.observer.disconnect();
+    this.domObserver.disconnect();
+    const observedCurrent = () =>
+      r.ticket === ticket && r.phase === 'mounted' && ticket.open && this.editor === editor;
+    this.observer = new ResizeObserver(() => {
+      if (observedCurrent()) this.measure();
+    });
+    this.domObserver = new MutationObserver(() => {
+      if (observedCurrent()) this.scheduleDomMeasurement();
+    });
+    this.observer.observe(this.host);
+    const dispatch = view.props.dispatchTransaction;
+    if (!dispatch) throw new Error('Missing configured native dispatch');
+    const handlers = view.props.handleDOMEvents;
+    const handleKeyDown = view.props.handleKeyDown;
+    const current = () => r.phase === 'mounted' && this.editor === editor && editor.view === view;
+    const events: NonNullable<typeof handlers> = {};
+    for (const key of Object.keys(handlers ?? {})) {
+      const name = key as keyof NonNullable<typeof handlers>;
+      const handler = handlers?.[name];
+      if (handler)
+        events[name] = ((native, event) => {
+          r.router.assert(ticket, native);
+          return current() ? handler.call(view, native, event as never) : true;
+        }) as typeof handler;
+    }
+    view.setProps({
+      dispatchTransaction: (transaction) => {
+        if (!current()) throw new Error('Retained mount is not ready');
+        return r.router.dispatch(ticket, view, transaction, () => dispatch.call(view, transaction));
+      },
+      handleDOMEvents: events,
+      handleKeyDown: handleKeyDown
+        ? (native, event) => {
+            r.router.assert(ticket, native);
+            return current() ? handleKeyDown.call(view, native, event) : true;
+          }
+        : undefined,
+    });
+    const update = view.updateState;
+    const observed = (state: EditorState) => {
+      r.router.assert(ticket, view);
+      if (state !== view.state) this.invalidateSelectionBorrows();
+      r.router.assert(ticket, view);
+      if (this.disposed || this.historyCancelled || this.editor !== editor)
+        throw new Error('Retained mount lost during selection notification');
+      update.call(view, state);
+    };
+    view.updateState = observed;
+    this.restoreSelectionObserver = () => {
+      if (view.updateState === observed) view.updateState = update;
+    };
+  }
+  private async finishRetainedMount(first: boolean) {
+    const r = this.retained!,
+      editor = r.editor!,
+      ticket = r.ticket!,
+      scope = r.scope!;
+    const owner = this.historyOwner,
+      lease = this.currentLease;
+    if (!owner || !scope || !lease || r.phase !== 'preparing')
+      throw new Error('Retained owner missing');
+    await scope.whenIdle();
+    if (r.phase !== 'preparing') throw new Error('Retained mount lost');
+    const view = editor.view,
+      state = view.state,
+      schema = editor.schema;
+    const endpoint = owner.retainedEndpoint?.();
+    const initial = endpoint?.initial ?? (first ? owner.initial : undefined);
+    if (!initial || (!first && !endpoint)) throw new Error('Retained endpoint missing');
+    const plugins = state.plugins.slice(),
+      selection = state.selection;
+    const expected = endpoint?.selection ?? this.selection;
+    const anchor = initial.projection.pmAt(expected.anchor, expected.anchorAffinity);
+    const head = initial.projection.pmAt(expected.head, expected.headAffinity);
+    const relay = this.transactionRelay?.plugin;
+    if (!relay || plugins.filter((p) => p === relay).length !== 1)
+      throw new Error('Retained relay binding missing');
+    const witness = r.tasks.captureIdle(scope, editor, view);
+    // setEditable/layout/current hooks can execute; the final checks are callback-free.
+    editor.setEditable(true, false);
+    this.layout();
+    this.measureDom();
+    this.options.changed?.();
+    const valid = owner.current();
+    if (
+      !valid ||
+      r.phase !== 'preparing' ||
+      this.disposed ||
+      this.historyOwner !== owner ||
+      this.currentLease !== lease ||
+      this.editor !== editor ||
+      editor.view !== view ||
+      view.state !== state ||
+      (endpoint
+        ? !validateLocalPointMountedOutput(endpoint.nativeOutput, initial, state.doc)
+        : state.doc !== initial.doc) ||
+      editor.schema !== schema ||
+      state.schema !== schema ||
+      state.selection !== selection ||
+      selection.anchor !== anchor ||
+      selection.head !== head ||
+      state.plugins.length !== plugins.length ||
+      !state.plugins.every((p, i) => p === plugins[i]) ||
+      !ticket.lifetime.idle ||
+      (endpoint && !validateLocalPointOutput(endpoint.nativeOutput, initial)) ||
+      !r.tasks.validateIdle(witness)
+    )
+      throw new Error('Retained mount final proof failed');
+    r.phase = 'mounted';
+  }
+  private retainedPhysicalCleanup(): Promise<void> {
+    const r = this.retained!;
+    if (r.cleanup) return r.cleanup;
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    r.cleanup = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    void r.cleanup.catch(() => undefined);
+    const construction = r.construction,
+      lifetime = r.ticket?.lifetime ?? construction?.lifetime,
+      scope = r.scope,
+      lease = this.currentLease;
+    try {
+      const dependent = lease?.suspend();
+      if (r.ticket) r.router.close(r.ticket);
+      this.invalidateSelectionBorrows();
+      this.restoreSelectionObserver?.();
+      this.restoreSelectionObserver = undefined;
+      cancelAnimationFrame(this.frame);
+      cancelAnimationFrame(this.domFrame);
+      this.frame = this.domFrame = 0;
+      this.domObserver.disconnect();
+      this.observer.disconnect();
+      this.editor = undefined;
+      const native = Promise.resolve(construction?.settled).then(async () => {
+        const ownedLease = this.currentLease;
+        if (lease && ownedLease !== lease) throw new Error('Retained cleanup lease changed');
+        if (r.phase === 'retired') ownedLease?.retire?.();
+        await Promise.all([
+          ownedLease === lease ? undefined : ownedLease?.suspend(),
+          lifetime?.dispose(
+            () => r.editor?.unmount(),
+            () => {},
+          ),
+        ]);
+      });
+      void Promise.all([scope?.settled, r.taskSettlement, native, dependent]).then(() => {
+        this.cost.mountedViews = 0;
+        this.cost.mountedNodes = 0;
+        this.cost.destroyedViews++;
+        resolve();
+      }, reject);
+    } catch (error) {
+      reject(error);
+    }
+    return r.cleanup;
+  }
+  detachRetained(): Promise<object> {
+    const r = this.retained;
+    if (
+      !r ||
+      r.phase !== 'mounted' ||
+      this.historyBusy ||
+      this.transactionRelay?.busy ||
+      this.pins.size ||
+      this.editor?.view.composing
+    )
+      return Promise.reject(new Error('Retained detach is not admitted'));
+    r.phase = 'detaching';
+    // Block new borrows before owner/invalidation callbacks can reenter.
+    void this.currentLease?.suspend();
+    try {
+      if (!this.historyOwner?.retainedEndpoint?.()) throw new Error('Retained group missing');
+    } catch (error) {
+      this.retireRetained();
+      return Promise.reject(error);
+    }
+    const owner = this.historyOwner,
+      lease = this.currentLease;
+    return this.retainedPhysicalCleanup().then(
+      () => {
+        const valid = owner?.current();
+        if (
+          !valid ||
+          r.phase !== 'detaching' ||
+          this.historyOwner !== owner ||
+          this.currentLease !== lease
+        ) {
+          this.retireRetained();
+          throw new Error('Retained detach lost');
+        }
+        const token = Object.freeze({});
+        r.token = token;
+        r.phase = 'detached';
+        return token;
+      },
+      (error) => {
+        this.retireRetained();
+        throw error;
+      },
+    );
+  }
+  attachRetained(token: object) {
+    const r = this.retained;
+    if (!r || r.phase !== 'detached' || !r.token || token !== r.token)
+      throw new Error('Retained detach token is not admitted');
+    r.token = undefined;
+    r.phase = 'preparing';
+    r.cleanup = undefined;
+    const ready = (async () => {
+      try {
+        const editor = r.editor!,
+          owner = this.historyOwner,
+          lease = this.currentLease;
+        const endpoint = owner?.retainedEndpoint?.();
+        const valid = owner?.current();
+        if (
+          !endpoint ||
+          !valid ||
+          this.disposed ||
+          r.phase !== 'preparing' ||
+          this.historyOwner !== owner ||
+          this.currentLease !== lease
+        )
+          throw new Error('Retained proof lost');
+        const before = editor.state;
+        if (
+          before.schema !== editor.schema ||
+          !validateLocalPointMountedOutput(endpoint.nativeOutput, endpoint.initial, before.doc)
+        )
+          throw new Error('Retained native endpoint mismatch');
+        this.currentLease!.resume();
+        const lifetime = new NoteNativeLifetime();
+        r.ticket = r.router.begin(editor, lifetime);
+        this.lifetime = lifetime;
+        const element = document.createElement('div');
+        this.host.replaceChildren(element);
+        try {
+          r.router.mount(r.ticket, element);
+        } catch (error) {
+          r.failed = true;
+          throw error;
+        }
+        r.scope = editor.captureDeferredTasks(editor.view);
+        this.editor = editor;
+        this.bindRetainedPhysicalView();
+        this.cost.createdViews++;
+        this.cost.mountedViews = 1;
+        this.observeDom();
+        await this.finishRetainedMount(false);
+      } catch (error) {
+        this.retireRetained();
+        throw error;
+      }
+    })();
+    return Object.freeze({ ready, cancel: () => this.retireRetained() });
+  }
+  private retireRetained() {
+    const r = this.retained;
+    if (!r || r.phase === 'retired') return;
+    r.phase = 'retired';
+    r.token = undefined;
+    try {
+      r.taskSettlement = r.tasks.retire();
+    } catch {
+      r.failed = true;
+    }
+    try {
+      this.currentLease?.retire?.();
+    } catch {
+      r.failed = true;
+    }
+    void this.retainedPhysicalCleanup()
+      .then(() => {
+        r.editor?.destroy();
+        r.editor = undefined;
+        if (r.failed) throw new Error('Partial retained construction keeps debt');
+        this.currentLease?.release();
+        r.editor = undefined;
+        this.currentLease = undefined;
+        this.historyOwner = undefined;
+      })
+      .catch((error) => logger.error('Failed to retire retained editor', error));
+  }
   /** Navigation changes the desired window, not the owner of a still-composing
    * mounted view. Its context independently checks revision, expiry and revocation. */
   showPrepared(window: NoteWindow, editing?: NoteViewEditing) {
@@ -1157,6 +1587,10 @@ export class NoteWindowView {
     return this.show(window);
   }
   show(window: NoteWindow, history?: { lease: WindowLease }) {
+    if (this.retained) {
+      if (!this.retained.setup) return false;
+      this.retained.setup = false;
+    }
     this.invalidateSelectionBorrows();
     if (this.historyBusy && !history) return false;
     if (this.disposed) return false;
@@ -1197,7 +1631,13 @@ export class NoteWindowView {
     const lease = history?.lease ?? retained ?? this.retain(window);
     this.pending = undefined;
     this.pendingLease = undefined;
-    const lifetime = new NoteNativeLifetime();
+    const lifetime = this.retained?.construction?.lifetime ?? new NoteNativeLifetime();
+    if (this.retained) {
+      this.currentLease = lease;
+      this.lifetime = lifetime;
+      if (this.disposed || this.retained.phase !== 'preparing')
+        throw new Error('Retained acquisition lost');
+    }
     let candidate: Editor | undefined;
     let candidateHost: HTMLDivElement | undefined;
     let published = false;
@@ -1221,23 +1661,34 @@ export class NoteWindowView {
         editable: !!this.options.editing,
         useMarkdown: true,
         enableComments: false,
-        enableMentions: true,
+        enableMentions: !this.retained,
+        deferredTasks: this.retained?.tasks.port,
         enableNotePrimitives: true,
         onUpdate: () => {},
       });
       const extensions = (config.extensions ?? []).map((e) =>
-        e.name === 'starterKit' ? e.configure({ undoRedo: false }) : e,
+        e.name === 'starterKit'
+          ? e.configure({ undoRedo: false, ...(this.retained ? { dropcursor: false } : {}) })
+          : e,
       );
       let boundEditing = lease.editing;
       let editOwner: NoteTransactionOwner | undefined;
       let currentProjection = projection;
       let currentCoordinates: NoteViewCoordinates | undefined;
-      const transactions = createNoteTransactionRelay(() =>
-        !this.historyBusy &&
-        (!lease.initialSelection || lifetime.idle) &&
-        this.editor === candidate &&
-        this.mountedEditing === boundEditing
-          ? editOwner
+      const transactions = createNoteTransactionRelay(
+        () =>
+          !this.historyBusy &&
+          (this.retained
+            ? this.retained.phase === 'mounted' &&
+              !!this.retained.ticket &&
+              this.retained.router.admitted(this.retained.ticket)
+            : !lease.initialSelection || lifetime.idle) &&
+          this.editor === candidate &&
+          this.mountedEditing === boundEditing
+            ? editOwner
+            : undefined,
+        this.retained
+          ? (transaction, state) => this.retained!.router.filter(transaction, state)
           : undefined,
       );
       const retireFailedView = () => {
@@ -1294,7 +1745,10 @@ export class NoteWindowView {
         ...config,
         element: null,
         content: projection.content,
-        extensions: lifetime.extensions([...extensions, CommentAnchor, relay]),
+        ...(this.retained ? { autofocus: false } : {}),
+        extensions: this.retained
+          ? this.retained.router.extensions([...extensions, CommentAnchor, relay])
+          : lifetime.extensions([...extensions, CommentAnchor, relay]),
         editorProps: {
           ...config.editorProps,
           handleDOMEvents: {
@@ -1361,7 +1815,14 @@ export class NoteWindowView {
             )
           )
             this.invalidateSelectionBorrows();
-          if (!candidate || this.historyBusy || this.applying || this.editor !== candidate) return;
+          if (
+            !candidate ||
+            this.historyBusy ||
+            this.applying ||
+            this.editor !== candidate ||
+            (this.retained && this.retained.phase !== 'mounted')
+          )
+            return;
           const chain = [transaction, ...appendedTransactions];
           if (chain.some((step) => step.docChanged)) {
             const accepted = transactions.adopt(chain, this.editor.state);
@@ -1400,6 +1861,11 @@ export class NoteWindowView {
           }
         },
       });
+      if (this.retained) {
+        // Own the returned Editor before any context or admission callback.
+        this.retained.editor = candidate;
+        if (this.retained.phase !== 'preparing') throw new Error('Retained construction lost');
+      }
       if (lease.initialSelection) {
         const selected = lease.initialSelection();
         candidate.view.updateState(
@@ -1415,7 +1881,13 @@ export class NoteWindowView {
         );
         this.selection = { ...selected };
       }
-      editOwner = lease.bind?.(window, projection, candidate.state.doc, candidate.state);
+      editOwner = lease.bind?.(
+        window,
+        projection,
+        candidate.state.doc,
+        candidate.state,
+        !!this.retained,
+      );
       if (editOwner) {
         const initial = editOwner.initial;
         if (
@@ -1437,14 +1909,25 @@ export class NoteWindowView {
         // The editor is still unmounted. Install the materialized dirty document
         // and its exact map together, without a synthetic edit or history entry.
         candidate.view.updateState(
-          EditorState.create({ schema: candidate.schema, doc: initial.doc }),
+          EditorState.create({
+            schema: candidate.schema,
+            doc: initial.doc,
+            ...(this.retained ? { selection: candidate.state.selection } : {}),
+          }),
         );
         currentProjection = initial.projection;
         currentCoordinates = initial.coordinates;
       }
       candidate.setEditable(!!editOwner, false);
-      candidate.mount(candidateHost);
-      this.destroyEditor();
+      if (this.retained) {
+        this.retained.editor = candidate;
+        this.retained.ticket = this.retained.router.begin(candidate, lifetime);
+        this.retained.router.mount(this.retained.ticket, candidateHost);
+        this.retained.scope = candidate.captureDeferredTasks(candidate.view);
+      } else {
+        candidate.mount(candidateHost);
+        this.destroyEditor();
+      }
       this.host.replaceChildren(candidateHost);
       candidateHost.removeAttribute('style');
       this.committedProjection = currentProjection;
@@ -1475,12 +1958,20 @@ export class NoteWindowView {
       this.cost.pendingBytes = 0;
       published = true;
       const editor = candidate;
+      if (this.retained) this.bindRetainedPhysicalView();
       // Observe the actual native state boundary as well as TipTap transactions:
       // direct updateState/rollback must not restore a previously borrowed epoch.
       const nativeView = editor.view,
         updateState = nativeView.updateState;
+      const capturedTicket = this.retained?.ticket;
       const observeState = (state: EditorState) => {
+        if (capturedTicket) this.retained!.router.assert(capturedTicket, nativeView);
         if (nativeView.state !== state) this.invalidateSelectionBorrows();
+        if (capturedTicket) {
+          this.retained!.router.assert(capturedTicket, nativeView);
+          if (this.disposed || this.historyCancelled || this.editor !== editor)
+            throw new Error('Retained mount lost during selection notification');
+        }
         updateState.call(nativeView, state);
       };
       const nativeDestroyed = () => this.invalidateSelectionBorrows();
@@ -1524,7 +2015,10 @@ export class NoteWindowView {
       this.options.changed?.();
       return true;
     } catch (error) {
-      if (!published) {
+      if (!published && this.retained) {
+        this.retained.failed = true;
+        this.retireRetained();
+      } else if (!published) {
         lease.retire?.();
         void lifetime
           .dispose(
@@ -1657,6 +2151,7 @@ export class NoteWindowView {
     }
   }
   history(direction: 'undo' | 'redo') {
+    if (this.retained && this.retained.phase !== 'mounted') return false;
     this.invalidateSelectionBorrows();
     if (this.disposed || this.historyBusy) return false;
     if (this.transactionRelay?.defer('history', () => this.history(direction))) return false;
@@ -1786,40 +2281,57 @@ export class NoteWindowView {
     this.after.style.height = `${(w.length - w.end) * rate}px`;
   }
   private restoreAnchor() {
-    if (!this.anchor || !this.editor || !this.projection) return;
-    const at = this.projection.pmAt(this.anchor.source);
-    const delta =
-      this.editor.view.coordsAtPos(at).top -
-      this.scroller.getBoundingClientRect().top -
-      this.anchor.offset;
+    const current = this.measurementBinding(),
+      anchor = this.anchor,
+      editor = this.editor,
+      projection = this.projection;
+    if (!anchor || !editor || !projection || !current()) return;
+    const at = projection.pmAt(anchor.source);
+    if (!current()) return;
+    const top = editor.view.coordsAtPos(at).top;
+    if (!current()) return;
+    const rect = this.scroller.getBoundingClientRect();
+    if (!current()) return;
+    const delta = top - rect.top - anchor.offset;
     if (Math.abs(delta) > 0.5) {
       this.programmatic = true;
       this.scroller.scrollTop += delta;
     }
   }
   private measure() {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     const coordinates = this.coordinates;
     if (!coordinates || this.disposed) return;
     this.scheduleDomMeasurement();
+    const current = this.measurementBinding();
     const anchor = this.anchor ?? this.captureAnchor();
+    if (!current()) return;
     const height = this.host.getBoundingClientRect().height;
+    if (!current()) return;
     if (height > 0) {
       this.rate = height / Math.max(1, coordinates.end - coordinates.start);
       this.layout();
     }
+    if (!current()) return;
     this.anchor = anchor;
     this.restoreAnchor();
   }
   private scroll = () => {
+    if (this.retained && this.retained.phase !== 'mounted') return;
     if (this.programmatic) {
       this.programmatic = false;
       return;
     }
     const w = this.coordinates;
     if (!w) return;
-    const viewport = this.scroller.getBoundingClientRect(),
-      rect = this.host.getBoundingClientRect();
-    this.anchor = this.captureAnchor();
+    const current = this.measurementBinding();
+    const viewport = this.scroller.getBoundingClientRect();
+    if (!current()) return;
+    const rect = this.host.getBoundingClientRect();
+    if (!current()) return;
+    const anchor = this.captureAnchor();
+    if (!current()) return;
+    this.anchor = anchor;
     let target: number | undefined;
     if (rect.bottom < viewport.top || rect.top > viewport.bottom) {
       const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.length));
@@ -1838,6 +2350,10 @@ export class NoteWindowView {
     }
   };
   private destroyEditor() {
+    if (this.retained) {
+      this.retireRetained();
+      return;
+    }
     this.invalidateSelectionBorrows();
     this.restoreSelectionObserver?.();
     this.restoreSelectionObserver = undefined;
