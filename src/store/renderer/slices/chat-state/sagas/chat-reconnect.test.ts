@@ -50,6 +50,7 @@ import {
   initializeChatRequested,
   olderHistoryPageRequested,
   chatSendStarted,
+  refreshChatTranscriptRequested,
 } from '../chat-state-slice';
 import { selectTranscriptSnapshotMeta, selectChatAgentState } from '../chat-state-selectors';
 import { chatSubscribeSaga } from './chat-subscribe-saga';
@@ -260,6 +261,128 @@ describe('chat reconnect recovery through the live client and store', () => {
     });
     expect(rows().map((row) => row.id)).toEqual(['after']);
   });
+
+  it.each([false, true])(
+    'preserves pending-send activity through failed hydration retry (prior streaming: %s)',
+    async (wasStreaming) => {
+      await open();
+      const canonical = [message('before', 0)];
+      snapshot('sub-1', wasStreaming ? [...canonical, message('old-partial')] : canonical);
+      stops.push(store.runSaga(chatReadSaga));
+      vi.mocked(appClient.agents.get).mockRejectedValueOnce(
+        new Error('temporary metadata read failure'),
+      );
+      await reconnect();
+      store.dispatch(chatSendStarted(AGENT, WS));
+      store.dispatch(
+        addMessage(AGENT, {
+          ...message('optimistic-send'),
+          role: 'user',
+          isStreaming: false,
+          appMessageId: 'local-send-id',
+        }),
+      );
+      snapshot('sub-2', canonical);
+      await flush();
+      await flush();
+      expect(selectChatAgentState.select(store.state, AGENT).transcriptHydration).toBe('error');
+      expect(selectAgentSession.select(store.state, AGENT)).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+
+      let completeRead!: (session: AgentSession) => void;
+      vi.mocked(appClient.agents.get).mockReturnValueOnce(
+        new Promise((resolve) => {
+          completeRead = resolve;
+        }),
+      );
+      store.dispatch(refreshChatTranscriptRequested(WS, AGENT));
+      await flush();
+      expect(appClient.agents.get).toHaveBeenNthCalledWith(2, AGENT, WS);
+      expect(rows().map((row) => row.id)).toEqual(['before', 'optimistic-send']);
+      expect.soft(selectAgentSession.select(store.state, AGENT)).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+      // agent.get returns daemon metadata, without renderer-only activity flags.
+      // This stale idle read must not overwrite the local send while retry restores
+      // the already-applied recovery snapshot.
+      completeRead({
+        id: AGENT,
+        workspaceId: WS,
+        name: 'Sleep regression',
+        status: AgentStatus.Active,
+        createdAt: '2026-10-06T00:00:00.000Z',
+        updatedAt: '2026-10-06T00:00:00.000Z',
+        messages: [],
+        isResponding: false,
+        turnInFlight: false,
+        lastStreamActivityAt: null,
+      } as AgentSession);
+      await flush();
+      await flush();
+      expect(selectChatAgentState.select(store.state, AGENT).transcriptHydration).toBe('settled');
+      expect(rows().map((row) => row.id)).toEqual(['before', 'optimistic-send']);
+      expect.soft(selectAgentSession.select(store.state, AGENT)).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+      expect(appClient.agents.get).toHaveBeenCalledTimes(2);
+      expect(appClient.agents.getConversation).not.toHaveBeenCalled();
+      expect(
+        wire.request.mock.calls.filter(([method]) => method === 'chat.subscribe'),
+      ).toHaveLength(2);
+
+      const echo: BackendNotification = {
+        method: 'subscription.push',
+        params: {
+          subscriptionId: 'sub-2',
+          kind: 'delta',
+          seq: 1,
+          delta: {
+            added: [
+              {
+                agentId: AGENT,
+                messageId: 'canonical-send',
+                role: 'user',
+                messageSeq: 1,
+                timestamp: '2026-10-06T01:00:01.000Z',
+                streamingComplete: true,
+                appMessageId: 'local-send-id',
+                block: {
+                  type: 'text',
+                  id: 'canonical-send:0',
+                  text: 'Content for optimistic-send',
+                },
+              },
+            ],
+            updated: [],
+            removedIds: [],
+          },
+        },
+      };
+      for (const handler of wire.notifications) {
+        handler(echo);
+        handler(echo);
+      }
+      expect(rows().map((row) => [row.id, row.seq])).toEqual([
+        ['before', 0],
+        ['canonical-send', 1],
+      ]);
+      expect.soft(selectAgentSession.select(store.state, AGENT)).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+      // A genuinely new idle snapshot still settles the pending activity.
+      snapshot('sub-2', [...rows(), message('completed-reply', 2)]);
+      expect(selectAgentSession.select(store.state, AGENT)).toMatchObject({
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+      });
+    },
+  );
 
   it.each([
     { timing: 'before', wasStreaming: false },

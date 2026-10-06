@@ -654,7 +654,17 @@ function* handleSubscriptionEvent(
       event.transcript.resumed === false || event.transcript.resetCachedTranscript === true;
     const discardStoreOnly =
       !event.replayed && event.transcript.fromSnapshot === true && resetsCachedHistory;
-    yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
+    // Retry re-emits an already-applied snapshot to restore hydration, not to
+    // deliver new idle evidence. Deferred pre-session snapshots omit replayed
+    // because their first application must still reconcile stale activity.
+    yield* applyTranscript(
+      coordinator,
+      event.agentId,
+      entry,
+      event.transcript,
+      discardStoreOnly,
+      event.replayed === true,
+    );
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
     // subsequent agent:stream:chunk dispatches carry the full block prefix,
