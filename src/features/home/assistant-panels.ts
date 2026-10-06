@@ -231,7 +231,7 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
     },
   );
   store.dispatch(applyNoteUpdated(workspaceId, String(note.id), note));
-  if (!alreadyOpen) store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'preview'));
+  if (!alreadyOpen) store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'editor'));
   showContent(
     { type: 'note', title: note.title, noteId: String(note.id), workspaceId, closable: true },
     preserveFocus,

@@ -1,12 +1,21 @@
+import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../test/ct-test';
 import Preview from './assistant-panels.preview.svelte';
+
+async function selectNoteView(panel: Locator, page: Page, name: 'Editor' | 'Rendered preview') {
+  await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  await page.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
+  await page.getByRole('menuitemradio', { name, exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+}
 
 for (const note of [
   { link: 'Open the plan', id: 'plan', width: 1440 },
   { link: 'Open empty note', id: 'empty', width: 600 },
   { link: 'Open long note', id: 'long', width: 600 },
 ]) {
-  test(`Assistant ${note.id} note can be edited, saved and reopened`, async ({
+  test(`Assistant ${note.id} note opens editable, saves and reopens`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -16,15 +25,18 @@ for (const note of [
     await draft.fill('Keep my conversation draft');
     await component.getByRole('link', { name: note.link, exact: true }).click();
     const panel = component.locator('[data-assistant-content-panel]');
-    await panel.getByRole('button', { name: 'Edit note', exact: true }).click();
-    const editor = panel.locator('.tiptap[contenteditable="true"]');
+    const editor = panel.locator('.tiptap[contenteditable="true"]').filter({ visible: true });
     await expect(editor).toBeVisible();
+    await testInfo.attach(`assistant-${note.id}-default`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
     await editor.click();
     await page.keyboard.press('ControlOrMeta+End');
     await page.keyboard.press('Enter');
     await page.keyboard.press('Enter');
     await page.keyboard.insertText('Updated by me.');
-    await panel.getByRole('button', { name: 'Rendered preview', exact: true }).click();
+    await selectNoteView(panel, page, 'Rendered preview');
     await expect(
       panel.getByTestId('rendered-note-preview').filter({ visible: true }),
     ).toContainText('Updated by me.');
@@ -67,9 +79,9 @@ for (const note of [
     await expect(
       panel.getByTestId('rendered-note-preview').filter({ visible: true }),
     ).toContainText('Updated by me.');
-    await panel.getByRole('button', { name: 'Edit note', exact: true }).click();
+    await selectNoteView(panel, page, 'Editor');
     await component.getByRole('link', { name: note.link, exact: true }).click();
-    await expect(panel.locator('.tiptap[contenteditable="true"]')).toContainText('Updated by me.');
+    await expect(editor).toContainText('Updated by me.');
     await expect(draft).toHaveValue('Keep my conversation draft');
     await testInfo.attach(`assistant-${note.id}-edited`, {
       body: await page.screenshot(),
@@ -90,13 +102,12 @@ test('Assistant opens workspace notes in their own editable workspace', async ({
   const component = await mount(Preview);
   await component.getByRole('link', { name: 'Open workspace plan' }).click();
   const panel = component.locator('[data-assistant-content-panel]');
-  await panel.getByRole('button', { name: 'Edit note', exact: true }).click();
-  const editor = panel.locator('.tiptap[contenteditable="true"]');
+  const editor = panel.locator('.tiptap[contenteditable="true"]').filter({ visible: true });
   await expect(editor).toBeVisible();
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.insertText(' Saved in its workspace.');
-  await panel.getByRole('button', { name: 'Rendered preview', exact: true }).click();
+  await selectNoteView(panel, page, 'Rendered preview');
   await expect
     .poll(() =>
       page.evaluate(
@@ -128,9 +139,9 @@ test('Assistant note menus fit a narrow panel and unavailable workspaces stay re
   const component = await mount(Preview);
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
   const panel = component.locator('[data-assistant-content-panel]');
+  await expect(panel.locator('.tiptap[contenteditable="true"]')).toBeVisible();
   await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
   const menu = page.locator('[data-slot="menu-content"]');
-  await expect(menu.getByRole('menuitem', { name: 'Edit note', exact: true })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: /Move panel/ })).toHaveCount(0);
   const view = menu.getByRole('menuitem', { name: /^Note view/ });
   await expect(view).toBeVisible();
@@ -154,7 +165,9 @@ test('Assistant note menus fit a narrow panel and unavailable workspaces stay re
   await expect(panel.getByTestId('rendered-note-preview').filter({ visible: true })).toContainText(
     'Plan for the repository',
   );
-  await expect(panel.getByRole('button', { name: 'Edit note', exact: true })).toHaveCount(0);
+  await expect(
+    panel.locator('.tiptap[contenteditable="true"]').filter({ visible: true }),
+  ).toHaveCount(0);
   await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
   await menu.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
   const views = page.getByRole('menu', { name: 'Note view', exact: true });
@@ -179,7 +192,7 @@ test('Assistant notes remain readable when the workspace lookup fails', async ({
   await component.getByRole('link', { name: 'Open workspace lookup failure note' }).click();
   const panel = component.locator('[data-assistant-content-panel]');
   await expect(panel.getByTestId('rendered-note-preview')).toContainText('Plan for the repository');
-  await expect(panel.getByRole('button', { name: 'Edit note', exact: true })).toHaveCount(0);
+  await expect(panel.locator('.tiptap[contenteditable="true"]')).toHaveCount(0);
   await testInfo.attach('workspace-lookup-failure-note', {
     body: await page.screenshot(),
     contentType: 'image/png',

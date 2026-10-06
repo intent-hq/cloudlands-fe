@@ -49,19 +49,11 @@
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
-  import {
-    faCheck,
-    faCopy,
-    faEye,
-    faNoteSticky,
-    faPen,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCopy, faNoteSticky, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-  import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 
   const logger = createLogger('NoteTabType');
 
@@ -188,24 +180,6 @@
   const showRenderedPreview = $derived(
     (noteViewMode === 'preview' || !$workspace) && !showSpecOnboarding,
   );
-  const canChangeNoteView = $derived(
-    !!tab.noteId &&
-      !!$note &&
-      !!$workspace &&
-      noteEditable &&
-      !noteContentStale &&
-      !noteContentLoadFailed &&
-      !showSpecOnboarding &&
-      !showVersionHistory,
-  );
-
-  function toggleNoteEditing() {
-    if (!canChangeNoteView || !tab.noteId) return;
-    appStore.dispatch(
-      setNoteViewMode(workspaceId, tab.noteId, showRenderedPreview ? 'editor' : 'preview'),
-    );
-  }
-
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
@@ -337,13 +311,6 @@
 {/snippet}
 
 {#snippet noteActions()}
-  {#if canChangeNoteView && showRenderedPreview}
-    <Menu.CommandItem
-      icon={faPen}
-      label={m.chat_toolClassifier_editNote_label()}
-      onclick={toggleNoteEditing}
-    />
-  {/if}
   {#if showPresenceStack && tab.noteId}
     <NotePresenceAvatarStack viewers={presenceViewers} embedded />
   {/if}
@@ -370,16 +337,6 @@
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col">
-  {#if canChangeNoteView}
-    <div class="flex shrink-0 items-center justify-end border-b border-border px-4 py-2">
-      <Button variant="ghost-light" size="sm" onclick={toggleNoteEditing}>
-        <Fa icon={showRenderedPreview ? faPen : faEye} size="sm" />
-        {showRenderedPreview
-          ? m.chat_toolClassifier_editNote_label()
-          : m.ui_viewSettings_renderedPreview_label()}
-      </Button>
-    </div>
-  {/if}
   <div class="min-h-0 flex-1">
     <NoteContentSurface state={noteContentState}>
       {#if tab.noteId}
