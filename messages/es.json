@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "Administrador de archivos",
   "layout_panelTabBar_paneStack_ariaLabel": "Tamaño de la pila de paneles: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "Mostrar la lista de paneles. Total de paneles: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. Mostrar la lista de paneles. Total de paneles: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "Paneles de esta pila",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. Requiere atención.",
   "layout_panelTabBar_openPaneAbove_label": "Abrir el panel de arriba",

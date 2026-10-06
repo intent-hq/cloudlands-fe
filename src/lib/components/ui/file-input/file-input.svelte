@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import { InputMessage } from '$lib/components/ui/input-message';
@@ -144,7 +145,7 @@
         class="type-caption min-w-0 flex-1 truncate text-muted-foreground"
         role="status"
         aria-live="polite"
-        title={selectedText}
+        use:truncatedTitle={selectedText}
       >
         {selectedText}
       </span>

@@ -6,8 +6,8 @@
  * - rotate: adjusts the current agent's effort by default; optionally cycles
  *   workspaces ordered by activity. Both modes clamp at the ends and show a
  *   small HUD naming the choice;
- * - click (`ENC_CLK` keydown): brings up the All-workspaces sidebar panel;
- *   clicks while it is open cycle its view mode Recent → Repo → Status.
+ * - click (`ENC_CLK` keydown): opens Home; clicks while its workspace list
+ *   is open cycle grouping by activity, repository, and status.
  *
  * The HUD timer is action-driven in the device saga.
  *
@@ -29,15 +29,9 @@ import { HardwareInputDecoder } from '../input/input-decoder';
 import type { EncoderDirection } from '../input/types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import { isConsoleOwner } from '../owner-gate';
-import {
-  openPanel,
-  setAllSpacesViewMode,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import {
-  cycleWorkspaceId,
-  nextAllSpacesViewMode,
-  orderWorkspacesForCycling,
-} from './workspace-cycle';
+import { closePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { updateHomeWorkspaceView } from '$features/home/home-workspaces-slice';
+import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 const logger = createLogger('HardwareConsoleEncoder');
@@ -105,18 +99,29 @@ function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}
 }
 
 /**
- * Handle one encoder click. Exported for tests. First click opens the
- * All-workspaces sidebar panel (in its current view mode); clicks while it
- * is open cycle the view mode Recent → Repo → Status.
+ * Open the homepage workspace list, or cycle its grouping when already open.
  */
 function handleEncoderClick(deps: EncoderDeps = {}): void {
-  const { dispatch } = resolveDeps(deps);
-  const nav = appStore.state.sidebarNav;
-  if (nav.panelItem === 'all-workspaces') {
-    dispatch(setAllSpacesViewMode(nextAllSpacesViewMode(nav.allSpacesViewMode)));
-  } else {
-    dispatch(openPanel('all-workspaces'));
+  const { dispatch, navigate } = resolveDeps(deps);
+  const { sidebarNav, homeWorkspaces } = appStore.state;
+  const isHome = typeof window !== 'undefined' && window.location.pathname === '/';
+  if (isHome && sidebarNav.panelItem === null && homeWorkspaces.tab === 'workspaces') {
+    dispatch(
+      updateHomeWorkspaceView({
+        groupBy:
+          homeWorkspaces.groupBy === 'none'
+            ? 'repository'
+            : homeWorkspaces.groupBy === 'repository'
+              ? 'status'
+              : 'none',
+      }),
+    );
   }
+  dispatch(closePanel());
+  dispatch(updateHomeWorkspaceView({ tab: 'workspaces' }));
+  void navigate('/').catch((error: unknown) => {
+    logger.warn('Failed to open Home from encoder', { error });
+  });
 }
 
 /**

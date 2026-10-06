@@ -85,7 +85,7 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
     updatedAt: '2026-09-28T22:00:00Z',
   };
   const handlers: Record<string, MockBackendMethodHandler> = {
-    'agent.getQueue': () => ({ queue: [] }),
+    'agent.getQueue': () => ({ success: true, queue: [] }),
     'github.authStatus': () => ({
       isConfigured: true,
       oauthUrl: '',

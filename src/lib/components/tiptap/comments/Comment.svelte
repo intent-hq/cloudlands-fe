@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { commentAuthorLabel } from '$features/comments/comment-attribution';
   import type { CommentAttribution } from '$shared/types/comment.types';
   import Fa from 'svelte-fa';
@@ -235,7 +236,7 @@
         <span
           data-comment-author
           aria-label={authorLabel}
-          title={authorLabel}
+          use:truncatedTitle={authorLabel}
           class="font-medium text-foreground truncate {authorSize}">{authorLabel}</span
         >
         {#if comment.createdAt}
@@ -245,10 +246,7 @@
           >
         {/if}
         {#if showType && comment.type && comment.type !== 'comment'}
-          <span
-            class="comment-type-badge px-1.5 py-0.5 text-ui font-mono bg-muted/50 text-subtle"
-            title={m.tiptap_comment_type_tooltip()}
-          >
+          <span class="comment-type-badge px-1.5 py-0.5 text-ui font-mono bg-muted/50 text-subtle">
             {comment.type}
           </span>
         {/if}

@@ -245,6 +245,15 @@
     flex: 1;
     min-height: 24rem;
   }
+  .home-layout.home-assistant {
+    overflow: hidden;
+  }
+  .home-layout.home-assistant .home-sidebar-resizable {
+    height: min(10rem, 25%);
+  }
+  .home-layout.home-assistant .home-surface {
+    min-height: 0;
+  }
 }
 
 .home-workspace-filters-compact,

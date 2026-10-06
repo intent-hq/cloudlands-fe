@@ -47,8 +47,6 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
   selectOnboardingActive: () => readable(false),
-  selectPanelItem: () => readable(null),
-  selectPanelWidth: () => readable(0),
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateBackFromSettings: vi.fn(),

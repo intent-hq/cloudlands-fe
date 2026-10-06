@@ -547,6 +547,7 @@
 <div
   bind:this={homeElement}
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
+  class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
   use:homeSidebarMotion={destination}
 >
@@ -556,7 +557,7 @@
     minWidth={200}
     maxWidth={360}
     defaultWidth={224}
-    className="home-sidebar-resizable h-full"
+    className="home-sidebar-resizable flex h-full min-h-0 flex-col"
     handleClassName="home-sidebar-resize-handle"
   >
     <nav
@@ -749,13 +750,7 @@
           aria-hidden={destination !== 'assistant'}
         >
           <HomeAssistantPanels isActive={destination === 'assistant'}>
-            <ChiefCard
-              expanded
-              embedded
-              pageLayout
-              threadPicker={false}
-              isActive={destination === 'assistant'}
-            />
+            <ChiefCard threadPicker={false} isActive={destination === 'assistant'} />
           </HomeAssistantPanels>
         </div>
       {/if}

@@ -53,11 +53,10 @@
     "test/fixtures/native-review-native/main.ts",
     "test/fixtures/native-review-native/ui-renderer.svelte",
     // Substituted for production components through Vite alias/resolveId plugins inside
-    // the specs' createServer() config (electron-browser-lifetime.spec.ts,
-    // sidebar-shell-background.spec.ts); alias resolution is not followed by knip
+    // the specs' createServer() config (electron-browser-lifetime.spec.ts);
+    // alias resolution is not followed by knip
     "test/fixtures/browser-lifetime/BrowserContent.svelte",
     "test/fixtures/browser-lifetime/Empty.svelte",
-    "test/fixtures/SidebarShellChiefStub.svelte",
     // Dynamically imported as import('$lib/dev-tools') in src/routes/(app)/+layout.svelte
     // (DEV-only); knip does not follow this aliased dynamic import inside .svelte
     "src/lib/dev-tools.ts",

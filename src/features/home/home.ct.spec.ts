@@ -280,6 +280,9 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
   await planning.click();
   await expect(planning).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('ArrowDown');
+  await expect(
+    threads.getByRole('option', { name: 'Review open pull requests', exact: true }),
+  ).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(threads.getByRole('option', { selected: true })).toHaveText(
     'Review open pull requests',

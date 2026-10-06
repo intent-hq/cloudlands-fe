@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { tick, untrack, type Snippet } from 'svelte';
   import { slide } from '$lib/motion';
   import {
@@ -573,7 +574,7 @@
                       <div class="flex min-w-0 w-full items-center gap-2">
                         <code
                           class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 flex-1 truncate"
-                          title={tcAddress}>{tcAddress}</code
+                          use:truncatedTitle={tcAddress}>{tcAddress}</code
                         >
                         <Button
                           variant="ghost"

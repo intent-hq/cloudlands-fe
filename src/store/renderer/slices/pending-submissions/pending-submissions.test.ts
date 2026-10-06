@@ -235,11 +235,10 @@ describe('shared pending submission state', () => {
 
   it('splits an apparent A+B append into A / other participant / B without changing confirmed A', () => {
     const f = fixture();
-    const a = queued('a', 'A', { imageBlocks: [{ type: 'image', attachmentId: 'a-image' }] });
+    const a = queued('a', 'A');
     f.fresh([a]);
     f.accept('b', 'queue', {
       content: 'B',
-      fileBlocks: [{ type: 'file', attachmentId: 'b-file', fileName: 'b.txt' }],
       messageMetadata: { answer: 'B' },
     });
     expect(f.display().queue.map((s) => s.content)).toEqual(['A\n\nB']);

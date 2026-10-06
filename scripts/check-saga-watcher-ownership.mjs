@@ -62,10 +62,6 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
     rationale: 'backend layout restore and sidebar reconciliation are independent',
   },
   {
-    pattern: /sidebar-nav-slice\.ts#(?:openPanel|closePanel|togglePanel|closeAll|closeHoverCards)$/,
-    rationale: 'sidebar ownership and unread-boundary snapshots are independent',
-  },
-  {
     pattern:
       /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|destroyHiddenTabsByOwnerAgent|reopenClosedPanelColumn|reopenClosedTab|setActiveTab|activateVisibleTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
     rationale:

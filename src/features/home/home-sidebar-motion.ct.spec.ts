@@ -28,7 +28,8 @@ test.beforeEach(async ({ page }) => {
         this.matches(
           '.home-sidebar-content, .home-destination-content, .home-tab-content, [data-tabs-indicator]',
         ) &&
-        Array.isArray(frames)
+        Array.isArray(frames) &&
+        frames.length > 1
       ) {
         window.__sidebarMotionRecords.push({
           view:
@@ -221,7 +222,7 @@ test('Home content enters and exits horizontally in the direction of its tabs', 
     expect(record.frames.at(-1)).toMatchObject({ x: 0, y: 0, opacity: 1 });
     records.push(record);
   }
-  await testInfo.attach('home-content-downward-motion', {
+  await testInfo.attach('home-content-horizontal-motion', {
     body: JSON.stringify(records, null, 2),
     contentType: 'application/json',
   });
@@ -240,7 +241,7 @@ for (const preference of ['OS', 'battery saver'] as const) {
     await tabs.getByRole('tab', { name: 'Assistant', exact: true }).click();
     await expect(sidebar.getByRole('status')).toContainText('No Assistant threads');
     await tabs.getByRole('tab', { name: 'Workspaces', exact: true }).click();
-    await expect(sidebar.getByRole('button', { name: 'All repos', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: /^All repos/ })).toBeVisible();
     expect(
       await page.evaluate(() =>
         window.__sidebarMotionRecords.filter((record) => record.duration > 0),

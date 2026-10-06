@@ -1,5 +1,6 @@
 <script lang="ts">
   import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /** Agent summary with Redux-owned streaming state and line changes. */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
@@ -909,7 +910,7 @@
                 <p
                   class="ml-2.5 min-w-0 flex-1 truncate whitespace-nowrap text-sm {INLINE_PEEK_TYPOGRAPHY_CLASS}"
                   data-testid="agent-card-preview"
-                  title={inlinePreviewText}
+                  use:truncatedTitle={inlinePreviewText}
                   aria-label={inlinePreviewText}
                 >
                   {inlinePreviewText}
@@ -976,7 +977,7 @@
             {:else if $preview$.kind === 'report'}
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
-                title={$preview$.text}
+                use:truncatedTitle={$preview$.text}
               >
                 {$preview$.text}
               </p>
@@ -984,7 +985,7 @@
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
                 data-testid="agent-card-preview"
-                title={$preview$.text}
+                use:truncatedTitle={$preview$.text}
               >
                 {$preview$.text}
               </p>

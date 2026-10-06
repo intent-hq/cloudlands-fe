@@ -48,6 +48,8 @@ export const CheckoutProjectSchema = z
     webUrl: httpsUrl,
     cloneUrl: httpsUrl,
     defaultBranch: nonempty.optional(),
+    // Optional display metadata must never invalidate an otherwise usable checkout target.
+    ownerAvatarUrl: z.string().url().pipe(httpsUrl).optional().catch(undefined),
   })
   .strict();
 

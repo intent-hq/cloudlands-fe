@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "ファイルマネージャー",
   "layout_panelTabBar_paneStack_ariaLabel": "ペインスタックのサイズ: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "ペインリストを表示。ペイン総数: {count}。",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}。ペインリストを表示。ペイン総数: {count}。",
   "layout_panelTabBar_paneMenu_ariaLabel": "このスタックのペイン",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}。確認が必要です。",
   "layout_panelTabBar_openPaneAbove_label": "上のパネルを開く",

@@ -42,8 +42,27 @@ describe('GitLab project presentation', () => {
     render(GitLabProjectPicker, input);
 
     expect(screen.getByText(input.instanceBaseUrl!)).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'API team/platform/api' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'API team/mobile/api' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'team/platform/api' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'team/mobile/api' })).toBeTruthy();
+    expect(input.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('uses the returned owner image and the same fallback after an image failure', async () => {
+    const input = props();
+    const ownerAvatarUrl = 'https://images.example.test:8443/Forge/namespace.png';
+    input.page = {
+      status: 'ready',
+      items: [{ ...project, ownerAvatarUrl }, other],
+      hasMore: false,
+    };
+    render(GitLabProjectPicker, input);
+    const row = screen.getByRole('option', { name: project.projectPath });
+    const image = row.querySelector('img')!;
+    expect(image.getAttribute('src')).toBe(ownerAvatarUrl);
+    expect(row.querySelector('[data-slot=action-row-leading]')?.textContent).not.toContain('API');
+    await fireEvent.error(image);
+    expect(row.querySelector('img')).toBeNull();
+    expect(row.querySelector('[data-slot=action-row-leading]')?.textContent).toBe('T');
     expect(input.onSelect).not.toHaveBeenCalled();
   });
 
@@ -54,7 +73,7 @@ describe('GitLab project presentation', () => {
     expect(input.onMore).toHaveBeenCalledWith(input.scopeKey);
 
     await view.rerender({ page: { status: 'ready', items: [project, other], hasMore: false } });
-    await fireEvent.click(screen.getByRole('option', { name: 'API team/mobile/api' }));
+    await fireEvent.click(screen.getByRole('option', { name: 'team/mobile/api' }));
 
     expect(input.onSelect).toHaveBeenCalledWith(other.projectPath, input.scopeKey);
     expect(screen.queryByRole('button', { name: 'Load more projects' })).toBeNull();
@@ -68,9 +87,10 @@ describe('GitLab project presentation', () => {
 
     expect(input.onSearch).toHaveBeenCalledWith('platform', input.scopeKey);
     // The state owner, not a second component filter, decides which results are current.
-    expect(
-      screen.getAllByRole('option').map((row) => row.textContent?.replace(/\s+/g, ' ').trim()),
-    ).toEqual(['API team/mobile/api', 'API team/platform/api']);
+    expect(screen.getAllByRole('option').map((row) => row.getAttribute('aria-label'))).toEqual([
+      'team/mobile/api',
+      'team/platform/api',
+    ]);
   });
 
   it('waits for an admitted capture before accepting search input', async () => {
@@ -109,6 +129,24 @@ describe('GitLab project presentation', () => {
     await fireEvent.keyDown(option, { key: 'Enter' });
     expect(input.onSelect).toHaveBeenCalledWith(project.projectPath, input.scopeKey);
     expect(input.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('keeps keyboard focus in the current result list after query results shrink', async () => {
+    const input = props();
+    const view = render(GitLabProjectPicker, {
+      ...input,
+      page: { status: 'ready', items: [project, other], hasMore: false },
+    });
+    await fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'ArrowDown' });
+    await fireEvent.keyDown(screen.getByRole('option', { name: project.projectPath }), {
+      key: 'End',
+    });
+    expect(document.activeElement).toBe(screen.getByRole('option', { name: other.projectPath }));
+    await view.rerender({ page: { status: 'ready', items: [project], hasMore: false } });
+    expect(screen.getByRole('option').getAttribute('tabindex')).toBe('0');
+    await fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'ArrowDown' });
+    await fireEvent.keyDown(screen.getByRole('option'), { key: ' ' });
+    expect(input.onSelect).toHaveBeenCalledExactlyOnceWith(project.projectPath, input.scopeKey);
   });
 
   it('offers explicit submission only when the consumer supplies both action and label', async () => {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * EventWakeupBanner Component
@@ -441,7 +442,6 @@
       : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${suppressTopGap || onPinnedActivate ? 'mt-0' : EVENT_WAKEUP_IN_THREAD_SPACING_CLASS}`}"
     class:pointer-events-auto={!!onPinnedActivate}
     data-testid={onPinnedActivate ? 'pinned-user-prompt' : 'event-wakeup-card'}
-    title={onPinnedActivate ? friendlySummary : undefined}
     data-embedded={embedded}
     data-external-spacing-owner={!embedded && !suppressTopGap && !onPinnedActivate
       ? 'event-wakeup-card'
@@ -522,25 +522,28 @@
               {#if agentSummaryRoles}
                 <span
                   class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden"
-                  title={friendlySummary}
                   aria-hidden="true"
                 >
                   <strong
                     class="type-body min-w-0 truncate font-normal text-muted-foreground"
                     data-testid="event-wakeup-agent-name"
+                    use:truncatedTitle={agentSummaryRoles.name}
                   >
                     {agentSummaryRoles.name}
                   </strong>
                   <span
                     class="type-body min-w-0 shrink truncate font-normal text-muted-foreground"
                     data-testid="event-wakeup-status"
+                    use:truncatedTitle={agentSummaryRoles.status}
                   >
                     {agentSummaryRoles.status}
                   </span>
                 </span>
               {:else}
-                <span class="min-w-0 flex-1 truncate" title={friendlySummary} aria-hidden="true"
-                  >{friendlySummary}</span
+                <span
+                  class="min-w-0 flex-1 truncate"
+                  use:truncatedTitle={friendlySummary}
+                  aria-hidden="true">{friendlySummary}</span
                 >
               {/if}
               <span
