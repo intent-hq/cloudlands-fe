@@ -1,11 +1,10 @@
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { AgentSession } from '$shared/types';
-import type { DraftAttachment } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
 import { setupAgentMutationPreview } from '../../test/agent-mutation-preview';
+import { setupChatDraftsPreview } from '../../test/chat-drafts-preview';
 
 interface RenameCall {
   agentId: string;
@@ -31,10 +30,6 @@ export function setupHomeAssistantRenameFixtures() {
   if (!previous) throw new Error('Home preview bridge is unavailable');
   const calls: RenameCall[] = [];
   const saved = new Map<string, AgentSession>();
-  const drafts = new Map<
-    string,
-    { text: string; attachments?: DraftAttachment[]; updatedAt: string }
-  >();
   let holdNext = false;
   let failNext = false;
   let release = () => {};
@@ -55,29 +50,6 @@ export function setupHomeAssistantRenameFixtures() {
   window.electronAPI = {
     ...previous,
     invoke: async (channel, payload) => {
-      if (channel === IPC_CHANNELS.BACKEND.REQUEST) {
-        const request = payload as {
-          method: string;
-          params: {
-            workspaceId: string;
-            agentId: string;
-            text: string;
-            attachments?: DraftAttachment[];
-          };
-        };
-        const { method, params } = request;
-        const key = params ? `${params.workspaceId}:${params.agentId}` : '';
-        if (method === 'drafts.get') return { ok: true, result: drafts.get(key) ?? null };
-        if (method === 'drafts.set') {
-          const updatedAt = new Date().toISOString();
-          drafts.set(key, { text: params.text, attachments: params.attachments, updatedAt });
-          return { ok: true, result: { ok: true, updatedAt } };
-        }
-        if (method === 'drafts.clear') {
-          drafts.delete(key);
-          return { ok: true, result: { ok: true } };
-        }
-      }
       const request = payload as { method?: string; params?: RenameCall };
       if (channel !== IPC_CHANNELS.BACKEND.REQUEST || request?.method !== 'agent.rename') {
         return previous.invoke(channel, payload);
@@ -102,7 +74,7 @@ export function setupHomeAssistantRenameFixtures() {
     },
   };
   const stopMutations = setupAgentMutationPreview();
-  const stopDrafts = appStore.runSaga(chatDraftsSaga);
+  const stopDrafts = setupChatDraftsPreview();
   return () => {
     release();
     stopMutations();

@@ -9,6 +9,7 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { setupChatDraftsPreview } from '../../../../test/chat-drafts-preview';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     principalContextChanged,
@@ -117,7 +118,7 @@
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: () => [] })
+    ? startRootStoreLifecycle(store, { startSagas: () => [setupChatDraftsPreview()] })
     : () => {};
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
