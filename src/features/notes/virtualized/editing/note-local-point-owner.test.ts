@@ -808,3 +808,34 @@ it('releases abandoned and replaced native outputs across repeated local history
     await f.destroy();
   }
 });
+
+it('refuses another allocation while an abandoned prepared borrow is physically retained', async () => {
+  const f = await fixture();
+  let drop: (() => void) | undefined;
+  try {
+    const before = f.owner.initial;
+    const transaction = f.editor.state.tr.insertText('X', 2).insert(
+      3,
+      f.editor.schema.nodes.commentAnchor.create({
+        id: `${pointId}:point`,
+        type: 'point',
+        commentId: pointId,
+      }),
+    );
+    const candidate = f.owner.prepare(transaction, before)!;
+    expect(candidate).toBeDefined();
+    drop = f.owner.retainPrepared(candidate, transaction);
+    const bytes = f.ledger().used.payloadBytes;
+    f.owner.settled?.();
+    expect(f.ledger().used.payloadBytes).toBe(bytes);
+    expect(f.refs()).toBe(1);
+    expect(f.owner.prepare(transaction, before)).toBeUndefined();
+    expect(f.ledger().used.payloadBytes).toBe(bytes);
+    drop();
+    expect(f.refs()).toBe(0);
+    expect(f.ledger().used.payloadBytes).toBe(f.baselineBytes);
+  } finally {
+    drop?.();
+    await f.destroy();
+  }
+});

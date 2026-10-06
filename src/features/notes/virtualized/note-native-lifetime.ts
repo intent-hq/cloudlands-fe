@@ -14,6 +14,11 @@ export class NoteNativeLifetime {
   private closed = false;
   private completion?: Promise<void>;
 
+  /** A local history command must not accumulate asynchronous retired views. */
+  get idle(): boolean {
+    return !this.closed && !this.failure && this.pending.size === 0;
+  }
+
   private observe(value: unknown) {
     if (!value || typeof (value as PromiseLike<unknown>).then !== 'function') return;
     const pending = Promise.resolve(value).then(

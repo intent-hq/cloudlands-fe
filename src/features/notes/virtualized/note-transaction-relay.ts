@@ -7,6 +7,7 @@ import {
   type Selection,
   type Transaction,
 } from '@tiptap/pm/state';
+import type { EditorView } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { Editor } from '@tiptap/core';
 import type { SourceProjection } from './projection/source-projection';
@@ -34,9 +35,14 @@ export interface NoteTransactionOwner {
     | {
         initial: Candidate;
         selection: NoteSourceSelection;
+        /** Existing minted endpoint, only for same-schema local history. */
+        nativeOutput?: LocalOutput;
+        abandon?(): void;
         current(): boolean;
         adopted(): boolean;
         commit(): void;
+        /** Local endpoint publication after the final installed-state fence. */
+        commitNative?(view: EditorView, state: EditorState): void;
       }
     | undefined;
   prepare(transaction: Transaction, before: Candidate): Candidate | undefined;

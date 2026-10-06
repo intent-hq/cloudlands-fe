@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid';
+import type { EditorView } from '@tiptap/pm/view';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import type { NoteSplice } from '$lib/client/note-pages';
 import type { NoteTransactionOwner } from '../note-transaction-relay';
@@ -40,6 +41,7 @@ function fail(): never {
  * never Redux, the native undo plugin, a receipt or an ordinary text authority. */
 export function createNoteLocalPointOwner(options: Options): NoteTransactionOwner & {
   retain(): () => void;
+  retainPrepared(candidate: Candidate, transaction: Transaction): () => void;
   dispose(): void;
 } {
   const { read, publish, admit, resources } = options;
@@ -251,27 +253,76 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
   const historyResult = (key: object) => {
     const p = planned;
     if (!p || p.key !== key) return fail();
+    const commit = (view?: EditorView, state?: EditorState) => {
+      const selection = state?.selection;
+      const plugins = state?.plugins.slice();
+      const anchor =
+        state &&
+        p.candidate.projection.pmAt(p.state.selection.anchor, p.state.selection.anchorAffinity);
+      const head =
+        state &&
+        p.candidate.projection.pmAt(p.state.selection.head, p.state.selection.headAffinity);
+      if (!historyEligible(key)) fail();
+      const plan = planned!;
+      // No owner, clock, admission or schema callbacks after this installed-state
+      // fence. The private credential proves the exact endpoint, not the view argument.
+      if (
+        view &&
+        (!state ||
+          view.isDestroyed ||
+          view.state !== state ||
+          state.doc !== plan.candidate.doc ||
+          state.schema !== plan.candidate.doc.type.schema ||
+          state.selection !== selection ||
+          selection?.anchor !== anchor ||
+          selection?.head !== head ||
+          selection.$anchor.doc !== state.doc ||
+          selection.$head.doc !== state.doc ||
+          !plugins ||
+          state.plugins.length !== plugins.length ||
+          state.plugins.some((plugin, i) => plugin !== plugins[i]))
+      )
+        fail();
+      if (!validateLocalPointOutput(plan.output, plan.candidate)) fail();
+      publish(plan.before, plan.state, plan.splices);
+      if (read() !== plan.state || !validateLocalPointOutput(plan.output, plan.candidate)) {
+        dispose();
+        fail();
+      }
+      const old = endpointOutput;
+      committed = plan.state;
+      endpoint = plan.candidate;
+      endpointOutput = plan.output;
+      plan.published = true;
+      old?.release();
+    };
     return {
       initial: p.candidate,
       selection: p.state.selection,
+      nativeOutput: p.output,
+      abandon() {
+        if (planned?.key !== key || planned.published) return;
+        planned.output.release();
+        planned = undefined;
+      },
       current: () => historyEligible(key),
       adopted: () =>
         !!planned && planned.key === key && planned.published && read() === committed && current(),
-      commit() {
-        if (!historyEligible(key)) fail();
-        const plan = planned!;
-        publish(plan.before, plan.state, plan.splices);
-        if (read() !== plan.state || !validateLocalPointOutput(plan.output, plan.candidate)) {
-          dispose();
-          fail();
-        }
-        const old = endpointOutput;
-        committed = plan.state;
-        endpoint = plan.candidate;
-        endpointOutput = plan.output;
-        plan.published = true;
-        old?.release();
-      },
+      commit: () => commit(),
+      commitNative: (view: EditorView, state: EditorState) => commit(view, state),
+    };
+  };
+  const borrowNative = () => {
+    borrowers++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (--borrowers === 0) {
+        const release = releaseDeferred;
+        releaseDeferred = undefined;
+        release?.();
+      }
     };
   };
   return {
@@ -281,7 +332,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     },
     current,
     prepare(transaction, before) {
-      if (preparingOwner) return undefined;
+      if (preparingOwner || borrowers || releaseDeferred) return undefined;
       if (
         !current() ||
         !native ||
@@ -459,19 +510,21 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       };
       return historyResult(key);
     },
+    retainPrepared(candidate, transaction) {
+      const p = pending;
+      if (
+        !p ||
+        p.candidate !== candidate ||
+        p.transaction !== transaction ||
+        !current() ||
+        pending !== p
+      )
+        return fail();
+      return borrowNative();
+    },
     retain() {
       if (!accepted || !current()) return fail();
-      borrowers++;
-      let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        if (--borrowers === 0) {
-          const release = releaseDeferred;
-          releaseDeferred = undefined;
-          release?.();
-        }
-      };
+      return borrowNative();
     },
     dispose,
   };

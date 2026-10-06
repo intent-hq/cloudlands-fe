@@ -18,6 +18,7 @@ import type { NoteResourceCost } from './note-resource-ledger';
 import { createNoteTransactionRelay, type NoteTransactionOwner } from './note-transaction-relay';
 
 import { NoteEditAuthority } from './editing/note-edit-authority';
+import { validateLocalPointOutput } from './editing/note-local-point-history';
 import {
   captureNoteSelectionMarkdown,
   type NoteSelectionMarkdownIdentity,
@@ -50,9 +51,15 @@ export interface NoteViewEditing {
     window: NoteWindow,
     projection: SourceProjection,
     doc: PMNode,
+    state?: EditorState,
   ): NoteTransactionOwner | undefined;
   /** A retained prepared context belongs to one pending/mounted native view. */
-  borrow?(window: NoteWindow): { bind: NoteViewEditing['bind']; release(): void };
+  borrow?(window: NoteWindow): {
+    bind: NoteViewEditing['bind'];
+    initialSelection?(): NoteSourceSelection;
+    retire?(): void;
+    release(): void;
+  };
   selectionChanged?(selection: NoteSourceSelection): void;
   undo(): void;
   redo(): void;
@@ -200,6 +207,8 @@ export interface NoteReadingSurface {
 interface WindowLease {
   editing?: NoteViewEditing;
   bind?: NoteViewEditing['bind'];
+  initialSelection?: () => NoteSourceSelection;
+  retire?: () => void;
   borrowed: boolean;
   retain(): () => void;
   release(): void;
@@ -907,6 +916,7 @@ export class NoteWindowView {
   updateEditing(editing?: NoteViewEditing) {
     this.invalidateSelectionBorrows();
     if (this.historyBusy) {
+      if (this.currentLease?.initialSelection) this.currentLease.retire?.();
       this.historyCancelled = true;
       this.options.editing = editing;
       return;
@@ -916,6 +926,7 @@ export class NoteWindowView {
     this.options.editing = editing;
     this.mountedEditing = editing;
     if (changed) {
+      this.currentLease?.retire?.();
       this.historyOwner = undefined;
       this.historyLease = undefined;
       this.historyEditing = undefined;
@@ -1106,6 +1117,8 @@ export class NoteWindowView {
       return {
         editing,
         bind: borrow?.bind ?? editing?.bind.bind(editing),
+        initialSelection: borrow?.initialSelection,
+        retire: borrow?.retire,
         borrowed: !!borrow,
         retain() {
           if (released || references === Number.MAX_SAFE_INTEGER)
@@ -1220,7 +1233,10 @@ export class NoteWindowView {
       let currentProjection = projection;
       let currentCoordinates: NoteViewCoordinates | undefined;
       const transactions = createNoteTransactionRelay(() =>
-        !this.historyBusy && this.editor === candidate && this.mountedEditing === boundEditing
+        !this.historyBusy &&
+        (!lease.initialSelection || lifetime.idle) &&
+        this.editor === candidate &&
+        this.mountedEditing === boundEditing
           ? editOwner
           : undefined,
       );
@@ -1384,7 +1400,22 @@ export class NoteWindowView {
           }
         },
       });
-      editOwner = lease.bind?.(window, projection, candidate.state.doc);
+      if (lease.initialSelection) {
+        const selected = lease.initialSelection();
+        candidate.view.updateState(
+          candidate.state.apply(
+            candidate.state.tr.setSelection(
+              TextSelection.create(
+                candidate.state.doc,
+                projection.pmAt(selected.anchor, selected.anchorAffinity),
+                projection.pmAt(selected.head, selected.headAffinity),
+              ),
+            ),
+          ),
+        );
+        this.selection = { ...selected };
+      }
+      editOwner = lease.bind?.(window, projection, candidate.state.doc, candidate.state);
       if (editOwner) {
         const initial = editOwner.initial;
         if (
@@ -1423,7 +1454,7 @@ export class NoteWindowView {
       this.transactionRelay = transactions;
       this.bindEditing = (editing) => {
         boundEditing = editing;
-        editOwner = editing?.bind(window, currentProjection, editor.state.doc);
+        editOwner = editing?.bind(window, currentProjection, editor.state.doc, editor.state);
         if (editOwner && (!editOwner.current() || !editOwner.initial.doc.eq(editor.state.doc)))
           editOwner = undefined;
         this.historyOwner = editOwner;
@@ -1494,6 +1525,7 @@ export class NoteWindowView {
       return true;
     } catch (error) {
       if (!published) {
+        lease.retire?.();
         void lifetime
           .dispose(
             () => candidate?.destroy(),
@@ -1508,6 +1540,122 @@ export class NoteWindowView {
     }
   }
   /** A bounded document command, never the disposable editor's local history. */
+  private localHistory(
+    plan: NonNullable<ReturnType<NonNullable<NoteTransactionOwner['history']>>>,
+    owner: NoteTransactionOwner,
+    editor: Editor,
+    window: NoteWindow,
+    editing: NoteViewEditing | undefined,
+  ): boolean {
+    const output = plan.nativeOutput,
+      initial = plan.initial;
+    const before = editor.state,
+      schema = editor.schema,
+      lifetime = this.lifetime,
+      lease = this.currentLease;
+    let installed = false,
+      completed = false;
+    const same = () =>
+      !this.historyCancelled &&
+      !this.disposed &&
+      this.editor === editor &&
+      this.window === window &&
+      this.historyOwner === owner &&
+      this.mountedEditing === editing &&
+      this.options.editing === editing &&
+      this.currentLease === lease &&
+      this.lifetime === lifetime &&
+      editor.schema === schema;
+    try {
+      if (
+        !output ||
+        !plan.commitNative ||
+        !lifetime?.idle ||
+        initial.doc.type.schema !== schema ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      for (const key of ['anchor', 'head', 'anchorAffinity', 'headAffinity'] as const)
+        if (plan.selection[key] !== output.selection[key]) return false;
+      const anchor = initial.projection.pmAt(
+          output.selection.anchor,
+          output.selection.anchorAffinity,
+        ),
+        head = initial.projection.pmAt(output.selection.head, output.selection.headAffinity);
+      const selected = TextSelection.create(initial.doc, anchor, head);
+      // Reinitialize the existing configured plugins (including the relay) under
+      // the SAME editor/schema. Plugin init/updateState are callback boundaries.
+      const plugins = before.plugins.slice();
+      const next = EditorState.create({
+        schema,
+        doc: initial.doc,
+        plugins,
+        selection: selected,
+      });
+      const native = () =>
+        next.doc === initial.doc &&
+        next.schema === schema &&
+        next.selection === selected &&
+        next.plugins.length === plugins.length &&
+        next.plugins.every((plugin, i) => plugin === plugins[i]) &&
+        selected.anchor === anchor &&
+        selected.head === head &&
+        selected.$anchor.doc === initial.doc &&
+        selected.$head.doc === initial.doc;
+      const cost = measureNoteProjection(initial.projection);
+      if (
+        !plan.current() ||
+        !same() ||
+        editor.state !== before ||
+        !lifetime.idle ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      installed = true;
+      editor.view.updateState(next);
+      if (
+        !plan.current() ||
+        !same() ||
+        editor.state !== next ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      plan.commitNative(editor.view, next);
+      if (
+        !plan.adopted() ||
+        !same() ||
+        editor.state !== next ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      this.committedProjection = initial.projection;
+      this.committedCoordinates = initial.coordinates;
+      this.selection = { ...output.selection };
+      this.cost.derivedBytes = cost.derivedBytes;
+      this.layout();
+      this.measureDom();
+      if (
+        !plan.adopted() ||
+        !same() ||
+        editor.state !== next ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      completed = true;
+      return true;
+    } catch (error) {
+      logger.error('Failed to install local note history', error);
+      return false;
+    } finally {
+      // ACKed Redux is never rolled back. Failed native publication retires the
+      // view while the caller keeps historyBusy through abandon/physical cleanup.
+      if (installed && !completed) this.destroyEditor();
+    }
+  }
   history(direction: 'undo' | 'redo') {
     this.invalidateSelectionBorrows();
     if (this.disposed || this.historyBusy) return false;
@@ -1526,6 +1674,37 @@ export class NoteWindowView {
       this.mountedEditing?.[direction]();
       return false;
     }
+    if (this.currentLease?.initialSelection) {
+      this.historyBusy = true;
+      this.historyCancelled = false;
+      let localPlan: ReturnType<NonNullable<NoteTransactionOwner['history']>>;
+      try {
+        if (
+          !editor ||
+          !window ||
+          this.historyLease !== this.currentLease ||
+          this.historyEditing !== editing ||
+          this.options.editing !== editing ||
+          !this.lifetime?.idle ||
+          !owner.current() ||
+          this.historyCancelled
+        )
+          return false;
+        localPlan = owner.history(direction);
+        if (!localPlan?.nativeOutput || !localPlan.current() || this.historyCancelled) return false;
+        return this.localHistory(localPlan, owner, editor, window, editing);
+      } catch {
+        return false;
+      } finally {
+        try {
+          localPlan?.abandon?.();
+        } finally {
+          if (this.historyCancelled) this.destroyEditor();
+          this.historyBusy = false;
+          if (this.historyCancelled) this.destroy();
+        }
+      }
+    }
     if (
       !editor ||
       !window ||
@@ -1540,6 +1719,10 @@ export class NoteWindowView {
     try {
       plan = owner.history(direction);
       if (!plan || !plan.current()) return false;
+      if (plan.nativeOutput) {
+        plan.abandon?.();
+        return false;
+      }
       const initial = plan.initial;
       if (
         initial.doc.type.schema !== editor.schema ||
@@ -1661,6 +1844,7 @@ export class NoteWindowView {
     const editor = this.editor,
       lifetime = this.lifetime,
       lease = this.currentLease;
+    lease?.retire?.();
     this.editor = undefined;
     this.bindEditing = undefined;
     this.lifetime = undefined;
@@ -1692,6 +1876,7 @@ export class NoteWindowView {
   destroy() {
     this.invalidateSelectionBorrows();
     if (this.historyBusy) {
+      if (this.currentLease?.initialSelection) this.currentLease.retire?.();
       this.historyCancelled = true;
       return;
     }
