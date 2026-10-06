@@ -30,6 +30,14 @@ interface Candidate {
 export interface NoteTransactionOwner {
   readonly initial: Candidate;
   current(): boolean;
+  /** Opt-in actual owner fence; absent for ordinary text owners. */
+  saveAdmission?: {
+    bind(view: EditorView, idle: () => boolean): void;
+    enter(): () => void;
+    permits(state: EditorState): boolean;
+    permitsSelection(selection: NoteSourceSelection): boolean;
+    mutable(): boolean;
+  };
   /** Existing local endpoint only; does not issue history or replay authority. */
   retainedEndpoint?():
     { initial: Candidate; selection: NoteSourceSelection; nativeOutput: LocalOutput } | undefined;
@@ -133,6 +141,8 @@ export function createNoteTransactionRelay(
     },
     filterTransaction(transaction, state) {
       if (filterRoot && !filterRoot(transaction, state)) return false;
+      const admission = getOwner()?.saveAdmission;
+      if (admission && !admission.mutable()) return false;
       if (!transaction.docChanged) return true;
       prepared.delete(transaction);
       const owner = getOwner();
@@ -230,7 +240,8 @@ export function createNoteTransactionRelay(
             failed = true;
           };
           try {
-            work.next(work.transaction);
+            if (!work.owner?.saveAdmission || work.owner.saveAdmission.mutable())
+              work.next(work.transaction);
           } catch (error) {
             recordFailure(error);
           } finally {

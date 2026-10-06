@@ -1,4 +1,8 @@
 import {
+  applyLocalPointSavePublication,
+  type LocalPointSavePublication,
+} from './note-local-point-save-publication';
+import {
   prepareNoteSaveContinuationPublication,
   type NoteSaveContinuation,
 } from './note-save-continuation-publication';
@@ -250,6 +254,9 @@ export const pageSaveRequested =
   createAction<
     [workspaceId: string, noteId: string, operation: NoteSpliceOperation, throughSequence: number]
   >('notePages/saveRequested');
+export const pageLocalPointSavePublished = createAction<
+  [string, string, LocalPointSavePublication]
+>('notePages/localPointSavePublished');
 export const pageSaveStarted =
   createAction<
     [workspaceId: string, noteId: string, operation: NoteSpliceOperation, throughSequence: number]
@@ -406,6 +413,7 @@ function hasRetainedDocumentWork(n: NotePageSession): boolean {
     n.drafts.length ||
     n.history.length ||
     n.pending ||
+    n.localPointSave ||
     n.receipts.length ||
     n.document?.history.length ||
     n.document?.dirty.length ||
@@ -741,7 +749,7 @@ notePagesReducer.with(pageRequestFailed, (s, { payload: [ws, id, generation, key
 );
 notePagesReducer.with(pageDraftChanged, (s, { payload: [ws, id, draft] }) =>
   update(s, ws, id, (n) => {
-    if (!n.state || !sameNoteScope(draft.scope, n.state.scope)) return n;
+    if (n.localPointSave || !n.state || !sameNoteScope(draft.scope, n.state.scope)) return n;
     if (n.history.length && draft.sequence <= n.history[n.history.length - 1].sequence) return n;
     return {
       ...n,
@@ -758,6 +766,7 @@ notePagesReducer.with(
       if (
         n.generation !== generation ||
         n.document !== before ||
+        n.localPointSave ||
         n.status !== 'ready' ||
         n.needsReconcile ||
         n.state?.sourceRevision !== before.baseRevision ||
@@ -795,10 +804,19 @@ notePagesReducer.with(
       };
     }),
 );
+notePagesReducer.with(pageLocalPointSavePublished, (s, { payload: [ws, id, proof] }) =>
+  update(
+    s,
+    ws,
+    id,
+    (note) => applyLocalPointSavePublication(proof, note, s.resourceLedger) ?? note,
+  ),
+);
 notePagesReducer.with(pageSaveStarted, (s, { payload: [ws, id, operation, throughSequence] }) =>
   update(s, ws, id, (n) => {
     if (
       n.pending ||
+      n.localPointSave ||
       n.status !== 'ready' ||
       n.needsReconcile ||
       !n.state ||
@@ -831,6 +849,7 @@ notePagesReducer.with(
         n.generation !== generation ||
         n.state?.sourceRevision !== revision ||
         n.pending ||
+        n.localPointSave ||
         n.needsReconcile ||
         (n.document && !isNoteTextDocumentSession(n.document))
       )
@@ -863,6 +882,7 @@ notePagesReducer.with(pageSaveSettled, (s, { payload: [ws, id, outcome] }) =>
   update(s, ws, id, (n) => {
     const pending = n.pending;
     if (
+      n.localPointSave ||
       !pending ||
       !sameNoteScope(pending.operation.scope, outcome.scope) ||
       pending.operation.operationId !== outcome.operationId ||
@@ -896,7 +916,7 @@ notePagesReducer.with(
   pageDocumentSaveReconciled,
   (s, { payload: [ws, id, capture, before, proof, observedAt, continuation] }) =>
     update(s, ws, id, (n) => {
-      if (n.document !== before) return n;
+      if (n.localPointSave || n.document !== before) return n;
       if (!continuation && !currentNoteDocumentSave(n, capture)) return n;
       if (continuation && !Object.hasOwn(s.resourceLedger.owners, continuation.owner)) return n;
       if (
@@ -971,7 +991,7 @@ notePagesReducer.with(pageMappingAccepted, (s, { payload: [ws, id, operationId, 
   update(s, ws, id, (n) => {
     // Draft-only mapping cannot reconcile a document's base, history or replay.
     // Those require one authoritative document-and-journal publication.
-    if (n.document) return n;
+    if (n.localPointSave || n.document) return n;
     const receipt = n.receipts.find((r) => r.operationId === operationId);
     if (
       !receipt ||
@@ -990,6 +1010,7 @@ notePagesReducer.with(pageMappingAccepted, (s, { payload: [ws, id, operationId, 
 );
 notePagesReducer.with(pageSessionDiscarded, (s, { payload: [ws, id] }) => {
   const w = getWorkspaceState(s, ws);
+  if (w.notes[id]?.localPointSave) return s;
   const notes = { ...w.notes };
   let resourceLedger = s.resourceLedger;
   for (const allocation of Object.values(notes[id]?.pageAllocations ?? {}))

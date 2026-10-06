@@ -1,3 +1,8 @@
+import * as pointPublication from '$store/renderer/slices/note-pages/note-local-point-save-publication';
+import * as livePages from '$lib/client/live/live-note-pages-client';
+import { takeNoteLocalPointUploadOwner } from './note-local-point-owner';
+import { openPointSaveUpload } from './note-local-point-save-sponsor';
+import { createNoteLocalPointUpload } from './note-local-point-staged-save';
 /** @vitest-environment jsdom */
 import { Editor, Extension } from '@tiptap/core';
 import { EditorState, Plugin, TextSelection } from '@tiptap/pm/state';
@@ -11,6 +16,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 import { backendRequest, onBackendReconnected } from '$lib/client/live/backend-transport';
 import {
   LiveNotePagesClient,
+  loadLiveNoteSaveDispatch,
   claimLiveNoteStagedSave,
   retainLiveNoteSaveLoss,
 } from '$lib/client/live/live-note-pages-client';
@@ -264,6 +270,7 @@ async function fixture(
   mode: 'normal' | 'filter' | 'append' = 'normal',
   underBudget = false,
   sponsor = false,
+  upload = false,
 ) {
   const calls = plainLocal.calls as unknown as Array<{
     request: NotePageRequest;
@@ -308,7 +315,9 @@ async function fixture(
   const channel = stdChannel(),
     listeners = new Set<() => void>();
   let storeReads = 0;
+  let beforeDispatch: ((action: Parameters<typeof a.notePagesReducer>[1]) => void) | undefined;
   const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
+    beforeDispatch?.(action);
     pages = a.notePagesReducer(pages, action);
     for (const fn of listeners) fn();
     channel.put(action);
@@ -323,14 +332,16 @@ async function fixture(
               control: 'probe-control',
             })[0].cost.payloadBytes +
           100
-        : sponsor
-          ? 19_140_608
-          : 100_000_000,
-      stringUnits: sponsor ? 19_140_608 : 100_000_000,
-      objectNodes: sponsor ? 13_692_928 : 100_000_000,
+        : upload
+          ? 21_827_584
+          : sponsor
+            ? 19_140_608
+            : 100_000_000,
+      stringUnits: upload ? 21_827_584 : sponsor ? 19_140_608 : 100_000_000,
+      objectNodes: upload ? 13_705_216 : sponsor ? 13_692_928 : 100_000_000,
       domNodes: 10000,
-      physicalReads: sponsor ? 4 : 16,
-      assemblies: sponsor ? 8 : 16,
+      physicalReads: upload ? 5 : sponsor ? 4 : 16,
+      assemblies: upload ? 10 : sponsor ? 8 : 16,
     }),
   );
   dispatch(
@@ -503,6 +514,7 @@ async function fixture(
     ...(sponsor ? { sponsorObservation: { ...port, panel: 'panel' } } : {}),
   });
   const owner = active;
+  if (upload) owner.saveAdmission!.bind(editor.view, () => !relay.busy);
   const problems: unknown[] = [];
   const nativeValidation: unknown[] = [];
   let preparations = 0;
@@ -538,6 +550,9 @@ async function fixture(
   };
   return {
     port,
+    beforeDispatch(fn?: typeof beforeDispatch) {
+      beforeDispatch = fn;
+    },
     setObservationSnapshot: (value?: typeof pages) => {
       observationSnapshot = value;
     },
@@ -1956,5 +1971,914 @@ it.each(['copied', 'closed'] as const)(
       clock.mockRestore();
       await f.destroy();
     }
+  },
+);
+
+/** NEW controlled transport. No historical receipt identity is attached to this issuer. */
+function configurePointUpload(
+  input: ReturnType<typeof createNoteLocalPointUpload>['input'],
+  hook?: (method: string) => void,
+) {
+  const streams = ['text', 'dirty', 'selection', 'mutation', 'live'].map((stream) => ({
+    stream,
+    nextSequence: 0,
+    lastDigest: null as string | null,
+  }));
+  let headerDigest = '',
+    payloadDigest = '';
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  vi.mocked(backendRequest).mockImplementation(async (method, supplied) => {
+    const params = supplied as Record<string, unknown>;
+    calls.push({ method, params });
+    hook?.(method);
+    const envelope = { scope: input.scope, operationId: input.operationId };
+    if (method === 'note.operation.begin') headerDigest = String(params.headerDigest);
+    if (method === 'note.operation.seal') payloadDigest = String(params.payloadDigest);
+    if (method === 'note.operation.append') {
+      const stream = streams.find((s) => s.stream === params.stream)!;
+      stream.nextSequence++;
+      stream.lastDigest = String(params.chunkDigest);
+      return {
+        ...envelope,
+        kind: 'noteStageAck',
+        stream: params.stream,
+        sequence: params.sequence,
+        nextSequence: stream.nextSequence,
+        chunkDigest: params.chunkDigest,
+      };
+    }
+    if (['note.operation.begin', 'note.operation.seal', 'note.operation.cancel'].includes(method))
+      return {
+        ...envelope,
+        kind: 'noteStageState',
+        phase: method.endsWith('seal')
+          ? 'sealed'
+          : method.endsWith('cancel')
+            ? 'cancelled'
+            : 'staging',
+        headerDigest,
+        baseRevision: input.header.baseRevision,
+        expiresAt: input.expiresAt,
+        streams: streams.map((s) => ({ ...s })),
+        ...(payloadDigest ? { payloadDigest, viewLength: 59 } : {}),
+      };
+    if (method === 'note.operation.commit')
+      return {
+        ...envelope,
+        kind: 'noteCommitReceipt',
+        outcome: 'committed',
+        headerDigest,
+        payloadDigest,
+        beforeRevision: input.header.baseRevision,
+        afterRevision: 'controlled-upload-after',
+        sourceLength: 3,
+        mappingRef: 'mapping',
+        effectsRef: 'effects',
+        inverseRef: 'inverse',
+        viewId: 'controlled-upload-view',
+        receiptExpiresAt: input.expiresAt,
+        invalidation: 'all',
+      };
+    throw new Error('Unexpected upload RPC');
+  });
+  return calls;
+}
+async function uploadFixture() {
+  const f = await fixture('normal', false, true, true);
+  f.insert();
+  expect(f.note().document?.history[0].kind).toBe('local-point');
+  return f;
+}
+it('uploads the genuine local group through the fixed live path and preserves unreconciled journals', async () => {
+  const f = await uploadFixture();
+  const document = f.note().document,
+    drafts = f.note().drafts;
+  const upload = f.owner.prepareUpload();
+  const calls = configurePointUpload(upload.input);
+  try {
+    const receipt = await upload.run();
+    expect(receipt.outcome).toBe('committed');
+    expect(calls.map((c) => c.method)).toEqual([
+      'note.operation.begin',
+      'note.operation.append',
+      'note.operation.append',
+      'note.operation.seal',
+      'note.operation.commit',
+    ]);
+    expect(calls[2].params.records).toMatchObject([
+      { localSequence: document!.history[0].id, start: 1, end: 1 },
+    ]);
+    expect(f.note().document).toBe(document);
+    expect(f.note().drafts).toBe(drafts);
+    expect(f.note().needsReconcile).toBe(true);
+    expect(f.note().pending).toBeNull();
+    expect(f.note().committedDocumentSave).toBeUndefined();
+    expect(f.note().localPointSave?.phase).toBe('committed');
+    f.port.dispatch(
+      a.pageSessionDiscarded(upload.input.scope.workspaceId, upload.input.scope.noteId),
+    );
+    expect(f.note().localPointSave?.receipt).toEqual(receipt);
+    await expect(upload.run()).rejects.toThrow();
+    await upload.release();
+    expect(f.port.read().resourceLedger.owners[f.note().localPointSave!.controlOwner]).toHaveLength(
+      1,
+    );
+  } finally {
+    await upload.release();
+    await f.destroy();
+  }
+});
+it('refuses copied local upload owners and fences native selection and domain history', async () => {
+  const f = await uploadFixture();
+  expect(() => createNoteLocalPointUpload({ ...f.owner })).toThrow();
+  const upload = f.owner.prepareUpload();
+  const state = f.editor.state;
+  try {
+    f.editor.commands.setTextSelection(1);
+    expect(f.editor.state.selection).toBe(state.selection);
+    expect(f.owner.history!('undo')).toBeUndefined();
+    expect(f.owner.prepareUpload).toBeDefined();
+    expect(() => f.owner.prepareUpload()).toThrow();
+    upload.cancel();
+    await expect(upload.run()).rejects.toThrow();
+  } finally {
+    await upload.release();
+    await f.destroy();
+  }
+});
+it('rejects save issuance inside a native installation callback', async () => {
+  const f = await uploadFixture();
+  const leave = f.owner.saveAdmission!.enter();
+  try {
+    expect(() => f.owner.prepareUpload()).toThrow();
+  } finally {
+    leave();
+    await f.destroy();
+  }
+});
+it('owns commit before synchronous transport reentry and retains one known ACK', async () => {
+  const f = await uploadFixture();
+  const upload = f.owner.prepareUpload();
+  let nested: Promise<unknown> | undefined;
+  const calls = configurePointUpload(upload.input, (method) => {
+    if (method === 'note.operation.commit') nested = upload.run().catch((e) => e);
+  });
+  try {
+    expect((await upload.run()).outcome).toBe('committed');
+    expect(await nested).toBeInstanceOf(Error);
+    expect(calls.filter((c) => c.method === 'note.operation.commit')).toHaveLength(1);
+  } finally {
+    await upload.release();
+    await f.destroy();
+  }
+});
+
+it('does not turn a genuine read-only observer into an upload commit arm', async () => {
+  const f = await fixture('normal', false, true);
+  const clock = vi.spyOn(Date, 'now').mockImplementation(f.now);
+  let sponsor: ReturnType<typeof createNoteLocalPointSaveSponsor> | undefined;
+  let observer: ReturnType<typeof claimLiveNoteStagedSave> | undefined;
+  const loss = retainLiveNoteSaveLoss();
+  try {
+    f.insert();
+    sponsor = f.owner.saveSponsor();
+    const stage = await controlledSeal(sponsor);
+    observer = claimLiveNoteStagedSave(stage, loss, () => true, f.now);
+    const calls = vi.mocked(backendRequest).mock.calls.length;
+    const createDispatch = await loadLiveNoteSaveDispatch();
+    expect(() => createDispatch(observer)).toThrow('Unknown local point dispatch arm');
+    expect(() => createDispatch({ ...observer! })).toThrow();
+    expect(vi.mocked(backendRequest).mock.calls.length).toBe(calls);
+  } finally {
+    await observer?.release();
+    loss.release();
+    await sponsor?.release();
+    clock.mockRestore();
+    await f.destroy();
+  }
+});
+it.each(['preparing', 'sealed', 'invoked', 'committed'] as const)(
+  'preserves actual pending installation when subscriber throws at %s',
+  async (phase) => {
+    const f = await uploadFixture(),
+      upload = f.owner.prepareUpload();
+    const document = f.note().document;
+    const calls = configurePointUpload(upload.input);
+    let reached = false;
+    const off = f.port.subscribe(() => {
+      if (!reached && f.note().localPointSave?.phase === phase) {
+        reached = true;
+        throw new Error('controlled subscriber after install');
+      }
+    });
+    try {
+      await expect(upload.run()).rejects.toThrow('controlled subscriber after install');
+      expect(reached).toBe(true);
+      const commit = calls.filter((c) => c.method === 'note.operation.commit');
+      expect(commit).toHaveLength(phase === 'invoked' || phase === 'committed' ? 1 : 0);
+      expect(f.note().document).toBe(document);
+      if (commit.length) expect(f.note().localPointSave?.phase).toBe('committed');
+      else expect(f.note().localPointSave).toBeUndefined();
+    } finally {
+      off();
+      await upload.release();
+      await f.destroy();
+    }
+  },
+);
+it.each(['note.operation.begin', 'note.operation.append', 'note.operation.seal'])(
+  'cancels before commit when actual %s callback revokes upload',
+  async (method) => {
+    const f = await uploadFixture(),
+      upload = f.owner.prepareUpload();
+    let reached = false;
+    const calls = configurePointUpload(upload.input, (m) => {
+      if (!reached && m === method) {
+        reached = true;
+        upload.cancel();
+      }
+    });
+    try {
+      await expect(upload.run()).rejects.toThrow();
+      expect(reached).toBe(true);
+      expect(calls.some((c) => c.method === 'note.operation.commit')).toBe(false);
+      expect(calls.filter((c) => c.method === 'note.operation.cancel')).toHaveLength(1);
+      expect(f.note().localPointSave).toBeUndefined();
+    } finally {
+      await upload.release();
+      await f.destroy();
+    }
+  },
+);
+it.each(['note.operation.begin', 'note.operation.commit'])(
+  'retains charged unknown IO and recovery record after actual %s rejects',
+  async (method) => {
+    const f = await uploadFixture(),
+      upload = f.owner.prepareUpload();
+    const calls = configurePointUpload(upload.input, (m) => {
+      if (m === method) throw new Error('controlled transport unknown');
+    });
+    try {
+      await expect(upload.run()).rejects.toThrow('controlled transport unknown');
+      expect(calls.filter((c) => c.method === method)).toHaveLength(1);
+      expect(f.note().localPointSave?.phase).toBe('unknown');
+      const held = f.ledger().used.payloadBytes;
+      await expect(upload.release()).rejects.toThrow();
+      expect(f.ledger().used.payloadBytes).toBeGreaterThanOrEqual(2621440 + 65536);
+      expect(f.ledger().used.payloadBytes).toBeLessThanOrEqual(held);
+      await expect(upload.run()).rejects.toThrow();
+    } finally {
+      await upload.release().catch(() => {});
+      await f.destroy();
+      expect(f.ledger().used.payloadBytes).toBeGreaterThanOrEqual(2621440 + 65536);
+    }
+  },
+);
+it.each(['event-before', 'event-after', 'panel-loss', 'expiry-after-entry'] as const)(
+  'keeps authenticated ACK DATA and original journals through %s',
+  async (when) => {
+    const f = await uploadFixture(),
+      upload = f.owner.prepareUpload();
+    const document = f.note().document,
+      drafts = f.note().drafts;
+    const event = () => {
+      const n = f.note();
+      f.port.dispatch(
+        a.pageStateReceived(
+          upload.input.scope.workspaceId,
+          upload.input.scope.noteId,
+          n.generation,
+          { ...n.state!, stateGeneration: '2', sourceRevision: 'controlled-upload-after' },
+        ),
+      );
+    };
+    const calls = configurePointUpload(upload.input, (method) => {
+      if (method !== 'note.operation.commit') return;
+      if (when === 'event-before') event();
+      if (when === 'panel-loss')
+        f.port.dispatch(
+          a.pagePanelClosed(upload.input.scope.workspaceId, upload.input.scope.noteId, 'panel'),
+        );
+      if (when === 'expiry-after-entry') f.setTime(Date.parse(upload.input.expiresAt) + 1);
+    });
+    try {
+      expect((await upload.run()).outcome).toBe('committed');
+      if (when === 'event-after') event();
+      expect(f.note().localPointSave?.receipt).toBe(upload.outcome());
+      expect(f.note().document).toBe(document);
+      expect(f.note().drafts).toBe(drafts);
+      expect(f.note().needsReconcile).toBe(true);
+      expect(calls.filter((c) => c.method === 'note.operation.commit')).toHaveLength(1);
+      if (when === 'panel-loss' || when === 'expiry-after-entry')
+        await expect(upload.certificate()).rejects.toThrow();
+    } finally {
+      await upload.release();
+      await f.destroy();
+    }
+  },
+);
+it('holds upload IO until the exact issued commit settles after cancellation', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  configurePointUpload(upload.input);
+  const original = vi.mocked(backendRequest).getMockImplementation()!;
+  let settle!: (v: unknown) => void;
+  let raw: unknown;
+  vi.mocked(backendRequest).mockImplementation(async (m, p) => {
+    const result = await original(m, p);
+    if (m !== 'note.operation.commit') return result;
+    raw = result;
+    return new Promise((resolve) => {
+      settle = resolve;
+    });
+  });
+  const running = upload.run();
+  await vi.waitFor(() => expect(settle).toBeTypeOf('function'));
+  const held = f.ledger().used.payloadBytes;
+  upload.cancel();
+  const release = upload.release();
+  let released = false;
+  void release.then(() => {
+    released = true;
+  });
+  await Promise.resolve();
+  expect(released).toBe(false);
+  expect(f.ledger().used.payloadBytes).toBe(held);
+  settle(raw);
+  expect((await running).outcome).toBe('committed');
+  await release;
+  expect(f.note().localPointSave?.phase).toBe('committed');
+  await f.destroy();
+});
+it('recovers a pending operation through status only with no second commit', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  const calls = configurePointUpload(upload.input);
+  const original = vi.mocked(backendRequest).getMockImplementation()!;
+  let receipt: unknown;
+  vi.mocked(backendRequest).mockImplementation(async (m, p) => {
+    if (m === 'note.operationStatus') return receipt;
+    const result = await original(m, p);
+    if (m !== 'note.operation.commit') return result;
+    receipt = result;
+    const r = result as Record<string, unknown>;
+    return {
+      kind: 'noteOperationStatus',
+      outcome: 'pending',
+      scope: r.scope,
+      operationId: r.operationId,
+      headerDigest: r.headerDigest,
+      payloadDigest: r.payloadDigest,
+    };
+  });
+  try {
+    expect((await upload.run()).outcome).toBe('pending');
+    expect(f.note().localPointSave?.phase).toBe('pending');
+    expect((await upload.observe()).outcome).toBe('committed');
+    expect(f.note().localPointSave?.phase).toBe('committed');
+    expect(calls.filter((c) => c.method === 'note.operation.commit')).toHaveLength(1);
+    await expect(upload.run()).rejects.toThrow();
+  } finally {
+    await upload.release();
+    await f.destroy();
+  }
+});
+it.each(['operationId', 'payloadDigest', 'beforeRevision', 'scope'])(
+  'retains unknown debt instead of adopting foreign %s in a commit response',
+  async (key) => {
+    const f = await uploadFixture(),
+      upload = f.owner.prepareUpload();
+    configurePointUpload(upload.input);
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation(async (m, p) => {
+      const result = await original(m, p);
+      return m === 'note.operation.commit'
+        ? { ...(result as object), [key]: key === 'scope' ? {} : 'foreign' }
+        : result;
+    });
+    try {
+      await expect(upload.run()).rejects.toThrow();
+      expect(upload.outcome()).toBeUndefined();
+      expect(f.note().localPointSave?.phase).toBe('unknown');
+      await expect(upload.release()).rejects.toThrow();
+    } finally {
+      await upload.release().catch(() => {});
+      await f.destroy();
+    }
+  },
+);
+it('refuses the last stage-send clock after a callback cancels the uploader', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  const calls = configurePointUpload(upload.input);
+  let reached = false;
+  const off = f.port.subscribe(() => {
+    if (!reached && f.note().localPointSave?.phase === 'preparing') {
+      reached = true;
+      f.armClock(() => upload.cancel());
+    }
+  });
+  try {
+    await expect(upload.run()).rejects.toThrow();
+    expect(reached).toBe(true);
+    expect(calls.some((c) => c.method === 'note.operation.begin')).toBe(false);
+    expect(calls.some((c) => c.method === 'note.operation.commit')).toBe(false);
+  } finally {
+    off();
+    await upload.release();
+    await f.destroy();
+  }
+});
+
+it('replays a genuine immutable publication proof deterministically and refuses stale aliases', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  configurePointUpload(upload.input);
+  let reached = false;
+  f.beforeDispatch((action) => {
+    if (action.type !== a.pageLocalPointSavePublished.type || reached) return;
+    reached = true;
+    const before = f.port.read(),
+      note = f.note();
+    const first = a.notePagesReducer(before, action),
+      second = a.notePagesReducer(before, action);
+    expect(first).toEqual(second);
+    const saved = note.document;
+    note.document = { ...saved!, generation: saved!.generation + 1 };
+    expect(a.notePagesReducer(before, action)).toEqual(before);
+    note.document = saved;
+    let mutable = 0;
+    for (const [object, key, changed] of [
+      [note.drafts[0].splices[0], 'text', 'foreign'],
+      [note.drafts[0], 'sequence', 999],
+      [note.document!.history[0], 'id', 999],
+    ] as const) {
+      const original = Reflect.get(object, key);
+      if (Reflect.set(object, key, changed)) {
+        mutable++;
+        expect(a.notePagesReducer(before, action)).toEqual(before);
+        Reflect.set(object, key, original);
+      } else {
+        expect(Object.getOwnPropertyDescriptor(object, key)?.writable).toBe(false);
+        expect(Reflect.get(object, key)).toBe(original);
+      }
+    }
+    expect(mutable).toBeGreaterThan(0);
+    const old = note.localPointSave;
+    note.localPointSave = {
+      ...first.byWorkspaceId[upload.input.scope.workspaceId].notes[upload.input.scope.noteId]
+        .localPointSave!,
+    };
+    expect(a.notePagesReducer(before, action)).toEqual(before);
+    note.localPointSave = old;
+    // Preserve absence as well as value in the original captured object.
+    if (old === undefined) delete note.localPointSave;
+    const cost =
+      f.ledger().resources[
+        first.byWorkspaceId[upload.input.scope.workspaceId].notes[upload.input.scope.noteId]
+          .localPointSave!.controlResource
+      ].cost;
+    cost.payloadBytes--;
+    expect(a.notePagesReducer(before, action)).toEqual(before);
+    cost.payloadBytes++;
+    const payload = (action as ReturnType<typeof a.pageLocalPointSavePublished>).payload;
+    const forged = a.pageLocalPointSavePublished(payload[0], payload[1], { ...payload[2] });
+    expect(a.notePagesReducer(before, forged)).toEqual(before);
+    expect(a.notePagesReducer(first, action)).toEqual(first);
+  });
+  let primary: unknown;
+  try {
+    await upload.run();
+    expect(reached).toBe(true);
+  } catch (error) {
+    primary = error;
+    throw error;
+  } finally {
+    f.beforeDispatch();
+    try {
+      await upload.release();
+    } catch (error) {
+      if (!primary) throw error;
+    } finally {
+      await f.destroy();
+    }
+  }
+});
+it('does not acknowledge removal when the actual note disappeared during publication', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  configurePointUpload(upload.input, (m) => {
+    if (m === 'note.operation.begin') upload.cancel();
+  });
+  const scope = upload.input.scope;
+  let removed: ReturnType<typeof f.note> | undefined,
+    publishes = 0;
+  f.beforeDispatch((action) => {
+    if (action.type === a.pageLocalPointSavePublished.type && ++publishes === 2) {
+      removed = f.note();
+      delete f.port.read().byWorkspaceId[scope.workspaceId].notes[scope.noteId];
+    }
+  });
+  try {
+    await expect(upload.run()).rejects.toThrow();
+    expect(removed).toBeDefined();
+    await expect(upload.release()).rejects.toThrow();
+    expect(f.ledger().used.payloadBytes).toBeGreaterThanOrEqual(2621440 + 65536);
+  } finally {
+    f.beforeDispatch();
+    if (removed) f.port.read().byWorkspaceId[scope.workspaceId].notes[scope.noteId] = removed;
+    await upload.release().catch(() => {});
+    await f.destroy();
+  }
+});
+it('releases known provisional upload allocations when initial journal admission fails', async () => {
+  const f = await uploadFixture(),
+    note = f.note(),
+    drafts = note.drafts,
+    originalRefs = f.refs();
+  note.drafts = [];
+  try {
+    expect(() => f.owner.prepareUpload()).toThrow();
+    await vi.waitFor(() =>
+      expect(
+        Object.keys(f.ledger().owners).filter((k) => /^point-(upload|pending|sponsor):/.test(k)),
+      ).toEqual([]),
+    );
+    expect(f.refs()).toBe(originalRefs);
+  } finally {
+    note.drafts = drafts;
+    await f.destroy();
+  }
+});
+it('serializes certificate traversal against status and retires it before held IO releases', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  let stage: ReturnType<LiveNotePagesClient['createGuardedSaveOperation']> | undefined;
+  const create = LiveNotePagesClient.prototype.createGuardedSaveOperation;
+  const spy = vi
+    .spyOn(LiveNotePagesClient.prototype, 'createGuardedSaveOperation')
+    .mockImplementation(function (...args) {
+      stage = create.apply(this, args);
+      return stage;
+    });
+  configurePointUpload(upload.input);
+  const original = vi.mocked(backendRequest).getMockImplementation()!;
+  let controlled: Awaited<ReturnType<typeof controlledReceipt>> | undefined;
+  let settle!: (value: unknown) => void, heldRaw: unknown;
+  vi.mocked(backendRequest).mockImplementation(async (m, p) => {
+    if (m === 'note.operation.commit') {
+      controlled = await controlledReceipt(stage!, upload.input.header.localEditSequence);
+      return controlled.receipt;
+    }
+    if (m === 'note.operation.read') {
+      const raw = await controlled!.respond(m, p);
+      if (!settle) {
+        heldRaw = raw;
+        return new Promise((resolve) => {
+          settle = resolve;
+        });
+      }
+      return raw;
+    }
+    return original(m, p);
+  });
+  try {
+    await upload.run();
+    const n = f.note();
+    f.port.dispatch(
+      a.pageStateReceived(upload.input.scope.workspaceId, upload.input.scope.noteId, n.generation, {
+        ...n.state!,
+        stateGeneration: '2',
+        sourceRevision: controlled!.receipt.afterRevision,
+      }),
+    );
+    const certificate = upload.certificate();
+    const failed = expect(certificate).rejects.toThrow();
+    await vi.waitFor(() => expect(settle).toBeTypeOf('function'));
+    const count = vi.mocked(backendRequest).mock.calls.length;
+    await expect(upload.observe()).rejects.toThrow();
+    expect(vi.mocked(backendRequest).mock.calls.length).toBe(count);
+    const held = f.ledger().used.payloadBytes;
+    const release = upload.release();
+    let done = false;
+    void release.then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+    expect(done).toBe(false);
+    expect(f.ledger().used.payloadBytes).toBe(held);
+    settle(heldRaw);
+    await failed;
+    await release;
+    expect(f.note().localPointSave?.phase).toBe('committed');
+  } finally {
+    spy.mockRestore();
+    await upload.release();
+    await f.destroy();
+  }
+});
+
+it('refuses another genuine dispatch both before and after its own observer binding', async () => {
+  const first = await uploadFixture(),
+    upload = first.owner.prepareUpload();
+  let dispatch:
+    ReturnType<Awaited<ReturnType<typeof livePages.loadLiveNoteSaveDispatch>>> | undefined;
+  const load = livePages.loadLiveNoteSaveDispatch;
+  const spy = vi.spyOn(livePages, 'loadLiveNoteSaveDispatch').mockImplementation(async () => {
+    const create = await load();
+    return (key) => {
+      dispatch = create(key);
+      return dispatch;
+    };
+  });
+  configurePointUpload(upload.input);
+  await upload.run();
+  const second = await uploadFixture(),
+    capture = takeNoteLocalPointUploadOwner(second.owner);
+  const access = openPointSaveUpload(capture);
+  const clock = vi.spyOn(Date, 'now').mockImplementation(second.now);
+  try {
+    expect(() => access.receive(dispatch!)).toThrow();
+    await capture.sponsor.bindSealed(await controlledSeal(capture.sponsor));
+    expect(() => access.receive(dispatch!)).toThrow('Foreign live save dispatch');
+  } finally {
+    clock.mockRestore();
+    spy.mockRestore();
+    await capture.sponsor.release();
+    capture.upload.release();
+    capture.control.release();
+    capture.releaseFence();
+    await second.destroy();
+    await upload.release();
+    await first.destroy();
+  }
+});
+it('covers direct malformed journal access with acquired preparation cleanup', async () => {
+  const f = await uploadFixture(),
+    draft = f.note().drafts[0];
+  const descriptor = Object.getOwnPropertyDescriptor(draft, 'splices')!;
+  Object.defineProperty(draft, 'splices', {
+    configurable: true,
+    get() {
+      throw new Error('controlled journal getter');
+    },
+  });
+  try {
+    expect(() => f.owner.prepareUpload()).toThrow('controlled journal getter');
+    await vi.waitFor(() =>
+      expect(
+        Object.keys(f.ledger().owners).filter((k) => /^point-(upload|pending|sponsor):/.test(k)),
+      ).toEqual([]),
+    );
+  } finally {
+    Object.defineProperty(draft, 'splices', descriptor);
+    await f.destroy();
+  }
+});
+it('releases the independent control ticket when provisional upload release throws', async () => {
+  const f = await uploadFixture(),
+    n = f.note(),
+    drafts = n.drafts;
+  n.drafts = [];
+  let reached = false;
+  f.beforeDispatch((action) => {
+    if (
+      action.type === a.pageResourcesReleased.type &&
+      String(action.payload).startsWith('point-upload:')
+    ) {
+      reached = true;
+      throw new Error('controlled upload release failure');
+    }
+  });
+  try {
+    expect(() => f.owner.prepareUpload()).toThrow();
+    await vi.waitFor(() => expect(reached).toBe(true));
+    await vi.waitFor(() =>
+      expect(Object.keys(f.ledger().owners).filter((k) => k.startsWith('point-pending:'))).toEqual(
+        [],
+      ),
+    );
+    expect(
+      Object.keys(f.ledger().owners).filter((k) => k.startsWith('point-upload:')),
+    ).toHaveLength(1);
+  } finally {
+    f.beforeDispatch();
+    n.drafts = drafts;
+    await f.destroy();
+  }
+});
+it.each([false, true])(
+  'refuses denied upload admission with one cleanup attempt per ticket (releaseThrows=%s)',
+  async (releaseThrows) => {
+    const f = await uploadFixture();
+    // Leave exactly one byte less than both provisional reservations require.
+    const remaining = 2621440 + 65536 - 1;
+    const cost = {
+      payloadBytes: f.ledger().limit.payloadBytes - f.ledger().used.payloadBytes - remaining,
+      stringUnits: 0,
+      objectNodes: 0,
+      domNodes: 0,
+      physicalReads: 0,
+      assemblies: 0,
+    };
+    f.port.dispatch(
+      a.pageResourcesRequested('upload-budget-block', [{ id: 'upload-budget-block', cost }]),
+    );
+    expect(f.ledger().limit.payloadBytes - f.ledger().used.payloadBytes).toBe(remaining);
+    const before = vi.mocked(backendRequest).mock.calls.length;
+    const releases = new Map<string, number>();
+    f.beforeDispatch((action) => {
+      if (
+        action.type !== a.pageResourcesReleased.type ||
+        !/^point-(upload|pending):/.test(String(action.payload))
+      )
+        return;
+      const id = String(action.payload);
+      releases.set(id, (releases.get(id) ?? 0) + 1);
+      if (releaseThrows && id.startsWith('point-upload:'))
+        throw new Error('controlled denied release');
+    });
+    try {
+      expect(() => f.owner.prepareUpload()).toThrow();
+      expect(vi.mocked(backendRequest).mock.calls.length).toBe(before);
+      expect(releases.size).toBe(2);
+      expect([...releases.values()]).toEqual([1, 1]);
+      expect(Object.keys(f.ledger().owners).filter((k) => k.startsWith('point-pending:'))).toEqual(
+        [],
+      );
+      expect(
+        Object.keys(f.ledger().owners).filter((k) => k.startsWith('point-upload:')),
+      ).toHaveLength(releaseThrows ? 1 : 0);
+      if (releaseThrows) expect(f.owner.saveAdmission.mutable()).toBe(false);
+      expect(() => f.owner.prepareUpload()).toThrow();
+      expect([...releases.values()]).toEqual([1, 1]);
+    } finally {
+      f.beforeDispatch();
+      f.port.dispatch(a.pageResourcesReleased('upload-budget-block'));
+      await f.destroy();
+    }
+  },
+);
+it.each([
+  'root-array',
+  'flat-object',
+  'nested-array',
+  'nested-object',
+  'sparse-array',
+  'escaped-string',
+])('bounds rejected %s commit copies before exceeding prepaid control nodes', async (shape) => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  configurePointUpload(upload.input);
+  const original = vi.mocked(backendRequest).getMockImplementation()!;
+  // This wire-small invalid response formerly copied >1024 empty objects before decoding.
+  const array = Array.from({ length: 1100 }, () => ({}));
+  const flat = Object.fromEntries(array.map((_, i) => [`k${i}`, null]));
+  let getters = 0;
+  Object.defineProperty(flat, 'trap', {
+    enumerable: true,
+    get() {
+      getters++;
+      throw new Error('must not invoke');
+    },
+  });
+  const sparse = new Array(500);
+  sparse[499] = 'X'.repeat(2000);
+  const raw =
+    shape === 'root-array'
+      ? array
+      : shape === 'flat-object'
+        ? flat
+        : {
+            extra:
+              shape === 'nested-array'
+                ? array
+                : shape === 'sparse-array'
+                  ? sparse
+                  : shape === 'escaped-string'
+                    ? '\u0000'.repeat(1024)
+                    : flat,
+          };
+  let serializedCandidate = 0;
+  let restoreSerialization = () => {};
+  vi.mocked(backendRequest).mockImplementation(async (m, p) => {
+    if (m !== 'note.operation.commit') return original(m, p);
+    // Install at the actual controlled response, after stage hashing. A late
+    // bytes check would serialize the copied candidate before refusing it.
+    const stringify = JSON.stringify;
+    const spy = vi.spyOn(JSON, 'stringify').mockImplementation((value, replacer, space) => {
+      if (value && typeof value === 'object' && Object.hasOwn(value, 'extra'))
+        serializedCandidate++;
+      return stringify(value, replacer, space);
+    });
+    restoreSerialization = () => spy.mockRestore();
+    return raw;
+  });
+  try {
+    await expect(upload.run()).rejects.toThrow('Save data');
+    expect(getters).toBe(0);
+    expect(serializedCandidate).toBe(0);
+    expect(upload.outcome()).toBeUndefined();
+    expect(f.note().localPointSave?.phase).toBe('unknown');
+    expect(
+      Object.keys(f.ledger().owners).filter((k) => k.startsWith('point-pending:')),
+    ).toHaveLength(1);
+    await expect(upload.release()).rejects.toThrow();
+  } finally {
+    restoreSerialization();
+    await upload.release().catch(() => {});
+    await f.destroy();
+  }
+});
+it('refuses certificate during an owned held status and preserves completion through retirement', async () => {
+  const f = await uploadFixture(),
+    upload = f.owner.prepareUpload();
+  configurePointUpload(upload.input);
+  const receipt = await upload.run();
+  if (receipt.kind !== 'noteCommitReceipt') throw new Error('Missing committed control');
+  const n = f.note();
+  f.port.dispatch(
+    a.pageStateReceived(upload.input.scope.workspaceId, upload.input.scope.noteId, n.generation, {
+      ...n.state!,
+      stateGeneration: '2',
+      sourceRevision: receipt.afterRevision,
+    }),
+  );
+  let settle!: (value: unknown) => void;
+  vi.mocked(backendRequest).mockImplementation((m) => {
+    if (m !== 'note.operationStatus') throw new Error('Unexpected concurrent receipt request');
+    return new Promise((resolve) => {
+      settle = resolve;
+    });
+  });
+  const status = upload.observe();
+  expect(settle).toBeTypeOf('function');
+  await expect(upload.certificate()).rejects.toThrow('Certificate unavailable');
+  const count = vi.mocked(backendRequest).mock.calls.length;
+  await expect(upload.observe()).rejects.toThrow();
+  expect(vi.mocked(backendRequest).mock.calls.length).toBe(count);
+  const release = upload.release();
+  let released = false;
+  void release.then(() => {
+    released = true;
+  });
+  await Promise.resolve();
+  expect(released).toBe(false);
+  settle(receipt);
+  expect((await status).outcome).toBe('committed');
+  await release;
+  expect(f.note().localPointSave?.receipt).toEqual(receipt);
+  await f.destroy();
+});
+
+it.each(['cancel', 'panel-loss', 'loader-rejection'])(
+  'owns lazy factory loading through %s before any publication or RPC',
+  async (mode) => {
+    const f = await uploadFixture(),
+      upload = f.owner.prepareUpload();
+    const realLoad = livePages.loadLiveNoteSaveDispatch;
+    let settle!: (value: Awaited<ReturnType<typeof realLoad>>) => void;
+    const load = vi.spyOn(livePages, 'loadLiveNoteSaveDispatch').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const publication =
+      mode === 'loader-rejection'
+        ? vi
+            .spyOn(pointPublication, 'loadLocalPointSavePublication')
+            .mockRejectedValue(new Error('controlled loader failure'))
+        : undefined;
+    const before = vi.mocked(backendRequest).mock.calls.length;
+    const held = f.ledger().used.payloadBytes;
+    const running = upload.run();
+    const outcome = running.catch((error) => error);
+    expect(settle).toBeTypeOf('function');
+    await expect(upload.run()).rejects.toThrow('consumed');
+    if (mode === 'panel-loss')
+      f.port.dispatch(
+        a.pagePanelClosed(upload.input.scope.workspaceId, upload.input.scope.noteId, 'panel'),
+      );
+    else if (mode === 'cancel') upload.cancel();
+    const releasing = upload.release();
+    let released = false;
+    void releasing.then(() => {
+      released = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(released).toBe(false);
+    expect(f.ledger().used.payloadBytes).toBe(held);
+    expect(f.note().localPointSave).toBeUndefined();
+    expect(vi.mocked(backendRequest).mock.calls.length).toBe(before);
+    settle(await realLoad());
+    expect(await outcome).toBeInstanceOf(Error);
+    await releasing;
+    expect(vi.mocked(backendRequest).mock.calls.length).toBe(before);
+    expect(f.note().localPointSave).toBeUndefined();
+    load.mockRestore();
+    publication?.mockRestore();
+    await f.destroy();
   },
 );

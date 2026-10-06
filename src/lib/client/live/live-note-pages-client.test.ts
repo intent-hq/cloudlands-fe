@@ -249,3 +249,42 @@ it('routes inline receipt pages through note.operation.read without staged or le
     maxWireBytes: 4096,
   });
 });
+it('checks the fixed staged send after its final clock callback, before backend invocation', async () => {
+  const now = Date.parse('2026-01-01T00:00:00.000Z');
+  let finalCaptured = false,
+    alive = true,
+    finalClockReached = false;
+  const stage = new LiveNotePagesClient().createGuardedSaveOperation(
+    {
+      scope,
+      operationId: '00000000-0000-4000-8000-000000000001',
+      expiresAt: '2026-01-01T00:01:00.000Z',
+      header: {
+        baseRevision: 'r:7',
+        editorSessionId: '00000000-0000-4000-8000-000000000002',
+        localEditSequence: 1,
+        liveGeneration: 0,
+        selectionGeneration: 0,
+        action: 'mutate',
+        output: 'source',
+        selection: 'all',
+      },
+    },
+    () => alive,
+    () => {
+      if (finalCaptured) {
+        finalClockReached = true;
+        alive = false;
+      }
+      return now;
+    },
+    () => {
+      finalCaptured = true;
+      return () => alive;
+    },
+  );
+  await expect(stage.begin()).rejects.toThrow('Guarded save lost before send');
+  expect(finalCaptured).toBe(true);
+  expect(finalClockReached).toBe(true);
+  expect(rpc).not.toHaveBeenCalled();
+});

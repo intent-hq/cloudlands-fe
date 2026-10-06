@@ -31,6 +31,7 @@ export function prepareNoteDocumentPublication(
   limit = { bytes: 262144, records: 512 },
 ): { draft: NoteDraft | null } | undefined {
   if (
+    note.localPointSave ||
     note.document !== before ||
     note.status !== 'ready' ||
     note.needsReconcile ||
@@ -98,7 +99,7 @@ export function captureNoteDocumentSave(
   | { operation: NoteSpliceOperation | NoteStagedSaveOperation; document: NoteDocumentSaveCapture }
   | undefined {
   const doc = note.document;
-  if (!doc || !isNoteTextDocumentSession(doc)) return undefined;
+  if (note.localPointSave || !doc || !isNoteTextDocumentSession(doc)) return undefined;
   const staged = 'headerDigest' in operation;
   if (staged && (!doc || !currentNoteNativeHistoryWitness(doc, operation.nativeWitness)))
     return undefined;

@@ -153,6 +153,7 @@ export async function stageNoteDocumentSave(
     initial.status !== 'ready' ||
     initial.state.deleted ||
     initial.pending ||
+    initial.localPointSave ||
     initial.needsReconcile ||
     !(options.panelId in initial.panels) ||
     initial.state.sourceRevision !== doc.baseRevision ||

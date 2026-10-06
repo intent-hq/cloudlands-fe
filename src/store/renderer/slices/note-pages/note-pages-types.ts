@@ -1,3 +1,7 @@
+import type {
+  NoteStagedSaveInput,
+  NoteSealedSaveIdentity,
+} from '$lib/client/note-source-operation';
 import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
 import type { NoteDocumentSession } from '$features/notes/virtualized/editing/note-document-edit-session';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
@@ -35,6 +39,22 @@ export interface NoteDocumentSaveCapture {
   cursor: number;
   throughSequence: number;
 }
+/** Recovery DATA only. The private runtime issuer, never this DTO, owns dispatch. */
+export interface NoteLocalPointSaveRecord {
+  readonly kind: 'local-point';
+  readonly phase:
+    'preparing' | 'sealed' | 'invoked' | 'unknown' | 'pending' | 'committed' | 'refused';
+  readonly input: NoteStagedSaveInput;
+  readonly sealed?: NoteSealedSaveIdentity;
+  readonly group: number;
+  readonly documentGeneration: number;
+  readonly cursor: number;
+  readonly throughSequence: number;
+  readonly controlOwner: string;
+  readonly controlResource: string;
+  readonly receipt?: NoteCommitReceipt;
+}
+
 export interface NotePageSession {
   panels: Record<string, SourceRange[]>;
   windows: Record<
@@ -70,6 +90,7 @@ export interface NotePageSession {
     document: NoteDocumentSaveCapture;
     receipt: NoteCommitReceipt;
   };
+  localPointSave?: NoteLocalPointSaveRecord;
   pending: {
     document?: NoteDocumentSaveCapture;
     operation: NoteSpliceOperation | NoteStagedSaveOperation;

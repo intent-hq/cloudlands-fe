@@ -158,6 +158,7 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
             },
             now,
             sponsorObservation: {
+              dispatch: port.dispatch,
               read: port.read,
               subscribe: port.subscribe,
               panel,
@@ -172,6 +173,7 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
               return local.initial;
             },
             current: local.current,
+            saveAdmission: local.saveAdmission,
             retainedEndpoint: local.retainedEndpoint,
             prepare(transaction, before) {
               if (prepared || revoked) return undefined;
@@ -215,6 +217,10 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
   }));
   return {
     ready,
+    prepareUpload() {
+      if (revoked || suspended || !owner) throw new Error('Local point upload unavailable');
+      return owner.prepareUpload();
+    },
     saveSponsor() {
       if (revoked || suspended || !owner) throw new Error('Local point sponsor unavailable');
       return owner.saveSponsor();

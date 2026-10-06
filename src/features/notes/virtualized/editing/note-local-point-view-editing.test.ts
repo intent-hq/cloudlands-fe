@@ -29,7 +29,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
-async function fixture(withData = false) {
+async function fixture(withData = false, upload = false) {
   const calls = plainLocal.calls as unknown as Array<{
     request: NotePageRequest;
     response: NoteReadPage;
@@ -73,6 +73,7 @@ async function fixture(withData = false) {
   let publishedHook: (() => void) | undefined;
   let changedHook: (() => void) | undefined;
   let retainHook: (() => void) | undefined;
+  let selectionHook: (() => void) | undefined;
   let dataReleases = 0;
   const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
     pages = a.notePagesReducer(pages, action);
@@ -82,12 +83,12 @@ async function fixture(withData = false) {
   };
   dispatch(
     a.pageResourceLimitsConfigured({
-      payloadBytes: 100_000_000,
-      stringUnits: 100_000_000,
-      objectNodes: 100_000_000,
+      payloadBytes: upload ? 21_827_584 : 100_000_000,
+      stringUnits: upload ? 21_827_584 : 100_000_000,
+      objectNodes: upload ? 13_705_216 : 100_000_000,
       domNodes: 10000,
-      physicalReads: 16,
-      assemblies: 16,
+      physicalReads: upload ? 5 : 16,
+      assemblies: upload ? 10 : 16,
     }),
   );
   dispatch(
@@ -196,6 +197,7 @@ async function fixture(withData = false) {
     seek: vi.fn(),
     fullOperation: vi.fn(),
     selectionChanged(selection) {
+      selectionHook?.();
       const n = note();
       if (n.document)
         dispatch(a.pageDocumentSelectionChanged(ws, id, n.generation, n.document, selection));
@@ -210,6 +212,9 @@ async function fixture(withData = false) {
     note,
     dispatch,
     ledger: () => pages.resourceLedger,
+    onSelection(fn?: () => void) {
+      selectionHook = fn;
+    },
     onRetain(fn: () => void) {
       retainHook = fn;
     },
@@ -1291,3 +1296,80 @@ it.each(['data', 'borrow'] as const)(
     }
   },
 );
+
+it('fences actual NoteWindowView native and source selection while upload is prepared', async () => {
+  const f = await fixture(false, true);
+  let upload: ReturnType<typeof f.offer.prepareUpload> | undefined;
+  try {
+    insertPoint(f);
+    upload = f.offer.prepareUpload();
+    const e = f.view.editor!,
+      state = e.state,
+      selection = f.view.getSelection(),
+      document = f.note().document;
+    f.view.setSelection({ anchor: 0, head: 0, anchorAffinity: 1, headAffinity: 1 });
+    expect(f.view.getSelection()).toEqual(selection);
+    f.view.setSelection(selection);
+    expect(f.view.getSelection()).toEqual(selection);
+    expect(e.commands.setTextSelection(1)).toBe(true); // TipTap command return is not acceptance.
+    expect(e.state).toBe(state);
+    expect(() =>
+      e.view.updateState(
+        EditorState.create({
+          doc: state.doc,
+          plugins: state.plugins,
+          selection: TextSelection.create(state.doc, 1),
+        }),
+      ),
+    ).toThrow();
+    expect(e.state).toBe(state);
+    expect(f.note().document).toBe(document);
+    expect(f.view.history('undo')).toBe(false);
+  } finally {
+    await upload?.release();
+    await f.cleanup();
+  }
+});
+it('refuses save issuance during actual direct native update plugin callbacks', async () => {
+  const f = await fixture(false, true);
+  try {
+    insertPoint(f);
+    const e = f.view.editor!;
+    let reached = false;
+    const plugin = new Plugin({
+      view: () => ({
+        update() {
+          reached = true;
+          expect(() => f.offer.prepareUpload()).toThrow();
+        },
+      }),
+    });
+    e.view.updateState(e.state.reconfigure({ plugins: [...e.state.plugins, plugin] }));
+    e.view.updateState(e.state);
+    expect(reached).toBe(true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('blocks nested save during actual selection publication with an otherwise eligible genuine group', async () => {
+  const f = await fixture(false, true);
+  let upload: ReturnType<typeof f.offer.prepareUpload> | undefined;
+  try {
+    insertPoint(f);
+    let reached = false;
+    f.onSelection(() => {
+      reached = true;
+      expect(() => f.offer.prepareUpload()).toThrow();
+    });
+    f.view.setSelection(f.view.getSelection());
+    expect(reached).toBe(true);
+    f.onSelection();
+    upload = f.offer.prepareUpload();
+    expect(upload.input.header.localEditSequence).toBe(f.note().document!.history[0].id);
+  } finally {
+    f.onSelection();
+    await upload?.release();
+    await f.cleanup();
+  }
+});

@@ -1,3 +1,4 @@
+import type { takeLocalPointDispatchArm } from '$features/notes/virtualized/editing/note-local-point-staged-save';
 import { readNoteReceiptPage, type NoteReceiptReadRequest } from '../note-receipt-reader';
 import {
   createNoteSourceOperation,
@@ -270,6 +271,97 @@ function copyObservedData(value: unknown, limit: number): unknown {
   if (bytes(result) > limit) throw new Error('Save data bytes');
   return result;
 }
+/** Dispatch-only bounded JSON DATA copy. No application-owned full key list is
+ * allocated. The logical allowance does not measure engine enumeration internals. */
+function copyDispatchOutcome(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Save data root');
+  let nodes = 0,
+    units = 0,
+    wire = 0;
+  const charge = (amount: number) => {
+    wire += amount;
+    if (wire > 4096) throw new Error('Save data bytes');
+  };
+  const stringWire = (value: string) => {
+    charge(2);
+    for (let i = 0; i < value.length; i++) {
+      const c = value.charCodeAt(i);
+      if (c < 32) charge(c === 8 || c === 9 || c === 10 || c === 12 || c === 13 ? 2 : 6);
+      else if (c === 34 || c === 92) charge(2);
+      else if (c < 128) charge(1);
+      else if (c < 2048) charge(2);
+      else if (
+        c >= 0xd800 &&
+        c <= 0xdbff &&
+        i + 1 < value.length &&
+        value.charCodeAt(i + 1) >= 0xdc00 &&
+        value.charCodeAt(i + 1) <= 0xdfff
+      ) {
+        charge(4);
+        i++;
+      } else charge(c >= 0xd800 && c <= 0xdfff ? 6 : 3);
+    }
+  };
+  const copy = (v: unknown, depth: number): unknown => {
+    if (depth > 8) throw new Error('Save data depth');
+    if (v === null || typeof v === 'boolean') {
+      charge(v === null ? 4 : v ? 4 : 5);
+      return v;
+    }
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      charge(String(v).length);
+      return v;
+    }
+    if (typeof v === 'string') {
+      units += v.length;
+      if (units > 4096) throw new Error('Save data size');
+      stringWire(v);
+      return v;
+    }
+    if (!v || typeof v !== 'object') throw new Error('Save data type');
+    const array = Array.isArray(v),
+      prototype = Object.getPrototypeOf(v);
+    if (
+      array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null
+    )
+      throw new Error('Save data prototype');
+    if (++nodes > 512) throw new Error('Save data nodes');
+    if (array) {
+      const length = Object.getOwnPropertyDescriptor(v, 'length');
+      if (
+        !length ||
+        !('value' in length) ||
+        !Number.isSafeInteger(length.value) ||
+        length.value < 0 ||
+        length.value > 512 - nodes
+      )
+        throw new Error('Save data array bound');
+      charge(length.value * 5); // Prepay every slot, including sparse null/comma output.
+    }
+    charge(2);
+    const result: unknown[] | Record<string, unknown> = array ? [] : {};
+    // Count inherited iterations too; only own enumerable JSON fields are copied.
+    for (const key in v) {
+      if (++nodes > 512) throw new Error('Save data nodes');
+      const d = Object.getOwnPropertyDescriptor(v, key);
+      if (!d) continue;
+      if (!('value' in d)) throw new Error('Save data accessor');
+      units += key.length;
+      if (units > 4096) throw new Error('Save data size');
+      charge(1); // Conservative comma allowance, including the first field.
+      if (!array) {
+        stringWire(key);
+        charge(1);
+      }
+      Object.defineProperty(result, key, { value: copy(d.value, depth + 1), enumerable: true });
+    }
+    return Object.freeze(result);
+  };
+  const result = copy(value, 0);
+  if (bytes(result) > 4096) throw new Error('Save data bytes');
+  return result;
+}
 function saveObserverAPI(
   slot: LiveSaveSlot,
   identity: NoteSealedSaveIdentity,
@@ -410,6 +502,166 @@ export function claimLiveNoteStagedSave(
   }
 }
 
+const dispatchBrand = Symbol('live note dispatch');
+export interface LiveNoteSaveDispatch {
+  readonly [dispatchBrand]: true;
+  invoke(): Promise<NoteSaveOutcome>;
+  status(): Promise<NoteSaveOutcome>;
+  entered(): boolean;
+  release(): Promise<void>;
+}
+type DispatchSlot = {
+  observer: LiveNoteSaveObserver;
+  identity: NoteSealedSaveIdentity;
+  entered: boolean;
+  busy: boolean;
+  retired: boolean;
+  unknown: boolean;
+  pending?: Promise<NoteSaveOutcome>;
+  result?: NoteSaveOutcome;
+};
+const dispatches = new WeakMap<object, DispatchSlot>();
+const dispatchedObservers = new WeakSet<object>();
+/** A local fixed-path invocation receipt is NOT evidence of server delivery. */
+export async function loadLiveNoteSaveDispatch() {
+  const { takeLocalPointDispatchArm } =
+    await import('$features/notes/virtualized/editing/note-local-point-staged-save');
+  return (key: unknown): LiveNoteSaveDispatch =>
+    createLiveNoteSaveDispatch(key, takeLocalPointDispatchArm);
+}
+function createLiveNoteSaveDispatch(
+  key: unknown,
+  takeArm: typeof takeLocalPointDispatchArm,
+): LiveNoteSaveDispatch {
+  let arm: ReturnType<typeof takeLocalPointDispatchArm> | undefined = takeArm(key);
+  const observer = arm.observer;
+  const observed = liveSaveObservers.get(observer);
+  if (!observed?.data || dispatchedObservers.has(observer) || !saveObserverCurrent(observed))
+    throw new Error('Live save dispatch unavailable');
+  dispatchedObservers.add(observer);
+  const slot: DispatchSlot = {
+    observer,
+    identity: observed.data.identity,
+    entered: false,
+    busy: false,
+    retired: false,
+    unknown: false,
+  };
+  const request = (commit: boolean): Promise<NoteSaveOutcome> => {
+    if (slot.busy || slot.retired || (commit ? slot.entered : !slot.entered))
+      return Promise.reject(new Error('Live save dispatch already consumed'));
+    slot.busy = true;
+    let resolve!: (value: NoteSaveOutcome) => void, reject!: (error: unknown) => void;
+    const pending = new Promise<NoteSaveOutcome>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    slot.pending = pending; // Own receipt BEFORE any callback or synchronous transport reentry.
+    void (async () => {
+      let started = false;
+      try {
+        if (!saveObserverCurrent(observed) || slot.retired)
+          throw new Error('Live save dispatch lost');
+        const owned = arm;
+        if (!owned || !owned.current()) throw new Error('Live dispatch arm lost');
+        const finalCheck = owned.finalCheck(),
+          time = owned.now();
+        if (arm !== owned || slot.retired || !finalCheck?.(time))
+          throw new Error('Live dispatch final check lost');
+        const op = slot.identity;
+        if (commit) slot.entered = true;
+        started = true;
+        const raw = await backendRequest(
+          commit ? 'note.operation.commit' : 'note.operationStatus',
+          {
+            ...op.scope,
+            operationId: op.operationId,
+            headerDigest: op.headerDigest,
+            payloadDigest: op.payloadDigest,
+          },
+        );
+        // Authentication/data recovery survives authority loss after actual invocation.
+        const result = outcome(copyDispatchOutcome(raw), op);
+        if (
+          slot.result?.kind === 'noteCommitReceipt' &&
+          JSON.stringify(slot.result) !== JSON.stringify(result)
+        )
+          throw new Error('Live save outcome changed');
+        slot.result = result;
+        if (result.kind === 'noteCommitReceipt' && observed.data && !observed.retired)
+          observed.data.receipt = result;
+        resolve(result);
+      } catch (error) {
+        if (started) slot.unknown = true;
+        reject(error);
+      } finally {
+        slot.busy = false;
+        if (slot.pending === pending) slot.pending = undefined;
+      }
+    })();
+    return pending;
+  };
+  let releasing: Promise<void> | undefined;
+  const api: LiveNoteSaveDispatch = Object.freeze({
+    [dispatchBrand]: true as const,
+    invoke: () => request(true),
+    status: () => request(false),
+    entered: () => slot.entered,
+    release() {
+      if (releasing) return releasing;
+      slot.retired = true;
+      releasing = (async () => {
+        try {
+          await slot.pending;
+        } catch {
+          /* Unknown debt remains independently latched. */
+        }
+        arm = undefined;
+        if (slot.unknown) throw new Error('Live save dispatch cleanup unknown');
+      })();
+      return releasing;
+    },
+  });
+  dispatches.set(api, slot);
+  return api;
+}
+export function liveNoteDispatchOutcome(
+  dispatch: unknown,
+  observer?: LiveNoteSaveObserver,
+): NoteSaveOutcome | undefined {
+  const slot = dispatch && typeof dispatch === 'object' ? dispatches.get(dispatch) : undefined;
+  if (!slot || (observer && slot.observer !== observer))
+    throw new Error('Foreign live save dispatch');
+  return slot.result;
+}
+
+type GuardedIO = {
+  busy: boolean;
+  retired: boolean;
+  unknown: boolean;
+  pending?: Promise<unknown>;
+  release?: Promise<void>;
+};
+const guardedIO = new WeakMap<object, GuardedIO>();
+export function guardedNoteSaveCleanupKnown(stage: unknown): boolean {
+  const io = stage && typeof stage === 'object' ? guardedIO.get(stage) : undefined;
+  return !!io && !io.busy && !io.unknown;
+}
+export function releaseGuardedNoteSave(stage: unknown): Promise<void> {
+  const slot = stage && typeof stage === 'object' ? guardedIO.get(stage) : undefined;
+  if (!slot) return Promise.reject(new Error('Unknown guarded stage'));
+  if (slot.release) return slot.release;
+  slot.retired = true;
+  slot.release = (async () => {
+    try {
+      await slot.pending;
+    } catch {
+      /* Rejection never proves remote cleanup. */
+    }
+    if (slot.unknown) throw new Error('Guarded stage cleanup unknown');
+  })();
+  return slot.release;
+}
 export class LiveNotePagesClient extends NotePageReader implements NotePagesClient {
   createSaveOperation(
     input: NoteStagedSaveInput,
@@ -420,6 +672,58 @@ export class LiveNotePagesClient extends NotePageReader implements NotePagesClie
       input,
       current,
     );
+    liveSaveStages.set(stage, { claimed: false });
+    return stage;
+  }
+  /** Opt-in liveness restriction at the ORIGINAL fixed send closure. These callbacks
+   * cannot authenticate outcomes; provenance still comes only from backendRequest. */
+  createGuardedSaveOperation(
+    input: NoteStagedSaveInput,
+    current: () => boolean,
+    now: () => number,
+    captureFinalCheck: () => ((time: number) => boolean) | undefined,
+  ): ReturnType<typeof createNoteStagedSaveOperation> {
+    const guard = () => {
+      const valid = current(),
+        check = captureFinalCheck(),
+        time = now();
+      if (!valid || !check || !check(time) || time >= Date.parse(input.expiresAt))
+        throw new Error('Guarded save lost before send');
+    };
+    const io: GuardedIO = { busy: false, retired: false, unknown: false };
+    const stage = createNoteStagedSaveOperation(
+      (method, params) => {
+        if (io.busy || io.retired) return Promise.reject(new Error('Guarded stage busy/retired'));
+        // Own the deferred before guard/transport callbacks can reenter.
+        io.busy = true;
+        let yes!: (v: unknown) => void, no!: (e: unknown) => void;
+        const pending = new Promise<unknown>((resolve, reject) => {
+          yes = resolve;
+          no = reject;
+        });
+        io.pending = pending;
+        void (async () => {
+          let entered = false;
+          try {
+            if (method !== 'note.operation.cancel') guard();
+            if (io.retired) throw new Error('Guarded stage retired');
+            entered = true;
+            yes(await backendRequest(method, params));
+          } catch (e) {
+            if (entered) io.unknown = true;
+            no(e);
+          } finally {
+            io.busy = false;
+            if (io.pending === pending) io.pending = undefined;
+          }
+        })();
+        return pending;
+      },
+      input,
+      current,
+      now,
+    );
+    guardedIO.set(stage, io);
     liveSaveStages.set(stage, { claimed: false });
     return stage;
   }

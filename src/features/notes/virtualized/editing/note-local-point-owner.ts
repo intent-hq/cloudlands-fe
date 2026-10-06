@@ -1,3 +1,8 @@
+import {
+  createNoteLocalPointUpload,
+  pointUploadCost,
+  pointUploadControlCost,
+} from './note-local-point-staged-save';
 import { retainLiveNoteSaveLoss } from '$lib/client/live/live-note-pages-client';
 import { v4 as uuid } from 'uuid';
 import type { EditorView } from '@tiptap/pm/view';
@@ -15,6 +20,7 @@ import {
   replayLocalPoint,
   validateLocalPoint,
   validateLocalPointOutput,
+  validateLocalPointMountedOutput,
   type NoteLocalPointInput,
   captureLocalPointSaveEvidence,
   currentLocalPointSaveEvidence,
@@ -36,6 +42,27 @@ const sponsorIssuers = new WeakMap<object, () => NoteLocalPointSponsorCapture>()
 /** Private owner identity is mandatory; a copied owner/group/recipe cannot issue. */
 export function takeNoteLocalPointSponsorCapture(owner: unknown): NoteLocalPointSponsorCapture {
   const issue = owner && typeof owner === 'object' ? sponsorIssuers.get(owner) : undefined;
+  return issue ? issue() : fail();
+}
+
+type UploadTicket = ReturnType<ReturnType<typeof createNoteResourceOwner>['reservation']>;
+export interface PointUploadOwnerCapture {
+  sponsor: PointSaveSponsor;
+  upload: UploadTicket;
+  control: UploadTicket;
+  controlOwner: string;
+  controlResource: string;
+  uploadOwner: string;
+  uploadResource: string;
+  releaseFence(): void;
+}
+const uploadCaptures = new WeakSet<object>();
+export function consumePointUploadOwnerCapture(value: PointUploadOwnerCapture): boolean {
+  return uploadCaptures.delete(value);
+}
+const uploadIssuers = new WeakMap<object, () => PointUploadOwnerCapture>();
+export function takeNoteLocalPointUploadOwner(owner: unknown): PointUploadOwnerCapture {
+  const issue = owner && typeof owner === 'object' ? uploadIssuers.get(owner) : undefined;
   return issue ? issue() : fail();
 }
 
@@ -66,6 +93,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
   retainPrepared(candidate: Candidate, transaction: Transaction): () => void;
   dispose(): void;
   saveSponsor(): PointSaveSponsor;
+  prepareUpload(): ReturnType<typeof createNoteLocalPointUpload>;
 } {
   const { read, publish, admit, resources } = options;
   const retainedInitial = options.retainInitial === true;
@@ -167,7 +195,13 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
   };
   let pending: Prepared | undefined, accepted: Allocation | undefined;
   let acceptedRoot: Transaction | undefined;
-  let sponsorTaken = false;
+  let sponsorTaken = false,
+    uploadTaken = false,
+    saveLocked = false,
+    nativeWork = 0;
+  let saveState: EditorState | undefined;
+  let saveDocView: unknown;
+  let saveView: { view: EditorView; idle(): boolean } | undefined;
   let endpointOutput: ReturnType<typeof replayLocalPoint> | undefined;
   type HistoryPlan = {
     key: object;
@@ -201,6 +235,9 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     accepted = undefined;
     acceptedRoot = undefined;
     pending = undefined;
+    saveView = undefined;
+    saveState = undefined;
+    saveDocView = undefined;
     finalized = undefined;
     initialGuard?.release();
     initialGuard = undefined;
@@ -264,7 +301,30 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       return false;
     }
   };
+  const nativeSaveCurrent = () => {
+    if (!saveLocked || retired || nativeWork || !saveView || !saveState) return false;
+    const state = Object.getOwnPropertyDescriptor(saveView.view, 'state');
+    const docView = Object.getOwnPropertyDescriptor(saveView.view, 'docView');
+    return (
+      !!state &&
+      'value' in state &&
+      state.value === saveState &&
+      !!docView &&
+      'value' in docView &&
+      !!saveDocView &&
+      docView.value === saveDocView
+    );
+  };
   const current = () => {
+    if (
+      saveLocked &&
+      (!saveView ||
+        nativeWork ||
+        saveView.view.isDestroyed ||
+        saveView.view.state !== saveState ||
+        !saveView.idle())
+    )
+      return false;
     if (!rawCurrent()) return false;
     const capture = accepted?.capture ?? pending?.allocation.capture;
     if (capture && !validateLocalPoint(capture.proof, capture.recipe, origin)) {
@@ -277,9 +337,15 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       dispose();
       return false;
     }
-    return finalCurrent(output, candidate);
+    const valid = finalCurrent(output, candidate);
+    if (saveLocked && !nativeSaveCurrent()) {
+      dispose();
+      return false;
+    }
+    return valid;
   };
   const historyEligible = (key: object) => {
+    if (saveLocked) return false;
     const p = planned;
     if (
       !p ||
@@ -413,8 +479,38 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     retainPrepared(candidate: Candidate, transaction: Transaction): () => void;
     dispose(): void;
     saveSponsor(): PointSaveSponsor;
+    prepareUpload(): ReturnType<typeof createNoteLocalPointUpload>;
   } = {
     saveSponsor: () => createNoteLocalPointSaveSponsor(api),
+    prepareUpload: () => createNoteLocalPointUpload(api),
+    saveAdmission: {
+      bind(view, idle) {
+        if (saveLocked || nativeWork) return fail();
+        saveView = { view, idle };
+      },
+      enter() {
+        nativeWork++;
+        let done = false;
+        return () => {
+          if (!done) {
+            done = true;
+            nativeWork--;
+          }
+        };
+      },
+      permits(state) {
+        return !saveLocked || state === saveState;
+      },
+      permitsSelection(selection) {
+        return (
+          !saveLocked ||
+          (['anchor', 'head', 'anchorAffinity', 'headAffinity'] as const).every(
+            (key) => selection[key] === committed.selection[key],
+          )
+        );
+      },
+      mutable: () => !saveLocked,
+    },
     releaseInitial() {
       if (!initialPhysical) return;
       initialPhysical = false;
@@ -434,6 +530,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       });
     },
     prepare(transaction, before) {
+      if (saveLocked) return undefined;
       if (preparingOwner || borrowers || releaseDeferred) return undefined;
       if (
         !current() ||
@@ -582,6 +679,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       if (p) close(p.allocation);
     },
     history(direction) {
+      if (saveLocked) return undefined;
       if (!current() || !accepted || !native || !endpoint) return undefined;
       if (planned && !planned.published) planned.output.release();
       planned = undefined;
@@ -639,6 +737,92 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     },
     dispose,
   };
+  uploadIssuers.set(api, () => {
+    if (uploadTaken || sponsorTaken || saveLocked || nativeWork || pending || planned || !saveView)
+      return fail();
+    uploadTaken = true;
+    const binding = saveView;
+    // Busy state is checked again after the callbackful current/idle reads.
+    if (
+      !binding.idle() ||
+      !current() ||
+      nativeWork ||
+      pending ||
+      planned ||
+      saveView !== binding ||
+      binding.view.isDestroyed ||
+      !endpoint ||
+      !validateLocalPointMountedOutput(endpointOutput, endpoint, binding.view.state.doc)
+    )
+      return fail();
+    saveLocked = true;
+    saveState = binding.view.state;
+    saveDocView = Object.getOwnPropertyDescriptor(binding.view, 'docView')?.value;
+    const uploadOwner = `point-upload:${uuid()}`,
+      controlOwner = `point-pending:${uuid()}`;
+    const upload = allocator.reservation(uploadOwner, pointUploadCost);
+    const control = allocator.reservation(controlOwner, pointUploadControlCost);
+    try {
+      // These two provisional products are empty DATA, with no IO/native product yet.
+      if (
+        !upload.construct(
+          () => ({}),
+          () => {},
+        ) ||
+        !control.construct(
+          () => ({}),
+          () => {},
+        )
+      )
+        return fail(); // The single catch below owns both cleanup attempts.
+      const uploadResource = resources.read().owners[uploadOwner]?.[0];
+      const controlResource = resources.read().owners[controlOwner]?.[0];
+      if (
+        !uploadResource ||
+        !controlResource ||
+        nativeWork ||
+        !binding.idle() ||
+        saveView !== binding ||
+        binding.view.state !== saveState ||
+        !current()
+      )
+        return fail();
+      const sponsor = createNoteLocalPointSaveSponsor(api);
+      const value = {
+        sponsor,
+        upload,
+        control,
+        controlOwner,
+        controlResource,
+        uploadOwner,
+        uploadResource,
+        releaseFence() {
+          saveLocked = false;
+          saveState = undefined;
+        },
+      };
+      Object.freeze(value);
+      uploadCaptures.add(value);
+      return value;
+    } catch (error) {
+      // A subscriber may throw after installing a reservation. Both tickets own
+      // only empty provisional DATA; a failed release remains charged by its owner.
+      const errors: unknown[] = [];
+      for (const ticket of [upload, control]) {
+        try {
+          ticket.release();
+        } catch (cleanup) {
+          errors.push(cleanup);
+        }
+      }
+      if (errors.length)
+        throw new AggregateError([error, ...errors], 'Upload admission cleanup unknown');
+      saveLocked = false;
+      saveState = undefined;
+      saveDocView = undefined;
+      throw error;
+    }
+  });
   sponsorIssuers.set(api, () => {
     if (sponsorTaken) return fail();
     sponsorTaken = true; // Consume before resource/context/read callbacks.
@@ -714,6 +898,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
             ticket,
             loss,
             precommitCurrent: current,
+            nativeSaveCurrent,
             now,
             dropBorrow,
           };

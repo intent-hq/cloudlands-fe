@@ -1,7 +1,9 @@
+import { pointUploadCost, pointUploadControlCost } from './note-local-point-staged-save';
 import { v4 as uuid } from 'uuid';
 import type {
   NotePagesState,
   NotePageSession,
+  NoteLocalPointSaveRecord,
 } from '$store/renderer/slices/note-pages/note-pages-types';
 import type { NoteDocumentSession } from './note-document-edit-session';
 import type { NoteStagedSaveInput } from '$lib/client/note-source-operation';
@@ -9,6 +11,8 @@ import { stageTextDigest } from '$lib/client/note-source-operation';
 import { sameNoteScope, type NoteCommitReceipt } from '$lib/client/note-pages';
 import {
   claimLiveNoteStagedSave,
+  liveNoteDispatchOutcome,
+  type LiveNoteSaveDispatch,
   type LiveNoteSaveObserver,
   type LiveNoteSaveLoss,
 } from '$lib/client/live/live-note-pages-client';
@@ -20,7 +24,11 @@ import {
   type NoteLocalPointSaveEvidence,
   type NoteLocalPointRecipe,
 } from './note-local-point-history';
-import { takeNoteLocalPointSponsorCapture } from './note-local-point-owner';
+import {
+  takeNoteLocalPointSponsorCapture,
+  consumePointUploadOwnerCapture,
+  type PointUploadOwnerCapture,
+} from './note-local-point-owner';
 import { readLocalPointCanonicalReceipt } from './note-local-point-canonical-receipt';
 import { beforeSourceDeadline, parseSourceDeadline } from '$shared/source-session-expiry';
 
@@ -54,6 +62,11 @@ const receiptCost = Object.freeze({
 type Resources = Parameters<typeof createNoteResourceOwner>[0];
 type Ticket = ReturnType<ReturnType<typeof createNoteResourceOwner>['reservation']>;
 export interface PointSponsorObservation {
+  dispatch?(
+    action: Parameters<
+      typeof import('$store/renderer/slices/note-pages/note-pages-slice').notePagesReducer
+    >[1],
+  ): void;
   read(): NotePagesState;
   subscribe(listener: () => void): () => void;
   panel: string;
@@ -70,6 +83,7 @@ export interface NoteLocalPointSponsorCapture {
   owner: string;
   ticket: Ticket;
   precommitCurrent(): boolean;
+  nativeSaveCurrent(): boolean;
   now(): number;
   dropBorrow(): void;
   loss: LiveNoteSaveLoss;
@@ -98,6 +112,11 @@ type Data = {
   quarantine?: { generation: number; state: NonNullable<NotePageSession['state']> };
   receipt?: NoteCommitReceipt;
   observer?: LiveNoteSaveObserver;
+  upload?: {
+    record?: NoteLocalPointSaveRecord;
+    transition?: { before?: NoteLocalPointSaveRecord; after?: NoteLocalPointSaveRecord };
+    receiptAwait: boolean;
+  };
 };
 type SponsorSlot = {
   data?: Data;
@@ -122,6 +141,7 @@ type SponsorSlot = {
   pending?: Promise<unknown>;
   release?: Promise<void>;
 };
+const sponsorSlots = new WeakMap<object, SponsorSlot>();
 const certificates = new WeakMap<object, { slot: SponsorSlot; summary?: Summary }>();
 function fail(): never {
   throw new Error('Local point save sponsor unavailable');
@@ -155,6 +175,19 @@ function observeState(slot: SponsorSlot): boolean {
       !sameNoteScope(note.state.scope, scope)
     )
       fail();
+    if (d.upload) {
+      const u = d.upload,
+        t = u.transition;
+      if (
+        note.drafts !== c.note.drafts ||
+        note.history !== c.note.history ||
+        note.pending ||
+        (t
+          ? note.localPointSave !== t.before && note.localPointSave !== t.after
+          : note.localPointSave !== u.record)
+      )
+        fail();
+    }
     if (d.phase === 'captured' || d.phase === 'bound') {
       if (
         note.generation !== c.note.generation ||
@@ -275,12 +308,15 @@ function current(slot: SponsorSlot) {
       !Object.hasOwn(note.panels, d.capture.observation.panel)
     )
       fail();
+    const receiptAwait = d.upload?.transition
+      ? note.localPointSave === d.upload.transition.after && !!d.upload.transition.after?.receipt
+      : d.upload?.receiptAwait;
     const generation = d.quarantine?.generation ?? d.capture.note.generation;
     const state = d.quarantine?.state ?? d.capture.note.state;
     if (
       note.generation !== generation ||
       note.state !== state ||
-      (d.quarantine ? !note.needsReconcile : note.needsReconcile)
+      (d.quarantine || receiptAwait ? !note.needsReconcile : note.needsReconcile)
     )
       fail();
     const pins = [note, note.state, note.state.scope, note.panels].map(pinFields);
@@ -600,6 +636,7 @@ export function createNoteLocalPointSaveSponsor(owner: unknown): PointSaveSponso
     cleanup: { capture },
   };
   const api = sponsorAPI(slot, input);
+  sponsorSlots.set(api, slot);
   try {
     allocation(slot, capture.owner, pointSponsorCost);
     slot.subscriptionUnknown = true; // Ownership claimed BEFORE callbackful registration.
@@ -622,4 +659,88 @@ export function createNoteLocalPointSaveSponsor(owner: unknown): PointSaveSponso
 export function currentPointCanonicalCertificate(value: unknown): boolean {
   const cert = value && typeof value === 'object' ? certificates.get(value) : undefined;
   return !!cert?.summary && current(cert.slot);
+}
+
+interface PointSaveUploadAccess {
+  input: NoteStagedSaveInput;
+  port: Pick<PointSponsorObservation, 'read' | 'subscribe'> & {
+    dispatch: NonNullable<PointSponsorObservation['dispatch']>;
+  };
+  resources: NoteLocalPointSponsorCapture['resources'];
+  document: NoteDocumentSession;
+  note: NotePageSession;
+  text: string;
+  now(): number;
+  loss: LiveNoteSaveLoss;
+  current(): boolean;
+  precommitCurrent(): boolean;
+  nativeCurrent(): boolean;
+  finalCheck(): ((time: number) => boolean) | undefined;
+  observer(): LiveNoteSaveObserver;
+  transition(next: NoteLocalPointSaveRecord | undefined): (installed: boolean) => void;
+  receive(dispatch: LiveNoteSaveDispatch): ReturnType<typeof liveNoteDispatchOutcome>;
+  retire(): void;
+  retirement(): Promise<void>;
+}
+
+/** Narrow actual-owner transfer. No source/recipe/port reconstruction from DTOs. */
+export function openPointSaveUpload(owner: PointUploadOwnerCapture): PointSaveUploadAccess {
+  if (!consumePointUploadOwnerCapture(owner)) return fail();
+  const slot = sponsorSlots.get(owner.sponsor);
+  const d = slot?.data;
+  if (!slot || !d || d.upload || !d.capture.observation.dispatch || !current(slot)) return fail();
+  allocation(slot, owner.uploadOwner, pointUploadCost);
+  allocation(slot, owner.controlOwner, pointUploadControlCost);
+  d.upload = { receiptAwait: false };
+  const port = Object.freeze({
+    read: d.capture.observation.read,
+    dispatch: d.capture.observation.dispatch,
+    subscribe: d.capture.observation.subscribe,
+  });
+  return Object.freeze({
+    input: d.input,
+    port,
+    resources: d.capture.resources,
+    document: d.capture.document,
+    note: d.capture.note,
+    text: d.capture.recipe.forward[0].text,
+    now: d.capture.now,
+    loss: d.capture.loss,
+    current: () => current(slot),
+    precommitCurrent: owner.sponsor.precommitCurrent,
+    nativeCurrent: d.capture.nativeSaveCurrent,
+    finalCheck() {
+      const check = slot.finalCheck;
+      slot.finalCheck = undefined;
+      return check;
+    },
+    observer() {
+      if (slot.data !== d || !d.observer) return fail();
+      return d.observer;
+    },
+    transition(next: NoteLocalPointSaveRecord | undefined) {
+      if (slot.data !== d || !d.upload || d.upload.transition) return fail();
+      d.upload.transition = { before: d.upload.record, after: next };
+      return (installed: boolean) => {
+        if (d.upload) {
+          if (installed) {
+            d.upload.record = next;
+            d.upload.receiptAwait = !!next?.receipt;
+          }
+          d.upload.transition = undefined;
+        }
+      };
+    },
+    receive(dispatch: LiveNoteSaveDispatch) {
+      if (!d.observer) return fail();
+      const receipt = liveNoteDispatchOutcome(dispatch, d.observer);
+      if (receipt?.kind === 'noteCommitReceipt' && slot.data === d) {
+        d.receipt = receipt;
+        d.phase = 'receiptBound';
+      }
+      return receipt;
+    },
+    retire: () => retire(slot),
+    retirement: owner.sponsor.release,
+  });
 }

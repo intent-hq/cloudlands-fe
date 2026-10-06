@@ -1,3 +1,4 @@
+import type { EditorView } from '@tiptap/pm/view';
 import { sameNoteScope } from '$lib/client/note-pages';
 import type { NoteViewCoordinates } from './note-view-coordinates';
 import type { Workspace } from '$shared/types';
@@ -990,11 +991,33 @@ export class NoteWindowView {
   }
   private publishSelection() {
     if (this.retained && this.retained.phase !== 'mounted') return;
-    this.invalidateSelectionBorrows();
-    if (this.historyBusy) return;
-    const selection = this.getSelection();
-    this.mountedEditing?.selectionChanged?.(selection);
-    this.options.selectionChanged(selection);
+    const admission = this.historyOwner?.saveAdmission;
+    if (admission && (!admission.mutable() || !admission.permitsSelection(this.selection))) return;
+    const leave = admission?.enter();
+    try {
+      this.invalidateSelectionBorrows();
+      if (this.historyBusy) return;
+      const selection = this.getSelection();
+      if (admission && !admission.permitsSelection(selection)) return;
+      this.mountedEditing?.selectionChanged?.(selection);
+      if (admission && !admission.permitsSelection(selection)) return;
+      this.options.selectionChanged(selection);
+    } finally {
+      leave?.();
+    }
+  }
+  private bindSaveAdmission(view: EditorView) {
+    const owner = this.historyOwner;
+    owner?.saveAdmission?.bind(
+      view,
+      () =>
+        this.historyOwner === owner &&
+        this.editor?.view === view &&
+        !this.disposed &&
+        !this.historyBusy &&
+        !this.transactionRelay?.busy &&
+        (!this.retained || this.retained.phase === 'mounted'),
+    );
   }
   getSelection(): NoteSourceSelection {
     return { ...this.selection };
@@ -1002,6 +1025,7 @@ export class NoteWindowView {
   private command(kind: 'copy' | 'search' | 'selectAll') {
     if (this.historyBusy || (this.retained && this.retained.phase !== 'mounted')) return;
     if (kind === 'selectAll' && this.coordinates) {
+      if (this.historyOwner?.saveAdmission && !this.historyOwner.saveAdmission.mutable()) return;
       this.selection = {
         anchor: 0,
         head: this.coordinates.length,
@@ -1110,38 +1134,45 @@ export class NoteWindowView {
     } else this.seekCurrent(Math.max(0, position - 1024));
   }
   setSelection(selection: NoteSourceSelection) {
-    if (this.retained && this.retained.phase !== 'mounted') return;
-    this.invalidateSelectionBorrows();
-    if (this.historyBusy) return;
-    if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
-    this.selection = { ...selection };
-    this.publishSelection();
-    const w = this.coordinates,
-      p = this.projection,
-      e = this.editor;
-    if (!w || !p || !e || selection.head < w.start || selection.head > w.end) {
-      this.navigationAnchor = { source: selection.head, offset: this.scroller.clientHeight / 3 };
-      this.seekCurrent(Math.max(0, selection.head - 1024), selection.headAffinity);
-      return;
-    }
-    this.applying = true;
+    const admission = this.historyOwner?.saveAdmission;
+    if (admission && (!admission.mutable() || !admission.permitsSelection(selection))) return;
+    const leaveSelection = admission?.enter();
     try {
-      e.view.dispatch(
-        e.state.tr
-          .setSelection(
-            TextSelection.create(
-              e.state.doc,
-              p.pmAt(
-                Math.max(w.start, Math.min(w.end, selection.anchor)),
-                selection.anchorAffinity,
+      if (this.retained && this.retained.phase !== 'mounted') return;
+      this.invalidateSelectionBorrows();
+      if (this.historyBusy) return;
+      if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
+      this.selection = { ...selection };
+      this.publishSelection();
+      const w = this.coordinates,
+        p = this.projection,
+        e = this.editor;
+      if (!w || !p || !e || selection.head < w.start || selection.head > w.end) {
+        this.navigationAnchor = { source: selection.head, offset: this.scroller.clientHeight / 3 };
+        this.seekCurrent(Math.max(0, selection.head - 1024), selection.headAffinity);
+        return;
+      }
+      this.applying = true;
+      try {
+        e.view.dispatch(
+          e.state.tr
+            .setSelection(
+              TextSelection.create(
+                e.state.doc,
+                p.pmAt(
+                  Math.max(w.start, Math.min(w.end, selection.anchor)),
+                  selection.anchorAffinity,
+                ),
+                p.pmAt(selection.head, selection.headAffinity),
               ),
-              p.pmAt(selection.head, selection.headAffinity),
-            ),
-          )
-          .setMeta('addToHistory', false),
-      );
+            )
+            .setMeta('addToHistory', false),
+        );
+      } finally {
+        this.applying = false;
+      }
     } finally {
-      this.applying = false;
+      leaveSelection?.();
     }
   }
   private captureAnchor() {
@@ -1327,14 +1358,25 @@ export class NoteWindowView {
     });
     const update = view.updateState;
     const observed = (state: EditorState) => {
-      r.router.assert(ticket, view);
-      if (state !== view.state) this.invalidateSelectionBorrows();
-      r.router.assert(ticket, view);
-      if (this.disposed || this.historyCancelled || this.editor !== editor)
-        throw new Error('Retained mount lost during selection notification');
-      update.call(view, state);
+      const admission = this.historyOwner?.saveAdmission;
+      if (admission && !admission.permits(state))
+        throw new Error('Local point save fences native state');
+      const leave = admission?.enter();
+      try {
+        r.router.assert(ticket, view);
+        if (state !== view.state) this.invalidateSelectionBorrows();
+        r.router.assert(ticket, view);
+        if (this.disposed || this.historyCancelled || this.editor !== editor)
+          throw new Error('Retained mount lost during selection notification');
+        if (admission && !admission.permits(state))
+          throw new Error('Local point save lost before native state');
+        update.call(view, state);
+      } finally {
+        leave?.();
+      }
     };
     view.updateState = observed;
+    this.bindSaveAdmission(view);
     this.restoreSelectionObserver = () => {
       if (view.updateState === observed) view.updateState = update;
     };
@@ -1793,6 +1835,13 @@ export class NoteWindowView {
                   coordinates.length,
                   Math.max(0, this.selection.head + direction),
                 );
+                if (
+                  this.historyOwner?.saveAdmission &&
+                  !this.historyOwner.saveAdmission.mutable()
+                ) {
+                  event.preventDefault();
+                  return true;
+                }
                 this.selection = {
                   ...this.selection,
                   anchor: event.shiftKey ? this.selection.anchor : head,
@@ -1853,8 +1902,14 @@ export class NoteWindowView {
               const selection = this.editor.state.selection;
               const anchor = this.projection.sourceAt(selection.anchor),
                 head = this.projection.sourceAt(selection.head);
-              this.selection = { anchor, head, anchorAffinity: 1, headAffinity: 1 };
-              this.publishSelection();
+              const nextSelection = { anchor, head, anchorAffinity: 1, headAffinity: 1 } as const;
+              if (
+                !this.historyOwner?.saveAdmission ||
+                this.historyOwner.saveAdmission.permitsSelection(nextSelection)
+              ) {
+                this.selection = nextSelection;
+                this.publishSelection();
+              }
             } catch {
               /* Structural atoms report their bounded source range through navigation. */
             }
@@ -1965,17 +2020,28 @@ export class NoteWindowView {
         updateState = nativeView.updateState;
       const capturedTicket = this.retained?.ticket;
       const observeState = (state: EditorState) => {
-        if (capturedTicket) this.retained!.router.assert(capturedTicket, nativeView);
-        if (nativeView.state !== state) this.invalidateSelectionBorrows();
-        if (capturedTicket) {
-          this.retained!.router.assert(capturedTicket, nativeView);
-          if (this.disposed || this.historyCancelled || this.editor !== editor)
-            throw new Error('Retained mount lost during selection notification');
+        const admission = this.historyOwner?.saveAdmission;
+        if (admission && !admission.permits(state))
+          throw new Error('Local point save fences native state');
+        const leave = admission?.enter();
+        try {
+          if (capturedTicket) this.retained!.router.assert(capturedTicket, nativeView);
+          if (nativeView.state !== state) this.invalidateSelectionBorrows();
+          if (capturedTicket) {
+            this.retained!.router.assert(capturedTicket, nativeView);
+            if (this.disposed || this.historyCancelled || this.editor !== editor)
+              throw new Error('Retained mount lost during selection notification');
+          }
+          if (admission && !admission.permits(state))
+            throw new Error('Local point save lost before native state');
+          updateState.call(nativeView, state);
+        } finally {
+          leave?.();
         }
-        updateState.call(nativeView, state);
       };
       const nativeDestroyed = () => this.invalidateSelectionBorrows();
       nativeView.updateState = observeState;
+      this.bindSaveAdmission(nativeView);
       editor.on('destroy', nativeDestroyed);
       this.restoreSelectionObserver = () => {
         if (nativeView.updateState === observeState) nativeView.updateState = updateState;
