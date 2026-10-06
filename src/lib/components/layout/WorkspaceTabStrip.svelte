@@ -1,5 +1,4 @@
 <script lang="ts">
-  /* eslint-disable max-lines */
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
