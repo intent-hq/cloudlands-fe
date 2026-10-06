@@ -163,10 +163,9 @@
     } else if (newValue) {
       // No template selected but has content - treat as custom
       hasUserEdited = true;
-    } else {
-      // Empty content with no template - not custom
-      hasUserEdited = false;
     }
+    // Clearing an existing custom choice keeps its identity. An untouched
+    // blank already has hasUserEdited=false and remains eligible for defaults.
   }
 
   // Find "Copy config files only" template ID (it's the 'generic' template)
@@ -188,8 +187,10 @@
     // Only run when repo actually changes (null means first run)
     if (currentRepo === previousRepoPath) return;
 
-    // Check if value was pre-populated (e.g., from restored form state)
-    const hasPrePopulatedValue = previousRepoPath === null && value && value.trim().length > 0;
+    // Explicit custom choices include empty scripts. Preserve them on reopen;
+    // untouched blanks still receive the normal repository/default selection.
+    const hasPrePopulatedValue =
+      previousRepoPath === null && (isCustomScript || value.trim().length > 0);
 
     // Update tracking variable without triggering effect
     previousRepoPath = currentRepo;
