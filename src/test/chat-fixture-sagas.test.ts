@@ -143,7 +143,7 @@ it('uses an injected transport for delayed restore, flushed save, and clear', as
   );
   store.dispatch(chatDraftOwnerReleased('composer'));
   await settle();
-  expect(transport.set).toHaveBeenCalledExactlyOnceWith('workspace', 'agent', 'edited', []);
+  expect(transport.set).toHaveBeenCalledExactlyOnceWith('workspace', 'agent', 'edited', undefined);
   store.dispatch(chatDraftClearRequested('workspace', 'agent'));
   await settle();
   expect(transport.clear).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');

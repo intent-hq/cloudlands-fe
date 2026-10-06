@@ -138,7 +138,7 @@
       onDraftRequest,
     ),
   );
-  const startFixtureSagas = (appStore: typeof store) =>
+  const startFixtureSagas = (appStore: Parameters<typeof startChatFixtureSagas>[0]) =>
     startChatFixtureSagas(appStore, { drafts: drafts.transport });
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
