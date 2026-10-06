@@ -5,7 +5,6 @@ import { appClient } from '$lib/client';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
-import { replaceNoteCommentsAction } from '../../comments/comments-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   applyNoteCreated,
@@ -486,7 +485,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('settles comment loading with the protocol rows and replaces only the owning note', async () => {
+  it('settles comment loading with the protocol rows for its live consumer to apply', async () => {
     const comments = [{ id: 'comment-1', noteId: 'note-1', workspaceId: WS }] as never;
     const list = vi.spyOn(appClient.comments, 'list').mockResolvedValue(comments);
     const run = harness();
@@ -496,10 +495,7 @@ describe('notesReadSaga', () => {
     await expect(action.promise).resolves.toBe(comments);
 
     expect(list.mock.calls).toEqual([['note-1', WS]]);
-    expect(run.actions).toEqual([
-      replaceNoteCommentsAction(WS, 'note-1', comments),
-      action.success(comments),
-    ]);
+    expect(run.actions).toEqual([action.success(comments)]);
     run.task.cancel();
     await run.task.toPromise();
   });

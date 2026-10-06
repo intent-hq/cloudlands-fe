@@ -161,20 +161,20 @@ function* searchNotesWorker(action: ReturnType<typeof searchNotesRequested>) {
   }
 }
 
-function* loadNoteComments(workspaceId: string, noteId: string) {
+function* loadNoteComments(workspaceId: string, noteId: string, apply = true) {
   const comments: Awaited<ReturnType<typeof appClient.comments.list>> = yield* call(
     [appClient.comments, appClient.comments.list],
     noteId,
     workspaceId,
   );
-  yield* put(replaceNoteCommentsAction(workspaceId, noteId, comments));
+  if (apply) yield* put(replaceNoteCommentsAction(workspaceId, noteId, comments));
   return comments;
 }
 
 function* loadNoteCommentsWorker(action: ReturnType<typeof loadNoteCommentsRequested>) {
   const [workspaceId, noteId] = action.payload;
   try {
-    const comments = yield* call(loadNoteComments, workspaceId, noteId);
+    const comments = yield* call(loadNoteComments, workspaceId, noteId, false);
     yield* put(action.success(comments));
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
@@ -211,7 +211,14 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
 
 export function* notesReadSaga() {
   yield* takeEvery(readNoteRequested, readNoteWorker);
-  yield* takeEvery(ensureNoteContentLoadedRequested, ensureNoteContentWorker);
+  // Concurrent consumers of the same slim note share the first full-content
+  // read. A queued duplicate then observes the fresh cache and resolves
+  // without issuing a second note.get request.
+  yield* takeSingleFlightInContext(
+    ensureNoteContentLoadedRequested,
+    (action) => `${action.payload[0]}:${action.payload[1]}`,
+    ensureNoteContentWorker,
+  );
   yield* takeEvery(searchNotesRequested, searchNotesWorker);
   yield* takeEvery(loadNoteCommentsRequested, loadNoteCommentsWorker);
   yield* takeLatestByContext(

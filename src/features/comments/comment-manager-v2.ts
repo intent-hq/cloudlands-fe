@@ -12,7 +12,10 @@ import { createLogger } from '$lib/utils/client-logger';
 import { findCommentAnchors, getAllAnchoredCommentIds } from '$lib/components/tiptap/CommentAnchor';
 import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
-import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
+import {
+  replaceNoteCommentsAction,
+  updateCommentAction,
+} from '$store/renderer/slices/comments/comments-slice';
 import {
   selectCommentsForNote,
   selectCommentById,
@@ -106,6 +109,8 @@ export class CommentManagerV2 {
       );
 
       if (!this.editor) return;
+
+      appStore.dispatch(replaceNoteCommentsAction(this.workspaceId, this.noteId, v2Comments));
 
       logger.info('Loading comments from backend', {
         count: v2Comments.length,
