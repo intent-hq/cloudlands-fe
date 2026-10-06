@@ -7,27 +7,24 @@
 
 import type { Editor } from '@tiptap/core';
 import { getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
-import type { CommentV2, CommentAnchor } from './comment-types-v2';
+import type { CommentV2 } from './comment-types-v2';
 import { createLogger } from '$lib/utils/client-logger';
 import { findCommentAnchors, getAllAnchoredCommentIds } from '$lib/components/tiptap/CommentAnchor';
 import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
-import {
-  loadComments as loadCommentsFromBackend,
-  resolveComment as resolveCommentInBackend,
-} from './comment-loader';
-import { convertBackendCommentToV2 } from './comment-types-v2';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
-import * as commentsWrite from './comments-write-service';
-import {
-  updateCommentAction,
-  replaceNoteCommentsAction,
-} from '$store/renderer/slices/comments/comments-slice';
+import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
 import {
   selectCommentsForNote,
   selectCommentById,
 } from '$store/renderer/slices/comments/comments-selectors';
 import { store as appStore } from '$store/renderer/store';
-import { m } from '$shared/paraglide/messages.js';
+import {
+  addCommentRequested,
+  deleteCommentRequested,
+  loadNoteCommentsRequested,
+  resolveCommentRequested,
+  respondToCommentRequested,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   getAnchorOwnerCommentId,
   isProjectionDroppedChar,
@@ -104,113 +101,16 @@ export class CommentManagerV2 {
    */
   private async loadComments() {
     try {
-      const backendComments = await loadCommentsFromBackend({
-        workspaceId: this.workspaceId,
-        noteId: this.noteId,
-      });
+      const v2Comments = await appStore.dispatch(
+        loadNoteCommentsRequested(this.workspaceId, this.noteId),
+      );
 
       if (!this.editor) return;
 
       logger.info('Loading comments from backend', {
-        count: backendComments.length,
-        firstComment: backendComments[0],
+        count: v2Comments.length,
+        firstComment: v2Comments[0],
       });
-
-      // Convert backend comments to V2 format using type-safe helper
-      const v2Comments: CommentV2[] = backendComments.map((comment) => {
-        // Determine anchor type based on comment data
-        let anchor: CommentAnchor | undefined;
-
-        logger.debug('Processing comment', {
-          id: comment.id,
-          markId: comment.markId,
-          from: comment.from,
-          to: comment.to,
-        });
-
-        if (comment.parentId) {
-          // Post-#729 replies carry no anchor on the wire — they anchor
-          // through their thread root (PROTOCOL §5.3 "Reply anchoring"), so
-          // no anchor is synthesized for them, mirroring normalizeComment in
-          // live-comments-client (monorepo#749/#754).
-          anchor = undefined;
-        } else if (comment.markId) {
-          // Parse existing anchor IDs from markId
-          // Format is either "id:start|id:end" for range or "id:point" for point
-          if (comment.markId.includes('|')) {
-            // Range comment with format "id:start|id:end"
-            const [startId, endId] = comment.markId.split('|');
-            anchor = {
-              type: 'range',
-              startId: startId || `${comment.id}:start`,
-              endId: endId || `${comment.id}:end`,
-            };
-          } else {
-            // Point comment with format "id:point"
-            anchor = {
-              type: 'point',
-              pointId: comment.markId || `${comment.id}:point`,
-            };
-          }
-        } else if (
-          comment.from !== undefined &&
-          comment.to !== undefined &&
-          comment.from !== comment.to
-        ) {
-          // Range comment
-          anchor = {
-            type: 'range',
-            startId: `${comment.id}:start`,
-            endId: `${comment.id}:end`,
-          };
-        } else {
-          // Point comment
-          anchor = {
-            type: 'point',
-            pointId: `${comment.id}:point`,
-          };
-        }
-
-        // Use type-safe conversion helper with runtime validation
-        try {
-          return convertBackendCommentToV2(comment, anchor, this.noteId, this.workspaceId);
-        } catch (error) {
-          // Log error but don't fail the entire load - just skip this comment
-          logger.error('Failed to convert comment, skipping', {
-            commentId: comment.id,
-            type: comment.type,
-            error,
-          });
-          // Return a fallback regular comment to avoid breaking the UI
-          return {
-            id: comment.id,
-            threadId: comment.threadId || `thread-${comment.id}`,
-            content: comment.content || m.comments_manager_errorLoading_label(),
-            type: 'comment' as const,
-            author: comment.author || m.comments_manager_unknownAuthor_label(),
-            authorType: comment.authorType || 'user',
-            status: comment.status || 'open',
-            createdAt: comment.createdAt || new Date().toISOString(),
-            updatedAt: comment.updatedAt || new Date().toISOString(),
-            parentId: comment.parentId,
-            noteId: this.noteId,
-            workspaceId: this.workspaceId,
-            ...(anchor ? { anchor } : {}),
-            ...(comment.section !== undefined ? { anchorText: comment.section } : {}),
-            // NoteComment doesn't have anchorContext, so the key is never set
-            reactions: comment.reactions
-              ? Object.fromEntries(
-                  Object.entries(comment.reactions).map(([k, v]) => [
-                    k,
-                    Array.isArray(v) ? (v as string[]) : [v as string],
-                  ]),
-                )
-              : undefined,
-          };
-        }
-      });
-
-      appStore.dispatch(replaceNoteCommentsAction(this.workspaceId, this.noteId, v2Comments));
       logger.info('Loaded comments from backend', { count: v2Comments.length });
 
       // After loading comments, we need to insert anchors into the document
@@ -1099,16 +999,18 @@ export class CommentManagerV2 {
     // were inserted under — the post-add refetch converges instead of ghosting
     // the editor anchors behind a daemon-minted id.
     const searchContext = `${beforeText}${selectedText}${afterText}`;
-    const persisted = await commentsWrite.addComment(this.noteId, addedComment, {
-      workspaceId: this.workspaceId,
-      searchContext,
-      commentTarget: selectedText,
-      comment: content,
-      type,
-      author: 'User',
-      authorType: 'user',
-      commentId: addedComment.id,
-    });
+    const persisted = await appStore.dispatch(
+      addCommentRequested(this.noteId, addedComment, {
+        workspaceId: this.workspaceId,
+        searchContext,
+        commentTarget: selectedText,
+        comment: content,
+        type,
+        author: 'User',
+        authorType: 'user',
+        commentId: addedComment.id,
+      }),
+    );
     if (!persisted) {
       // Reconstruction evidence for a failed comment.add: param lengths plus
       // bounded head/tail snippets (never the full note text). Emitted as a
@@ -1162,10 +1064,8 @@ export class CommentManagerV2 {
     // reflects daemon persistence. Anchors are only removed once the delete
     // persists so a rolled-back store entry does not desynchronise from the
     // document.
-    const { existed, success } = await commentsWrite.deleteComment(
-      this.noteId,
-      commentId,
-      this.workspaceId,
+    const { existed, success } = await appStore.dispatch(
+      deleteCommentRequested(this.noteId, commentId, this.workspaceId),
     );
 
     if (!success) {
@@ -1186,21 +1086,18 @@ export class CommentManagerV2 {
    */
   async resolveComment(commentId: string): Promise<boolean> {
     const existing = selectCommentById.select(appStore.state, commentId);
-    const updated = !!existing;
-    if (updated) {
-      appStore.dispatch(updateCommentAction(commentId, { status: 'resolved' }));
+    if (existing) {
+      const updated = await appStore.dispatch(
+        resolveCommentRequested(this.workspaceId, this.noteId, commentId),
+      );
+
+      if (updated) {
+        this.updateDecorations();
+        logger.info('Resolved comment', { commentId });
+      }
+      return updated;
     }
-
-    if (updated) {
-      // Save to backend
-      await resolveCommentInBackend(this.workspaceId, commentId, this.noteId);
-
-      // Update decorations
-      this.updateDecorations();
-      logger.info('Resolved comment', { commentId });
-    }
-
-    return updated;
+    return false;
   }
 
   /**
@@ -1239,13 +1136,15 @@ export class CommentManagerV2 {
     // `comment.respond` + rollback are owned there.
     // `authorType: 'user'` marks the UI-driven reply as user-authored (the
     // daemon defaults to 'agent' when absent).
-    await commentsWrite.respondToComment(this.noteId, reply, {
-      workspaceId: this.workspaceId,
-      commentId: parentId,
-      comment: content,
-      type: 'comment',
-      authorType: 'user',
-    });
+    await appStore.dispatch(
+      respondToCommentRequested(this.noteId, reply, {
+        workspaceId: this.workspaceId,
+        commentId: parentId,
+        comment: content,
+        type: 'comment',
+        authorType: 'user',
+      }),
+    );
 
     logger.info('Added reply', { replyId: reply.id, parentId });
     return reply;

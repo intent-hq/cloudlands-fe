@@ -7,6 +7,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 
 import { appClient } from '$lib/client';
 import { notify } from '$lib/components/patterns/notify';
+import type { CommentV2 } from '$features/comments/comment-types-v2';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -17,6 +18,7 @@ import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/p
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   addOptimisticNote,
+  addCommentRequested,
   applyNoteUpdated,
   createNote,
   deleteNote,
@@ -517,6 +519,13 @@ describe('notesWriteSaga', () => {
     await settle();
     run.channel.put(updateNoteContent(WS, NOTE, 'body first plus typing'));
     await settle();
+    run.channel.put(
+      updateNoteContent(WS, NOTE, 'body first plus typing newest', {
+        baseRev: 4,
+        baseContent: 'body first plus typing',
+      }),
+    );
+    await settle();
 
     run.dispatch(
       loadWorkspaceNotesSucceeded([WS], {
@@ -533,7 +542,7 @@ describe('notesWriteSaga', () => {
     await settle();
     expect(setContent.mock.calls).toEqual([
       [NOTE, 'body first', 4, WS],
-      [NOTE, 'AGENT\nbody first plus typing', 6, WS],
+      [NOTE, 'AGENT\nbody first plus typing newest', 6, WS],
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -797,6 +806,56 @@ describe('notesWriteSaga', () => {
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
 
     expect(setContent.mock.calls).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('serializes a comment rev bump before a content save on the same note', async () => {
+    vi.useFakeTimers();
+    let resolveAdd!: (value: { success: true; noteRev: number }) => void;
+    const add = vi.spyOn(appClient.comments, 'add').mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAdd = resolve;
+      }),
+    );
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+      newContent: 'draft',
+      noteRev: 6,
+    });
+    const run = harness();
+    const optimistic = {
+      id: 'comment-1',
+      noteId: NOTE,
+      workspaceId: WS,
+      content: 'review',
+    } as CommentV2;
+    const request = addCommentRequested(NOTE, optimistic, {
+      workspaceId: WS,
+      searchContext: 'old body',
+      commentTarget: 'old',
+      comment: 'review',
+      commentId: optimistic.id,
+    });
+
+    run.channel.put(request);
+    await settle();
+    expect(add).toHaveBeenCalledWith(NOTE, expect.objectContaining({ commentId: 'comment-1' }));
+    run.channel.put(
+      updateNoteContent(WS, NOTE, 'draft', {
+        immediate: true,
+        baseRev: 4,
+        baseContent: 'old body',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setContent).not.toHaveBeenCalled();
+
+    resolveAdd({ success: true, noteRev: 5 });
+    await expect(request.promise).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    expect(setContent).toHaveBeenCalledWith(NOTE, 'draft', 4, WS);
     run.task.cancel();
     await run.task.toPromise();
   });

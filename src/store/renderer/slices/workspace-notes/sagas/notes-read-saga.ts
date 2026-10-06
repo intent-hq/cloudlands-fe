@@ -1,8 +1,11 @@
-import { call, put, race, take } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
+import { isNoteContentStale } from '$shared/utils/note-content';
+import { replaceNoteCommentsAction } from '../../comments/comments-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   takeLatestByContext,
@@ -13,9 +16,14 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  commentEventReceived,
+  ensureNoteContentLoadedRequested,
+  loadNoteCommentsRequested,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  readNoteRequested,
+  searchNotesRequested,
   selectNote,
   workspaceNotesHydrationRequested,
   type NoteEventType,
@@ -96,6 +104,93 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
   }
 }
 
+function* readNote(workspaceId: string, noteId: string) {
+  const found: Awaited<ReturnType<typeof appClient.notes.get>> = yield* call(
+    [appClient.notes, appClient.notes.get],
+    noteId,
+    workspaceId,
+  );
+  if (!found || String(found.workspaceId) !== workspaceId) return null;
+  const note = toRuntimeNote(found);
+  yield* put(applyNoteUpdated(workspaceId, noteId, note));
+  return note;
+}
+
+function* readNoteWorker(action: ReturnType<typeof readNoteRequested>) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    const note = yield* call(readNote, workspaceId, noteId);
+    yield* put(action.success(note));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoadedRequested>) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    const cached = yield* selectNoteById.effect(workspaceId, noteId);
+    if (!cached) {
+      yield* put(action.success(false));
+      return;
+    }
+    if (!isNoteContentStale(cached)) {
+      yield* put(action.success(true));
+      return;
+    }
+    const note = yield* call(readNote, workspaceId, noteId);
+    yield* put(action.success(note !== null && !isNoteContentStale(note)));
+  } catch (error) {
+    logger.error('Failed to load full note content', error);
+    yield* put(action.success(false));
+  }
+}
+
+function* searchNotesWorker(action: ReturnType<typeof searchNotesRequested>) {
+  const [query, preferWorkspaceId] = action.payload;
+  try {
+    const response: unknown = yield* call(backendRequest, 'search.notes', {
+      query,
+      limit: 10,
+      includeArchived: false,
+      ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
+    });
+    yield* put(action.success(response));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* loadNoteComments(workspaceId: string, noteId: string) {
+  const comments: Awaited<ReturnType<typeof appClient.comments.list>> = yield* call(
+    [appClient.comments, appClient.comments.list],
+    noteId,
+    workspaceId,
+  );
+  yield* put(replaceNoteCommentsAction(workspaceId, noteId, comments));
+  return comments;
+}
+
+function* loadNoteCommentsWorker(action: ReturnType<typeof loadNoteCommentsRequested>) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    const comments = yield* call(loadNoteComments, workspaceId, noteId);
+    yield* put(action.success(comments));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* applyCommentEventWorker(action: ReturnType<typeof commentEventReceived>) {
+  const [workspaceId, noteId] = action.payload;
+  if (!workspaceId || !noteId) return;
+  try {
+    yield* call(loadNoteComments, workspaceId, noteId);
+  } catch (error) {
+    logger.error('Failed to apply comment event', error);
+  }
+}
+
 function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceNotesHydrationRequested>) {
   const [workspaceId, , force] = action.payload;
   if (!workspaceId) return;
@@ -115,6 +210,10 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
 }
 
 export function* notesReadSaga() {
+  yield* takeEvery(readNoteRequested, readNoteWorker);
+  yield* takeEvery(ensureNoteContentLoadedRequested, ensureNoteContentWorker);
+  yield* takeEvery(searchNotesRequested, searchNotesWorker);
+  yield* takeEvery(loadNoteCommentsRequested, loadNoteCommentsWorker);
   yield* takeLatestByContext(
     workspaceNotesHydrationRequested,
     (action) => ({ context: action.payload[0], generation: action.payload[1] }),
@@ -128,5 +227,10 @@ export function* notesReadSaga() {
     noteEventReceived,
     (action) => `${action.payload[0]}:${action.payload[1]}`,
     applyNoteEventWorker,
+  );
+  yield* takeSingleFlightInContext(
+    commentEventReceived,
+    (action) => `${action.payload[0]}:${action.payload[1]}`,
+    applyCommentEventWorker,
   );
 }

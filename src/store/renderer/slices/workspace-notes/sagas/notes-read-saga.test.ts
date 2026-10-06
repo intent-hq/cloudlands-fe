@@ -5,14 +5,18 @@ import { appClient } from '$lib/client';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+import { replaceNoteCommentsAction } from '../../comments/comments-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  commentEventReceived,
+  loadNoteCommentsRequested,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  searchNotesRequested,
   selectNote,
   workspaceNotesReducer,
   workspaceNotesHydrationRequested,
@@ -478,6 +482,64 @@ describe('notesReadSaga', () => {
 
     expect(get.mock.calls).toEqual([['note-1', WS]]);
     expect(run.actions).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles comment loading with the protocol rows and replaces only the owning note', async () => {
+    const comments = [{ id: 'comment-1', noteId: 'note-1', workspaceId: WS }] as never;
+    const list = vi.spyOn(appClient.comments, 'list').mockResolvedValue(comments);
+    const run = harness();
+    const action = loadNoteCommentsRequested(WS, 'note-1');
+
+    run.channel.put(action);
+    await expect(action.promise).resolves.toBe(comments);
+
+    expect(list.mock.calls).toEqual([['note-1', WS]]);
+    expect(run.actions).toEqual([
+      replaceNoteCommentsAction(WS, 'note-1', comments),
+      action.success(comments),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('single-flights comment event bursts with one trailing reconciliation', async () => {
+    const first = deferred<never[]>();
+    const list = vi
+      .spyOn(appClient.comments, 'list')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce([]);
+    const run = harness();
+
+    run.channel.put(commentEventReceived(WS, 'note-1', 'added'));
+    run.channel.put(commentEventReceived(WS, 'note-1', 'resolved'));
+    run.channel.put(commentEventReceived(WS, 'note-1', 'added'));
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+
+    first.resolve([]);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sends the exact indexed search request and settles its correlated result', async () => {
+    const transport = await import('$lib/client/live/backend-transport');
+    const response = { matches: [], total: 0 };
+    const request = vi.spyOn(transport, 'backendRequest').mockResolvedValue(response);
+    const run = harness();
+    const action = searchNotesRequested('wombat', WS);
+
+    run.channel.put(action);
+    await expect(action.promise).resolves.toBe(response);
+    expect(request).toHaveBeenCalledWith('search.notes', {
+      query: 'wombat',
+      limit: 10,
+      includeArchived: false,
+      preferWorkspaceId: WS,
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
