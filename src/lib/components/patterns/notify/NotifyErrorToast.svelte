@@ -32,8 +32,11 @@
         <span class="toast-details-chevron" aria-hidden="true">›</span>
         {m.chat_toolCall_technicalDetails_label()}
       </summary>
-      <pre
-        class="type-caption mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-(--radius-medium) bg-muted p-2 font-mono">{details}</pre>
+      <div class="mt-2 rounded-(--radius-medium) bg-muted p-2" data-toast-optional>
+        <pre
+          class="type-caption whitespace-pre-wrap break-all font-mono"
+          data-toast-description>{details}</pre>
+      </div>
       <div class="mt-2 flex justify-end gap-2">
         <Button variant="ghost" size="compact" class="toast-detail-copy" onclick={copyDetails}>
           {m.ui_errorToast_copy_label()}

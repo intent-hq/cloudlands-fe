@@ -1,23 +1,16 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { test } from './root-browser-fixtures';
-import { createServer, type ViteDevServer } from 'vite';
-import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { startSandboxServer } from '../scripts/sandbox/runner.mjs';
 import { loadBundledInterFont } from './test-fonts';
 
-let server: ViteDevServer | undefined;
+let server: Awaited<ReturnType<typeof startSandboxServer>> | undefined;
 let baseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '') ?? '';
 test.describe.configure({ timeout: 120_000 });
 test.beforeAll(async () => {
   test.setTimeout(360_000);
   if (baseUrl) return;
-  process.env.INTENT_UI_PREVIEW = '1';
-  process.env.INTENT_BUILD_TARGET = 'web';
-  server = await createServer({
-    cacheDir: viteHarnessCacheDir('toast-overflow'),
-    server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
-  });
-  await server.listen();
-  baseUrl = server.resolvedUrls?.local[0]?.replace(/\/$/, '') ?? '';
+  server = await startSandboxServer();
+  baseUrl = server.baseUrl.replace(/\/$/, '');
   expect(baseUrl).not.toBe('');
 });
 test.afterAll(async () => server?.close());
@@ -33,6 +26,9 @@ async function open(page: Page, state: string, theme = 'light', scale = 1) {
     colorScheme: theme === 'dark' ? 'dark' : 'light',
   });
   await page.goto(`${baseUrl}/sandbox/toast-overflow?state=${state}&theme=${theme}&motion=reduced`);
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: 90_000,
+  });
   await expect(page.getByTestId('toast-overflow-preview')).toHaveAttribute('data-scenario', state);
   await loadBundledInterFont(page, { baseUrl: `${baseUrl}/` });
   if (scale !== 1)
@@ -48,12 +44,14 @@ async function geometry(page: Page) {
       const { x, y, width, height, top, bottom, left, right } = el.getBoundingClientRect();
       return { x, y, width, height, top, bottom, left, right };
     };
-    const region = document.querySelector('#toast-overflow-region')!;
+    const region = document.querySelector('#toast-overflow-region');
     return {
       viewport: { width: innerWidth, height: innerHeight },
       rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
       cards: [
-        ...region.querySelectorAll<HTMLElement>('[data-sonner-toast]:not([data-removed="true"])'),
+        ...(region?.querySelectorAll<HTMLElement>(
+          '[data-sonner-toast]:not([data-removed="true"])',
+        ) ?? []),
       ].map((card) => ({
         ...rect(card),
         visible: card.dataset.visible,
@@ -71,12 +69,23 @@ async function geometry(page: Page) {
           ...rect(el),
           kind: el.matches('[data-title], [data-toast-title]') ? 'title' : 'description',
           lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+          paddingHeight:
+            parseFloat(getComputedStyle(el).paddingTop) +
+            parseFloat(getComputedStyle(el).paddingBottom),
           fullLength: el.textContent?.length,
         })),
         controls: [...card.querySelectorAll<HTMLElement>('button, summary')].map((el) => ({
           ...rect(el),
           label: el.getAttribute('aria-label') ?? el.textContent?.trim(),
         })),
+        parts: [
+          ...card.querySelectorAll<HTMLElement>(
+            '[data-title], [data-description], [data-toast-title], [data-toast-description], [data-toast-optional], [data-toast-glyph], [data-icon], button, summary, code, .toast-progress-label, .progress-bar',
+          ),
+        ]
+          .filter((part) => !part.closest('details:not([open])') || part.closest('summary'))
+          .map(rect)
+          .filter((part) => part.width > 0 && part.height > 0),
         scrollRegions: [card, ...card.querySelectorAll<HTMLElement>('*')]
           .filter(
             (el) =>
@@ -116,7 +125,18 @@ async function bounded(page: Page, info: TestInfo, name: string) {
         (card) =>
           card.height <= Math.min(16 * state.rem, state.viewport.height / 2) + 1 &&
           (card.visible === 'false' ||
-            (card.top >= -1 && card.bottom <= state.viewport.height + 1)),
+            (card.top >= -1 &&
+              card.bottom <= state.viewport.height + 1 &&
+              (card.inert ||
+                (card.scrollHeight <= card.clientHeight + 1 &&
+                  card.scrollRegions.length === 0 &&
+                  card.parts.every(
+                    (part) =>
+                      part.left >= card.left - 1 &&
+                      part.right <= card.right + 1 &&
+                      part.top >= card.top - 1 &&
+                      part.bottom <= card.bottom + 1,
+                  ))))),
       );
     })
     .toBe(true);
@@ -128,19 +148,25 @@ async function bounded(page: Page, info: TestInfo, name: string) {
     expect(card.top).toBeGreaterThanOrEqual(-1);
     expect(card.bottom).toBeLessThanOrEqual(state.viewport.height + 1);
     for (const text of card.text) {
-      expect(text.height).toBeLessThanOrEqual(
+      expect(text.height - text.paddingHeight).toBeLessThanOrEqual(
         text.lineHeight * (text.kind === 'title' ? 2 : 3) + 1,
       );
     }
-    // Scrollable custom cards intentionally contain offscreen descendants; scrollIntoView
-    // and real click assertions below prove their actions are reachable.
-    if (card.styled === 'true')
-      for (const control of card.controls) {
-        expect(control.left).toBeGreaterThanOrEqual(card.left - 1);
-        expect(control.right).toBeLessThanOrEqual(card.right + 1);
-        expect(control.top).toBeGreaterThanOrEqual(card.top - 1);
-        expect(control.bottom).toBeLessThanOrEqual(card.bottom + 1);
-      }
+    if (card.inert) continue;
+    expect(card.scrollHeight).toBeLessThanOrEqual(card.clientHeight + 1);
+    expect(card.scrollRegions).toHaveLength(0);
+    for (const part of card.parts) {
+      expect(part.left).toBeGreaterThanOrEqual(card.left - 1);
+      expect(part.right).toBeLessThanOrEqual(card.right + 1);
+      expect(part.top).toBeGreaterThanOrEqual(card.top - 1);
+      expect(part.bottom).toBeLessThanOrEqual(card.bottom + 1);
+    }
+  }
+  const expanded = state.cards
+    .filter((card) => card.visible !== 'false' && card.expanded === 'true')
+    .sort((a, b) => a.top - b.top);
+  for (let index = 1; index < expanded.length; index += 1) {
+    expect(expanded[index].top).toBeGreaterThanOrEqual(expanded[index - 1].bottom + 7);
   }
   return state;
 }
@@ -149,6 +175,7 @@ for (const environment of [
   { name: 'desktop', width: 1024, height: 768, theme: 'light', scale: 1 },
   { name: 'narrow-short-dark', width: 360, height: 320, theme: 'dark', scale: 1 },
   { name: 'larger-text', width: 420, height: 480, theme: 'light', scale: 1.5 },
+  { name: 'short-larger-text', width: 360, height: 320, theme: 'dark', scale: 1.5 },
 ]) {
   test(`contains standard and custom content: ${environment.name}`, async ({ page }, info) => {
     await page.setViewportSize(environment);
@@ -172,9 +199,6 @@ for (const environment of [
     ]) {
       await open(page, scenario, environment.theme, environment.scale);
       await bounded(page, info, `${environment.name}-${scenario}`);
-      if (scenario === 'auth') {
-        expect((await geometry(page)).cards[0].scrollRegions.length).toBeGreaterThan(0);
-      }
     }
   });
 }
@@ -213,7 +237,12 @@ test('keeps Undo, long actions, custom callbacks, copy, details and close usable
   await expect(cards(page).locator('details')).toHaveAttribute('open', '');
   await cards(page).getByRole('button', { name: 'Copy', exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('Diagnostic 40:');
-  await bounded(page, info, 'details-expanded-scrolled');
+  await bounded(page, info, 'details-expanded-truncated');
+  await page.setViewportSize({ width: 360, height: 320 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '150%';
+  });
+  await bounded(page, info, 'details-expanded-short-larger-text');
   await open(page, 'auth');
   await cards(page).getByRole('button', { name: 'Copy', exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('claude auth login');

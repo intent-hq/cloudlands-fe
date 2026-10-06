@@ -68,7 +68,9 @@
 
     {#if loginCommandHint}
       <div class="mt-1.5 flex min-w-0 flex-col gap-1" data-testid="toast-auth-guidance">
-        <p class="text-xs text-muted-foreground">{m.settings_providers_runToLogIn_label()}</p>
+        <p class="text-xs text-muted-foreground" data-toast-optional>
+          {m.settings_providers_runToLogIn_label()}
+        </p>
         <div class="flex items-center gap-1">
           <code
             class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 text-xs"
@@ -82,6 +84,7 @@
             class="text-xs text-muted-foreground break-words"
             data-testid="toast-auth-claude-desktop-note"
             data-toast-description
+            data-toast-optional
           >
             {m.settings_providers_claudeDesktopNote_label()}
           </p>
@@ -90,14 +93,16 @@
     {/if}
 
     {#if metadata}
-      <p class="toast-metadata min-w-0 truncate">
+      <p class="toast-metadata min-w-0 truncate" data-toast-optional>
         <span class="toast-metadata-dot" aria-hidden="true"></span>
         <span class="min-w-0 truncate" title={metadata}>{metadata}</span>
       </p>
     {/if}
 
     {#if retryNote}
-      <p class="text-xs text-danger mt-1.5" data-toast-description>{retryNote}</p>
+      <p class="text-xs text-danger mt-1.5" data-toast-description data-toast-optional>
+        {retryNote}
+      </p>
     {/if}
 
     <!-- Action buttons -->
