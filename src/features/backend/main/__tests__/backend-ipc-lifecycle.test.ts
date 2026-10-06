@@ -683,14 +683,19 @@ describe('enrolled real pool and original callback ownership', () => {
     await expect(lifecycle.retire(fence())).rejects.toThrow('presence');
   });
 
-  it('P8 preserves the unenrolled immediate void disposer and refuses retroactive or duplicate enrollment', async () => {
-    const { pool } = await load(false);
-    const client = pool.getLocalBackendClient();
-    expect(() => pool.enrollBackendClientLifecycle()).toThrow('unowned empty pool');
-    expect(() => client.beginRetirement()).toThrow('not enrolled');
-    expect(pool.disposeAllBackendClients()).toBeUndefined();
-    expect(edge.sockets[0]!.destroyed).toBe(true);
-  });
+  it.each(['linux', 'darwin'] as const)(
+    'P8 preserves the unenrolled immediate void disposer and refuses retroactive or duplicate enrollment on %s',
+    async (platform) => {
+      const { pool } = await load(false);
+      Object.defineProperty(process, 'platform', { value: platform });
+      const client = pool.getLocalBackendClient();
+      await connection(client);
+      expect(() => pool.enrollBackendClientLifecycle()).toThrow('unowned empty pool');
+      expect(() => client.beginRetirement()).toThrow('not enrolled');
+      expect(pool.disposeAllBackendClients()).toBeUndefined();
+      expect(edge.sockets[0]!.destroyed).toBe(true);
+    },
+  );
 
   it('P8 refuses a second enrollment before any allocation', async () => {
     const { pool, lifecycle } = await load();
