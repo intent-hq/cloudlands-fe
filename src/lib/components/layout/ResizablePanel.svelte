@@ -368,27 +368,11 @@
     }
   }
 
-  // Handle sidebar toggle event (used by the onboarding-exit force-expand flow,
-  // which sets the panel width without flipping the Redux `sidebarCollapsed` flag).
-  function handleSidebarToggle(event: Event) {
-    const detail = (event as CustomEvent<{ collapsed: boolean; restoreWidth: number }>).detail;
-    if (detail.collapsed) {
-      // Save current width before collapsing
-      widthBeforeToggle = panelWidth;
-      panelWidth = 0;
-    } else {
-      // Restore to previous width
-      panelWidth = widthBeforeToggle > 0 ? widthBeforeToggle : defaultWidth;
-    }
-    // Update percentage tracking
-    widthPercent = pixelsToPercent(panelWidth, true);
-  }
-
   // Apply a Redux-driven collapse/expand of the workspace left sidebar
   // (Cmd+B keyboard shortcut, title-bar toggle, settings proposals, etc.).
   function applySidebarCollapsedChange(collapsed: boolean) {
     if (collapsed) {
-      widthBeforeToggle = panelWidth;
+      if (panelWidth > 0) widthBeforeToggle = panelWidth;
       panelWidth = 0;
     } else {
       panelWidth = widthBeforeToggle > 0 ? widthBeforeToggle : defaultWidth;
@@ -542,26 +526,16 @@
     heightPercent = pixelsToPercent(panelHeight, false);
 
     // Initialize from store's collapsed state for workspace sidebars.
-    if (followsSidebarCollapsed) {
-      const initialCollapsed = $sidebarIsCollapsed;
-      if (initialCollapsed) {
-        widthBeforeToggle = panelWidth;
-        panelWidth = 0;
-        widthPercent = 0;
-      }
+    if (followsSidebarCollapsed && $sidebarIsCollapsed) {
+      applySidebarCollapsedChange(true);
     }
   });
 
   $effect(() => {
     if (!active) return;
     if (effectiveWeight > 0) window.addEventListener('resize', handleWindowResize);
-    if (followsSidebarCollapsed)
-      window.addEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
     return () => {
       window.removeEventListener('resize', handleWindowResize);
-      if (followsSidebarCollapsed) {
-        window.removeEventListener('workspace:toggle-left-sidebar', handleSidebarToggle);
-      }
     };
   });
 
