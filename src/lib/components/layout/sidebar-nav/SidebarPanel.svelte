@@ -282,7 +282,7 @@
             <div class="shrink-0 px-2 pt-2 pb-1">
               <Tabs.List
                 aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
-                class="sidebar-view-tabs grid w-full grid-cols-2 rounded-lg bg-muted/60 p-1 [&_[data-tabs-indicator]]:bg-foreground dark:[&_[data-tabs-indicator]]:bg-surface-3"
+                class="sidebar-view-tabs grid w-full grid-cols-2 rounded-lg bg-muted/60 p-1 [&_[data-tabs-indicator]]:bg-muted-foreground dark:[&_[data-tabs-indicator]]:bg-surface-3"
               >
                 <Tabs.Trigger
                   value="all-workspaces"
