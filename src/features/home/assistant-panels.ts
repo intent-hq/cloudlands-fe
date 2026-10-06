@@ -12,6 +12,7 @@ import {
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { initializeLayout, openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 
 /** The Assistant owns one content stack, using the normal persisted workspace layout. */
 export const ASSISTANT_CONTENT_PANEL_ID = 'assistant-content';
@@ -19,27 +20,31 @@ let latestOpenRequest = 0;
 
 function showContent(tab: Omit<PanelTab, 'id'>, preserveFocus: boolean) {
   const layout = selectPanelLayoutWorkspace.select(store.state, CHIEF_WORKSPACE_ID);
-  if (!layout.panels[ASSISTANT_CONTENT_PANEL_ID]) {
-    const contentRoot = { type: 'panel' as const, panelId: ASSISTANT_CONTENT_PANEL_ID };
+  if (
+    !layout.panels[ASSISTANT_CONTENT_PANEL_ID] ||
+    Object.keys(layout.panels).some((id) => id !== ASSISTANT_CONTENT_PANEL_ID)
+  ) {
+    const contentPanel = layout.panels[ASSISTANT_CONTENT_PANEL_ID];
+    const tabs = Object.values(layout.panels).flatMap((panel) =>
+      panel.tabs.filter((item) => item.type !== 'agent'),
+    );
+    const activeTabId = tabs.some((item) => item.id === contentPanel?.activeTabId)
+      ? (contentPanel?.activeTabId ?? null)
+      : (tabs.at(-1)?.id ?? null);
+    // Assistant chat is retained outside the content layout. Older saved chat
+    // columns would otherwise absorb the content stack during width cleanup.
     store.dispatch(
       initializeLayout(CHIEF_WORKSPACE_ID, {
-        root: Object.keys(layout.panels).length
-          ? {
-              type: 'split',
-              direction: 'horizontal',
-              children: [layout.root, contentRoot],
-              sizes: [50, 50],
-            }
-          : contentRoot,
+        root: { type: 'panel', panelId: ASSISTANT_CONTENT_PANEL_ID },
         panels: {
-          ...layout.panels,
           [ASSISTANT_CONTENT_PANEL_ID]: {
             id: ASSISTANT_CONTENT_PANEL_ID,
-            tabs: [],
-            activeTabId: null,
+            tabs,
+            activeTabId,
           },
         },
-        focusedPanelId: layout.focusedPanelId,
+        focusedPanelId:
+          layout.focusedPanelId === ASSISTANT_CONTENT_PANEL_ID ? ASSISTANT_CONTENT_PANEL_ID : null,
         hiddenTabs: selectHiddenTabs.select(store.state, CHIEF_WORKSPACE_ID),
       }),
     );
@@ -93,6 +98,7 @@ export async function showAssistantContent(url: string, preserveFocus = false): 
     return true;
   }
   store.dispatch(applyNoteUpdated(workspaceId, String(note.id), note));
+  store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'preview'));
   showContent(
     { type: 'note', title: note.title, noteId: String(note.id), workspaceId, closable: true },
     preserveFocus,

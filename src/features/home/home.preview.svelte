@@ -16,6 +16,7 @@
       | 'board'
       | 'empty'
       | 'assistant'
+      | 'assistant-streaming'
       | 'assistant-many'
       | 'assistant-empty'
       | 'error'
@@ -34,6 +35,7 @@
       board: { props: { scenario: 'board' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
+      'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
       'assistant-many': { props: { scenario: 'assistant-many' } },
       'assistant-empty': { props: { scenario: 'assistant-empty' } },
       error: { props: { scenario: 'error' } },
@@ -222,13 +224,23 @@
     const threads =
       scenario === 'assistant-many'
         ? assistantFixtures
-        : scenario === 'assistant'
+        : scenario === 'assistant' || scenario === 'assistant-streaming'
           ? assistantFixtures.slice(0, 3)
           : [];
     store.dispatch(setAgents(CHIEF_WORKSPACE_ID, threads));
-    store.dispatch(bulkUpsertSessions(threads));
+    store.dispatch(
+      bulkUpsertSessions(
+        scenario === 'assistant-streaming'
+          ? threads.map((thread) => ({ ...thread, isStreaming: true, isProcessing: true }))
+          : threads,
+      ),
+    );
     store.dispatch(setChiefActiveAgentId(threads[0]?.id ?? null));
-    store.dispatch(scenario === 'assistant-empty' ? openPanel('chief') : closePanel());
+    store.dispatch(
+      scenario === 'assistant-empty' || scenario === 'assistant-streaming'
+        ? openPanel('chief')
+        : closePanel(),
+    );
     store.dispatch(
       replaceWorkspaceList(
         scenario === 'empty'

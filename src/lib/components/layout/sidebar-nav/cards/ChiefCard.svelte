@@ -325,7 +325,13 @@
     </Button>
   </div>
 {:else}
-  <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
+  <div
+    class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}"
+    style:--chief-aurora-left={pageLayout ? '-1.5rem' : undefined}
+    style:--chief-aurora-right={pageLayout ? '-1.5rem' : undefined}
+    style:--chief-aurora-bottom={pageLayout ? '-1.25rem' : undefined}
+    style:--chief-aurora-radius={pageLayout ? 'calc(var(--radius-large) * 1.5)' : undefined}
+  >
     <!-- Keyboard users can use either child button; the row click expands empty space. -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
