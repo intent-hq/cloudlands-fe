@@ -65,7 +65,6 @@
     type WorkspaceGitRootEntry,
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
-  import RepositoryContextSummary from '$features/accept-changes/components/RepositoryContextSummary.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
@@ -864,12 +863,6 @@
             ? (action) => (secondaryRefreshAction = action)
             : undefined}
         />
-        <RepositoryContextSummary
-          root={selectedSecondaryRoot
-            ? { workspaceId, kind: 'registered', gitRootId: selectedSecondaryRoot.key }
-            : { workspaceId, kind: 'primary' }}
-        />
-
         {#if isBrowsingSecondaryRoot}
           <!-- PR sections follow the dropdown while browsing a secondary root:
                the selected root's PRs on top, the workspace's own PRs under
