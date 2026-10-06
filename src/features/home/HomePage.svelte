@@ -143,7 +143,7 @@
         id: 'open',
         label: m.home_open_workspace(),
         icon: faArrowRight,
-        shortcut: `cmd+${m.chat_toolClassifier_click_label().toLowerCase()}`,
+        shortcut: `Cmd+${m.chat_toolClassifier_click_label().toLowerCase()}`,
         onClick: () => openWorkspace(workspace.id),
       },
       {

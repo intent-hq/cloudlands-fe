@@ -13,7 +13,7 @@
 
 <kbd
   data-slot="shortcut-chip"
-  class={cn('type-caption shrink-0 font-normal leading-none text-muted-foreground', className)}
+  class={cn('type-caption shrink-0 font-normal leading-none text-muted-foreground/75', className)}
   style="font-family: var(--font-ui);"
 >
   {@render children?.()}
