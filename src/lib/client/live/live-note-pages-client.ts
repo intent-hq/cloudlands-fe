@@ -10,6 +10,8 @@ import {
   type NoteSourceOperationInput,
   createNoteStagedSaveOperation,
   type NoteStagedSaveInput,
+  readConstructedNoteSave,
+  type NoteSealedSaveIdentity,
 } from '../note-source-operation';
 import { NotePageReader } from '../note-page-reader';
 import type {
@@ -62,7 +64,12 @@ function pageState(value: unknown, workspaceId: string, noteId: string): NotePag
     throw new Error('Invalid note state snapshot');
   return value as NotePageState;
 }
-function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
+function outcome(
+  value: unknown,
+  op: Pick<NoteSpliceOperation, 'scope' | 'operationId' | 'payloadDigest' | 'baseRevision'> & {
+    headerDigest?: string;
+  },
+): NoteSaveOutcome {
   const staged = 'headerDigest' in op;
   const p = object(value);
   scope(p.scope, op.scope.workspaceId, op.scope.noteId);
@@ -98,16 +105,323 @@ function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
   return value as NoteSaveOutcome;
 }
 
+// Enrollment exists only at the fixed backendRequest construction path below.
+// Standalone source-operation constructors and copied API objects never enroll.
+/** Invalidation-only lease; it establishes no backend/receipt provenance. The
+ * fixed live-stage registry is still required. Tiny control state exists before
+ * subscription callbacks; registration failure remains unknown cleanup. */
+const lossBrand = Symbol('live save loss');
+export interface LiveNoteSaveLoss {
+  readonly [lossBrand]: true;
+  current(): boolean;
+  release(): void;
+}
+type LossState = {
+  live: boolean;
+  phase: 'open' | 'closing' | 'settled' | 'unknown';
+  off?: () => void;
+};
+const lossLeases = new WeakMap<object, LossState>();
+function lossCurrent(lease: LiveNoteSaveLoss): boolean {
+  const state = lossLeases.get(lease);
+  return !!state && state.live && state.phase === 'open';
+}
+export function retainLiveNoteSaveLoss(): LiveNoteSaveLoss {
+  const state: LossState = { live: true, phase: 'open' };
+  const lease: LiveNoteSaveLoss = Object.freeze({
+    [lossBrand]: true as const,
+    current: () => lossCurrent(lease),
+    release() {
+      state.live = false;
+      if (state.phase === 'settled') return;
+      if (state.phase !== 'open') throw new Error('Save loss subscription cleanup unknown');
+      state.phase = 'closing';
+      const off = state.off;
+      state.off = undefined;
+      try {
+        off?.();
+        state.phase = 'settled';
+      } catch (error) {
+        state.phase = 'unknown';
+        throw error;
+      }
+    },
+  });
+  lossLeases.set(lease, state);
+  try {
+    state.off = onBackendReconnected(() => {
+      state.live = false;
+    });
+  } catch {
+    state.live = false;
+    state.phase = 'unknown';
+  }
+  return lease;
+}
+const liveSaveStages = new WeakMap<object, { claimed: boolean }>();
+const liveSaveObserverBrand = Symbol('live save observer');
+export interface LiveNoteSaveObserver {
+  readonly [liveSaveObserverBrand]: true;
+  readonly identity: NoteSealedSaveIdentity;
+  readonly header: Readonly<NoteStagedSaveInput['header']>;
+  current(): boolean;
+  observeOutcome(): Promise<NoteSaveOutcome>;
+  readReceipt(request: NoteReceiptReadRequest): ReturnType<typeof readNoteReceiptPage>;
+  release(): Promise<void>;
+}
+type LiveSaveSlot = {
+  data?: {
+    identity: NoteSealedSaveIdentity;
+    loss: LiveNoteSaveLoss;
+    current: () => boolean;
+    now: () => number;
+    captureFinalCheck?: () => ((time: number) => boolean) | undefined;
+    receipt?: NoteCommitReceipt;
+  };
+  retired: boolean;
+  busy: boolean;
+  pending?: Promise<unknown>;
+  unknownCleanup: boolean;
+  releasing?: Promise<void>;
+};
+const liveSaveObservers = new WeakMap<object, LiveSaveSlot>();
+/** Registry identity, not an arbitrary current() callback, authenticates this path. */
+export function isLiveNoteSaveObserver(value: unknown): value is LiveNoteSaveObserver {
+  return !!value && typeof value === 'object' && !!liveSaveObservers.get(value)?.data;
+}
+export function readLiveNoteSaveReceipt(observer: LiveNoteSaveObserver): NoteCommitReceipt {
+  const receipt = liveSaveObservers.get(observer)?.data?.receipt;
+  if (!receipt) throw new Error('Missing authenticated save receipt');
+  return receipt;
+}
+function retireSaveObserver(slot: LiveSaveSlot) {
+  slot.retired = true;
+  slot.data = undefined;
+}
+function saveObserverCurrent(slot: LiveSaveSlot) {
+  const d = slot.data;
+  if (!d || slot.retired) return false;
+  try {
+    const receipt = d.receipt;
+    const valid = d.current();
+    const finalCheck = d.captureFinalCheck?.();
+    const time = d.now();
+    if (d.captureFinalCheck && (!finalCheck || !finalCheck(time)))
+      throw new Error('Save observer final proof lost');
+    if (
+      !valid ||
+      !Number.isFinite(time) ||
+      slot.data !== d ||
+      d.receipt !== receipt ||
+      slot.retired ||
+      !lossCurrent(d.loss)
+    )
+      throw new Error('Save observer lost');
+    if (d.receipt && time >= Date.parse(d.receipt.receiptExpiresAt))
+      throw new Error('Save receipt expired');
+    return true;
+  } catch {
+    retireSaveObserver(slot);
+    return false;
+  }
+}
+// This bounded copy precedes the ordinary outcome decoder. Accessors and mutable
+// aliases cannot become a private authenticated receipt after a callback runs.
+function copyObservedData(value: unknown, limit: number): unknown {
+  let fields = 0,
+    units = 0;
+  const copy = (v: unknown, depth: number): unknown => {
+    if (depth > 8) throw new Error('Save data depth');
+    if (v === null || typeof v === 'boolean') return v;
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string') {
+      units += v.length;
+      if (units > limit) throw new Error('Save data size');
+      return v;
+    }
+    if (!v || typeof v !== 'object') throw new Error('Save data type');
+    const array = Array.isArray(v);
+    if (
+      array
+        ? Object.getPrototypeOf(v) !== Array.prototype
+        : ![Object.prototype, null].includes(Object.getPrototypeOf(v))
+    )
+      throw new Error('Save data prototype');
+    const keys = Reflect.ownKeys(v);
+    if (keys.length > 8192 - fields) throw new Error('Save data fields');
+    const result: unknown[] | Record<string, unknown> = array ? [] : {};
+    for (const key of keys) {
+      fields++;
+      if (typeof key !== 'string') throw new Error('Save data key');
+      const d = Object.getOwnPropertyDescriptor(v, key);
+      if (!d || !('value' in d)) throw new Error('Save data accessor');
+      if (array && key === 'length') {
+        if (!Number.isSafeInteger(d.value) || d.value < 0 || d.value > 8192)
+          throw new Error('Save data length');
+        continue;
+      }
+      units += key.length;
+      if (units > limit) throw new Error('Save data size');
+      Object.defineProperty(result, key, { value: copy(d.value, depth + 1), enumerable: true });
+    }
+    return Object.freeze(result);
+  };
+  const result = copy(value, 0);
+  if (bytes(result) > limit) throw new Error('Save data bytes');
+  return result;
+}
+function saveObserverAPI(
+  slot: LiveSaveSlot,
+  identity: NoteSealedSaveIdentity,
+  header: Readonly<NoteStagedSaveInput['header']>,
+): LiveNoteSaveObserver {
+  const run = <T>(action: (d: NonNullable<LiveSaveSlot['data']>) => Promise<T>): Promise<T> => {
+    if (slot.busy || !slot.data) return Promise.reject(new Error('Save observer unavailable'));
+    slot.busy = true; // Consume before owner, clock or transport callbacks.
+    let resolve!: (value: T) => void, reject!: (error: unknown) => void;
+    const pending = new Promise<T>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    slot.pending = pending;
+    void (async () => {
+      try {
+        if (!saveObserverCurrent(slot) || !slot.data) throw new Error('Save observer lost');
+        const data = slot.data;
+        const result = await action(data);
+        if (slot.data !== data || !saveObserverCurrent(slot)) throw new Error('Save observer lost');
+        resolve(result);
+      } catch (error) {
+        retireSaveObserver(slot);
+        reject(error);
+      } finally {
+        slot.busy = false;
+        if (slot.pending === pending) slot.pending = undefined;
+      }
+    })();
+    return pending;
+  };
+  const api: LiveNoteSaveObserver = Object.freeze({
+    [liveSaveObserverBrand]: true as const,
+    identity,
+    header,
+    current: () => saveObserverCurrent(slot),
+    observeOutcome: () =>
+      run(async (d) => {
+        let raw: unknown;
+        try {
+          raw = await backendRequest('note.operationStatus', {
+            ...d.identity.scope,
+            operationId: d.identity.operationId,
+            headerDigest: d.identity.headerDigest,
+            payloadDigest: d.identity.payloadDigest,
+          });
+        } catch (error) {
+          slot.unknownCleanup = true;
+          throw error;
+        }
+        const snapshot = copyObservedData(raw, 4096);
+        if (!saveObserverCurrent(slot)) throw new Error('Save observer lost');
+        const result = outcome(snapshot, d.identity);
+        if (result.kind === 'noteCommitReceipt') {
+          if (d.receipt && JSON.stringify(d.receipt) !== JSON.stringify(result))
+            throw new Error('Save receipt changed');
+          d.receipt = result;
+        } else if (result.outcome === 'conflict' || result.outcome === 'rejected') {
+          retireSaveObserver(slot);
+          throw new Error('Save operation refused');
+        }
+        return result;
+      }),
+    readReceipt: (request: NoteReceiptReadRequest) =>
+      run(async (d) => {
+        if (!d.receipt) throw new Error('Missing authenticated save receipt');
+        const receipt = d.receipt;
+        const supplied = copyObservedData(request, 4096) as NoteReceiptReadRequest;
+        return readNoteReceiptPage(
+          async (params) => {
+            if (slot.data !== d || d.receipt !== receipt || !saveObserverCurrent(slot))
+              throw new Error('Save observer lost before read');
+            let raw: unknown;
+            try {
+              raw = await backendRequest('note.operation.read', params);
+            } catch (error) {
+              slot.unknownCleanup = true;
+              throw error;
+            }
+            // Copy at transport completion before decoder/owner clock callbacks.
+            return copyObservedData(raw, 8192);
+          },
+          receipt,
+          supplied,
+          d.now,
+        );
+      }),
+    release() {
+      if (slot.releasing) return slot.releasing;
+      retireSaveObserver(slot);
+      let resolve!: () => void, reject!: (error: unknown) => void;
+      slot.releasing = new Promise<void>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      void (async () => {
+        try {
+          try {
+            await slot.pending;
+          } catch {
+            /* Physical debt is distinguished below. */
+          }
+          if (slot.unknownCleanup) throw new Error('Save observer cleanup unknown');
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      })();
+      return slot.releasing;
+    },
+  });
+  liveSaveObservers.set(api, slot);
+  return api;
+}
+/** Read-only, one-use observation of an actual live-client sealed operation.
+ * Caller reserves DATA/one physical IO slot first. This never uploads or commits. */
+export function claimLiveNoteStagedSave(
+  stage: unknown,
+  loss: LiveNoteSaveLoss,
+  current: () => boolean,
+  now: () => number = Date.now,
+  captureFinalCheck?: () => ((time: number) => boolean) | undefined,
+): LiveNoteSaveObserver {
+  const enrollment = stage && typeof stage === 'object' ? liveSaveStages.get(stage) : undefined;
+  if (!enrollment || enrollment.claimed) throw new Error('Unknown or claimed live save');
+  enrollment.claimed = true;
+  const slot: LiveSaveSlot = { busy: false, retired: false, unknownCleanup: false };
+  try {
+    if (!lossCurrent(loss)) throw new Error('Save loss lease unavailable');
+    const original = readConstructedNoteSave(stage);
+    if (slot.retired) throw new Error('Live save claim lost during subscription');
+    slot.data = { identity: original.sealed, loss, current, now, captureFinalCheck };
+    if (!saveObserverCurrent(slot)) throw new Error('Live save claim lost');
+    return saveObserverAPI(slot, original.sealed, original.header);
+  } catch (error) {
+    retireSaveObserver(slot);
+    throw error;
+  }
+}
+
 export class LiveNotePagesClient extends NotePageReader implements NotePagesClient {
   createSaveOperation(
     input: NoteStagedSaveInput,
     current: () => boolean,
   ): ReturnType<typeof createNoteStagedSaveOperation> {
-    return createNoteStagedSaveOperation(
+    const stage = createNoteStagedSaveOperation(
       (method, params) => backendRequest(method, params),
       input,
       current,
     );
+    liveSaveStages.set(stage, { claimed: false });
+    return stage;
   }
   async stagedStatus(op: NoteStagedSaveOperation): Promise<NoteSaveOutcome | NoteSaveStageState> {
     const value = await backendRequest('note.operationStatus', {

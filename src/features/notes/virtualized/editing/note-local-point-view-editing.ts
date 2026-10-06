@@ -157,6 +157,12 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
               },
             },
             now,
+            sponsorObservation: {
+              read: port.read,
+              subscribe: port.subscribe,
+              panel,
+              signal,
+            },
           });
           const local = owner;
           let prepared = false,
@@ -209,6 +215,10 @@ export function prepareNoteLocalPointViewEditing(args: [Port, ...Tail]) {
   }));
   return {
     ready,
+    saveSponsor() {
+      if (revoked || suspended || !owner) throw new Error('Local point sponsor unavailable');
+      return owner.saveSponsor();
+    },
     cancel() {
       revoke();
       offer.cancel();

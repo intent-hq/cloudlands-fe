@@ -1,3 +1,4 @@
+import { retainLiveNoteSaveLoss } from '$lib/client/live/live-note-pages-client';
 import { v4 as uuid } from 'uuid';
 import type { EditorView } from '@tiptap/pm/view';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
@@ -15,11 +16,28 @@ import {
   validateLocalPoint,
   validateLocalPointOutput,
   type NoteLocalPointInput,
+  captureLocalPointSaveEvidence,
+  currentLocalPointSaveEvidence,
+  releaseLocalPointSaveEvidence,
 } from './note-local-point-history';
 import {
   prepareNoteLocalPointSession,
   moveNoteLocalPointSession,
 } from './note-local-point-session';
+import {
+  createNoteLocalPointSaveSponsor,
+  pointSponsorCost,
+  type NoteLocalPointSponsorCapture,
+  type PointSaveSponsor,
+  type PointSponsorObservation,
+} from './note-local-point-save-sponsor';
+
+const sponsorIssuers = new WeakMap<object, () => NoteLocalPointSponsorCapture>();
+/** Private owner identity is mandatory; a copied owner/group/recipe cannot issue. */
+export function takeNoteLocalPointSponsorCapture(owner: unknown): NoteLocalPointSponsorCapture {
+  const issue = owner && typeof owner === 'object' ? sponsorIssuers.get(owner) : undefined;
+  return issue ? issue() : fail();
+}
 
 type Candidate = NoteTransactionOwner['initial'];
 interface Options {
@@ -34,6 +52,7 @@ interface Options {
   context: { current(): boolean; retain(): () => void };
   now?: () => number;
   retainInitial?: boolean;
+  sponsorObservation?: PointSponsorObservation;
 }
 function fail(): never {
   throw new Error('Unsupported local point owner');
@@ -46,6 +65,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
   retain(): () => void;
   retainPrepared(candidate: Candidate, transaction: Transaction): () => void;
   dispose(): void;
+  saveSponsor(): PointSaveSponsor;
 } {
   const { read, publish, admit, resources } = options;
   const retainedInitial = options.retainInitial === true;
@@ -146,6 +166,8 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     output: ReturnType<typeof replayLocalPoint>;
   };
   let pending: Prepared | undefined, accepted: Allocation | undefined;
+  let acceptedRoot: Transaction | undefined;
+  let sponsorTaken = false;
   let endpointOutput: ReturnType<typeof replayLocalPoint> | undefined;
   type HistoryPlan = {
     key: object;
@@ -177,6 +199,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     const a = accepted,
       p = pending?.allocation;
     accepted = undefined;
+    acceptedRoot = undefined;
     pending = undefined;
     finalized = undefined;
     initialGuard?.release();
@@ -384,7 +407,14 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     } finally {
       initialConstructing = false;
     }
-  return {
+  const api: NoteTransactionOwner & {
+    releaseInitial(): void;
+    retain(): () => void;
+    retainPrepared(candidate: Candidate, transaction: Transaction): () => void;
+    dispose(): void;
+    saveSponsor(): PointSaveSponsor;
+  } = {
+    saveSponsor: () => createNoteLocalPointSaveSponsor(api),
     releaseInitial() {
       if (!initialPhysical) return;
       initialPhysical = false;
@@ -541,6 +571,7 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
       endpoint = p.candidate;
       endpointOutput = p.output;
       accepted = p.allocation;
+      acceptedRoot = p.transaction;
       pending = undefined;
       finalized = undefined;
     },
@@ -608,4 +639,107 @@ export function createNoteLocalPointOwner(options: Options): NoteTransactionOwne
     },
     dispose,
   };
+  sponsorIssuers.set(api, () => {
+    if (sponsorTaken) return fail();
+    sponsorTaken = true; // Consume before resource/context/read callbacks.
+    if (!accepted || retired) return fail();
+    // Pure existing-allocation borrow precedes callbackful subscription. If its
+    // cleanup is unknown this charged allocation cannot be released/reissued.
+    const dropBorrow = borrowNative();
+    const loss = retainLiveNoteSaveLoss();
+    try {
+      const observation = options.sponsorObservation;
+      if (
+        !loss.current() ||
+        !observation ||
+        !accepted ||
+        !acceptedRoot ||
+        !endpointOutput ||
+        !current() ||
+        committed.history.length !== 1 ||
+        committed.cursor !== 1 ||
+        committed.generation !== committed.history[0].id ||
+        committed.length !== 59
+      ) {
+        // Unknown subscription disposal remains a bounded control debt; do not
+        // mint a sponsor or a fresh capture when it cannot be established.
+        loss.release();
+        dropBorrow();
+        return fail();
+      }
+      const a = accepted,
+        root = acceptedRoot,
+        output = endpointOutput,
+        document = committed;
+      const owner = `point-sponsor:${uuid()}`;
+      const ticket = allocator.reservation(owner, pointSponsorCost);
+      let evidence: ReturnType<typeof captureLocalPointSaveEvidence> | undefined;
+      const capture = ticket.construct(
+        () => {
+          if (!current() || accepted !== a || acceptedRoot !== root || committed !== document)
+            fail();
+          const note =
+            observation.read().byWorkspaceId[document.scope.workspaceId]?.notes[
+              document.scope.noteId
+            ];
+          if (!note || note.document !== document || !current()) fail();
+          evidence = captureLocalPointSaveEvidence(
+            a.capture.proof,
+            a.capture.recipe,
+            origin,
+            root,
+            document,
+            output,
+          );
+          if (
+            !current() ||
+            accepted !== a ||
+            committed !== document ||
+            observation.read().byWorkspaceId[document.scope.workspaceId]?.notes[
+              document.scope.noteId
+            ] !== note ||
+            !loss.current() ||
+            !currentLocalPointSaveEvidence(evidence, now()) ||
+            !loss.current()
+          )
+            fail();
+          return {
+            document,
+            recipe: a.capture.recipe,
+            evidence,
+            observation,
+            note,
+            resources,
+            owner,
+            ticket,
+            loss,
+            precommitCurrent: current,
+            now,
+            dropBorrow,
+          };
+        },
+        () => {
+          if (evidence) releaseLocalPointSaveEvidence(evidence);
+          loss.release();
+          dropBorrow(); // Unknown cleanup retains original and sponsor tickets.
+        },
+      );
+      if (!capture) {
+        loss.release();
+        ticket.release();
+        return fail();
+      }
+      return capture;
+    } catch (error) {
+      // Attempt known disposal; a failed loss lease keeps the original borrow.
+      try {
+        loss.release();
+        dropBorrow();
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], 'Sponsor capture cleanup unknown');
+      }
+      throw error;
+    }
+  });
+  return api;
 }

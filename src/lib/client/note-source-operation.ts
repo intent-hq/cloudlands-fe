@@ -20,6 +20,36 @@ export interface NoteSourceOperationInput {
 export type NoteStagedSaveInput = Omit<NoteSourceOperationInput, 'header'> & {
   header: Omit<NoteSourceOperationInput['header'], 'action'> & { action: 'mutate' };
 };
+export interface NoteSealedSaveIdentity {
+  readonly scope: Readonly<NoteScope>;
+  readonly baseRevision: string;
+  readonly operationId: string;
+  readonly expiresAt: string;
+  readonly headerDigest: string;
+  readonly payloadDigest: string;
+  readonly viewLength: number;
+  readonly manifest: readonly Readonly<{
+    stream: string;
+    chunks: number;
+    records: number;
+    lastDigest: string | null;
+  }>[];
+}
+const constructedSaves = new WeakMap<
+  object,
+  () => {
+    header: Readonly<NoteStagedSaveInput['header']>;
+    sealed: NoteSealedSaveIdentity;
+  }
+>();
+/** Constructor/seal association ONLY. An injected send is not backend provenance.
+ * The live-client registry separately identifies its fixed authenticated path. */
+export function readConstructedNoteSave(stage: unknown) {
+  if (!stage || typeof stage !== 'object') throw new Error('Unknown staged save producer');
+  const read = constructedSaves.get(stage);
+  if (!read) throw new Error('Unknown staged save producer');
+  return read();
+}
 /** Bounded configured-native selection output. expectedOutput is local validation
  * state, never a wire field or a source/native authority supplied by the server. */
 export type NoteSelectionOperationInput = Omit<NoteSourceOperationInput, 'header'> & {
@@ -335,7 +365,7 @@ function createSourceStage(
       busy = false;
     }
   };
-  return {
+  const api = {
     sealedSave() {
       check();
       if (
@@ -700,5 +730,23 @@ function createSourceStage(
       });
     },
   };
+  if (action === 'mutate' && output === 'source' && !marker) {
+    const readSeal = api.sealedSave;
+    // Capture the original closure, never a replaceable property of the public API.
+    constructedSaves.set(api, () => ({
+      header: Object.freeze({
+        baseRevision: header.baseRevision,
+        editorSessionId: header.editorSessionId,
+        localEditSequence: header.localEditSequence,
+        liveGeneration: header.liveGeneration,
+        selectionGeneration: header.selectionGeneration,
+        action: 'mutate',
+        output: 'source',
+        selection: 'all',
+      }),
+      sealed: readSeal(),
+    }));
+  }
+  return api;
 }
 export type NoteSourceOperation = ReturnType<typeof createNoteSourceOperation>;

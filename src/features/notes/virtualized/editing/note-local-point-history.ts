@@ -10,6 +10,7 @@ import {
 } from '../projection/exact-source-mappings';
 import { NoteEditAuthority } from './note-edit-authority';
 import type { NoteSelectionMarkdownIdentity } from './note-selection-markdown-capture';
+import { beforeSourceDeadline, parseSourceDeadline } from '$shared/source-session-expiry';
 
 export const noteLocalPointLimits = Object.freeze({
   parentUnits: 4096,
@@ -801,6 +802,311 @@ export function validateLocalPointMountedOutput(
   return validateOutput(slot, key);
 }
 const proofs = new WeakMap<NoteLocalPointProof, Slot>();
+
+const saveEvidenceBrand = Symbol('local point save evidence');
+/** Independent correspondence DATA. This is deliberately not an editing proof. */
+export interface NoteLocalPointSaveEvidence {
+  readonly [saveEvidenceBrand]: true;
+}
+type EvidencePin = {
+  object: object;
+  prototype: object | null;
+  fields: Array<readonly [PropertyKey, unknown]>;
+  exact: boolean;
+};
+type SaveEvidenceData = {
+  pins: EvidencePin[];
+  maps: Array<{ map: Map<number, number>; pairs: Array<readonly [number, number]> }>;
+  deadline: bigint;
+};
+const saveEvidence = new WeakMap<NoteLocalPointSaveEvidence, { data?: SaveEvidenceData }>();
+
+function checkSaveEvidence(data: SaveEvidenceData) {
+  for (const pin of data.pins) {
+    if (
+      Object.getPrototypeOf(pin.object) !== pin.prototype ||
+      (pin.exact && Reflect.ownKeys(pin.object).length !== pin.fields.length)
+    )
+      throw unsupported();
+    for (const [key, value] of pin.fields)
+      if (ownData(pin.object, key) !== value) throw unsupported();
+  }
+  for (const { map, pairs } of data.maps) {
+    if (
+      Object.getPrototypeOf(map) !== Map.prototype ||
+      Reflect.ownKeys(map).length ||
+      mapSize!.call(map) !== pairs.length
+    )
+      throw unsupported();
+    let i = 0;
+    mapForEach.call(map, (value: number, key: number) => {
+      const pair = pairs[i++];
+      if (!pair || pair[0] !== key || pair[1] !== value) throw unsupported();
+    });
+  }
+}
+
+/** Called by the actual local owner under its separate sponsor reservation.
+ * Resolves Held privately; never exposes it or retains its callbacks. Capture
+ * is restricted further than ordinary point history to the complete ab fixture.
+ * The owner must check native acceptance/session CAS again after capture. */
+export function captureLocalPointSaveEvidence(
+  proof: NoteLocalPointProof,
+  recipe: NoteLocalPointRecipe,
+  origin: object,
+  transaction: Transaction,
+  accepted: object,
+  output: unknown,
+): NoteLocalPointSaveEvidence {
+  const slot = proofs.get(proof),
+    h = slot && live(slot);
+  const credential =
+    output && typeof output === 'object' ? outputCredentials.get(output) : undefined;
+  const endpoint =
+    credential && slot === credential.slot ? slot.outputs.get(credential.key) : undefined;
+  const originGeneration = ownData(origin, 'generation');
+  if (
+    !h ||
+    !endpoint ||
+    !validateOutput(slot!, credential!.key) ||
+    h.recipe !== recipe ||
+    h.origin !== origin ||
+    h.transaction !== transaction ||
+    h.source !== 'ab' ||
+    h.caller.length !== 59 ||
+    recipe.insertion.sourceAt !== 1 ||
+    recipe.insertion.point.literal.length !== 56 ||
+    typeof originGeneration !== 'number' ||
+    !uint(originGeneration) ||
+    ownData(accepted, 'generation') !== originGeneration + 1 ||
+    ownData(accepted, 'cursor') !== 1 ||
+    ownData(accepted, 'length') !== 59
+  )
+    throw unsupported();
+  const projection = endpoint.projection;
+  const history = ownData(accepted, 'history');
+  if (!Array.isArray(history) || history.length !== 1) throw unsupported();
+  const entry = ownData(history, '0');
+  if (
+    !entry ||
+    typeof entry !== 'object' ||
+    ownData(entry, 'kind') !== 'local-point' ||
+    ownData(entry, 'recipe') !== recipe ||
+    ownData(entry, 'id') !== ownData(accepted, 'generation')
+  )
+    throw unsupported();
+
+  const pins: EvidencePin[] = [],
+    maps: SaveEvidenceData['maps'] = [],
+    seen = new Set<object>();
+  let fields = 0,
+    units = 0,
+    bytes = 0,
+    nodes = 0;
+  const scalar = (value: unknown) => {
+    if (typeof value === 'string') {
+      units += value.length;
+      if (units > 65536) throw unsupported();
+      bytes += encoder.encode(value).length;
+      if (bytes > 65536) throw unsupported();
+    }
+  };
+  const pin = (object: object, keys: readonly PropertyKey[], exact = false) => {
+    if (keys.length > 8192 - fields) throw unsupported();
+    fields += keys.length;
+    const values: EvidencePin['fields'] = [];
+    for (const key of keys) {
+      if (typeof key === 'string') scalar(key);
+      const value = ownData(object, key);
+      scalar(value);
+      values.push([key, value]);
+    }
+    pins.push({ object, prototype: Object.getPrototypeOf(object), fields: values, exact });
+    return values;
+  };
+  const plain = (object: object, depth = 0) => {
+    if (seen.has(object)) return;
+    if (depth > 12 || seen.size >= 8192) throw unsupported();
+    seen.add(object);
+    const proto = Object.getPrototypeOf(object);
+    if (
+      proto !== null &&
+      proto !== Object.prototype &&
+      !(Array.isArray(object) && proto === Array.prototype)
+    )
+      throw unsupported();
+    // Enumeration and each copied descriptor are bounded before reconstruction.
+    const values = pin(object, Reflect.ownKeys(object), true);
+    for (const [, value] of values) {
+      if (value && typeof value === 'object') plain(value, depth + 1);
+      else if (typeof value === 'function' || typeof value === 'symbol') throw unsupported();
+    }
+  };
+  const native = (node: PMNode) => {
+    if (seen.has(node)) return;
+    if (++nodes > 64) throw unsupported();
+    seen.add(node);
+    pin(node, Reflect.ownKeys(node), true);
+    // Preserve exact method dispatch without invoking getters or native methods.
+    let proto: object | null = Object.getPrototypeOf(node);
+    for (let depth = 0; proto && depth < 4; depth++, proto = Object.getPrototypeOf(proto)) {
+      const methods = ['eq', 'child', 'nodeAt'].filter((key) => Object.hasOwn(proto!, key));
+      pin(proto, methods);
+    }
+    const type = ownData(node, 'type');
+    if (!type || typeof type !== 'object') throw unsupported();
+    pin(type, Reflect.ownKeys(type), true);
+    const spec = ownData(type, 'spec'),
+      schema = ownData(type, 'schema');
+    if (!spec || typeof spec !== 'object' || !schema || typeof schema !== 'object')
+      throw unsupported();
+    pin(spec, Reflect.ownKeys(spec), true);
+    pin(schema, ['nodes']);
+    const types = ownData(schema, 'nodes');
+    if (!types || typeof types !== 'object') throw unsupported();
+    pin(types, ['doc', 'paragraph', 'text', 'commentAnchor']);
+    const attrs = ownData(node, 'attrs'),
+      marks = ownData(node, 'marks'),
+      fragment = ownData(node, 'content');
+    if (
+      !attrs ||
+      typeof attrs !== 'object' ||
+      !Array.isArray(marks) ||
+      marks.length ||
+      !fragment ||
+      typeof fragment !== 'object'
+    )
+      throw unsupported();
+    plain(attrs);
+    plain(marks);
+    pin(fragment, ['content', 'size']);
+    pin(Fragment.prototype, ['child']);
+    const children = ownData(fragment, 'content');
+    if (!Array.isArray(children) || children.length > 64 - nodes) throw unsupported();
+    pin(children, Reflect.ownKeys(children), true);
+    for (let i = 0; i < children.length; i++) {
+      const child = ownData(children, String(i));
+      if (!(child instanceof PMNode)) throw unsupported();
+      native(child);
+    }
+  };
+  plain(origin);
+  plain(accepted);
+  plain(recipe);
+  for (const node of [h.before, h.intermediate, h.after, endpoint.doc]) native(node);
+  pin(h.beforeState, ['doc', 'selection']);
+  pin(transaction, [
+    'doc',
+    'docs',
+    'steps',
+    'mapping',
+    'curSelection',
+    'curSelectionFor',
+    'storedMarks',
+  ]);
+  pin(transaction.docs, Reflect.ownKeys(transaction.docs), true);
+  pin(transaction.steps, Reflect.ownKeys(transaction.steps), true);
+  pin(transaction.mapping, Reflect.ownKeys(transaction.mapping), true);
+  pin(transaction.mapping.maps, Reflect.ownKeys(transaction.mapping.maps), true);
+  for (const selection of [h.beforeState.selection, transaction.selection]) {
+    pin(selection, Reflect.ownKeys(selection), true);
+    for (const resolved of [selection.$anchor, selection.$head]) {
+      pin(resolved, Reflect.ownKeys(resolved), true);
+      const path = ownData(resolved, 'path');
+      if (!Array.isArray(path) || path.length > 12) throw unsupported();
+      pin(path, Reflect.ownKeys(path), true);
+    }
+  }
+  for (const step of [...h.steps, ...h.inverse]) {
+    pin(step, ['from', 'to', 'slice', 'structure']);
+    pin(ReplaceStep.prototype, ['apply', 'invert']);
+    pin(step.slice, ['content', 'openStart', 'openEnd']);
+    pin(step.slice.content, ['content', 'size']);
+    const children = step.slice.content.content;
+    pin(children, Reflect.ownKeys(children), true);
+    for (const child of children) native(child);
+  }
+  for (const map of h.maps) {
+    pin(map, Reflect.ownKeys(map), true);
+    const ranges = ownData(map, 'ranges');
+    if (!Array.isArray(ranges) || ranges.length > 6) throw unsupported();
+    plain(ranges);
+  }
+  for (const p of [h.base, projection]) {
+    pin(p, Reflect.ownKeys(p), true);
+    let proto: object | null = Object.getPrototypeOf(p);
+    for (let depth = 0; proto && depth < 4; depth++, proto = Object.getPrototypeOf(proto))
+      pin(
+        proto,
+        ['sourceAt', 'pmAt', 'replace'].filter((key) => Object.hasOwn(proto!, key)),
+      );
+    plain(ownData(p, 'content') as object);
+    for (const key of ['positions', 'ends', 'boundaries']) {
+      const map = ordinaryMap(p, key);
+      if (mapSize!.call(map) > 128) throw unsupported();
+      const pairs: Array<readonly [number, number]> = [];
+      mapForEach.call(map, (value: number, key: number) => pairs.push([key, value]));
+      maps.push({ map, pairs });
+    }
+  }
+  plain(ownData(h.base, 'lexical') as object);
+  const navigation = ownData(h.base, 'navigation');
+  if (!navigation || typeof navigation !== 'object') throw unsupported();
+  pin(navigation, Reflect.ownKeys(navigation), true);
+  const changes = ownData(navigation, 'changes');
+  if (!Array.isArray(changes) || changes.length) throw unsupported();
+  plain(changes);
+  for (const key of ['forward', 'backward']) {
+    const map = ordinaryMap(navigation, key);
+    if (mapSize!.call(map) > 128) throw unsupported();
+    const pairs: Array<readonly [number, number]> = [];
+    mapForEach.call(map, (value: number, key: number) => pairs.push([key, value]));
+    maps.push({ map, pairs });
+  }
+  const original = ownData(navigation, 'original');
+  if (!original || typeof original !== 'object') throw unsupported();
+  pin(original, Reflect.ownKeys(original), true);
+  for (const key of ['positions', 'ends', 'boundaries']) {
+    const map = ordinaryMap(original, key);
+    if (mapSize!.call(map) > 128) throw unsupported();
+    const pairs: Array<readonly [number, number]> = [];
+    mapForEach.call(map, (value: number, key: number) => pairs.push([key, value]));
+    maps.push({ map, pairs });
+  }
+  plain(ownData(original, 'content') as object);
+  const data: SaveEvidenceData = {
+    pins,
+    maps,
+    deadline: parseSourceDeadline(recipe.identity.expiresAt),
+  };
+  // All callbackful original proof checks precede the independent pure witness.
+  if (live(slot!) !== h) throw unsupported();
+  checkSaveEvidence(data);
+  const evidence = Object.freeze({ [saveEvidenceBrand]: true as const });
+  saveEvidence.set(evidence, { data });
+  return evidence;
+}
+
+/** Pure evidence validation after owner/clock callbacks; loss is irreversible. */
+export function currentLocalPointSaveEvidence(
+  evidence: NoteLocalPointSaveEvidence,
+  time: number,
+): boolean {
+  const slot = saveEvidence.get(evidence);
+  if (!slot?.data) return false;
+  try {
+    if (!beforeSourceDeadline(time, slot.data.deadline)) throw unsupported();
+    checkSaveEvidence(slot.data);
+    return true;
+  } catch {
+    slot.data = undefined;
+    return false;
+  }
+}
+export function releaseLocalPointSaveEvidence(evidence: NoteLocalPointSaveEvidence): void {
+  const slot = saveEvidence.get(evidence);
+  if (slot) slot.data = undefined;
+}
 function live(slot: Slot) {
   const h = slot.held;
   if (!h) return undefined;
