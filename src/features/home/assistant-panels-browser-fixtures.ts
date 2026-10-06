@@ -74,6 +74,7 @@ interface AssistantPanelsControl {
   selectThread(agentId: string): void;
   setNoteMode(mode: NoteViewMode): void;
   navigate(route: string, agentId?: string): void;
+  navigateBackground(route: string, agentId: string): Promise<void>;
   navigateWithoutCaller(route: string): Promise<void>;
   openWorkspace(agentId: string): void;
   leaveAssistant(): void;
@@ -131,6 +132,9 @@ export function setupAssistantPanelsFixture() {
         workspaceId: CHIEF_WORKSPACE_ID,
         ...(agentId ? { agentId } : {}),
       });
+    },
+    navigateBackground(route, agentId) {
+      return navigateToRoute(route, { assistantContent: true, assistantAgentId: agentId });
     },
     navigateWithoutCaller(route) {
       return navigateToRoute(route, { assistantContent: true });

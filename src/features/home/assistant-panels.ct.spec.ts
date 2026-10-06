@@ -182,6 +182,67 @@ test('A delayed note click keeps its original thread after the user changes thre
   await expect(panel).toContainText('Plan for the repository');
 });
 
+for (const backgroundNote of ['second', 'missing']) {
+  test(`A slow user click survives a same-thread background open of ${backgroundNote}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(Preview);
+    await page.evaluate(() => window.__assistantPanels!.holdNextRead());
+    await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__assistantPanels!.calls.length)).toBe(1);
+    await page.evaluate(
+      (noteId) =>
+        window.__assistantPanels!.navigateBackground(
+          `intent://local/note/${noteId}`,
+          'assistant-source',
+        ),
+      backgroundNote,
+    );
+    await expect.poll(() => page.evaluate(() => window.__assistantPanels!.calls.length)).toBe(2);
+    const panel = component.locator('[data-assistant-content-panel]');
+    if (backgroundNote === 'second') await expect(panel).toContainText('Second plan');
+    await page.evaluate(() => window.__assistantPanels!.release());
+    await expect(panel).toContainText('Plan for the repository');
+    const after = await page.evaluate(() => window.__assistantPanels!.snapshot());
+    expect(after.selectedThread).toBe('assistant-source');
+    await testInfo.attach('explicit-open-priority-state', {
+      body: JSON.stringify({ backgroundNote, after }, null, 2),
+      contentType: 'application/json',
+    });
+  });
+}
+
+for (const firstOpen of ['user', 'background']) {
+  test(`A newer user click supersedes a slow ${firstOpen} open in the same thread`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(Preview);
+    await page.evaluate(() => window.__assistantPanels!.holdNextRead());
+    if (firstOpen === 'user')
+      await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+    else
+      await page.evaluate(() =>
+        window.__assistantPanels!.navigate('intent://local/note/plan', 'assistant-source'),
+      );
+    await expect.poll(() => page.evaluate(() => window.__assistantPanels!.calls.length)).toBe(1);
+    await component.getByRole('link', { name: 'Open the second plan', exact: true }).click();
+    const panel = component.locator('[data-assistant-content-panel]');
+    await expect(panel).toContainText('Second plan');
+    await page.evaluate(() => window.__assistantPanels!.release());
+    await expect(panel).toContainText('Second plan');
+    const after = await page.evaluate(() => window.__assistantPanels!.snapshot());
+    expect(after.layouts.source.tabs).toEqual([
+      { type: 'note', noteId: 'second', workspaceId: '__chief__' },
+    ]);
+    await testInfo.attach('newer-explicit-open-state', {
+      body: JSON.stringify({ firstOpen, after }, null, 2),
+      contentType: 'application/json',
+    });
+  });
+}
+
 test('Opening a shared note in another thread preserves the user’s note mode', async ({
   mount,
   page,

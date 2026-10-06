@@ -39,17 +39,33 @@ export const selectAssistantPanelLayoutId = store.createSelector((state) => {
   return assistantPanelLayoutId(thread?.agentId ?? null);
 });
 
-const latestOpenRequests = new Map<string, number>();
+interface OpenRequest {
+  explicit: number;
+  background?: number;
+}
+const latestOpenRequests = new Map<string, Required<OpenRequest>>();
 interface AssistantContentOptions {
   preserveFocus?: boolean;
   background?: boolean;
   agentId?: string;
   layoutId?: string;
 }
-function nextOpenRequest(layoutId: string) {
-  const request = (latestOpenRequests.get(layoutId) ?? 0) + 1;
+function nextOpenRequest(layoutId: string, background = false): OpenRequest {
+  const previous = latestOpenRequests.get(layoutId) ?? { explicit: 0, background: 0 };
+  const request = {
+    explicit: previous.explicit + (background ? 0 : 1),
+    background: previous.background + (background ? 1 : 0),
+  };
   latestOpenRequests.set(layoutId, request);
-  return request;
+  return background ? request : { explicit: request.explicit };
+}
+function isCurrentOpenRequest(layoutId: string, request: OpenRequest) {
+  const latest = latestOpenRequests.get(layoutId);
+  return (
+    latest !== undefined &&
+    request.explicit === latest.explicit &&
+    (request.background === undefined || request.background === latest.background)
+  );
 }
 
 async function restoreAssistantLayout(layoutId: string) {
@@ -159,13 +175,13 @@ async function openAssistantContent(
       : (options.layoutId ?? selectAssistantPanelLayoutId.select(store.state));
   // Older events have no sender; multiple threads make their destination ambiguous.
   if (!layoutId) return true;
-  const request = nextOpenRequest(layoutId);
+  const request = nextOpenRequest(layoutId, options.background);
   await restoreAssistantLayout(layoutId);
-  if (request !== latestOpenRequests.get(layoutId)) return true;
+  if (!isCurrentOpenRequest(layoutId, request)) return true;
   if (workspaceMatch) {
     const workspaceId = workspaceMatch[1];
     const workspace = await appClient.workspaces.get(workspaceId);
-    if (request !== latestOpenRequests.get(layoutId)) return true;
+    if (!isCurrentOpenRequest(layoutId, request)) return true;
     if (!workspace) {
       notify.error(m.workspace_loader_notFound_title());
       return true;
@@ -183,7 +199,7 @@ async function openAssistantContent(
   if (browserLink) {
     const { resolveBrowserLinkForOpen } = await import('$lib/utils/browser-link-open');
     const resolved = await resolveBrowserLinkForOpen(url);
-    if (request !== latestOpenRequests.get(layoutId)) return true;
+    if (!isCurrentOpenRequest(layoutId, request)) return true;
     showContent(
       {
         type: 'browser',
@@ -202,7 +218,7 @@ async function openAssistantContent(
   const targetWorkspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
   if (info.type === 'file') {
     const workspace = await appClient.workspaces.get(targetWorkspaceId);
-    if (request !== latestOpenRequests.get(layoutId)) return true;
+    if (!isCurrentOpenRequest(layoutId, request)) return true;
     if (!workspace) {
       notify.error(m.workspace_loader_notFound_title());
       return true;
@@ -235,7 +251,7 @@ async function openAssistantContent(
   if (info.type !== 'note' && info.type !== 'task') return false;
   const workspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
   const note = await appClient.notes.get(info.resourceId, workspaceId);
-  if (request !== latestOpenRequests.get(layoutId)) return true;
+  if (!isCurrentOpenRequest(layoutId, request)) return true;
   if (!note || String(note.workspaceId) !== workspaceId) {
     notify.error(m.ui_linkHandler_notFound_title(), {
       description: m.ui_linkHandler_noteNotFound_error({ noteId: info.resourceId, workspaceId }),
@@ -260,7 +276,7 @@ async function showAssistantAgent(
   agentId: string,
   options: AssistantContentOptions,
   layoutId: string,
-  request: number,
+  request: OpenRequest,
   messageId?: string,
 ): Promise<boolean> {
   const agent = await appClient.agents.get(
@@ -270,7 +286,7 @@ async function showAssistantAgent(
   if (workspaceId === CHIEF_WORKSPACE_ID && agent) workspaceId = String(agent.workspaceId);
   const workspace =
     workspaceId === CHIEF_WORKSPACE_ID ? null : await appClient.workspaces.get(workspaceId);
-  if (request !== latestOpenRequests.get(layoutId)) return true;
+  if (!isCurrentOpenRequest(layoutId, request)) return true;
   if (
     (!workspace && workspaceId !== CHIEF_WORKSPACE_ID) ||
     !agent ||
