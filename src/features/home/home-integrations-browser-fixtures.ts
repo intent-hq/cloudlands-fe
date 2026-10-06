@@ -2,6 +2,8 @@ import { selectWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/
 import { resolveGitHubPrefillSelection } from '$lib/components/workspace/initializer/github-prefill';
 import type { WorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { store as rendererStore } from '$store/renderer/store';
+import type { DraftsClient } from '$lib/client/app-client';
+import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
 import {
   installMockElectronBridge,
   type MockBackendMethodHandler,
@@ -28,6 +30,12 @@ declare global {
 export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStore, 'runSaga'>) {
   const previous = window.electronAPI;
   const calls: HomeIntegrationWireCall[] = [];
+  type Draft = NonNullable<Awaited<ReturnType<DraftsClient['get']>>>;
+  const drafts = new Map<string, Draft>();
+  const draftKey = (raw: unknown) => {
+    const params = raw as { workspaceId: string; agentId: string };
+    return `${params.workspaceId}\u0000${params.agentId}`;
+  };
   let releaseSearch = () => {};
   let pageFailed = false;
   let filePageFailed = false;
@@ -86,6 +94,18 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
   };
   const handlers: Record<string, MockBackendMethodHandler> = {
     'agent.getQueue': () => ({ success: true, queue: [] }),
+    'drafts.get': (raw) => drafts.get(draftKey(raw)) ?? null,
+    'drafts.set': (raw) => {
+      const { text, attachments } = raw as Pick<Draft, 'text' | 'attachments'>;
+      const updatedAt = '2026-09-29T12:00:00Z';
+      if (!text && !attachments?.length) drafts.delete(draftKey(raw));
+      else drafts.set(draftKey(raw), { text, attachments, updatedAt });
+      return { ok: true, updatedAt };
+    },
+    'drafts.clear': (raw) => {
+      drafts.delete(draftKey(raw));
+      return { ok: true };
+    },
     'github.authStatus': () => ({
       isConfigured: true,
       oauthUrl: '',
@@ -288,7 +308,9 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
     ),
   );
   const stop = appStore.runSaga(homeIntegrationsSaga);
+  const stopDrafts = appStore.runSaga(chatDraftsSaga);
   return () => {
+    stopDrafts();
     stop();
     releaseSearch();
     window.electronAPI = previous;
