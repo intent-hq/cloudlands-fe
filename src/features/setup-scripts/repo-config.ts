@@ -158,6 +158,7 @@ export async function fetchGitHubRepoConfigSetupScript(
 export function resolveSetupScriptParam(options: {
   setupScript: string;
   setupScriptName: string;
+  setupScriptNameSource: SetupScriptNameSource;
   repoPath: string | null;
   /** Cached repo-config script and the repo it was fetched for. */
   repoConfigScript: string | null;
@@ -166,6 +167,7 @@ export function resolveSetupScriptParam(options: {
   const script = options.setupScript.trim();
   if (!script) return undefined;
   const isUneditedRepoConfigScript =
+    options.setupScriptNameSource === 'repo-config' &&
     options.setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
     options.repoConfigScriptRepo === options.repoPath &&
     script === (options.repoConfigScript ?? '').trim();

@@ -82,6 +82,8 @@ export interface RepoConfigProbeOptions {
   isSetupScriptModalOpen: () => boolean;
   /** Whether the user picked/edited a custom script (read untracked). */
   isCustomSetupScript: () => boolean;
+  /** Scheduler run is still current, including selection round-trips and disposal. */
+  isCurrentRun?: () => boolean;
   /** Spinner on the setup-script control. */
   setLoading: (loading: boolean) => void;
   /**
@@ -129,7 +131,7 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): Pro
     // while the read was in flight (compare the full ref-aware identity;
     // GitHub repos can share a clone path)
     const currentKey = untrack(() => probeIdentityKey(options.getCurrentIdentity()));
-    if (currentKey !== probeKey) return;
+    if (currentKey !== probeKey || options.isCurrentRun?.() === false) return;
     options.setLoading(false);
     options.onProbeResult(script);
     if (!script) return;
@@ -197,6 +199,7 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
   let preservedRestoredState = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  let generation = 0;
   // Probe activity tracked for `settled()`: the last started probe, plus a
   // wait handle that resolves when a pending debounced re-probe fires or is
   // cancelled (so awaiters never hang on the debounce window).
@@ -223,6 +226,8 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
       const probeKey = probeIdentityKey(options.identity);
       if (probeKey === previousProbeKey) return;
       previousProbeKey = probeKey;
+      const run = ++generation;
+      probeOptions.isCurrentRun = () => !disposed && run === generation;
       clearPendingTimer();
 
       if (repoKey !== previousRepoKey) {

@@ -2388,6 +2388,7 @@
       const setupScriptParam = resolveSetupScriptParam({
         setupScript,
         setupScriptName,
+        setupScriptNameSource,
         repoPath,
         repoConfigScript,
         repoConfigScriptRepo,
@@ -2544,6 +2545,7 @@
       // is its source of truth, and recording a copy would shadow future
       // repo-config changes as the last-used default.
       const isUneditedRepoConfigScript =
+        setupScriptNameSource === 'repo-config' &&
         setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
         repoConfigScriptRepo === repoPath &&
         setupScript.trim() === (repoConfigScript ?? '').trim();

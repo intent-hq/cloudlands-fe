@@ -462,6 +462,38 @@ describe('createRepoConfigProbeScheduler', () => {
     expect(spies.applyScript).not.toHaveBeenCalled();
   });
 
+  it('rejects the first result after switching away and back to the same selection', async () => {
+    const old = deferred<string | null>();
+    const latest = deferred<string | null>();
+    fetches.github.mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
+    const { select, spies } = makeScheduler(ghIdentity('main'));
+    select(ghIdentity('main'));
+    select(ghIdentity('release'));
+    select(ghIdentity('main'));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    old.resolve('echo obsolete');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(spies.onProbeResult).not.toHaveBeenCalled();
+    expect(spies.applyScript).not.toHaveBeenCalled();
+    latest.resolve('echo current');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(spies.applyScript).toHaveBeenCalledExactlyOnceWith('echo current');
+  });
+
+  it('does not deliver an in-flight result after disposal', async () => {
+    const pending = deferred<string | null>();
+    fetches.github.mockReturnValueOnce(pending.promise);
+    const { select, spies, scheduler } = makeScheduler(ghIdentity('main'));
+    select(ghIdentity('main'));
+    spies.setLoading.mockClear();
+    scheduler.dispose();
+    pending.resolve('echo late');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(spies.setLoading).not.toHaveBeenCalled();
+    expect(spies.onProbeResult).not.toHaveBeenCalled();
+    expect(spies.applyScript).not.toHaveBeenCalled();
+  });
+
   it('dispose() prevents any further scheduling', async () => {
     fetches.github.mockResolvedValue(null);
     const { select, spies, scheduler } = makeScheduler(ghIdentity('main'));

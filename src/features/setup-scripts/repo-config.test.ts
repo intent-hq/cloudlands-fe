@@ -262,6 +262,7 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
   const base = {
     setupScript: 'echo default',
     setupScriptName: 'Copy config files only',
+    setupScriptNameSource: 'named' as const,
     repoPath: '/repo/a',
     repoConfigScript: null as string | null,
     repoConfigScriptRepo: null as string | null,
@@ -283,10 +284,24 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
         ...base,
         setupScript: 'echo repo-config\n',
         setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
         repoConfigScript: 'echo repo-config',
         repoConfigScriptRepo: '/repo/a',
       }),
     ).toBeUndefined();
+  });
+
+  it('sends a custom script even when its name and content match the committed script', () => {
+    expect(
+      resolveSetupScriptParam({
+        ...base,
+        setupScript: 'echo repo-config',
+        setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'custom',
+        repoConfigScript: 'echo repo-config',
+        repoConfigScriptRepo: '/repo/a',
+      }),
+    ).toBe('echo repo-config');
   });
 
   it('sends an edited repo-config script', () => {
@@ -295,6 +310,7 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
         ...base,
         setupScript: 'echo repo-config && echo edited',
         setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
         repoConfigScript: 'echo repo-config',
         repoConfigScriptRepo: '/repo/a',
       }),
@@ -309,6 +325,7 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
         ...base,
         setupScript: 'echo repo-config',
         setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
         repoConfigScript: 'echo repo-config',
         repoConfigScriptRepo: '/repo/b',
       }),
