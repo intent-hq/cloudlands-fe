@@ -29,7 +29,10 @@ test.beforeEach(async ({ page }) => {
           '.home-sidebar-content, .home-destination-content, .home-tab-content, [data-tabs-indicator]',
         ) &&
         Array.isArray(frames) &&
-        frames.length > 1
+        frames.length > 1 &&
+        frames.some(
+          (frame) => frame.transform !== frames[0].transform || frame.opacity !== frames[0].opacity,
+        )
       ) {
         window.__sidebarMotionRecords.push({
           view:
@@ -107,7 +110,7 @@ test('Sidebar fades in both directions and keeps filters, drafts, and toggle ali
   await draft.fill('Keep this draft through the animation');
   await page.evaluate(() => (window.__sidebarMotionRecords = []));
   await workspaces.click();
-  await expect(sidebar.getByRole('button', { name: 'All repos', exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('button', { name: /^All repos/ })).toBeVisible();
   await expect(sidebar.locator('[data-home-sidebar-exiting]')).toHaveCount(0);
   const backward = await page.evaluate(() => window.__sidebarMotionRecords);
   expect(

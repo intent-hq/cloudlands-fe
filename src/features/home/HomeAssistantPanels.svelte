@@ -113,7 +113,7 @@
       flex-direction: column;
       overflow-y: auto;
     }
-    .assistant-chat {
+    .assistant-panels:has(> .assistant-content) .assistant-chat {
       flex: 1 0 20rem;
     }
     .assistant-content {
