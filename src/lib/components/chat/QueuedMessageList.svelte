@@ -566,10 +566,10 @@
 
   // Action to autofocus textarea when it appears
   function autofocusAction(node: HTMLTextAreaElement) {
-    // Use requestAnimationFrame to ensure the element is fully rendered
     const frame = requestAnimationFrame(() => {
+      // An early click or selection already owns the caret before this frame.
+      if (document.activeElement === node) return;
       node.focus({ preventScroll: true });
-      // Move cursor to end
       node.selectionStart = node.selectionEnd = node.value.length;
     });
     return { destroy: () => cancelAnimationFrame(frame) };
