@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   /** Agent summary with Redux-owned streaming state and line changes. */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
@@ -702,6 +703,7 @@
           ? String(workspace.id)
           : undefined;
       if (!wsId) return;
+      if (openAssistantAgentFromEvent(event, wsId, agentId)) return;
       appStore.dispatch(
         openAgentTabRequested(wsId, {
           agentId,

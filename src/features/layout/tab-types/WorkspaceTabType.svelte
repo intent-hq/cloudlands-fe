@@ -16,6 +16,7 @@
   {#key workspaceId}
     <HomeWorkspaceDetail
       workspace={$workspace$}
+      showBackToList={false}
       onclose={() => store.dispatch(closeTab(layoutId ?? workspaceId, tab.id))}
     />
   {/key}

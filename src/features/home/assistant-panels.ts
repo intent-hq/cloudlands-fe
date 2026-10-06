@@ -226,18 +226,24 @@ async function showAssistantAgent(
   layoutId: string,
   messageId?: string,
 ): Promise<boolean> {
-  if (workspaceId === CHIEF_WORKSPACE_ID) return false;
   const request = nextOpenRequest(layoutId);
-  const [workspace, agent] = await Promise.all([
-    appClient.workspaces.get(workspaceId),
-    appClient.agents.get(agentId, workspaceId),
-  ]);
+  const agent = await appClient.agents.get(
+    agentId,
+    workspaceId === CHIEF_WORKSPACE_ID ? undefined : workspaceId,
+  );
+  if (workspaceId === CHIEF_WORKSPACE_ID && agent) workspaceId = String(agent.workspaceId);
+  const workspace =
+    workspaceId === CHIEF_WORKSPACE_ID ? null : await appClient.workspaces.get(workspaceId);
   if (request !== latestOpenRequests.get(layoutId)) return true;
-  if (!workspace || !agent || String(agent.workspaceId) !== workspaceId) {
+  if (
+    (!workspace && workspaceId !== CHIEF_WORKSPACE_ID) ||
+    !agent ||
+    String(agent.workspaceId) !== workspaceId
+  ) {
     notify.error(m.ui_linkHandler_notFound_title());
     return true;
   }
-  store.dispatch(setWorkspaceEntity(workspace));
+  if (workspace) store.dispatch(setWorkspaceEntity(workspace));
   store.dispatch(upsertSession(agent));
   showContent(
     { type: 'agent', title: agent.name ?? agentId, agentId, workspaceId, closable: true },

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
@@ -709,6 +710,7 @@
   function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (isolatedPreview) return;
     if (!workspaceId) return;
+    if (openAssistantAgentFromEvent(event, workspaceId, watchedAgentId)) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
       appStore.dispatch(openWorkspaceTab(workspaceId));
       void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {
