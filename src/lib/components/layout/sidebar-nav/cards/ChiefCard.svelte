@@ -122,6 +122,15 @@
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
   let hasActivatedChat = $state(false);
+  let hadThreads = false;
+
+  $effect(() => {
+    const hasThreads = $chiefThreads$.length > 0;
+    // Removing the last thread should return Assistant to its first-start flow.
+    // Reset only on that transition so a failed creation cannot retry forever.
+    if (hadThreads && !hasThreads) hasAutoStartedRef = false;
+    hadThreads = hasThreads;
+  });
 
   const activeChiefThread = $derived(
     $chiefActiveAgentId$
@@ -397,22 +406,21 @@
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </h2>
           {/if}
-          {#if activeThread && !$hidesAgentLifecycleActions$}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
-              title={m.layout_chiefCard_deleteThread_tooltip()}
-              onclick={(event) => {
-                if (activeThread)
-                  handleDeleteThread(event, activeThread.agentId, activeThread.title);
-              }}
-            >
-              <Fa icon={faTrash} size="xs" />
-            </Button>
-          {/if}
         {/if}
       </div>
+      {#if !collapsed && activeThread && !$hidesAgentLifecycleActions$}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
+          title={m.layout_chiefCard_deleteThread_tooltip()}
+          onclick={(event) => {
+            if (activeThread) handleDeleteThread(event, activeThread.agentId, activeThread.title);
+          }}
+        >
+          <Fa icon={faTrash} size="xs" />
+        </Button>
+      {/if}
       {#if !$hidesAgentLifecycleActions$}
         <div
           class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {collapsed
