@@ -39,7 +39,10 @@ async function open(page: Page, state: string, theme = 'light', scale = 1) {
   await expect(cards(page).first()).toHaveAttribute('data-mounted', 'true');
 }
 async function geometry(page: Page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
     const rect = (el: Element) => {
       const { x, y, width, height, top, bottom, left, right } = el.getBoundingClientRect();
       return { x, y, width, height, top, bottom, left, right };
