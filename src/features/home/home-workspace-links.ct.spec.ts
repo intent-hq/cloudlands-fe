@@ -354,7 +354,7 @@ for (const entry of headerCases) {
     await expect(close).toBeVisible();
     const titleBox = (await title.boundingBox())!;
     const closeBox = (await close.boundingBox())!;
-    const titleLayout = await title.locator('span').evaluate((element) => ({
+    const titleLayout = await title.getByText(entry.title, { exact: true }).evaluate((element) => ({
       height: element.clientHeight,
       lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
     }));
