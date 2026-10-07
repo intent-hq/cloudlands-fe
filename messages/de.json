@@ -7085,7 +7085,7 @@
   "home_city_shortcuts": "Stadt-Tastenkürzel",
   "home_city_drag_hint": "Ziehen zum Drehen · Scrollen zum Verschieben · Finger spreizen zum Zoomen",
   "home_city_size_legend": "Höhe · geänderte Dateien",
-  "home_city_size_description": "2–8 Etagen. Ein vereinfachter Hinweis, kein Maß für Fortschritt.",
+  "home_city_size_description": "Die Gebäudegröße zeigt die Anzahl geänderter Dateien als groben Hinweis, nicht den Fortschritt.",
   "home_city_unknown": "Änderungsumfang nicht verfügbar",
   "home_city_files": "{count} Dateien geändert",
   "home_city_agents": "{count} Agenten",
@@ -7122,5 +7122,12 @@
   "home_city_pan_gesture": "Umschalt + Ziehen / rechte oder mittlere Maustaste",
   "home_city_scroll_gesture": "Mit zwei Fingern scrollen",
   "home_city_zoom_gesture": "Finger spreizen / Strg + Scrollen / ⌘ + Scrollen",
-  "home_city_touch_hint": "Mit einem Finger: drehen. Mit zwei Fingern: verschieben, zum Zoomen zusammen- oder auseinanderziehen, zum Rotieren drehen."
+  "home_city_touch_hint": "Mit einem Finger: drehen. Mit zwei Fingern: verschieben, zum Zoomen zusammen- oder auseinanderziehen, zum Rotieren drehen.",
+  "home_city_zone_residential": "Wohnen",
+  "home_city_zone_commercial": "Gewerbe",
+  "home_city_zone_industrial": "Industrie",
+  "home_city_condition_construction": "Im Bau",
+  "home_city_condition_dilapidated": "Verfallen",
+  "home_city_condition_developed": "Fertig gebaut",
+  "home_city_sprite_description": "Repositories haben feste Zonen. Laufende Arbeit ist im Bau; blockierte Arbeit erscheint als verfallenes Gebäude."
 }

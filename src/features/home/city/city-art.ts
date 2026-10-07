@@ -8,8 +8,13 @@ import {
   type CityDistrict,
   type CityLayout,
 } from './home-city-layout';
-
-export const CITY_DETAIL_LIMIT = 48;
+import { cityBuildingSprite, cityParkSprite, cityRepositoryZone } from './home-city-sprites';
+import {
+  CitySpriteArt,
+  citySpriteHeight,
+  type CitySpriteAtlas,
+  type CitySpritePlacement,
+} from './city-sprite-art';
 
 export interface CityTheme {
   background: THREE.Color;
@@ -18,26 +23,16 @@ export interface CityTheme {
   accent: THREE.Color;
   statuses: Record<CityBuilding['status'], THREE.Color>;
 }
-
-type Tone = 'structure' | 'detail' | 'landscape' | 'street' | 'accent';
-type Shape = 'box' | 'rounded' | 'cylinder' | 'leaf';
-interface Instance {
-  matrix: THREE.Matrix4;
-  tone: Tone;
-  owner?: string;
-  beacon?: boolean;
-}
-interface Batch {
-  mesh: THREE.InstancedMesh;
-  instances: Instance[];
-  colors: THREE.InstancedBufferAttribute;
-}
 interface CityAnchor {
   id: string;
   x: number;
   y: number;
   z: number;
   district: CityDistrict;
+}
+interface StreetInstance {
+  matrix: THREE.Matrix4;
+  marking: boolean;
 }
 
 function streetGround(blocks: CityBlock[]): THREE.BufferGeometry {
@@ -80,144 +75,92 @@ export class CityArt {
   readonly group = new THREE.Group();
   readonly anchors = new Map<string, CityAnchor>();
   readonly districts: CityDistrict[];
-  readonly pickBoxes = new Map<string, THREE.Box3>();
-  private readonly geometries = new Map<string, THREE.BufferGeometry>();
-  // Background-colored faces hide rear edges without introducing shaded surfaces.
-  private readonly faces = new THREE.MeshBasicMaterial({
-    toneMapped: false,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
-  });
-  private readonly edges = new THREE.ShaderMaterial({
-    toneMapped: false,
-    vertexShader: `
-      attribute mat4 cityMatrix;
-      attribute vec3 cityColor;
-      varying vec3 ink;
-      void main() {
-        ink = cityColor;
-        gl_Position = projectionMatrix * modelViewMatrix * cityMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      varying vec3 ink;
-      void main() {
-        gl_FragColor = vec4(ink, 1.0);
-        #include <colorspace_fragment>
-      }
-    `,
-  });
-  private statuses = new Map<string, CityBuilding['status']>();
-  private matches: ReadonlySet<string> = new Set();
-  private selected: string | null = null;
-  private readonly pending = new Map<string, Instance[]>();
-  private readonly batches: Batch[] = [];
-  private readonly transform = new THREE.Object3D();
+  private readonly geometries: THREE.BufferGeometry[] = [];
+  private readonly road = new THREE.MeshBasicMaterial({ toneMapped: false, depthWrite: false });
+  private readonly pavement = new THREE.MeshBasicMaterial({ toneMapped: false, depthWrite: false });
+  private readonly streets: StreetInstance[] = [];
+  private readonly placements: CitySpritePlacement[] = [];
+  private readonly sprites: CitySpriteArt;
+  private readonly sidewalks: THREE.InstancedMesh;
   private readonly ring: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-  private readonly compact: boolean;
+  private matches: ReadonlySet<string> = new Set();
 
   constructor(
     model: CityModel,
     layout: CityLayout,
     private theme: CityTheme,
-    private readonly focused: string | null = null,
+    atlas: CitySpriteAtlas,
   ) {
-    this.compact = model.buildings.length > CITY_DETAIL_LIMIT;
-    this.faces.color.copy(theme.background);
-    this.geometries.set('box', new THREE.BoxGeometry(1, 1, 1));
-    this.geometries.set('rounded', new THREE.BoxGeometry(1, 1, 1));
-    this.geometries.set('cylinder', new THREE.CylinderGeometry(0.5, 0.5, 1, 16));
-    this.geometries.set('leaf', new THREE.IcosahedronGeometry(0.5, 1));
-    this.geometries.set('rounded-far', new THREE.BoxGeometry(1, 1, 1));
-    this.geometries.set('cylinder-far', new THREE.CylinderGeometry(0.5, 0.5, 1, 12));
-    this.geometries.set('leaf-far', new THREE.IcosahedronGeometry(0.5, 0));
     const activeIds = new Set(model.buildings.map((building) => building.id));
     const plots = layout.plots.filter((plot) => activeIds.has(plot.id));
     this.districts = layout.districts.filter((district) =>
       plots.some((plot) => plot.districtId === district.id),
     );
-    this.streets();
+    const ground = streetGround(this.districts.flatMap((district) => district.blocks));
+    this.geometries.push(ground);
+    const terrain = new THREE.Mesh(ground, this.road);
+    terrain.position.y = -0.13;
+    this.group.add(terrain);
+    this.makeStreets();
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    this.geometries.push(box);
+    this.sidewalks = new THREE.InstancedMesh(box, this.pavement, this.streets.length);
+    for (const [index, item] of this.streets.entries())
+      this.sidewalks.setMatrixAt(index, item.matrix);
+    this.sidewalks.computeBoundingSphere();
+    this.group.add(this.sidewalks);
+    const zones = new Map(model.repositories.map((repo) => [repo.id, cityRepositoryZone(repo)]));
     for (const building of model.buildings) {
       const plot = plots.find((item) => item.id === building.id);
       const district = this.districts.find((item) => item.id === plot?.districtId);
-      if (!plot || !district) continue;
-      const pos = cityPlotPosition(plot, district);
-      const height = building.floors * 0.5 + 0.3;
+      const zone = zones.get(building.repositoryId);
+      if (!plot || !district || !zone) continue;
+      const position = cityPlotPosition(plot, district);
+      const sprite = cityBuildingSprite(building, zone);
+      this.placements.push({ sprite, x: position.x, z: position.z, owner: building.id });
       this.anchors.set(building.id, {
         id: building.id,
-        x: pos.x,
-        z: pos.z,
-        y: height + 0.72,
+        x: position.x,
+        z: position.z,
+        y: citySpriteHeight(sprite) + 0.15,
         district,
       });
-      this.pickBoxes.set(
-        building.id,
-        new THREE.Box3(
-          new THREE.Vector3(pos.x - 1.2, 0, pos.z - 1.2),
-          new THREE.Vector3(pos.x + 1.2, height + 0.65, pos.z + 1.2),
-        ),
-      );
-      this.building(building, pos.x, pos.z, pos.angle);
     }
-    this.flush();
-    const ringGeometry = new THREE.BufferGeometry().setFromPoints(
-      Array.from({ length: 64 }, (_, index) => {
-        const angle = (index * Math.PI * 2) / 64;
-        return new THREE.Vector3(Math.cos(angle) * 1.48, 0, Math.sin(angle) * 1.48);
-      }),
-    );
-    this.geometries.set('selection', ringGeometry);
+    this.sprites = new CitySpriteArt(atlas, this.placements, theme.background);
+    this.group.add(this.sprites.group);
+    const ringGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-1.5, 0, -1.5),
+      new THREE.Vector3(1.5, 0, -1.5),
+      new THREE.Vector3(1.5, 0, 1.5),
+      new THREE.Vector3(-1.5, 0, 1.5),
+    ]);
+    this.geometries.push(ringGeometry);
     this.ring = new THREE.LineLoop(
       ringGeometry,
-      new THREE.LineBasicMaterial({ color: theme.accent, toneMapped: false }),
+      new THREE.LineBasicMaterial({ color: theme.accent, toneMapped: false, depthTest: false }),
     );
+    this.ring.renderOrder = 3;
     this.ring.visible = false;
     this.group.add(this.ring);
+    this.setTheme(theme);
   }
 
-  private add(
-    shape: Shape | string,
-    tone: Tone,
-    x: number,
-    y: number,
-    z: number,
-    sx = 1,
-    sy = 1,
-    sz = 1,
-    angle = 0,
-    owner?: string,
-    beacon = false,
-  ) {
-    if (this.compact && owner !== this.focused && this.geometries.has(`${shape}-far`))
-      shape = `${shape}-far`;
-    this.transform.position.set(x, y, z);
-    this.transform.rotation.set(0, angle, 0);
-    this.transform.scale.set(sx, sy, sz);
-    this.transform.updateMatrix();
-    const key = shape;
-    let bucket = this.pending.get(key);
-    if (!bucket) {
-      bucket = [];
-      this.pending.set(key, bucket);
-    }
-    bucket.push({
-      matrix: this.transform.matrix.clone(),
-      tone,
-      owner,
-      beacon,
-    });
-  }
-
-  private streets() {
-    if (!this.districts.length) return;
-    // One continuous ground joins every neighborhood. Sidewalks leave narrow
-    // local streets and wider avenues at repository boundaries.
-    this.geometries.set(
-      'ground',
-      streetGround(this.districts.flatMap((district) => district.blocks)),
-    );
-    this.add('ground', 'street', 0, -0.13, 0);
+  private makeStreets() {
+    const transform = new THREE.Object3D();
+    const add = (
+      x: number,
+      y: number,
+      z: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      marking = false,
+    ) => {
+      transform.position.set(x, y, z);
+      transform.scale.set(sx, sy, sz);
+      transform.updateMatrix();
+      this.streets.push({ matrix: transform.matrix.clone(), marking });
+    };
     const owners = new Map(
       this.districts.flatMap((district) =>
         district.blocks.map((block) => [`${block.x}:${block.z}`, district.id] as const),
@@ -233,21 +176,16 @@ export class CityArt {
         const right = x + CITY_BLOCK_SIZE / 2 - margin(1, 0);
         const back = z - CITY_BLOCK_SIZE / 2 + margin(0, -1);
         const front = z + CITY_BLOCK_SIZE / 2 - margin(0, 1);
-        this.add(
-          'box',
-          'street',
-          (left + right) / 2,
-          -0.005,
-          (back + front) / 2,
-          right - left,
-          0.12,
-          front - back,
-        );
+        add((left + right) / 2, -0.005, (back + front) / 2, right - left, 0.12, front - back);
         for (let lot = 0; lot < 4; lot++) {
           const slot = index * 4 + lot;
           if (slot < district.capacity) continue;
           const position = cityPlotPosition({ slot }, district);
-          this.tree(position.x, 0.055, position.z, 0.95, citySeed(district.id) + slot);
+          this.placements.push({
+            sprite: cityParkSprite(citySeed(district.id) + slot),
+            x: position.x,
+            z: position.z,
+          });
         }
         for (const [dx, dz] of [
           [1, 0],
@@ -255,263 +193,60 @@ export class CityArt {
         ]) {
           const neighbor = owners.get(`${block.x + dx}:${block.z + dz}`);
           if (!neighbor || neighbor === district.id) continue;
-          // Dashed center markings distinguish avenues without boxing in a repo.
           for (const offset of [-2.4, 0, 2.4]) {
-            this.add(
-              'box',
-              'street',
+            add(
               x + (dx * CITY_BLOCK_SIZE) / 2 + dz * offset,
               -0.11,
               z + (dz * CITY_BLOCK_SIZE) / 2 + dx * offset,
-              dx ? 0.04 : 1.1,
+              dx ? 0.055 : 1.1,
               0.025,
-              dz ? 0.04 : 1.1,
+              dz ? 0.055 : 1.1,
+              true,
             );
           }
         }
       }
     }
-  }
-
-  private tree(x: number, y: number, z: number, size: number, seed: number, owner?: string) {
-    this.add(
-      'cylinder',
-      'landscape',
-      x,
-      y + size * 0.29,
-      z,
-      size * 0.07,
-      size * 0.58,
-      size * 0.07,
-      0,
-      owner,
-    );
-    for (let i = 0; i < (this.compact && owner !== this.focused ? 3 : 6); i++) {
-      const angle = i * 2.4 + (seed % 13);
-      const spread = i === 0 ? 0 : size * 0.19;
-      this.add(
-        'leaf',
-        'landscape',
-        x + Math.cos(angle) * spread,
-        y + size * (0.57 + (i % 3) * 0.105),
-        z + Math.sin(angle) * spread,
-        size * 0.47,
-        size * 0.42,
-        size * 0.45,
-        angle,
-        owner,
-      );
-    }
-  }
-
-  private building(building: CityBuilding, x: number, z: number, angle: number) {
-    const id = building.id,
-      seed = citySeed(id),
-      family = seed % 3;
-    const h = building.floors * 0.5 + 0.3;
-    const detailed = !this.compact || id === this.focused;
-    const add = (
-      shape: Shape,
-      tone: Tone,
-      dx: number,
-      y: number,
-      dz: number,
-      sx: number,
-      sy: number,
-      sz: number,
-      beacon = false,
-    ) => {
-      this.add(
-        shape,
-        tone,
-        x + Math.cos(angle) * dx + Math.sin(angle) * dz,
-        y,
-        z - Math.sin(angle) * dx + Math.cos(angle) * dz,
-        sx,
-        sy,
-        sz,
-        angle,
-        id,
-        beacon,
-      );
-    };
-    add('rounded', 'structure', 0, 0.2, 0, 2.45, 0.23, 2.04);
-    add('rounded', 'detail', 0, 0.33, 0, 2.16, 0.035, 1.8);
-    const cylinder = family === 2;
-    const shape = cylinder ? 'cylinder' : 'rounded';
-    const width = cylinder ? 1.76 : family === 1 ? 1.6 : 1.95;
-    const depth = cylinder ? 1.76 : family === 1 ? 1.7 : 1.35;
-    add(shape, 'detail', 0, h / 2 + 0.35, 0, width * 0.76, h - 0.08, depth * 0.76);
-    add(shape, 'detail', 0, h / 2 + 0.35, 0, width, h, depth);
-    for (let floor = 0; floor <= building.floors; floor++) {
-      const y = 0.39 + floor * 0.5;
-      const balcony = family === 2 && floor % 2 === 0;
-      add(
-        shape,
-        balcony ? 'structure' : 'detail',
-        0,
-        y,
-        0,
-        width + (balcony ? 0.28 : 0.025),
-        balcony ? 0.11 : 0.028,
-        depth + (balcony ? 0.28 : 0.025),
-      );
-      const panes = detailed ? (cylinder ? 12 : 5) : 0;
-      for (let pane = 0; pane < panes; pane++) {
-        const lit = (seed + floor * 7 + pane * 3) % 11 < 5;
-        if (cylinder) {
-          const a = (pane * Math.PI * 2) / panes;
-          add(
-            'box',
-            'detail',
-            Math.cos(a) * 0.87,
-            y + 0.23,
-            Math.sin(a) * 0.87,
-            0.021,
-            0.48,
-            0.021,
-          );
-          if (lit && floor < building.floors)
-            add(
-              'rounded',
-              'detail',
-              Math.cos(a) * 0.78,
-              y + 0.14,
-              Math.sin(a) * 0.78,
-              0.19,
-              0.2,
-              0.19,
-            );
-        } else {
-          const dx = (pane / (panes - 1) - 0.5) * (width - 0.18);
-          for (const sign of [-1, 1]) {
-            add('box', 'detail', dx, y + 0.23, sign * (depth / 2 - 0.02), 0.026, 0.47, 0.027);
-            if (lit && floor < building.floors && pane < panes - 1)
-              add(
-                'box',
-                'detail',
-                dx + (width - 0.18) / (panes - 1) / 2,
-                y + 0.12,
-                sign * (depth / 2 + 0.005),
-                (width - 0.18) / (panes - 1) - 0.035,
-                0.16,
-                0.012,
-              );
-          }
-        }
-      }
-    }
-    if (!cylinder) {
-      for (const sx of [-1, 1])
-        for (const sz of [-1, 1])
-          add(
-            'rounded',
-            'structure',
-            sx * (width / 2 - 0.04),
-            h / 2 + 0.37,
-            sz * (depth / 2 - 0.06),
-            0.12,
-            h + 0.05,
-            0.16,
-          );
-      if (family === 1) add('rounded', 'structure', 0, h / 2 + 0.4, depth / 2, 0.23, h + 0.13, 0.2);
-    }
-    add(shape, 'structure', 0, h + 0.43, 0, width + 0.22, 0.19, depth + 0.22);
-    add(shape, 'detail', 0, h + 0.535, 0, width - 0.07, 0.018, depth - 0.07);
-    add(shape, 'structure', 0, h + 0.55, 0, width - 0.18, 0.045, depth - 0.18);
-    add('rounded', 'landscape', -0.14, h + 0.59, 0.09, width * 0.6, 0.055, depth * 0.63);
-    for (let i = 0; i < (detailed ? 3 : 1); i++) {
-      const dx = (i - 1) * 0.36,
-        dz = (i % 2) * 0.23;
-      this.tree(
-        x + Math.cos(angle) * dx + Math.sin(angle) * dz,
-        h + 0.62,
-        z - Math.sin(angle) * dx + Math.cos(angle) * dz,
-        0.48 + (seed % 3) * 0.07,
-        seed + i,
-        id,
-      );
-    }
-    add('cylinder', 'accent', width * 0.4, h + 0.61, -depth * 0.37, 0.1, 0.055, 0.1, true);
-  }
-
-  private flush() {
-    for (const [key, instances] of this.pending) {
-      const geometry = this.geometries.get(key);
-      if (!geometry) continue;
-      const mesh = new THREE.InstancedMesh(geometry, this.faces, instances.length);
-      for (let i = 0; i < instances.length; i++) mesh.setMatrixAt(i, instances[i].matrix);
-      mesh.computeBoundingSphere();
-      this.group.add(mesh);
-
-      // Share instance transforms with the picking/occlusion mesh. EdgesGeometry
-      // removes coplanar triangle diagonals, keeping the architecture legible.
-      const outline = new THREE.EdgesGeometry(geometry, 10);
-      const lines = new THREE.InstancedBufferGeometry();
-      lines.setAttribute('position', outline.getAttribute('position').clone());
-      outline.dispose();
-      lines.setAttribute('cityMatrix', mesh.instanceMatrix);
-      const colors = new THREE.InstancedBufferAttribute(new Float32Array(instances.length * 3), 3);
-      lines.setAttribute('cityColor', colors);
-      lines.instanceCount = instances.length;
-      this.geometries.set(`${key}-edges`, lines);
-      const edges = new THREE.LineSegments(lines, this.edges);
-      edges.renderOrder = 1;
-      edges.frustumCulled = false;
-      this.group.add(edges);
-      this.batches.push({ mesh, instances, colors });
-    }
-    this.pending.clear();
   }
 
   setTheme(theme: CityTheme) {
     this.theme = theme;
-    this.faces.color.copy(theme.background);
+    this.road.color.copy(theme.background).lerp(theme.foreground, 0.07);
     this.ring.material.color.copy(theme.accent);
-    this.recolor();
+    const color = new THREE.Color();
+    for (const [index, item] of this.streets.entries()) {
+      color
+        .copy(theme.background)
+        .lerp(item.marking ? theme.muted : theme.foreground, item.marking ? 0.55 : 0.12);
+      this.sidewalks.setColorAt(index, color);
+    }
+    if (this.sidewalks.instanceColor) this.sidewalks.instanceColor.needsUpdate = true;
+    this.sprites.appearance(this.matches, theme.background);
   }
 
-  appearance(model: CityModel, matches: ReadonlySet<string>, selected: string | null) {
-    this.statuses = new Map(model.buildings.map((building) => [building.id, building.status]));
+  appearance(_model: CityModel, matches: ReadonlySet<string>, selected: string | null) {
     this.matches = matches;
-    this.selected = selected;
-    this.recolor();
+    this.sprites.appearance(matches, this.theme.background);
     const anchor = selected ? this.anchors.get(selected) : undefined;
     this.ring.visible = !!anchor;
-    if (anchor) this.ring.position.set(anchor.x, 0.4, anchor.z);
+    if (anchor) this.ring.position.set(anchor.x, 0.1, anchor.z);
   }
 
-  private recolor() {
-    const { background, foreground, muted, accent, statuses } = this.theme;
-    const tones = {
-      structure: foreground.clone().lerp(background, 0.32),
-      detail: muted.clone().lerp(background, 0.15),
-      landscape: muted.clone().lerp(foreground, 0.2),
-      street: muted.clone().lerp(background, 0.48),
-      accent,
-    };
-    const color = new THREE.Color();
-    for (const { instances, colors } of this.batches) {
-      for (let i = 0; i < instances.length; i++) {
-        const item = instances[i];
-        color.copy(tones[item.tone]);
-        if (item.owner) {
-          if (item.beacon) color.copy(statuses[this.statuses.get(item.owner) ?? 'idle']);
-          else if (item.owner === this.selected) color.lerp(accent, 0.65);
-          if (!this.matches.has(item.owner)) color.lerp(background, 0.86);
-        }
-        colors.setXYZ(i, color.r, color.g, color.b);
-      }
-      colors.needsUpdate = true;
-    }
+  view(yaw: number) {
+    this.sprites.view(yaw);
+  }
+
+  pick(point: THREE.Vector2, camera: THREE.OrthographicCamera): string | null {
+    return this.sprites.pick(point, camera);
   }
 
   dispose() {
-    for (const geometry of this.geometries.values()) geometry.dispose();
-    this.faces.dispose();
-    this.edges.dispose();
+    for (const geometry of this.geometries) geometry.dispose();
+    this.road.dispose();
+    this.pavement.dispose();
     this.ring.material.dispose();
-    for (const { mesh } of this.batches) mesh.dispose();
+    this.sidewalks.dispose();
+    this.sprites.dispose();
     this.group.clear();
   }
 }

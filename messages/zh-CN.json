@@ -7085,7 +7085,7 @@
   "home_city_shortcuts": "城市快捷键",
   "home_city_drag_hint": "拖动旋转 · 滚动平移 · 捏合缩放",
   "home_city_size_legend": "高度 · 已更改的文件数",
-  "home_city_size_description": "2–8 层。仅简要表示规模，不代表进度。",
+  "home_city_size_description": "建筑规模反映已更改文件的数量。这是概略提示，不代表进度。",
   "home_city_unknown": "无法获取更改规模",
   "home_city_files": "{count} 个文件已更改",
   "home_city_agents": "{count} 个智能体",
@@ -7122,5 +7122,12 @@
   "home_city_pan_gesture": "按住 Shift、右键或中键拖动",
   "home_city_scroll_gesture": "双指滚动",
   "home_city_zoom_gesture": "捏合 / Ctrl + 滚动 / ⌘ + 滚动",
-  "home_city_touch_hint": "单指操作：旋转。双指操作：拖动平移，捏合或张开缩放，扭转旋转。"
+  "home_city_touch_hint": "单指操作：旋转。双指操作：拖动平移，捏合或张开缩放，扭转旋转。",
+  "home_city_zone_residential": "住宅区",
+  "home_city_zone_commercial": "商业区",
+  "home_city_zone_industrial": "工业区",
+  "home_city_condition_construction": "施工中",
+  "home_city_condition_dilapidated": "破旧",
+  "home_city_condition_developed": "已建成",
+  "home_city_sprite_description": "每个仓库有固定的分区。运行中的工作显示为施工建筑，受阻的工作显示为破旧建筑。"
 }

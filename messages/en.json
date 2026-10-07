@@ -7085,7 +7085,7 @@
   "home_city_shortcuts": "City shortcuts",
   "home_city_drag_hint": "Drag to rotate · scroll to pan · pinch to zoom",
   "home_city_size_legend": "Height · changed files",
-  "home_city_size_description": "2–8 floors. A compressed cue, not a measure of progress.",
+  "home_city_size_description": "Building size reflects changed-file volume. It is a compressed cue, not a measure of progress.",
   "home_city_unknown": "Change size unavailable",
   "home_city_files": "{count} files changed",
   "home_city_agents": "{count} agents",
@@ -7122,5 +7122,12 @@
   "home_city_pan_gesture": "Shift-drag / right-drag / middle-drag",
   "home_city_scroll_gesture": "Two-finger scroll",
   "home_city_zoom_gesture": "Pinch / Ctrl-scroll / ⌘-scroll",
-  "home_city_touch_hint": "One finger: rotate. Two fingers: pan, pinch to zoom, twist to rotate."
+  "home_city_touch_hint": "One finger: rotate. Two fingers: pan, pinch to zoom, twist to rotate.",
+  "home_city_zone_residential": "Residential",
+  "home_city_zone_commercial": "Commercial",
+  "home_city_zone_industrial": "Industrial",
+  "home_city_condition_construction": "Under construction",
+  "home_city_condition_dilapidated": "Dilapidated",
+  "home_city_condition_developed": "Developed",
+  "home_city_sprite_description": "Repositories have consistent zones. Running work is under construction; blocked work uses dilapidated buildings."
 }

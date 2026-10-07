@@ -34,6 +34,13 @@
     type CityLayout,
   } from './home-city-layout';
   import type { CityFrame, CityScene } from './city-scene';
+  import {
+    cityBuildingCondition,
+    cityBuildingSprite,
+    cityRepositoryZone,
+    type CityCondition,
+    type CityZone,
+  } from './home-city-sprites';
   import './city.css';
 
   let {
@@ -82,6 +89,7 @@
   const buildings = $derived(new Map(model.buildings.map((building) => [building.id, building])));
   const repoRows = $derived(model.repositories);
   const repoById = $derived(new Map(repoRows.map((repo) => [repo.id, repo])));
+  const zones = $derived(new Map(repoRows.map((repo) => [repo.id, cityRepositoryZone(repo)])));
   const results = $derived(model.buildings.filter((building) => matching.has(building.id)));
   const selected = $derived(selectedId ? buildings.get(selectedId) : undefined);
   const plots = $derived(
@@ -117,6 +125,20 @@
           ? faCheck
           : faCircle;
   }
+  function zoneLabel(zone: CityZone | undefined): string {
+    return zone === 'industrial'
+      ? m.home_city_zone_industrial()
+      : zone === 'commercial'
+        ? m.home_city_zone_commercial()
+        : m.home_city_zone_residential();
+  }
+  function conditionLabel(condition: CityCondition): string {
+    return condition === 'construction'
+      ? m.home_city_condition_construction()
+      : condition === 'dilapidated'
+        ? m.home_city_condition_dilapidated()
+        : m.home_city_condition_developed();
+  }
 
   $effect(() => {
     const next = allocateCityLayout(model, layout ?? untrack(() => allocation));
@@ -142,7 +164,7 @@
     try {
       const { CityScene } = await import('./city-scene');
       if (disposed || current !== generation) return;
-      scene = new CityScene(viewport, {
+      const next = await CityScene.create(viewport, {
         interactionRoot: root,
         onframe: (value) => {
           frame = value;
@@ -154,6 +176,8 @@
           ready = false;
         },
       });
+      if (disposed || current !== generation) next.dispose();
+      else scene = next;
     } catch {
       if (!disposed && current === generation) failed = true;
     }
@@ -261,10 +285,10 @@
         if (selectedId) scene?.focus(selectedId);
         break;
       case 'q':
-        scene?.orbit(-Math.PI / 12);
+        scene?.orbit(-Math.PI / 2);
         break;
       case 'e':
-        scene?.orbit(Math.PI / 12);
+        scene?.orbit(Math.PI / 2);
         break;
       case 'r':
         scene?.resetAngle();
@@ -414,6 +438,12 @@
             data-city-x={plots.get(label.id)?.x}
             data-city-z={plots.get(label.id)?.z}
             data-city-match={matching.has(label.id)}
+            data-city-zone={zones.get(building.repositoryId)}
+            data-city-condition={cityBuildingCondition(building.status)}
+            data-city-sprite={cityBuildingSprite(
+              building,
+              zones.get(building.repositoryId) ?? 'residential',
+            ).id}
           >
             <Button
               variant="ghost"
@@ -490,7 +520,11 @@
       out:fade={{ tier: 'fast' }}
     >
       <div class="city-inspector-top">
-        <span class="city-inspector-repo">{repoById.get(selected.repositoryId)?.name}</span><Button
+        <span class="city-inspector-repo"
+          >{repoById.get(selected.repositoryId)?.name} · {zoneLabel(
+            zones.get(selected.repositoryId),
+          )}</span
+        ><Button
           variant="ghost"
           size="icon-sm"
           aria-label={m.home_city_close()}
@@ -503,6 +537,9 @@
       <h3>{selected.title}</h3>
       <p class="city-inspector-message">
         {selected.workspace.statusMessage || statusLabel(selected.status)}
+      </p>
+      <p class="city-condition type-caption text-muted-foreground" data-city-condition-label>
+        {conditionLabel(cityBuildingCondition(selected.status))}
       </p>
       <div class="city-inspector-status" data-city-status data-status={selected.status}>
         <Fa icon={statusIcon(selected.status)} /><span>{statusLabel(selected.status)}</span
@@ -578,6 +615,9 @@
                   >{repo.name}<span>{formatInteger(items.length)}</span></Button
                 >
               </h4>
+              <p class="city-index-zone type-caption text-muted-foreground">
+                {zoneLabel(zones.get(repo.id))}
+              </p>
               {#each items as building (building.id)}
                 <Button
                   variant="ghost"
@@ -617,7 +657,7 @@
         aria-label={m.home_city_rotate_left()}
         tooltip={m.home_city_rotate_left()}
         tooltipShortcut="Q"
-        onclick={() => scene?.orbit(-Math.PI / 12)}><Fa icon={faRotateLeft} /></Button
+        onclick={() => scene?.orbit(-Math.PI / 2)}><Fa icon={faRotateLeft} /></Button
       >
       <Button
         variant="ghost"
@@ -637,7 +677,7 @@
         aria-label={m.home_city_rotate_right()}
         tooltip={m.home_city_rotate_right()}
         tooltipShortcut="E"
-        onclick={() => scene?.orbit(Math.PI / 12)}><Fa icon={faRotateRight} /></Button
+        onclick={() => scene?.orbit(Math.PI / 2)}><Fa icon={faRotateRight} /></Button
       >
     </div>
     <Button
@@ -718,4 +758,5 @@
   </dl>
   <p class="mt-5 type-caption text-muted-foreground">{m.home_city_touch_hint()}</p>
   <p class="mt-5 type-caption text-muted-foreground">{m.home_city_size_description()}</p>
+  <p class="mt-5 type-caption text-muted-foreground">{m.home_city_sprite_description()}</p>
 </ContentDialog>

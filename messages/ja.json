@@ -7085,7 +7085,7 @@
   "home_city_shortcuts": "街のショートカット",
   "home_city_drag_hint": "ドラッグで回転 · スクロールで移動 · ピンチで拡大・縮小",
   "home_city_size_legend": "高さ · 変更ファイル数",
-  "home_city_size_description": "2〜8階。規模を簡略化した目安で、進捗を示すものではありません。",
+  "home_city_size_description": "建物の規模は変更されたファイル数の目安です。進捗を表すものではありません。",
   "home_city_unknown": "変更規模を取得できません",
   "home_city_files": "{count} ファイルを変更",
   "home_city_agents": "エージェント {count} 件",
@@ -7122,5 +7122,12 @@
   "home_city_pan_gesture": "Shift＋ドラッグ / 右・中央ボタンでドラッグ",
   "home_city_scroll_gesture": "2本指でスクロール",
   "home_city_zoom_gesture": "ピンチ / Ctrl＋スクロール / ⌘＋スクロール",
-  "home_city_touch_hint": "1本指で回転。2本指で移動、指を開閉して拡大・縮小、ひねって回転。"
+  "home_city_touch_hint": "1本指で回転。2本指で移動、指を開閉して拡大・縮小、ひねって回転。",
+  "home_city_zone_residential": "住宅地区",
+  "home_city_zone_commercial": "商業地区",
+  "home_city_zone_industrial": "工業地区",
+  "home_city_condition_construction": "建設中",
+  "home_city_condition_dilapidated": "老朽化",
+  "home_city_condition_developed": "完成",
+  "home_city_sprite_description": "リポジトリごとに地区が決まっています。実行中の作業は建設中、ブロックされた作業は老朽化した建物で表示されます。"
 }

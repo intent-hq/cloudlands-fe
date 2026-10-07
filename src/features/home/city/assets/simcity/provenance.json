@@ -1,0 +1,143 @@
+{
+  "sourceArchive": {
+    "file": "simcity-3000-city-buildings.zip",
+    "sha256": "f834bf680972379e44bf8b97c8efc27c7a53a449d6ef739a30000f2969adb082"
+  },
+  "collectedOn": "2026-10-07",
+  "sources": {
+    "sourceProduct": "SimCity 3000 Unlimited Linux demo 2.0 (Loki, November 2000)",
+    "demoInfo": "https://faqs.lokigames.com/sc3ufaq.html",
+    "download": "https://ftp.lokigames.twolife.be/updates/loki_demos/sc3u-demo.run",
+    "readme": "https://ftp.lokigames.twolife.be/updates/loki_demos/sc3u-demo.run.txt",
+    "downloadSha256": "15fe9871f47d14624480fb355fa7bd009e5a04a2a7d4227071b508606b1bf313",
+    "downloadBytes": 185191780,
+    "archives": [
+      {
+        "file": "res/sprites/00000002_residential.dat",
+        "sha256": "38bd050d9bc84ad8bf0442f45454f51faa9b4f85b413ab36fee95f7a3c98775a",
+        "entryTypes": {
+          "00000000": 1360,
+          "00000001": 1360
+        }
+      },
+      {
+        "file": "res/sprites/00000003_commercial.dat",
+        "sha256": "4f1e228b0a1112fdb41291f9bb612041c093ed1b52671fbc5a8892bdf14051d0",
+        "entryTypes": {
+          "00000000": 1904,
+          "00000001": 1904
+        }
+      },
+      {
+        "file": "res/sprites/00000004_industrial.dat",
+        "sha256": "cf16b82f3dbc720991c45bb0f5c628c562012aab1d1b2fc9e396e62aede8201f",
+        "entryTypes": {
+          "00000001": 2320,
+          "00000000": 2320
+        }
+      },
+      {
+        "file": "res/sprites/00000005_roads.dat",
+        "sha256": "e7ade20b336b56ea1d10fa568e3f1027478b6b20ac321cfa42b72b6fe5aab1ea",
+        "entryTypes": {
+          "00000001": 6676,
+          "00000000": 6676
+        }
+      },
+      {
+        "file": "res/sprites/00000008_other.dat",
+        "sha256": "e10ba205f4c73d7639dbc3799585390e522f7213d55a42f1ed25aff0fdcadc4e",
+        "entryTypes": {
+          "00000000": 9156,
+          "00000001": 9156
+        }
+      },
+      {
+        "file": "res/sprites/0000000b_utilities.dat",
+        "sha256": "136128c6f3fc926e92b69ed4cfbd344eacc1e6516221b3f6557f61b081edfe4e",
+        "entryTypes": {
+          "00000000": 2744,
+          "00000001": 2744
+        }
+      }
+    ],
+    "metadata": "Labels and lot dimensions come from the demo occupant .blo records. Frame mappings come from its .sat/.saa records. Duplicate objects sharing the same frames are recorded as aliases.",
+    "decoder": {
+      "url": "https://github.com/thiekus/sc3k-sprite-extract",
+      "credit": "Thiekus / Faris Khowarizmi; RefPack logic credits Nicholas Hayes / DBPFSharp. MIT components adapted.",
+      "licenseFile": "tools/extractor-MIT.txt"
+    },
+    "rights": "Game-art rights are separate from extractor-code licensing."
+  },
+  "sourceFiles": [
+    {
+      "file": "manifest.json",
+      "sha256": "2dc7949b8ac96b5518aa28adff16e6b26ff1e549ca85f9d4ede2d6cf6fe8da98"
+    },
+    {
+      "file": "catalog.json",
+      "sha256": "090b8baad22936ca0b75d1541cf1851ebca411b60cbb567d8c8d07e14ee6e141"
+    },
+    {
+      "file": "sources.json",
+      "sha256": "51213f131e8fed512e5338e6ae8959349df836217b0e520c145c5ed4b8020970"
+    },
+    {
+      "file": "README.txt",
+      "sha256": "8b5ea62f7706017bf1b02519c3dd81ad567ce4e2e11830a80880946602067c8b"
+    }
+  ],
+  "sheets": [
+    {
+      "file": "civic-z2-1.png",
+      "sourceFile": "sheets/civic-z2-1.png",
+      "sha256": "cd2e3aa7d4f7b7d91ce3a75bb20b3e82ac5a196112ae8abc0f921e305c35addf",
+      "bytes": 918984
+    },
+    {
+      "file": "commercial-z2-1.png",
+      "sourceFile": "sheets/commercial-z2-1.png",
+      "sha256": "e4b6182540d53fe3f3dff4b62a57591077a128bd58d3ac416a1b4ef8a1a08063",
+      "bytes": 1710423
+    },
+    {
+      "file": "construction-z2-1.png",
+      "sourceFile": "sheets/construction-z2-1.png",
+      "sha256": "59ef07a51ff3a5c69262c2d6fc0aa8b9a9728e405841a055ef1e0179c167aaed",
+      "bytes": 897629
+    },
+    {
+      "file": "industrial-z2-1.png",
+      "sourceFile": "sheets/industrial-z2-1.png",
+      "sha256": "9a9a2f90911d04931d6ade6586443581f2159a398d64fde71cfbd8aac2ae323b",
+      "bytes": 857763
+    },
+    {
+      "file": "residential-z2-1.png",
+      "sourceFile": "sheets/residential-z2-1.png",
+      "sha256": "519f1608e0e7703cce49f378f38ad33fcdf0e4caaf878f31a37fb3e51715fb61",
+      "bytes": 1273802
+    }
+  ],
+  "originalArtRights": "Original game art belongs to Maxis / Electronic Arts and respective rights holders. No open-content reuse license is supplied by this collection.",
+  "originalReadme": "SimCity 3000 city buildings\n\n315 building and lot designs / 5,040 transparent PNG frames\nEach design has four source views and four native raster sizes.\n\nCategories\n  civic: 42\n  commercial: 53\n  construction: 47\n  industrial: 58\n  residential: 85\n  utilities: 30\n\nQuick start\n  Open preview.html for a searchable gallery. It works offline.\n  Give manifest.json and the sheets/ or individual/ folder to the visualization.\n  Start at zoom 2, rotation 0, and use one zoom and view consistently in a scene.\n  All individual PNGs have transparency and retain their original raster sizes.\n  Use nearest-neighbor scaling. Atlas crops exactly match the individual PNGs.\n\n  catalog.json is a smaller name/category/footprint index.\n  catalog/*.png shows every design by category; contact-sheet.png is a selection.\n  manifest.json contains exact atlas rectangles, frame files, lot dimensions,\n  source IDs, and provenance. sources.json records source links and hashes.\n\n  Example Canvas use:\n    const m = await fetch('manifest.json').then(r => r.json());\n    const b = m.buildings.find(b => b.category === 'residential');\n    const f = m.frames[`${b.id}-z2-r0`];\n    const img = new Image(); img.src = f.sheet; await img.decode();\n    const {x,y,w,h} = f.frame;\n    ctx.imageSmoothingEnabled = false;\n    ctx.drawImage(img, x,y,w,h, sceneX-w/2,sceneY-h,w,h);\n\nPlacement\n  Native tile widths are 8,16,32,64 pixels for zooms 0,1,2,3; tile height is\n  half the width. The source's 128px zoom scales existing art and is omitted.\n  Lot sizes use the X/Z values from each source CellSize record.\n  View indices 0-3 are preserved; compass directions have not been verified.\n  Suggested bottom-center anchors are convenience values, not engine origins.\n  Validate ground alignment in the target scene and draw back to front.\n\nScope\n  The collection is extracted from the public SimCity 3000 Unlimited Linux demo.\n  Categories also contain gardens, pools, fences, parks, and other lot designs.\n  Construction and abandoned lots have their own category. Some objects share\n  graphics; aliases record those names without increasing the design count.\n  This collection contains complete static building base images. Buildings\n  requiring separate animated regions are omitted to avoid incomplete images.\n  Dynamic smoke, traffic, people, roads, terrain, and engine depth masks are\n  outside this collection. extraction-report.json records omitted objects.\n  The earlier downloadable landmark/UI pack is a separate collection.\n\nSources and rights\n  Original art: Maxis / Electronic Arts and respective rights holders.\n  The collection does not supply an open-content license for the game art.\n  Extractor code licensing is separate; see tools/extractor-MIT.txt.\n  https://faqs.lokigames.com/sc3ufaq.html\n  https://ftp.lokigames.twolife.be/updates/loki_demos/sc3u-demo.run.txt\n  Collected October 7, 2026.\n",
+  "representation": {
+    "format": "RGBA PNG",
+    "trimmed": false,
+    "resampled": false,
+    "rotatedInAtlas": false,
+    "gutterPixels": 4,
+    "zoomMeaning": "Four native raster sizes: 0=8px tiles, 1=16px, 2=32px, 3=64px. The 128px engine zoom reuses scaled images and is not duplicated.",
+    "rotationMeaning": "Source view indices 0-3; compass directions are not verified.",
+    "footprintMeaning": "X and Z from the source CellSize property, in tiles.",
+    "anchorMeaning": "Suggested bottom-center placement helper, not an exported engine origin.",
+    "scope": "Complete static base sprites associated with named building objects. Includes decorative lots, gardens, parks, construction and abandoned lots.",
+    "omitted": "Objects needing separate animated regions; missing or incomplete demo families; dynamic effects; people; vehicles; roads and terrain."
+  },
+  "import": {
+    "zoom": 2,
+    "rotations": [0, 1, 2, 3],
+    "sheetBytesUnchanged": true,
+    "selection": "All three zone categories; zone-named construction and abandoned designs; six small civic park lots."
+  }
+}

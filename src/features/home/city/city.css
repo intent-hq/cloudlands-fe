@@ -207,6 +207,12 @@
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+.city-condition {
+  margin: 0 0 16px;
+}
+.city-index-zone {
+  margin: 0 14px 10px;
+}
 .city-inspector-status {
   display: flex;
   gap: 7px;
@@ -280,7 +286,7 @@
 }
 .city-footer {
   position: absolute;
-  inset: auto 22px 14px 22px;
+  inset: auto auto 14px 22px;
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -472,7 +478,7 @@
   .city-inspector {
     padding: 12px;
     margin-left: -8px;
-    width: min(285px, calc(100% - 70px));
+    width: min(285px, calc(100% - 90px));
   }
   .city-inspector h3 {
     font-size: 20px;
@@ -490,7 +496,6 @@
   }
   .city-footer {
     left: 10px;
-    right: 10px;
   }
   .city-building-label {
     max-width: 148px;

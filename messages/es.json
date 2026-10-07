@@ -7085,7 +7085,7 @@
   "home_city_shortcuts": "Atajos de la ciudad",
   "home_city_drag_hint": "Arrastra para girar · desliza para desplazar · pellizca para ajustar el zoom",
   "home_city_size_legend": "Altura · archivos modificados",
-  "home_city_size_description": "2–8 plantas. Una señal simplificada, no una medida del progreso.",
+  "home_city_size_description": "El tamaño del edificio refleja el volumen de archivos modificados. Es una señal aproximada, no una medida del progreso.",
   "home_city_unknown": "Tamaño de los cambios no disponible",
   "home_city_files": "{count} archivos modificados",
   "home_city_agents": "{count} agentes",
@@ -7122,5 +7122,12 @@
   "home_city_pan_gesture": "Mayús + arrastrar / botón derecho o central",
   "home_city_scroll_gesture": "Deslizar con dos dedos",
   "home_city_zoom_gesture": "Pellizcar / Ctrl + rueda / ⌘ + rueda",
-  "home_city_touch_hint": "Con un dedo: gira. Con dos dedos: desplaza, junta o separa para ajustar el zoom y gira para rotar."
+  "home_city_touch_hint": "Con un dedo: gira. Con dos dedos: desplaza, junta o separa para ajustar el zoom y gira para rotar.",
+  "home_city_zone_residential": "Residencial",
+  "home_city_zone_commercial": "Comercial",
+  "home_city_zone_industrial": "Zona industrial",
+  "home_city_condition_construction": "En construcción",
+  "home_city_condition_dilapidated": "Deteriorado",
+  "home_city_condition_developed": "Construido",
+  "home_city_sprite_description": "Los repositorios tienen zonas constantes. El trabajo en curso está en construcción; el trabajo bloqueado usa edificios deteriorados."
 }

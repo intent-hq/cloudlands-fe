@@ -7085,7 +7085,7 @@
   "home_city_shortcuts": "城市快捷鍵",
   "home_city_drag_hint": "拖曳旋轉 · 捲動平移 · 捏合縮放",
   "home_city_size_legend": "高度 · 已變更的檔案數",
-  "home_city_size_description": "2–8 層。僅簡要表示規模，不代表進度。",
+  "home_city_size_description": "建築規模反映已變更檔案的數量。這是概略提示，不代表進度。",
   "home_city_unknown": "無法取得變更規模",
   "home_city_files": "{count} 個檔案已變更",
   "home_city_agents": "{count} 個代理程式",
@@ -7122,5 +7122,12 @@
   "home_city_pan_gesture": "按住 Shift、右鍵或中鍵拖曳",
   "home_city_scroll_gesture": "雙指捲動",
   "home_city_zoom_gesture": "捏合 / Ctrl + 捲動 / ⌘ + 捲動",
-  "home_city_touch_hint": "單指操作：旋轉。雙指操作：拖曳平移，捏合或張開縮放，扭轉旋轉。"
+  "home_city_touch_hint": "單指操作：旋轉。雙指操作：拖曳平移，捏合或張開縮放，扭轉旋轉。",
+  "home_city_zone_residential": "住宅區",
+  "home_city_zone_commercial": "商業區",
+  "home_city_zone_industrial": "工業區",
+  "home_city_condition_construction": "施工中",
+  "home_city_condition_dilapidated": "破舊",
+  "home_city_condition_developed": "已建成",
+  "home_city_sprite_description": "每個儲存庫有固定的分區。執行中的工作顯示為施工建築，受阻的工作顯示為破舊建築。"
 }

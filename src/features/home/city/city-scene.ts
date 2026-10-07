@@ -3,7 +3,8 @@ import { prefersReducedMotion, spring } from '$lib/motion';
 import { onReducedMotionChange } from '$lib/utils/reduced-motion';
 import type { CityModel } from './home-city-model';
 import { CITY_BLOCK_SIZE, cityDistrictBounds, type CityLayout } from './home-city-layout';
-import { CityArt, CITY_DETAIL_LIMIT, type CityTheme } from './city-art';
+import { CityArt, type CityTheme } from './city-art';
+import { CitySpriteAtlas, loadCitySpriteSheets } from './city-sprite-art';
 
 interface CityLabel {
   id: string;
@@ -38,8 +39,8 @@ interface CityPointer {
   selectable: boolean;
   label: HTMLElement | null;
 }
-const DEFAULT_YAW = Math.atan2(24, 30);
-const DEFAULT_ELEVATION = Math.atan2(31, Math.hypot(24, 30));
+const DEFAULT_YAW = Math.PI / 4;
+const DEFAULT_ELEVATION = Math.PI / 6;
 const CAMERA_DISTANCE = Math.hypot(24, 31, 30);
 const MIN_ELEVATION = (28 * Math.PI) / 180;
 const MAX_ELEVATION = (66 * Math.PI) / 180;
@@ -52,6 +53,10 @@ interface SceneOptions {
 }
 
 export class CityScene {
+  static async create(host: HTMLElement, options: SceneOptions): Promise<CityScene> {
+    return new CityScene(host, options, await loadCitySpriteSheets());
+  }
+
   readonly canvas: HTMLCanvasElement;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 800);
@@ -60,7 +65,7 @@ export class CityScene {
   private readonly intersection: IntersectionObserver;
   private readonly unsubscribeMotion: () => void;
   private readonly abort = new AbortController();
-  private readonly raycaster = new THREE.Raycaster();
+  private readonly atlas: CitySpriteAtlas;
   // World-space lines share the city's camera, so every gesture keeps them aligned.
   private readonly grid = new THREE.Mesh(
     new THREE.PlaneGeometry(1, 1),
@@ -122,10 +127,12 @@ export class CityScene {
   private bounds = new THREE.Box3();
   private readonly pointers = new Map<number, CityPointer>();
 
-  constructor(
+  private constructor(
     private readonly host: HTMLElement,
     private readonly options: SceneOptions,
+    sheets: Awaited<ReturnType<typeof loadCitySpriteSheets>>,
   ) {
+    this.atlas = new CitySpriteAtlas(sheets);
     this.renderer = new THREE.WebGLRenderer({
       alpha: true,
       antialias: true,
@@ -224,9 +231,14 @@ export class CityScene {
     this.matches = new Set(matches);
     this.selected = selected;
     const structure = JSON.stringify([
-      model.buildings.map((building) => [building.id, building.floors]),
+      model.buildings.map((building) => [
+        building.id,
+        building.floors,
+        building.files,
+        building.status,
+      ]),
+      model.repositories,
       layout,
-      model.buildings.length > CITY_DETAIL_LIMIT ? selected : null,
     ]);
     if (structure !== this.structure) {
       const initial = !this.art || this.bounds.isEmpty();
@@ -234,7 +246,7 @@ export class CityScene {
         this.scene.remove(this.art.group);
         this.art.dispose();
       }
-      this.art = new CityArt(model, layout, this.readTheme(), selected);
+      this.art = new CityArt(model, layout, this.readTheme(), this.atlas);
       this.scene.add(this.art.group);
       this.structure = structure;
       this.bounds.makeEmpty();
@@ -243,6 +255,8 @@ export class CityScene {
         this.bounds.expandByPoint(new THREE.Vector3(bounds.minX - 1.4, -1.5, bounds.minZ - 1.4));
         this.bounds.expandByPoint(new THREE.Vector3(bounds.maxX + 1.4, 5.8, bounds.maxZ + 1.4));
       }
+      for (const anchor of this.art.anchors.values())
+        this.bounds.expandByPoint(new THREE.Vector3(anchor.x, anchor.y + 1, anchor.z));
       this.fitHome();
       if (initial || this.bounds.isEmpty()) {
         this.history = [];
@@ -274,6 +288,13 @@ export class CityScene {
       const bounds = cityDistrictBounds(district);
       box.expandByPoint(new THREE.Vector3(bounds.minX, -1.5, bounds.minZ));
       box.expandByPoint(new THREE.Vector3(bounds.maxX, 5.8, bounds.maxZ));
+    }
+    for (const anchor of this.art?.anchors.values() ?? []) {
+      if (anchor.district.repositoryId === id) {
+        const elevation = (this.motion?.to ?? this.view).elevation;
+        const height = ((anchor.y + 1) * Math.cos(DEFAULT_ELEVATION)) / Math.cos(elevation);
+        box.expandByPoint(new THREE.Vector3(anchor.x, height, anchor.z));
+      }
     }
     const center = box.getCenter(new THREE.Vector3());
     const target = {
@@ -490,6 +511,7 @@ export class CityScene {
       (this.view.span * Math.max(1, this.width / this.height) * 4) / Math.sin(this.view.elevation);
     this.grid.scale.set(size, size, 1);
     this.grid.position.set(this.view.x, -2, this.view.z);
+    this.art?.view(this.view.yaw);
     this.renderer.render(this.scene, this.camera);
     this.projectLabels();
     if (this.motion) this.invalidate();
@@ -507,7 +529,9 @@ export class CityScene {
       };
     };
     const buildings = [...this.art.anchors.values()].map((anchor) => {
-      const point = project(anchor.id, anchor.x, anchor.y + 0.5, anchor.z);
+      const height =
+        ((anchor.y + 0.5) * Math.cos(DEFAULT_ELEVATION)) / Math.cos(this.view.elevation);
+      const point = project(anchor.id, anchor.x, height, anchor.z);
       point.visible =
         point.visible &&
         this.matches.has(point.id) &&
@@ -527,26 +551,15 @@ export class CityScene {
 
   private pick(event: PointerEvent): string | null {
     const rect = this.canvas.getBoundingClientRect();
-    this.raycaster.setFromCamera(
-      new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1,
-      ),
-      this.camera,
+    return (
+      this.art?.pick(
+        new THREE.Vector2(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -((event.clientY - rect.top) / rect.height) * 2 + 1,
+        ),
+        this.camera,
+      ) ?? null
     );
-    let nearest: string | null = null,
-      distance = Infinity;
-    for (const [id, box] of this.art?.pickBoxes ?? []) {
-      if (!this.matches.has(id)) continue;
-      const hit = this.raycaster.ray.intersectBox(box, new THREE.Vector3());
-      if (!hit) continue;
-      const d = hit.distanceToSquared(this.raycaster.ray.origin);
-      if (d < distance) {
-        nearest = id;
-        distance = d;
-      }
-    }
-    return nearest;
   }
 
   private inputTarget(event: Event): HTMLElement | null {
@@ -726,6 +739,7 @@ export class CityScene {
     this.grid.geometry.dispose();
     this.grid.material.dispose();
     this.art?.dispose();
+    this.atlas.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();

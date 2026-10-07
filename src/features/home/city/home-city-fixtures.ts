@@ -4,6 +4,7 @@ import { cityFloors, type CityModel } from './home-city-model';
 
 export const cityScenarios = [
   'showcase',
+  'zones-and-states',
   'empty',
   'one',
   'two',
@@ -36,6 +37,7 @@ const titles = [
   'Onboarding',
 ];
 const counts: Partial<Record<CityScenario, number>> = {
+  'zones-and-states': 9,
   empty: 0,
   one: 1,
   two: 2,
@@ -84,14 +86,19 @@ export function createCityFixture(scenario: CityScenario = 'showcase'): CityMode
           : `Make every workspace accessible across all repositories, including exceptionally long project and branch names — ${index + 1}`
         : `${titles[index % titles.length]}${index >= titles.length ? ` ${index + 1}` : ''}`;
     const files =
-      scenario === 'metrics'
-        ? [null, 0, 1_000_000][index]
-        : index === 3
-          ? null
-          : [24, 81, 7, 0, 12, 3, 140, 2, 40, 16][index % 10];
+      scenario === 'zones-and-states'
+        ? 40
+        : scenario === 'metrics'
+          ? [null, 0, 1_000_000][index]
+          : index === 3
+            ? null
+            : [24, 81, 7, 0, 12, 3, 140, 2, 40, 16][index % 10];
     const additions = files === null ? null : files * 18;
     const deletions = files === null ? null : files * 3;
-    const status = statuses[index % statuses.length];
+    const status =
+      scenario === 'zones-and-states'
+        ? (['running', 'complete', 'blocked'] as const)[Math.floor(index / 3)]
+        : statuses[index % statuses.length];
     const workspace: Workspace = {
       id: WorkspaceId(id),
       title,

@@ -7085,7 +7085,7 @@
   "home_city_shortcuts": "도시 단축키",
   "home_city_drag_hint": "드래그로 회전 · 스크롤로 이동 · 핀치로 확대 및 축소",
   "home_city_size_legend": "높이 · 변경된 파일 수",
-  "home_city_size_description": "2~8층. 규모를 간략히 나타내며 진행 상황을 뜻하지 않습니다.",
+  "home_city_size_description": "건물 크기는 변경된 파일 수의 대략적인 표시이며 진행률을 나타내지 않습니다.",
   "home_city_unknown": "변경 규모를 알 수 없음",
   "home_city_files": "파일 {count}개 변경됨",
   "home_city_agents": "에이전트 {count}개",
@@ -7122,5 +7122,12 @@
   "home_city_pan_gesture": "Shift + 드래그 / 오른쪽 또는 가운데 버튼으로 드래그",
   "home_city_scroll_gesture": "두 손가락으로 스크롤",
   "home_city_zoom_gesture": "핀치 / Ctrl + 스크롤 / ⌘ + 스크롤",
-  "home_city_touch_hint": "한 손가락으로 회전하세요. 두 손가락으로 이동, 벌리거나 오므려 확대 및 축소, 비틀어 회전하세요."
+  "home_city_touch_hint": "한 손가락으로 회전하세요. 두 손가락으로 이동, 벌리거나 오므려 확대 및 축소, 비틀어 회전하세요.",
+  "home_city_zone_residential": "주거 구역",
+  "home_city_zone_commercial": "상업 구역",
+  "home_city_zone_industrial": "공업 구역",
+  "home_city_condition_construction": "건설 중",
+  "home_city_condition_dilapidated": "노후화",
+  "home_city_condition_developed": "완공",
+  "home_city_sprite_description": "저장소마다 일정한 구역이 있습니다. 실행 중인 작업은 건설 중인 건물로, 차단된 작업은 노후화된 건물로 표시됩니다."
 }

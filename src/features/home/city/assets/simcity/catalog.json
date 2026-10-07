@@ -1,0 +1,8680 @@
+{
+  "tileWidth": 32,
+  "sheets": [
+    {
+      "file": "civic-z2-1.png",
+      "width": 2048,
+      "height": 600
+    },
+    {
+      "file": "commercial-z2-1.png",
+      "width": 2048,
+      "height": 1171
+    },
+    {
+      "file": "construction-z2-1.png",
+      "width": 2048,
+      "height": 654
+    },
+    {
+      "file": "industrial-z2-1.png",
+      "width": 2048,
+      "height": 587
+    },
+    {
+      "file": "residential-z2-1.png",
+      "width": 2048,
+      "height": 749
+    }
+  ],
+  "buildings": [
+    {
+      "id": "amalgamated-amalgamation-inc-000000b3",
+      "name": "Amalgamated Amalgamation Inc.",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1638,
+          "y": 789,
+          "w": 96,
+          "h": 93
+        },
+        {
+          "sheet": 1,
+          "x": 338,
+          "y": 921,
+          "w": 96,
+          "h": 85
+        },
+        {
+          "sheet": 1,
+          "x": 1906,
+          "y": 789,
+          "w": 96,
+          "h": 89
+        },
+        {
+          "sheet": 1,
+          "x": 1270,
+          "y": 789,
+          "w": 96,
+          "h": 97
+        }
+      ]
+    },
+    {
+      "id": "aquilina-building-000000ba",
+      "name": "Aquilina Building",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1070,
+          "y": 789,
+          "w": 96,
+          "h": 99
+        },
+        {
+          "sheet": 1,
+          "x": 1370,
+          "y": 789,
+          "w": 96,
+          "h": 96
+        },
+        {
+          "sheet": 1,
+          "x": 270,
+          "y": 789,
+          "w": 96,
+          "h": 113
+        },
+        {
+          "sheet": 1,
+          "x": 370,
+          "y": 789,
+          "w": 96,
+          "h": 109
+        }
+      ]
+    },
+    {
+      "id": "arbor-plaza-0000009b",
+      "name": "Arbor Plaza",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1574,
+          "y": 609,
+          "w": 64,
+          "h": 136
+        },
+        {
+          "sheet": 1,
+          "x": 1642,
+          "y": 609,
+          "w": 64,
+          "h": 136
+        },
+        {
+          "sheet": 1,
+          "x": 1710,
+          "y": 609,
+          "w": 64,
+          "h": 136
+        },
+        {
+          "sheet": 1,
+          "x": 1778,
+          "y": 609,
+          "w": 64,
+          "h": 136
+        }
+      ]
+    },
+    {
+      "id": "asphalt-grazing-here-00000fbc",
+      "name": "Asphalt Grazing Here",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 614,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 650,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 686,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 722,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "ben-s-diner-0000007e",
+      "name": "Ben's Diner",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1798,
+          "y": 1091,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 1,
+          "x": 1510,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 1,
+          "x": 1366,
+          "y": 1091,
+          "w": 32,
+          "h": 29
+        },
+        {
+          "sheet": 1,
+          "x": 1834,
+          "y": 1091,
+          "w": 32,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "bowling-accountancy-00000080",
+      "name": "Bowling Accountancy",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 254,
+          "y": 1142,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 1,
+          "x": 362,
+          "y": 1142,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 1,
+          "x": 398,
+          "y": 1142,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 1,
+          "x": 218,
+          "y": 1142,
+          "w": 32,
+          "h": 23
+        }
+      ]
+    },
+    {
+      "id": "bradbury-building-00000fa2",
+      "name": "Bradbury Building",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 438,
+          "y": 921,
+          "w": 96,
+          "h": 85
+        },
+        {
+          "sheet": 1,
+          "x": 238,
+          "y": 921,
+          "w": 96,
+          "h": 86
+        },
+        {
+          "sheet": 1,
+          "x": 538,
+          "y": 921,
+          "w": 96,
+          "h": 85
+        },
+        {
+          "sheet": 1,
+          "x": 70,
+          "y": 921,
+          "w": 96,
+          "h": 87
+        }
+      ]
+    },
+    {
+      "id": "buff-s-athletic-club-00000096",
+      "name": "Buff's Athletic Club",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 682,
+          "y": 1091,
+          "w": 64,
+          "h": 42
+        },
+        {
+          "sheet": 1,
+          "x": 886,
+          "y": 1091,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 1,
+          "x": 750,
+          "y": 1091,
+          "w": 64,
+          "h": 42
+        },
+        {
+          "sheet": 1,
+          "x": 1226,
+          "y": 1091,
+          "w": 64,
+          "h": 37
+        }
+      ]
+    },
+    {
+      "id": "buy-and-buy-retail-0000009c",
+      "name": "Buy and Buy Retail",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1342,
+          "y": 1014,
+          "w": 64,
+          "h": 54
+        },
+        {
+          "sheet": 1,
+          "x": 1206,
+          "y": 1014,
+          "w": 64,
+          "h": 57
+        },
+        {
+          "sheet": 1,
+          "x": 1070,
+          "y": 1014,
+          "w": 64,
+          "h": 58
+        },
+        {
+          "sheet": 1,
+          "x": 1274,
+          "y": 1014,
+          "w": 64,
+          "h": 57
+        }
+      ]
+    },
+    {
+      "id": "clothing-boutique-00000094",
+      "name": "Clothing Boutique",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 954,
+          "y": 1091,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 1,
+          "x": 1022,
+          "y": 1091,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 1,
+          "x": 410,
+          "y": 1091,
+          "w": 64,
+          "h": 43
+        },
+        {
+          "sheet": 1,
+          "x": 818,
+          "y": 1091,
+          "w": 64,
+          "h": 41
+        }
+      ]
+    },
+    {
+      "id": "compact-only-00000fbd",
+      "name": "Compact Only",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 758,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 794,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 830,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 866,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "corporate-ground-zero-plaza-00000fb6",
+      "name": "Corporate Ground Zero Plaza",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1394,
+          "y": 2,
+          "w": 128,
+          "h": 252
+        },
+        {
+          "sheet": 1,
+          "x": 1526,
+          "y": 2,
+          "w": 128,
+          "h": 252
+        },
+        {
+          "sheet": 1,
+          "x": 930,
+          "y": 2,
+          "w": 128,
+          "h": 260
+        },
+        {
+          "sheet": 1,
+          "x": 1062,
+          "y": 2,
+          "w": 128,
+          "h": 259
+        }
+      ]
+    },
+    {
+      "id": "depalma-savings-bank-0000009a",
+      "name": "DePalma Savings Bank",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1478,
+          "y": 1014,
+          "w": 64,
+          "h": 50
+        },
+        {
+          "sheet": 1,
+          "x": 1546,
+          "y": 1014,
+          "w": 64,
+          "h": 50
+        },
+        {
+          "sheet": 1,
+          "x": 1818,
+          "y": 1014,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 1,
+          "x": 1886,
+          "y": 1014,
+          "w": 64,
+          "h": 47
+        }
+      ]
+    },
+    {
+      "id": "drumm-building-0000009d",
+      "name": "Drumm Building",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1738,
+          "y": 789,
+          "w": 64,
+          "h": 93
+        },
+        {
+          "sheet": 1,
+          "x": 1570,
+          "y": 789,
+          "w": 64,
+          "h": 95
+        },
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 921,
+          "w": 64,
+          "h": 89
+        },
+        {
+          "sheet": 1,
+          "x": 170,
+          "y": 921,
+          "w": 64,
+          "h": 87
+        }
+      ]
+    },
+    {
+      "id": "eugene-marazzani-memorial-plaza-00000099",
+      "name": "Eugene Marazzani Memorial Plaza",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 802,
+          "y": 609,
+          "w": 64,
+          "h": 146
+        },
+        {
+          "sheet": 1,
+          "x": 870,
+          "y": 609,
+          "w": 64,
+          "h": 146
+        },
+        {
+          "sheet": 1,
+          "x": 938,
+          "y": 609,
+          "w": 64,
+          "h": 146
+        },
+        {
+          "sheet": 1,
+          "x": 1006,
+          "y": 609,
+          "w": 64,
+          "h": 146
+        }
+      ]
+    },
+    {
+      "id": "fashion-plus-00000fa3",
+      "name": "Fashion Plus",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1546,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 1,
+          "x": 1582,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 1,
+          "x": 1402,
+          "y": 1091,
+          "w": 32,
+          "h": 29
+        },
+        {
+          "sheet": 1,
+          "x": 1618,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        }
+      ]
+    },
+    {
+      "id": "federal-building-000000b2",
+      "name": "Federal Building",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 502,
+          "y": 609,
+          "w": 96,
+          "h": 161
+        },
+        {
+          "sheet": 1,
+          "x": 602,
+          "y": 609,
+          "w": 96,
+          "h": 161
+        },
+        {
+          "sheet": 1,
+          "x": 702,
+          "y": 609,
+          "w": 96,
+          "h": 161
+        },
+        {
+          "sheet": 1,
+          "x": 402,
+          "y": 609,
+          "w": 96,
+          "h": 168
+        }
+      ]
+    },
+    {
+      "id": "foofoo-shops-00000fa8",
+      "name": "FooFoo Shops",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 206,
+          "y": 1091,
+          "w": 64,
+          "h": 45
+        },
+        {
+          "sheet": 1,
+          "x": 70,
+          "y": 1091,
+          "w": 64,
+          "h": 46
+        },
+        {
+          "sheet": 1,
+          "x": 1954,
+          "y": 1014,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 1,
+          "x": 1090,
+          "y": 1091,
+          "w": 64,
+          "h": 38
+        }
+      ]
+    },
+    {
+      "id": "gold-tower-000000bb",
+      "name": "Gold Tower",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1194,
+          "y": 2,
+          "w": 96,
+          "h": 255
+        },
+        {
+          "sheet": 1,
+          "x": 1658,
+          "y": 2,
+          "w": 96,
+          "h": 251
+        },
+        {
+          "sheet": 1,
+          "x": 1758,
+          "y": 2,
+          "w": 96,
+          "h": 248
+        },
+        {
+          "sheet": 1,
+          "x": 1294,
+          "y": 2,
+          "w": 96,
+          "h": 253
+        }
+      ]
+    },
+    {
+      "id": "gray-matter-place-00000fa9",
+      "name": "Gray Matter Place",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 234,
+          "y": 360,
+          "w": 128,
+          "h": 233
+        },
+        {
+          "sheet": 1,
+          "x": 1858,
+          "y": 2,
+          "w": 128,
+          "h": 245
+        },
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 360,
+          "w": 128,
+          "h": 245
+        },
+        {
+          "sheet": 1,
+          "x": 366,
+          "y": 360,
+          "w": 128,
+          "h": 233
+        }
+      ]
+    },
+    {
+      "id": "hurt-plaza-00000098",
+      "name": "Hurt Plaza",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1846,
+          "y": 609,
+          "w": 64,
+          "h": 128
+        },
+        {
+          "sheet": 1,
+          "x": 1914,
+          "y": 609,
+          "w": 64,
+          "h": 128
+        },
+        {
+          "sheet": 1,
+          "x": 1982,
+          "y": 609,
+          "w": 64,
+          "h": 128
+        },
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 789,
+          "w": 64,
+          "h": 128
+        }
+      ]
+    },
+    {
+      "id": "insurance-office-0000007d",
+      "name": "Insurance Office",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1654,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 1,
+          "x": 1690,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 1,
+          "x": 182,
+          "y": 1142,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 1,
+          "x": 74,
+          "y": 1142,
+          "w": 32,
+          "h": 26
+        }
+      ]
+    },
+    {
+      "id": "insurance-plaza-00000faa",
+      "name": "Insurance Plaza",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 609,
+          "w": 96,
+          "h": 176
+        },
+        {
+          "sheet": 1,
+          "x": 102,
+          "y": 609,
+          "w": 96,
+          "h": 175
+        },
+        {
+          "sheet": 1,
+          "x": 202,
+          "y": 609,
+          "w": 96,
+          "h": 170
+        },
+        {
+          "sheet": 1,
+          "x": 302,
+          "y": 609,
+          "w": 96,
+          "h": 169
+        }
+      ]
+    },
+    {
+      "id": "justin-brown-plaza-00000fa5",
+      "name": "Justin Brown Plaza",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1298,
+          "y": 360,
+          "w": 96,
+          "h": 197
+        },
+        {
+          "sheet": 1,
+          "x": 1398,
+          "y": 360,
+          "w": 96,
+          "h": 196
+        },
+        {
+          "sheet": 1,
+          "x": 898,
+          "y": 360,
+          "w": 96,
+          "h": 214
+        },
+        {
+          "sheet": 1,
+          "x": 998,
+          "y": 360,
+          "w": 96,
+          "h": 208
+        }
+      ]
+    },
+    {
+      "id": "kate-foundation-00000fa6",
+      "name": "Kate Foundation",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1798,
+          "y": 360,
+          "w": 96,
+          "h": 178
+        },
+        {
+          "sheet": 1,
+          "x": 1898,
+          "y": 360,
+          "w": 96,
+          "h": 178
+        },
+        {
+          "sheet": 1,
+          "x": 1598,
+          "y": 360,
+          "w": 96,
+          "h": 185
+        },
+        {
+          "sheet": 1,
+          "x": 1698,
+          "y": 360,
+          "w": 96,
+          "h": 185
+        }
+      ]
+    },
+    {
+      "id": "kong-tower-000000b7",
+      "name": "Kong Tower",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 530,
+          "y": 2,
+          "w": 96,
+          "h": 309
+        },
+        {
+          "sheet": 1,
+          "x": 630,
+          "y": 2,
+          "w": 96,
+          "h": 309
+        },
+        {
+          "sheet": 1,
+          "x": 730,
+          "y": 2,
+          "w": 96,
+          "h": 309
+        },
+        {
+          "sheet": 1,
+          "x": 830,
+          "y": 2,
+          "w": 96,
+          "h": 309
+        }
+      ]
+    },
+    {
+      "id": "lansburgh-building-000000b5",
+      "name": "Lansburgh Building",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 470,
+          "y": 789,
+          "w": 96,
+          "h": 105
+        },
+        {
+          "sheet": 1,
+          "x": 670,
+          "y": 789,
+          "w": 96,
+          "h": 103
+        },
+        {
+          "sheet": 1,
+          "x": 970,
+          "y": 789,
+          "w": 96,
+          "h": 101
+        },
+        {
+          "sheet": 1,
+          "x": 770,
+          "y": 789,
+          "w": 96,
+          "h": 103
+        }
+      ]
+    },
+    {
+      "id": "marky-market-00000fa0",
+      "name": "Marky Market",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1682,
+          "y": 1014,
+          "w": 64,
+          "h": 48
+        },
+        {
+          "sheet": 1,
+          "x": 1614,
+          "y": 1014,
+          "w": 64,
+          "h": 50
+        },
+        {
+          "sheet": 1,
+          "x": 274,
+          "y": 1091,
+          "w": 64,
+          "h": 45
+        },
+        {
+          "sheet": 1,
+          "x": 478,
+          "y": 1091,
+          "w": 64,
+          "h": 43
+        }
+      ]
+    },
+    {
+      "id": "maxis-theater-00000fb2",
+      "name": "Maxis Theater",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 834,
+          "y": 1014,
+          "w": 64,
+          "h": 66
+        },
+        {
+          "sheet": 1,
+          "x": 1002,
+          "y": 1014,
+          "w": 64,
+          "h": 61
+        },
+        {
+          "sheet": 1,
+          "x": 1138,
+          "y": 1014,
+          "w": 64,
+          "h": 58
+        },
+        {
+          "sheet": 1,
+          "x": 766,
+          "y": 1014,
+          "w": 64,
+          "h": 69
+        }
+      ]
+    },
+    {
+      "id": "medical-research-center-00001f56",
+      "name": "Medical Research Center",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1070,
+          "y": 921,
+          "w": 96,
+          "h": 77
+        },
+        {
+          "sheet": 1,
+          "x": 638,
+          "y": 921,
+          "w": 96,
+          "h": 84
+        },
+        {
+          "sheet": 1,
+          "x": 738,
+          "y": 921,
+          "w": 96,
+          "h": 83
+        },
+        {
+          "sheet": 1,
+          "x": 838,
+          "y": 921,
+          "w": 96,
+          "h": 80
+        }
+      ]
+    },
+    {
+      "id": "microshops-00000fae",
+      "name": "MicroShops",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1870,
+          "y": 1091,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 1,
+          "x": 1906,
+          "y": 1091,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 1,
+          "x": 1438,
+          "y": 1091,
+          "w": 32,
+          "h": 29
+        },
+        {
+          "sheet": 1,
+          "x": 1474,
+          "y": 1091,
+          "w": 32,
+          "h": 29
+        }
+      ]
+    },
+    {
+      "id": "park-pay-00000fb9",
+      "name": "Park & Pay",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1942,
+          "y": 1091,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 1,
+          "x": 470,
+          "y": 1142,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 1,
+          "x": 578,
+          "y": 1142,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 1,
+          "x": 434,
+          "y": 1142,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "paved-00000fba",
+      "name": "Paved",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 902,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 938,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 974,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1010,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "pile-o-dirt-bulldozer-00000fb8",
+      "name": "Pile o' dirt & Bulldozer",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1046,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1082,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1118,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1154,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "precious-shops-00000097",
+      "name": "Precious Shops",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1750,
+          "y": 1014,
+          "w": 64,
+          "h": 48
+        },
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 1091,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 1,
+          "x": 138,
+          "y": 1091,
+          "w": 64,
+          "h": 46
+        },
+        {
+          "sheet": 1,
+          "x": 342,
+          "y": 1091,
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    {
+      "id": "prehistoric-llama-shrine-00000fc2",
+      "name": "Prehistoric Llama Shrine",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1190,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1226,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1262,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1298,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "quigley-insurance-00000fbf",
+      "name": "Quigley Insurance",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 398,
+          "y": 2,
+          "w": 128,
+          "h": 333
+        },
+        {
+          "sheet": 1,
+          "x": 266,
+          "y": 2,
+          "w": 128,
+          "h": 343
+        },
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 2,
+          "w": 128,
+          "h": 354
+        },
+        {
+          "sheet": 1,
+          "x": 134,
+          "y": 2,
+          "w": 128,
+          "h": 344
+        }
+      ]
+    },
+    {
+      "id": "retail-exchange-000000b9",
+      "name": "Retail Exchange",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1806,
+          "y": 789,
+          "w": 96,
+          "h": 91
+        },
+        {
+          "sheet": 1,
+          "x": 1170,
+          "y": 789,
+          "w": 96,
+          "h": 99
+        },
+        {
+          "sheet": 1,
+          "x": 870,
+          "y": 789,
+          "w": 96,
+          "h": 103
+        },
+        {
+          "sheet": 1,
+          "x": 1470,
+          "y": 789,
+          "w": 96,
+          "h": 96
+        }
+      ]
+    },
+    {
+      "id": "see-and-want-emporium-00001f4a",
+      "name": "See and Want Emporium",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1634,
+          "y": 921,
+          "w": 128,
+          "h": 74
+        },
+        {
+          "sheet": 1,
+          "x": 134,
+          "y": 1014,
+          "w": 128,
+          "h": 72
+        },
+        {
+          "sheet": 1,
+          "x": 938,
+          "y": 921,
+          "w": 128,
+          "h": 77
+        },
+        {
+          "sheet": 1,
+          "x": 1766,
+          "y": 921,
+          "w": 128,
+          "h": 74
+        }
+      ]
+    },
+    {
+      "id": "shicoff-multiplex-00000fb7",
+      "name": "Shicoff Multiplex",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 466,
+          "y": 1014,
+          "w": 96,
+          "h": 70
+        },
+        {
+          "sheet": 1,
+          "x": 366,
+          "y": 1014,
+          "w": 96,
+          "h": 71
+        },
+        {
+          "sheet": 1,
+          "x": 902,
+          "y": 1014,
+          "w": 96,
+          "h": 61
+        },
+        {
+          "sheet": 1,
+          "x": 566,
+          "y": 1014,
+          "w": 96,
+          "h": 70
+        }
+      ]
+    },
+    {
+      "id": "silver-tower-000000b8",
+      "name": "Silver Tower",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 134,
+          "y": 360,
+          "w": 96,
+          "h": 238
+        },
+        {
+          "sheet": 1,
+          "x": 498,
+          "y": 360,
+          "w": 96,
+          "h": 229
+        },
+        {
+          "sheet": 1,
+          "x": 698,
+          "y": 360,
+          "w": 96,
+          "h": 223
+        },
+        {
+          "sheet": 1,
+          "x": 598,
+          "y": 360,
+          "w": 96,
+          "h": 229
+        }
+      ]
+    },
+    {
+      "id": "smiley-sons-and-daughters-foundation-00000fab",
+      "name": "Smiley Sons and Daughters Foundation",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 266,
+          "y": 1014,
+          "w": 96,
+          "h": 72
+        },
+        {
+          "sheet": 1,
+          "x": 666,
+          "y": 1014,
+          "w": 96,
+          "h": 70
+        },
+        {
+          "sheet": 1,
+          "x": 1402,
+          "y": 921,
+          "w": 96,
+          "h": 76
+        },
+        {
+          "sheet": 1,
+          "x": 1170,
+          "y": 921,
+          "w": 96,
+          "h": 77
+        }
+      ]
+    },
+    {
+      "id": "spicoli-center-00000fc7",
+      "name": "Spicoli Center",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1074,
+          "y": 609,
+          "w": 96,
+          "h": 144
+        },
+        {
+          "sheet": 1,
+          "x": 1274,
+          "y": 609,
+          "w": 96,
+          "h": 139
+        },
+        {
+          "sheet": 1,
+          "x": 1374,
+          "y": 609,
+          "w": 96,
+          "h": 137
+        },
+        {
+          "sheet": 1,
+          "x": 1174,
+          "y": 609,
+          "w": 96,
+          "h": 141
+        }
+      ]
+    },
+    {
+      "id": "stock-exchange-00001f51",
+      "name": "Stock Exchange",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 1014,
+          "w": 128,
+          "h": 73
+        },
+        {
+          "sheet": 1,
+          "x": 1898,
+          "y": 921,
+          "w": 128,
+          "h": 74
+        },
+        {
+          "sheet": 1,
+          "x": 1502,
+          "y": 921,
+          "w": 128,
+          "h": 75
+        },
+        {
+          "sheet": 1,
+          "x": 1270,
+          "y": 921,
+          "w": 128,
+          "h": 76
+        }
+      ]
+    },
+    {
+      "id": "tarmac-o-plenty-00000fbb",
+      "name": "Tarmac o' Plenty",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1334,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1370,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1406,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1442,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "ted-s-tires-00000fb0",
+      "name": "Ted's Tires",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 546,
+          "y": 1091,
+          "w": 64,
+          "h": 43
+        },
+        {
+          "sheet": 1,
+          "x": 1410,
+          "y": 1014,
+          "w": 64,
+          "h": 52
+        },
+        {
+          "sheet": 1,
+          "x": 614,
+          "y": 1091,
+          "w": 64,
+          "h": 43
+        },
+        {
+          "sheet": 1,
+          "x": 1158,
+          "y": 1091,
+          "w": 64,
+          "h": 38
+        }
+      ]
+    },
+    {
+      "id": "they-paved-paradise-00000fc1",
+      "name": "They Paved Paradise",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1478,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1514,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1550,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 1586,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "this-one-has-lights-00000fc5",
+      "name": "This One Has Lights",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 110,
+          "y": 1142,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 1,
+          "x": 290,
+          "y": 1142,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 1,
+          "x": 146,
+          "y": 1142,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 1,
+          "x": 326,
+          "y": 1142,
+          "w": 32,
+          "h": 22
+        }
+      ]
+    },
+    {
+      "id": "three-tree-plaza-00000fcc",
+      "name": "Three Tree Plaza",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1622,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 1,
+          "x": 506,
+          "y": 1142,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 1,
+          "x": 542,
+          "y": 1142,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 1,
+          "x": 1658,
+          "y": 1142,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "toy-store-00000083",
+      "name": "Toy Store",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1726,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 1,
+          "x": 1978,
+          "y": 1091,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 1,
+          "x": 2014,
+          "y": 1091,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 1,
+          "x": 1762,
+          "y": 1091,
+          "w": 32,
+          "h": 28
+        }
+      ]
+    },
+    {
+      "id": "triangle-terrace-00000fb4",
+      "name": "Triangle Terrace",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 170,
+          "y": 789,
+          "w": 96,
+          "h": 120
+        },
+        {
+          "sheet": 1,
+          "x": 1474,
+          "y": 609,
+          "w": 96,
+          "h": 136
+        },
+        {
+          "sheet": 1,
+          "x": 70,
+          "y": 789,
+          "w": 96,
+          "h": 122
+        },
+        {
+          "sheet": 1,
+          "x": 570,
+          "y": 789,
+          "w": 96,
+          "h": 105
+        }
+      ]
+    },
+    {
+      "id": "u-store-it-00000082",
+      "name": "U-Store-It",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1294,
+          "y": 1091,
+          "w": 32,
+          "h": 30
+        },
+        {
+          "sheet": 1,
+          "x": 1330,
+          "y": 1091,
+          "w": 32,
+          "h": 30
+        },
+        {
+          "sheet": 1,
+          "x": 2,
+          "y": 1142,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 1,
+          "x": 38,
+          "y": 1142,
+          "w": 32,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "wilkinson-tower-00000fa7",
+      "name": "Wilkinson Tower",
+      "zone": "commercial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 1,
+          "x": 1198,
+          "y": 360,
+          "w": 96,
+          "h": 203
+        },
+        {
+          "sheet": 1,
+          "x": 1498,
+          "y": 360,
+          "w": 96,
+          "h": 192
+        },
+        {
+          "sheet": 1,
+          "x": 1098,
+          "y": 360,
+          "w": 96,
+          "h": 206
+        },
+        {
+          "sheet": 1,
+          "x": 798,
+          "y": 360,
+          "w": 96,
+          "h": 217
+        }
+      ]
+    },
+    {
+      "id": "abandoned-commercial-building-000000ab",
+      "name": "Abandoned Commercial Building",
+      "zone": "commercial",
+      "condition": "dilapidated",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 2,
+          "y": 460,
+          "w": 64,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 70,
+          "y": 460,
+          "w": 64,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 138,
+          "y": 460,
+          "w": 64,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 470,
+          "y": 460,
+          "w": 64,
+          "h": 65
+        }
+      ]
+    },
+    {
+      "id": "abandoned-commercial-building-000000ac",
+      "name": "Abandoned Commercial Building",
+      "zone": "commercial",
+      "condition": "dilapidated",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 974,
+          "y": 531,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 2,
+          "x": 1422,
+          "y": 531,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 2,
+          "x": 1078,
+          "y": 531,
+          "w": 64,
+          "h": 45
+        },
+        {
+          "sheet": 2,
+          "x": 1182,
+          "y": 531,
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    {
+      "id": "abandoned-commercial-building-000000c4",
+      "name": "Abandoned Commercial Building",
+      "zone": "commercial",
+      "condition": "dilapidated",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1086,
+          "y": 205,
+          "w": 96,
+          "h": 86
+        },
+        {
+          "sheet": 2,
+          "x": 1454,
+          "y": 2,
+          "w": 96,
+          "h": 102
+        },
+        {
+          "sheet": 2,
+          "x": 1186,
+          "y": 205,
+          "w": 96,
+          "h": 86
+        },
+        {
+          "sheet": 2,
+          "x": 2,
+          "y": 385,
+          "w": 96,
+          "h": 71
+        }
+      ]
+    },
+    {
+      "id": "abandoned-commercial-building-0000233b",
+      "name": "Abandoned Commercial Building",
+      "zone": "commercial",
+      "condition": "dilapidated",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1042,
+          "y": 531,
+          "w": 32,
+          "h": 46
+        },
+        {
+          "sheet": 2,
+          "x": 1146,
+          "y": 531,
+          "w": 32,
+          "h": 45
+        },
+        {
+          "sheet": 2,
+          "x": 1558,
+          "y": 531,
+          "w": 32,
+          "h": 40
+        },
+        {
+          "sheet": 2,
+          "x": 1386,
+          "y": 531,
+          "w": 32,
+          "h": 41
+        }
+      ]
+    },
+    {
+      "id": "abandoned-commercial-building-0000233c",
+      "name": "Abandoned Commercial Building",
+      "zone": "commercial",
+      "condition": "dilapidated",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 538,
+          "y": 460,
+          "w": 128,
+          "h": 64
+        },
+        {
+          "sheet": 2,
+          "x": 1562,
+          "y": 300,
+          "w": 128,
+          "h": 72
+        },
+        {
+          "sheet": 2,
+          "x": 202,
+          "y": 385,
+          "w": 128,
+          "h": 70
+        },
+        {
+          "sheet": 2,
+          "x": 598,
+          "y": 385,
+          "w": 128,
+          "h": 69
+        }
+      ]
+    },
+    {
+      "id": "abandoned-industrial-building-0000008b",
+      "name": "Abandoned Industrial Building",
+      "zone": "industrial",
+      "condition": "dilapidated",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1022,
+          "y": 591,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 2,
+          "x": 1826,
+          "y": 591,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 2,
+          "x": 1530,
+          "y": 591,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 2,
+          "x": 1058,
+          "y": 591,
+          "w": 32,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "abandoned-industrial-building-000000ad",
+      "name": "Abandoned Industrial Building",
+      "zone": "industrial",
+      "condition": "dilapidated",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 166,
+          "y": 300,
+          "w": 64,
+          "h": 81
+        },
+        {
+          "sheet": 2,
+          "x": 234,
+          "y": 300,
+          "w": 64,
+          "h": 81
+        },
+        {
+          "sheet": 2,
+          "x": 1486,
+          "y": 205,
+          "w": 64,
+          "h": 83
+        },
+        {
+          "sheet": 2,
+          "x": 1554,
+          "y": 205,
+          "w": 64,
+          "h": 83
+        }
+      ]
+    },
+    {
+      "id": "abandoned-industrial-building-00002339",
+      "name": "Abandoned Industrial Building",
+      "zone": "industrial",
+      "condition": "dilapidated",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 862,
+          "y": 385,
+          "w": 96,
+          "h": 69
+        },
+        {
+          "sheet": 2,
+          "x": 934,
+          "y": 460,
+          "w": 96,
+          "h": 62
+        },
+        {
+          "sheet": 2,
+          "x": 1434,
+          "y": 385,
+          "w": 96,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 102,
+          "y": 385,
+          "w": 96,
+          "h": 71
+        }
+      ]
+    },
+    {
+      "id": "abandoned-industrial-building-0000233a",
+      "name": "Abandoned Industrial Building",
+      "zone": "industrial",
+      "condition": "dilapidated",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 166,
+          "y": 205,
+          "w": 128,
+          "h": 91
+        },
+        {
+          "sheet": 2,
+          "x": 298,
+          "y": 205,
+          "w": 128,
+          "h": 90
+        },
+        {
+          "sheet": 2,
+          "x": 1818,
+          "y": 2,
+          "w": 128,
+          "h": 93
+        },
+        {
+          "sheet": 2,
+          "x": 1686,
+          "y": 2,
+          "w": 128,
+          "h": 95
+        }
+      ]
+    },
+    {
+      "id": "abandoned-industrial-building-0000233e",
+      "name": "Abandoned Industrial Building",
+      "zone": "industrial",
+      "condition": "dilapidated",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 502,
+          "y": 300,
+          "w": 96,
+          "h": 77
+        },
+        {
+          "sheet": 2,
+          "x": 302,
+          "y": 300,
+          "w": 96,
+          "h": 80
+        },
+        {
+          "sheet": 2,
+          "x": 1198,
+          "y": 300,
+          "w": 96,
+          "h": 74
+        },
+        {
+          "sheet": 2,
+          "x": 602,
+          "y": 300,
+          "w": 96,
+          "h": 77
+        }
+      ]
+    },
+    {
+      "id": "abandoned-residential-building-0000008a",
+      "name": "Abandoned Residential Building",
+      "zone": "residential",
+      "condition": "dilapidated",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1638,
+          "y": 591,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 2,
+          "x": 1674,
+          "y": 591,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 2,
+          "x": 82,
+          "y": 631,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 2,
+          "x": 118,
+          "y": 631,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "abandoned-residential-building-000000aa",
+      "name": "Abandoned Residential Building",
+      "zone": "residential",
+      "condition": "dilapidated",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 2,
+          "y": 531,
+          "w": 64,
+          "h": 56
+        },
+        {
+          "sheet": 2,
+          "x": 70,
+          "y": 531,
+          "w": 64,
+          "h": 56
+        },
+        {
+          "sheet": 2,
+          "x": 238,
+          "y": 531,
+          "w": 64,
+          "h": 55
+        },
+        {
+          "sheet": 2,
+          "x": 306,
+          "y": 531,
+          "w": 64,
+          "h": 55
+        }
+      ]
+    },
+    {
+      "id": "abandoned-residential-building-000000c5",
+      "name": "Abandoned Residential Building",
+      "zone": "residential",
+      "condition": "dilapidated",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 966,
+          "y": 300,
+          "w": 96,
+          "h": 75
+        },
+        {
+          "sheet": 2,
+          "x": 1286,
+          "y": 205,
+          "w": 96,
+          "h": 86
+        },
+        {
+          "sheet": 2,
+          "x": 402,
+          "y": 300,
+          "w": 96,
+          "h": 79
+        },
+        {
+          "sheet": 2,
+          "x": 1386,
+          "y": 205,
+          "w": 96,
+          "h": 86
+        }
+      ]
+    },
+    {
+      "id": "abandoned-residential-building-00002329",
+      "name": "Abandoned Residential Building",
+      "zone": "residential",
+      "condition": "dilapidated",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1322,
+          "y": 2,
+          "w": 128,
+          "h": 104
+        },
+        {
+          "sheet": 2,
+          "x": 1554,
+          "y": 2,
+          "w": 128,
+          "h": 98
+        },
+        {
+          "sheet": 2,
+          "x": 1058,
+          "y": 2,
+          "w": 128,
+          "h": 112
+        },
+        {
+          "sheet": 2,
+          "x": 1190,
+          "y": 2,
+          "w": 128,
+          "h": 112
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-00000089",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1746,
+          "y": 591,
+          "w": 36,
+          "h": 22
+        },
+        {
+          "sheet": 2,
+          "x": 1786,
+          "y": 591,
+          "w": 36,
+          "h": 22
+        },
+        {
+          "sheet": 2,
+          "x": 1898,
+          "y": 591,
+          "w": 36,
+          "h": 21
+        },
+        {
+          "sheet": 2,
+          "x": 1938,
+          "y": 591,
+          "w": 36,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-000000a8",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 206,
+          "y": 591,
+          "w": 64,
+          "h": 35
+        },
+        {
+          "sheet": 2,
+          "x": 2,
+          "y": 591,
+          "w": 64,
+          "h": 36
+        },
+        {
+          "sheet": 2,
+          "x": 274,
+          "y": 591,
+          "w": 64,
+          "h": 35
+        },
+        {
+          "sheet": 2,
+          "x": 1594,
+          "y": 531,
+          "w": 64,
+          "h": 39
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-000000c3",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1534,
+          "y": 385,
+          "w": 96,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 1238,
+          "y": 460,
+          "w": 96,
+          "h": 58
+        },
+        {
+          "sheet": 2,
+          "x": 474,
+          "y": 531,
+          "w": 96,
+          "h": 53
+        },
+        {
+          "sheet": 2,
+          "x": 1338,
+          "y": 460,
+          "w": 96,
+          "h": 58
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-00002334",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1634,
+          "y": 385,
+          "w": 96,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 1734,
+          "y": 385,
+          "w": 96,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 1834,
+          "y": 385,
+          "w": 96,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 1934,
+          "y": 385,
+          "w": 96,
+          "h": 67
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-00002336",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 530,
+          "y": 2,
+          "w": 128,
+          "h": 141
+        },
+        {
+          "sheet": 2,
+          "x": 662,
+          "y": 2,
+          "w": 128,
+          "h": 141
+        },
+        {
+          "sheet": 2,
+          "x": 794,
+          "y": 2,
+          "w": 128,
+          "h": 115
+        },
+        {
+          "sheet": 2,
+          "x": 926,
+          "y": 2,
+          "w": 128,
+          "h": 114
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-00002338",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 134,
+          "y": 2,
+          "w": 128,
+          "h": 198
+        },
+        {
+          "sheet": 2,
+          "x": 266,
+          "y": 2,
+          "w": 128,
+          "h": 174
+        },
+        {
+          "sheet": 2,
+          "x": 398,
+          "y": 2,
+          "w": 128,
+          "h": 174
+        },
+        {
+          "sheet": 2,
+          "x": 2,
+          "y": 2,
+          "w": 128,
+          "h": 199
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-00002340",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 154,
+          "y": 631,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 2,
+          "x": 226,
+          "y": 631,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 2,
+          "x": 338,
+          "y": 631,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 2,
+          "x": 190,
+          "y": 631,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "commercial-construction-00002341",
+      "name": "Commercial Construction",
+      "zone": "commercial",
+      "condition": "construction",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1422,
+          "y": 591,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 2,
+          "x": 1458,
+          "y": 591,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 2,
+          "x": 1494,
+          "y": 591,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 2,
+          "x": 1602,
+          "y": 591,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "industrial-construction-00002332",
+      "name": "Industrial Construction",
+      "zone": "industrial",
+      "condition": "construction",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 374,
+          "y": 631,
+          "w": 36,
+          "h": 18
+        },
+        {
+          "sheet": 2,
+          "x": 450,
+          "y": 631,
+          "w": 36,
+          "h": 17
+        },
+        {
+          "sheet": 2,
+          "x": 490,
+          "y": 631,
+          "w": 36,
+          "h": 17
+        },
+        {
+          "sheet": 2,
+          "x": 530,
+          "y": 631,
+          "w": 36,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "industrial-construction-00002333",
+      "name": "Industrial Construction",
+      "zone": "industrial",
+      "condition": "construction",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1250,
+          "y": 531,
+          "w": 64,
+          "h": 42
+        },
+        {
+          "sheet": 2,
+          "x": 1490,
+          "y": 531,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 2,
+          "x": 70,
+          "y": 591,
+          "w": 64,
+          "h": 36
+        },
+        {
+          "sheet": 2,
+          "x": 1318,
+          "y": 531,
+          "w": 64,
+          "h": 42
+        }
+      ]
+    },
+    {
+      "id": "industrial-construction-00002335",
+      "name": "Industrial Construction",
+      "zone": "industrial",
+      "condition": "construction",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 674,
+          "y": 531,
+          "w": 96,
+          "h": 50
+        },
+        {
+          "sheet": 2,
+          "x": 874,
+          "y": 531,
+          "w": 96,
+          "h": 49
+        },
+        {
+          "sheet": 2,
+          "x": 1838,
+          "y": 460,
+          "w": 96,
+          "h": 56
+        },
+        {
+          "sheet": 2,
+          "x": 1938,
+          "y": 460,
+          "w": 96,
+          "h": 56
+        }
+      ]
+    },
+    {
+      "id": "industrial-construction-00002337",
+      "name": "Industrial Construction",
+      "zone": "industrial",
+      "condition": "construction",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 466,
+          "y": 385,
+          "w": 128,
+          "h": 70
+        },
+        {
+          "sheet": 2,
+          "x": 802,
+          "y": 460,
+          "w": 128,
+          "h": 64
+        },
+        {
+          "sheet": 2,
+          "x": 206,
+          "y": 460,
+          "w": 128,
+          "h": 66
+        },
+        {
+          "sheet": 2,
+          "x": 1826,
+          "y": 300,
+          "w": 128,
+          "h": 71
+        }
+      ]
+    },
+    {
+      "id": "industrial-construction-00002342",
+      "name": "Industrial Construction",
+      "zone": "industrial",
+      "condition": "construction",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 894,
+          "y": 631,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 2,
+          "x": 930,
+          "y": 631,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 2,
+          "x": 966,
+          "y": 631,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 2,
+          "x": 1002,
+          "y": 631,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "residential-construction-00000088",
+      "name": "Residential Construction",
+      "zone": "residential",
+      "condition": "construction",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1978,
+          "y": 591,
+          "w": 36,
+          "h": 21
+        },
+        {
+          "sheet": 2,
+          "x": 262,
+          "y": 631,
+          "w": 36,
+          "h": 19
+        },
+        {
+          "sheet": 2,
+          "x": 2,
+          "y": 631,
+          "w": 36,
+          "h": 21
+        },
+        {
+          "sheet": 2,
+          "x": 42,
+          "y": 631,
+          "w": 36,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "residential-construction-000000a6",
+      "name": "Residential Construction",
+      "zone": "residential",
+      "condition": "construction",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1662,
+          "y": 531,
+          "w": 64,
+          "h": 39
+        },
+        {
+          "sheet": 2,
+          "x": 342,
+          "y": 591,
+          "w": 64,
+          "h": 35
+        },
+        {
+          "sheet": 2,
+          "x": 410,
+          "y": 591,
+          "w": 64,
+          "h": 35
+        },
+        {
+          "sheet": 2,
+          "x": 478,
+          "y": 591,
+          "w": 64,
+          "h": 35
+        }
+      ]
+    },
+    {
+      "id": "residential-construction-000000a9",
+      "name": "Residential Construction",
+      "zone": "residential",
+      "condition": "construction",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1730,
+          "y": 531,
+          "w": 64,
+          "h": 39
+        },
+        {
+          "sheet": 2,
+          "x": 546,
+          "y": 591,
+          "w": 64,
+          "h": 35
+        },
+        {
+          "sheet": 2,
+          "x": 954,
+          "y": 591,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 2,
+          "x": 614,
+          "y": 591,
+          "w": 64,
+          "h": 35
+        }
+      ]
+    },
+    {
+      "id": "residential-construction-000000c2",
+      "name": "Residential Construction",
+      "zone": "residential",
+      "condition": "construction",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1226,
+          "y": 385,
+          "w": 100,
+          "h": 67
+        },
+        {
+          "sheet": 2,
+          "x": 1034,
+          "y": 460,
+          "w": 100,
+          "h": 59
+        },
+        {
+          "sheet": 2,
+          "x": 1538,
+          "y": 460,
+          "w": 96,
+          "h": 57
+        },
+        {
+          "sheet": 2,
+          "x": 1330,
+          "y": 385,
+          "w": 100,
+          "h": 67
+        }
+      ]
+    },
+    {
+      "id": "residential-construction-00002328",
+      "name": "Residential Construction",
+      "zone": "residential",
+      "condition": "construction",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 2,
+          "x": 1298,
+          "y": 300,
+          "w": 128,
+          "h": 73
+        },
+        {
+          "sheet": 2,
+          "x": 834,
+          "y": 300,
+          "w": 128,
+          "h": 75
+        },
+        {
+          "sheet": 2,
+          "x": 730,
+          "y": 385,
+          "w": 128,
+          "h": 69
+        },
+        {
+          "sheet": 2,
+          "x": 1430,
+          "y": 300,
+          "w": 128,
+          "h": 73
+        }
+      ]
+    },
+    {
+      "id": "acid-and-base-manufacturing-00001f4e",
+      "name": "Acid and Base Manufacturing",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 950,
+          "y": 436,
+          "w": 64,
+          "h": 54
+        },
+        {
+          "sheet": 3,
+          "x": 1218,
+          "y": 436,
+          "w": 64,
+          "h": 49
+        },
+        {
+          "sheet": 3,
+          "x": 882,
+          "y": 436,
+          "w": 64,
+          "h": 55
+        },
+        {
+          "sheet": 3,
+          "x": 1830,
+          "y": 360,
+          "w": 64,
+          "h": 61
+        }
+      ]
+    },
+    {
+      "id": "agate-marble-inc-000013ab",
+      "name": "Agate Marble Inc.",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 102,
+          "y": 274,
+          "w": 96,
+          "h": 81
+        },
+        {
+          "sheet": 3,
+          "x": 1502,
+          "y": 274,
+          "w": 96,
+          "h": 74
+        },
+        {
+          "sheet": 3,
+          "x": 434,
+          "y": 274,
+          "w": 96,
+          "h": 79
+        },
+        {
+          "sheet": 3,
+          "x": 1102,
+          "y": 163,
+          "w": 96,
+          "h": 96
+        }
+      ]
+    },
+    {
+      "id": "armpit-central-000013a0",
+      "name": "Armpit Central",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 134,
+          "y": 2,
+          "w": 128,
+          "h": 145
+        },
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 2,
+          "w": 128,
+          "h": 157
+        },
+        {
+          "sheet": 3,
+          "x": 266,
+          "y": 2,
+          "w": 128,
+          "h": 138
+        },
+        {
+          "sheet": 3,
+          "x": 398,
+          "y": 2,
+          "w": 128,
+          "h": 134
+        }
+      ]
+    },
+    {
+      "id": "auto-parts-warehouse-00000086",
+      "name": "Auto Parts Warehouse",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1662,
+          "y": 500,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 3,
+          "x": 1734,
+          "y": 500,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 3,
+          "x": 1770,
+          "y": 500,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 3,
+          "x": 1806,
+          "y": 500,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "auto-plant-00001390",
+      "name": "Auto Plant",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 670,
+          "y": 163,
+          "w": 128,
+          "h": 98
+        },
+        {
+          "sheet": 3,
+          "x": 1830,
+          "y": 2,
+          "w": 128,
+          "h": 107
+        },
+        {
+          "sheet": 3,
+          "x": 970,
+          "y": 163,
+          "w": 128,
+          "h": 96
+        },
+        {
+          "sheet": 3,
+          "x": 538,
+          "y": 163,
+          "w": 128,
+          "h": 103
+        }
+      ]
+    },
+    {
+      "id": "barn-00001396",
+      "name": "Barn",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 238,
+          "y": 436,
+          "w": 96,
+          "h": 59
+        },
+        {
+          "sheet": 3,
+          "x": 1162,
+          "y": 360,
+          "w": 96,
+          "h": 65
+        },
+        {
+          "sheet": 3,
+          "x": 1018,
+          "y": 436,
+          "w": 96,
+          "h": 53
+        },
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 436,
+          "w": 96,
+          "h": 60
+        }
+      ]
+    },
+    {
+      "id": "barrel-o-fun-motor-oil-recycle-00001389",
+      "name": "Barrel O' Fun Motor Oil Recycle",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 110,
+          "y": 541,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 3,
+          "x": 1590,
+          "y": 500,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 3,
+          "x": 1554,
+          "y": 500,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 3,
+          "x": 146,
+          "y": 541,
+          "w": 32,
+          "h": 22
+        }
+      ]
+    },
+    {
+      "id": "building-supply-manufacturer-000000bc",
+      "name": "Building Supply Manufacturer",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 962,
+          "y": 360,
+          "w": 96,
+          "h": 67
+        },
+        {
+          "sheet": 3,
+          "x": 1702,
+          "y": 274,
+          "w": 96,
+          "h": 73
+        },
+        {
+          "sheet": 3,
+          "x": 202,
+          "y": 274,
+          "w": 96,
+          "h": 81
+        },
+        {
+          "sheet": 3,
+          "x": 1070,
+          "y": 274,
+          "w": 96,
+          "h": 76
+        }
+      ]
+    },
+    {
+      "id": "building-supply-warehouse-000000bd",
+      "name": "Building Supply Warehouse",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1262,
+          "y": 360,
+          "w": 96,
+          "h": 64
+        },
+        {
+          "sheet": 3,
+          "x": 1630,
+          "y": 360,
+          "w": 96,
+          "h": 62
+        },
+        {
+          "sheet": 3,
+          "x": 1118,
+          "y": 436,
+          "w": 96,
+          "h": 53
+        },
+        {
+          "sheet": 3,
+          "x": 438,
+          "y": 436,
+          "w": 96,
+          "h": 58
+        }
+      ]
+    },
+    {
+      "id": "car-factory-000000c0",
+      "name": "Car Factory",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 274,
+          "w": 96,
+          "h": 82
+        },
+        {
+          "sheet": 3,
+          "x": 770,
+          "y": 274,
+          "w": 96,
+          "h": 78
+        },
+        {
+          "sheet": 3,
+          "x": 234,
+          "y": 360,
+          "w": 96,
+          "h": 70
+        },
+        {
+          "sheet": 3,
+          "x": 534,
+          "y": 274,
+          "w": 96,
+          "h": 79
+        }
+      ]
+    },
+    {
+      "id": "chicken-coop-00001394",
+      "name": "Chicken Coop",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1874,
+          "y": 541,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 1910,
+          "y": 541,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 1946,
+          "y": 541,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 1982,
+          "y": 541,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "concrete-walk-000013bd",
+      "name": "Concrete Walk",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 938,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 1370,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 3,
+          "x": 974,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 362,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "construction-tools-plant-000000a5",
+      "name": "Construction Tools Plant",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1898,
+          "y": 360,
+          "w": 64,
+          "h": 61
+        },
+        {
+          "sheet": 3,
+          "x": 814,
+          "y": 436,
+          "w": 64,
+          "h": 56
+        },
+        {
+          "sheet": 3,
+          "x": 638,
+          "y": 436,
+          "w": 64,
+          "h": 58
+        },
+        {
+          "sheet": 3,
+          "x": 1362,
+          "y": 360,
+          "w": 64,
+          "h": 64
+        }
+      ]
+    },
+    {
+      "id": "crop-circle-000013ce",
+      "name": "Crop Circle",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 434,
+          "y": 360,
+          "w": 128,
+          "h": 68
+        },
+        {
+          "sheet": 3,
+          "x": 566,
+          "y": 360,
+          "w": 128,
+          "h": 68
+        },
+        {
+          "sheet": 3,
+          "x": 698,
+          "y": 360,
+          "w": 128,
+          "h": 68
+        },
+        {
+          "sheet": 3,
+          "x": 830,
+          "y": 360,
+          "w": 128,
+          "h": 68
+        }
+      ]
+    },
+    {
+      "id": "double-stogie-enterprise-000000a0",
+      "name": "Double Stogie Enterprise",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 402,
+          "y": 163,
+          "w": 64,
+          "h": 105
+        },
+        {
+          "sheet": 3,
+          "x": 470,
+          "y": 163,
+          "w": 64,
+          "h": 105
+        },
+        {
+          "sheet": 3,
+          "x": 1330,
+          "y": 2,
+          "w": 64,
+          "h": 116
+        },
+        {
+          "sheet": 3,
+          "x": 1162,
+          "y": 2,
+          "w": 64,
+          "h": 117
+        }
+      ]
+    },
+    {
+      "id": "dusty-lot-000013b6",
+      "name": "Dusty Lot",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 38,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 74,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 110,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "factory-barn-000000a1",
+      "name": "Factory Barn",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1638,
+          "y": 163,
+          "w": 64,
+          "h": 86
+        },
+        {
+          "sheet": 3,
+          "x": 1202,
+          "y": 163,
+          "w": 64,
+          "h": 96
+        },
+        {
+          "sheet": 3,
+          "x": 202,
+          "y": 163,
+          "w": 64,
+          "h": 107
+        },
+        {
+          "sheet": 3,
+          "x": 902,
+          "y": 163,
+          "w": 64,
+          "h": 97
+        }
+      ]
+    },
+    {
+      "id": "factory-parking-lot-000013b7",
+      "name": "Factory Parking Lot",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 146,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 398,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 1658,
+          "y": 541,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 3,
+          "x": 182,
+          "y": 541,
+          "w": 32,
+          "h": 22
+        }
+      ]
+    },
+    {
+      "id": "farm-house-00001392",
+      "name": "Farm House",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1762,
+          "y": 436,
+          "w": 64,
+          "h": 39
+        },
+        {
+          "sheet": 3,
+          "x": 1830,
+          "y": 436,
+          "w": 64,
+          "h": 39
+        },
+        {
+          "sheet": 3,
+          "x": 1354,
+          "y": 436,
+          "w": 64,
+          "h": 41
+        },
+        {
+          "sheet": 3,
+          "x": 1966,
+          "y": 436,
+          "w": 64,
+          "h": 37
+        }
+      ]
+    },
+    {
+      "id": "fenced-transformer-000013c2",
+      "name": "Fenced Transformer",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1694,
+          "y": 541,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 3,
+          "x": 1010,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 182,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 1046,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        }
+      ]
+    },
+    {
+      "id": "fern-park-000013be",
+      "name": "Fern Park",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1406,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 3,
+          "x": 434,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 1842,
+          "y": 500,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 3,
+          "x": 470,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "foreman-shack-000013ba",
+      "name": "Foreman Shack",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1950,
+          "y": 500,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 3,
+          "x": 506,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 542,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 1878,
+          "y": 500,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "fountain-of-9-to-5-000013bc",
+      "name": "Fountain of 9 to 5",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1986,
+          "y": 500,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 3,
+          "x": 1442,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 3,
+          "x": 1082,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 1730,
+          "y": 541,
+          "w": 32,
+          "h": 18
+        }
+      ]
+    },
+    {
+      "id": "furnaces-000000a3",
+      "name": "Furnaces",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1806,
+          "y": 163,
+          "w": 64,
+          "h": 85
+        },
+        {
+          "sheet": 3,
+          "x": 634,
+          "y": 274,
+          "w": 64,
+          "h": 79
+        },
+        {
+          "sheet": 3,
+          "x": 1802,
+          "y": 274,
+          "w": 64,
+          "h": 73
+        },
+        {
+          "sheet": 3,
+          "x": 702,
+          "y": 274,
+          "w": 64,
+          "h": 79
+        }
+      ]
+    },
+    {
+      "id": "glass-shop-0000138a",
+      "name": "Glass Shop",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 218,
+          "y": 541,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 3,
+          "x": 1118,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 578,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 1914,
+          "y": 500,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "grain-silos-000000be",
+      "name": "Grain Silos",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 802,
+          "y": 163,
+          "w": 96,
+          "h": 97
+        },
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 163,
+          "w": 96,
+          "h": 107
+        },
+        {
+          "sheet": 3,
+          "x": 1062,
+          "y": 2,
+          "w": 96,
+          "h": 117
+        },
+        {
+          "sheet": 3,
+          "x": 1730,
+          "y": 2,
+          "w": 96,
+          "h": 108
+        }
+      ]
+    },
+    {
+      "id": "grass-lot-000013aa",
+      "name": "Grass Lot",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 694,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 762,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 830,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 898,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        }
+      ]
+    },
+    {
+      "id": "grass-lot-000013ac",
+      "name": "Grass Lot",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 966,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 1034,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 1102,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 1170,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        }
+      ]
+    },
+    {
+      "id": "gravel-loading-bay-00001399",
+      "name": "Gravel Loading bay",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 254,
+          "y": 541,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 3,
+          "x": 218,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 254,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 614,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "greenhouse-00001391",
+      "name": "Greenhouse",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 174,
+          "y": 500,
+          "w": 64,
+          "h": 36
+        },
+        {
+          "sheet": 3,
+          "x": 242,
+          "y": 500,
+          "w": 64,
+          "h": 36
+        },
+        {
+          "sheet": 3,
+          "x": 310,
+          "y": 500,
+          "w": 64,
+          "h": 36
+        },
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 500,
+          "w": 64,
+          "h": 37
+        }
+      ]
+    },
+    {
+      "id": "gurgle-and-smelt-000000a2",
+      "name": "Gurgle and Smelt",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1402,
+          "y": 163,
+          "w": 64,
+          "h": 91
+        },
+        {
+          "sheet": 3,
+          "x": 1874,
+          "y": 163,
+          "w": 64,
+          "h": 84
+        },
+        {
+          "sheet": 3,
+          "x": 1942,
+          "y": 163,
+          "w": 64,
+          "h": 84
+        },
+        {
+          "sheet": 3,
+          "x": 1470,
+          "y": 163,
+          "w": 64,
+          "h": 90
+        }
+      ]
+    },
+    {
+      "id": "hans-silo-0000138b",
+      "name": "Hans Silo",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 514,
+          "y": 500,
+          "w": 32,
+          "h": 35
+        },
+        {
+          "sheet": 3,
+          "x": 1446,
+          "y": 500,
+          "w": 32,
+          "h": 31
+        },
+        {
+          "sheet": 3,
+          "x": 622,
+          "y": 500,
+          "w": 32,
+          "h": 34
+        },
+        {
+          "sheet": 3,
+          "x": 1374,
+          "y": 500,
+          "w": 32,
+          "h": 32
+        }
+      ]
+    },
+    {
+      "id": "hump-day-park-000013bf",
+      "name": "Hump Day Park",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1154,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 1478,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 541,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 3,
+          "x": 1766,
+          "y": 541,
+          "w": 32,
+          "h": 18
+        }
+      ]
+    },
+    {
+      "id": "industrial-lab-000000a4",
+      "name": "Industrial Lab",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1626,
+          "y": 436,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 3,
+          "x": 1238,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 1422,
+          "y": 436,
+          "w": 64,
+          "h": 41
+        },
+        {
+          "sheet": 3,
+          "x": 1898,
+          "y": 436,
+          "w": 64,
+          "h": 39
+        }
+      ]
+    },
+    {
+      "id": "lumber-mill-00001f76",
+      "name": "Lumber Mill",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 70,
+          "y": 500,
+          "w": 64,
+          "h": 37
+        },
+        {
+          "sheet": 3,
+          "x": 1490,
+          "y": 436,
+          "w": 64,
+          "h": 41
+        },
+        {
+          "sheet": 3,
+          "x": 1286,
+          "y": 436,
+          "w": 64,
+          "h": 43
+        },
+        {
+          "sheet": 3,
+          "x": 1558,
+          "y": 436,
+          "w": 64,
+          "h": 41
+        }
+      ]
+    },
+    {
+      "id": "mill-000000bf",
+      "name": "Mill",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 970,
+          "y": 274,
+          "w": 96,
+          "h": 77
+        },
+        {
+          "sheet": 3,
+          "x": 2,
+          "y": 360,
+          "w": 96,
+          "h": 72
+        },
+        {
+          "sheet": 3,
+          "x": 870,
+          "y": 274,
+          "w": 96,
+          "h": 78
+        },
+        {
+          "sheet": 3,
+          "x": 1538,
+          "y": 163,
+          "w": 96,
+          "h": 87
+        }
+      ]
+    },
+    {
+      "id": "mine-000013af",
+      "name": "Mine",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 962,
+          "y": 2,
+          "w": 96,
+          "h": 119
+        },
+        {
+          "sheet": 3,
+          "x": 102,
+          "y": 163,
+          "w": 96,
+          "h": 107
+        },
+        {
+          "sheet": 3,
+          "x": 1230,
+          "y": 2,
+          "w": 96,
+          "h": 116
+        },
+        {
+          "sheet": 3,
+          "x": 530,
+          "y": 2,
+          "w": 96,
+          "h": 128
+        }
+      ]
+    },
+    {
+      "id": "muck-factory-000013b0",
+      "name": "Muck Factory",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 730,
+          "y": 2,
+          "w": 96,
+          "h": 125
+        },
+        {
+          "sheet": 3,
+          "x": 630,
+          "y": 2,
+          "w": 96,
+          "h": 127
+        },
+        {
+          "sheet": 3,
+          "x": 1398,
+          "y": 2,
+          "w": 96,
+          "h": 115
+        },
+        {
+          "sheet": 3,
+          "x": 1498,
+          "y": 2,
+          "w": 96,
+          "h": 114
+        }
+      ]
+    },
+    {
+      "id": "parking-lot-000013c3",
+      "name": "Parking Lot",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 290,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 326,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 362,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 398,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "petrol-plant-0000138c",
+      "name": "Petrol Plant",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1270,
+          "y": 163,
+          "w": 128,
+          "h": 95
+        },
+        {
+          "sheet": 3,
+          "x": 270,
+          "y": 163,
+          "w": 128,
+          "h": 105
+        },
+        {
+          "sheet": 3,
+          "x": 830,
+          "y": 2,
+          "w": 128,
+          "h": 124
+        },
+        {
+          "sheet": 3,
+          "x": 1598,
+          "y": 2,
+          "w": 128,
+          "h": 113
+        }
+      ]
+    },
+    {
+      "id": "plowed-field-000013c7",
+      "name": "Plowed Field",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1802,
+          "y": 541,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 3,
+          "x": 434,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 470,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 506,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "propane-tank-000013b9",
+      "name": "Propane Tank",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 542,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 578,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 614,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 650,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "shed-000013b2",
+      "name": "Shed",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1190,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 1226,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 1262,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 3,
+          "x": 1514,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        }
+      ]
+    },
+    {
+      "id": "shiny-things-inc-000013a2",
+      "name": "Shiny Things INC.",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1302,
+          "y": 274,
+          "w": 96,
+          "h": 75
+        },
+        {
+          "sheet": 3,
+          "x": 1706,
+          "y": 163,
+          "w": 96,
+          "h": 85
+        },
+        {
+          "sheet": 3,
+          "x": 1402,
+          "y": 274,
+          "w": 96,
+          "h": 75
+        },
+        {
+          "sheet": 3,
+          "x": 1430,
+          "y": 360,
+          "w": 96,
+          "h": 63
+        }
+      ]
+    },
+    {
+      "id": "simmars-research-testing-facility-0000138e",
+      "name": "SimMars Research & Testing Facility",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 102,
+          "y": 360,
+          "w": 128,
+          "h": 70
+        },
+        {
+          "sheet": 3,
+          "x": 302,
+          "y": 274,
+          "w": 128,
+          "h": 79
+        },
+        {
+          "sheet": 3,
+          "x": 1170,
+          "y": 274,
+          "w": 128,
+          "h": 75
+        },
+        {
+          "sheet": 3,
+          "x": 1870,
+          "y": 274,
+          "w": 128,
+          "h": 72
+        }
+      ]
+    },
+    {
+      "id": "small-storage-facility-00000084",
+      "name": "Small Storage Facility",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1482,
+          "y": 500,
+          "w": 32,
+          "h": 30
+        },
+        {
+          "sheet": 3,
+          "x": 1626,
+          "y": 500,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 3,
+          "x": 1518,
+          "y": 500,
+          "w": 32,
+          "h": 30
+        },
+        {
+          "sheet": 3,
+          "x": 550,
+          "y": 500,
+          "w": 32,
+          "h": 35
+        }
+      ]
+    },
+    {
+      "id": "smog-o-matic-00000085",
+      "name": "Smog-o-matic",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1410,
+          "y": 500,
+          "w": 32,
+          "h": 32
+        },
+        {
+          "sheet": 3,
+          "x": 658,
+          "y": 500,
+          "w": 32,
+          "h": 34
+        },
+        {
+          "sheet": 3,
+          "x": 138,
+          "y": 500,
+          "w": 32,
+          "h": 37
+        },
+        {
+          "sheet": 3,
+          "x": 586,
+          "y": 500,
+          "w": 32,
+          "h": 35
+        }
+      ]
+    },
+    {
+      "id": "software-studio-0000138f",
+      "name": "Software Studio",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 102,
+          "y": 436,
+          "w": 96,
+          "h": 60
+        },
+        {
+          "sheet": 3,
+          "x": 1530,
+          "y": 360,
+          "w": 96,
+          "h": 63
+        },
+        {
+          "sheet": 3,
+          "x": 1730,
+          "y": 360,
+          "w": 96,
+          "h": 62
+        },
+        {
+          "sheet": 3,
+          "x": 1062,
+          "y": 360,
+          "w": 96,
+          "h": 67
+        }
+      ]
+    },
+    {
+      "id": "soot-sifter-00000087",
+      "name": "Soot Sifter",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 778,
+          "y": 436,
+          "w": 32,
+          "h": 57
+        },
+        {
+          "sheet": 3,
+          "x": 706,
+          "y": 436,
+          "w": 32,
+          "h": 58
+        },
+        {
+          "sheet": 3,
+          "x": 202,
+          "y": 436,
+          "w": 32,
+          "h": 60
+        },
+        {
+          "sheet": 3,
+          "x": 742,
+          "y": 436,
+          "w": 32,
+          "h": 58
+        }
+      ]
+    },
+    {
+      "id": "stack-o-crates-000013c5",
+      "name": "Stack o' Crates",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 650,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 38,
+          "y": 541,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 3,
+          "x": 1838,
+          "y": 541,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 3,
+          "x": 686,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "storage-tanks-0000009f",
+      "name": "Storage Tanks",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 378,
+          "y": 500,
+          "w": 64,
+          "h": 36
+        },
+        {
+          "sheet": 3,
+          "x": 1306,
+          "y": 500,
+          "w": 64,
+          "h": 33
+        },
+        {
+          "sheet": 3,
+          "x": 1694,
+          "y": 436,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 3,
+          "x": 446,
+          "y": 500,
+          "w": 64,
+          "h": 36
+        }
+      ]
+    },
+    {
+      "id": "the-white-zone-is-for-loading-and-unloading-only-000013b1",
+      "name": "The white zone is for loading and unloading only",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1550,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 3,
+          "x": 1586,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 3,
+          "x": 1622,
+          "y": 541,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 3,
+          "x": 686,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "tool-shed-00001393",
+      "name": "Tool Shed",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 74,
+          "y": 541,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 3,
+          "x": 1698,
+          "y": 500,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 3,
+          "x": 722,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 1298,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        }
+      ]
+    },
+    {
+      "id": "trucks-o-plenty-0000139e",
+      "name": "Trucks O'Plenty",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 1602,
+          "y": 274,
+          "w": 96,
+          "h": 74
+        },
+        {
+          "sheet": 3,
+          "x": 338,
+          "y": 436,
+          "w": 96,
+          "h": 59
+        },
+        {
+          "sheet": 3,
+          "x": 538,
+          "y": 436,
+          "w": 96,
+          "h": 58
+        },
+        {
+          "sheet": 3,
+          "x": 334,
+          "y": 360,
+          "w": 96,
+          "h": 70
+        }
+      ]
+    },
+    {
+      "id": "utility-muffin-research-0000139a",
+      "name": "Utility Muffin Research",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 758,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 290,
+          "y": 541,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 3,
+          "x": 326,
+          "y": 541,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 3,
+          "x": 1334,
+          "y": 541,
+          "w": 32,
+          "h": 20
+        }
+      ]
+    },
+    {
+      "id": "vacant-lot-000013a7",
+      "name": "Vacant Lot",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 722,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 758,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 794,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 830,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "vacant-lot-000013b8",
+      "name": "Vacant Lot",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 866,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 902,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 938,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 3,
+          "x": 974,
+          "y": 568,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "wheat-field-000013c6",
+      "name": "Wheat Field",
+      "zone": "industrial",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 3,
+          "x": 794,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 830,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 866,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 3,
+          "x": 902,
+          "y": 541,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "above-ground-pool-00000be1",
+      "name": "Above Ground Pool",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1874,
+          "y": 704,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 4,
+          "x": 362,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 398,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 1226,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        }
+      ]
+    },
+    {
+      "id": "bayberry-manor-00000bb8",
+      "name": "Bayberry Manor",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1022,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        },
+        {
+          "sheet": 4,
+          "x": 682,
+          "y": 576,
+          "w": 64,
+          "h": 46
+        },
+        {
+          "sheet": 4,
+          "x": 410,
+          "y": 576,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 630,
+          "w": 64,
+          "h": 41
+        }
+      ]
+    },
+    {
+      "id": "bleak-s-abode-00000bc3",
+      "name": "Bleak's Abode",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1630,
+          "y": 510,
+          "w": 96,
+          "h": 51
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 510,
+          "w": 96,
+          "h": 62
+        },
+        {
+          "sheet": 4,
+          "x": 1054,
+          "y": 510,
+          "w": 96,
+          "h": 53
+        },
+        {
+          "sheet": 4,
+          "x": 1730,
+          "y": 510,
+          "w": 96,
+          "h": 51
+        }
+      ]
+    },
+    {
+      "id": "brick-arms-apartments-00000bd4",
+      "name": "Brick Arms Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 434,
+          "y": 180,
+          "w": 128,
+          "h": 117
+        },
+        {
+          "sheet": 4,
+          "x": 566,
+          "y": 180,
+          "w": 128,
+          "h": 117
+        },
+        {
+          "sheet": 4,
+          "x": 1830,
+          "y": 2,
+          "w": 128,
+          "h": 120
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 180,
+          "w": 128,
+          "h": 120
+        }
+      ]
+    },
+    {
+      "id": "brownstone-00000bf0",
+      "name": "Brownstone",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1966,
+          "y": 510,
+          "w": 64,
+          "h": 50
+        },
+        {
+          "sheet": 4,
+          "x": 750,
+          "y": 576,
+          "w": 64,
+          "h": 46
+        },
+        {
+          "sheet": 4,
+          "x": 478,
+          "y": 576,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 576,
+          "w": 64,
+          "h": 50
+        }
+      ]
+    },
+    {
+      "id": "camino-de-verde-00000be8",
+      "name": "Camino de Verde",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1406,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1442,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1478,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1514,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        }
+      ]
+    },
+    {
+      "id": "colonnaded-garden-00000bec",
+      "name": "Colonnaded Garden",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1982,
+          "y": 704,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 38,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 74,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "comfort-towers-00000bd2",
+      "name": "Comfort Towers",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1346,
+          "y": 304,
+          "w": 96,
+          "h": 100
+        },
+        {
+          "sheet": 4,
+          "x": 1950,
+          "y": 304,
+          "w": 96,
+          "h": 90
+        },
+        {
+          "sheet": 4,
+          "x": 1446,
+          "y": 304,
+          "w": 96,
+          "h": 97
+        },
+        {
+          "sheet": 4,
+          "x": 810,
+          "y": 304,
+          "w": 96,
+          "h": 105
+        }
+      ]
+    },
+    {
+      "id": "community-garden-00000be4",
+      "name": "Community Garden",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1262,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 1818,
+          "y": 630,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 1766,
+          "y": 675,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 938,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        }
+      ]
+    },
+    {
+      "id": "concrete-and-trees-00000bf2",
+      "name": "Concrete and Trees",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 326,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 362,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1206,
+          "y": 630,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 4,
+          "x": 398,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "corner-fence-00000bed",
+      "name": "Corner Fence",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 434,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 434,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1854,
+          "y": 630,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 1890,
+          "y": 630,
+          "w": 32,
+          "h": 25
+        }
+      ]
+    },
+    {
+      "id": "corner-fence-00000bfc",
+      "name": "Corner Fence",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 470,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 1802,
+          "y": 675,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 470,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1298,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        }
+      ]
+    },
+    {
+      "id": "corner-fence-00000bfd",
+      "name": "Corner Fence",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 974,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 1550,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1334,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 1370,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        }
+      ]
+    },
+    {
+      "id": "corner-fence-00000bfe",
+      "name": "Corner Fence",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1350,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 1010,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 506,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1926,
+          "y": 630,
+          "w": 32,
+          "h": 25
+        }
+      ]
+    },
+    {
+      "id": "dark-brick-abode-00000092",
+      "name": "Dark Brick Abode",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1546,
+          "y": 304,
+          "w": 64,
+          "h": 95
+        },
+        {
+          "sheet": 4,
+          "x": 1614,
+          "y": 304,
+          "w": 64,
+          "h": 93
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 417,
+          "w": 64,
+          "h": 89
+        },
+        {
+          "sheet": 4,
+          "x": 1682,
+          "y": 304,
+          "w": 64,
+          "h": 92
+        }
+      ]
+    },
+    {
+      "id": "dead-garden-00000c03",
+      "name": "Dead Garden",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 110,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 146,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 1838,
+          "y": 675,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1874,
+          "y": 675,
+          "w": 32,
+          "h": 22
+        }
+      ]
+    },
+    {
+      "id": "dingy-ave-00000071",
+      "name": "Dingy Ave.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 542,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 954,
+          "y": 630,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 4,
+          "x": 1386,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 1962,
+          "y": 630,
+          "w": 32,
+          "h": 25
+        }
+      ]
+    },
+    {
+      "id": "dirty-open-space-00000bba",
+      "name": "Dirty Open Space",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 182,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 218,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 254,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 290,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "edgewood-apartments-00000bca",
+      "name": "Edgewood Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1090,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        },
+        {
+          "sheet": 4,
+          "x": 1838,
+          "y": 576,
+          "w": 64,
+          "h": 42
+        },
+        {
+          "sheet": 4,
+          "x": 1158,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        },
+        {
+          "sheet": 4,
+          "x": 1226,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        }
+      ]
+    },
+    {
+      "id": "elem-station-00000077",
+      "name": "Elem Station",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 882,
+          "y": 630,
+          "w": 32,
+          "h": 29
+        },
+        {
+          "sheet": 4,
+          "x": 1422,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 918,
+          "y": 630,
+          "w": 32,
+          "h": 29
+        },
+        {
+          "sheet": 4,
+          "x": 558,
+          "y": 630,
+          "w": 32,
+          "h": 33
+        }
+      ]
+    },
+    {
+      "id": "elm-st-00000074",
+      "name": "Elm St.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 578,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 506,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 1998,
+          "y": 630,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 1458,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        }
+      ]
+    },
+    {
+      "id": "empty-concrete-lot-00000bf6",
+      "name": "Empty Concrete Lot",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 326,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 362,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 398,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 434,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "english-garden-00000be7",
+      "name": "English Garden",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1910,
+          "y": 704,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 4,
+          "x": 470,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 506,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 1946,
+          "y": 704,
+          "w": 32,
+          "h": 18
+        }
+      ]
+    },
+    {
+      "id": "even-keel-estate-00000090",
+      "name": "Even Keel Estate",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 270,
+          "y": 417,
+          "w": 64,
+          "h": 87
+        },
+        {
+          "sheet": 4,
+          "x": 406,
+          "y": 417,
+          "w": 64,
+          "h": 86
+        },
+        {
+          "sheet": 4,
+          "x": 474,
+          "y": 417,
+          "w": 64,
+          "h": 86
+        },
+        {
+          "sheet": 4,
+          "x": 338,
+          "y": 417,
+          "w": 64,
+          "h": 87
+        }
+      ]
+    },
+    {
+      "id": "fancy-house-00000078",
+      "name": "Fancy House",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 630,
+          "y": 630,
+          "w": 32,
+          "h": 32
+        },
+        {
+          "sheet": 4,
+          "x": 666,
+          "y": 630,
+          "w": 32,
+          "h": 32
+        },
+        {
+          "sheet": 4,
+          "x": 450,
+          "y": 630,
+          "w": 32,
+          "h": 34
+        },
+        {
+          "sheet": 4,
+          "x": 378,
+          "y": 630,
+          "w": 32,
+          "h": 35
+        }
+      ]
+    },
+    {
+      "id": "fence-00000bc9",
+      "name": "Fence",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 542,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 614,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 1046,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        }
+      ]
+    },
+    {
+      "id": "fence-00000bee",
+      "name": "Fence",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1586,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1082,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 1406,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 650,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "fenced-garage-00000bef",
+      "name": "Fenced Garage",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1622,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1910,
+          "y": 675,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1442,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 1118,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        }
+      ]
+    },
+    {
+      "id": "fenced-gate-00000bf8",
+      "name": "Fenced Gate",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1946,
+          "y": 675,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1982,
+          "y": 675,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1478,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        }
+      ]
+    },
+    {
+      "id": "fenced-lot-00000be2",
+      "name": "Fenced Lot",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 38,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1154,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 686,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 578,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "garage-00000bda",
+      "name": "Garage",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 614,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 1658,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 38,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 74,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        }
+      ]
+    },
+    {
+      "id": "garage-on-concrete-00000bf7",
+      "name": "Garage On Concrete",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 722,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 758,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1694,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 794,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "garden-00000bd8",
+      "name": "Garden",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1190,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 542,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 578,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 614,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "gazebo-00000be9",
+      "name": "Gazebo",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 990,
+          "y": 630,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 4,
+          "x": 1026,
+          "y": 630,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 4,
+          "x": 1062,
+          "y": 630,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 4,
+          "x": 1098,
+          "y": 630,
+          "w": 32,
+          "h": 28
+        }
+      ]
+    },
+    {
+      "id": "goodplace-arms-00000bcc",
+      "name": "Goodplace Arms",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1830,
+          "y": 510,
+          "w": 64,
+          "h": 51
+        },
+        {
+          "sheet": 4,
+          "x": 206,
+          "y": 576,
+          "w": 64,
+          "h": 48
+        },
+        {
+          "sheet": 4,
+          "x": 138,
+          "y": 576,
+          "w": 64,
+          "h": 49
+        },
+        {
+          "sheet": 4,
+          "x": 1154,
+          "y": 510,
+          "w": 64,
+          "h": 53
+        }
+      ]
+    },
+    {
+      "id": "green-lawn-00000bdd",
+      "name": "Green Lawn",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 650,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 686,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 722,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 758,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "hacienda-ct-00000093",
+      "name": "Hacienda CT.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 914,
+          "y": 417,
+          "w": 64,
+          "h": 84
+        },
+        {
+          "sheet": 4,
+          "x": 610,
+          "y": 417,
+          "w": 64,
+          "h": 85
+        },
+        {
+          "sheet": 4,
+          "x": 982,
+          "y": 417,
+          "w": 64,
+          "h": 83
+        },
+        {
+          "sheet": 4,
+          "x": 1050,
+          "y": 417,
+          "w": 64,
+          "h": 83
+        }
+      ]
+    },
+    {
+      "id": "hampton-s-apartments-00000bb9",
+      "name": "Hampton's Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 546,
+          "y": 576,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 4,
+          "x": 238,
+          "y": 510,
+          "w": 64,
+          "h": 57
+        },
+        {
+          "sheet": 4,
+          "x": 918,
+          "y": 510,
+          "w": 64,
+          "h": 54
+        },
+        {
+          "sheet": 4,
+          "x": 986,
+          "y": 510,
+          "w": 64,
+          "h": 54
+        }
+      ]
+    },
+    {
+      "id": "high-st-00000079",
+      "name": "High St.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1514,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 1494,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 1530,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 1242,
+          "y": 630,
+          "w": 32,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "hope-towers-00000bbd",
+      "name": "Hope Towers",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 202,
+          "y": 304,
+          "w": 64,
+          "h": 109
+        },
+        {
+          "sheet": 4,
+          "x": 270,
+          "y": 304,
+          "w": 64,
+          "h": 109
+        },
+        {
+          "sheet": 4,
+          "x": 1210,
+          "y": 304,
+          "w": 64,
+          "h": 101
+        },
+        {
+          "sheet": 4,
+          "x": 1278,
+          "y": 304,
+          "w": 64,
+          "h": 101
+        }
+      ]
+    },
+    {
+      "id": "ike-s-house-00000c05",
+      "name": "Ike's House",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 206,
+          "y": 630,
+          "w": 64,
+          "h": 39
+        },
+        {
+          "sheet": 4,
+          "x": 310,
+          "y": 630,
+          "w": 64,
+          "h": 35
+        },
+        {
+          "sheet": 4,
+          "x": 1906,
+          "y": 576,
+          "w": 64,
+          "h": 42
+        },
+        {
+          "sheet": 4,
+          "x": 1974,
+          "y": 576,
+          "w": 64,
+          "h": 42
+        }
+      ]
+    },
+    {
+      "id": "kevin-way-row-houses-00000bbf",
+      "name": "Kevin Way Row Houses",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 818,
+          "y": 576,
+          "w": 64,
+          "h": 46
+        },
+        {
+          "sheet": 4,
+          "x": 614,
+          "y": 576,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 4,
+          "x": 70,
+          "y": 576,
+          "w": 64,
+          "h": 50
+        },
+        {
+          "sheet": 4,
+          "x": 274,
+          "y": 576,
+          "w": 64,
+          "h": 48
+        }
+      ]
+    },
+    {
+      "id": "land-s-end-apartments-0000008d",
+      "name": "Land's End Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1566,
+          "y": 576,
+          "w": 64,
+          "h": 43
+        },
+        {
+          "sheet": 4,
+          "x": 1294,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        },
+        {
+          "sheet": 4,
+          "x": 1362,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        },
+        {
+          "sheet": 4,
+          "x": 954,
+          "y": 576,
+          "w": 64,
+          "h": 45
+        }
+      ]
+    },
+    {
+      "id": "lawn-in-concrete-00000bf3",
+      "name": "Lawn in Concrete",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 110,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 74,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 650,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 146,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        }
+      ]
+    },
+    {
+      "id": "meager-pl-00000072",
+      "name": "Meager Pl.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 110,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1226,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 1550,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 1566,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        }
+      ]
+    },
+    {
+      "id": "meek-cr-00000073",
+      "name": "Meek Cr.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1586,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 830,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 146,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 182,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        }
+      ]
+    },
+    {
+      "id": "middle-rd-00000076",
+      "name": "Middle Rd.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1602,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 866,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1638,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 1278,
+          "y": 630,
+          "w": 32,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "middletown-row-houses-0000008f",
+      "name": "Middletown Row Houses",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1222,
+          "y": 510,
+          "w": 64,
+          "h": 53
+        },
+        {
+          "sheet": 4,
+          "x": 374,
+          "y": 510,
+          "w": 64,
+          "h": 56
+        },
+        {
+          "sheet": 4,
+          "x": 306,
+          "y": 510,
+          "w": 64,
+          "h": 57
+        },
+        {
+          "sheet": 4,
+          "x": 1290,
+          "y": 510,
+          "w": 64,
+          "h": 53
+        }
+      ]
+    },
+    {
+      "id": "mullet-hi-rise-00000bff",
+      "name": "Mullet Hi-Rise",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [4, 4],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 898,
+          "y": 2,
+          "w": 128,
+          "h": 132
+        },
+        {
+          "sheet": 4,
+          "x": 402,
+          "y": 2,
+          "w": 128,
+          "h": 144
+        },
+        {
+          "sheet": 4,
+          "x": 534,
+          "y": 2,
+          "w": 128,
+          "h": 144
+        },
+        {
+          "sheet": 4,
+          "x": 666,
+          "y": 2,
+          "w": 128,
+          "h": 139
+        }
+      ]
+    },
+    {
+      "id": "onderdonk-house-00000be0",
+      "name": "Onderdonk House",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1634,
+          "y": 576,
+          "w": 64,
+          "h": 43
+        },
+        {
+          "sheet": 4,
+          "x": 1430,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        },
+        {
+          "sheet": 4,
+          "x": 138,
+          "y": 630,
+          "w": 64,
+          "h": 40
+        },
+        {
+          "sheet": 4,
+          "x": 1702,
+          "y": 576,
+          "w": 64,
+          "h": 43
+        }
+      ]
+    },
+    {
+      "id": "open-lawn-00000bfb",
+      "name": "Open Lawn",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 794,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 830,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 866,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 902,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "palazzo-apartments-00000bbe",
+      "name": "Palazzo Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 70,
+          "y": 417,
+          "w": 96,
+          "h": 87
+        },
+        {
+          "sheet": 4,
+          "x": 170,
+          "y": 417,
+          "w": 96,
+          "h": 87
+        },
+        {
+          "sheet": 4,
+          "x": 1750,
+          "y": 304,
+          "w": 96,
+          "h": 91
+        },
+        {
+          "sheet": 4,
+          "x": 1850,
+          "y": 304,
+          "w": 96,
+          "h": 91
+        }
+      ]
+    },
+    {
+      "id": "pinky-s-plaza-0000008c",
+      "name": "Pinky's Plaza",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 442,
+          "y": 510,
+          "w": 64,
+          "h": 56
+        },
+        {
+          "sheet": 4,
+          "x": 510,
+          "y": 510,
+          "w": 64,
+          "h": 56
+        },
+        {
+          "sheet": 4,
+          "x": 782,
+          "y": 510,
+          "w": 64,
+          "h": 55
+        },
+        {
+          "sheet": 4,
+          "x": 850,
+          "y": 510,
+          "w": 64,
+          "h": 55
+        }
+      ]
+    },
+    {
+      "id": "pitched-roof-cottage-00000bf9",
+      "name": "Pitched Roof Cottage",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1674,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 1710,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 1622,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 902,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "playground-00000c02",
+      "name": "Playground",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 938,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 974,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 1730,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1010,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "plush-manor-0000008e",
+      "name": "Plush Manor",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1786,
+          "y": 417,
+          "w": 64,
+          "h": 69
+        },
+        {
+          "sheet": 4,
+          "x": 102,
+          "y": 510,
+          "w": 64,
+          "h": 61
+        },
+        {
+          "sheet": 4,
+          "x": 1494,
+          "y": 510,
+          "w": 64,
+          "h": 52
+        },
+        {
+          "sheet": 4,
+          "x": 170,
+          "y": 510,
+          "w": 64,
+          "h": 60
+        }
+      ]
+    },
+    {
+      "id": "project-feelgood-00000bd0",
+      "name": "Project Feelgood",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 202,
+          "y": 2,
+          "w": 96,
+          "h": 165
+        },
+        {
+          "sheet": 4,
+          "x": 302,
+          "y": 2,
+          "w": 96,
+          "h": 156
+        },
+        {
+          "sheet": 4,
+          "x": 102,
+          "y": 2,
+          "w": 96,
+          "h": 168
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 2,
+          "w": 96,
+          "h": 174
+        }
+      ]
+    },
+    {
+      "id": "quality-dr-00000075",
+      "name": "Quality Dr.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 218,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 254,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1658,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 938,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "quigley-acres-0000007a",
+      "name": "Quigley Acres",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 414,
+          "y": 630,
+          "w": 32,
+          "h": 35
+        },
+        {
+          "sheet": 4,
+          "x": 594,
+          "y": 630,
+          "w": 32,
+          "h": 33
+        },
+        {
+          "sheet": 4,
+          "x": 486,
+          "y": 630,
+          "w": 32,
+          "h": 34
+        },
+        {
+          "sheet": 4,
+          "x": 274,
+          "y": 630,
+          "w": 32,
+          "h": 37
+        }
+      ]
+    },
+    {
+      "id": "ranchero-dr-0000007b",
+      "name": "Ranchero Dr.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 182,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 974,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 290,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 1010,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "red-brick-apartments-00000091",
+      "name": "Red Brick Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 674,
+          "y": 304,
+          "w": 64,
+          "h": 107
+        },
+        {
+          "sheet": 4,
+          "x": 742,
+          "y": 304,
+          "w": 64,
+          "h": 107
+        },
+        {
+          "sheet": 4,
+          "x": 438,
+          "y": 304,
+          "w": 64,
+          "h": 108
+        },
+        {
+          "sheet": 4,
+          "x": 506,
+          "y": 304,
+          "w": 64,
+          "h": 108
+        }
+      ]
+    },
+    {
+      "id": "red-brick-apartments-00000bc7",
+      "name": "Red Brick Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1618,
+          "y": 417,
+          "w": 64,
+          "h": 73
+        },
+        {
+          "sheet": 4,
+          "x": 678,
+          "y": 417,
+          "w": 64,
+          "h": 85
+        },
+        {
+          "sheet": 4,
+          "x": 542,
+          "y": 417,
+          "w": 64,
+          "h": 86
+        },
+        {
+          "sheet": 4,
+          "x": 746,
+          "y": 417,
+          "w": 64,
+          "h": 85
+        }
+      ]
+    },
+    {
+      "id": "regal-tower-000000af",
+      "name": "Regal Tower",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1398,
+          "y": 180,
+          "w": 96,
+          "h": 112
+        },
+        {
+          "sheet": 4,
+          "x": 574,
+          "y": 304,
+          "w": 96,
+          "h": 107
+        },
+        {
+          "sheet": 4,
+          "x": 1110,
+          "y": 304,
+          "w": 96,
+          "h": 101
+        },
+        {
+          "sheet": 4,
+          "x": 338,
+          "y": 304,
+          "w": 96,
+          "h": 108
+        }
+      ]
+    },
+    {
+      "id": "rock-bottom-terrace-00000bbb",
+      "name": "Rock Bottom Terrace",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 698,
+          "y": 180,
+          "w": 96,
+          "h": 117
+        },
+        {
+          "sheet": 4,
+          "x": 910,
+          "y": 304,
+          "w": 96,
+          "h": 105
+        },
+        {
+          "sheet": 4,
+          "x": 1010,
+          "y": 304,
+          "w": 96,
+          "h": 105
+        },
+        {
+          "sheet": 4,
+          "x": 898,
+          "y": 180,
+          "w": 96,
+          "h": 116
+        }
+      ]
+    },
+    {
+      "id": "row-house-00000bf1",
+      "name": "Row House",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1358,
+          "y": 510,
+          "w": 64,
+          "h": 53
+        },
+        {
+          "sheet": 4,
+          "x": 1426,
+          "y": 510,
+          "w": 64,
+          "h": 53
+        },
+        {
+          "sheet": 4,
+          "x": 578,
+          "y": 510,
+          "w": 64,
+          "h": 56
+        },
+        {
+          "sheet": 4,
+          "x": 646,
+          "y": 510,
+          "w": 64,
+          "h": 56
+        }
+      ]
+    },
+    {
+      "id": "royal-manor-000000b1",
+      "name": "Royal Manor",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1430,
+          "y": 2,
+          "w": 96,
+          "h": 121
+        },
+        {
+          "sheet": 4,
+          "x": 1530,
+          "y": 2,
+          "w": 96,
+          "h": 121
+        },
+        {
+          "sheet": 4,
+          "x": 1630,
+          "y": 2,
+          "w": 96,
+          "h": 121
+        },
+        {
+          "sheet": 4,
+          "x": 1730,
+          "y": 2,
+          "w": 96,
+          "h": 121
+        }
+      ]
+    },
+    {
+      "id": "rusted-cars-on-lawn-00000c00",
+      "name": "Rusted cars on lawn",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 774,
+          "y": 630,
+          "w": 32,
+          "h": 31
+        },
+        {
+          "sheet": 4,
+          "x": 1134,
+          "y": 630,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 4,
+          "x": 218,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 1170,
+          "y": 630,
+          "w": 32,
+          "h": 28
+        }
+      ]
+    },
+    {
+      "id": "sheza-brick-haus-00000bc1",
+      "name": "Sheza Brick Haus",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 998,
+          "y": 180,
+          "w": 96,
+          "h": 115
+        },
+        {
+          "sheet": 4,
+          "x": 1098,
+          "y": 180,
+          "w": 96,
+          "h": 115
+        },
+        {
+          "sheet": 4,
+          "x": 1198,
+          "y": 180,
+          "w": 96,
+          "h": 113
+        },
+        {
+          "sheet": 4,
+          "x": 1298,
+          "y": 180,
+          "w": 96,
+          "h": 113
+        }
+      ]
+    },
+    {
+      "id": "sketchy-towers-00000bc0",
+      "name": "Sketchy Towers",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 70,
+          "y": 630,
+          "w": 64,
+          "h": 41
+        },
+        {
+          "sheet": 4,
+          "x": 886,
+          "y": 576,
+          "w": 64,
+          "h": 46
+        },
+        {
+          "sheet": 4,
+          "x": 1498,
+          "y": 576,
+          "w": 64,
+          "h": 44
+        },
+        {
+          "sheet": 4,
+          "x": 1770,
+          "y": 576,
+          "w": 64,
+          "h": 43
+        }
+      ]
+    },
+    {
+      "id": "squat-st-00000070",
+      "name": "Squat St.",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1694,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 1746,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 810,
+          "y": 630,
+          "w": 32,
+          "h": 31
+        },
+        {
+          "sheet": 4,
+          "x": 254,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        }
+      ]
+    },
+    {
+      "id": "stoclet-apartments-00000bce",
+      "name": "Stoclet Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1518,
+          "y": 417,
+          "w": 96,
+          "h": 74
+        },
+        {
+          "sheet": 4,
+          "x": 1318,
+          "y": 417,
+          "w": 96,
+          "h": 79
+        },
+        {
+          "sheet": 4,
+          "x": 1686,
+          "y": 417,
+          "w": 96,
+          "h": 70
+        },
+        {
+          "sheet": 4,
+          "x": 1854,
+          "y": 417,
+          "w": 96,
+          "h": 64
+        }
+      ]
+    },
+    {
+      "id": "stoic-arms-apartments-00000c06",
+      "name": "Stoic Arms Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 134,
+          "y": 180,
+          "w": 96,
+          "h": 120
+        },
+        {
+          "sheet": 4,
+          "x": 234,
+          "y": 180,
+          "w": 96,
+          "h": 120
+        },
+        {
+          "sheet": 4,
+          "x": 1130,
+          "y": 2,
+          "w": 96,
+          "h": 131
+        },
+        {
+          "sheet": 4,
+          "x": 1230,
+          "y": 2,
+          "w": 96,
+          "h": 131
+        }
+      ]
+    },
+    {
+      "id": "stratton-hall-00000bdf",
+      "name": "Stratton Hall",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1562,
+          "y": 510,
+          "w": 64,
+          "h": 52
+        },
+        {
+          "sheet": 4,
+          "x": 342,
+          "y": 576,
+          "w": 64,
+          "h": 48
+        },
+        {
+          "sheet": 4,
+          "x": 1898,
+          "y": 510,
+          "w": 64,
+          "h": 51
+        },
+        {
+          "sheet": 4,
+          "x": 714,
+          "y": 510,
+          "w": 64,
+          "h": 56
+        }
+      ]
+    },
+    {
+      "id": "svelte-towers-00000bbc",
+      "name": "Svelte Towers",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 798,
+          "y": 180,
+          "w": 96,
+          "h": 117
+        },
+        {
+          "sheet": 4,
+          "x": 1598,
+          "y": 180,
+          "w": 96,
+          "h": 111
+        },
+        {
+          "sheet": 4,
+          "x": 2,
+          "y": 304,
+          "w": 96,
+          "h": 109
+        },
+        {
+          "sheet": 4,
+          "x": 102,
+          "y": 304,
+          "w": 96,
+          "h": 109
+        }
+      ]
+    },
+    {
+      "id": "swimming-pool-00000bdc",
+      "name": "Swimming Pool",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1046,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1262,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 1766,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1802,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        }
+      ]
+    },
+    {
+      "id": "tennis-court-00000bdb",
+      "name": "Tennis Court",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 686,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 1298,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 722,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 758,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "the-fritz-000000ae",
+      "name": "The Fritz",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1498,
+          "y": 180,
+          "w": 96,
+          "h": 112
+        },
+        {
+          "sheet": 4,
+          "x": 1698,
+          "y": 180,
+          "w": 96,
+          "h": 111
+        },
+        {
+          "sheet": 4,
+          "x": 1798,
+          "y": 180,
+          "w": 96,
+          "h": 111
+        },
+        {
+          "sheet": 4,
+          "x": 1898,
+          "y": 180,
+          "w": 96,
+          "h": 110
+        }
+      ]
+    },
+    {
+      "id": "the-grass-is-always-greener-00000be3",
+      "name": "The grass is always greener",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1046,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 1082,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 1118,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        },
+        {
+          "sheet": 4,
+          "x": 1154,
+          "y": 730,
+          "w": 32,
+          "h": 17
+        }
+      ]
+    },
+    {
+      "id": "villard-apartments-000000b0",
+      "name": "Villard Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1418,
+          "y": 417,
+          "w": 96,
+          "h": 79
+        },
+        {
+          "sheet": 4,
+          "x": 814,
+          "y": 417,
+          "w": 96,
+          "h": 84
+        },
+        {
+          "sheet": 4,
+          "x": 1218,
+          "y": 417,
+          "w": 96,
+          "h": 81
+        },
+        {
+          "sheet": 4,
+          "x": 1118,
+          "y": 417,
+          "w": 96,
+          "h": 82
+        }
+      ]
+    },
+    {
+      "id": "villars-apartments-00000bc2",
+      "name": "Villars Apartments",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [3, 3],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 798,
+          "y": 2,
+          "w": 96,
+          "h": 137
+        },
+        {
+          "sheet": 4,
+          "x": 1030,
+          "y": 2,
+          "w": 96,
+          "h": 132
+        },
+        {
+          "sheet": 4,
+          "x": 334,
+          "y": 180,
+          "w": 96,
+          "h": 119
+        },
+        {
+          "sheet": 4,
+          "x": 1330,
+          "y": 2,
+          "w": 96,
+          "h": 128
+        }
+      ]
+    },
+    {
+      "id": "walton-s-dream-00000bc6",
+      "name": "Walton's Dream",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 702,
+          "y": 630,
+          "w": 32,
+          "h": 32
+        },
+        {
+          "sheet": 4,
+          "x": 846,
+          "y": 630,
+          "w": 32,
+          "h": 30
+        },
+        {
+          "sheet": 4,
+          "x": 738,
+          "y": 630,
+          "w": 32,
+          "h": 32
+        },
+        {
+          "sheet": 4,
+          "x": 522,
+          "y": 630,
+          "w": 32,
+          "h": 34
+        }
+      ]
+    },
+    {
+      "id": "white-cottage-00000bfa",
+      "name": "White Cottage",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1782,
+          "y": 630,
+          "w": 32,
+          "h": 26
+        },
+        {
+          "sheet": 4,
+          "x": 290,
+          "y": 675,
+          "w": 32,
+          "h": 25
+        },
+        {
+          "sheet": 4,
+          "x": 1082,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 1314,
+          "y": 630,
+          "w": 32,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "zeke-s-cousin-s-home-00000bc5",
+      "name": "Zeke's Cousin's home",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1334,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 1118,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 4,
+          "x": 326,
+          "y": 704,
+          "w": 32,
+          "h": 22
+        },
+        {
+          "sheet": 4,
+          "x": 794,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        }
+      ]
+    },
+    {
+      "id": "zeke-s-home-00000bc4",
+      "name": "Zeke's Home",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 830,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 866,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 1370,
+          "y": 704,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 4,
+          "x": 1154,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "zeke-s-uncle-s-home-00000bd1",
+      "name": "Zeke's Uncle's home",
+      "zone": "residential",
+      "condition": "developed",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 4,
+          "x": 1730,
+          "y": 675,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 4,
+          "x": 902,
+          "y": 704,
+          "w": 32,
+          "h": 21
+        },
+        {
+          "sheet": 4,
+          "x": 1838,
+          "y": 704,
+          "w": 32,
+          "h": 19
+        },
+        {
+          "sheet": 4,
+          "x": 1190,
+          "y": 675,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    }
+  ],
+  "parks": [
+    {
+      "id": "gazebo-0000234d",
+      "name": "Gazebo",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 0,
+          "x": 110,
+          "y": 578,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 0,
+          "x": 146,
+          "y": 578,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 0,
+          "x": 182,
+          "y": 578,
+          "w": 32,
+          "h": 18
+        },
+        {
+          "sheet": 0,
+          "x": 218,
+          "y": 578,
+          "w": 32,
+          "h": 18
+        }
+      ]
+    },
+    {
+      "id": "parque-aire-fresco-00002348",
+      "name": "Parque Aire Fresco",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 0,
+          "x": 1574,
+          "y": 529,
+          "w": 32,
+          "h": 30
+        },
+        {
+          "sheet": 0,
+          "x": 1646,
+          "y": 529,
+          "w": 32,
+          "h": 28
+        },
+        {
+          "sheet": 0,
+          "x": 1718,
+          "y": 529,
+          "w": 32,
+          "h": 27
+        },
+        {
+          "sheet": 0,
+          "x": 1610,
+          "y": 529,
+          "w": 32,
+          "h": 30
+        }
+      ]
+    },
+    {
+      "id": "parque-hermosas-flores-00002349",
+      "name": "Parque Hermosas Flores",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 0,
+          "x": 2006,
+          "y": 529,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 0,
+          "x": 2,
+          "y": 578,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 0,
+          "x": 38,
+          "y": 578,
+          "w": 32,
+          "h": 20
+        },
+        {
+          "sheet": 0,
+          "x": 74,
+          "y": 578,
+          "w": 32,
+          "h": 20
+        }
+      ]
+    },
+    {
+      "id": "playground-0000234b",
+      "name": "Playground",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 0,
+          "x": 1090,
+          "y": 529,
+          "w": 64,
+          "h": 38
+        },
+        {
+          "sheet": 0,
+          "x": 342,
+          "y": 529,
+          "w": 64,
+          "h": 43
+        },
+        {
+          "sheet": 0,
+          "x": 682,
+          "y": 529,
+          "w": 64,
+          "h": 42
+        },
+        {
+          "sheet": 0,
+          "x": 954,
+          "y": 529,
+          "w": 64,
+          "h": 39
+        }
+      ]
+    },
+    {
+      "id": "small-park-0000000d",
+      "name": "Small Park",
+      "lot": [1, 1],
+      "frames": [
+        {
+          "sheet": 0,
+          "x": 1862,
+          "y": 529,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 0,
+          "x": 1970,
+          "y": 529,
+          "w": 32,
+          "h": 23
+        },
+        {
+          "sheet": 0,
+          "x": 1898,
+          "y": 529,
+          "w": 32,
+          "h": 24
+        },
+        {
+          "sheet": 0,
+          "x": 1934,
+          "y": 529,
+          "w": 32,
+          "h": 24
+        }
+      ]
+    },
+    {
+      "id": "the-pond-0000234c",
+      "name": "The Pond",
+      "lot": [2, 2],
+      "frames": [
+        {
+          "sheet": 0,
+          "x": 1294,
+          "y": 529,
+          "w": 64,
+          "h": 38
+        },
+        {
+          "sheet": 0,
+          "x": 1694,
+          "y": 469,
+          "w": 64,
+          "h": 47
+        },
+        {
+          "sheet": 0,
+          "x": 750,
+          "y": 529,
+          "w": 64,
+          "h": 41
+        },
+        {
+          "sheet": 0,
+          "x": 410,
+          "y": 529,
+          "w": 64,
+          "h": 43
+        }
+      ]
+    }
+  ]
+}
