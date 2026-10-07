@@ -3098,6 +3098,60 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     reset();
   });
 
+  it('resets retained history on reconnect after an empty resume suffix, only once', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value), undefined, {
+      sinceMessageId: '0190a1b2-user',
+    });
+    try {
+      await flush();
+      snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, messages: [], resumed: true });
+      expect(seen.at(-1)).toMatchObject({ messages: [], resumed: true });
+      emitReconnect();
+      await flush();
+      expect(mockedRequest).toHaveBeenLastCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+      });
+      snapshotPush('sub-2', 0, SEEDED_SNAPSHOT);
+      expect(seen.at(-1)).toMatchObject({ resetCachedTranscript: true, fromSnapshot: true });
+      expect(seen.at(-1)).not.toHaveProperty('resumed');
+      deltaPush('sub-2', 1, { added: [], updated: [], removedIds: [] });
+      expect(seen.at(-1)).not.toHaveProperty('resetCachedTranscript');
+      // An ordinary later snapshot has no local reset disposition.
+      snapshotPush('sub-2', 2, SEEDED_SNAPSHOT);
+      expect(seen.at(-1)).not.toHaveProperty('resumed');
+      expect(seen.at(-1)).not.toHaveProperty('resetCachedTranscript');
+    } finally {
+      off();
+    }
+  });
+
+  it('preserves the initial resume request across reconnect before any snapshot', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value), undefined, {
+      sinceMessageId: '0190a1b2-user',
+    });
+    try {
+      await flush();
+      emitReconnect();
+      await flush();
+      expect(mockedRequest).toHaveBeenLastCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        sinceMessageId: '0190a1b2-user',
+      });
+      snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, messages: [], resumed: true });
+      expect(seen.at(-1)).toMatchObject({ messages: [], resumed: true });
+    } finally {
+      off();
+    }
+  });
+
   it('sends sinceMessageId on chat.subscribe and stamps resumed: true on the seq-0 emit', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();

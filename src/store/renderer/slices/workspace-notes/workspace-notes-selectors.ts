@@ -39,6 +39,11 @@ export const selectNewlyCreatedNoteId = store.createSelector(
     state.workspaceNotes.byWorkspaceId[workspaceId]?.newlyCreatedNoteId ?? null,
 );
 
+export const selectHasPendingNoteContent = store.createSelector(
+  (state, workspaceId: string, noteId: string): boolean =>
+    state.workspaceNotes.byWorkspaceId[workspaceId]?.pendingContentByNoteId[noteId] === true,
+);
+
 // ============================================================================
 // Note item selectors
 // ============================================================================
