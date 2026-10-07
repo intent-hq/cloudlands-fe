@@ -802,7 +802,7 @@ export function followToBottom(element: HTMLElement): void {
  */
 export function animateScrollTo(
   getContainer: () => HTMLElement | null | undefined,
-  targetScrollTop: number,
+  targetScrollTop: number | ((container: HTMLElement) => number),
   duration = 150,
   onComplete?: (container: HTMLElement) => void,
 ): void {
@@ -810,7 +810,6 @@ export function animateScrollTo(
   if (!container) return;
 
   const startScrollTop = container.scrollTop;
-  const distance = targetScrollTop - startScrollTop;
   const startTime = performance.now();
 
   function easeOutCubic(t: number): number {
@@ -824,7 +823,10 @@ export function animateScrollTo(
     const elapsed = currentTime - startTime;
     const progress = Math.min(elapsed / duration, 1);
 
-    current.scrollTop = startScrollTop + distance * easeOutCubic(progress);
+    // Lazy rows may change the destination while navigation owns the viewport.
+    const target =
+      typeof targetScrollTop === 'function' ? targetScrollTop(current) : targetScrollTop;
+    current.scrollTop = startScrollTop + (target - startScrollTop) * easeOutCubic(progress);
 
     if (progress < 1) {
       requestAnimationFrame(animate);

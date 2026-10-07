@@ -67,6 +67,43 @@ describe('animateScrollTo', () => {
     expect(onComplete).toHaveBeenCalledWith(container);
   });
 
+  it('tracks a moving destination through preceding layout changes', () => {
+    const container = makeContainer(400);
+    let target = 700;
+    const onComplete = vi.fn();
+    animateScrollTo(
+      () => container,
+      () => target,
+      150,
+      onComplete,
+    );
+    runFrames(75);
+    expect(container.scrollTop).toBeGreaterThan(400);
+    target -= 112;
+    runFrames(150);
+    expect(container.scrollTop).toBe(588);
+    expect(onComplete).toHaveBeenCalledExactlyOnceWith(container);
+    expect(rafCallbacks).toHaveLength(0);
+  });
+
+  it('does not measure or write a moving destination after navigation cancellation', () => {
+    const container = makeContainer(400);
+    let current: HTMLElement | null = container;
+    const target = vi.fn(() => 700);
+    const onComplete = vi.fn();
+    animateScrollTo(() => current, target, 150, onComplete);
+    runFrames(75);
+    const position = container.scrollTop;
+    expect(target).toHaveBeenCalledOnce();
+    const measurements = target.mock.calls.length;
+    current = null;
+    runFrames(150);
+    expect(target).toHaveBeenCalledTimes(measurements);
+    expect(container.scrollTop).toBe(position);
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(rafCallbacks).toHaveLength(0);
+  });
+
   it('stops cleanly when the container becomes null mid-animation', () => {
     let container: HTMLElement | null = makeContainer(0);
     animateScrollTo(() => container, 100, 150);
