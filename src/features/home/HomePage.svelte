@@ -460,11 +460,10 @@
   );
   let homeElement = $state<HTMLDivElement | null>(null);
   const homePanes = new Map<HTMLElement, typeof tab>();
-  let pendingTabFocus = $state<{ value: typeof tab } | null>(null);
+  let tabFocus = $state<{ value: typeof tab } | null>(null);
   function syncPaneOwnership(pane: HTMLElement, value: typeof tab) {
-    const active = destination === 'workspaces' && value === tab;
-    pane.inert = !active;
-    if (active) pane.removeAttribute('aria-hidden');
+    pane.inert = destination !== 'workspaces' || value !== tab;
+    if (!pane.inert) pane.removeAttribute('aria-hidden');
     else pane.setAttribute('aria-hidden', 'true');
   }
   function registerHomePane(pane: HTMLElement, value: typeof tab) {
@@ -472,29 +471,25 @@
     syncPaneOwnership(pane, value);
     return { destroy: () => homePanes.delete(pane) };
   }
-  // Outgoing keyed effects are paused before outrostart. Keep ownership outside
-  // that branch, including when Svelte resumes an existing pane on reversal.
+  // Sync outside paused keyed effects, including same-pane reversal.
   $effect.pre(() => {
     const activeTab = destination === 'workspaces' ? tab : null;
     untrack(() => {
       for (const [pane, value] of homePanes) syncPaneOwnership(pane, value);
-      if (pendingTabFocus?.value !== activeTab) pendingTabFocus = null;
+      if (tabFocus?.value !== activeTab) tabFocus = null;
     });
   });
   $effect(() => {
-    const intent = pendingTabFocus;
+    const intent = tabFocus;
     if (!intent || destination !== 'workspaces' || intent.value !== tab) return;
     void tick().then(() => {
-      if (pendingTabFocus !== intent || destination !== 'workspaces' || tab !== intent.value)
-        return;
+      if (tabFocus !== intent || destination !== 'workspaces' || tab !== intent.value) return;
       const pane = [...homePanes].find(
         ([node, value]) => value === intent.value && node.isConnected && !node.inert,
       )?.[0];
-      const trigger = pane?.querySelector<HTMLElement>(
-        `[role="tab"][data-value="${intent.value}"]`,
-      );
+      const trigger = pane?.querySelector<HTMLElement>(`[role=tab][data-value="${intent.value}"]`);
       trigger?.focus();
-      if (trigger && document.activeElement === trigger) pendingTabFocus = null;
+      if (trigger && document.activeElement === trigger) tabFocus = null;
     });
   });
   let pendingFocusId = $state<string | null>(null);
@@ -793,11 +788,10 @@
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
             out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
             onoutrostart={(event) => {
-              // An outer route can leave without changing this component's tab
-              // or destination. A real outro always relinquishes ownership.
+              // Outer routes can leave tab/destination unchanged; every outro revokes ownership.
               event.currentTarget.inert = true;
               event.currentTarget.setAttribute('aria-hidden', 'true');
-              if (pendingTabFocus?.value === renderedTab) pendingTabFocus = null;
+              if (tabFocus?.value === renderedTab) tabFocus = null;
             }}
             onintrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
           >
@@ -810,7 +804,7 @@
                 ) {
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
-                  pendingTabFocus = { value };
+                  tabFocus = { value };
                   updateView({ tab: value });
                 }
               }}
