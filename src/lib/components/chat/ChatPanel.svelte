@@ -2587,7 +2587,9 @@
       agentId,
       session: $agentSession$ ?? undefined,
       transientError: $chatError$,
-      queue: $queuedMessages$,
+      // Recovery instructions must point to the queue controls rendered below.
+      // Hidden automatic entries remain in the daemon queue for execution.
+      queue: visibleQueuedMessages,
     }),
   );
   // Keep current recovery after saved history, next to the existing queue controls.
