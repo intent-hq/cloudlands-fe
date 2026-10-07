@@ -10,6 +10,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
+  import { createDraftsFixture } from '../../../../test/fixtures/chat-drafts';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     principalContextChanged,
@@ -117,10 +118,13 @@
   const timestamp = '2026-08-23T12:00:00.000Z';
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
+  const drafts = createDraftsFixture({ workspaceId, agentId, text: fixture.draft });
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: startChatFixtureSagas })
+    ? startRootStoreLifecycle(store, {
+        startSagas: (appStore) => startChatFixtureSagas(appStore, drafts),
+      })
     : () => {};
-  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store);
+  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store, drafts);
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;

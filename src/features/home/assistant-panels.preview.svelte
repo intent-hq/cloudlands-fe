@@ -5,12 +5,18 @@
     ASSISTANT_DIAGRAM_ERROR_NOTE,
     ASSISTANT_DIAGRAM_EXAMPLE_NOTE,
   } from './assistant-note-diagrams-fixtures';
-  export const preview = definePreview<{ noteContent?: string }>({
+  interface Props {
+    noteContent?: string;
+    workspaceView?: 'editor' | 'raw';
+  }
+  export const preview = definePreview<Props>({
     id: 'assistant-panels',
     title: 'Assistant content panels',
     defaultState: 'default',
     states: {
       default: { props: {} },
+      workspaceEditor: { props: { workspaceView: 'editor' } },
+      workspaceMarkdown: { props: { workspaceView: 'raw' } },
       diagrams: { props: { noteContent: ASSISTANT_DIAGRAM_NOTE } },
       'diagram-errors': { props: { noteContent: ASSISTANT_DIAGRAM_ERROR_NOTE } },
       'diagram-examples': { props: { noteContent: ASSISTANT_DIAGRAM_EXAMPLE_NOTE } },
@@ -32,12 +38,12 @@
   } from './assistant-panels-browser-fixtures';
   import './home.css';
 
-  let { noteContent }: { noteContent?: string } = $props();
-  const stop = startHomePreview(() => [setupAssistantPanelsFixture(noteContent)]);
+  let { noteContent, workspaceView }: Props = $props();
+  const stop = startHomePreview(() => [setupAssistantPanelsFixture(noteContent, workspaceView)]);
   onDestroy(stop);
 
   const links =
-    '[Open the plan](intent://local/note/plan) · [Open the second plan](intent://local/note/second)\n\n[Open repository](https://github.com/acme/studio) · [Open missing note](intent://local/note/missing) · [Open workspace plan](intent://local/example-workspace/note/plan)';
+    '[Open the plan](intent://local/note/plan) · [Open the second plan](intent://local/note/second)\n\n[Open repository](https://github.com/acme/studio) · [Open missing note](intent://local/note/missing) · [Open workspace plan](intent://local/example-workspace/note/plan)\n\n[Open empty note](intent://local/note/empty) · [Open long note](intent://local/note/long)\n\n[Open unavailable workspace note](intent://local/unavailable-workspace/note/plan) · [Open workspace lookup failure note](intent://local/failing-workspace/note/plan)';
 </script>
 
 <div class="assistant-panels-preview h-[780px] w-full bg-sidebar p-3 text-foreground">
