@@ -208,7 +208,10 @@ for (const state of ['auth-rejected', 'guest-offline']) {
     );
     await expect.poll(() => hitTest(recovery)).toBe(true);
     await recovery.click();
-    const child = page.locator('[data-slot="dialog-content"]');
+    const child = page.getByRole('dialog', {
+      name: state === 'auth-rejected' ? 'Connect to another intentd' : 'Leave this host?',
+      exact: true,
+    });
     await expect(child).toBeVisible();
     await aboveScreen(child, page.getByTestId('daemon-stopped-overlay'));
     await ownsFocus(child);
