@@ -4296,19 +4296,25 @@
     duration: number = 150,
     getContainer = beginScrollNavigation(),
   ) {
-    if (!getContainer() || !scrollContainer) return;
+    const getTargetContainer = () => {
+      const container = getContainer();
+      // Transcript replacement can remove the target while its viewport survives.
+      // Cancel before the next geometry read or animation write in that case.
+      return container?.contains(element) ? container : null;
+    };
+    const container = getTargetContainer();
+    if (!container) return;
 
     // Explicit navigation owns the viewport until the user returns to bottom.
     // Programmatic scroll events intentionally do not release followBottom.
     shouldFollowBottom = false;
-    const measureTarget = (container: HTMLElement) => {
+    const targetScrollTop = (container: HTMLElement) => {
       const containerRect = container.getBoundingClientRect();
       const elementRect = element.getBoundingClientRect();
       if (block === 'center') {
         return (
           container.scrollTop +
-          elementRect.top -
-          containerRect.top -
+          (elementRect.top - containerRect.top) -
           containerRect.height / 2 +
           elementRect.height / 2
         );
@@ -4321,17 +4327,14 @@
           headerBottom: getRenderedPanelHeaderBottom(),
         });
       }
-      return container.scrollTop + elementRect.bottom - containerRect.bottom + 1;
+      return container.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     };
-    const currentContainer = () => {
-      const container = getContainer();
-      return container?.contains(element) ? container : null;
-    };
+
     if (prefersReducedMotion()) {
-      scrollContainer.scrollTop = measureTarget(scrollContainer);
+      container.scrollTop = targetScrollTop(container);
       return;
     }
-    animateScrollTo(currentContainer, measureTarget, duration);
+    animateScrollTo(getTargetContainer, targetScrollTop, duration);
   }
 
   /**

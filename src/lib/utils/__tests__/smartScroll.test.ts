@@ -67,6 +67,24 @@ describe('animateScrollTo', () => {
     expect(onComplete).toHaveBeenCalledWith(container);
   });
 
+  it('tracks a destination that moves during the animation', () => {
+    const container = makeContainer(300);
+    let destination = 100;
+    const resolveDestination = vi.fn(() => destination);
+    const onComplete = vi.fn();
+    animateScrollTo(() => container, resolveDestination, 150, onComplete);
+
+    runFrames(75);
+    expect(container.scrollTop).toBeGreaterThan(100);
+    expect(container.scrollTop).toBeLessThan(300);
+    // A lazy row above the destination contracts while navigation owns scroll.
+    destination = 40;
+    runFrames(150);
+    expect(container.scrollTop).toBe(40);
+    expect(onComplete).toHaveBeenCalledExactlyOnceWith(container);
+    expect(rafCallbacks).toHaveLength(0);
+  });
+
   it('tracks a moving destination through preceding layout changes', () => {
     const container = makeContainer(400);
     let target = 700;
@@ -86,21 +104,21 @@ describe('animateScrollTo', () => {
     expect(rafCallbacks).toHaveLength(0);
   });
 
-  it('does not measure or write a moving destination after navigation cancellation', () => {
-    const container = makeContainer(400);
-    let current: HTMLElement | null = container;
-    const target = vi.fn(() => 700);
+  it('does not resolve a moving destination after navigation is superseded', () => {
+    let current: HTMLElement | null = makeContainer(300);
+    const container = current;
+    const resolveDestination = vi.fn(() => 100);
     const onComplete = vi.fn();
-    animateScrollTo(() => current, target, 150, onComplete);
+    animateScrollTo(() => current, resolveDestination, 150, onComplete);
     runFrames(75);
-    const position = container.scrollTop;
-    expect(target).toHaveBeenCalledOnce();
-    const measurements = target.mock.calls.length;
+    const readingPosition = container.scrollTop;
+    resolveDestination.mockClear();
+
     current = null;
     runFrames(150);
-    expect(target).toHaveBeenCalledTimes(measurements);
-    expect(container.scrollTop).toBe(position);
+    expect(resolveDestination).not.toHaveBeenCalled();
     expect(onComplete).not.toHaveBeenCalled();
+    expect(container.scrollTop).toBe(readingPosition);
     expect(rafCallbacks).toHaveLength(0);
   });
 

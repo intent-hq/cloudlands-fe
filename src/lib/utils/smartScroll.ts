@@ -823,7 +823,8 @@ export function animateScrollTo(
     const elapsed = currentTime - startTime;
     const progress = Math.min(elapsed / duration, 1);
 
-    // Lazy rows may change the destination while navigation owns the viewport.
+    // Message destinations can move as earlier lazy rows hydrate. Resolve
+    // after checking ownership so a superseded navigation never reads or writes.
     const target =
       typeof targetScrollTop === 'function' ? targetScrollTop(current) : targetScrollTop;
     current.scrollTop = startScrollTop + (target - startScrollTop) * easeOutCubic(progress);
