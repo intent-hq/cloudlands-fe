@@ -33,25 +33,24 @@ interface CityAnchor {
   island: CityIsland;
 }
 
-function platform(
-  radius: number,
-  inner: number,
-  thickness: number,
-  compact: boolean,
-): THREE.ExtrudeGeometry {
-  const shape = new THREE.Shape();
-  shape.absarc(0, 0, radius, 0, Math.PI * 2, false);
-  if (inner > 0) {
-    const hole = new THREE.Path();
-    hole.absarc(0, 0, inner, 0, Math.PI * 2, true);
-    shape.holes.push(hole);
-  }
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: thickness,
-    bevelEnabled: false,
-    steps: 1,
-    curveSegments: compact ? 16 : 32,
+function platform(island: CityIsland, compact: boolean): THREE.ExtrudeGeometry {
+  const phase = ((citySeed(island.repositoryId) % 360) * Math.PI) / 180;
+  const variation = Math.min(0.4, island.radius * 0.08);
+  const coast = Array.from({ length: 12 }, (_, index) => {
+    const angle = (index * Math.PI * 2) / 12;
+    const radius =
+      island.radius -
+      variation -
+      0.15 +
+      Math.sin(angle * 3 + phase) * variation * 0.55 +
+      Math.sin(angle * 2 - phase) * variation * 0.45;
+    return new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
   });
+  const curve = new THREE.CatmullRomCurve3(coast, true);
+  const shape = new THREE.Shape(
+    curve.getPoints(compact ? 64 : 96).map((point) => new THREE.Vector2(point.x, point.y)),
+  );
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false, steps: 1 });
   geometry.rotateX(-Math.PI / 2);
   return geometry;
 }
@@ -118,7 +117,6 @@ export class CityArt {
       plots.some((plot) => plot.islandId === island.id),
     );
     for (const island of this.islands) this.island(island);
-    this.bridges();
     for (const building of model.buildings) {
       const plot = plots.find((item) => item.id === building.id);
       const island = this.islands.find((item) => item.id === plot?.islandId);
@@ -191,145 +189,9 @@ export class CityArt {
   }
 
   private island(island: CityIsland) {
-    const { radius: r, x, z } = island;
-    const inner = r > 4 ? r - 3.35 : 0;
-    for (const [part, radius, hole, depth, y, color] of [
-      ['base', r, inner, 0.46, -0.5, 'structure'],
-      ['deck', r + 0.035, inner, 0.11, -0.045, 'structure'],
-      ['rim', r - 0.12, r - 0.2, 0.065, 0.09, 'structure'],
-      ['lane', r - 0.45, r - 0.47, 0.012, 0.09, 'detail'],
-    ] as const) {
-      const key = `island-${r}-${part}`;
-      if (!this.geometries.has(key))
-        this.geometries.set(key, platform(radius, hole, depth, this.compact));
-      this.add(key, color, x, y, z);
-    }
-    if (inner > 0) {
-      const key = `pool-${r}`;
-      if (!this.geometries.has(key))
-        this.geometries.set(
-          key,
-          platform(inner + 0.1, Math.max(0, inner - 0.65), 0.02, this.compact),
-        );
-      this.add(key, 'detail', x, 0.05, z);
-    }
-    const count = island.capacity;
-    for (let i = 0; i < count; i++) {
-      const angle = ((i + 0.48) * Math.PI * 2) / count - Math.PI / 2;
-      const distance = r - 1.85;
-      const px = x + Math.cos(angle) * distance,
-        pz = z + Math.sin(angle) * distance;
-      this.add('cylinder', 'structure', px, 0.11, pz, 1.18, 0.12, 0.95);
-      this.add('cylinder', 'landscape', px, 0.18, pz, 0.94, 0.06, 0.73);
-      this.tree(px, 0.2, pz, 0.9, i + citySeed(island.id));
-      this.add(
-        'box',
-        'detail',
-        x + Math.cos(angle) * (r - 0.23),
-        0.25,
-        z + Math.sin(angle) * (r - 0.23),
-        0.022,
-        0.35,
-        0.022,
-      );
-      this.add(
-        'cylinder',
-        'detail',
-        x + Math.cos(angle) * (r - 0.23),
-        0.44,
-        z + Math.sin(angle) * (r - 0.23),
-        0.07,
-        0.045,
-        0.07,
-      );
-    }
-    // Supports carry the platforms below the city plane.
-    for (let i = 0; i < Math.min(count, 6); i++) {
-      const angle = (i * Math.PI * 2) / Math.min(count, 6);
-      this.add(
-        'rounded',
-        'structure',
-        x + Math.cos(angle) * (r - 1.1),
-        -0.9,
-        z + Math.sin(angle) * (r - 1.1),
-        0.9,
-        1.25 + (i % 3) * 0.23,
-        0.75,
-        angle,
-      );
-    }
-  }
-
-  private bridges() {
-    const connected: CityIsland[] = [];
-    for (const island of this.islands) {
-      let nearest: CityIsland | undefined;
-      let best = Infinity;
-      for (const other of connected) {
-        const distance =
-          Math.hypot(island.x - other.x, island.z - other.z) - island.radius - other.radius;
-        if (distance < best) {
-          best = distance;
-          nearest = other;
-        }
-      }
-      connected.push(island);
-      if (!nearest) continue;
-      const angle = Math.atan2(island.z - nearest.z, island.x - nearest.x);
-      const a = new THREE.Vector3(
-        nearest.x + Math.cos(angle) * (nearest.radius - 0.2),
-        0,
-        nearest.z + Math.sin(angle) * (nearest.radius - 0.2),
-      );
-      const b = new THREE.Vector3(
-        island.x - Math.cos(angle) * (island.radius - 0.2),
-        0,
-        island.z - Math.sin(angle) * (island.radius - 0.2),
-      );
-      const length = a.distanceTo(b),
-        middle = a.clone().add(b).multiplyScalar(0.5);
-      this.add(
-        'rounded',
-        'structure',
-        middle.x,
-        -0.08,
-        middle.z,
-        length + 0.15,
-        0.18,
-        0.72,
-        -angle,
-      );
-      for (const sign of [-1, 1]) {
-        const dx = -Math.sin(angle) * 0.29 * sign,
-          dz = Math.cos(angle) * 0.29 * sign;
-        this.add(
-          'box',
-          'detail',
-          middle.x + dx,
-          0.095,
-          middle.z + dz,
-          length,
-          0.022,
-          0.022,
-          -angle,
-        );
-        this.add(
-          'box',
-          'structure',
-          middle.x + dx,
-          0.24,
-          middle.z + dz,
-          length,
-          0.026,
-          0.026,
-          -angle,
-        );
-        for (let i = 0; i <= 4; i++) {
-          const point = a.clone().lerp(b, i / 4);
-          this.add('box', 'detail', point.x + dx, 0.16, point.z + dz, 0.02, 0.22, 0.02);
-        }
-      }
-    }
+    const key = `island-${island.id}`;
+    this.geometries.set(key, platform(island, this.compact));
+    this.add(key, 'structure', island.x, -0.16, island.z);
   }
 
   private tree(x: number, y: number, z: number, size: number, seed: number, owner?: string) {
