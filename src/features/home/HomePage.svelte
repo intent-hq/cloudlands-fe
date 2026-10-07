@@ -643,18 +643,12 @@
           <div class="home-sidebar-header flex shrink-0 items-center">
             <Tabs.List
               aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
-              class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1 [&_[data-tabs-indicator]]:bg-muted-foreground dark:[&_[data-tabs-indicator]]:bg-surface-3"
+              class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1"
             >
-              <Tabs.Trigger
-                value="workspaces"
-                class="min-w-0 px-1 font-medium data-[state=active]:text-background dark:data-[state=active]:text-foreground"
-              >
+              <Tabs.Trigger value="workspaces" class="min-w-0 px-1 font-medium">
                 {m.home_tab_workspaces()}
               </Tabs.Trigger>
-              <Tabs.Trigger
-                value="assistant"
-                class="min-w-0 px-1 font-medium data-[state=active]:text-background dark:data-[state=active]:text-foreground"
-              >
+              <Tabs.Trigger value="assistant" class="min-w-0 px-1 font-medium">
                 {m.home_assistant()}
               </Tabs.Trigger>
             </Tabs.List>
