@@ -71,6 +71,7 @@
     states: {
       grouped: { props: { initialQuery: '' }, setup },
       context: { props: { initialQuery: '#' }, setup },
+      'context-search': { props: { initialQuery: '#context' }, setup },
       search: { props: { initialQuery: 'context' }, setup },
       empty: { props: { initialQuery: 'no-matching-context-xyz' }, setup },
       'empty-category': { props: { initialQuery: '@' }, setup },
@@ -92,6 +93,7 @@
 </script>
 
 <script lang="ts">
+  import { paletteNoteSearchFixture } from './command-palette-browser-fixtures';
   import CommandPalette from './CommandPalette.svelte';
   import { Button } from '$lib/components/ui/button';
   let {
@@ -101,7 +103,7 @@
   let isOpen = $state(true);
 </script>
 
-<div class="min-h-[700px]" data-command-palette-preview>
+<div class="min-h-[700px]" data-command-palette-preview use:paletteNoteSearchFixture>
   <Button onclick={() => (isOpen = true)}>Open palette</Button>
   <CommandPalette
     bind:isOpen

@@ -1,6 +1,24 @@
 import { expect, test } from '../../test/ct-test';
 import CommandPalettePreview from './command-palette.preview.svelte';
 
+test('initial note search settles after mount and again after remount', async ({ mount, page }) => {
+  const options = {
+    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'context-search' } },
+  };
+  let component = await mount(CommandPalettePreview, options);
+  const preview = page.locator('[data-command-palette-preview]');
+  await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('#context');
+  await expect(preview).toHaveAttribute('data-search-settled', 'context');
+  await expect(page.getByRole('dialog').locator('[data-palette-result]')).toHaveCount(16);
+  await component.unmount();
+  await expect(preview).toHaveCount(0);
+  component = await mount(CommandPalettePreview, options);
+  await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('#context');
+  await expect(preview).toHaveAttribute('data-search-settled', 'context');
+  await expect(page.getByRole('dialog').locator('[data-palette-result]')).toHaveCount(16);
+  await component.unmount();
+});
+
 test('ordinary open clears the visible recovery filter without disrupting typing or go-to-line', async ({
   mount,
   page,
@@ -173,6 +191,10 @@ test('category controls preserve the query, support keyboard cycling, and recove
   await filters.getByRole('button', { name: 'Context', exact: true }).click();
   await expect(input).toHaveValue('#context');
   await expect(input).toBeFocused();
+  await expect(page.locator('[data-command-palette-preview]')).toHaveAttribute(
+    'data-search-settled',
+    'context',
+  );
   await expect(dialog.locator('[data-palette-result]')).toHaveCount(16);
   await input.press('Tab');
   await expect(input).toHaveValue('/context');
@@ -188,6 +210,10 @@ test('category controls preserve the query, support keyboard cycling, and recove
   await expect(dialog.locator('[data-palette-result]')).toHaveCount(2);
 
   await input.fill('#no-matching-context-xyz');
+  await expect(page.locator('[data-command-palette-preview]')).toHaveAttribute(
+    'data-search-settled',
+    'no-matching-context-xyz',
+  );
   await expect(dialog.getByText('No results found for "no-matching-context-xyz"')).toBeVisible();
   await testInfo.attach('empty-results', {
     body: await dialog.screenshot(),
