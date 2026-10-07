@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { ContentType, NoteVisibility, type Note } from '$shared/types';
+  import { ContentType, NoteVisibility, WorkspaceStatus, type Note } from '$shared/types';
   import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
@@ -12,6 +12,11 @@
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
   import NoteTabType from '../../NoteTabType.svelte';
+  import {
+    setWorkspaceEntity,
+    removeWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
+  import { installMockElectronBridge } from '../../../../../test/ct-mock-electron-bridge';
 
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   const workspaceId = 'note-panel-menu-ct';
@@ -28,6 +33,30 @@
     createdAt: '2026-09-22T00:00:00.000Z',
     updatedAt: '2026-09-22T00:00:00.000Z',
   };
+  const previousBridge = window.electronAPI;
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only local bridge setup; no domain data is fetched.
+  installMockElectronBridge({
+    'note.get': () => ({ note }),
+    'comment.list': () => ({ threads: [] }),
+    'note.lineAttribution.load': () => null,
+    'principal.me': () => ({ id: 'note-menu-owner' }),
+    'note.presence.subscribe': () => ({ subscriptionId: 'note-menu-presence' }),
+    'note.presence.unsubscribe': () => ({ ok: true }),
+    'note.presence.update': () => ({ ok: true }),
+  });
+  store.dispatch(
+    setWorkspaceEntity({
+      id: WorkspaceId(workspaceId),
+      title: 'Note menu workspace',
+      branch: '',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: WorkspaceStatus.Active,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+    }),
+  );
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: [note] }));
   const tab: PanelTab = {
     id: 'note-menu-tab',
@@ -39,12 +68,13 @@
   const header = createPanelHeaderContext();
   onDestroy(() => {
     store.dispatch(clearWorkspaceNotesForWorkspaces([workspaceId]));
+    store.dispatch(removeWorkspaceEntity(workspaceId));
+    window.electronAPI = previousBridge;
     dispose();
   });
 </script>
 
-<!-- The real note registers its production snippets; no menu items are copied into the fixture.
-     No workspace record is seeded: the editor and its backend lifecycle are outside this test. -->
+<!-- The real note registers its production snippets against an editable workspace. -->
 <section class="w-full overflow-hidden bg-background text-foreground" data-testid="note-menu-host">
   <PanelTabBar
     tabs={[tab]}

@@ -80,17 +80,28 @@
   <header class="shrink-0 border-b border-border px-4 py-2">
     <div class="flex min-w-0 items-center gap-3">
       <h2 class="-ml-2 min-w-0 flex-1">
-        <Button
-          variant="ghost"
-          class="type-title h-auto max-w-full shrink gap-2 justify-start px-2 py-1 text-left font-medium leading-snug"
-          wrapContent={false}
-          aria-label={m.home_open_workspace()}
-          tooltip={m.home_open_workspace()}
-          onclick={openWorkspace}
-        >
-          <span class="min-w-0 line-clamp-2 whitespace-normal break-words">{workspace.title}</span>
-          <Fa icon={faArrowRight} class="shrink-0 text-muted-foreground" size="sm" />
-        </Button>
+        <Tooltip.Provider>
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props: titleTooltipProps })}
+                <Button
+                  {...titleTooltipProps}
+                  variant="ghost"
+                  class="type-title h-auto min-w-0 max-w-full shrink gap-2 justify-start whitespace-normal px-2 py-1 text-left font-medium leading-snug"
+                  wrapContent={false}
+                  aria-label={m.home_open_workspace()}
+                  onclick={openWorkspace}
+                >
+                  <span class="min-w-0 line-clamp-2 [overflow-wrap:anywhere]"
+                    >{workspace.title}</span
+                  >
+                  <Fa icon={faArrowRight} class="shrink-0 text-muted-foreground" size="sm" />
+                </Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content>{workspace.title}</Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
       </h2>
       {#if repositoryLabel}
         <Tooltip.Provider
@@ -118,13 +129,15 @@
         >
       {/if}
       {#if showBackToList}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={m.home_close_preview()}
-          tooltip={m.home_close_preview()}
-          onclick={onclose}><Fa icon={faXmark} /></Button
-        >
+        <div class="shrink-0">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={m.home_close_preview()}
+            tooltip={m.home_close_preview()}
+            onclick={onclose}><Fa icon={faXmark} /></Button
+          >
+        </div>
       {/if}
     </div>
     {#if workspace.statusMessage}

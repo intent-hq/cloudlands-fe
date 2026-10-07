@@ -9,6 +9,10 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
+  import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+  import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import { scriptMonitorsUpdated } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import {
     bulkUpsertSessions,
     replaceMessages,
@@ -191,7 +195,21 @@
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));
+  store.dispatch(backgroundHooksUpdated(workspace.id, []));
+  store.dispatch(prMonitorsUpdated(workspace.id, []));
+  store.dispatch(
+    scriptMonitorsUpdated(workspace.id, { monitors: [], scripts: [], status: 'ready' }),
+  );
   for (const id of ['primary', 'secondary']) {
+    store.dispatch(
+      setSubscriptionSnapshot(workspace.id, id, {
+        subscriptions: [],
+        eventSubscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
     store.dispatch(
       bulkUpsertSessions([
         {
