@@ -298,7 +298,11 @@
   >
     <div class="flex min-w-0 flex-1 items-center gap-1.5">
       {#if activeThread && !$hidesAgentLifecycleActions$}
-        <h2 class="min-w-0 truncate type-body font-medium" title={activeThread.title}>
+        <h2
+          class="min-w-0 truncate type-body font-medium"
+          class:flex-1={rename.agentId === activeThread.agentId}
+          title={activeThread.title}
+        >
           <AssistantThreadTitle thread={activeThread} {rename} class="type-body font-medium" />
         </h2>
       {/if}
