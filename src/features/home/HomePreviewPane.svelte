@@ -22,7 +22,7 @@
     handleClassName="home-preview-resize-handle"
     className="home-preview-resizable h-full max-w-full home-panel bg-background"
   >
-    <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+    <div class="h-full min-h-0 overflow-hidden rounded-(--panel-shell-radius)">
       {@render children()}
     </div>
   </ResizablePanel>
