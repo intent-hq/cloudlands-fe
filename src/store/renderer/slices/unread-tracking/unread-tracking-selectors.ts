@@ -48,8 +48,7 @@ export const selectDividerBoundaryStateSnapshot = store.createSelector(
     );
     const nav = state.sidebarNav;
     return {
-      chiefCardVisible:
-        nav.panelItem === 'chief' || (nav.expandedItem ?? nav.hoveredItem) === 'chief',
+      chiefCardVisible: nav.panelItem === 'chief',
       chiefSessionAgentIds: dividerSessionAgentIds.filter((id) => chiefAgentIds.has(id)),
       dividerSessionAgentIds,
       openAgentTabIds,

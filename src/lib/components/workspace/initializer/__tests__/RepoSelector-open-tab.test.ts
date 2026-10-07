@@ -34,7 +34,7 @@ const mocks = vi.hoisted(() => {
       githubUrl?: string;
       name: string;
       owner?: string;
-      repositoryIdentity?: null;
+      repositoryIdentity?: import('$shared/types/repository-context').RepositoryTarget | null;
     }>,
   };
   return {
@@ -215,6 +215,35 @@ function gitlabProps(): GitLabProjectPickerProps {
 }
 
 describe('RepoSelector qualified GitLab choice', () => {
+  it('uses only the selected project owner avatar and retires it with access', async () => {
+    const gitlab = gitlabProps();
+    const ownerAvatarUrl = 'https://images.example.test/namespace.png';
+    gitlab.selectedProject = {
+      projectPath: 'group/subgroup/api',
+      namespace: 'group/subgroup',
+      name: 'api',
+      ownerAvatarUrl,
+    };
+    const view = render(RepoSelector, { gitlab, gitlabSelected: true });
+    const trigger = screen.getByRole('button');
+    expect(trigger.querySelector('img')?.getAttribute('src')).toBe(ownerAvatarUrl);
+    await fireEvent.error(trigger.querySelector('img')!);
+    expect(trigger.querySelector('img')).toBeNull();
+    await view.rerender({
+      gitlab: {
+        ...gitlab,
+        selectedProject: { ...gitlab.selectedProject, ownerAvatarUrl: ownerAvatarUrl + '?new' },
+      },
+    });
+    expect(trigger.querySelector('img')?.getAttribute('src')).toBe(ownerAvatarUrl + '?new');
+    await view.rerender({
+      gitlab: { ...gitlab, page: { status: 'unavailable', message: 'Access denied' } },
+    });
+    expect(trigger.querySelector('img')).toBeNull();
+    await fireEvent.click(trigger);
+    expect(screen.queryByRole('option')).toBeNull();
+  });
+
   afterEach(() => {
     cleanup();
     mocks.dispatch.mockReset();
@@ -245,7 +274,7 @@ describe('RepoSelector qualified GitLab choice', () => {
     const onchange = vi.fn();
     await openDropdown({ gitlab, onchange });
     await fireEvent.click(tabButton('Pick a repo'));
-    await fireEvent.click(screen.getByRole('option', { name: 'API group/subgroup/api' }));
+    await fireEvent.click(screen.getByRole('option', { name: 'group/subgroup/api' }));
     expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', gitlab.scopeKey);
     expect(onchange).not.toHaveBeenCalled();
     expect(mocks.dispatch.mock.calls.some(([action]) => action.type === 'wi/last')).toBe(false);
@@ -268,7 +297,7 @@ describe('RepoSelector qualified GitLab choice', () => {
     const nextScope = 'owner/connection-a/checkout-a/query-2';
     await view.rerender({ gitlab: { ...gitlab, scopeKey: nextScope, query: 'api' } });
     expect(gitlab.onOpenChange).toHaveBeenCalledTimes(1);
-    await fireEvent.click(screen.getByRole('option', { name: 'API group/subgroup/api' }));
+    await fireEvent.click(screen.getByRole('option', { name: 'group/subgroup/api' }));
     expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', nextScope);
     expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, nextScope);
   });
@@ -429,16 +458,75 @@ describe('RepoSelector active forge recent search', () => {
     mocks.state.recentRepos = [];
   });
 
+  it('shares both forge identities without changing a recent selection to the discovery forge', async () => {
+    const gitlab = gitlabProps();
+    await openDropdown({ gitlab });
+    await waitFor(() => expect(recentLabels()).toHaveLength(4));
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'group/subgroup / docs GitLab', exact: true }),
+    );
+    expect(gitlab.onSelect).toHaveBeenCalledExactlyOnceWith('group/subgroup/docs', gitlab.scopeKey);
+    expect(gitlab.onSearch).not.toHaveBeenCalled();
+  });
+
+  it('keeps GitHub recents usable while GitLab discovery is unavailable', async () => {
+    const gitlab = {
+      ...gitlabProps(),
+      page: {
+        status: 'unavailable' as const,
+        message: 'GitLab is unavailable',
+        actionLabel: 'Refresh',
+      },
+    };
+    const onchange = vi.fn();
+    await openDropdown({ gitlab, gitlabSelected: true, onchange });
+    await waitFor(() => expect(recentLabels()).toHaveLength(4));
+    await fireEvent.click(screen.getByRole('button', { name: 'octo / beta GitHub', exact: true }));
+    expect(onchange.mock.calls[0][0].detail).toMatchObject({
+      path: 'octo/beta',
+      type: 'github',
+      githubUrl: 'https://github.com/octo/beta',
+    });
+    expect(gitlab.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('requests a qualified recent through its own root before a GitLab capture exists', async () => {
+    const onSelectRecent = vi.fn();
+    const gitlab = { ...gitlabProps(), scopeKey: '', onSelectRecent };
+    await openDropdown({ gitlab });
+    await waitFor(() => expect(recentLabels()).toHaveLength(4));
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'group/subgroup / docs GitLab', exact: true }),
+    );
+    expect(onSelectRecent).toHaveBeenCalledExactlyOnceWith(
+      'group/subgroup/docs',
+      'https://git.example.test:8443/Forge',
+    );
+    expect(gitlab.onSelect).not.toHaveBeenCalled();
+  });
+
   it('uses the blank GitLab query after switching and preserves the GitHub query on return', async () => {
     const gitlab = gitlabProps();
     await openDropdown({ gitlab });
-    await waitFor(() => expect(recentLabels()).toEqual(['octo / alpha', 'octo / beta']));
+    await waitFor(() =>
+      expect(recentLabels()).toEqual([
+        'octo / alpha',
+        'octo / beta',
+        'group/subgroup / api',
+        'group/subgroup / docs',
+      ]),
+    );
     await fireEvent.input(githubInput()!, { target: { value: 'beta' } });
     await waitFor(() => expect(recentLabels()).toEqual(['octo / beta']));
 
     await switchForge('github.com/', 'git.example.test:8443/Forge/');
     await waitFor(() =>
-      expect(recentLabels()).toEqual(['group/subgroup / api', 'group/subgroup / docs']),
+      expect(recentLabels()).toEqual([
+        'octo / alpha',
+        'octo / beta',
+        'group/subgroup / api',
+        'group/subgroup / docs',
+      ]),
     );
     expect(gitlab.onSearch).not.toHaveBeenCalled();
 
@@ -446,7 +534,14 @@ describe('RepoSelector active forge recent search', () => {
     expect(githubInput()?.value).toBe('beta');
     await waitFor(() => expect(recentLabels()).toEqual(['octo / beta']));
     await fireEvent.input(githubInput()!, { target: { value: '' } });
-    await waitFor(() => expect(recentLabels()).toEqual(['octo / alpha', 'octo / beta']));
+    await waitFor(() =>
+      expect(recentLabels()).toEqual([
+        'octo / alpha',
+        'octo / beta',
+        'group/subgroup / api',
+        'group/subgroup / docs',
+      ]),
+    );
   });
 
   it('filters GitLab recents from its typed query without filtering local-copy rows', async () => {
@@ -477,7 +572,12 @@ describe('RepoSelector active forge recent search', () => {
     expect(gitlab.onSearch).toHaveBeenLastCalledWith('', gitlab.scopeKey);
     await view.rerender({ gitlab: { ...gitlab, query: '' } });
     await waitFor(() =>
-      expect(recentLabels()).toEqual(['group/subgroup / api', 'group/subgroup / docs']),
+      expect(recentLabels()).toEqual([
+        'octo / alpha',
+        'octo / beta',
+        'group/subgroup / api',
+        'group/subgroup / docs',
+      ]),
     );
 
     await switchForge('git.example.test:8443/Forge/', 'github.com/');
@@ -626,7 +726,10 @@ describe('RepoSelector Recent list derived from workspaces', () => {
 
   const buttonTexts = () =>
     Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).map(
-      (b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+      (b) =>
+        (b.querySelector('[data-recent-repo-label]')?.textContent ?? b.textContent)
+          ?.replace(/\s+/g, ' ')
+          .trim() ?? '',
     );
 
   afterEach(() => {
@@ -819,6 +922,58 @@ describe('RepoSelector recent forge identity', () => {
       path: '/owned/local-app',
       type: 'local',
     });
+    expect(gitlab.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('uses observed Recent owner metadata only for the same provider, root and project', async () => {
+    mocks.authenticated = true;
+    const instanceBaseUrl = 'https://git.example.test:8443/Forge';
+    const projectPath = 'group/subgroup/api';
+    const ownerAvatarUrl = 'https://images.example.test/namespace.png';
+    mocks.state.recentRepos = [
+      {
+        path: `${instanceBaseUrl}/${projectPath}`,
+        type: 'github',
+        name: 'api',
+        repositoryIdentity: { provider: 'gitlab', instanceBaseUrl, projectPath },
+      },
+      {
+        path: `https://git.example.test:8443/Other/${projectPath}`,
+        type: 'github',
+        name: 'api',
+        repositoryIdentity: {
+          provider: 'gitlab',
+          instanceBaseUrl: 'https://git.example.test:8443/Other',
+          projectPath,
+        },
+      },
+      { path: 'octo/api', type: 'github', name: 'api', githubUrl: 'https://github.com/octo/api' },
+    ];
+    const gitlab = {
+      ...gitlabProps(),
+      selectedProject: { projectPath, namespace: 'group/subgroup', name: 'api', ownerAvatarUrl },
+      page: { status: 'ready' as const, items: [], hasMore: false },
+    };
+    const view = await openDropdown({ gitlab });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-recent-repo-row]')).toHaveLength(3),
+    );
+    const rows = [...document.querySelectorAll<HTMLDivElement>('[data-recent-repo-row]')];
+    expect(rows[0].querySelector('img')?.getAttribute('src')).toBe(ownerAvatarUrl);
+    expect(rows[1].querySelector('img')).toBeNull();
+    expect(rows[1].querySelector<HTMLButtonElement>('[data-slot=menu-action-row]')?.disabled).toBe(
+      true,
+    );
+    expect(rows[2].querySelector('img')?.getAttribute('src')).toContain(
+      'https://github.com/octo.png',
+    );
+    await view.rerender({
+      gitlab: { ...gitlab, page: { status: 'unavailable', message: 'Access denied' } },
+    });
+    expect(rows[0].querySelector('img')).toBeNull();
+    expect(rows[2].querySelector<HTMLButtonElement>('[data-slot=menu-action-row]')?.disabled).toBe(
+      false,
+    );
     expect(gitlab.onSelect).not.toHaveBeenCalled();
   });
 

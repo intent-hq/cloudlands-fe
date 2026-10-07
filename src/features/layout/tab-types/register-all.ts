@@ -31,6 +31,20 @@ import { m } from '$shared/paraglide/messages.js';
  * Call this function during app initialization to register all tab types.
  */
 export function registerAllTabTypes(): void {
+  tabTypeRegistry.register({
+    type: 'workspace',
+    loadComponent: () => import('./WorkspaceTabType.svelte'),
+    defaultWidthTier: 'wide',
+    icon: faHouse,
+    get defaultTitle() {
+      return m.workspace_page_workspaceResource_label();
+    },
+    get categoryLabel() {
+      return m.workspace_page_workspaceResource_label();
+    },
+    renameable: false,
+  });
+
   // Browser tab
   tabTypeRegistry.register({
     type: 'browser',

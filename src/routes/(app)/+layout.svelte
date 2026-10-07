@@ -132,7 +132,6 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
-  import { SidebarPanel } from '$lib/components/layout/sidebar-nav';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
@@ -982,19 +981,9 @@
     <!-- Title bar at top -->
     <WindowTitleBar {workspaceId} />
 
-    <!-- Main Content Area with Sidebar Nav -->
+    <!-- Main Content Area -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2">
-        <!-- Sidebar Panel (persistent, pushes content) -->
-        <div
-          class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
-          data-sidebar-panel-frame
-        >
-          {#if routePathname !== '/'}
-            <SidebarPanel />
-          {/if}
-        </div>
-
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main

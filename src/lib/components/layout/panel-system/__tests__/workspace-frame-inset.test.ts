@@ -59,10 +59,6 @@ vi.mock('$features/agent/interrupted-agents-service', () => ({
 }));
 vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }));
 
-vi.mock('$lib/components/layout/sidebar-nav', async () => ({
-  SidebarNav: (await import('../../../../../routes/__tests__/mocks/Marker.svelte')).default,
-  SidebarPanel: (await import('../../../../../routes/__tests__/mocks/Marker.svelte')).default,
-}));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
   default: (await import('../../../../../routes/__tests__/mocks/Marker.svelte')).default,
 }));
@@ -208,17 +204,6 @@ describe('workspace frame outer inset', () => {
     expect(main.classList.contains('overflow-hidden')).toBe(true);
     for (const scrollClass of ['flex-1', 'min-h-0', 'overflow-hidden']) {
       expect(contentSlot.classList.contains(scrollClass), scrollClass).toBe(true);
-    }
-  });
-
-  it('keeps the sidebar frame dimensions stable', () => {
-    const { frameRow } = renderShell();
-    const sidebarFrame = frameRow.querySelector<HTMLElement>('[data-sidebar-panel-frame]')!;
-
-    expect(sidebarFrame).not.toBeNull();
-    expect(sidebarFrame.parentElement).toBe(frameRow);
-    for (const frameClass of ['relative', 'z-40', 'shrink-0']) {
-      expect(sidebarFrame.classList.contains(frameClass), frameClass).toBe(true);
     }
   });
 });

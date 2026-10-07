@@ -8,6 +8,7 @@
   import { proximityItem } from '$lib/interaction';
   import { getListProximityContext } from './list-context';
   import { untrack } from 'svelte';
+  import { observeOverflow } from '$lib/actions/observe-overflow';
 
   interface Props extends HTMLButtonAttributes {
     class?: string;
@@ -87,6 +88,8 @@
   const listContext = getListProximityContext();
   const proximityIndex = listContext?.claimIndex() ?? -1;
   let itemElement: HTMLDivElement | null = $state(null);
+  let titleOverflow = $state(false);
+  let subtitleOverflow = $state(false);
   let proximityActive = $derived(
     listContext?.interactive && listContext.hover?.activeIndex === proximityIndex,
   );
@@ -170,6 +173,9 @@
     aria-current={active ? 'true' : undefined}
     aria-label={ariaLabel}
     aria-labelledby={ariaLabelledby ?? (ariaLabel ? undefined : contentId)}
+    title={(title && titleOverflow) || (subtitle && subtitleOverflow)
+      ? [title, subtitle].filter(Boolean).join(' — ')
+      : undefined}
     class={cn(
       // Base styles
       'relative col-start-1 row-start-1 flex h-full w-full min-w-0 cursor-pointer items-center justify-start rounded-(--radius-row) border border-transparent bg-transparent text-left font-inherit text-foreground transition-colors duration-spring-fast ease-spring-fast',
@@ -242,6 +248,7 @@
     <div id={contentId} class="flex min-w-0 flex-1 items-baseline gap-1 text-left">
       {#if title}
         <div
+          use:observeOverflow={(overflow) => (titleOverflow = overflow)}
           class={cn(config.titleSize, 'max-w-full min-w-0 shrink truncate leading-5', titleClass)}
         >
           {title}
@@ -250,6 +257,7 @@
 
       {#if subtitle}
         <div
+          use:observeOverflow={(overflow) => (subtitleOverflow = overflow)}
           class={cn(
             config.subtitleSize,
             'min-w-0 flex-1 truncate text-muted-foreground',

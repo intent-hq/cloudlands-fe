@@ -24,6 +24,7 @@ import type {
   AgentStatus,
   DelegationGroupStatus,
   Subscription,
+  EventSubscription,
   WaitingState,
 } from '../agent-subscription-ui-types';
 import {
@@ -69,6 +70,7 @@ interface WireResult {
   /** Optional for daemons predating bundled slim agent.list projections. */
   agents?: Record<string, unknown>[];
   subscriptions?: WireSubscription[];
+  eventSubscriptions?: EventSubscription[];
   delegationGroups?: WireDelegationGroup[];
   agentStatuses?: Record<string, AgentStatus>;
 }
@@ -117,7 +119,14 @@ function mapResult(result: WireResult) {
       delivered: group.delivered,
     }),
   );
-  return { subscriptions, delegationGroups, agentStatuses };
+  return {
+    subscriptions,
+    delegationGroups,
+    agentStatuses,
+    ...(result.eventSubscriptions !== undefined
+      ? { eventSubscriptions: result.eventSubscriptions }
+      : {}),
+  };
 }
 
 /** Publish participant rows before readiness can mount missing-session AgentCards. */
@@ -155,7 +164,10 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
     });
     yield* ingestBundledAgents(fresh, beforeRead);
     const mapped = mapResult(fresh);
-    const hasData = mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0;
+    const hasData =
+      mapped.subscriptions.length > 0 ||
+      mapped.delegationGroups.length > 0 ||
+      (mapped.eventSubscriptions?.length ?? 0) > 0;
     // A view arriving during this read joins it, including an authoritative empty response.
     yield* put(
       setSubscriptionSnapshot(wsId, agentId, {
@@ -185,7 +197,10 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
     });
     yield* ingestBundledAgents(result, beforeRead);
     const mapped = mapResult(result);
-    const hasData = mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0;
+    const hasData =
+      mapped.subscriptions.length > 0 ||
+      mapped.delegationGroups.length > 0 ||
+      (mapped.eventSubscriptions?.length ?? 0) > 0;
     const completed = !hasData && (previous === 'waiting' || previous === 'woken');
     yield* put(
       setSubscriptionSnapshot(wsId, agentId, {

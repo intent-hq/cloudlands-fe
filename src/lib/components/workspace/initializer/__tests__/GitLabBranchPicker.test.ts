@@ -40,6 +40,22 @@ beforeAll(() => {
 afterEach(cleanup);
 
 describe('GitLab branch presentation', () => {
+  it('exposes loading on the closed trigger, then allows a real branch choice', async () => {
+    const input = props();
+    const view = render(GitLabBranchPicker, { ...input, page: { status: 'loading' } });
+    const trigger = screen.getByRole('button');
+    expect(trigger.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByRole('status')).toBeTruthy();
+    await view.rerender({ page: input.page });
+    expect(trigger.getAttribute('aria-busy')).not.toBe('true');
+    await fireEvent.click(trigger);
+    await fireEvent.click(screen.getByRole('option', { name: 'trunk Protected' }));
+    expect(input.onSelect).toHaveBeenCalledWith(
+      { name: 'trunk', commitSha: main.commitSha },
+      input.scopeKey,
+    );
+  });
+
   it('keeps a cached exact ref selectable without inventing protection metadata', async () => {
     const input = props();
     input.page = {
@@ -90,10 +106,23 @@ describe('GitLab branch presentation', () => {
       selectedBranch: undefined,
       page: { status: 'loading' },
     });
-    expect(screen.getByRole('button', { name: 'Choose a branch' })).toBeTruthy();
+    expect(screen.getByRole('button').getAttribute('aria-busy')).toBe('true');
     await view.rerender({ ...input, selectedBranch: selected });
     expect(screen.getByRole('button', { name: selected.name })).toBeTruthy();
     expect(input.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('allows an explicit branch choice while the independent default lookup is pending', async () => {
+    const input = props();
+    render(GitLabBranchPicker, { ...input, isLoading: true });
+    const trigger = screen.getByRole('button');
+    expect(trigger.getAttribute('aria-busy')).toBe('true');
+    await fireEvent.click(trigger);
+    await fireEvent.click(screen.getByRole('option', { name: 'trunk Protected' }));
+    expect(input.onSelect).toHaveBeenCalledWith(
+      { name: 'trunk', commitSha: main.commitSha },
+      input.scopeKey,
+    );
   });
 
   it('shows branch search results without filtering away server-returned matches', async () => {

@@ -4,16 +4,12 @@
  * Continue, Enter in the free-form field advances, Skip clears + advances, Back
  * returns with the previous answer pre-selected, Hide collapses to the
  * banner, Dismiss is gated behind a confirmation dialog, and Continue on the
- * last typed answer hands back the full answers array. With a `draftKey`,
- * in-progress answers + step persist to localStorage (debounced, flushed on
- * unmount) and restore on remount; completing or dismissing clears the draft.
+ * last typed answer hands back the full answers array. Redux-owned draft props
+ * drive restoration; edits and successful resolution are reported to the host.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
-import { createNullableMessageSource } from './nullable-message-source.svelte';
-import { wizardDraftKey } from '../wizard-draft-storage';
 import type { Question } from '$shared/types/question-resource';
 import { REDUCE_MOTION_ATTRIBUTE } from '$lib/utils/reduced-motion';
 
@@ -706,226 +702,74 @@ describe('QuestionWizard', () => {
   });
 });
 
-describe('QuestionWizard draft persistence', () => {
-  const KEY = wizardDraftKey('agent-draft-test', 'msg-draft-test');
+describe('QuestionWizard Redux draft integration', () => {
   const PREFIX = 'chat.questionWizardDraft/';
 
-  // The global test-setup localStorage stub is a no-op. Install a functional
-  // mock whose entries are enumerable own properties (Web Storage enumeration
-  // semantics) so `safeLocalStorage.keysWithPrefix` — which save-time pruning
-  // depends on — sees them; methods stay configurable for `vi.spyOn`.
-  function installEnumerableLocalStorage(): void {
-    const storage: Record<string, string> = {};
-    const methods: Record<string, unknown> = {
-      getItem: (key: string) =>
-        Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null,
-      setItem: (key: string, value: string) => {
-        storage[key] = String(value);
-      },
-      removeItem: (key: string) => {
-        delete storage[key];
-      },
-      clear: () => {
-        for (const key of Object.keys(storage)) delete storage[key];
-      },
-    };
-    for (const [name, fn] of Object.entries(methods)) {
-      Object.defineProperty(storage, name, { value: fn, enumerable: false, configurable: true });
-    }
-    Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
-  }
-
-  beforeEach(() => {
-    installEnumerableLocalStorage();
-  });
-
-  function seedDraft(
-    idx: number,
-    answers: Array<{ sel: number[]; text: string; skipped: boolean }>,
-  ) {
-    window.localStorage.setItem(
-      KEY,
-      JSON.stringify({ version: 1, idx, answers, savedAt: Date.now() }),
-    );
-  }
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-    window.localStorage.clear();
-  });
-
-  it('restores skipped flags, selections, free text, and the step on remount', async () => {
+  it('renders the canonical draft and reports an immutable updated snapshot', async () => {
     const questions = [SINGLE, MULTI, LAST];
-    const first = render(QuestionWizard, { props: { questions, draftKey: KEY } });
-    // Q1: explicit skip; Q2: multi-select + free text, left mid-answer.
-    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
-    await fireEvent.click(screen.getByText('Desktop app'));
-    const input = currentOtherInput();
-    await fireEvent.input(input, { target: { value: 'Also the API' } });
-    // Unmount before the debounce fires — the pending save must flush.
-    first.unmount();
-
-    const onComplete = vi.fn<(answers: QuestionAnswer[]) => void>();
-    render(QuestionWizard, { props: { questions, draftKey: KEY, onComplete } });
+    const draft = {
+      idx: 1,
+      answers: [
+        { sel: [], text: '', skipped: true },
+        { sel: [0], text: 'Also the API', skipped: false },
+        { sel: [], text: '', skipped: false },
+      ],
+    };
+    const onDraftChange = vi.fn();
+    render(QuestionWizard, { props: { questions, draft, onDraftChange } });
     expect(screen.getByText('Question 2 of 3')).toBeTruthy();
-    const option = screen.getByRole('checkbox', { name: /Desktop app/ });
-    expect(option.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('checkbox', { name: /Desktop app/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
     expect(currentOtherInput().value).toBe('Also the API');
 
-    await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await fireEvent.input(currentOtherInput(), { target: { value: 'Updated' } });
+    expect(onDraftChange).toHaveBeenLastCalledWith({
+      idx: 1,
+      answers: [draft.answers[0], { sel: [0], text: 'Updated', skipped: false }, draft.answers[2]],
+    });
+  });
+
+  it('resolves only after the host admits completion', async () => {
+    const onResolved = vi.fn();
+    const rejected = render(QuestionWizard, {
+      props: { questions: [LAST], onComplete: () => false, onResolved },
+    });
     await fireEvent.click(screen.getByText('Migrate silently'));
-    expect(onComplete.mock.calls[0][0]).toEqual([
-      { question: SINGLE, selectedLabels: [], freeText: '', skipped: true },
-      {
-        question: MULTI,
-        selectedLabels: ['Desktop app'],
-        freeText: 'Also the API',
-        skipped: false,
-      },
-      { question: LAST, selectedLabels: ['Migrate silently'], freeText: '', skipped: false },
-    ]);
-  });
+    expect(onResolved).not.toHaveBeenCalled();
+    rejected.unmount();
 
-  it('debounces draft writes while typing; rendering alone writes nothing', async () => {
-    vi.useFakeTimers();
-    render(QuestionWizard, { props: { questions: [SINGLE, LAST], draftKey: KEY } });
-    expect(window.localStorage.getItem(KEY)).toBeNull();
-
-    const input = screen.getByPlaceholderText('Or type your own answer…');
-    await fireEvent.input(input, { target: { value: 'd' } });
-    await fireEvent.input(input, { target: { value: 'draft' } });
-    expect(window.localStorage.getItem(KEY)).toBeNull();
-
-    vi.advanceTimersByTime(300);
-    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
-    expect(stored.idx).toBe(0);
-    expect(stored.answers[0]).toEqual({ sel: [], text: 'draft', skipped: false });
-  });
-
-  it('completing the wizard clears the stored draft and unmount cannot resurrect it', async () => {
-    vi.useFakeTimers();
-    const view = render(QuestionWizard, {
-      props: { questions: [LAST], draftKey: KEY, onComplete: vi.fn() },
+    render(QuestionWizard, {
+      props: { questions: [LAST], onComplete: () => true, onResolved },
     });
-    const input = screen.getByPlaceholderText('Or type your own answer…');
-    await fireEvent.input(input, { target: { value: 'Redis' } });
-    vi.advanceTimersByTime(300);
-    expect(window.localStorage.getItem(KEY)).not.toBeNull();
-
-    await fireEvent.keyDown(input, { key: 'Enter' });
-    expect(window.localStorage.getItem(KEY)).toBeNull();
-    view.unmount();
-    expect(window.localStorage.getItem(KEY)).toBeNull();
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(onResolved).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps answers editable and persisted when local admission declines completion', async () => {
-    const onComplete = vi.fn().mockReturnValue(false);
-    const view = render(QuestionWizard, {
-      props: { questions: [LAST], draftKey: KEY, onComplete },
-    });
-    const input = currentOtherInput();
-    await fireEvent.input(input, { target: { value: 'Keep this answer' } });
-    await fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onComplete).toHaveBeenCalledOnce();
-    await fireEvent.input(input, { target: { value: 'Corrected answer' } });
-    await fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onComplete).toHaveBeenCalledTimes(2);
-    expect(onComplete.mock.calls[1][0][0].freeText).toBe('Corrected answer');
-    view.unmount();
-    expect(JSON.parse(window.localStorage.getItem(KEY)!).answers[0].text).toBe('Corrected answer');
-  });
-
-  it('confirmed Dismiss clears the stored draft once onDismiss resolves', async () => {
-    seedDraft(0, [{ sel: [], text: 'draft', skipped: false }]);
-    const view = render(QuestionWizard, {
-      props: { questions: [LAST], draftKey: KEY, onDismiss: vi.fn(async () => {}) },
-    });
-    expect(
-      (screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement).value,
-    ).toBe('draft');
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
-    await waitFor(() => expect(window.localStorage.getItem(KEY)).toBeNull());
-    view.unmount();
-    expect(window.localStorage.getItem(KEY)).toBeNull();
-  });
-
-  it('a failed dismissal keeps the stored draft for the re-surfaced wizard', async () => {
-    seedDraft(0, [{ sel: [], text: 'draft', skipped: false }]);
-    let rejectDismiss!: (error: Error) => void;
-    const onDismiss = vi.fn(
-      () =>
-        new Promise<void>((_, reject) => {
-          rejectDismiss = reject;
-        }),
-    );
-    render(QuestionWizard, { props: { questions: [LAST], draftKey: KEY, onDismiss } });
-
+  it('resolves dismissal only after the existing host acknowledgment succeeds', async () => {
+    const onResolved = vi.fn();
+    let acknowledge!: () => void;
+    const onDismiss = vi.fn(() => new Promise<void>((resolve) => (acknowledge = resolve)));
+    render(QuestionWizard, { props: { questions: [LAST], onDismiss, onResolved } });
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
-    // Still in flight — the draft must not be cleared optimistically.
-    expect(window.localStorage.getItem(KEY)).not.toBeNull();
-
-    rejectDismiss(new Error('wire failure'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(window.localStorage.getItem(KEY)).not.toBeNull();
+    expect(onResolved).not.toHaveBeenCalled();
+    acknowledge();
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(1));
   });
 
-  it('a draft for a mismatched question set is discarded and the wizard starts fresh', () => {
-    seedDraft(0, [{ sel: [0], text: '', skipped: false }]);
-    render(QuestionWizard, { props: { questions: [SINGLE, MULTI, LAST], draftKey: KEY } });
-    expect(screen.getByText('Question 1 of 3')).toBeTruthy();
-    expect(window.localStorage.getItem(KEY)).toBeNull();
+  it('keeps the draft unresolved when dismissal fails', async () => {
+    const onResolved = vi.fn();
+    const onDismiss = vi.fn(async () => Promise.reject(new Error('wire failure')));
+    render(QuestionWizard, { props: { questions: [LAST], onDismiss, onResolved } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+    await waitFor(() => expect(onDismiss).toHaveBeenCalledTimes(1));
+    expect(onResolved).not.toHaveBeenCalled();
   });
 
-  it('teardown after the draftKey source goes null still flushes under the original key', async () => {
-    // Mirrors the host: ChatPanel computes `draftKey` from a nullable
-    // `$derived` (`wizardDraftKey(agentId, pendingQuestions.messageId)`), so
-    // nulling the source makes the prop expression unevaluable while the
-    // wizard tears down. `mount()` with a get-accessor prop over a rune-backed
-    // source reproduces the crash deterministically: nulling the `$state`
-    // dirties the prop derived, so any teardown-time re-read of the prop
-    // (the pre-fix onDestroy flush) re-executes the accessor against null and
-    // throws `Cannot read properties of null (reading 'messageId')`. The key
-    // is now captured once at init, so unmount must not throw AND the pending
-    // draft must flush under the original key.
-    vi.useFakeTimers();
-    const source = createNullableMessageSource('msg-draft-test');
-    const target = document.createElement('div');
-    document.body.appendChild(target);
-    const wizard = mount(QuestionWizard, {
-      target,
-      props: {
-        questions: [SINGLE, LAST],
-        get draftKey() {
-          return wizardDraftKey('agent-draft-test', source.current!.messageId);
-        },
-      },
-    });
-    flushSync();
-
-    try {
-      // Arm a pending debounced save, then null the source and unmount.
-      const input = screen.getByPlaceholderText('Or type your own answer…');
-      await fireEvent.input(input, { target: { value: 'draft' } });
-      expect(window.localStorage.getItem(KEY)).toBeNull();
-
-      source.current = null;
-      flushSync();
-      unmount(wizard);
-      flushSync();
-
-      const stored = JSON.parse(window.localStorage.getItem(KEY)!);
-      expect(stored.answers[0]).toEqual({ sel: [], text: 'draft', skipped: false });
-    } finally {
-      target.remove();
-    }
-  });
-
-  it('without draftKey the wizard never reads or writes wizard-draft storage', async () => {
+  it('never reads or writes wizard-draft storage directly', async () => {
     const getSpy = vi.spyOn(window.localStorage, 'getItem');
     const setSpy = vi.spyOn(window.localStorage, 'setItem');
     const removeSpy = vi.spyOn(window.localStorage, 'removeItem');

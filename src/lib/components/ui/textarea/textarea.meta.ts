@@ -26,6 +26,7 @@ export const textareaMetadata = parseUiComponentMetadata({
     'src/lib/components/ui/ask-user-questions/ask-user-questions.svelte',
     'src/lib/components/ui/message-composer/message-composer.svelte',
     'src/lib/components/ui/text-entry-focus.preview.svelte',
+    'src/lib/components/ui/tooltip/tooltip-audit.preview.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
     'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
     'src/lib/components/workspace/sidebar/CommitDrawer.svelte',

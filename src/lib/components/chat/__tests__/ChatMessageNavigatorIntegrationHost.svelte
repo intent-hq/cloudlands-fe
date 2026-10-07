@@ -9,10 +9,12 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { previousUserMessageLoadSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
   import {
     addMessage,
     bulkUpsertSessions,
     prependHistoryMessages,
+    replaceMessages,
     seedHistoryAround,
     setHistoryOldestReached,
     setAgentStreaming,
@@ -32,7 +34,9 @@
   const workspaceId = 'message-navigator-integration';
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: (target) => [target.runSaga(previousUserMessageLoadSaga)],
+  });
   let {
     theme = 'light',
     messages: fixtureMessages,
@@ -258,6 +262,12 @@
       return structuredClone(page);
     };
   }
+  function truncateNavigationTarget() {
+    const currentMessages = fixtureMessages ?? messages;
+    const targetIndex = currentMessages.findIndex((message) => message.id === 'user-23');
+    store.dispatch(replaceMessages(agentId, currentMessages.slice(0, targetIndex)));
+  }
+
   function discardTranscript(replayed?: true) {
     store.dispatch(
       chatTranscriptSnapshotApplied(
@@ -285,6 +295,11 @@
   <span class="sr-only" data-testid="page-requests">{JSON.stringify(pageRequests)}</span>
   <button class="sr-only" data-testid="release-page" onclick={() => pendingPages.shift()?.()}
     >Release page</button
+  >
+  <button
+    class="sr-only"
+    data-testid="truncate-navigation-target"
+    onclick={truncateNavigationTarget}>Truncate navigation target</button
   >
   <button class="sr-only" data-testid="discard-transcript" onclick={() => discardTranscript()}
     >Discard transcript</button

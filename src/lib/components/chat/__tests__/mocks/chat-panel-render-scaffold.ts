@@ -9,6 +9,10 @@
 import { vi } from 'vitest';
 import { readable, type Readable } from 'svelte/store';
 import type { AgentMessage } from '$shared/types';
+import { initialState as chatDrafts } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
+import { initialState as questionUi } from '$store/renderer/slices/question-ui/question-ui-slice';
+
+const queueMutationSubscribers = new Set<(value: unknown[]) => void>();
 
 export const scaffold = {
   dispatch: vi.fn(),
@@ -17,6 +21,7 @@ export const scaffold = {
   agentSession: { id: 'agent-1', workspaceId: 'ws-1', status: 'active', messages: [] } as unknown,
   dividerAnchorId: null as string | null,
   queuedMessages: [] as unknown[],
+  queueMutations: [] as unknown[],
 };
 
 export function resetScaffold() {
@@ -26,6 +31,8 @@ export function resetScaffold() {
   scaffold.agentSession = { id: 'agent-1', workspaceId: 'ws-1', status: 'active', messages: [] };
   scaffold.dividerAnchorId = null;
   scaffold.queuedMessages = [];
+  scaffold.queueMutations = [];
+  queueMutationSubscribers.clear();
 }
 
 function selectorFrom<T>(get: () => T) {
@@ -46,8 +53,32 @@ export async function appStore() {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ browser: { byWorkspaceId: {} }, ...scaffold.authorityState }),
-    dispatch: scaffold.dispatch,
+    state: () => ({
+      browser: { byWorkspaceId: {} },
+      chatDrafts,
+      chatPanelUi: { byWorkspaceId: {} },
+      questionUi,
+      ...scaffold.authorityState,
+    }),
+    dispatch: (action) => {
+      scaffold.dispatch(action);
+      if (action?.type === 'agentQueue/mutationRequested') {
+        const request = action.payload[0];
+        const { operation, ...identity } = request;
+        scaffold.queueMutations = [
+          {
+            ...identity,
+            kind: operation.kind,
+            ...(operation.kind === 'edit' && operation.editing !== undefined
+              ? { editing: operation.editing }
+              : {}),
+            status: 'succeeded',
+          },
+        ];
+        for (const run of queueMutationSubscribers) run(scaffold.queueMutations);
+      }
+      return action;
+    },
   });
 }
 
@@ -107,7 +138,19 @@ export function unreadTrackingSelectors() {
 }
 
 export function agentQueueSelectors() {
-  return { selectAgentQueueMessages: selectorFrom(() => scaffold.queuedMessages) };
+  return {
+    selectAgentQueueMessages: selectorFrom(() => scaffold.queuedMessages),
+    selectQueuedMessageMutations: Object.assign(
+      vi.fn(() => ({
+        subscribe: (run: (value: unknown[]) => void) => {
+          run(scaffold.queueMutations);
+          queueMutationSubscribers.add(run);
+          return () => queueMutationSubscribers.delete(run);
+        },
+      })),
+      { select: vi.fn(() => scaffold.queueMutations) },
+    ),
+  };
 }
 
 export function transientUiSelectors() {

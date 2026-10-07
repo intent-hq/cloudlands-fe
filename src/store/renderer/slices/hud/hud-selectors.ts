@@ -621,8 +621,7 @@ const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
  * attention flags (unread travels on the `attention` flag and overlays the
  * card, intentd#1186). The only mapping left is presentational: the wire
  * `needs_attention` renders as `wait` (NEEDS ATTENTION, yellow). Unknown or
- * absent wire values default to `not_started` so the card never vanishes
- * (same convention as `AllWorkspacesCard`).
+ * absent wire values default to `not_started` so the card never vanishes.
  */
 function cardStateKey(workspace: Workspace): HudCardStateKey {
   const displayStatus = isWorkspaceDisplayStatus(workspace.displayStatus)

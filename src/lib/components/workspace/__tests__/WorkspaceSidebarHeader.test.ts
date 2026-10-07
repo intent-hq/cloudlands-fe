@@ -259,7 +259,7 @@ describe('WorkspaceSidebarHeader status message', () => {
     expect(repository?.className).toContain('max-w-[45%]');
     expect(repository?.className).toContain('truncate');
     expect(repository?.className).toContain('h-5');
-    expect(repository?.getAttribute('title')).toBe(`augment/${repositoryName}`);
+    expect(repository?.textContent?.trim()).toBe(`augment/${repositoryName}`);
     expect(branchMetadata?.className).toContain('h-5');
     expect(branchMetadata?.className).toContain('items-center');
     expect(branch.className).toContain('h-5');

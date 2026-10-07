@@ -395,7 +395,6 @@ describe('fixed-column panel keyboard shortcuts', () => {
       const protectedEvents = [
         event('PageDown', { metaKey: true, shiftKey: true }, target),
         event('PageDown', { metaKey: true, altKey: true }, target),
-        event('\\', { metaKey: true }, target),
         event(';', { metaKey: true }, target),
       ];
 

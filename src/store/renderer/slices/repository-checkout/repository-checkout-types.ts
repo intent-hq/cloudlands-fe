@@ -42,6 +42,7 @@ export interface RepositoryCheckoutForm {
   branchesCursor: string | null;
   branch: CheckoutBranch | null;
   explicitBranch: boolean;
+  resolvingBranch: boolean;
   branchByProject: Collection<{ projectPath: string; branch: string }, 'projectPath'>;
   warmStatus: 'idle' | 'warming' | 'ready';
 }

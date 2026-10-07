@@ -793,7 +793,7 @@ describe('shared browser jobs and nightly routing', () => {
     const ct = jobLines('test-ct', browserWorkflow);
     expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
     expect(field(ct, 'fail-fast')).toBe('false');
-    expect(jobField(ct, 'timeout-minutes')).toBe('40');
+    expect(jobField(ct, 'timeout-minutes')).toBe('50');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
       '--max-old-space-size=8192',
     );

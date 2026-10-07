@@ -11,6 +11,9 @@ import {
   CheckoutProjectDetailSchema,
   CheckoutBranchesSchema,
   CheckoutWarmSchema,
+  CheckoutRepoConfigQuerySchema,
+  CheckoutRepoConfigSchema,
+  type CheckoutRepoConfigQuery,
   checkoutResultSchema,
   parseCheckoutResult,
   type CheckoutCaptureQuery,
@@ -99,7 +102,13 @@ export function createRepositoryCheckoutTransport(
       const reference = z.object({ value: z.object({ id: localId }) }).safeParse(raw);
       if (reference.success) id = reference.data.value.id;
       const result = checkoutResultSchema(
-        z.object({ id: localId, capture: CheckoutCaptureSchema }).strict(),
+        z
+          .object({
+            id: localId,
+            capture: CheckoutCaptureSchema,
+            repoConfigSupported: z.boolean().optional(),
+          })
+          .strict(),
       ).parse(raw);
       if (result.status === 'unavailable') {
         await release();
@@ -151,6 +160,29 @@ export function createRepositoryCheckoutTransport(
             ),
           branches: (params) =>
             request('branches', CheckoutBranchesQuerySchema.parse(params), CheckoutBranchesSchema),
+          ...(result.value.repoConfigSupported === true
+            ? {
+                repoConfig: async (input: CheckoutRepoConfigQuery) => {
+                  const selected = CheckoutRepoConfigQuerySchema.parse(input);
+                  if (
+                    selected.checkoutId !== capture.checkoutId ||
+                    selected.revision !== capture.revision
+                  )
+                    return retired();
+                  const result = await request('repoConfig', selected, CheckoutRepoConfigSchema);
+                  if (
+                    result.status === 'ready' &&
+                    (result.value.projectPath !== selected.projectPath ||
+                      result.value.branch !== selected.branch ||
+                      result.value.commitSha !== selected.commitSha)
+                  ) {
+                    await release();
+                    throw unavailable();
+                  }
+                  return result;
+                },
+              }
+            : {}),
           async warm(input) {
             const selected = CheckoutSelectionSchema.parse(input);
             if (

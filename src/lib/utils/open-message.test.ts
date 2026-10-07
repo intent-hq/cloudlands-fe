@@ -179,7 +179,7 @@ describe('openMessage', () => {
     window.removeEventListener('chat:open-message', eventListener);
   });
 
-  it('opens the Assistant panel and selects the exact Chief thread without route navigation', async () => {
+  it('opens Home and selects the exact Assistant thread', async () => {
     const done = openMessage({
       workspaceId: '__chief__',
       agentId: 'agent-1',
@@ -188,7 +188,7 @@ describe('openMessage', () => {
     await vi.runAllTimersAsync();
     await done;
 
-    expect(goto).not.toHaveBeenCalled();
+    expect(goto).toHaveBeenCalledWith('/');
     expect(mockDispatch).toHaveBeenCalledWith({
       type: 'sidebarNav/setChiefActiveAgentId',
       payload: ['agent-1'],

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -197,26 +198,32 @@
 
   const metadataRepoName = $derived.by(() => {
     const repoName =
-      repoType === 'remote' && remoteSetup
-        ? remoteSetup.name
-        : repoType === 'github' && githubUrl
-          ? formatGithubDisplayName(githubUrl)
-          : formatRepoDisplayName(repoPath);
+      repoType === 'gitlab'
+        ? (gitlab?.selectedProjectPath ?? '')
+        : repoType === 'remote' && remoteSetup
+          ? remoteSetup.name
+          : repoType === 'github' && githubUrl
+            ? formatGithubDisplayName(githubUrl)
+            : formatRepoDisplayName(repoPath);
     return repoName;
   });
   const metadataBranchName = $derived(
-    (repoType === 'remote' && remoteSetup ? remoteSetup.branch || branch : branch) ||
-      metadataDefaultBranch,
+    repoType === 'gitlab'
+      ? (gitlabBranch?.selectedBranch?.name ?? '')
+      : (repoType === 'remote' && remoteSetup ? remoteSetup.branch || branch : branch) ||
+          metadataDefaultBranch,
   );
   const metadataRepoLabel = $derived(
     metadataRepoName ? `${metadataRepoName}/${metadataBranchName}` : '',
   );
   const repoOnlyValue = $derived(
-    repoType === 'remote' && remoteSetup
-      ? remoteSetup.name
-      : repoType === 'github' && githubUrl
-        ? githubUrl
-        : repoPath,
+    repoType === 'gitlab'
+      ? ''
+      : repoType === 'remote' && remoteSetup
+        ? remoteSetup.name
+        : repoType === 'github' && githubUrl
+          ? githubUrl
+          : repoPath,
   );
   const repoOnlyDisplayValue = $derived(isMetadataPresentation ? metadataRepoName : undefined);
   // Dimmed "(owner/repo)" suffix for the default-presentation local-repo flow
@@ -239,7 +246,8 @@
 
   // Derive whether we have a repo selected
   const hasRepo = $derived(
-    !!repoPath ||
+    repoType === 'gitlab' ||
+      !!repoPath ||
       (repoType === 'github' && !!githubUrl) ||
       (repoType === 'remote' && !!remoteSetup),
   );
@@ -257,28 +265,12 @@
 </script>
 
 <div class={pickerClass}>
-  {#if repoType === 'gitlab'}
-    {#if field !== 'branch'}
-      <RepoSelector
-        bind:this={repoSelector}
-        {gitlab}
-        gitlabSelected
-        variant="ghost"
-        onchange={handleRepoChange}
-        triggerClass={repoTriggerClass}
-        triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
-        showTriggerChevron={isMetadataPresentation}
-        triggerChevronClass={metadataChevronClass}
-      />
-    {/if}
-    {#if field !== 'repo' && gitlabBranch}
-      <GitLabBranchPicker {...gitlabBranch} triggerClass={branchTriggerClass} />
-    {/if}
-  {:else if field === 'repo'}
+  {#if field === 'repo'}
     <RepoSelector
       {gitlab}
       bind:this={repoSelector}
       variant="ghost"
+      gitlabSelected={repoType === 'gitlab'}
       value={repoOnlyValue}
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
@@ -288,6 +280,15 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
+  {:else if field === 'branch' && repoType === 'gitlab'}
+    {#if gitlabBranch}
+      <GitLabBranchPicker
+        {...gitlabBranch}
+        triggerClass={branchTriggerClass}
+        showTriggerChevron={isMetadataPresentation}
+        triggerChevronClass={metadataChevronClass}
+      />
+    {/if}
   {:else if field === 'branch'}
     <div class="relative min-w-0">
       <BranchSelector
@@ -360,11 +361,12 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
-  {:else if repoType === 'github' && githubUrl && isMetadataPresentation}
+  {:else if ((repoType === 'github' && githubUrl) || repoType === 'gitlab') && isMetadataPresentation}
     <RepoSelector
       {gitlab}
+      gitlabSelected={repoType === 'gitlab'}
       variant="ghost"
-      value={repoPath}
+      value={repoType === 'gitlab' ? '' : repoPath}
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
       displayValue={metadataRepoLabel}
@@ -373,8 +375,8 @@
       showTriggerChevron={true}
       triggerChevronClass={metadataChevronClass}
     />
-  {:else if repoType === 'github' && githubUrl}
-    <!-- GitHub clone flow -->
+  {:else if (repoType === 'github' && githubUrl) || repoType === 'gitlab'}
+    <!-- Shared forge clone flow; provider adapters retain their own selection semantics. -->
     {#if !isMetadataPresentation}
       <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
       {#if cloneRepoParts[0]}
@@ -383,8 +385,9 @@
     {/if}
     <RepoSelector
       {gitlab}
+      gitlabSelected={repoType === 'gitlab'}
       variant="ghost"
-      value={repoPath}
+      value={repoType === 'gitlab' ? '' : repoPath}
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
       triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
@@ -397,27 +400,33 @@
         >{isMetadataPresentation ? repoOffBranchParts[1] : cloneRepoParts[1]}</span
       >
     {/if}
-    <BranchSelector
-      variant="ghost"
-      triggerClass={branchTriggerClass}
-      value={branch}
-      repoPath={repoPath || ''}
-      repoType={repoType as 'local' | 'github'}
-      {githubUrl}
-      {skipIsolation}
-      {suggestedBranch}
-      hasTriggerIcon={false}
-      disabled={!repoPath}
-      showUncommittedIndicator={true}
-      showTriggerChevron={isMetadataPresentation}
-      triggerChevronClass={metadataChevronClass}
-      triggerContentClass={isMetadataPresentation ? 'w-full gap-1.5' : undefined}
-      onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
-      onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
-      {onBranchStatusChange}
-      {onBranchesLoaded}
-      onchange={handleBranchChange}
-    />
+    {#if repoType === 'gitlab'}
+      {#if gitlabBranch}
+        <GitLabBranchPicker {...gitlabBranch} triggerClass={branchTriggerClass} />
+      {/if}
+    {:else}
+      <BranchSelector
+        variant="ghost"
+        triggerClass={branchTriggerClass}
+        value={branch}
+        repoPath={repoPath || ''}
+        repoType={repoType as 'local' | 'github'}
+        {githubUrl}
+        {skipIsolation}
+        {suggestedBranch}
+        hasTriggerIcon={false}
+        disabled={!repoPath}
+        showUncommittedIndicator={true}
+        showTriggerChevron={isMetadataPresentation}
+        triggerChevronClass={metadataChevronClass}
+        triggerContentClass={isMetadataPresentation ? 'w-full gap-1.5' : undefined}
+        onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
+        onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
+        {onBranchStatusChange}
+        {onBranchesLoaded}
+        onchange={handleBranchChange}
+      />
+    {/if}
     {#if isMetadataPresentation ? repoOffBranchParts[2] : cloneRepoParts[2]}
       <span class="text-sm text-subtle whitespace-nowrap shrink-0"
         >{isMetadataPresentation ? repoOffBranchParts[2] : cloneRepoParts[2]}</span
@@ -463,7 +472,7 @@
     {/if}
     <span
       class="text-xs text-subtle whitespace-nowrap min-w-0 font-mono truncate max-w-60"
-      title={remoteDisplayPath}
+      use:truncatedTitle={remoteDisplayPath}
     >
       {remoteDisplayPath}
     </span>

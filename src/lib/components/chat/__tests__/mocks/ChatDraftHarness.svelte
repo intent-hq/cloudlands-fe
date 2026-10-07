@@ -6,9 +6,11 @@
    * delayed ChatDraftLoadingGate indicator.
    */
   import type { DraftsClient } from '$lib/client/app-client';
+  import { chatDraftClearRequested } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
   import ChatDraftLoadingGate from '../../ChatDraftLoadingGate.svelte';
   import { createChatDraftManager } from '../../chat-panel-draft.svelte';
   import type { ContextItem } from '../../input/context-api';
+  import { createChatDraftStoreDriver } from './chat-draft-store-driver';
   import MockComposerInput from './MockComposerInput.svelte';
 
   let {
@@ -18,7 +20,7 @@
     onSaveError,
     showComposer = true,
   }: {
-    drafts: Pick<DraftsClient, 'get' | 'set'>;
+    drafts: Pick<DraftsClient, 'get' | 'set'> & Partial<Pick<DraftsClient, 'clear'>>;
     workspaceId?: string;
     agentId?: string;
     onSaveError?: (error: unknown) => void;
@@ -30,8 +32,14 @@
   let contextItems = $state<ContextItem[]>([]);
   let composer = $state<ReturnType<typeof MockComposerInput>>();
 
+  const driver = createChatDraftStoreDriver({
+    get: (...args) => drafts.get(...args),
+    set: (...args) => drafts.set(...args),
+    clear: (...args) => drafts.clear?.(...args) ?? Promise.resolve({ ok: true as const }),
+  });
+
   const manager = createChatDraftManager({
-    drafts: { get: (...args) => drafts.get(...args), set: (...args) => drafts.set(...args) },
+    store: driver.port,
     workspaceId: () => workspaceId,
     agentId: () => agentId,
     inputValue: () => inputValue,
@@ -52,6 +60,7 @@
     contextItems = [];
     inputValue = '';
     composer?.setContent('');
+    if (workspaceId && agentId) driver.dispatch(chatDraftClearRequested(workspaceId, agentId));
   }
 </script>
 

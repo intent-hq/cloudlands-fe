@@ -28,6 +28,7 @@ export type WorkspaceNotesWorkspaceState = {
   notesVersion: number;
   noteVersions: NoteVersionsState | null;
   readyTasks: ReadyTasksState | null;
+  pendingContentByNoteId: Record<string, true>;
 };
 
 export type WorkspaceNotesState = {

@@ -1,10 +1,10 @@
-import type { ChiefThreadPreview } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
+import type { ChiefThreadSummary } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
 
 export function resolveChiefThreadOnExpansion(
-  threads: readonly ChiefThreadPreview[],
+  threads: readonly ChiefThreadSummary[],
   requestedAgentId: string | null,
-  currentThread: ChiefThreadPreview | null,
-): ChiefThreadPreview | null {
+  currentThread: ChiefThreadSummary | null,
+): ChiefThreadSummary | null {
   const requestedThread = requestedAgentId
     ? threads.find((thread) => thread.agentId === requestedAgentId)
     : null;

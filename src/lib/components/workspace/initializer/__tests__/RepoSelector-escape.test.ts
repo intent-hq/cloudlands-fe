@@ -274,9 +274,12 @@ describe('RepoSelector Recent list owner rendering', () => {
       expect(screen.getAllByText('(acme/app)').length).toBe(2);
     });
 
-    const rowTexts = screen
-      .getAllByRole('button')
-      .map((button) => button.textContent?.replace(/\s+/g, ' ').trim());
+    // The shared avatar's decorative initial is aria-hidden; inspect the visible
+    // repository label independently, and retain the exact accessible names below.
+    const rowTexts = Array.from(
+      screen.getByTestId('recent-repositories').querySelectorAll('[data-recent-repo-label]'),
+      (label) => label.textContent?.replace(/\s+/g, ' ').trim(),
+    );
 
     // The two clones are visually distinct via their folder names.
     expect(rowTexts).toContain('app (acme/app)');
@@ -284,6 +287,12 @@ describe('RepoSelector Recent list owner rendering', () => {
 
     // The ownerless row must render the folder name only — no stray suffix.
     expect(rowTexts).toContain('solo');
+    for (const name of ['app (acme/app)', 'app-2 (acme/app)', 'solo']) {
+      expect(screen.getByRole('button', { name, exact: true })).toBeTruthy();
+    }
+    for (const suffix of screen.getAllByText('(acme/app)')) {
+      expect(suffix.className).toContain('text-subtle');
+    }
 
     // Local entries no longer use the GitHub "owner /" prefix.
     expect(screen.queryByText('acme /')).toBeNull();

@@ -59,7 +59,7 @@
         aria-pressed={action.checked === undefined ? undefined : action.checked}
         active={action.checked}
         disabled={action.disabled || action.disabledReason !== undefined}
-        tooltip={action.disabledReason ?? action.label}
+        tooltip={action.disabledReason ?? (action.shortcut ? action.label : undefined)}
         tooltipShortcut={action.shortcut}
         onclick={(event) => onAction?.(action.id, event)}
         data-action-id={action.id}

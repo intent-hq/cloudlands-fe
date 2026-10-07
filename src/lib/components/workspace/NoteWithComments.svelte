@@ -74,16 +74,14 @@
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
+    flushNoteContentRequested,
     restoreNoteVersion,
     clearNewlyCreatedNoteId,
+    settleNoteContentRequested,
+    updateNoteContent,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
-    flushNoteContent,
-    hasPendingNoteContent,
-    settleNoteContent,
-    updateNoteContent,
-  } from '$features/notes/notes-write-service';
-  import {
+    selectHasPendingNoteContent,
     selectNoteById,
     selectNewlyCreatedNoteId,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -903,18 +901,23 @@
           // instead of merging. The store rev is that base only while it is
           // authoritative (no save unacknowledged) and its content IS the
           // editor's baseline — then it is also the freshest rev for it.
-          if (!hasPendingNoteContent(workspace.id, noteId) && (note.content || '') === baseline) {
+          if (
+            !selectHasPendingNoteContent.select(appStore.state, workspace.id, noteId) &&
+            (note.content || '') === baseline
+          ) {
             lastKnownRev = note.rev;
           }
           // The baseline also names the text the draft was typed on: a
           // pending draft the service has since rebased onto an echo the
           // editor has not shown yet would otherwise make this draft read as
           // deleting the rebased-in change.
-          updateNoteContent(workspace.id, noteId, markdownContent, {
-            immediate,
-            baseRev: lastKnownRev,
-            baseContent: baseline,
-          });
+          appStore.dispatch(
+            updateNoteContent(workspace.id, noteId, markdownContent, {
+              immediate,
+              baseRev: lastKnownRev,
+              baseContent: baseline,
+            }),
+          );
         }
       }
 
@@ -1123,7 +1126,7 @@
         saveDebounceTimer = null;
         void saveEditorContent();
       }
-      await settleNoteContent(targetWorkspaceId, targetNoteId);
+      await appStore.dispatch(settleNoteContentRequested(targetWorkspaceId, targetNoteId));
       if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
         return;
       }
@@ -1733,7 +1736,9 @@
       getEditor: () => editor as any,
       getIsInitialized: () => isInitialized,
       getHasPendingNoteContent: () =>
-        workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
+        workspace?.id && noteId
+          ? selectHasPendingNoteContent.select(appStore.state, workspace.id, noteId)
+          : false,
       // Hand the current editor text to the write-service now — the pending
       // flush must carry keystrokes still waiting on saveDebounceTimer.
       stageUnsavedEdits: () => {
@@ -1748,13 +1753,19 @@
         // nothing leaves those keystrokes unsaved: keep the baseline so the
         // apply folds them in, and re-arm the debounced save to carry them.
         if (lastKnownContent === baseline) return;
-        if (workspace?.id && noteId && hasPendingNoteContent(workspace.id, noteId)) return;
+        if (
+          workspace?.id &&
+          noteId &&
+          selectHasPendingNoteContent.select(appStore.state, workspace.id, noteId)
+        )
+          return;
         lastKnownContent = baseline;
         saveDebounceTimer = setTimeout(() => {
           saveEditorContent();
         }, 1000);
       },
-      flushNoteContent,
+      flushNoteContent: (workspaceId, targetNoteId) =>
+        appStore.dispatch(flushNoteContentRequested(workspaceId, targetNoteId)),
       onPendingSaveSettled: () => {
         // Re-queue once an in-flight save's window closes. Reset the
         // safety-net dedupe first: if the resolved save left the Redux

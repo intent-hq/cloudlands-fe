@@ -818,7 +818,7 @@ describe('web-notification-service', () => {
       focusSpy.mockRestore();
     });
 
-    it('opens the Assistant panel and selects the thread for chief clicks', async () => {
+    it('opens Home and selects the Assistant thread for chief clicks', async () => {
       stubBackendWire({ workspaceIds: [CHIEF_WORKSPACE_ID] });
       vi.spyOn(window, 'focus').mockImplementation(() => {});
       await handleWebAgentIdle(makeIdleEvent({ agentName: 'Chat' }, CHIEF_WORKSPACE_ID));
@@ -828,7 +828,7 @@ describe('web-notification-service', () => {
 
       expect(mockAppStore.dispatch).toHaveBeenCalledWith(setChiefActiveAgentId('agent-1'));
       expect(mockAppStore.dispatch).toHaveBeenCalledWith(openPanel('chief'));
-      expect(goto).not.toHaveBeenCalled();
+      expect(goto).toHaveBeenCalledWith('/');
     });
   });
 

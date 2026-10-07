@@ -19,6 +19,7 @@ const PANEL_DEFAULT_WIDTH_TIERS = {
   'local-changes': 'wide',
   note: 'medium',
   overview: 'narrow',
+  workspace: 'wide',
   settings: 'narrow',
   terminal: 'medium',
 } as const satisfies Record<string, PanelDefaultWidthTier>;

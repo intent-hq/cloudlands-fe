@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * SecondaryRootChangesView - Read-only per-root changes browser
    * (multi git root tracking, monorepo#2053).
@@ -317,7 +318,6 @@
                 type="button"
                 variant="plain"
                 class="flex h-auto w-full min-w-0 cursor-pointer items-center justify-start gap-1.5 rounded !px-1 -mx-1 py-0.5 text-left text-xs font-inherit hover:bg-muted focus-visible:bg-muted"
-                title={file.path}
                 data-testid="secondary-root-file-open"
                 onclick={(event: MouseEvent) => openFile(file, event)}
                 onkeydown={(event: KeyboardEvent) => {
@@ -329,7 +329,9 @@
                 <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
                   >{file.status}</span
                 >
-                <span class="truncate min-w-0 text-foreground">{file.path}</span>
+                <span class="truncate min-w-0 text-foreground" use:truncatedTitle={file.path}
+                  >{file.path}</span
+                >
                 {#if file.staged}
                   <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
                     >{m.workspace_fileChanges_staged_label()}</span
@@ -468,7 +470,7 @@
         onclick={() => openCommitChangeset(commit)}
         data-testid="secondary-root-commit-open"
       >
-        <span class="text-ui text-subtle truncate flex-1" title={commit.message}
+        <span class="text-ui text-subtle truncate flex-1" use:truncatedTitle={commit.message}
           >{commit.message.split('\n')[0]}</span
         >
       </Button>

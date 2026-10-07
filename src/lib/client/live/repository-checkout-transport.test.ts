@@ -52,6 +52,40 @@ async function acquire(h: ReturnType<typeof harness>) {
 }
 
 describe('checkout facade through the captured preload bridge', () => {
+  it('keeps unsupported config reads absent on an older daemon', async () => {
+    const h = harness();
+    expect((await acquire(h)).repoConfig).toBeUndefined();
+  });
+  it('sends the qualified config query and rejects a replacement bridge result', async () => {
+    const h = harness();
+    h.bridge.invoke.mockResolvedValueOnce(
+      envelope(ready({ id: 'local-A', capture, repoConfigSupported: true })),
+    );
+    const session = await acquire(h);
+    const held = Promise.withResolvers<unknown>();
+    h.bridge.invoke.mockReturnValueOnce(held.promise);
+    const { mode: _mode, ...query } = selection;
+    const reading = session.repoConfig!(query);
+    expect(h.bridge.invoke).toHaveBeenLastCalledWith(channels.REQUEST, {
+      id: 'local-A',
+      kind: 'repoConfig',
+      params: query,
+    });
+    h.replace();
+    held.resolve(
+      envelope(
+        ready({
+          projectPath: query.projectPath,
+          branch: query.branch,
+          commitSha: query.commitSha,
+          config: { setupScript: 'echo obsolete' },
+          exists: true,
+        }),
+      ),
+    );
+    await expect(reading).resolves.toEqual({ status: 'unavailable', reason: 'retired' });
+  });
+
   it('registers retirement before capture and keeps full-root input without an invented workspace', async () => {
     const h = harness();
     const session = await acquire(h);

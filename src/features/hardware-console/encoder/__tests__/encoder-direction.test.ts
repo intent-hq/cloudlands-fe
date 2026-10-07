@@ -101,10 +101,12 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
     expect(device.navigate).toHaveBeenLastCalledWith('/workspace/ws-1');
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(state.sidebarNav.panelItem).toBe('all-workspaces');
+    expect(device.navigate).toHaveBeenLastCalledWith('/');
+    expect(state.sidebarNav.panelItem).toBeNull();
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 0 } });
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(state.sidebarNav.allSpacesViewMode).toBe('repo');
+    expect(state.homeWorkspaces.tab).toBe('workspaces');
+    device.navigate.mockClear();
     await flush();
     expect(mutations()).toHaveLength(0);
   });

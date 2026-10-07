@@ -27,7 +27,10 @@ test('Home handles rapid tab and filter changes with motion enabled', async ({
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(Preview);
   for (const name of ['Pull requests', 'Linear issues', 'Workspaces']) {
-    await component.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
+    await component
+      .locator('.home-tabs')
+      .getByRole('tab', { name: new RegExp(`^${name}`) })
+      .click();
   }
   await component
     .getByRole('group', { name: 'Status', exact: true })
@@ -69,10 +72,9 @@ test('Home filters and previews workspaces without entering them', async ({
   );
   await expect(component.getByRole('tab', { name: 'Pull requests', exact: true })).toBeFocused();
   await page.keyboard.press('ArrowLeft');
-  await expect(component.getByRole('tab', { name: /^Workspaces/ })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
+  await expect(
+    component.locator('.home-tabs').getByRole('tab', { name: /^Workspaces/ }),
+  ).toHaveAttribute('aria-selected', 'true');
   await expect(list.getByRole('option')).toHaveCount(6);
   await component
     .getByRole('group', { name: 'Status', exact: true })
@@ -186,13 +188,20 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('Home keeps Assistant and owner creation hidden for collaborators', async ({ mount }) => {
+test('Home keeps Assistant and owner creation hidden for collaborators', async ({
+  mount,
+  page,
+}, testInfo) => {
   const component = await mount(Preview, { props: { scenario: 'collaborator' } });
-  await expect(component.getByRole('button', { name: 'Assistant', exact: true })).toHaveCount(0);
+  await expect(component.getByRole('tab', { name: 'Assistant', exact: true })).toHaveCount(0);
   await expect(component.getByRole('button', { name: 'New workspace', exact: true })).toHaveCount(
     0,
   );
   await expect(component.getByRole('option')).toHaveCount(6);
+  await testInfo.attach('home-collaborator-sidebar', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-collaborator-sidebar.png') }),
+    contentType: 'image/png',
+  });
 });
 
 test('Home shows connection errors with a retry action', async ({ mount }) => {
@@ -228,6 +237,7 @@ test('Home preview resizes and board headers stay visible while scrolling', asyn
   await board.getByRole('button', { name: 'Review the new onboarding flow', exact: true }).click();
   const detail = component.locator('[data-home-detail]');
   const handle = component
+    .locator('.home-surface')
     .getByRole('tabpanel', { name: 'Workspaces', exact: true })
     .getByRole('button', { name: 'Resize panel (double-click to reset)', exact: true });
   await expect(handle).toBeVisible();
@@ -240,6 +250,142 @@ test('Home preview resizes and board headers stay visible while scrolling', asyn
   ).toBeVisible();
   await testInfo.attach('home-resizable-preview', {
     body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+test('Home sidebar switches threads with the keyboard and keeps workspace filters', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'assistant' } });
+  const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+  const tabs = sidebar.getByRole('tablist');
+  await testInfo.attach('home-sidebar-workspaces', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-workspaces.png') }),
+    contentType: 'image/png',
+  });
+  await sidebar.getByRole('button', { name: 'acme/platform', exact: true }).click();
+  await component.getByRole('searchbox').fill('sidebar');
+  await expect(component.locator('.workspace-list').getByRole('option')).toHaveCount(1);
+  await tabs.getByRole('tab', { name: 'Assistant', exact: true }).click();
+  await expect(sidebar.getByRole('button', { name: 'All repos', exact: true })).toHaveCount(0);
+  const threads = sidebar.getByRole('listbox');
+  const planning = threads.getByRole('option', { name: 'Plan the next release', exact: true });
+  await planning.click({ position: { x: 6, y: 6 } });
+  await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
+    'Plan the next release',
+  );
+  await planning.click({ position: { x: 6, y: 6 } });
+  await expect(planning).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('ArrowDown');
+  await expect(
+    threads.getByRole('option', { name: 'Review open pull requests', exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(threads.getByRole('option', { selected: true })).toHaveText(
+    'Review open pull requests',
+  );
+  await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
+    'Review open pull requests',
+  );
+  const draft = component.locator('.home-surface [contenteditable="true"]').first();
+  await draft.fill('Keep this draft while I check workspaces');
+  await testInfo.attach('home-sidebar-assistant', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-assistant.png') }),
+    contentType: 'image/png',
+  });
+  await tabs.getByRole('tab', { name: 'Workspaces', exact: true }).click();
+  await expect(component.getByRole('searchbox')).toHaveValue('sidebar');
+  await expect(component.locator('.workspace-list').getByRole('option')).toHaveCount(1);
+  await page.keyboard.press('ArrowRight');
+  await expect(tabs.getByRole('tab', { name: 'Assistant', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(tabs.getByRole('tab', { name: 'Assistant', exact: true })).toBeFocused();
+  await expect(threads.getByRole('option', { selected: true })).toHaveText(
+    'Review open pull requests',
+  );
+  await expect(draft).toHaveText('Keep this draft while I check workspaces');
+  await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
+  await expect(threads.getByRole('option')).toHaveCount(2);
+  await expect(threads.getByRole('option', { selected: true })).toHaveText('Plan the next release');
+  await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
+    'Plan the next release',
+  );
+  await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
+  await expect(threads.getByRole('option')).toHaveCount(1);
+  await expect(threads.getByRole('option', { selected: true })).toHaveCount(1);
+  await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
+  await expect(sidebar.getByRole('status')).toContainText('No Assistant threads');
+});
+
+test('Home sidebar keeps an empty Assistant usable', async ({ mount, page }, testInfo) => {
+  const component = await mount(Preview, { props: { scenario: 'empty' } });
+  const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+  await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
+  await expect(sidebar.getByRole('status')).toContainText('No Assistant threads');
+  await expect(
+    component
+      .locator('[data-chief-header-row]')
+      .getByRole('button', { name: 'New Assistant thread', exact: true }),
+  ).toBeEnabled();
+  await testInfo.attach('home-sidebar-empty-assistant', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-empty-assistant.png') }),
+    contentType: 'image/png',
+  });
+  await sidebar.getByRole('tab', { name: 'Workspaces', exact: true }).click();
+  await expect(
+    component.locator('.home-header').getByRole('button', { name: 'New workspace', exact: true }),
+  ).toBeVisible();
+});
+
+test('Home sidebar scrolls long thread history and keeps narrow tabs usable', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'assistant-many' } });
+  const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+  const handle = component
+    .locator('.home-sidebar-resizable')
+    .getByRole('button', { name: 'Resize panel (double-click to reset)', exact: true });
+  await handle.focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowLeft');
+  await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
+  const threads = sidebar.getByRole('listbox');
+  expect(await threads.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+    true,
+  );
+  await threads.getByRole('option', { name: /^Find the workspaces/ }).click();
+  await expect(
+    component
+      .locator('[data-chief-header-row]')
+      .getByRole('button', { name: 'New Assistant thread', exact: true }),
+  ).toBeVisible();
+  await testInfo.attach('home-sidebar-long-title', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-long-title.png') }),
+    contentType: 'image/png',
+  });
+  await threads.getByRole('option').first().focus();
+  await page.keyboard.press('End');
+  const last = threads.getByRole('option', { name: 'Assistant conversation 240', exact: true });
+  await expect(last).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(last).toBeInViewport();
+  await expect(last).toHaveAttribute('aria-selected', 'true');
+  await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
+    'Assistant conversation 240',
+  );
+  expect(await sidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+  const tabs = sidebar.getByRole('tablist');
+  expect(await tabs.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await testInfo.attach('home-sidebar-narrow-history', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-narrow-history.png') }),
     contentType: 'image/png',
   });
 });
