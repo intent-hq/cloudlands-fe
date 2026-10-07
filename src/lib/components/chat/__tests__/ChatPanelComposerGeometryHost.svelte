@@ -126,7 +126,8 @@
   const draftFixture = createChatDraftFixture((request) => {
     draftRequests = [...draftRequests, request];
   });
-  if (fixture.persistedDraft) draftFixture.seed(workspaceId, agentId, fixture.persistedDraft);
+  const initialDraft = fixture.persistedDraft || fixture.draft;
+  if (initialDraft) draftFixture.seed(workspaceId, agentId, initialDraft);
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
