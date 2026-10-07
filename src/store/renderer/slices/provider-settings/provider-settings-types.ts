@@ -24,7 +24,16 @@ export type ProviderFastModeState = {
   revision: number;
 };
 
+export type ProviderTokenState = {
+  status: 'loading' | 'ready' | 'error';
+  configured: boolean;
+  busy: boolean;
+  failed: boolean;
+  requestId: string;
+};
+
 export type ProviderSettingsState = {
+  accessTokens: Record<string, ProviderTokenState>;
   fastMode: ProviderFastModeState;
   enabledProviders: Record<string, boolean>;
   nonDisableableProviderIds: string[];

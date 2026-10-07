@@ -11,6 +11,7 @@ import {
   updateItem,
 } from '@themislib/themis/utils/collections/collection-utils';
 import type {
+  ProviderTokenState,
   ProviderFastModeState,
   ProviderPaths,
   ProviderSettingsRequest,
@@ -43,6 +44,7 @@ export const fastModeWriteSettled = createAction<[providerId: string, editId: nu
 );
 
 export const initialState: ProviderSettingsState = {
+  accessTokens: {},
   fastMode: emptyFastMode,
   enabledProviders: {},
   nonDisableableProviderIds: [],
@@ -247,6 +249,7 @@ providerSettingsReducer.with(providerSettingsStopped, (state) => {
   return {
     ...state,
     requests,
+    accessTokens: {},
     pathsRevision: state.pathsRevision + 1,
     pathsStatus: state.pathsStatus === 'pending' ? 'idle' : state.pathsStatus,
     piAdapter: {
@@ -366,3 +369,77 @@ providerSettingsReducer.with(fastModeWriteSettled, (state, { payload: [providerI
   delete pending[providerId];
   return { ...state, fastMode: { ...state.fastMode, pending } };
 });
+
+export const providerTokenReadRequested = createAction<[providerId: string]>(
+  'providerSettings/tokenReadRequested',
+);
+export const providerTokenReadStarted = createAction<[providerId: string, requestId: string]>(
+  'providerSettings/tokenReadStarted',
+);
+export const providerTokenWriteRequested = createAction<
+  [providerId: string, operation: 'save' | 'remove', request: ProviderSettingsRequestContext]
+>('providerSettings/tokenWriteRequested');
+export const providerTokenSettled = createAction<
+  [providerId: string, requestId: string, result: { configured: boolean } | null]
+>('providerSettings/tokenSettled');
+
+providerSettingsReducer.with(
+  providerTokenReadStarted,
+  (state, { payload: [providerId, requestId] }) => {
+    if (state.accessTokens[providerId]?.busy) return state;
+    return {
+      ...state,
+      accessTokens: {
+        ...state.accessTokens,
+        [providerId]: {
+          status: 'loading',
+          configured: false,
+          busy: false,
+          failed: false,
+          requestId,
+        },
+      },
+    };
+  },
+);
+providerSettingsReducer.with(
+  providerTokenWriteRequested,
+  (state, { payload: [providerId, , request] }) => {
+    const previous = state.accessTokens[providerId];
+    if (
+      !previous ||
+      previous.status !== 'ready' ||
+      previous.busy ||
+      !state.sessions.includes(request.sessionId)
+    )
+      return state;
+    return {
+      ...state,
+      accessTokens: {
+        ...state.accessTokens,
+        [providerId]: {
+          ...previous,
+          busy: true,
+          failed: false,
+          requestId: request.id,
+        },
+      },
+    };
+  },
+);
+providerSettingsReducer.with(
+  providerTokenSettled,
+  (state, { payload: [providerId, requestId, result] }) => {
+    const previous = state.accessTokens[providerId];
+    if (!previous || previous.requestId !== requestId) return state;
+    const next: ProviderTokenState = result
+      ? { ...previous, configured: result.configured, status: 'ready', busy: false, failed: false }
+      : {
+          ...previous,
+          status: previous.busy ? 'ready' : 'error',
+          busy: false,
+          failed: previous.busy,
+        };
+    return { ...state, accessTokens: { ...state.accessTokens, [providerId]: next } };
+  },
+);

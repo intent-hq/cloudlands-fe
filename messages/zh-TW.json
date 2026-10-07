@@ -7471,5 +7471,19 @@
   "settings_machineName_saved": "電腦名稱已儲存",
   "home_assistantThread_hooks_label": "作用中的掛鉤：{count}",
   "home_assistantThread_monitors_label": "作用中的監控：{count}",
-  "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}"
+  "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}",
+  "settings_providerToken_label": "存取權杖（選填）",
+  "settings_providerToken_saved": "權杖已儲存 · 尚未驗證",
+  "settings_providerToken_absent": "尚未儲存權杖",
+  "settings_providerToken_manual": "若不使用權杖，請在每台目標機器上以執行節點的帳戶登入。",
+  "settings_providerToken_nextLaunch": "變更適用於新啟動的代理程式。執行中的代理程式保留目前的驗證。",
+  "settings_providerToken_claude": "使用 claude setup-token 建立 Claude 設定權杖。",
+  "settings_providerToken_codex": "請使用符合資格的 ChatGPT Business 或 Enterprise 工作區的 Codex 存取權杖。",
+  "settings_providerToken_save": "儲存權杖",
+  "settings_providerToken_replace": "替換權杖",
+  "settings_providerToken_remove": "移除權杖",
+  "settings_providerToken_loading": "正在載入權杖設定…",
+  "settings_providerToken_unavailable": "此守護程式不支援權杖設定。",
+  "settings_providerToken_error": "無法更新權杖，請重試。",
+  "settings_providerToken_loadError": "無法載入權杖設定，請重試。"
 }

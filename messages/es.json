@@ -7471,5 +7471,19 @@
   "settings_machineName_saved": "Nombre del equipo guardado",
   "home_assistantThread_hooks_label": "Hooks activos: {count}",
   "home_assistantThread_monitors_label": "Monitores activos: {count}",
-  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}"
+  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}",
+  "settings_providerToken_label": "Token de acceso opcional",
+  "settings_providerToken_saved": "Token guardado · sin verificar",
+  "settings_providerToken_absent": "No hay token guardado",
+  "settings_providerToken_manual": "Sin un token, inicia sesión en cada máquina de destino con la cuenta que ejecuta el nodo.",
+  "settings_providerToken_nextLaunch": "Los cambios se aplican a los agentes nuevos. Los agentes en ejecución conservan su autenticación actual.",
+  "settings_providerToken_claude": "Crea un token de configuración de Claude con claude setup-token.",
+  "settings_providerToken_codex": "Usa un token de acceso de Codex de un espacio de ChatGPT Business o Enterprise elegible.",
+  "settings_providerToken_save": "Guardar token",
+  "settings_providerToken_replace": "Reemplazar token",
+  "settings_providerToken_remove": "Eliminar token",
+  "settings_providerToken_loading": "Cargando ajustes del token…",
+  "settings_providerToken_unavailable": "Los ajustes de token no están disponibles en este daemon.",
+  "settings_providerToken_error": "No se pudo actualizar el token. Inténtalo de nuevo.",
+  "settings_providerToken_loadError": "No se pudieron cargar los ajustes del token. Inténtalo de nuevo."
 }
