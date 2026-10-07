@@ -54,7 +54,9 @@
   {matchingIds}
   query={$view$.query}
   layout={$view$.cityLayout}
+  rendering={$view$.cityRendering}
   onlayout={(cityLayout) => store.dispatch(updateHomeWorkspaceView({ cityLayout }))}
+  onrendering={(cityRendering) => store.dispatch(updateHomeWorkspaceView({ cityRendering }))}
   {onsearch}
   {onclear}
   onopen={openWorkspace}

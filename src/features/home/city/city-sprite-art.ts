@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import catalog from './assets/simcity/catalog.json';
 import { citySpriteRotation, type CitySprite, type CitySpriteFrame } from './home-city-sprites';
+import { CITY_SPRITE_TILE_SIZE } from './home-city-layout';
 
 interface SpriteSheet {
   image: HTMLImageElement;
@@ -28,7 +29,7 @@ const urls = import.meta.glob<string>('./assets/simcity/*.png', {
 });
 let loaded: Promise<SpriteSheet[]> | undefined;
 // One native tile uses the same world scale in every zone and condition.
-const PIXEL_SCALE = (0.65 * Math.SQRT2) / catalog.tileWidth;
+const PIXEL_SCALE = (CITY_SPRITE_TILE_SIZE * Math.SQRT2) / catalog.tileWidth;
 
 /** Decode before the scene's ready marker, including alpha used by pointer picking. */
 export function loadCitySpriteSheets(): Promise<SpriteSheet[]> {

@@ -3,6 +3,8 @@ import type { RepositoryGroup } from '$lib/components/workspace/utils/workspace-
 import type { WorkspaceSummariesState } from '$store/renderer/slices/workspace-summaries/workspace-summaries-types';
 import { getHomeTriageGroup } from '../home-model';
 
+export type CityRenderingStyle = 'sprites' | 'wireframe';
+
 interface CityRepository {
   id: string;
   name: string;

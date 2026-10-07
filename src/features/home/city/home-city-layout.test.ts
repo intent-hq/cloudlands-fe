@@ -57,12 +57,19 @@ describe('repository neighborhoods on a shared city grid', () => {
       const width = Math.max(...blocks.map((b) => b.x)) - Math.min(...blocks.map((b) => b.x)) + 1;
       const depth = Math.max(...blocks.map((b) => b.z)) - Math.min(...blocks.map((b) => b.z)) + 1;
       expect(width * depth).toBeLessThanOrEqual(blocks.length * 2);
-      const points = [...positions(layout).values()];
+      const points = layout.plots.map((plot) => ({
+        ...positions(layout).get(plot.id)!,
+        size: plot.cell === undefined ? 3 : 0.65,
+      }));
       for (let i = 0; i < points.length; i++) {
         for (let j = i + 1; j < points.length; j++) {
-          expect(Math.hypot(points[i].x - points[j].x, points[i].z - points[j].z)).toBeGreaterThan(
-            2.8,
-          );
+          const gap = (points[i].size + points[j].size) / 2;
+          expect(
+            Math.max(
+              Math.abs(points[i].x - points[j].x) - gap,
+              Math.abs(points[i].z - points[j].z) - gap,
+            ),
+          ).toBeGreaterThanOrEqual(-1e-8);
         }
       }
     },
@@ -84,6 +91,66 @@ describe('repository neighborhoods on a shared city grid', () => {
         emptyCityLayout(),
       ),
     ).toEqual(original);
+  });
+
+  it('packs sixteen native one-tile workspaces into one lot and spills without overlap', () => {
+    const model = createCityFixture('packed');
+    const layout = allocateCityLayout(model, emptyCityLayout());
+    const small = layout.plots.filter((plot) => plot.cell !== undefined);
+    expect(small).toHaveLength(18);
+    expect(new Set(small.slice(0, 16).map((plot) => plot.slot)).size).toBe(1);
+    expect(new Set(small.slice(0, 16).map((plot) => plot.cell)).size).toBe(16);
+    expect(new Set(small.slice(16).map((plot) => plot.slot)).size).toBe(1);
+    expect(small[16].slot).not.toBe(small[0].slot);
+    const large = layout.plots.filter((plot) => plot.cell === undefined);
+    expect(large).toHaveLength(2);
+    expect(new Set(layout.plots.map((plot) => plot.slot)).size).toBe(4);
+    expect(layout.districts[0].blocks).toHaveLength(1);
+    const addresses = [...positions(layout).values()].map(({ x, z }) => `${x}:${z}`);
+    expect(new Set(addresses).size).toBe(model.buildings.length);
+    expect(normalizeCityLayout(JSON.parse(JSON.stringify(layout)))).toEqual(layout);
+  });
+
+  it('reserves hidden compact cells and moves only a workspace that outgrows its cell', () => {
+    const model = createCityFixture('packed');
+    const original = allocateCityLayout(model, emptyCityLayout());
+    const scoped = { ...model, buildings: model.buildings.slice(1, 3) };
+    expect(allocateCityLayout(scoped, original)).toBe(original);
+    const target = model.buildings[0];
+    const promoted = allocateCityLayout(
+      {
+        ...model,
+        buildings: model.buildings.map((building) =>
+          building.id === target.id ? { ...building, files: 100, floors: 8 } : building,
+        ),
+      },
+      original,
+    );
+    const grown = promoted.plots.find((plot) => plot.id === target.id)!;
+    expect(grown.cell).toBeUndefined();
+    expect(grown.slot).not.toBe(original.plots[0].slot);
+    const moved = positions(promoted);
+    for (const [id, position] of positions(original)) {
+      if (id !== target.id) expect(moved.get(id)).toEqual(position);
+    }
+    expect(normalizeCityLayout(JSON.parse(JSON.stringify(promoted)))).toEqual(promoted);
+  });
+
+  it('rejects duplicate compact cells, invalid cells, and full-lot collisions', () => {
+    const layout = allocateCityLayout(createCityFixture('packed'), emptyCityLayout());
+    const sample = layout.plots[0];
+    const restored = normalizeCityLayout({
+      ...layout,
+      plots: [
+        ...layout.plots,
+        { ...sample, id: 'duplicate' },
+        { ...sample, id: 'negative', cell: -1 },
+        { ...sample, id: 'oversized', cell: 16 },
+        { ...sample, id: 'fractional', cell: 1.5 },
+        { ...sample, id: 'whole-lot', cell: undefined },
+      ],
+    });
+    expect(restored).toEqual(layout);
   });
 
   it('migrates ring layouts without losing more than 2,000 reserved workspace IDs', () => {

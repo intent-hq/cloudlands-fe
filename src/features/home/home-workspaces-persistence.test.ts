@@ -11,6 +11,27 @@ import {
 // nonfinite or extreme coordinates/zoom, stale unread values, retired saved-view fields,
 // and transient selection/blob URLs surviving reload. Tests precede implementation.
 describe('durable Home configuration', () => {
+  // Prevent a lost style after reload or an unsupported legacy value reaching the renderer.
+  it.each(['sprites', 'wireframe'] as const)(
+    'restores the %s city style through the persisted document',
+    (cityRendering) => {
+      const state = { ...defaultHomeConfiguration(), view: 'city' as const, cityRendering };
+      const saved = JSON.parse(JSON.stringify(persistedHomeState(state)));
+      expect(readHomePersistence(saved).configuration).toMatchObject({
+        view: 'city',
+        cityRendering,
+      });
+    },
+  );
+  it('defaults new, legacy, and invalid city styles to sprites', () => {
+    expect(defaultHomeConfiguration().cityRendering).toBe('sprites');
+    expect(
+      readHomePersistence({ version: 1, settings: { view: 'city' } }).configuration,
+    ).toMatchObject({ view: 'city', cityRendering: 'sprites' });
+    for (const cityRendering of [undefined, null, 'unknown', '', 1, {}, ['wireframe']]) {
+      expect(normalizeHomeConfiguration({ cityRendering }).cityRendering).toBe('sprites');
+    }
+  });
   it('uses unambiguous backend and principal namespaces', () => {
     expect(homePersistenceKey('remote', 'alice')).not.toBe(homePersistenceKey('remote', 'bob'));
     expect(homePersistenceKey('local', 'alice')).not.toBe(homePersistenceKey('remote', 'alice'));

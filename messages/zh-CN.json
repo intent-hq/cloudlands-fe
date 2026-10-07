@@ -7129,5 +7129,8 @@
   "home_city_condition_construction": "施工中",
   "home_city_condition_dilapidated": "破旧",
   "home_city_condition_developed": "已建成",
-  "home_city_sprite_description": "每个仓库有固定的分区。运行中的工作显示为施工建筑，受阻的工作显示为破旧建筑。"
+  "home_city_sprite_description": "每个仓库有固定的分区。运行中的工作显示为施工建筑，受阻的工作显示为破旧建筑。",
+  "home_city_style_label": "建筑风格",
+  "home_city_style_sprites": "SimCity",
+  "home_city_style_wireframe": "线框"
 }

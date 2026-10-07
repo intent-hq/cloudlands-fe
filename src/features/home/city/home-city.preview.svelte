@@ -25,6 +25,7 @@
   import { Input } from '$lib/components/ui/input';
   import HomeWorkspaceCity from './HomeWorkspaceCity.svelte';
   import { emptyCityLayout, normalizeCityLayout } from './home-city-layout';
+  import type { CityRenderingStyle } from './home-city-model';
   import { untrack } from 'svelte';
 
   let { scenario = 'showcase' }: Props = $props();
@@ -32,6 +33,7 @@
   let revision = $state(0);
   let removed = $state(false);
   let generation = $state(0);
+  let rendering = $state<CityRenderingStyle>('sprites');
   let opened = $state('');
   let listRequested = $state(false);
   let searchInput: HTMLInputElement | undefined = $state();
@@ -138,6 +140,8 @@
   <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     {#key generation}
       <HomeWorkspaceCity
+        {rendering}
+        onrendering={(next) => (rendering = next)}
         {model}
         {matchingIds}
         {query}

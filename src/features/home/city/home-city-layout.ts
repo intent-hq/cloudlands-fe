@@ -1,4 +1,5 @@
 import type { CityModel } from './home-city-model';
+import { cityBuildingSprite, cityRepositoryZone } from './home-city-sprites';
 
 export interface CityBlock {
   x: number;
@@ -15,6 +16,8 @@ export interface CityPlot {
   repositoryId: string;
   districtId: string;
   slot: number;
+  /** Native 1x1 buildings share a 4x4 lot; larger buildings own the whole lot. */
+  cell?: number;
 }
 export interface CityLayout {
   version: 3;
@@ -28,6 +31,9 @@ interface CityPosition {
 }
 
 export const CITY_BLOCK_SIZE = 9.6;
+export const CITY_SPRITE_TILE_SIZE = 0.65;
+const COMPACT_GRID = 4;
+const COMPACT_CELLS = COMPACT_GRID ** 2;
 const LOTS_PER_BLOCK = 4;
 const LOT_OFFSET = 1.8;
 const directions = [
@@ -271,6 +277,8 @@ const validCapacity = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 100000;
 const validCoordinate = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 10000;
+const validCell = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < COMPACT_CELLS;
 
 function migrateIslands(raw: Record<string, unknown>): CityLayout {
   if (!Array.isArray(raw.islands) || !Array.isArray(raw.plots)) return emptyCityLayout();
@@ -384,13 +392,15 @@ export function normalizeCityLayout(value: unknown): CityLayout {
     for (const block of blocks) occupied.add(address(block));
   }
   const ids = new Set<string>();
-  const slots = new Set<string>();
+  const slots = new Map<string, Set<number>>();
   const plots: CityPlot[] = [];
   for (const entry of raw.plots) {
     const item = record(entry);
     const district =
       typeof item.districtId === 'string' ? districts.get(item.districtId) : undefined;
     const slot = `${item.districtId}:${item.slot}`;
+    const cell = validCell(item.cell) ? item.cell : undefined;
+    const reserved = slots.get(slot);
     if (
       !validId(item.id) ||
       ids.has(item.id) ||
@@ -400,7 +410,8 @@ export function normalizeCityLayout(value: unknown): CityLayout {
       !Number.isInteger(item.slot) ||
       item.slot < 0 ||
       item.slot >= district.capacity ||
-      slots.has(slot)
+      (item.cell !== undefined && cell === undefined) ||
+      (reserved !== undefined && (cell === undefined || reserved.has(-1) || reserved.has(cell)))
     )
       continue;
     plots.push({
@@ -408,9 +419,10 @@ export function normalizeCityLayout(value: unknown): CityLayout {
       repositoryId: district.repositoryId,
       districtId: district.id,
       slot: item.slot,
+      ...(cell === undefined ? {} : { cell }),
     });
     ids.add(item.id);
-    slots.add(slot);
+    slots.set(slot, (reserved ?? new Set<number>()).add(cell ?? -1));
   }
   const used = new Set(plots.map((plot) => plot.districtId));
   return {
@@ -422,9 +434,23 @@ export function normalizeCityLayout(value: unknown): CityLayout {
 
 export function allocateCityLayout(model: CityModel, previous: CityLayout): CityLayout {
   const existing = new Map(previous.plots.map((plot) => [plot.id, plot]));
-  const newcomers = model.buildings.filter(
-    (building) => existing.get(building.id)?.repositoryId !== building.repositoryId,
+  const zones = new Map(model.repositories.map((repo) => [repo.id, cityRepositoryZone(repo)]));
+  const compact = new Map(
+    model.buildings.map((building) => {
+      const sprite = cityBuildingSprite(
+        building,
+        zones.get(building.repositoryId) ?? 'residential',
+      );
+      return [building.id, sprite.lot[0] === 1 && sprite.lot[1] === 1];
+    }),
   );
+  const newcomers = model.buildings.filter((building) => {
+    const plot = existing.get(building.id);
+    return (
+      plot?.repositoryId !== building.repositoryId ||
+      (plot.cell !== undefined) !== compact.get(building.id)
+    );
+  });
   if (newcomers.length === 0) return previous;
   const incoming = new Set(newcomers.map((building) => building.id));
   const layout: CityLayout = {
@@ -436,13 +462,14 @@ export function allocateCityLayout(model: CityModel, previous: CityLayout): City
     plots: previous.plots.filter((plot) => !incoming.has(plot.id)),
   };
   const districts = new Map(layout.districts.map((district) => [district.repositoryId, district]));
-  const occupied = new Map<string, Set<number>>();
+  const occupied = new Map<string, Map<number, Set<number>>>();
   for (const plot of layout.plots) {
     let slots = occupied.get(plot.repositoryId);
-    if (!slots) occupied.set(plot.repositoryId, (slots = new Set()));
-    slots.add(plot.slot);
+    if (!slots) occupied.set(plot.repositoryId, (slots = new Map()));
+    const cells = slots.get(plot.slot) ?? new Set<number>();
+    cells.add(plot.cell ?? -1);
+    slots.set(plot.slot, cells);
   }
-  const cursors = new Map<string, number>();
   // A scoped model cannot distinguish deleted workspaces from hidden reservations.
   for (const building of [...newcomers].sort(
     (a, b) => a.repositoryId.localeCompare(b.repositoryId) || a.id.localeCompare(b.id),
@@ -458,17 +485,32 @@ export function allocateCityLayout(model: CityModel, previous: CityLayout): City
       districts.set(district.id, district);
     }
     let slots = occupied.get(building.repositoryId);
-    if (!slots) occupied.set(building.repositoryId, (slots = new Set()));
-    let slot = cursors.get(building.repositoryId) ?? 0;
-    while (slots.has(slot)) slot++;
-    slots.add(slot);
-    cursors.set(building.repositoryId, slot + 1);
+    if (!slots) occupied.set(building.repositoryId, (slots = new Map()));
+    const small = compact.get(building.id) === true;
+    let slot = small
+      ? [...slots.entries()]
+          .filter(([, cells]) => !cells.has(-1) && cells.size < COMPACT_CELLS)
+          .sort(([a], [b]) => a - b)[0]?.[0]
+      : undefined;
+    if (slot === undefined) {
+      slot = 0;
+      while (slots.has(slot)) slot++;
+    }
+    const cells = slots.get(slot) ?? new Set<number>();
+    let cell: number | undefined;
+    if (small) {
+      cell = 0;
+      while (cells.has(cell)) cell++;
+    }
+    cells.add(cell ?? -1);
+    slots.set(slot, cells);
     district.capacity = Math.max(district.capacity, slot + 1);
     layout.plots.push({
       id: building.id,
       repositoryId: district.repositoryId,
       districtId: district.id,
       slot,
+      ...(cell === undefined ? {} : { cell }),
     });
   }
   layout.districts = [...districts.values()];
@@ -477,14 +519,20 @@ export function allocateCityLayout(model: CityModel, previous: CityLayout): City
 }
 
 export function cityPlotPosition(
-  plot: Pick<CityPlot, 'slot'>,
+  plot: Pick<CityPlot, 'slot' | 'cell'>,
   district: CityDistrict,
 ): CityPosition {
   const block = district.blocks[Math.floor(plot.slot / LOTS_PER_BLOCK)];
   const lot = plot.slot % LOTS_PER_BLOCK;
+  const dx =
+    plot.cell === undefined ? 0 : ((plot.cell % COMPACT_GRID) - 1.5) * CITY_SPRITE_TILE_SIZE;
+  const dz =
+    plot.cell === undefined
+      ? 0
+      : (Math.floor(plot.cell / COMPACT_GRID) - 1.5) * CITY_SPRITE_TILE_SIZE;
   return {
-    x: block.x * CITY_BLOCK_SIZE + (lot % 2 ? LOT_OFFSET : -LOT_OFFSET),
-    z: block.z * CITY_BLOCK_SIZE + (lot < 2 ? -LOT_OFFSET : LOT_OFFSET),
+    x: block.x * CITY_BLOCK_SIZE + (lot % 2 ? LOT_OFFSET : -LOT_OFFSET) + dx,
+    z: block.z * CITY_BLOCK_SIZE + (lot < 2 ? -LOT_OFFSET : LOT_OFFSET) + dz,
     angle: 0,
   };
 }

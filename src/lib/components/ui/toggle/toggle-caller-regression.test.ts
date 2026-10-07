@@ -122,6 +122,7 @@ describe('B2 caller metadata regression', () => {
       ],
       toggle: ['src/lib/component-catalog/renderers/BasicCatalogPreview.svelte'],
       'toggle-group': [
+        'src/features/home/city/HomeWorkspaceCity.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',

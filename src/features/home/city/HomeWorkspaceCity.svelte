@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import { fade, fly } from '$lib/motion';
   import { formatInteger } from '$lib/i18n/format';
@@ -26,7 +27,7 @@
     faRotateLeft,
     faRotateRight,
   } from '@fortawesome/free-solid-svg-icons';
-  import type { CityBuilding, CityModel } from './home-city-model';
+  import type { CityBuilding, CityModel, CityRenderingStyle } from './home-city-model';
   import {
     allocateCityLayout,
     cityPlotPosition,
@@ -49,6 +50,8 @@
     query = '',
     layout,
     onlayout,
+    rendering,
+    onrendering,
     onsearch,
     onclear,
     onopen,
@@ -59,6 +62,8 @@
     query?: string;
     layout?: CityLayout;
     onlayout?: (layout: CityLayout) => void;
+    rendering?: CityRenderingStyle;
+    onrendering?: (rendering: CityRenderingStyle) => void;
     onsearch: () => void;
     onclear: () => void;
     onopen: (id: string) => void;
@@ -70,6 +75,8 @@
   let scene = $state<CityScene | null>(null);
   let allocation = $state<CityLayout>(untrack(() => layout ?? emptyCityLayout()));
   let selectedId = $state<string | null>(null);
+  let localRendering = $state<CityRenderingStyle>('sprites');
+  const style = $derived(rendering ?? localRendering);
   let indexOpen = $state(false);
   let helpOpen = $state(false);
   let failed = $state(false);
@@ -79,6 +86,7 @@
   let frame = $state<CityFrame>({
     buildings: [],
     zoom: 1,
+    span: 24,
     draws: 0,
     triangles: 0,
     moving: false,
@@ -96,7 +104,15 @@
     new Map(
       allocation.plots.map((plot) => {
         const district = allocation.districts.find((item) => item.id === plot.districtId);
-        return [plot.id, district ? cityPlotPosition(plot, district) : { x: 0, z: 0, angle: 0 }];
+        return [
+          plot.id,
+          {
+            ...(district ? cityPlotPosition(plot, district) : { x: 0, z: 0, angle: 0 }),
+            slot: plot.slot,
+            cell: plot.cell,
+            districtId: plot.districtId,
+          },
+        ];
       }),
     ),
   );
@@ -149,7 +165,7 @@
     if (selectedId && (!buildings.has(selectedId) || !matching.has(selectedId))) selectedId = null;
   });
   $effect(() => {
-    scene?.update(model, allocation, matchingIds, selectedId);
+    scene?.update(model, allocation, matchingIds, selectedId, style);
   });
   $effect(() => {
     if (failed) indexOpen = true;
@@ -197,6 +213,11 @@
     scene?.focus(id);
     if (root.clientWidth < 680) indexOpen = false;
     viewport?.focus({ preventScroll: true });
+  }
+  function changeRendering(next: string) {
+    if (next !== 'sprites' && next !== 'wireframe') return;
+    localRendering = next;
+    onrendering?.(next);
   }
   function cycle(direction = 1, attentionOnly = false) {
     const candidates = attentionOnly
@@ -373,9 +394,11 @@
   class:city-has-selection={!!selected}
   class:city-has-index={indexOpen}
   data-city
+  data-city-rendering={style}
   data-city-ready={ready}
   data-city-moving={frame.moving}
   data-city-zoom={frame.zoom}
+  data-city-span={frame.span}
   data-city-draws={frame.draws}
   data-city-triangles={frame.triangles}
   data-city-yaw={frame.yaw}
@@ -393,6 +416,30 @@
     aria-describedby="city-keyboard-hint"
   ></div>
   <div class="city-top-actions">
+    <ToggleGroup.Root
+      type="single"
+      value={style}
+      onValueChange={changeRendering}
+      variant="outline"
+      size="sm"
+      class="city-tool"
+      aria-label={m.home_city_style_label()}
+    >
+      <ToggleGroup.Item
+        value="sprites"
+        data-city-style="sprites"
+        onclick={(event) => {
+          if (style === 'sprites') event.preventDefault();
+        }}>{m.home_city_style_sprites()}</ToggleGroup.Item
+      >
+      <ToggleGroup.Item
+        value="wireframe"
+        data-city-style="wireframe"
+        onclick={(event) => {
+          if (style === 'wireframe') event.preventDefault();
+        }}>{m.home_city_style_wireframe()}</ToggleGroup.Item
+      >
+    </ToggleGroup.Root>
     <Button
       variant="ghost"
       size="icon-sm"
@@ -437,6 +484,9 @@
             data-city-plot={label.id}
             data-city-x={plots.get(label.id)?.x}
             data-city-z={plots.get(label.id)?.z}
+            data-city-district={plots.get(label.id)?.districtId}
+            data-city-slot={plots.get(label.id)?.slot}
+            data-city-cell={plots.get(label.id)?.cell}
             data-city-match={matching.has(label.id)}
             data-city-zone={zones.get(building.repositoryId)}
             data-city-condition={cityBuildingCondition(building.status)}
@@ -538,9 +588,11 @@
       <p class="city-inspector-message">
         {selected.workspace.statusMessage || statusLabel(selected.status)}
       </p>
-      <p class="city-condition type-caption text-muted-foreground" data-city-condition-label>
-        {conditionLabel(cityBuildingCondition(selected.status))}
-      </p>
+      {#if style === 'sprites'}
+        <p class="city-condition type-caption text-muted-foreground" data-city-condition-label>
+          {conditionLabel(cityBuildingCondition(selected.status))}
+        </p>
+      {/if}
       <div class="city-inspector-status" data-city-status data-status={selected.status}>
         <Fa icon={statusIcon(selected.status)} /><span>{statusLabel(selected.status)}</span
         >{#if selected.agents !== null}<span class="city-agent-count"

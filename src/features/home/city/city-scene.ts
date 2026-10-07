@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { prefersReducedMotion, spring } from '$lib/motion';
 import { onReducedMotionChange } from '$lib/utils/reduced-motion';
-import type { CityModel } from './home-city-model';
+import type { CityModel, CityRenderingStyle } from './home-city-model';
 import { CITY_BLOCK_SIZE, cityDistrictBounds, type CityLayout } from './home-city-layout';
 import { CityArt, type CityTheme } from './city-art';
+import { CITY_DETAIL_LIMIT, CityWireframeArt } from './city-wireframe-art';
 import { CitySpriteAtlas, loadCitySpriteSheets } from './city-sprite-art';
 
 interface CityLabel {
@@ -15,6 +16,7 @@ interface CityLabel {
 export interface CityFrame {
   buildings: CityLabel[];
   zoom: number;
+  span: number;
   draws: number;
   triangles: number;
   moving: boolean;
@@ -102,7 +104,7 @@ export class CityScene {
     }),
   );
   private readonly themeObserver: MutationObserver;
-  private art: CityArt | null = null;
+  private art: CityArt | CityWireframeArt | null = null;
   private matches = new Set<string>();
   private selected: string | null = null;
   private hovered: string | null = null;
@@ -227,10 +229,13 @@ export class CityScene {
     layout: CityLayout,
     matches: readonly string[],
     selected: string | null,
+    rendering: CityRenderingStyle = 'sprites',
   ) {
     this.matches = new Set(matches);
     this.selected = selected;
     const structure = JSON.stringify([
+      rendering,
+      rendering === 'wireframe' && model.buildings.length > CITY_DETAIL_LIMIT ? selected : null,
       model.buildings.map((building) => [
         building.id,
         building.floors,
@@ -246,7 +251,10 @@ export class CityScene {
         this.scene.remove(this.art.group);
         this.art.dispose();
       }
-      this.art = new CityArt(model, layout, this.readTheme(), this.atlas);
+      this.art =
+        rendering === 'wireframe'
+          ? new CityWireframeArt(model, layout, this.readTheme(), selected)
+          : new CityArt(model, layout, this.readTheme(), this.atlas);
       this.scene.add(this.art.group);
       this.structure = structure;
       this.bounds.makeEmpty();
@@ -292,7 +300,9 @@ export class CityScene {
     for (const anchor of this.art?.anchors.values() ?? []) {
       if (anchor.district.repositoryId === id) {
         const elevation = (this.motion?.to ?? this.view).elevation;
-        const height = ((anchor.y + 1) * Math.cos(DEFAULT_ELEVATION)) / Math.cos(elevation);
+        const height = this.art?.billboard
+          ? ((anchor.y + 1) * Math.cos(DEFAULT_ELEVATION)) / Math.cos(elevation)
+          : anchor.y + 1;
         box.expandByPoint(new THREE.Vector3(anchor.x, height, anchor.z));
       }
     }
@@ -529,8 +539,9 @@ export class CityScene {
       };
     };
     const buildings = [...this.art.anchors.values()].map((anchor) => {
-      const height =
-        ((anchor.y + 0.5) * Math.cos(DEFAULT_ELEVATION)) / Math.cos(this.view.elevation);
+      const height = this.art?.billboard
+        ? ((anchor.y + 0.5) * Math.cos(DEFAULT_ELEVATION)) / Math.cos(this.view.elevation)
+        : anchor.y + 0.5;
       const point = project(anchor.id, anchor.x, height, anchor.z);
       point.visible =
         point.visible &&
@@ -541,6 +552,7 @@ export class CityScene {
     this.options.onframe({
       buildings,
       zoom: this.home.span / this.view.span,
+      span: this.view.span,
       draws: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
       moving: !!this.motion,

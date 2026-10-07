@@ -340,5 +340,6 @@
   "workspace_share_member_identityRole_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
   "presence_person_forge_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
   "home_integrations_code_tab": ["de", "fr"],
-  "home_integrations_discussion": ["fr"]
+  "home_integrations_discussion": ["fr"],
+  "home_city_style_sprites": "*"
 }

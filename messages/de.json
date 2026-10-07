@@ -7129,5 +7129,8 @@
   "home_city_condition_construction": "Im Bau",
   "home_city_condition_dilapidated": "Verfallen",
   "home_city_condition_developed": "Fertig gebaut",
-  "home_city_sprite_description": "Repositories haben feste Zonen. Laufende Arbeit ist im Bau; blockierte Arbeit erscheint als verfallenes Gebäude."
+  "home_city_sprite_description": "Repositories haben feste Zonen. Laufende Arbeit ist im Bau; blockierte Arbeit erscheint als verfallenes Gebäude.",
+  "home_city_style_label": "Gebäudestil",
+  "home_city_style_sprites": "SimCity",
+  "home_city_style_wireframe": "Drahtgitter"
 }

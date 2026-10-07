@@ -5,6 +5,7 @@ import { cityFloors, type CityModel } from './home-city-model';
 export const cityScenarios = [
   'showcase',
   'zones-and-states',
+  'packed',
   'empty',
   'one',
   'two',
@@ -38,6 +39,7 @@ const titles = [
 ];
 const counts: Partial<Record<CityScenario, number>> = {
   'zones-and-states': 9,
+  packed: 20,
   empty: 0,
   one: 1,
   two: 2,
@@ -62,7 +64,7 @@ export function createCityFixture(scenario: CityScenario = 'showcase'): CityMode
   const repositoryCount =
     scenario === 'many-repositories' || scenario === 'skewed'
       ? 25
-      : scenario === 'no-repository'
+      : scenario === 'no-repository' || scenario === 'packed'
         ? 1
         : Math.min(3, count);
   const repositories = Array.from({ length: repositoryCount }, (_, index) => ({
@@ -86,13 +88,17 @@ export function createCityFixture(scenario: CityScenario = 'showcase'): CityMode
           : `Make every workspace accessible across all repositories, including exceptionally long project and branch names — ${index + 1}`
         : `${titles[index % titles.length]}${index >= titles.length ? ` ${index + 1}` : ''}`;
     const files =
-      scenario === 'zones-and-states'
-        ? 40
-        : scenario === 'metrics'
-          ? [null, 0, 1_000_000][index]
-          : index === 3
-            ? null
-            : [24, 81, 7, 0, 12, 3, 140, 2, 40, 16][index % 10];
+      scenario === 'packed'
+        ? index < 18
+          ? 0
+          : 40
+        : scenario === 'zones-and-states'
+          ? 40
+          : scenario === 'metrics'
+            ? [null, 0, 1_000_000][index]
+            : index === 3
+              ? null
+              : [24, 81, 7, 0, 12, 3, 140, 2, 40, 16][index % 10];
     const additions = files === null ? null : files * 18;
     const deletions = files === null ? null : files * 3;
     const status =

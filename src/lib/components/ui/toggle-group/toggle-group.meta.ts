@@ -19,6 +19,7 @@ export const toggleGroupMetadata = {
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/home/city/HomeWorkspaceCity.svelte',
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',

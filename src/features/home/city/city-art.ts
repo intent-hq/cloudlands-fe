@@ -72,6 +72,7 @@ function streetGround(blocks: CityBlock[]): THREE.BufferGeometry {
 }
 
 export class CityArt {
+  readonly billboard = true;
   readonly group = new THREE.Group();
   readonly anchors = new Map<string, CityAnchor>();
   readonly districts: CityDistrict[];
@@ -84,6 +85,8 @@ export class CityArt {
   private readonly sidewalks: THREE.InstancedMesh;
   private readonly ring: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   private matches: ReadonlySet<string> = new Set();
+  private readonly occupiedPlots = new Set<string>();
+  private readonly compactOwners = new Set<string>();
 
   constructor(
     model: CityModel,
@@ -93,6 +96,10 @@ export class CityArt {
   ) {
     const activeIds = new Set(model.buildings.map((building) => building.id));
     const plots = layout.plots.filter((plot) => activeIds.has(plot.id));
+    for (const plot of plots) {
+      this.occupiedPlots.add(`${plot.districtId}:${plot.slot}`);
+      if (plot.cell !== undefined) this.compactOwners.add(plot.id);
+    }
     this.districts = layout.districts.filter((district) =>
       plots.some((plot) => plot.districtId === district.id),
     );
@@ -179,7 +186,7 @@ export class CityArt {
         add((left + right) / 2, -0.005, (back + front) / 2, right - left, 0.12, front - back);
         for (let lot = 0; lot < 4; lot++) {
           const slot = index * 4 + lot;
-          if (slot < district.capacity) continue;
+          if (this.occupiedPlots.has(`${district.id}:${slot}`)) continue;
           const position = cityPlotPosition({ slot }, district);
           this.placements.push({
             sprite: cityParkSprite(citySeed(district.id) + slot),
@@ -229,7 +236,10 @@ export class CityArt {
     this.sprites.appearance(matches, this.theme.background);
     const anchor = selected ? this.anchors.get(selected) : undefined;
     this.ring.visible = !!anchor;
-    if (anchor) this.ring.position.set(anchor.x, 0.1, anchor.z);
+    if (anchor) {
+      this.ring.position.set(anchor.x, 0.1, anchor.z);
+      this.ring.scale.setScalar(this.compactOwners.has(anchor.id) ? 0.25 : 1);
+    }
   }
 
   view(yaw: number) {
