@@ -17,6 +17,7 @@ import { setPRContent } from '$store/renderer/slices/changes/changes-slice';
 import { selectAcceptChangesState } from '$store/renderer/slices/changes/changes-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
+import { prRepositoryOptions } from './utils/pr-repository-options';
 import { confirm } from '$lib/components/patterns/confirm';
 
 import { store } from '$store/renderer/store';
@@ -189,6 +190,8 @@ const selectNativeRead = store.createSelector((state, demand: RepositoryContextD
       : null;
   return {
     view,
+    entry: entry ?? null,
+    canChooseRepository: prRepositoryOptions(entry ?? null).length > 0,
     target,
     destinationKey,
     contextKey:
@@ -202,6 +205,7 @@ const selectNativeAttempt = store.createSelector((state, owner: NativeReviewOwne
 );
 type SidebarProps = {
   workspaceId: string;
+  remoteSaving: boolean;
   nativeReview: boolean;
   listOnly: boolean;
   isOwner: boolean;
@@ -615,6 +619,9 @@ export function createNativeSidebarReview(readProps: () => SidebarProps) {
     },
     get nativeRead() {
       return nativeRead.current;
+    },
+    get remoteSaving() {
+      return readProps().remoteSaving;
     },
     get nativeParentView() {
       return nativeParentView.current;
