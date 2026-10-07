@@ -7471,5 +7471,14 @@
   "settings_machineName_saved": "Nombre del equipo guardado",
   "home_assistantThread_hooks_label": "Hooks activos: {count}",
   "home_assistantThread_monitors_label": "Monitores activos: {count}",
-  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}"
+  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}",
+  "chat_failureRecovery_title_label": "No se pudo completar esta respuesta",
+  "chat_failureRecovery_details_label": "Detalles",
+  "chat_failureRecovery_copyDetails_label": "Copiar detalles",
+  "chat_failureRecovery_recorded_one": "1 fallo registrado",
+  "chat_failureRecovery_recorded_many": "{count} fallos registrados",
+  "chat_failureRecovery_queued_label": "En cola",
+  "chat_failureRecovery_action_label": "Requiere atención",
+  "chat_failureRecovery_queued_description": "Hay un mensaje en cola. Usa sus controles de abajo para gestionarlo.",
+  "chat_failureRecovery_action_description": "La respuesta se detuvo antes de terminar."
 }

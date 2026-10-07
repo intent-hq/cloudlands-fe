@@ -1274,9 +1274,11 @@ describe('ChatPanel mounted lifecycle', () => {
     const reactivatedOverlay = screen.getByTestId('pinned-user-prompt');
     expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
-    expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(scroll);
+    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).toBe(scroll);
+    resolveTarget(scroll);
+    expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
   });
 
@@ -1747,9 +1749,11 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
       await tick();
 
+      const renderedNotice =
+        kind === 'turn-failure' ? '.turn-failure-notice' : '[data-message-key="inline-notice"]';
       const notice = view.container.querySelector('[data-lazy-turn-key="inline-notice"]')!;
       expect(notice).not.toBeNull();
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).toBeNull();
+      expect(notice.querySelector(renderedNotice)).toBeNull();
       const observer = MockChatIntersectionObserver.instances.find((candidate) =>
         candidate.observed.has(notice),
       )!;
@@ -1757,13 +1761,13 @@ describe('ChatPanel mounted lifecycle', () => {
       flushFrame();
       await tick();
 
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      expect(notice.querySelector(renderedNotice)).not.toBeNull();
       expect(notice.querySelector('.lazy-turn-placeholder')).toBeNull();
 
       await view.rerender({ ...props, isActive: false });
       await view.rerender({ ...props, isActive: true });
       await tick();
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      expect(notice.querySelector(renderedNotice)).not.toBeNull();
       view.unmount();
     },
   );
@@ -4096,10 +4100,10 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
     await tick();
     flushFrame();
-    await vi.waitFor(() => {
-      expect(replacementBounds).toHaveBeenCalled();
-      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    });
+    await vi.waitFor(() => expect(mocks.animateScrollTo).toHaveBeenCalledOnce());
+    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    resolveTarget(getContainer());
+    expect(replacementBounds).toHaveBeenCalled();
   });
 
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
