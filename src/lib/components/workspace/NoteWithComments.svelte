@@ -243,6 +243,7 @@
     noteId,
     content = '',
     editable = true,
+    rawView,
     showSuggestions = true,
     showComments = true,
     shouldFocus = false,
@@ -258,6 +259,8 @@
     noteId?: string;
     content?: string;
     editable?: boolean;
+    /** Applied mode held by a full-source owner while a view transition settles. */
+    rawView?: boolean;
     showSuggestions?: boolean;
     showComments?: boolean;
     shouldFocus?: boolean;
@@ -590,7 +593,7 @@
   // Both task-menu actions launch an agent; the popovers are withheld
   // (never disabled) where the daemon would refuse the create.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
-  let isRawNoteViewEnabled = $derived($rawNoteViewEnabled$ === true);
+  let isRawNoteViewEnabled = $derived(rawView ?? $rawNoteViewEnabled$ === true);
   let shouldShowRawNoteView = $derived(
     (isRawNoteViewEnabled || isTooLargeForRichEditor) && !isInitializing,
   );

@@ -61,8 +61,7 @@ vi.mock('$features/notes/virtualized/NoteReadingView.svelte', async () => ({
   default: (await import('./mocks/MockNoteReadingView.svelte')).default,
 }));
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
-  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default,
+  default: (await import('./mocks/MockFullNoteEditor.svelte')).default,
 }));
 vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
@@ -167,6 +166,7 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', () => ({
 }));
 
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
+import { fullEditControl } from './mocks/MockFullNoteEditor.svelte';
 import { deleteNotePersistRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 describe('NoteTabType note view modes', () => {
@@ -941,5 +941,181 @@ describe('explicit full editing from a paginated view', () => {
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     expect(mockState.loadFullEdit).not.toHaveBeenCalled();
+  });
+});
+
+describe('Assistant full-source entry ownership', () => {
+  const props = () => ({
+    tab: { id: 'assistant-note', type: 'note', noteId: 'note-1' },
+    workspaceId: 'ws-1',
+    layoutId: '__chief__-chat-empty',
+  });
+  beforeEach(() => {
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
+    mockState.note.set({ ...mockState.defaultNote });
+    mockState.initialSpecWriteInProgress.set(false);
+    mockState.noteViewMode.set('editor');
+    mockState.pageSession.set(undefined);
+    mockState.dispatch.mockClear();
+    mockState.loadFullEdit.mockReset().mockResolvedValue(true);
+    mockState.releaseFullEdit.mockClear();
+    fullEditControl.finish = vi.fn(async () => {});
+    fullEditControl.mounts = [];
+  });
+  afterEach(cleanup);
+
+  it.each(['editor', 'raw'] as const)(
+    'acquires complete source for Assistant %s intent only',
+    async (mode) => {
+      mockState.noteViewMode.set(mode);
+      const view = render(NoteTabTypeHeaderHarness, props());
+      await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+      const editor = await screen.findByTestId('full-note-editor');
+      expect(editor.dataset.raw).toBe(String(mode === 'raw'));
+      expect(mockState.dispatch.mock.calls.some(([a]) => a.type === 'notePages/panelOpened')).toBe(
+        false,
+      );
+      mockState.workspace.set({ id: 'ws-1', path: '/tmp/refreshed', branchName: 'main' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(mockState.loadFullEdit).toHaveBeenCalledOnce();
+      view.unmount();
+      expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
+      mockState.loadFullEdit.mockClear();
+      render(NoteTabTypeHeaderHarness, { ...props(), layoutId: 'ws-1' });
+      await screen.findByRole('button', { name: 'Edit', exact: true });
+      expect(mockState.loadFullEdit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps editor and lease until preview settlement and does not reopen unchanged intent', async () => {
+    let settle!: () => void;
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('full-note-editor')).toBeTruthy();
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    settle();
+    await screen.findByTestId('rendered-note-preview');
+    expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
+    expect(mockState.loadFullEdit).toHaveBeenCalledOnce();
+  });
+
+  it('keeps raw mode and draft owner when preview save fails', async () => {
+    mockState.noteViewMode.set('raw');
+    fullEditControl.finish = vi.fn(async () => {
+      throw new Error('save uncertain');
+    });
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('full-note-editor').dataset.raw).toBe('true');
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('rendered-note-preview')).toBeNull();
+  });
+
+  it('ignores a superseded preview settlement after returning to editing', async () => {
+    let settle!: () => void;
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    mockState.noteViewMode.set('raw');
+    await waitFor(() => expect(screen.getByTestId('full-note-editor').dataset.raw).toBe('true'));
+    settle();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('full-note-editor')).toBeTruthy();
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+  });
+
+  it.each(['preview', 'layout', 'unmount'] as const)(
+    'rejects late acquisition after %s',
+    async (change) => {
+      let loaded!: (value: boolean) => void;
+      mockState.loadFullEdit.mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            loaded = resolve;
+          }),
+      );
+      const view = render(NoteTabTypeHeaderHarness, props());
+      await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+      expect(fullEditControl.mounts).toEqual([]);
+      if (change === 'preview') mockState.noteViewMode.set('preview');
+      if (change === 'layout') await view.rerender({ ...props(), layoutId: 'ws-1' });
+      if (change === 'unmount') view.unmount();
+      await waitFor(() => expect(mockState.releaseFullEdit).toHaveBeenCalledOnce());
+      loaded(true);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByTestId('full-note-editor')).toBeNull();
+      expect(fullEditControl.mounts).toEqual([]);
+    },
+  );
+
+  it('leaves acquisition errors for explicit retry rather than reopening on workspace refresh', async () => {
+    mockState.loadFullEdit.mockResolvedValueOnce(false);
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByRole('alert');
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/refreshed', branchName: 'main' });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(mockState.loadFullEdit).toHaveBeenCalledOnce();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+    await screen.findByTestId('full-note-editor');
+    expect(mockState.loadFullEdit).toHaveBeenCalledTimes(2);
+  });
+  it('never constructs an editor before deferred complete-source admission', async () => {
+    let loaded!: (value: boolean) => void;
+    mockState.loadFullEdit.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          loaded = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+    expect(fullEditControl.mounts).toEqual([]);
+    loaded(true);
+    await screen.findByTestId('full-note-editor');
+    expect(fullEditControl.mounts).toEqual([false]);
+  });
+
+  it('binds the admitted editor before settling a same-turn preview request', async () => {
+    let loaded!: (value: boolean) => void, settled!: () => void;
+    mockState.loadFullEdit.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          loaded = resolve;
+        }),
+    );
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settled = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+    loaded(true);
+    await Promise.resolve();
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    expect(fullEditControl.mounts).toEqual([false]);
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    settled();
+    await screen.findByTestId('rendered-note-preview');
+    expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
   });
 });

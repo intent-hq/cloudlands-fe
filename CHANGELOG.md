@@ -4,6 +4,30 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.211.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.4...v2.211.5) (2026-10-07)
+
+
+### 🐛 Bug Fixes
+
+* **sidebar:** simplify the PR repository choice ([#3254](https://github.com/intent-hq/cloudlands-fe/issues/3254)) ([e2d19a5](https://github.com/intent-hq/cloudlands-fe/commit/e2d19a59ab68be25d309005d3b84b713e625f8a6))
+
+## [2.211.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.3...v2.211.4) (2026-10-07)
+
+
+### 🐛 Bug Fixes
+
+* keep toast content and stacks inside the window ([#3267](https://github.com/intent-hq/cloudlands-fe/issues/3267)) ([ff1ba8e](https://github.com/intent-hq/cloudlands-fe/commit/ff1ba8e5d761fb4bd46087abdbdf956be90ce3d7))
+* preserve Home tab ownership during transitions ([#3280](https://github.com/intent-hq/cloudlands-fe/issues/3280)) ([af1cf38](https://github.com/intent-hq/cloudlands-fe/commit/af1cf38dd8b8381e6417756e500487c14fb1a674))
+
+## [2.211.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.2...v2.211.3) (2026-10-07)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.30 ([#3296](https://github.com/intent-hq/cloudlands-fe/issues/3296)) ([586e002](https://github.com/intent-hq/cloudlands-fe/commit/586e0029e379917448333efaf94bad185b154821))
+* clarify repeated response failures and recovery ([#3285](https://github.com/intent-hq/cloudlands-fe/issues/3285)) ([aed0b4b](https://github.com/intent-hq/cloudlands-fe/commit/aed0b4bae8496d7bef57367b1cb5a7814e71319e))
+* keep message navigation aligned during lazy hydration ([#3293](https://github.com/intent-hq/cloudlands-fe/issues/3293)) ([bc274a0](https://github.com/intent-hq/cloudlands-fe/commit/bc274a074355b4f0b43b444dcdcc98a163d49573))
+
 ## [2.211.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.1...v2.211.2) (2026-10-07)
 
 

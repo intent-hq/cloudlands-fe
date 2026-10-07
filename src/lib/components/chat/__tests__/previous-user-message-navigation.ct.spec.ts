@@ -730,6 +730,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
     page,
   }, testInfo) => {
     await page.emulateMedia({ reducedMotion: motion });
+    await page.clock.install();
     const component = await mount(ChatMessageNavigatorIntegrationHost, {
       props: {
         messages: automatedTail,
@@ -763,20 +764,22 @@ for (const motion of ['reduce', 'no-preference'] as const) {
     });
     const source = component.locator('[data-message-id="reply-tail"]');
     await source.hover();
-    await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
-    await expectAtMessage(component, 'paged-human');
     const viewport = component.getByTestId('chat-transcript-scroll-viewport');
     await viewport.hover();
-    await page.mouse.wheel(0, 350);
-    // Enter the middle of a reply before the 400ms quiet spacer reconcile.
-    await page.waitForTimeout(100);
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+    await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    // Finish navigation while the 400ms spacer reconcile remains pending.
+    await page.clock.runFor(300);
+    await expectAtMessage(component, 'paged-human');
     const measure = () =>
       viewport.evaluate((node) => {
         const reply = node.querySelector('[data-message-id="paged-reply"]');
+        const spacer = node.querySelector('[data-testid="chat-virtual-scrollback-spacer"]');
         const rect = node.getBoundingClientRect();
         const replyRect = reply?.getBoundingClientRect();
         return {
           offset: replyRect ? replyRect.top - rect.top : null,
+          spacerHeight: spacer?.getBoundingClientRect().height ?? 0,
           bottom: replyRect ? replyRect.bottom - rect.top : null,
           viewport: node.clientHeight,
           rowStartsInside: [
@@ -787,19 +790,26 @@ for (const motion of ['reduce', 'no-preference'] as const) {
           }),
         };
       });
+    const landed = await measure();
+    expect(landed.offset).not.toBeNull();
+    await page.mouse.wheel(0, 350);
+    // Native wheel scrolling is asynchronous even while JavaScript time is paused.
+    await expect.poll(async () => (await measure()).offset).toBeCloseTo(landed.offset! - 350, 0);
     const before = await measure();
     expect(before.offset).not.toBeNull();
     expect(before.offset!).toBeLessThan(-200);
     expect(before.bottom!).toBeGreaterThan(before.viewport);
     expect(before.rowStartsInside).toBe(false);
     await component.screenshot({ path: testInfo.outputPath('tall-reply-before-resize.png') });
-    await page.waitForTimeout(850);
+    await page.clock.runFor(850);
     const after = await measure();
     await testInfo.attach('tall-reply-reading-offsets', {
       body: JSON.stringify({ before, after }),
       contentType: 'application/json',
     });
     await component.screenshot({ path: testInfo.outputPath('tall-reply-after-resize.png') });
+    expect(before.spacerHeight).toBeGreaterThan(0);
+    expect(after.spacerHeight).not.toBe(before.spacerHeight);
     expect(after.offset).not.toBeNull();
     expect(Math.abs(after.offset! - before.offset!)).toBeLessThanOrEqual(5);
     await expect(component.getByTestId('page-requests')).toHaveText(

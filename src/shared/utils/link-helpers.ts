@@ -40,6 +40,8 @@ export interface LinkHandlerOptions {
   modifiers?: ModifierFlags;
   /** Force external browser even for HTTP/HTTPS links */
   forceExternal?: boolean;
+  /** Enter the target workspace and show links in its file, note, or browser panel. */
+  openInWorkspace?: boolean;
   /** Override the persisted plain-click action for GitHub issue and PR links. */
   githubLinkDefaultAction?: GithubLinkDefaultAction;
   /** Custom handler for specific link types */

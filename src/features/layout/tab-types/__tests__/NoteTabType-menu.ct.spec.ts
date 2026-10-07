@@ -12,14 +12,44 @@ test('production note actions preserve selection and keyboard state across both 
       configurable: true,
       value: {
         writeText: async (text: string) => {
-          (window as typeof window & { copiedNote?: string }).copiedNote = text;
+          (window as typeof window & { fallbackCopy?: string }).fallbackCopy = text;
         },
       },
     });
   });
+  const previousBridge = await page.evaluateHandle(() => window.electronAPI);
+  const previousElectronVersion = await page.evaluate(() => window.electronAPI?.versions.electron);
   const component = await mount(Harness, {
     hooksConfig: { mockIpc: { 'workspace:get-root': null } },
   });
+  const wire = () =>
+    component
+      .getByTestId('note-menu-wire')
+      .textContent()
+      .then((text) => JSON.parse(text!));
+  await expect.poll(wire).toMatchObject({
+    status: 'ready',
+    commits: 0,
+    stagedText: '',
+    committedText: null,
+    window: {
+      tabId: 'note-menu-tab',
+      loading: false,
+      scope: {
+        backendId: 'note-menu-ct',
+        workspaceId: 'note-panel-menu-ct',
+        noteId: 'menu-note',
+        noteInstanceId: 'i',
+      },
+      sourceRevision: 'r4',
+      snapshotId: 's4',
+      range: { start: 0, end: '# Menu acceptance\n\nCopy the complete note.'.length },
+      text: '# Menu acceptance\n\nCopy the complete note.',
+    },
+  });
+  const reader = component.locator('.tiptap[contenteditable="false"]');
+  await expect(reader).toBeVisible();
+  await expect(reader).toHaveText('# Menu acceptance\n\nCopy the complete note.');
   const header = component.locator('[data-panel-tabless-header]');
   const trigger = header.getByTestId('panel-actions-trigger');
   const root = page.locator('[data-slot="menu-content"]');
@@ -121,7 +151,21 @@ test('production note actions preserve selection and keyboard state across both 
   await page.keyboard.press('Enter');
   await expect(root).toBeHidden();
   await expect(trigger).toBeFocused();
-  await expect
-    .poll(() => page.evaluate(() => (window as typeof window & { copiedNote?: string }).copiedNote))
-    .toBe('# Menu acceptance\n\nCopy the complete note.');
+  await expect.poll(wire).toMatchObject({
+    status: 'ready',
+    committedText: '# Menu acceptance\n\nCopy the complete note.',
+    commits: 1,
+    stagedText: '',
+  });
+  expect(
+    await page.evaluate(() => (window as typeof window & { fallbackCopy?: string }).fallbackCopy),
+  ).toBeUndefined();
+  await component.unmount();
+  expect(await page.evaluate((previous) => window.electronAPI === previous, previousBridge)).toBe(
+    true,
+  );
+  expect(await page.evaluate(() => window.electronAPI?.versions.electron)).toBe(
+    previousElectronVersion,
+  );
+  await previousBridge.dispose();
 });

@@ -3,7 +3,8 @@
   import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
   import { createNoteReadingSurface } from '$features/notes/virtualized/note-reading-surface';
   import type { CanonicalNoteHit } from '$features/notes/virtualized/note-canonical-search';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
+  import { isAssistantPanelLayout } from '$shared/assistant-panel-layout';
   import { writable } from 'svelte/store';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
@@ -85,6 +86,10 @@
   } = $props();
 
   const headerContext = getPanelHeaderContext();
+  const assistantLayout = $derived(isAssistantPanelLayout(layoutId ?? ''));
+  let assistantRawView = $state(false);
+  const editOwnerIdentity = $derived(JSON.stringify([layoutId, tab.id, workspaceId, tab.noteId]));
+  let loadedEditIdentity = $state('');
 
   const scrollPositions = selectAllScrollPositions();
   const scrollPosition = $derived($scrollPositions[tab.id]);
@@ -148,7 +153,9 @@
       selectedReadingSurface?.cancelRenderedSearch?.();
     };
   });
-  const selectedReadingSurface = $derived(readingSurface ?? normalReadingSurface);
+  const selectedReadingSurface = $derived(
+    readingSurface ?? (assistantLayout ? undefined : normalReadingSurface),
+  );
   const pagedSurface = $derived(
     editState === 'view' && $workspace ? selectedReadingSurface : undefined,
   );
@@ -219,13 +226,20 @@
 
   $effect(() => {
     const ownerWorkspace = workspaceId,
-      ownerNote = tab.noteId;
+      ownerNote = tab.noteId,
+      ownerLayout = layoutId,
+      ownerTab = tab.id;
     return () => {
       void ownerWorkspace;
       void ownerNote;
+      void ownerLayout;
+      void ownerTab;
       editLease?.release();
       editLease = undefined;
       editState = 'view';
+      loadedEditIdentity = '';
+      pendingFinish = undefined;
+      leavingEdit = false;
     };
   });
 
@@ -233,18 +247,30 @@
     if (!noteEditable || !$workspace || !tab.noteId || editState === 'loading') return;
     editLease?.release();
     const ownerWorkspace = workspaceId,
-      ownerNote = tab.noteId;
+      ownerNote = tab.noteId,
+      ownerLayout = layoutId,
+      ownerTab = tab.id;
     const lease = beginFullNoteEdit(ownerWorkspace, ownerNote);
     editLease = lease;
     editState = 'loading';
+    loadedEditIdentity = '';
+    const identity = editOwnerIdentity;
     // Let the reading view and its panel owner retire before mounting an editor.
     await tick();
     const loaded = await lease.load();
-    if (editLease !== lease || workspaceId !== ownerWorkspace || tab.noteId !== ownerNote) return;
+    if (
+      editLease !== lease ||
+      workspaceId !== ownerWorkspace ||
+      tab.noteId !== ownerNote ||
+      layoutId !== ownerLayout ||
+      tab.id !== ownerTab
+    )
+      return;
     if (!noteEditable || !$workspace) {
       cancelFullEdit();
       return;
     }
+    loadedEditIdentity = loaded ? identity : '';
     editState = loaded ? 'editing' : 'error';
     if (!loaded) {
       lease.release();
@@ -255,20 +281,85 @@
     editLease?.release();
     editLease = undefined;
     editState = 'view';
+    loadedEditIdentity = '';
   }
-  async function finishFullEdit() {
-    if (leavingEdit) return;
-    leavingEdit = true;
-    const lease = editLease;
+  let pendingFinish:
+    | {
+        lease: NonNullable<typeof editLease>;
+        editor: NonNullable<typeof fullEditor>;
+        identity: string;
+        promise: Promise<void>;
+      }
+    | undefined;
+  async function finishFullEdit(current: () => boolean = () => true) {
+    const lease = editLease,
+      identity = editOwnerIdentity;
+    if (!lease) return;
+    // A mode request can arrive in the same turn as source admission. Wait for
+    // the admitted editor binding instead of treating its absence as a save.
+    await tick();
+    if (editLease !== lease || editOwnerIdentity !== identity || !current()) return;
+    const editor = fullEditor;
+    if (!editor) return;
+    let pending: typeof pendingFinish;
     try {
-      await fullEditor?.finishEditing?.();
-      if (editLease === lease) cancelFullEdit();
+      pending =
+        pendingFinish?.lease === lease &&
+        pendingFinish.editor === editor &&
+        pendingFinish.identity === identity
+          ? pendingFinish
+          : {
+              lease,
+              editor,
+              identity,
+              promise: editor.finishEditing(),
+            };
+      pendingFinish = pending;
+      leavingEdit = true;
+      await pending.promise;
+      if (
+        editLease === lease &&
+        fullEditor === editor &&
+        editOwnerIdentity === identity &&
+        current()
+      )
+        cancelFullEdit();
     } catch (error) {
       logger.warn('Full note edit remains open because saving failed', error);
     } finally {
-      leavingEdit = false;
+      if (pending && pendingFinish === pending) {
+        pendingFinish = undefined;
+        leavingEdit = false;
+      }
     }
   }
+  // Assistant links are explicit editable-entry intents. Ordinary note tabs
+  // still negotiate bounded reading until the user selects Edit.
+  $effect(() => {
+    const owner = [layoutId, tab.id, workspaceId, tab.noteId];
+    const assistant = assistantLayout,
+      mode = noteViewMode,
+      available = workspacePresent && noteEditable;
+    let current = true;
+    untrack(() => {
+      void owner;
+      if (!assistant) return;
+      if (!available) {
+        cancelFullEdit();
+        return;
+      }
+      if (mode === 'preview') {
+        if (editState === 'editing') void finishFullEdit(() => current);
+        else cancelFullEdit();
+      } else {
+        assistantRawView = mode === 'raw';
+        if (editState === 'view') void startFullEdit();
+      }
+    });
+    return () => {
+      current = false;
+    };
+  });
   $effect(() => {
     const surface = pagedSurface;
     return () => {
@@ -323,7 +414,7 @@
   $effect(() => {
     const noteId = tab.noteId;
     if (
-      (selectedReadingSurface && editState !== 'view') ||
+      editState !== 'view' ||
       pagedSurface ||
       !isActive ||
       !$workspace ||
@@ -407,10 +498,19 @@
     (noteViewMode === 'preview' || !$workspace) && !showSpecOnboarding,
   );
 
+  const awaitingEditSource = $derived(
+    editState === 'loading' ||
+      (editState === 'editing' && loadedEditIdentity !== editOwnerIdentity) ||
+      (assistantLayout &&
+        workspacePresent &&
+        noteEditable &&
+        noteViewMode !== 'preview' &&
+        editState === 'view'),
+  );
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
-    if (editState === 'loading') return 'loading';
+    if (awaitingEditSource) return 'loading';
     if (editState === 'error') return 'error';
     if (editState === 'editing') return 'editor';
     if (pagedSurface) return 'read-only';
@@ -543,7 +643,7 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions({
+    return headerContext.registerActions({
       display: noteDisplayActions,
       actions: noteActions,
       destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
@@ -553,7 +653,12 @@
 
 {#snippet noteDisplayActions()}
   {#if tab.noteId}
-    <NoteViewSettingsDropdown {workspaceId} noteId={tab.noteId} embedded />
+    <NoteViewSettingsDropdown
+      {workspaceId}
+      noteId={tab.noteId}
+      canEdit={!!$workspace && noteEditable}
+      embedded
+    />
   {/if}
 {/snippet}
 
@@ -583,120 +688,128 @@
   {/if}
 {/snippet}
 
-<NoteContentSurface state={noteContentState}>
-  {#if tab.noteId}
-    {#if selectedReadingSurface && $workspace}
-      <div class="flex items-center gap-2 p-2">
-        {#if editState === 'view'}
-          <Button size="sm" onclick={startFullEdit} disabled={!noteEditable}>{m.menu_edit()}</Button
-          >
-        {:else if editState === 'editing'}
-          <Button size="sm" onclick={finishFullEdit} disabled={leavingEdit}
-            >{m.settings_devices_done_label()}</Button
-          >
-        {:else}
-          <Button size="sm" variant="outline" onclick={cancelFullEdit}
-            >{m.workspace_modals_cancel_label()}</Button
-          >
+<div class="flex h-full min-h-0 flex-col">
+  <div class="min-h-0 flex-1">
+    <NoteContentSurface state={noteContentState}>
+      {#if tab.noteId}
+        {#if selectedReadingSurface && $workspace}
+          <div class="flex items-center gap-2 p-2">
+            {#if editState === 'view'}
+              <Button size="sm" onclick={startFullEdit} disabled={!noteEditable}
+                >{m.menu_edit()}</Button
+              >
+            {:else if editState === 'editing'}
+              <Button size="sm" onclick={() => void finishFullEdit()} disabled={leavingEdit}
+                >{m.settings_devices_done_label()}</Button
+              >
+            {:else}
+              <Button size="sm" variant="outline" onclick={cancelFullEdit}
+                >{m.workspace_modals_cancel_label()}</Button
+              >
+            {/if}
+          </div>
         {/if}
-      </div>
-    {/if}
-    {#if pagedSurface && showPagedFind}
-      <PanelFindBar
-        autofocus
-        bind:query={pagedQuery}
-        currentMatchIndex={pagedHitIndex}
-        totalMatches={pagedHits.length}
-        onInput={findPagedText}
-        onPrevious={() => revealPagedHit(pagedHitIndex - 1, true)}
-        onNext={() => revealPagedHit(pagedHitIndex + 1, true)}
-        onClose={closePagedFind}
-      />
-      <p class="px-3 text-xs text-muted-foreground">{m.layout_noteTab_pagedFindLimit_label()}</p>
-      {#if !pagedFindExact && pagedHits.length === 1000}<p class="px-3 text-xs">
-          {m.layout_noteTab_pagedFindCapped_label()}
-        </p>{/if}
-      {#if pagedFindError}<p role="alert">{m.layout_noteTab_contentLoadFailed_error()}</p>{/if}
-    {/if}
-    {#if editState === 'loading'}
-      <div role="status" aria-busy="true"><Skeleton class="h-8 w-3/4" /></div>
-    {:else if editState === 'error'}
-      <div role="alert">
-        <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
-        <Button onclick={startFullEdit}>{m.ui_errorToast_retry_label()}</Button>
-      </div>
-    {:else if editState === 'editing' && $workspace}
-      {#key workspaceId + ':' + tab.noteId}
-        <NoteWithComments
-          bind:this={fullEditor}
-          workspace={$workspace}
-          noteId={tab.noteId}
-          editable={noteEditable}
-          {isPanelFocused}
-        />
-      {/key}
-    {:else if pagedSurface && $workspace}
-      <NoteReadingView
-        ownsPanel={false}
-        {workspaceId}
-        workspace={$workspace}
-        noteId={tab.noteId}
-        panelId={tab.id}
-        onSelection={pagedSurface.selectionChanged}
-        onFullOperation={handleFullNoteOperation}
-        onReady={readingReady}
-      />
-    {:else if noteContentLoadFailed}
-      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
-        <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
-        <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
-          {m.ui_errorToast_retry_label()}
-        </Button>
-      </div>
-    {:else if !$note}
-      <div class="flex flex-col h-full">
-        <div class="flex-1 p-4 space-y-4">
-          <Skeleton class="h-8 w-3/4" />
-          <Skeleton class="h-4 w-full" />
-          <Skeleton class="h-4 w-5/6" />
-          <Skeleton class="h-4 w-4/5" />
-          <Skeleton class="h-4 w-full" />
+        {#if pagedSurface && showPagedFind}
+          <PanelFindBar
+            autofocus
+            bind:query={pagedQuery}
+            currentMatchIndex={pagedHitIndex}
+            totalMatches={pagedHits.length}
+            onInput={findPagedText}
+            onPrevious={() => revealPagedHit(pagedHitIndex - 1, true)}
+            onNext={() => revealPagedHit(pagedHitIndex + 1, true)}
+            onClose={closePagedFind}
+          />
+          <p class="px-3 text-xs text-muted-foreground">
+            {m.layout_noteTab_pagedFindLimit_label()}
+          </p>
+          {#if !pagedFindExact && pagedHits.length === 1000}<p class="px-3 text-xs">
+              {m.layout_noteTab_pagedFindCapped_label()}
+            </p>{/if}
+          {#if pagedFindError}<p role="alert">{m.layout_noteTab_contentLoadFailed_error()}</p>{/if}
+        {/if}
+        {#if awaitingEditSource}
+          <div role="status" aria-busy="true"><Skeleton class="h-8 w-3/4" /></div>
+        {:else if editState === 'error'}
+          <div role="alert">
+            <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
+            <Button onclick={startFullEdit}>{m.ui_errorToast_retry_label()}</Button>
+          </div>
+        {:else if editState === 'editing' && $workspace}
+          {#key workspaceId + ':' + tab.noteId}
+            <NoteWithComments
+              bind:this={fullEditor}
+              rawView={assistantLayout ? assistantRawView : undefined}
+              workspace={$workspace}
+              noteId={tab.noteId}
+              editable={noteEditable}
+              {isPanelFocused}
+            />
+          {/key}
+        {:else if pagedSurface && $workspace}
+          <NoteReadingView
+            ownsPanel={false}
+            {workspaceId}
+            workspace={$workspace}
+            noteId={tab.noteId}
+            panelId={tab.id}
+            onSelection={pagedSurface.selectionChanged}
+            onFullOperation={handleFullNoteOperation}
+            onReady={readingReady}
+          />
+        {:else if noteContentLoadFailed}
+          <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
+            <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
+            <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
+              {m.ui_errorToast_retry_label()}
+            </Button>
+          </div>
+        {:else if !$note}
+          <div class="flex flex-col h-full">
+            <div class="flex-1 p-4 space-y-4">
+              <Skeleton class="h-8 w-3/4" />
+              <Skeleton class="h-4 w-full" />
+              <Skeleton class="h-4 w-5/6" />
+              <Skeleton class="h-4 w-4/5" />
+              <Skeleton class="h-4 w-full" />
+            </div>
+          </div>
+        {:else if showVersionHistory && $workspace}
+          <NoteVersionHistory
+            workspace={$workspace}
+            noteId={tab.noteId}
+            currentContent={$note?.content || ''}
+            onRestore={() => (showVersionHistory = false)}
+          />
+        {:else if showSpecOnboarding}
+          <!-- Show onboarding when coordinator is writing initial spec -->
+          <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
+        {:else if showRenderedPreview}
+          <RenderedNotePreview
+            content={$note.content || ''}
+            {workspaceId}
+            noteId={tab.noteId}
+            scrollKey={tab.id}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={handlePreviewScrollPositionSave}
+          />
+        {:else if $workspace}
+          <NoteWithComments
+            workspace={$workspace}
+            noteId={tab.noteId}
+            editable={noteEditable}
+            {isPanelFocused}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={(scrollTop: number) =>
+              appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
+          />
+        {/if}
+      {:else}
+        <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
+          <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
+          <p>{m.layout_noteTab_noNoteSelected_label()}</p>
         </div>
-      </div>
-    {:else if showVersionHistory && $workspace}
-      <NoteVersionHistory
-        workspace={$workspace}
-        noteId={tab.noteId}
-        currentContent={$note?.content || ''}
-        onRestore={() => (showVersionHistory = false)}
-      />
-    {:else if showSpecOnboarding}
-      <!-- Show onboarding when coordinator is writing initial spec -->
-      <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
-    {:else if showRenderedPreview}
-      <RenderedNotePreview
-        content={$note.content || ''}
-        {workspaceId}
-        noteId={tab.noteId}
-        scrollKey={tab.id}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={handlePreviewScrollPositionSave}
-      />
-    {:else if $workspace}
-      <NoteWithComments
-        workspace={$workspace}
-        noteId={tab.noteId}
-        editable={noteEditable}
-        {isPanelFocused}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={(scrollTop: number) =>
-          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
-      />
-    {/if}
-  {:else}
-    <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-      <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
-      <p>{m.layout_noteTab_noNoteSelected_label()}</p>
-    </div>
-  {/if}
-</NoteContentSurface>
+      {/if}
+    </NoteContentSurface>
+  </div>
+</div>
