@@ -38,7 +38,9 @@
   let populated = $state(false);
   let layout = $state(
     untrack(() =>
-      scenario === 'reserved-layout' ? createReservedCityLayout() : emptyCityLayout(),
+      scenario === 'reserved-layout'
+        ? normalizeCityLayout(createReservedCityLayout())
+        : emptyCityLayout(),
     ),
   );
   const original = $derived(createCityFixture(populated ? 'two' : scenario));

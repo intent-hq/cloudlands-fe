@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import type { CityBuilding, CityModel } from './home-city-model';
-import { cityPlotPosition, citySeed, type CityIsland, type CityLayout } from './home-city-layout';
+import {
+  CITY_BLOCK_SIZE,
+  cityPlotPosition,
+  citySeed,
+  type CityBlock,
+  type CityDistrict,
+  type CityLayout,
+} from './home-city-layout';
 
 export const CITY_DETAIL_LIMIT = 48;
 
@@ -12,7 +19,7 @@ export interface CityTheme {
   statuses: Record<CityBuilding['status'], THREE.Color>;
 }
 
-type Tone = 'structure' | 'detail' | 'landscape' | 'accent';
+type Tone = 'structure' | 'detail' | 'landscape' | 'street' | 'accent';
 type Shape = 'box' | 'rounded' | 'cylinder' | 'leaf';
 interface Instance {
   matrix: THREE.Matrix4;
@@ -30,35 +37,49 @@ interface CityAnchor {
   x: number;
   y: number;
   z: number;
-  island: CityIsland;
+  district: CityDistrict;
 }
 
-function platform(island: CityIsland, compact: boolean): THREE.ExtrudeGeometry {
-  const phase = ((citySeed(island.repositoryId) % 360) * Math.PI) / 180;
-  const variation = Math.min(0.4, island.radius * 0.08);
-  const coast = Array.from({ length: 12 }, (_, index) => {
-    const angle = (index * Math.PI * 2) / 12;
-    const radius =
-      island.radius -
-      variation -
-      0.15 +
-      Math.sin(angle * 3 + phase) * variation * 0.55 +
-      Math.sin(angle * 2 - phase) * variation * 0.45;
-    return new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-  });
-  const curve = new THREE.CatmullRomCurve3(coast, true);
-  const shape = new THREE.Shape(
-    curve.getPoints(compact ? 64 : 96).map((point) => new THREE.Vector2(point.x, point.y)),
-  );
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false, steps: 1 });
-  geometry.rotateX(-Math.PI / 2);
+function streetGround(blocks: CityBlock[]): THREE.BufferGeometry {
+  const occupied = new Set(blocks.map((block) => `${block.x}:${block.z}`));
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  for (const block of blocks) {
+    const offset = vertices.length / 3;
+    for (const y of [0, -0.14]) {
+      for (const [dx, dz] of [
+        [-0.5, -0.5],
+        [0.5, -0.5],
+        [0.5, 0.5],
+        [-0.5, 0.5],
+      ]) {
+        vertices.push((block.x + dx) * CITY_BLOCK_SIZE, y, (block.z + dz) * CITY_BLOCK_SIZE);
+      }
+    }
+    const face = (a: number, b: number, c: number, d: number) =>
+      indices.push(offset + a, offset + b, offset + c, offset + a, offset + c, offset + d);
+    face(0, 3, 2, 1);
+    face(4, 5, 6, 7);
+    for (const [dx, dz, a, b] of [
+      [0, -1, 0, 1],
+      [1, 0, 1, 2],
+      [0, 1, 2, 3],
+      [-1, 0, 3, 0],
+    ]) {
+      if (!occupied.has(`${block.x + dx}:${block.z + dz}`)) face(a, b, b + 4, a + 4);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
   return geometry;
 }
 
 export class CityArt {
   readonly group = new THREE.Group();
   readonly anchors = new Map<string, CityAnchor>();
-  readonly islands: CityIsland[];
+  readonly districts: CityDistrict[];
   readonly pickBoxes = new Map<string, THREE.Box3>();
   private readonly geometries = new Map<string, THREE.BufferGeometry>();
   // Background-colored faces hide rear edges without introducing shaded surfaces.
@@ -113,22 +134,22 @@ export class CityArt {
     this.geometries.set('leaf-far', new THREE.IcosahedronGeometry(0.5, 0));
     const activeIds = new Set(model.buildings.map((building) => building.id));
     const plots = layout.plots.filter((plot) => activeIds.has(plot.id));
-    this.islands = layout.islands.filter((island) =>
-      plots.some((plot) => plot.islandId === island.id),
+    this.districts = layout.districts.filter((district) =>
+      plots.some((plot) => plot.districtId === district.id),
     );
-    for (const island of this.islands) this.island(island);
+    this.streets();
     for (const building of model.buildings) {
       const plot = plots.find((item) => item.id === building.id);
-      const island = this.islands.find((item) => item.id === plot?.islandId);
-      if (!plot || !island) continue;
-      const pos = cityPlotPosition(plot, island);
+      const district = this.districts.find((item) => item.id === plot?.districtId);
+      if (!plot || !district) continue;
+      const pos = cityPlotPosition(plot, district);
       const height = building.floors * 0.5 + 0.3;
       this.anchors.set(building.id, {
         id: building.id,
         x: pos.x,
         z: pos.z,
         y: height + 0.72,
-        island,
+        district,
       });
       this.pickBoxes.set(
         building.id,
@@ -188,10 +209,68 @@ export class CityArt {
     });
   }
 
-  private island(island: CityIsland) {
-    const key = `island-${island.id}`;
-    this.geometries.set(key, platform(island, this.compact));
-    this.add(key, 'structure', island.x, -0.16, island.z);
+  private streets() {
+    if (!this.districts.length) return;
+    // One continuous ground joins every neighborhood. Sidewalks leave narrow
+    // local streets and wider avenues at repository boundaries.
+    this.geometries.set(
+      'ground',
+      streetGround(this.districts.flatMap((district) => district.blocks)),
+    );
+    this.add('ground', 'street', 0, -0.13, 0);
+    const owners = new Map(
+      this.districts.flatMap((district) =>
+        district.blocks.map((block) => [`${block.x}:${block.z}`, district.id] as const),
+      ),
+    );
+    for (const district of this.districts) {
+      for (const [index, block] of district.blocks.entries()) {
+        const x = block.x * CITY_BLOCK_SIZE;
+        const z = block.z * CITY_BLOCK_SIZE;
+        const margin = (dx: number, dz: number) =>
+          owners.get(`${block.x + dx}:${block.z + dz}`) === district.id ? 0.6 : 1.4;
+        const left = x - CITY_BLOCK_SIZE / 2 + margin(-1, 0);
+        const right = x + CITY_BLOCK_SIZE / 2 - margin(1, 0);
+        const back = z - CITY_BLOCK_SIZE / 2 + margin(0, -1);
+        const front = z + CITY_BLOCK_SIZE / 2 - margin(0, 1);
+        this.add(
+          'box',
+          'street',
+          (left + right) / 2,
+          -0.005,
+          (back + front) / 2,
+          right - left,
+          0.12,
+          front - back,
+        );
+        for (let lot = 0; lot < 4; lot++) {
+          const slot = index * 4 + lot;
+          if (slot < district.capacity) continue;
+          const position = cityPlotPosition({ slot }, district);
+          this.tree(position.x, 0.055, position.z, 0.95, citySeed(district.id) + slot);
+        }
+        for (const [dx, dz] of [
+          [1, 0],
+          [0, 1],
+        ]) {
+          const neighbor = owners.get(`${block.x + dx}:${block.z + dz}`);
+          if (!neighbor || neighbor === district.id) continue;
+          // Dashed center markings distinguish avenues without boxing in a repo.
+          for (const offset of [-2.4, 0, 2.4]) {
+            this.add(
+              'box',
+              'street',
+              x + (dx * CITY_BLOCK_SIZE) / 2 + dz * offset,
+              -0.11,
+              z + (dz * CITY_BLOCK_SIZE) / 2 + dx * offset,
+              dx ? 0.04 : 1.1,
+              0.025,
+              dz ? 0.04 : 1.1,
+            );
+          }
+        }
+      }
+    }
   }
 
   private tree(x: number, y: number, z: number, size: number, seed: number, owner?: string) {
@@ -408,6 +487,7 @@ export class CityArt {
       structure: foreground.clone().lerp(background, 0.32),
       detail: muted.clone().lerp(background, 0.15),
       landscape: muted.clone().lerp(foreground, 0.2),
+      street: muted.clone().lerp(background, 0.48),
       accent,
     };
     const color = new THREE.Color();

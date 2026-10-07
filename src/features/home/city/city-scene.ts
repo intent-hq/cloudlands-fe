@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { prefersReducedMotion, spring } from '$lib/motion';
 import { onReducedMotionChange } from '$lib/utils/reduced-motion';
 import type { CityModel } from './home-city-model';
-import type { CityLayout } from './home-city-layout';
+import { CITY_BLOCK_SIZE, cityDistrictBounds, type CityLayout } from './home-city-layout';
 import { CityArt, CITY_DETAIL_LIMIT, type CityTheme } from './city-art';
 
 interface CityLabel {
@@ -67,7 +67,7 @@ export class CityScene {
     new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
-      uniforms: { ink: { value: new THREE.Color() } },
+      uniforms: { ink: { value: new THREE.Color() }, blockSize: { value: CITY_BLOCK_SIZE } },
       vertexShader: `
         varying vec2 world;
         void main() {
@@ -78,9 +78,10 @@ export class CityScene {
       `,
       fragmentShader: `
         uniform vec3 ink;
+        uniform float blockSize;
         varying vec2 world;
         float gridLine(float spacing) {
-          vec2 cell = world / spacing;
+          vec2 cell = world / spacing + 0.5;
           vec2 footprint = max(fwidth(cell), vec2(0.0001));
           vec2 distanceToLine = abs(fract(cell - 0.5) - 0.5) / footprint;
           float line = 1.0 - min(min(distanceToLine.x, distanceToLine.y), 1.0);
@@ -88,7 +89,7 @@ export class CityScene {
           return line * (1.0 - smoothstep(0.15, 0.45, max(footprint.x, footprint.y)));
         }
         void main() {
-          float alpha = max(gridLine(2.0) * 0.12, gridLine(10.0) * 0.22);
+          float alpha = max(gridLine(blockSize / 4.0) * 0.12, gridLine(blockSize) * 0.22);
           gl_FragColor = vec4(ink, alpha);
           #include <colorspace_fragment>
         }
@@ -237,13 +238,10 @@ export class CityScene {
       this.scene.add(this.art.group);
       this.structure = structure;
       this.bounds.makeEmpty();
-      for (const island of this.art.islands) {
-        this.bounds.expandByPoint(
-          new THREE.Vector3(island.x - island.radius, -1.5, island.z - island.radius),
-        );
-        this.bounds.expandByPoint(
-          new THREE.Vector3(island.x + island.radius, 5.8, island.z + island.radius),
-        );
+      for (const district of this.art.districts) {
+        const bounds = cityDistrictBounds(district);
+        this.bounds.expandByPoint(new THREE.Vector3(bounds.minX - 1.4, -1.5, bounds.minZ - 1.4));
+        this.bounds.expandByPoint(new THREE.Vector3(bounds.maxX + 1.4, 5.8, bounds.maxZ + 1.4));
       }
       this.fitHome();
       if (initial || this.bounds.isEmpty()) {
@@ -269,14 +267,13 @@ export class CityScene {
   }
 
   focusRepository(id: string) {
-    const islands = this.art?.islands.filter((island) => island.repositoryId === id) ?? [];
-    if (!islands.length) return;
+    const districts = this.art?.districts.filter((district) => district.repositoryId === id) ?? [];
+    if (!districts.length) return;
     const box = new THREE.Box3();
-    for (const island of islands) {
-      box.expandByPoint(
-        new THREE.Vector3(island.x - island.radius, -1.5, island.z - island.radius),
-      );
-      box.expandByPoint(new THREE.Vector3(island.x + island.radius, 5.8, island.z + island.radius));
+    for (const district of districts) {
+      const bounds = cityDistrictBounds(district);
+      box.expandByPoint(new THREE.Vector3(bounds.minX, -1.5, bounds.minZ));
+      box.expandByPoint(new THREE.Vector3(bounds.maxX, 5.8, bounds.maxZ));
     }
     const center = box.getCenter(new THREE.Vector3());
     const target = {
@@ -410,17 +407,11 @@ export class CityScene {
       minY = Infinity,
       maxY = -Infinity;
     const points: THREE.Vector3[] = [];
-    for (const island of this.art?.islands ?? []) {
-      for (let i = 0; i < 16; i++) {
-        const angle = (i * Math.PI) / 8;
-        points.push(
-          new THREE.Vector3(
-            island.x + Math.cos(angle) * island.radius,
-            -1.4,
-            island.z + Math.sin(angle) * island.radius,
-          ),
-        );
-      }
+    for (const district of this.art?.districts ?? []) {
+      const bounds = cityDistrictBounds(district);
+      for (const x of [bounds.minX - 1.4, bounds.maxX + 1.4])
+        for (const z of [bounds.minZ - 1.4, bounds.maxZ + 1.4])
+          points.push(new THREE.Vector3(x, -1.4, z));
     }
     for (const anchor of this.art?.anchors.values() ?? []) {
       points.push(new THREE.Vector3(anchor.x, anchor.y + 1.2, anchor.z));

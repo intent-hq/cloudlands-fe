@@ -1,23 +1,24 @@
 import type { CityModel } from './home-city-model';
 
-export interface CityIsland {
-  id: string;
-  repositoryId: string;
+export interface CityBlock {
   x: number;
   z: number;
-  radius: number;
+}
+export interface CityDistrict {
+  id: string;
+  repositoryId: string;
+  blocks: CityBlock[];
   capacity: number;
 }
 export interface CityPlot {
   id: string;
   repositoryId: string;
-  islandId: string;
+  districtId: string;
   slot: number;
 }
 export interface CityLayout {
-  // Legacy rings are accepted at the persistence boundary and migrated before allocation.
-  version: 1 | 2;
-  islands: CityIsland[];
+  version: 3;
+  districts: CityDistrict[];
   plots: CityPlot[];
 }
 interface CityPosition {
@@ -26,13 +27,19 @@ interface CityPosition {
   angle: number;
 }
 
-const ISLAND_GAP = 3.2;
-const PLOT_SPACING = 3.4;
-const SHORE_MARGIN = 2.6;
-const footprints = new Map<number, { x: number; z: number; radius: number }>();
+export const CITY_BLOCK_SIZE = 9.6;
+const LOTS_PER_BLOCK = 4;
+const LOT_OFFSET = 1.8;
+const directions = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+const address = (block: CityBlock) => `${block.x}:${block.z}`;
 
 export function emptyCityLayout(): CityLayout {
-  return { version: 2, islands: [], plots: [] };
+  return { version: 3, districts: [], plots: [] };
 }
 
 export function citySeed(id: string): number {
@@ -41,140 +48,190 @@ export function citySeed(id: string): number {
   return hash >>> 0;
 }
 
-// A hexagonal spiral fills the interior while keeping every reserved address stable.
-function slotPosition(slot: number): { x: number; z: number } {
-  if (slot === 0) return { x: 0, z: 0 };
-  const ring = Math.ceil((Math.sqrt(12 * slot + 9) - 3) / 6);
-  const offset = slot - (1 + 3 * (ring - 1) * ring);
-  const side = Math.floor(offset / ring);
-  const step = offset % ring;
-  const [q, r] = [
-    [ring - step, step],
-    [-step, ring],
-    [-ring, ring - step],
-    [-ring + step, -step],
-    [step, -ring],
-    [ring, -ring + step],
-  ][side];
-  return { x: (q + r / 2) * PLOT_SPACING, z: r * PLOT_SPACING * (Math.sqrt(3) / 2) };
+function blockBounds(blocks: CityBlock[]) {
+  let minX = Infinity,
+    maxX = -Infinity,
+    minZ = Infinity,
+    maxZ = -Infinity;
+  for (const block of blocks) {
+    minX = Math.min(minX, block.x);
+    maxX = Math.max(maxX, block.x);
+    minZ = Math.min(minZ, block.z);
+    maxZ = Math.max(maxZ, block.z);
+  }
+  return { minX, maxX, minZ, maxZ };
 }
 
-function islandFootprint(capacity: number): { x: number; z: number; radius: number } {
-  const cached = footprints.get(capacity);
-  if (cached) return cached;
-  const positions = Array.from({ length: capacity }, (_, slot) => slotPosition(slot));
-  const xs = positions.map((point) => point.x);
-  const zs = positions.map((point) => point.z);
-  const x = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const z = (Math.min(...zs) + Math.max(...zs)) / 2;
-  const radius = Math.max(...positions.map((point) => Math.hypot(point.x - x, point.z - z)));
-  const footprint = { x, z, radius: radius + SHORE_MARGIN };
-  const oldest = footprints.keys().next();
-  if (footprints.size >= 32 && !oldest.done) footprints.delete(oldest.value);
-  footprints.set(capacity, footprint);
-  return footprint;
+export function cityDistrictBounds(district: CityDistrict) {
+  const bounds = blockBounds(district.blocks);
+  return {
+    minX: (bounds.minX - 0.5) * CITY_BLOCK_SIZE,
+    maxX: (bounds.maxX + 0.5) * CITY_BLOCK_SIZE,
+    minZ: (bounds.minZ - 0.5) * CITY_BLOCK_SIZE,
+    maxZ: (bounds.maxZ + 0.5) * CITY_BLOCK_SIZE,
+  };
 }
 
-function separated(a: CityIsland, b: CityIsland): boolean {
-  return Math.hypot(a.x - b.x, a.z - b.z) >= a.radius + b.radius + ISLAND_GAP - 0.001;
+function frontier(blocks: CityBlock[], occupied: ReadonlySet<string>): CityBlock[] {
+  const candidates = new Map<string, CityBlock>();
+  for (const block of blocks) {
+    for (const [dx, dz] of directions) {
+      const next = { x: block.x + dx, z: block.z + dz };
+      if (!occupied.has(address(next))) candidates.set(address(next), next);
+    }
+  }
+  return [...candidates.values()];
 }
 
-// Pack largest first, keeping a fixed shore-to-shore gap and minimizing the group bounds.
-function packIslands(islands: CityIsland[]): CityIsland[] {
-  const placed: CityIsland[] = [];
-  for (const source of [...islands].sort(
-    (a, b) => b.radius - a.radius || a.repositoryId.localeCompare(b.repositoryId),
-  )) {
-    const island = { ...source, x: 0, z: 0 };
-    const minX = Math.min(...placed.map((item) => item.x - item.radius));
-    const maxX = Math.max(...placed.map((item) => item.x + item.radius));
-    const minZ = Math.min(...placed.map((item) => item.z - item.radius));
-    const maxZ = Math.max(...placed.map((item) => item.z + item.radius));
-    let best = Infinity;
-    for (const anchor of placed) {
-      for (let step = 0; step < 72; step++) {
-        const angle = (step * Math.PI) / 36;
-        const distance = anchor.radius + island.radius + ISLAND_GAP;
-        const candidate = {
-          ...island,
-          x: anchor.x + Math.cos(angle) * distance,
-          z: anchor.z + Math.sin(angle) * distance,
-        };
-        if (!placed.every((other) => separated(candidate, other))) continue;
-        const width =
-          Math.max(maxX, candidate.x + island.radius) - Math.min(minX, candidate.x - island.radius);
-        const depth =
-          Math.max(maxZ, candidate.z + island.radius) - Math.min(minZ, candidate.z - island.radius);
-        const score = Math.max(width, depth) + (width + depth) * 0.1;
-        if (score < best) {
-          best = score;
-          island.x = candidate.x;
-          island.z = candidate.z;
+function compactness(blocks: CityBlock[]): number {
+  const bounds = blockBounds(blocks);
+  const width = bounds.maxX - bounds.minX + 1;
+  const depth = bounds.maxZ - bounds.minZ + 1;
+  return width * depth + Math.max(width, depth) ** 2 * 0.3;
+}
+
+// Rectangular neighborhoods share one lattice. Packing considers both orientations
+// and edge contacts, so small repositories fill the city rather than orbiting it.
+function placeDistrict(district: CityDistrict, placed: CityDistrict[]) {
+  const count = Math.ceil(district.capacity / LOTS_PER_BLOCK);
+  const columns = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / columns);
+  const all = placed.flatMap((item) => item.blocks);
+  const occupied = new Set(all.map(address));
+  let best: CityBlock[] = [];
+  let score = Infinity;
+  for (const [width, depth] of [
+    [columns, rows],
+    [rows, columns],
+  ]) {
+    const xs = new Set([0]);
+    const zs = new Set([0]);
+    for (const item of placed) {
+      const bounds = blockBounds(item.blocks);
+      for (const x of [bounds.minX - width, bounds.minX, bounds.maxX + 1, bounds.maxX - width + 1])
+        xs.add(x);
+      for (const z of [bounds.minZ - depth, bounds.minZ, bounds.maxZ + 1, bounds.maxZ - depth + 1])
+        zs.add(z);
+    }
+    for (const x of xs) {
+      for (const z of zs) {
+        const blocks = Array.from({ length: width * depth }, (_, index) => ({
+          x: x + (index % width),
+          z: z + Math.floor(index / width),
+        }));
+        if (blocks.some((block) => occupied.has(address(block)))) continue;
+        const contacts = blocks.reduce(
+          (sum, block) =>
+            sum +
+            directions.filter(([dx, dz]) =>
+              occupied.has(address({ x: block.x + dx, z: block.z + dz })),
+            ).length,
+          0,
+        );
+        if (all.length && !contacts) continue;
+        const candidate = compactness([...all, ...blocks]) - contacts * 0.05;
+        if (candidate < score) {
+          score = candidate;
+          best = blocks;
         }
       }
     }
-    placed.push(island);
   }
-  return placed;
+  district.blocks = best;
+}
+
+function reserveBlocks(districts: CityDistrict[]) {
+  const placed = districts.filter((district) => district.blocks.length);
+  const fresh = districts
+    .filter((district) => !district.blocks.length)
+    .sort((a, b) => b.capacity - a.capacity || a.repositoryId.localeCompare(b.repositoryId));
+  for (const district of fresh) {
+    placeDistrict(district, placed);
+    placed.push(district);
+  }
+  const occupied = new Set(placed.flatMap((district) => district.blocks.map(address)));
+  // Add blocks in rounds. Existing blocks and lot addresses never move, even when
+  // several repositories grow together. Keep an opening for neighboring repos.
+  let growing = true;
+  while (growing) {
+    growing = false;
+    for (const district of districts) {
+      if (district.blocks.length * LOTS_PER_BLOCK >= district.capacity) continue;
+      const choices = frontier(district.blocks, occupied);
+      const neighbors = districts
+        .filter((other) => other !== district)
+        .map((other) => frontier(other.blocks, occupied));
+      const available = choices.filter((block) =>
+        neighbors.every(
+          (opening) => opening.length !== 1 || address(opening[0]) !== address(block),
+        ),
+      );
+      const candidates = available.length ? available : choices;
+      // A completely enclosed neighborhood can continue on the nearest shared
+      // street block; its saved lots still retain their original addresses.
+      const fallback = candidates.length
+        ? candidates
+        : frontier(
+            placed.flatMap((item) => item.blocks),
+            occupied,
+          );
+      const bounds = blockBounds(district.blocks);
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerZ = (bounds.minZ + bounds.maxZ) / 2;
+      fallback.sort((a, b) => {
+        const score = (block: CityBlock) =>
+          compactness([...district.blocks, block]) +
+          Math.hypot(block.x - centerX, block.z - centerZ) * 0.01;
+        return score(a) - score(b) || a.z - b.z || a.x - b.x;
+      });
+      const next = fallback[0];
+      district.blocks.push(next);
+      occupied.add(address(next));
+      growing = true;
+    }
+  }
 }
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
+const validId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 1024;
+const validCapacity = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 100000;
+const validCoordinate = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 10000;
 
-export function normalizeCityLayout(value: unknown): CityLayout {
-  const raw = record(value);
-  if (
-    (raw.version !== 1 && raw.version !== 2) ||
-    !Array.isArray(raw.islands) ||
-    !Array.isArray(raw.plots)
-  )
-    return emptyCityLayout();
-  const sources = new Map<string, CityIsland>();
+function migrateIslands(raw: Record<string, unknown>): CityLayout {
+  if (!Array.isArray(raw.islands) || !Array.isArray(raw.plots)) return emptyCityLayout();
+  const sources = new Map<string, { repositoryId: string; capacity: number }>();
   const repositories = new Set<string>();
   for (const entry of raw.islands) {
     const item = record(entry);
     if (
-      typeof item.id !== 'string' ||
-      typeof item.repositoryId !== 'string' ||
-      item.id.length > 1024 ||
-      item.repositoryId.length > 1024 ||
+      !validId(item.id) ||
+      !validId(item.repositoryId) ||
       sources.has(item.id) ||
       (raw.version === 2 && repositories.has(item.repositoryId)) ||
-      typeof item.x !== 'number' ||
-      !Number.isFinite(item.x) ||
-      Math.abs(item.x) > 10000 ||
-      typeof item.z !== 'number' ||
-      !Number.isFinite(item.z) ||
-      Math.abs(item.z) > 10000 ||
-      typeof item.capacity !== 'number' ||
-      !Number.isInteger(item.capacity) ||
-      item.capacity < 1 ||
-      item.capacity > 100000 ||
+      !validCoordinate(item.x) ||
+      !validCoordinate(item.z) ||
+      !validCapacity(item.capacity) ||
       (raw.version === 1 && ![3, 6, 12].includes(item.capacity))
     )
       continue;
-    sources.set(item.id, {
-      id: item.id,
-      repositoryId: item.repositoryId,
-      x: item.x,
-      z: item.z,
-      capacity: item.capacity,
-      radius: 0,
-    });
+    sources.set(item.id, { repositoryId: item.repositoryId, capacity: item.capacity });
     repositories.add(item.repositoryId);
   }
-  const islands = new Map<string, CityIsland>();
+  const districts = new Map<string, CityDistrict>();
   const ids = new Set<string>();
   const slots = new Set<string>();
   const plots: CityPlot[] = [];
   for (const entry of raw.plots) {
     const item = record(entry);
     const source = typeof item.islandId === 'string' ? sources.get(item.islandId) : undefined;
-    const address = `${item.islandId}:${item.slot}`;
+    const slot = `${item.islandId}:${item.slot}`;
     if (
-      typeof item.id !== 'string' ||
-      item.id.length > 1024 ||
+      !validId(item.id) ||
       ids.has(item.id) ||
       !source ||
       item.repositoryId !== source.repositoryId ||
@@ -182,53 +239,133 @@ export function normalizeCityLayout(value: unknown): CityLayout {
       !Number.isInteger(item.slot) ||
       item.slot < 0 ||
       item.slot >= source.capacity ||
-      slots.has(address)
+      slots.has(slot)
     )
       continue;
-    let island = islands.get(source.repositoryId);
-    if (!island) {
-      island = {
-        ...source,
+    let district = districts.get(source.repositoryId);
+    if (!district) {
+      district = {
         id: source.repositoryId,
+        repositoryId: source.repositoryId,
+        blocks: [],
         capacity: raw.version === 1 ? 0 : source.capacity,
       };
-      islands.set(source.repositoryId, island);
+      districts.set(district.id, district);
     }
     plots.push({
       id: item.id,
-      repositoryId: island.repositoryId,
-      islandId: island.id,
-      slot: raw.version === 1 ? island.capacity++ : item.slot,
+      repositoryId: district.repositoryId,
+      districtId: district.id,
+      slot: raw.version === 1 ? district.capacity++ : item.slot,
     });
     ids.add(item.id);
-    slots.add(address);
+    slots.add(slot);
   }
-  const normalized = [...islands.values()].map((island) => ({
-    ...island,
-    radius: islandFootprint(island.capacity).radius,
-  }));
-  const needsPacking =
-    raw.version === 1 ||
-    normalized.some((island, index) =>
-      normalized.slice(index + 1).some((other) => !separated(island, other)),
-    );
-  return { version: 2, islands: needsPacking ? packIslands(normalized) : normalized, plots };
+  const layout: CityLayout = { version: 3, districts: [...districts.values()], plots };
+  reserveBlocks(layout.districts);
+  return layout;
+}
+
+export function normalizeCityLayout(value: unknown): CityLayout {
+  const raw = record(value);
+  if (raw.version === 1 || raw.version === 2) return migrateIslands(raw);
+  if (raw.version !== 3 || !Array.isArray(raw.districts) || !Array.isArray(raw.plots))
+    return emptyCityLayout();
+  const districts = new Map<string, CityDistrict>();
+  const repositories = new Set<string>();
+  const occupied = new Set<string>();
+  for (const entry of raw.districts) {
+    const item = record(entry);
+    if (
+      !validId(item.id) ||
+      !validId(item.repositoryId) ||
+      districts.has(item.id) ||
+      repositories.has(item.repositoryId) ||
+      !validCapacity(item.capacity) ||
+      !Array.isArray(item.blocks) ||
+      item.blocks.length > 25000 ||
+      item.capacity > item.blocks.length * LOTS_PER_BLOCK
+    )
+      continue;
+    const blocks: CityBlock[] = [];
+    const local = new Set<string>();
+    for (const entry of item.blocks) {
+      const block = record(entry);
+      if (
+        !validCoordinate(block.x) ||
+        !validCoordinate(block.z) ||
+        !Number.isInteger(block.x) ||
+        !Number.isInteger(block.z)
+      )
+        break;
+      const point = { x: block.x, z: block.z };
+      if (local.has(address(point)) || occupied.has(address(point))) break;
+      blocks.push(point);
+      local.add(address(point));
+    }
+    if (blocks.length !== item.blocks.length) continue;
+    districts.set(item.id, {
+      id: item.id,
+      repositoryId: item.repositoryId,
+      capacity: item.capacity,
+      blocks,
+    });
+    repositories.add(item.repositoryId);
+    for (const block of blocks) occupied.add(address(block));
+  }
+  const ids = new Set<string>();
+  const slots = new Set<string>();
+  const plots: CityPlot[] = [];
+  for (const entry of raw.plots) {
+    const item = record(entry);
+    const district =
+      typeof item.districtId === 'string' ? districts.get(item.districtId) : undefined;
+    const slot = `${item.districtId}:${item.slot}`;
+    if (
+      !validId(item.id) ||
+      ids.has(item.id) ||
+      !district ||
+      item.repositoryId !== district.repositoryId ||
+      typeof item.slot !== 'number' ||
+      !Number.isInteger(item.slot) ||
+      item.slot < 0 ||
+      item.slot >= district.capacity ||
+      slots.has(slot)
+    )
+      continue;
+    plots.push({
+      id: item.id,
+      repositoryId: district.repositoryId,
+      districtId: district.id,
+      slot: item.slot,
+    });
+    ids.add(item.id);
+    slots.add(slot);
+  }
+  const used = new Set(plots.map((plot) => plot.districtId));
+  return {
+    version: 3,
+    districts: [...districts.values()].filter((district) => used.has(district.id)),
+    plots,
+  };
 }
 
 export function allocateCityLayout(model: CityModel, previous: CityLayout): CityLayout {
-  const base = previous.version === 1 ? normalizeCityLayout(previous) : previous;
-  const existing = new Map(base.plots.map((plot) => [plot.id, plot]));
+  const existing = new Map(previous.plots.map((plot) => [plot.id, plot]));
   const newcomers = model.buildings.filter(
     (building) => existing.get(building.id)?.repositoryId !== building.repositoryId,
   );
-  if (newcomers.length === 0) return base;
+  if (newcomers.length === 0) return previous;
   const incoming = new Set(newcomers.map((building) => building.id));
   const layout: CityLayout = {
-    version: 2,
-    islands: base.islands.map((island) => ({ ...island })),
-    plots: base.plots.filter((plot) => !incoming.has(plot.id)),
+    version: 3,
+    districts: previous.districts.map((district) => ({
+      ...district,
+      blocks: [...district.blocks],
+    })),
+    plots: previous.plots.filter((plot) => !incoming.has(plot.id)),
   };
-  const islands = new Map(layout.islands.map((island) => [island.repositoryId, island]));
+  const districts = new Map(layout.districts.map((district) => [district.repositoryId, district]));
   const occupied = new Map<string, Set<number>>();
   for (const plot of layout.plots) {
     let slots = occupied.get(plot.repositoryId);
@@ -240,17 +377,15 @@ export function allocateCityLayout(model: CityModel, previous: CityLayout): City
   for (const building of [...newcomers].sort(
     (a, b) => a.repositoryId.localeCompare(b.repositoryId) || a.id.localeCompare(b.id),
   )) {
-    let island = islands.get(building.repositoryId);
-    if (!island) {
-      island = {
+    let district = districts.get(building.repositoryId);
+    if (!district) {
+      district = {
         id: building.repositoryId,
         repositoryId: building.repositoryId,
-        x: 0,
-        z: 0,
-        radius: 0,
+        blocks: [],
         capacity: 0,
       };
-      islands.set(building.repositoryId, island);
+      districts.set(district.id, district);
     }
     let slots = occupied.get(building.repositoryId);
     if (!slots) occupied.set(building.repositoryId, (slots = new Set()));
@@ -258,24 +393,28 @@ export function allocateCityLayout(model: CityModel, previous: CityLayout): City
     while (slots.has(slot)) slot++;
     slots.add(slot);
     cursors.set(building.repositoryId, slot + 1);
-    island.capacity = Math.max(island.capacity, slot + 1);
+    district.capacity = Math.max(district.capacity, slot + 1);
     layout.plots.push({
       id: building.id,
-      repositoryId: building.repositoryId,
-      islandId: island.id,
+      repositoryId: district.repositoryId,
+      districtId: district.id,
       slot,
     });
   }
-  layout.islands = packIslands(
-    [...islands.values()]
-      .filter((island) => occupied.get(island.repositoryId)?.size)
-      .map((island) => ({ ...island, radius: islandFootprint(island.capacity).radius })),
-  );
+  layout.districts = [...districts.values()];
+  reserveBlocks(layout.districts);
   return layout;
 }
 
-export function cityPlotPosition(plot: CityPlot, island: CityIsland): CityPosition {
-  const point = slotPosition(plot.slot);
-  const center = islandFootprint(island.capacity);
-  return { x: island.x + point.x - center.x, z: island.z + point.z - center.z, angle: 0 };
+export function cityPlotPosition(
+  plot: Pick<CityPlot, 'slot'>,
+  district: CityDistrict,
+): CityPosition {
+  const block = district.blocks[Math.floor(plot.slot / LOTS_PER_BLOCK)];
+  const lot = plot.slot % LOTS_PER_BLOCK;
+  return {
+    x: block.x * CITY_BLOCK_SIZE + (lot % 2 ? LOT_OFFSET : -LOT_OFFSET),
+    z: block.z * CITY_BLOCK_SIZE + (lot < 2 ? -LOT_OFFSET : LOT_OFFSET),
+    angle: 0,
+  };
 }

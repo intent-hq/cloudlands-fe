@@ -87,8 +87,8 @@
   const plots = $derived(
     new Map(
       allocation.plots.map((plot) => {
-        const island = allocation.islands.find((item) => item.id === plot.islandId);
-        return [plot.id, island ? cityPlotPosition(plot, island) : { x: 0, z: 0, angle: 0 }];
+        const district = allocation.districts.find((item) => item.id === plot.districtId);
+        return [plot.id, district ? cityPlotPosition(plot, district) : { x: 0, z: 0, angle: 0 }];
       }),
     ),
   );

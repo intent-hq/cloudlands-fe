@@ -1,7 +1,6 @@
 import { PullRequestStatus, WorkspaceStatus, type Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { cityFloors, type CityModel } from './home-city-model';
-import type { CityLayout } from './home-city-layout';
 
 export const cityScenarios = [
   'showcase',
@@ -151,9 +150,9 @@ export function createCityFixture(scenario: CityScenario = 'showcase'): CityMode
 }
 
 /** Only the last plot is live; the rest represent work hidden by Home filters. */
-export function createReservedCityLayout(): CityLayout {
+export function createReservedCityLayout() {
   return {
-    version: 1,
+    version: 1 as const,
     islands: Array.from({ length: 167 }, (_, index) => ({
       id: `reserved-island-${index}`,
       repositoryId: 'city-repo-0',
