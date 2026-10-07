@@ -459,6 +459,16 @@
         : null,
   );
   let homeElement = $state<HTMLDivElement | null>(null);
+  $effect.pre(() => {
+    const activeView = destination === 'workspaces' ? tab : null;
+    // Outgoing keyed effects pause; hide their controls before animation callbacks run.
+    for (const panel of homeElement?.querySelectorAll<HTMLElement>('[data-home-view]') ?? []) {
+      const active = panel.dataset.homeView === activeView;
+      panel.inert = !active;
+      if (active) panel.removeAttribute('aria-hidden');
+      else panel.setAttribute('aria-hidden', 'true');
+    }
+  });
   let pendingTabFocus: string | null = null;
   function restoreTabFocus(header: HTMLElement) {
     if (!pendingTabFocus) return;
@@ -774,8 +784,7 @@
               event.currentTarget.setAttribute('aria-hidden', 'true');
             }}
             onintrostart={(event) => {
-              event.currentTarget.inert = false;
-              event.currentTarget.removeAttribute('aria-hidden');
+              if (!event.currentTarget.inert) event.currentTarget.removeAttribute('aria-hidden');
             }}
           >
             <Tabs.Root

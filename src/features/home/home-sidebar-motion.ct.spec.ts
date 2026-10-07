@@ -13,6 +13,8 @@ interface SidebarMotionRecord {
 declare global {
   interface Window {
     __sidebarMotionRecords: SidebarMotionRecord[];
+    __heldHomeIntro?: Animation;
+    __retainedHomePanel?: Element;
   }
 }
 
@@ -242,6 +244,107 @@ test('Home content enters and exits horizontally in the direction of its tabs', 
     body: JSON.stringify(records, null, 2),
     contentType: 'application/json',
   });
+});
+
+test('a delayed intro cannot reactivate an outgoing Home tab panel', async ({ mount, page }) => {
+  await page.evaluate(() => {
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (frames, options) {
+      const animation = animate.call(this, frames, options);
+      if (this.matches('.home-destination-content[data-home-view="prs"]')) {
+        animation.pause();
+        const duration = typeof options === 'number' ? options : options?.duration;
+        if (duration === 0 && Array.isArray(frames) && frames.length > 0) {
+          window.__heldHomeIntro = animation;
+        }
+      }
+      return animation;
+    };
+  });
+  const component = await mount(Preview);
+  await component
+    .locator('.home-header')
+    .getByRole('tab', { name: 'Pull requests', exact: true })
+    .click();
+  await expect.poll(() => page.evaluate(() => !!window.__heldHomeIntro?.onfinish)).toBe(true);
+  await page.evaluate(() => {
+    document
+      .querySelector<HTMLElement>('[data-home-view="prs"] .home-header [data-value="linear"]')!
+      .click();
+  });
+  await expect(component.locator('[data-home-view="linear"]')).toHaveCount(1);
+  const outgoing = component.locator('[data-home-view="prs"]');
+  await expect(outgoing).toHaveAttribute('inert', '');
+  const state = await page.evaluate(() => {
+    const animation = window.__heldHomeIntro!;
+    animation.onfinish!.call(animation, new AnimationPlaybackEvent('finish'));
+    const panel = document.querySelector<HTMLElement>('[data-home-view="prs"]')!;
+    return { inert: panel.inert, hidden: panel.getAttribute('aria-hidden') };
+  });
+  expect(state).toEqual({ inert: true, hidden: 'true' });
+  await expect(
+    component.locator('.home-header').getByRole('tab', { name: 'Linear issues', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+});
+
+test('Home tab accessibility follows reversals before delayed outro callbacks', async ({
+  mount,
+  page,
+}) => {
+  await page.evaluate(() => {
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (frames, options) {
+      const animation = animate.call(this, frames, options);
+      const duration = typeof options === 'number' ? options : options?.duration;
+      if (
+        this.matches('.home-destination-content[data-home-view]') &&
+        duration === 0 &&
+        Array.isArray(frames) &&
+        frames.length === 0
+      )
+        animation.pause();
+      return animation;
+    };
+  });
+  const component = await mount(Preview, { props: { scenario: 'prs' } });
+  await page.evaluate(() => {
+    window.__retainedHomePanel = document.querySelector('[data-home-view="prs"]')!;
+  });
+  for (const [from, to, name] of [
+    ['prs', 'linear', 'Linear issues'],
+    ['linear', 'prs', 'Pull requests'],
+    ['prs', 'linear', 'Linear issues'],
+  ] as const) {
+    await page.evaluate(
+      ({ from, to }) => {
+        document
+          .querySelector<HTMLElement>(
+            `[data-home-view="${from}"] .home-header [data-value="${to}"]`,
+          )!
+          .click();
+      },
+      { from, to },
+    );
+    await expect
+      .soft(component.locator('.home-header').getByRole('tab', { name, exact: true }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect
+      .soft(
+        await component.locator(`[data-home-view="${from}"]`).evaluate((panel: HTMLElement) => ({
+          inert: panel.inert,
+          hidden: panel.getAttribute('aria-hidden'),
+        })),
+      )
+      .toEqual({ inert: true, hidden: 'true' });
+    await expect
+      .soft(component.locator('.home-header').getByRole('tab', { name, exact: true }))
+      .toHaveCount(1);
+    expect(
+      await page.evaluate(
+        () => window.__retainedHomePanel === document.querySelector('[data-home-view="prs"]'),
+      ),
+    ).toBe(true);
+  }
 });
 
 for (const preference of ['OS', 'battery saver'] as const) {
