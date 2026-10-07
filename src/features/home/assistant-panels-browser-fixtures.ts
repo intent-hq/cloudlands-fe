@@ -1,8 +1,8 @@
-import { startNoteFixtureReads } from '../../test/note-fixture-sagas';
 import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
 import { assistantPanelLayoutId } from '$shared/assistant-panel-layout';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { store } from '$store/renderer/store';
+import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
 import { clearPanelLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
@@ -51,8 +51,7 @@ export function setupAssistantPanelsFixture(noteContent?: string) {
     'note.presence.subscribe': () => ({ subscriptionId: 'assistant-preview-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),
   });
-  // Standalone previews need the owner of note-read actions as well as the mock bridge.
-  const stopNotes = startNoteFixtureReads(store);
+  const stopNotes = store.runSaga(notesReadSaga);
   return () => {
     stopNotes();
     window.electronAPI = previousBridge;
