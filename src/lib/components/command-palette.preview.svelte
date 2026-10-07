@@ -1,5 +1,4 @@
 <script lang="ts" module>
-  import { startNoteFixtureReads } from '../../test/note-fixture-sagas';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { ContentType, NoteVisibility, type Note } from '$shared/types';
   import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
@@ -11,6 +10,7 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
@@ -33,6 +33,7 @@
       createdAt: timestamp,
       updatedAt: timestamp,
     }));
+    const stopSearch = setupPaletteNoteSearch(notes);
     appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
     appStore.dispatch(
       setChangesData(
@@ -51,10 +52,8 @@
         2,
       ),
     );
-    // Indexed note searches settle through the production read-action owner.
-    const stopNotes = startNoteFixtureReads(appStore);
     return () => {
-      stopNotes();
+      stopSearch();
       appStore.dispatch(clearWorkspaceNotesForWorkspaces([workspaceId]));
       appStore.dispatch(clearWorkspace(workspaceId));
     };
@@ -63,8 +62,12 @@
   function setupGitLab(enabled: boolean) {
     return () => {
       const before = appStore.state.userPreferences.labsGitLabEnabled;
+      const stopSearch = setupPaletteNoteSearch();
       appStore.dispatch(setLabsGitLabEnabled(enabled));
-      return () => appStore.dispatch(setLabsGitLabEnabled(before));
+      return () => {
+        stopSearch();
+        appStore.dispatch(setLabsGitLabEnabled(before));
+      };
     };
   }
 
@@ -81,7 +84,10 @@
       'long-names': { props: { initialQuery: '#' }, setup: () => setup(true) },
       'go-to-line': { props: { initialQuery: ':42' }, setup },
       'invalid-line': { props: { initialQuery: ':0' }, setup },
-      'no-workspace': { props: { initialQuery: '', withoutWorkspace: true } },
+      'no-workspace': {
+        props: { initialQuery: '', withoutWorkspace: true },
+        setup: setupPaletteNoteSearch,
+      },
       multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
       'gitlab-off': {
         props: { initialQuery: 'GitLab', withoutWorkspace: true },
