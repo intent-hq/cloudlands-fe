@@ -61,7 +61,11 @@
   }
 </script>
 
-<div class="assistant-panels flex h-full min-h-0 min-w-0 flex-1" data-assistant-panels>
+<div
+  class="assistant-panels flex h-full min-h-0 min-w-0 flex-1"
+  data-assistant-panels
+  data-assistant-layout-id={$layoutId$}
+>
   <div class="assistant-chat home-panel min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
     {@render children()}
   </div>
