@@ -4301,29 +4301,30 @@
     // Explicit navigation owns the viewport until the user returns to bottom.
     // Programmatic scroll events intentionally do not release followBottom.
     shouldFollowBottom = false;
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const elementRect = element.getBoundingClientRect();
-
-    let targetScrollTop: number;
-    if (block === 'center') {
-      targetScrollTop =
-        scrollContainer.scrollTop +
-        (elementRect.top - containerRect.top) -
-        containerRect.height / 2 +
-        elementRect.height / 2;
-    } else if (block === 'start') {
-      targetScrollTop = getMessageNavigationStartScrollTop({
-        currentScrollTop: scrollContainer.scrollTop,
-        targetTop: elementRect.top,
-        containerTop: containerRect.top,
-        headerBottom: getRenderedPanelHeaderBottom(),
-      });
-    } else {
-      targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
-    }
+    const targetScrollTop = (container: HTMLElement) => {
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      if (block === 'center') {
+        return (
+          container.scrollTop +
+          (elementRect.top - containerRect.top) -
+          containerRect.height / 2 +
+          elementRect.height / 2
+        );
+      }
+      if (block === 'start') {
+        return getMessageNavigationStartScrollTop({
+          currentScrollTop: container.scrollTop,
+          targetTop: elementRect.top,
+          containerTop: containerRect.top,
+          headerBottom: getRenderedPanelHeaderBottom(),
+        });
+      }
+      return container.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
+    };
 
     if (prefersReducedMotion()) {
-      scrollContainer.scrollTop = targetScrollTop;
+      scrollContainer.scrollTop = targetScrollTop(scrollContainer);
       return;
     }
     animateScrollTo(getContainer, targetScrollTop, duration);

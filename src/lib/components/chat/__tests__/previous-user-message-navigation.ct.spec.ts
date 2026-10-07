@@ -173,6 +173,81 @@ test('previous-message action leaves bottom and stays at successive user message
     .toBeLessThanOrEqual(2);
 });
 
+test('previous-message navigation follows its target while earlier content hydrates', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.evaluate(() => {
+    const NativeObserver = window.IntersectionObserver;
+    let release: (() => void) | undefined;
+    let released = false;
+    Object.assign(window, {
+      hasDeferredNavigationHydration: () => Boolean(release),
+      releaseNavigationHydration: () => {
+        released = true;
+        release?.();
+      },
+    });
+    window.IntersectionObserver = class extends NativeObserver {
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        super((entries, observer) => {
+          const ready = entries.filter((entry) => {
+            if (released || entry.target.getAttribute('data-lazy-turn-key') !== 'assistant-22')
+              return true;
+            if (entry.isIntersecting) release = () => callback([entry], observer);
+            return false;
+          });
+          if (ready.length > 0) callback(ready, observer);
+        }, options);
+      }
+    };
+  });
+  const component = await mount(ChatMessageNavigatorIntegrationHost);
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  await bottomArrow(component).expectAtBottom(true);
+  const source = component.locator('[data-message-id="user-24"]');
+  // Bring the earlier placeholder into the real preload band without letting
+  // follow-bottom undo the reader's scroll before observer delivery.
+  await scroll.hover();
+  await page.mouse.wheel(0, -400);
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, 'hasDeferredNavigationHydration')()))
+    .toBe(true);
+  const earlier = component.locator('[data-lazy-turn-key="assistant-22"]');
+  await expect(earlier).toHaveAttribute('data-lazy-visible', 'false');
+  const placeholderHeight = await earlier.evaluate((node) => node.getBoundingClientRect().height);
+
+  const now = Date.now();
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now + 1000);
+  const action = source.getByRole('button', { name: 'Scroll to previous message' });
+  await action.evaluate((node: HTMLButtonElement) => node.focus({ preventScroll: true }));
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(32);
+  await page.evaluate(() => Reflect.get(window, 'releaseNavigationHydration')());
+  await page.clock.runFor(800);
+
+  const settledHeight = await earlier.evaluate((node) => node.getBoundingClientRect().height);
+  expect(settledHeight).toBeLessThan(placeholderHeight);
+  const target = component.locator('[data-message-id="user-23"]');
+  const offset = await target.evaluate(
+    (node, container) =>
+      node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
+    await scroll.elementHandle(),
+  );
+  const bottomDistance = await scroll.evaluate(
+    (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
+  );
+  await testInfo.attach('deferred-hydration-navigation', {
+    body: JSON.stringify({ placeholderHeight, settledHeight, offset, bottomDistance }),
+    contentType: 'application/json',
+  });
+  expect(Math.abs(offset)).toBeLessThanOrEqual(3);
+  expect(bottomDistance).toBeGreaterThan(2);
+  await page.clock.resume();
+});
+
 for (const sourceRole of ['user', 'assistant'] as const) {
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     test(`${sourceRole} previous-message action skips automated turns and reaches a lazy first message with ${reducedMotion} motion`, async ({
