@@ -7471,5 +7471,14 @@
   "settings_machineName_saved": "Machine name saved",
   "home_assistantThread_hooks_label": "Active hooks: {count}",
   "home_assistantThread_monitors_label": "Active monitors: {count}",
-  "home_assistantThread_subscriptions_label": "Active subscriptions: {count}"
+  "home_assistantThread_subscriptions_label": "Active subscriptions: {count}",
+  "chat_failureRecovery_title_label": "Couldn't complete this response",
+  "chat_failureRecovery_details_label": "Details",
+  "chat_failureRecovery_copyDetails_label": "Copy details",
+  "chat_failureRecovery_recorded_one": "1 recorded failure",
+  "chat_failureRecovery_recorded_many": "{count} recorded failures",
+  "chat_failureRecovery_queued_label": "Queued",
+  "chat_failureRecovery_action_label": "Needs attention",
+  "chat_failureRecovery_queued_description": "A message is queued. Use its controls below to manage it.",
+  "chat_failureRecovery_action_description": "The response stopped before it finished."
 }

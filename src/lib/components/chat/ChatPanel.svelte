@@ -210,6 +210,8 @@
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
   import { createAppMessageId } from '$shared/utils/app-message-id';
+  import { projectFailureTranscript } from './failure-transcript';
+  import TurnFailureNotice from './TurnFailureNotice.svelte';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
@@ -2579,6 +2581,23 @@
   // are not indexed by those features.
   const composedTranscript = $derived(
     composeTranscript($agentHistoryMessages$, $agentMessages$, $historySegmentMeta$.gapToTail),
+  );
+  const failureTranscript = $derived(
+    projectFailureTranscript(composedTranscript, {
+      agentId,
+      session: $agentSession$ ?? undefined,
+      transientError: $chatError$,
+      queue: $queuedMessages$,
+    }),
+  );
+  // Keep current recovery after saved history, next to the existing queue controls.
+  const recoveryAtEnd = $derived(
+    failureTranscript.history.length > 0 &&
+      Boolean(
+        effectiveError ||
+        $chatModelUnavailable$ ||
+        failureTranscript.current.state === 'attempting',
+      ),
   );
   let groupedMessages = $derived(composedTranscript.groups);
   // Index of the first tail group when the history→tail hole is open; the
@@ -6444,6 +6463,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
@@ -6474,6 +6494,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
@@ -6565,6 +6586,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
@@ -6595,6 +6617,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
@@ -6630,6 +6653,7 @@
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
+                  recoveryState={failureTranscript.current.state}
                   authGuidance={chatAuthGuidance}
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
@@ -7024,7 +7048,7 @@
                     {/each}
 
                     <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                    {#if showPendingAssistantStatus}
+                    {#if showPendingAssistantStatus && !recoveryAtEnd}
                       <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
@@ -7034,6 +7058,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
@@ -7075,109 +7100,118 @@
                       )}
                       {@const turnNumber = getMessageTurnNumber(message.id)}
                       {@const globalIndex = getMessageIndex(message.id)}
-                      <LazyTurn
-                        turnKey={message.id}
-                        {isActive}
-                        scrollRoot={scrollContainer}
-                        heightCache={lazyTurnHeightCache}
-                        hydrationController={messageHydrationPolicy}
-                        hydrated={hydratedMessageIds.has(message.id)}
-                        forceVisible={isMessageForceVisible(message.id)}
-                      >
-                        {#snippet children()}
-                          <div
-                            data-message-id={message.id}
-                            data-message-role={message.role}
-                            data-message-index={globalIndex}
-                            data-turn-number={turnNumber}
-                            class="message-nav-target"
-                            data-operational-message-seam={compactPreviousMessageBoundary
-                              ? 'true'
-                              : undefined}
-                          >
-                            <ChatMessage
-                              {agentId}
-                              messageId={message.id}
-                              ownsMessageIdentity={false}
-                              {workspace}
-                              ownPrincipalId={$presenceOwnPrincipalId$}
-                              isStreaming={isCurrentlyStreaming}
-                              isLastConversationMessage={isLastMessage}
-                              onEditSubmit={isRetiredSession || message.role !== 'assistant'
-                                ? undefined
-                                : (newText, model, blocks) =>
-                                    handleEditMessage(message.id, newText, model, blocks)}
-                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                              previousMessageLoading={previousMessageLoadingId === message.id}
-                              onRegenerate={isRetiredSession || message.role !== 'assistant'
-                                ? undefined
-                                : () => handleRegenerateFromMessage(message.id)}
-                              backendSessionId={auggieSessionId}
-                              suppressCoordinationStoppedIndicator={turn.userMessage
-                                ? isAutomatedMessage(turn.userMessage)
-                                : false}
-                            />
-                          </div>
-                          <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                          {#if !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
-                            <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
-                              <StreamingStatus
-                                isStreaming={$agentSessionIsStreaming$}
-                                isProcessing={$agentIsResponding$}
-                                processQueueHint={$agentSession$?.processQueueHint}
-                                lastChunkTime={$chatLastChunkTime$}
-                                receivedFirstChunk={$chatReceivedFirstChunk$}
-                                streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                                error={effectiveError}
-                                authGuidance={chatAuthGuidance}
-                                sessionCorrupted={effectiveSessionCorrupted}
-                                failedAt={effectiveFailedAt}
-                                modelUnavailable={$chatModelUnavailable$}
-                                {quotaExceeded}
-                                {quotaRetryProviders}
-                                {hasPendingPermission}
-                                onRetry={gatedRetry}
-                                onRetryWithModel={gatedRetryWithModel}
-                                onRetryWithProvider={gatedRetryWithProvider}
-                                onStop={handleStop}
-                                onStalledRetry={gatedStalledRetry}
-                                statusEvents={$chatStatusEvents$}
-                                streamingStartTime={$chatStreamingStartTime$}
-                              />
-                            </div>
-                          {/if}
-                          <!-- Show file changes after each assistant turn -->
-                          {#if message.role === 'assistant'}
+                      {#if !failureTranscript.collapsedMessageIds.has(message.id)}
+                        <LazyTurn
+                          turnKey={message.id}
+                          {isActive}
+                          scrollRoot={scrollContainer}
+                          heightCache={lazyTurnHeightCache}
+                          hydrationController={messageHydrationPolicy}
+                          hydrated={hydratedMessageIds.has(message.id)}
+                          forceVisible={isMessageForceVisible(message.id)}
+                        >
+                          {#snippet children()}
                             <div
-                              class="w-full"
-                              class:mb-1={!compactNextMessageBoundary &&
-                                !(isLastAssistant && compactOperationalTurnBoundary) &&
-                                !(
-                                  isLastAssistant &&
-                                  (nextTurnHasUserMessage ||
-                                    nextIsChatCard ||
-                                    (isLastTurn && pendingConversationMessages.length > 0))
-                                )}
-                              data-after-assistant-message={message.id}
+                              data-message-id={message.id}
+                              data-message-role={message.role}
+                              data-message-index={globalIndex}
+                              data-turn-number={turnNumber}
+                              class="message-nav-target"
+                              data-operational-message-seam={compactPreviousMessageBoundary
+                                ? 'true'
+                                : undefined}
                             >
-                              <ChatFileChangesSummary
-                                workspaceId={workspace.id}
-                                {message}
-                                isStreaming={isCurrentlyStreaming}
-                                {agentId}
-                                {turnNumber}
-                              />
+                              {#if failureTranscript.runsByAnchor.has(message.id)}
+                                <TurnFailureNotice
+                                  records={failureTranscript.runsByAnchor.get(message.id)?.records}
+                                />
+                              {:else}
+                                <ChatMessage
+                                  {agentId}
+                                  messageId={message.id}
+                                  ownsMessageIdentity={false}
+                                  {workspace}
+                                  ownPrincipalId={$presenceOwnPrincipalId$}
+                                  isStreaming={isCurrentlyStreaming}
+                                  isLastConversationMessage={isLastMessage}
+                                  onEditSubmit={isRetiredSession || message.role !== 'assistant'
+                                    ? undefined
+                                    : (newText, model, blocks) =>
+                                        handleEditMessage(message.id, newText, model, blocks)}
+                                  onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                  previousMessageLoading={previousMessageLoadingId === message.id}
+                                  onRegenerate={isRetiredSession || message.role !== 'assistant'
+                                    ? undefined
+                                    : () => handleRegenerateFromMessage(message.id)}
+                                  backendSessionId={auggieSessionId}
+                                  suppressCoordinationStoppedIndicator={turn.userMessage
+                                    ? isAutomatedMessage(turn.userMessage)
+                                    : false}
+                                />
+                              {/if}
                             </div>
-                            <!-- Show auto-commit status after the last assistant message of each turn -->
-                            {#if isLastAssistant}
-                              <AutoCommitStatus
-                                status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
-                                workspaceId={workspace.id}
-                              />
+                            <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
+                            {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
+                              <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
+                                <StreamingStatus
+                                  isStreaming={$agentSessionIsStreaming$}
+                                  isProcessing={$agentIsResponding$}
+                                  processQueueHint={$agentSession$?.processQueueHint}
+                                  lastChunkTime={$chatLastChunkTime$}
+                                  receivedFirstChunk={$chatReceivedFirstChunk$}
+                                  streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                                  error={effectiveError}
+                                  recoveryState={failureTranscript.current.state}
+                                  authGuidance={chatAuthGuidance}
+                                  sessionCorrupted={effectiveSessionCorrupted}
+                                  failedAt={effectiveFailedAt}
+                                  modelUnavailable={$chatModelUnavailable$}
+                                  {quotaExceeded}
+                                  {quotaRetryProviders}
+                                  {hasPendingPermission}
+                                  onRetry={gatedRetry}
+                                  onRetryWithModel={gatedRetryWithModel}
+                                  onRetryWithProvider={gatedRetryWithProvider}
+                                  onStop={handleStop}
+                                  onStalledRetry={gatedStalledRetry}
+                                  statusEvents={$chatStatusEvents$}
+                                  streamingStartTime={$chatStreamingStartTime$}
+                                />
+                              </div>
                             {/if}
-                          {/if}
-                        {/snippet}
-                      </LazyTurn>
+                            <!-- Show file changes after each assistant turn -->
+                            {#if message.role === 'assistant'}
+                              <div
+                                class="w-full"
+                                class:mb-1={!compactNextMessageBoundary &&
+                                  !(isLastAssistant && compactOperationalTurnBoundary) &&
+                                  !(
+                                    isLastAssistant &&
+                                    (nextTurnHasUserMessage ||
+                                      nextIsChatCard ||
+                                      (isLastTurn && pendingConversationMessages.length > 0))
+                                  )}
+                                data-after-assistant-message={message.id}
+                              >
+                                <ChatFileChangesSummary
+                                  workspaceId={workspace.id}
+                                  {message}
+                                  isStreaming={isCurrentlyStreaming}
+                                  {agentId}
+                                  {turnNumber}
+                                />
+                              </div>
+                              <!-- Show auto-commit status after the last assistant message of each turn -->
+                              {#if isLastAssistant}
+                                <AutoCommitStatus
+                                  status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
+                                  workspaceId={workspace.id}
+                                />
+                              {/if}
+                            {/if}
+                          {/snippet}
+                        </LazyTurn>
+                      {/if}
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/each}
                   </div>
@@ -7206,9 +7240,9 @@
                   {/if}
                 {/each}
               {/each}
-              {#if showEndOfListStreamingStatus && !pendingStatusMessageId}
+              {#if (showEndOfListStreamingStatus || recoveryAtEnd) && !pendingStatusMessageId}
                 <div
-                  class="pt-1 {isCompactMode ? 'mb-2' : 'mb-16'}"
+                  class="pt-1 {isCompactMode || recoveryAtEnd ? 'mb-2' : 'mb-16'}"
                   data-testid="end-of-list-streaming-status"
                 >
                   <StreamingStatus
@@ -7219,6 +7253,7 @@
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}
                     error={effectiveError}
+                    recoveryState={failureTranscript.current.state}
                     authGuidance={chatAuthGuidance}
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
@@ -7352,6 +7387,7 @@
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
+                      recoveryState={failureTranscript.current.state}
                       authGuidance={chatAuthGuidance}
                       sessionCorrupted={effectiveSessionCorrupted}
                       failedAt={effectiveFailedAt}
@@ -7393,6 +7429,7 @@
             >
               <QueuedMessageList
                 bind:this={queuedMessageListRef}
+                disabled={isRetiredSession}
                 messages={visibleQueuedMessages}
                 displayRows={visibleQueueRows}
                 {agentId}

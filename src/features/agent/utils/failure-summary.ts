@@ -3,7 +3,7 @@ import { AgentStatus } from '$shared/types/agent.types';
 import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
 import { getAttentionNotice, timestampIdentity } from '$lib/components/chat/attention-notice';
 
-interface FailureRecord {
+export interface FailureRecord {
   messageId: string;
   reason: string;
   timestamp: AgentMessage['timestamp'];
@@ -27,8 +27,9 @@ interface QueueRecoveryGroup {
   state: 'queued';
 }
 
-interface FailureSummaryInput {
+export interface FailureSummaryInput {
   agentId: string;
+  breakBeforeMessageIds?: ReadonlySet<string>;
   /** Canonically ordered transcript; may be a partially hydrated window. */
   messages: readonly AgentMessage[];
   session?: { id: string } & Partial<
@@ -66,6 +67,10 @@ export function deriveFailureSummary(input: FailureSummaryInput) {
     }
     if (seen.has(message.id)) continue;
     seen.add(message.id);
+    if (input.breakBeforeMessageIds?.has(message.id)) {
+      previous = undefined;
+      run = undefined;
+    }
     const notice = getAttentionNotice(message);
     if (notice?.kind !== 'turn-failure') {
       run = undefined;

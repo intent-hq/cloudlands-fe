@@ -1747,9 +1747,11 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
       await tick();
 
+      const renderedNotice =
+        kind === 'turn-failure' ? '.turn-failure-notice' : '[data-message-key="inline-notice"]';
       const notice = view.container.querySelector('[data-lazy-turn-key="inline-notice"]')!;
       expect(notice).not.toBeNull();
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).toBeNull();
+      expect(notice.querySelector(renderedNotice)).toBeNull();
       const observer = MockChatIntersectionObserver.instances.find((candidate) =>
         candidate.observed.has(notice),
       )!;
@@ -1757,13 +1759,13 @@ describe('ChatPanel mounted lifecycle', () => {
       flushFrame();
       await tick();
 
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      expect(notice.querySelector(renderedNotice)).not.toBeNull();
       expect(notice.querySelector('.lazy-turn-placeholder')).toBeNull();
 
       await view.rerender({ ...props, isActive: false });
       await view.rerender({ ...props, isActive: true });
       await tick();
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      expect(notice.querySelector(renderedNotice)).not.toBeNull();
       view.unmount();
     },
   );

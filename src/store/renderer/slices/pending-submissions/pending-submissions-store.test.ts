@@ -44,7 +44,7 @@ function fixture() {
 }
 
 describe('pending submissions with the production renderer store', () => {
-  it('projects failure evidence for the requested workspace and follows recovery without changing queue controls', () => {
+  it('keeps failure history out of queue-only projection and preserves queue controls', () => {
     const store = fixture();
     const timestamp = '2026-10-07T06:00:00.123456Z';
     store.dispatch(
@@ -102,38 +102,21 @@ describe('pending submissions with the production renderer store', () => {
       ),
     );
     const projected = selectAgentSubmissionDisplay.select(store.state, 'agent', 'workspace');
-    expect(projected.failureSummary.current).toMatchObject({
-      state: 'queued',
-      noticeId: 'failure',
-    });
+    expect(projected).not.toHaveProperty('failureSummary');
     expect(projected.queue[0]).toMatchObject({
       confirmedId: 'q',
       blocksMutations: false,
       fileBlocks: [{ attachmentId: 'attachment' }],
     });
-    expect(
-      selectAgentSubmissionDisplay.select(store.state, 'agent', 'other').failureSummary,
-    ).toMatchObject({
-      history: [],
-      queueRecovery: [],
-      current: { state: 'inactive', error: null },
-    });
-    expect(
-      selectAgentSubmissionDisplay.select(store.state, 'other-agent', 'workspace').failureSummary
-        .history,
-    ).toEqual([]);
+    expect(selectAgentSubmissionDisplay.select(store.state, 'agent', 'other').queue).toEqual([]);
     store.dispatch(replaceAgentQueue('agent', [], 'workspace'));
     store.dispatch(chatErrorCleared('agent'));
     store.dispatch(
       updateSession('agent', { status: AgentStatus.RuntimeIdle, stopReason: 'end_turn' }),
     );
-    const recovered = selectAgentSubmissionDisplay.select(
-      store.state,
-      'agent',
-      'workspace',
-    ).failureSummary;
-    expect(recovered.current.state).toBe('inactive');
-    expect(recovered.history[0].records.map((record) => record.messageId)).toEqual(['failure']);
+    expect(selectAgentSubmissionDisplay.select(store.state, 'agent', 'workspace').queue).toEqual(
+      [],
+    );
   });
 
   it('retains confirmed queue display before the first local admission', () => {

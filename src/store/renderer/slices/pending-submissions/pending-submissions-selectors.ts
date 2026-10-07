@@ -4,9 +4,6 @@ import type { AppSelector } from '../../types';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import { selectWorkspaceParticipationContext } from '../workspace/workspace-selectors';
 import { selectPrincipalSnapshot } from '../principal/principal-selectors';
-import { selectAgentMessages, selectAgentSession } from '../agent-session/agent-session-selectors';
-import { selectChatError } from '../chat-state/chat-state-selectors';
-import { deriveFailureSummary } from '$features/agent/utils/failure-summary';
 import { sameSubmissionScope } from './pending-submissions-model';
 import {
   projectPendingSubmissions,
@@ -72,18 +69,7 @@ export const selectAgentSubmissionDisplay = store.createSelector(
             undefined,
             selectAgentQueueMessages.select(state, agentId, workspaceId),
           );
-    const session = selectAgentSession.select(state, agentId);
-    const sessionInScope = session?.workspaceId === workspaceId;
-    return {
-      ...display,
-      failureSummary: deriveFailureSummary({
-        agentId,
-        messages: sessionInScope ? selectAgentMessages.select(state, agentId) : [],
-        session: sessionInScope ? session : undefined,
-        transientError: sessionInScope ? selectChatError.select(state, agentId) : null,
-        queue: selectAgentQueueMessages.select(state, agentId, workspaceId),
-      }),
-    };
+    return display;
   },
 );
 
