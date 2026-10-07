@@ -39,6 +39,7 @@ import {
 import {
   chatStateReducer,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   historyGapFillRequested,
   historySeekRequested,
   initialState as chatStateInitialState,
@@ -46,6 +47,7 @@ import {
   pendingProposalRecoveryPruned,
   pendingProposalRecoveryRequested,
   pendingQuestionRecoveryRequested,
+  pendingQuestionRecoveryCleared,
   previousUserMessageLoadConsumed,
   previousUserMessageLoadReleased,
   previousUserMessageLoadRequested,
@@ -183,6 +185,102 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     vi.useRealTimers();
     vi.clearAllMocks();
   });
+
+  it.each(['older', 'gap', 'seek', 'previous', 'question', 'proposal'] as const)(
+    'gates %s history reads until progressive completion',
+    async (producer) => {
+      const run = harness();
+      try {
+        run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+        run.dispatch(
+          chatTranscriptSnapshotApplied(AGENT, {
+            truncated: true,
+            totalMessages: 11,
+            initialHistory: { target: 20, received: 1, complete: false },
+          }),
+        );
+        mocks.getConversation.mockResolvedValue(page([message('m-1', 1)], { totalMessages: 11 }));
+        const request = () =>
+          run.dispatch(
+            producer === 'older'
+              ? olderHistoryPageRequested(WS, AGENT)
+              : producer === 'gap'
+                ? historyGapFillRequested(WS, AGENT)
+                : producer === 'seek'
+                  ? historySeekRequested(WS, AGENT, 1)
+                  : producer === 'previous'
+                    ? previousUserMessageLoadRequested(WS, AGENT, 'nav', 'm-10')
+                    : producer === 'question'
+                      ? pendingQuestionRecoveryRequested(AGENT, 'm-1')
+                      : pendingProposalRecoveryRequested(AGENT, 'm-1'),
+          );
+        request();
+        run.dispatch(
+          chatInitialHistoryProgressed(AGENT, { target: 20, received: 2, complete: false }),
+        );
+        await settle();
+        expect(mocks.getConversation).not.toHaveBeenCalled();
+        run.dispatch(
+          chatTranscriptSnapshotApplied(AGENT, {
+            truncated: true,
+            totalMessages: 11,
+            nextToken: 'before-9',
+            initialHistory: { target: 20, received: 2, complete: true },
+          }),
+        );
+        if (producer === 'older') request();
+        await settle();
+        if (producer !== 'gap') expect(mocks.getConversation).toHaveBeenCalled();
+        if (producer === 'older')
+          expect(mocks.getConversation).toHaveBeenCalledWith(
+            AGENT,
+            5,
+            'before-9',
+            undefined,
+            undefined,
+            WS,
+          );
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['question', 'proposal'] as const)(
+    'cancels deferred %s recovery before history completes',
+    async (producer) => {
+      const run = harness();
+      try {
+        run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+        run.dispatch(
+          chatInitialHistoryProgressed(AGENT, { target: 20, received: 1, complete: false }),
+        );
+        mocks.getConversation.mockResolvedValue(page([]));
+        run.dispatch(
+          producer === 'question'
+            ? pendingQuestionRecoveryRequested(AGENT, 'm-1')
+            : pendingProposalRecoveryRequested(AGENT, 'm-1'),
+        );
+        await settle();
+        run.dispatch(
+          producer === 'question'
+            ? pendingQuestionRecoveryCleared(AGENT)
+            : pendingProposalRecoveryPruned(AGENT, []),
+        );
+        run.dispatch(
+          chatTranscriptSnapshotApplied(AGENT, {
+            nextToken: null,
+            initialHistory: { target: 20, received: 1, complete: true },
+          }),
+        );
+        await settle();
+        expect(mocks.getConversation).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+      }
+    },
+  );
 
   it('keeps an advancing cursor across an empty page and latches a repeated cursor', async () => {
     const run = harness();

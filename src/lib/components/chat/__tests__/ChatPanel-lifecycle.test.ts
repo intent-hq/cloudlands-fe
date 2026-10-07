@@ -129,6 +129,10 @@ const mocks = vi.hoisted(() => {
     reportStreamLifecycle: vi.fn(),
     animateScrollTo: vi.fn(),
     awaitingSwitchBackSnapshot: mutableReadable(false),
+    initialHistory: mutableReadable<
+      { target: number; received: number; complete: boolean } | undefined
+    >(undefined),
+    initialHistoryPending: mutableReadable(false),
     transcriptHydration: mutableReadable('settled'),
     transcriptHydratedOnce: mutableReadable(true),
     transcriptSnapshotMeta: mutableReadable<
@@ -259,6 +263,8 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
   }),
+  selectInitialChatHistory: () => mocks.initialHistory,
+  selectInitialChatHistoryPending: () => mocks.initialHistoryPending,
   selectTranscriptHydratedOnce: Object.assign(() => mocks.transcriptHydratedOnce, {
     select: () => true,
   }),
@@ -838,6 +844,8 @@ beforeEach(() => {
   mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
+  mocks.initialHistory.set(undefined);
+  mocks.initialHistoryPending.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
   mocks.transcriptSnapshotMeta.set(undefined);
@@ -2146,6 +2154,33 @@ describe('ChatPanel mounted lifecycle', () => {
       expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
       expect(view.container.querySelector('[data-testid="error-title"]')).not.toBeNull();
     });
+  });
+
+  it('reveals the first progressive row without latching the unread boundary', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transcriptHydratedOnce.set(false);
+    mocks.transcriptHydration.set('loading');
+    mocks.initialHistory.set({ target: 20, received: 1, complete: false });
+    mocks.initialHistoryPending.set(true);
+    mocks.agentMessages.set([
+      {
+        id: 'progressive-visible',
+        role: 'assistant',
+        content: 'First visible row',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await tick();
+    expect(view.container.querySelector('[data-message-id="progressive-visible"]')).not.toBeNull();
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => action.type === 'unreadTracking/startDividerSession',
+      ),
+    ).toBe(false);
   });
 
   it('does not claim an assistant row is committed while first hydration hides it', async () => {

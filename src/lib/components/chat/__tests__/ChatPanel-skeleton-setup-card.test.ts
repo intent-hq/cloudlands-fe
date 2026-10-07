@@ -168,6 +168,8 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectPendingProposalRecovery: testState.selector(undefined),
   selectPendingQuestionRecovery: testState.selector(undefined),
   selectTranscriptHydration: testState.selectorFrom(() => testState.transcriptHydration),
+  selectInitialChatHistory: testState.selectorFrom(() => undefined),
+  selectInitialChatHistoryPending: testState.selectorFrom(() => false),
   selectTranscriptHydratedOnce: testState.selectorFrom(() => testState.transcriptHydratedOnce),
   selectTranscriptSnapshotMeta: testState.selector(undefined),
 }));
