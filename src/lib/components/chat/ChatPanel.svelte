@@ -4296,7 +4296,14 @@
     duration: number = 150,
     getContainer = beginScrollNavigation(),
   ) {
-    if (!getContainer() || !scrollContainer) return;
+    const getTargetContainer = () => {
+      const container = getContainer();
+      // Transcript replacement can remove the target while its viewport survives.
+      // Cancel before the next geometry read or animation write in that case.
+      return container?.contains(element) ? container : null;
+    };
+    const container = getTargetContainer();
+    if (!container) return;
 
     // Explicit navigation owns the viewport until the user returns to bottom.
     // Programmatic scroll events intentionally do not release followBottom.
@@ -4324,10 +4331,10 @@
     };
 
     if (prefersReducedMotion()) {
-      scrollContainer.scrollTop = targetScrollTop(scrollContainer);
+      container.scrollTop = targetScrollTop(container);
       return;
     }
-    animateScrollTo(getContainer, targetScrollTop, duration);
+    animateScrollTo(getTargetContainer, targetScrollTop, duration);
   }
 
   /**
