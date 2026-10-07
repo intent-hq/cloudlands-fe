@@ -20,7 +20,7 @@
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
   import {
     faThumbtack,
     faBoxArchive,
@@ -115,17 +115,7 @@
     void goto(`/workspace/${encodeURIComponent(id)}`);
   }
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
-    if (!isCmdClickModifier({ event })) return;
-    if (event instanceof MouseEvent && event.button !== 0) return;
-    if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
-    if (
-      event.target instanceof Element &&
-      event.target.closest('button, a, input, select, textarea, [role="button"], [role="menuitem"]')
-    )
-      return;
-    event.preventDefault();
-    event.stopPropagation();
-    openWorkspace(id);
+    openHomeWorkspaceFromEvent(event, id, openWorkspace);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);

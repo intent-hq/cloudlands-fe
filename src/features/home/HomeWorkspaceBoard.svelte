@@ -10,7 +10,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
   import { scrollFade } from '$lib/actions/scroll-fade';
-  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
 
   let {
     workspaces,
@@ -84,15 +84,10 @@
               wrapContent={false}
               class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-4 text-left shadow-xs"
               onclick={(event) => {
-                if (isCmdClickModifier({ event })) onopen(workspace.id);
-                else onselect(workspace.id);
+                if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
+                  onselect(workspace.id);
               }}
-              onkeydown={(event) => {
-                if (isCmdClickModifier({ event }) && (event.key === 'Enter' || event.key === ' ')) {
-                  event.preventDefault();
-                  onopen(workspace.id);
-                }
-              }}
+              onkeydown={(event) => openHomeWorkspaceFromEvent(event, workspace.id, onopen)}
               aria-label={workspace.title}
             >
               <span class="flex items-start justify-between gap-3">
