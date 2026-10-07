@@ -2770,7 +2770,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="agent-behavior" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -2822,7 +2822,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-remote">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-remote">
                   "Remote"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="devices" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -2874,7 +2874,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-preferences">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-preferences">
                   "Preferences"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button aria-current="page" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground/5 border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="display" data-slot="button" data-state="active" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -2958,7 +2958,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-specialists" data-settings-agents-section="" data-settings-specialists-section="">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-specialists">
                   "Specialists"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <button type="button">
                     "Example specialist"
           <div class="flex-1 min-w-0">
@@ -3090,7 +3090,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="agent-behavior" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3142,7 +3142,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-remote">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-remote">
                   "Remote"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="devices" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3194,7 +3194,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-preferences">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-preferences">
                   "Preferences"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button aria-current="page" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground/5 border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="display" data-slot="button" data-state="active" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3278,7 +3278,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-specialists" data-settings-agents-section="" data-settings-specialists-section="">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-specialists">
                   "Specialists"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <button type="button">
                     "Example specialist"
           <div class="flex-1 min-w-0">
@@ -3410,7 +3410,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="agent-behavior" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3462,7 +3462,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-remote">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-remote">
                   "Remote"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="devices" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3514,7 +3514,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-preferences">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-preferences">
                   "Preferences"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button aria-current="page" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground/5 border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="display" data-slot="button" data-state="active" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3598,7 +3598,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-specialists" data-settings-agents-section="" data-settings-specialists-section="">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-specialists">
                   "Specialists"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <button type="button">
                     "Example specialist"
           <div class="flex-1 min-w-0">
@@ -3659,7 +3659,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="agent-behavior" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3711,7 +3711,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-remote">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-remote">
                   "Remote"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="devices" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3763,7 +3763,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-preferences">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-preferences">
                   "Preferences"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button aria-current="page" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground/5 border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="display" data-slot="button" data-state="active" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -3847,7 +3847,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-specialists" data-settings-agents-section="" data-settings-specialists-section="">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-specialists">
                   "Specialists"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <button type="button">
                     "Example specialist"
           <div class="flex-1 min-w-0">
@@ -3979,7 +3979,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="agent-behavior" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4031,7 +4031,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-remote">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-remote">
                   "Remote"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="devices" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4083,7 +4083,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-preferences">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-preferences">
                   "Preferences"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button aria-current="page" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground/5 border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="display" data-slot="button" data-state="active" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4167,7 +4167,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-specialists" data-settings-agents-section="" data-settings-specialists-section="">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-specialists">
                   "Specialists"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <button type="button">
                     "Example specialist"
           <div class="flex-1 min-w-0">
@@ -4299,7 +4299,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="agent-behavior" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4351,7 +4351,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-remote">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-remote">
                   "Remote"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="devices" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4403,7 +4403,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-preferences">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-preferences">
                   "Preferences"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button aria-current="page" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground/5 border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="display" data-slot="button" data-state="active" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4487,7 +4487,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-specialists" data-settings-agents-section="" data-settings-specialists-section="">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-specialists">
                   "Specialists"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <button type="button">
                     "Example specialist"
           <div class="flex-1 min-w-0">
@@ -4619,7 +4619,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="agent-behavior" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4671,7 +4671,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-remote">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-remote">
                   "Remote"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="devices" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4723,7 +4723,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-preferences">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-preferences">
                   "Preferences"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <div>
                     <button aria-current="page" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground/5 border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="display" data-slot="button" data-state="active" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -4807,7 +4807,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
               <section aria-labelledby="settings-group-specialists" data-settings-agents-section="" data-settings-specialists-section="">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-specialists">
                   "Specialists"
-                <div class="flex flex-col mt-2">
+                <div class="flex flex-col gap-px mt-2">
                   <button type="button">
                     "Example specialist"
           <div class="flex-1 min-w-0">

@@ -741,7 +741,7 @@
       lastPointerX = e.clientX;
       startScrollLeft = resizeScrollContainer?.scrollLeft ?? 0;
       // Start from the current width (either normal or expanded)
-      startWidth = isExpanded ? expandedWidth : panelWidth;
+      startWidth = Math.max(minWidth, Math.min(maxWidth, isExpanded ? expandedWidth : panelWidth));
       lastResizeWidth = startWidth;
       document.body.style.cursor = side === 'left' ? 'col-resize' : 'ew-resize';
     } else {
@@ -799,7 +799,7 @@
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
         const delta = e.key === 'ArrowLeft' ? -step : step;
-        let newWidth = (isExpanded ? expandedWidth : panelWidth) + delta;
+        let newWidth = Math.min(maxWidth, isExpanded ? expandedWidth : panelWidth) + delta;
         newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
         if (isExpanded) {
           expandedWidth = newWidth;

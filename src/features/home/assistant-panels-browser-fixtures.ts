@@ -8,9 +8,13 @@ import {
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
+import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 
-export function setupAssistantPanelsFixture(workspaceView?: 'editor' | 'raw') {
+export function setupAssistantPanelsFixture(
+  noteContent?: string,
+  workspaceView?: 'editor' | 'raw',
+) {
   const previousBridge = window.electronAPI;
   const fixtureWindow = window as typeof window & {
     assistantNoteRequests?: Array<{ method: string; params: unknown }>;
@@ -104,7 +108,8 @@ export function setupAssistantPanelsFixture(workspaceView?: 'editor' | 'raw') {
                   ? '# Second plan\n\nKeep earlier panels in the header picker.'
                   : workspaceId === 'example-workspace'
                     ? '# Workspace plan\n\nA separate plan from another workspace.'
-                    : '# Plan for the repository\n\nThe Assistant can show this note beside the conversation.\n\n- Open links in the content panel.\n- Keep your chat draft.\n- Reopen earlier notes from the header.'),
+                    : (noteContent ??
+                      '# Plan for the repository\n\nThe Assistant can show this note beside the conversation.\n\n- Open links in the content panel.\n- Keep your chat draft.\n- Reopen earlier notes from the header.')),
           contentType: 'markdown',
           tags: [],
           isPinned: false,
@@ -135,7 +140,9 @@ export function setupAssistantPanelsFixture(workspaceView?: 'editor' | 'raw') {
     'note.presence.unsubscribe': () => ({ ok: true }),
     'note.presence.update': () => ({ ok: true }),
   });
+  const stopNotes = startWorkspaceNotesSagaFixture(store);
   return () => {
+    for (const stop of stopNotes) stop();
     window.electronAPI = previousBridge;
     fixtureWindow.assistantNoteRequests = previousRequests;
   };

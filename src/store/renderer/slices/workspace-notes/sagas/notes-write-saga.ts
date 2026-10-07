@@ -4,6 +4,7 @@ import {
   cancelled,
   delay,
   flush,
+  join,
   put,
   race,
   take,
@@ -13,6 +14,7 @@ import {
 
 import { appClient } from '$lib/client';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { rebaseText } from '$lib/notes/text-rebase';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -20,33 +22,51 @@ import { ContentType, NoteVisibility } from '$shared/types';
 import type { CreateNoteRequest, Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { notify } from '$lib/components/patterns/notify';
-import { takeLatestInContext } from '../../../utils/context-saga-effects';
+import {
+  addCommentAction,
+  removeCommentAction,
+  updateCommentAction,
+} from '../../comments/comments-slice';
+import { selectCommentById } from '../../comments/comments-selectors';
 import {
   createNoteRequested,
   markNoteRead,
 } from '../../note-read-tracking/note-read-tracking-slice';
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
 import {
   addOptimisticNote,
+  addCommentRequested,
   applyLocalNoteUpdate,
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
   createNote,
+  createNotePersistRequested,
+  deleteCommentRequested,
   deleteNote,
+  deleteNotePersistRequested,
+  flushNoteContentRequested,
   loadWorkspaceNotesSucceeded,
   removeOptimisticNote,
+  respondToCommentRequested,
+  resolveCommentRequested,
+  setNoteContentPending,
+  settleNoteContentRequested,
   updateNote,
   updateNoteContent,
   updateNoteTitle,
+  updateNoteTitlePersistRequested,
+  type AppliedNoteContent,
+  NOTE_CONTENT_SAVE_DEBOUNCE_MS,
 } from '../workspace-notes-slice';
 import { toRuntimeNote } from './note-payload-mappers';
 
 const logger = createLogger('NotesWriteSaga');
-export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
+export { NOTE_CONTENT_SAVE_DEBOUNCE_MS };
 
 // A draft is enqueued as the very same object that `unackedDrafts` holds, so
 // an in-place rebase reaches a command already waiting on the queue.
@@ -67,8 +87,46 @@ type MetadataCommand = {
   titleOnly: boolean;
 };
 type DeleteCommand = { kind: 'delete'; workspaceId: string; noteId: string; snapshot?: Note };
-type MutationCommand = ContentCommand | MetadataCommand | DeleteCommand;
-type MutationEnvelope = { command: MutationCommand; completion?: Channel<boolean> };
+type AddCommentCommand = {
+  kind: 'add-comment';
+  workspaceId: string;
+  noteId: string;
+  params: Parameters<typeof appClient.comments.add>[1];
+};
+type RespondCommentCommand = {
+  kind: 'respond-comment';
+  workspaceId: string;
+  noteId: string;
+  params: Parameters<typeof appClient.comments.respond>[1];
+};
+type DeleteCommentCommand = {
+  kind: 'delete-comment';
+  workspaceId: string;
+  noteId: string;
+  commentId: string;
+};
+type ResolveCommentCommand = {
+  kind: 'resolve-comment';
+  workspaceId: string;
+  noteId: string;
+  commentId: string;
+};
+type BarrierCommand = { kind: 'barrier'; workspaceId: string; noteId: string };
+type MutationCommand =
+  | ContentCommand
+  | MetadataCommand
+  | DeleteCommand
+  | AddCommentCommand
+  | RespondCommentCommand
+  | DeleteCommentCommand
+  | ResolveCommentCommand
+  | BarrierCommand;
+type MutationCompletion = { value: unknown };
+type MutationEnvelope = {
+  command: MutationCommand;
+  generation: number;
+  completion?: Channel<MutationCompletion>;
+};
 type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
@@ -87,10 +145,15 @@ const unackedDrafts = new Map<string, PendingContent[]>();
 // advanced to each echo's rev as the pending drafts are rebased onto it, and
 // sent as `expectedVersion`.
 const draftBaseRev = new Map<string, number>();
+const workspaceMutationGenerations = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}:${noteId}`;
+}
+
+function workspaceMutationGeneration(workspaceId: string): number {
+  return workspaceMutationGenerations.get(workspaceId) ?? 0;
 }
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
@@ -215,13 +278,13 @@ function* rebasePendingDrafts(
     for (const draft of later) draft.content = rebaseText(command.content, echoed, draft.content);
   }
   if (echoedRev !== undefined) draftBaseRev.set(key, echoedRev);
-  if (storeIsNewer) return;
   const newest = later[later.length - 1];
-  if (!newest) return;
+  if (!newest) return undefined;
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
-  if (stored?.content !== newest.content) {
+  if (!storeIsNewer && stored?.content !== newest.content) {
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: newest.content }));
   }
+  return newest.content;
 }
 
 /**
@@ -237,19 +300,28 @@ function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
-) {
+): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId, seq } = command;
   const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
+  let rebased: string | undefined;
   if (superseded) {
-    yield* call(rebasePendingDrafts, command, echoed, nextRev, storeIsNewer);
+    rebased = yield* call(rebasePendingDrafts, command, echoed, nextRev, storeIsNewer);
   } else if (!storeIsNewer && stored?.content !== echoed) {
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }
   if (nextRev !== undefined) yield* call(setRevisionIfNewer, workspaceId, noteId, nextRev);
+  if (storeIsNewer && rebased !== undefined) {
+    return nextRev !== undefined ? { content: rebased, rev: nextRev } : { content: rebased };
+  }
+  const applied = yield* selectNoteById.effect(workspaceId, noteId);
+  if (!applied) return { content: echoed };
+  return applied.rev !== undefined
+    ? { content: applied.content, rev: applied.rev }
+    : { content: applied.content };
 }
 
 function forgetDraft(key: string, draft: PendingContent): void {
@@ -258,7 +330,7 @@ function forgetDraft(key: string, draft: PendingContent): void {
   else unackedDrafts.delete(key);
 }
 
-function* saveContent(command: ContentCommand) {
+function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent | undefined> {
   const { workspaceId, noteId } = command;
   const key = noteKey(workspaceId, noteId);
   const note = yield* selectNoteById.effect(workspaceId, noteId);
@@ -282,12 +354,13 @@ function* saveContent(command: ContentCommand) {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
       yield* call(refetchWorkspaceNotes, workspaceId);
-      return;
+      return undefined;
     }
-    yield* call(applyContentSaveResult, command, rev, result);
+    return yield* call(applyContentSaveResult, command, rev, result);
   } catch (error) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);
+    return undefined;
   } finally {
     forgetDraft(key, command);
     // This was the latest edit and nothing later can compare against it; the
@@ -296,6 +369,58 @@ function* saveContent(command: ContentCommand) {
       latestEditSeq.delete(key);
       draftBaseRev.delete(key);
     }
+    if ((unackedDrafts.get(key)?.length ?? 0) === 0) {
+      yield* put(setNoteContentPending(workspaceId, noteId, false));
+    }
+  }
+}
+
+function* addComment(command: AddCommentCommand): SagaGenerator<boolean> {
+  const { workspaceId, noteId, params } = command;
+  const rev = (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
+  const result: MutationResult = yield* call(
+    [appClient.comments, appClient.comments.add],
+    noteId,
+    params,
+  );
+  if (!result.success) return false;
+  if (result.noteRev !== undefined)
+    yield* call(setRevisionIfNewer, workspaceId, noteId, result.noteRev);
+  else if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
+  return true;
+}
+
+function* respondToComment(command: RespondCommentCommand): SagaGenerator<boolean> {
+  const result: MutationResult = yield* call(
+    [appClient.comments, appClient.comments.respond],
+    command.noteId,
+    command.params,
+  );
+  return result.success;
+}
+
+function* deleteComment(command: DeleteCommentCommand): SagaGenerator<boolean> {
+  const result: MutationResult = yield* call(
+    [appClient.comments, appClient.comments.delete],
+    command.noteId,
+    command.commentId,
+    command.workspaceId,
+  );
+  return result.success;
+}
+
+function* resolveComment(command: ResolveCommentCommand): SagaGenerator<boolean> {
+  try {
+    yield* call(backendRequest, 'comment.resolveThread', {
+      workspaceId: command.workspaceId,
+      noteId: command.noteId,
+      commentId: command.commentId,
+      resolved: true,
+    });
+    return true;
+  } catch (error) {
+    logger.error('Failed to resolve comment', error);
+    return false;
   }
 }
 
@@ -356,9 +481,14 @@ function* removeNote(command: DeleteCommand) {
 }
 
 function* runMutation(command: MutationCommand) {
-  if (command.kind === 'content') yield* call(saveContent, command);
-  else if (command.kind === 'metadata') yield* call(saveMetadata, command);
-  else yield* call(removeNote, command);
+  if (command.kind === 'content') return yield* call(saveContent, command);
+  if (command.kind === 'metadata') return yield* call(saveMetadata, command);
+  if (command.kind === 'delete') return yield* call(removeNote, command);
+  if (command.kind === 'add-comment') return yield* call(addComment, command);
+  if (command.kind === 'respond-comment') return yield* call(respondToComment, command);
+  if (command.kind === 'delete-comment') return yield* call(deleteComment, command);
+  if (command.kind === 'resolve-comment') return yield* call(resolveComment, command);
+  return undefined;
 }
 
 function* enqueueMutation(
@@ -366,38 +496,54 @@ function* enqueueMutation(
   command: MutationCommand,
   waitForCompletion = false,
 ) {
+  const envelope = { command, generation: workspaceMutationGeneration(command.workspaceId) };
   if (!waitForCompletion) {
-    yield* put(queue, { command });
+    yield* put(queue, envelope);
     return;
   }
-  const completion = channel<boolean>(buffers.fixed(1));
+  const completion = channel<MutationCompletion>(buffers.fixed(1));
   try {
-    yield* put(queue, { command, completion });
-    yield* take(completion);
+    yield* put(queue, { ...envelope, completion });
+    const result = yield* take(completion);
+    return result.value;
   } finally {
     completion.close();
   }
 }
 
-export function* flushPendingNoteContent(workspaceId: string, noteId: string) {
+function* flushPendingNoteContent(workspaceId: string, noteId: string) {
   const key = noteKey(workspaceId, noteId);
   const pending = pendingContent.get(key);
-  if (!pending) return;
+  if (!pending) return undefined;
   pendingContent.delete(key);
-  if (noteMutationQueue) yield* enqueueMutation(noteMutationQueue, pending, true);
-  else yield* call(runMutation, pending);
+  if (noteMutationQueue) return yield* enqueueMutation(noteMutationQueue, pending, true);
+  return yield* call(runMutation, pending);
+}
+
+function* settlePendingNoteContent(workspaceId: string, noteId: string) {
+  yield* call(flushPendingNoteContent, workspaceId, noteId);
+  if (noteMutationQueue) {
+    const barrier: BarrierCommand = { kind: 'barrier', workspaceId, noteId };
+    yield* call(enqueueMutation, noteMutationQueue, barrier, true);
+  }
 }
 
 function* handleContentAction(
   queue: Channel<MutationEnvelope>,
   action: ReturnType<typeof updateNoteContent>,
 ) {
-  const [workspaceId, noteId, content, immediate] = action.payload;
+  const [workspaceId, noteId, initialContent, rawOptions] = action.payload;
+  const options = typeof rawOptions === 'boolean' ? { immediate: rawOptions } : (rawOptions ?? {});
+  let content = initialContent;
   if (!workspaceId || !noteId || typeof content !== 'string') return;
   const key = noteKey(workspaceId, noteId);
   if (!draftBaseRev.has(key)) {
-    const baseRev = (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
+    const baseRev = options.baseRev ?? (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  const newest = (unackedDrafts.get(key) ?? []).at(-1);
+  if (newest && options.baseContent !== undefined && options.baseContent !== newest.content) {
+    content = rebaseText(options.baseContent, newest.content, content);
   }
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
@@ -408,8 +554,9 @@ function* handleContentAction(
   if (replaced) forgetDraft(key, replaced);
   unackedDrafts.set(key, [...(unackedDrafts.get(key) ?? []), pending]);
   pendingContent.set(key, pending);
+  yield* put(setNoteContentPending(workspaceId, noteId, true));
   try {
-    if (!immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
+    if (!options.immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
     if (pendingContent.get(key) !== pending) return;
     pendingContent.delete(key);
     yield* enqueueMutation(queue, pending, true);
@@ -417,7 +564,152 @@ function* handleContentAction(
     if ((yield* cancelled()) && pendingContent.get(key) === pending) {
       pendingContent.delete(key);
       forgetDraft(key, pending);
+      if ((unackedDrafts.get(key)?.length ?? 0) === 0) {
+        yield* put(setNoteContentPending(workspaceId, noteId, false));
+      }
     }
+  }
+}
+
+function* handleFlushRequested(action: ReturnType<typeof flushNoteContentRequested>) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    const result = yield* call(flushPendingNoteContent, workspaceId, noteId);
+    yield* put(action.success(result as AppliedNoteContent | undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* handleSettleRequested(
+  queue: Channel<MutationEnvelope>,
+  action: ReturnType<typeof settleNoteContentRequested>,
+) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    yield* call(settlePendingNoteContent, workspaceId, noteId);
+    yield* put(action.success(undefined as void));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* handleAddComment(
+  queue: Channel<MutationEnvelope>,
+  action: ReturnType<typeof addCommentRequested>,
+) {
+  const [noteId, optimistic, params] = action.payload;
+  const workspaceId = params.workspaceId ?? optimistic.workspaceId;
+  yield* put(addCommentAction(optimistic));
+  if (!workspaceId) {
+    yield* put(removeCommentAction(optimistic.id));
+    yield* put(action.success(false));
+    return;
+  }
+  try {
+    const command: AddCommentCommand = {
+      kind: 'add-comment',
+      workspaceId,
+      noteId,
+      params: { ...params, workspaceId },
+    };
+    const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
+    if (!success) {
+      yield* put(removeCommentAction(optimistic.id));
+      notify.error(m.comments_writeService_addFailed_error());
+    }
+    yield* put(action.success(success));
+  } catch (error) {
+    yield* put(removeCommentAction(optimistic.id));
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* handleRespondComment(
+  queue: Channel<MutationEnvelope>,
+  action: ReturnType<typeof respondToCommentRequested>,
+) {
+  const [noteId, optimistic, params] = action.payload;
+  const workspaceId = params.workspaceId ?? optimistic.workspaceId;
+  yield* put(addCommentAction(optimistic));
+  if (!workspaceId) {
+    yield* put(removeCommentAction(optimistic.id));
+    yield* put(action.success(false));
+    return;
+  }
+  try {
+    const command: RespondCommentCommand = {
+      kind: 'respond-comment',
+      workspaceId,
+      noteId,
+      params: { ...params, workspaceId },
+    };
+    const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
+    if (!success) {
+      yield* put(removeCommentAction(optimistic.id));
+      notify.error(m.comments_writeService_replyFailed_error());
+    }
+    yield* put(action.success(success));
+  } catch (error) {
+    yield* put(removeCommentAction(optimistic.id));
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* handleDeleteComment(
+  queue: Channel<MutationEnvelope>,
+  action: ReturnType<typeof deleteCommentRequested>,
+) {
+  const [noteId, commentId, explicitWorkspaceId] = action.payload;
+  const snapshot = yield* selectCommentById.effect(commentId);
+  const workspaceId = explicitWorkspaceId ?? snapshot?.workspaceId;
+  yield* put(removeCommentAction(commentId));
+  if (!workspaceId) {
+    if (snapshot) yield* put(addCommentAction(snapshot));
+    yield* put(action.success({ existed: !!snapshot, success: false }));
+    return;
+  }
+  try {
+    const command: DeleteCommentCommand = {
+      kind: 'delete-comment',
+      workspaceId,
+      noteId,
+      commentId,
+    };
+    const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
+    if (!success && snapshot) yield* put(addCommentAction(snapshot));
+    if (!success) notify.error(m.comments_writeService_deleteFailed_error());
+    yield* put(action.success({ existed: !!snapshot, success }));
+  } catch (error) {
+    if (snapshot) yield* put(addCommentAction(snapshot));
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* handleResolveComment(
+  queue: Channel<MutationEnvelope>,
+  action: ReturnType<typeof resolveCommentRequested>,
+) {
+  const [workspaceId, noteId, commentId] = action.payload;
+  const snapshot = yield* selectCommentById.effect(commentId);
+  if (!snapshot) {
+    yield* put(action.success(false));
+    return;
+  }
+  yield* put(updateCommentAction(commentId, { status: 'resolved' }));
+  try {
+    const command: ResolveCommentCommand = {
+      kind: 'resolve-comment',
+      workspaceId,
+      noteId,
+      commentId,
+    };
+    const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
+    if (!success) yield* put(updateCommentAction(commentId, { status: snapshot.status }));
+    yield* put(action.success(success));
+  } catch (error) {
+    yield* put(updateCommentAction(commentId, { status: snapshot.status }));
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
 
@@ -442,6 +734,18 @@ function* handleTitleAction(
     },
     true,
   );
+}
+
+function* handleTitleRequested(
+  queue: Channel<MutationEnvelope>,
+  action: ReturnType<typeof updateNoteTitlePersistRequested>,
+) {
+  try {
+    yield* call(handleTitleAction, queue, updateNoteTitle(...action.payload));
+    yield* put(action.success(undefined as never));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
 }
 
 function* handleMetadataAction(
@@ -479,6 +783,18 @@ function* handleDeleteAction(
   const snapshot = yield* selectNoteById.effect(workspaceId, noteId);
   yield* put(applyNoteDeleted(workspaceId, noteId));
   yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true);
+}
+
+function* handleDeleteRequested(
+  queue: Channel<MutationEnvelope>,
+  action: ReturnType<typeof deleteNotePersistRequested>,
+) {
+  try {
+    yield* call(handleDeleteAction, queue, deleteNote(...action.payload));
+    yield* put(action.success(undefined as never));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
 }
 
 function* createNewNote(
@@ -537,6 +853,16 @@ function* handleCreateAction(action: ReturnType<typeof createNote>) {
   });
 }
 
+function* handleCreatePersistRequested(action: ReturnType<typeof createNotePersistRequested>) {
+  const [workspaceId, data] = action.payload;
+  try {
+    const noteId = yield* call(createNewNote, workspaceId, data);
+    yield* put(action.success(noteId));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
 function* handleCreateRequested(action: ReturnType<typeof createNoteRequested>) {
   const [workspaceId, options] = action.payload;
   if (!workspaceId) return;
@@ -569,8 +895,9 @@ function* createRequestedNote(
   );
 }
 
-function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCleanupAction) {
+function* cleanupWorkspace(action: WorkspaceCleanupAction) {
   const [workspaceId] = action.payload;
+  workspaceMutationGenerations.set(workspaceId, workspaceMutationGeneration(workspaceId) + 1);
   for (const key of pendingContent.keys()) {
     if (key.startsWith(`${workspaceId}:`)) pendingContent.delete(key);
   }
@@ -583,54 +910,69 @@ function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCl
   for (const key of unackedDrafts.keys()) {
     if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
   }
-  const queued = yield* flush(queue);
-  for (const envelope of queued) {
-    if (envelope.command.workspaceId === workspaceId) {
-      if (envelope.completion) yield* put(envelope.completion, false);
-    } else {
-      yield* put(queue, envelope);
-    }
+}
+
+function* settleDiscardedMutation(envelope: MutationEnvelope) {
+  if (envelope.completion) yield* put(envelope.completion, { value: undefined });
+}
+
+function* consumeMutation(envelope: MutationEnvelope) {
+  const { command, completion, generation } = envelope;
+  if (generation !== workspaceMutationGeneration(command.workspaceId)) {
+    yield* call(settleDiscardedMutation, envelope);
+    return;
   }
+  const { mutation } = yield* race({
+    mutation: call(runMutation, command),
+    cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
+  });
+  if (completion) yield* put(completion, { value: mutation });
 }
 
 function* consumeMutations(queue: Channel<MutationEnvelope>) {
-  while (true) {
-    const envelope = yield* take(queue);
-    const { command, completion } = envelope;
-    const { mutation } = yield* race({
-      mutation: call(runMutation, command),
-      cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
-    });
-    if (completion) yield* put(completion, mutation !== undefined);
-  }
+  const task = yield* takeEveryByContextFIFO(
+    queue,
+    ({ command }) => noteKey(command.workspaceId, command.noteId),
+    consumeMutation,
+    { onDiscardPending: settleDiscardedMutation },
+  );
+  yield* join(task);
 }
 
 export function* notesWriteSaga() {
   const queue = channel<MutationEnvelope>(buffers.expanding());
   noteMutationQueue = queue;
   try {
-    yield* takeLatestInContext(
-      updateNoteContent,
-      (action) => noteKey(action.payload[0], action.payload[1]),
-      handleContentAction,
-      queue,
-    );
+    // The worker owns keyed replacement. Keeping superseded workers alive until
+    // they observe replacement preserves their draft as the next action's
+    // rebase baseline; cancelling first would drop an intermediate keystroke.
+    yield* takeEvery(updateNoteContent, handleContentAction, queue);
     yield* takeEvery(updateNoteTitle, handleTitleAction, queue);
+    yield* takeEvery(updateNoteTitlePersistRequested, handleTitleRequested, queue);
     yield* takeEvery(updateNote, handleMetadataAction, queue);
     yield* takeEvery(deleteNote, handleDeleteAction, queue);
+    yield* takeEvery(deleteNotePersistRequested, handleDeleteRequested, queue);
     yield* takeEvery(createNote, handleCreateAction);
+    yield* takeEvery(createNotePersistRequested, handleCreatePersistRequested);
     yield* takeEvery(createNoteRequested, handleCreateRequested);
-    yield* takeEvery(workspaceUnmounted, cleanupWorkspace, queue);
+    yield* takeEvery(flushNoteContentRequested, handleFlushRequested);
+    yield* takeEvery(settleNoteContentRequested, handleSettleRequested, queue);
+    yield* takeEvery(addCommentRequested, handleAddComment, queue);
+    yield* takeEvery(respondToCommentRequested, handleRespondComment, queue);
+    yield* takeEvery(deleteCommentRequested, handleDeleteComment, queue);
+    yield* takeEvery(resolveCommentRequested, handleResolveComment, queue);
+    yield* takeEvery(workspaceUnmounted, cleanupWorkspace);
     yield* call(consumeMutations, queue);
   } finally {
     const queued = yield* flush(queue);
     for (const envelope of queued) {
-      if (envelope.completion) yield* put(envelope.completion, false);
+      if (envelope.completion) yield* put(envelope.completion, { value: undefined });
     }
     pendingContent.clear();
     latestEditSeq.clear();
     draftBaseRev.clear();
     unackedDrafts.clear();
+    workspaceMutationGenerations.clear();
     queue.close();
     if (noteMutationQueue === queue) noteMutationQueue = undefined;
   }

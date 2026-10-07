@@ -5,7 +5,7 @@ import { parseIntentLink } from '$lib/utils/workspaces-link-handler';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
-import { applyNoteUpdated } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { readNoteRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   selectPanelLayoutWorkspace,
   selectHiddenTabs,
@@ -204,7 +204,7 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
   const request = nextOpenRequest(layoutId);
   const workspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
   const [note, workspace] = await Promise.all([
-    appClient.notes.get(info.resourceId, workspaceId),
+    store.dispatch(readNoteRequested(workspaceId, info.resourceId)),
     Promise.resolve(
       selectWorkspaceById.select(store.state, workspaceId) ?? appClient.workspaces.get(workspaceId),
     ).catch(() => null),
@@ -230,7 +230,6 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
       );
     },
   );
-  store.dispatch(applyNoteUpdated(workspaceId, String(note.id), note));
   if (!alreadyOpen) store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'editor'));
   showContent(
     { type: 'note', title: note.title, noteId: String(note.id), workspaceId, closable: true },

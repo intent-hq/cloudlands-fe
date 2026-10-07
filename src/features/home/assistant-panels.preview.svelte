@@ -1,6 +1,12 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import {
+    ASSISTANT_DIAGRAM_NOTE,
+    ASSISTANT_DIAGRAM_ERROR_NOTE,
+    ASSISTANT_DIAGRAM_EXAMPLE_NOTE,
+  } from './assistant-note-diagrams-fixtures';
   interface Props {
+    noteContent?: string;
     workspaceView?: 'editor' | 'raw';
   }
   export const preview = definePreview<Props>({
@@ -11,6 +17,9 @@
       default: { props: {} },
       workspaceEditor: { props: { workspaceView: 'editor' } },
       workspaceMarkdown: { props: { workspaceView: 'raw' } },
+      diagrams: { props: { noteContent: ASSISTANT_DIAGRAM_NOTE } },
+      'diagram-errors': { props: { noteContent: ASSISTANT_DIAGRAM_ERROR_NOTE } },
+      'diagram-examples': { props: { noteContent: ASSISTANT_DIAGRAM_EXAMPLE_NOTE } },
     },
   });
 </script>
@@ -29,8 +38,8 @@
   } from './assistant-panels-browser-fixtures';
   import './home.css';
 
-  let { workspaceView }: Props = $props();
-  const stop = startHomePreview(() => [setupAssistantPanelsFixture(workspaceView)]);
+  let { noteContent, workspaceView }: Props = $props();
+  const stop = startHomePreview(() => [setupAssistantPanelsFixture(noteContent, workspaceView)]);
   onDestroy(stop);
 
   const links =
