@@ -206,16 +206,21 @@ test('Home content enters and exits horizontally in the direction of its tabs', 
 }, testInfo) => {
   const component = await mount(Preview);
   const records: SidebarMotionRecord[] = [];
+  let currentView = 'workspaces';
   for (const [name, view] of [
     ['Pull requests', 'prs'],
     ['Linear issues', 'linear'],
     ['Workspaces', 'workspaces'],
   ] as const) {
     await page.evaluate(() => (window.__sidebarMotionRecords = []));
-    await component.locator('.home-header').getByRole('tab', { name, exact: true }).click();
-    await expect(
-      component.locator('.home-header').getByRole('tab', { name, exact: true }),
-    ).toHaveAttribute('aria-selected', 'true');
+    await component
+      .locator(`[data-home-view="${currentView}"] .home-header`)
+      .getByRole('tab', { name, exact: true })
+      .click();
+    const selectedTab = component
+      .locator(`[data-home-view="${view}"] .home-header`)
+      .getByRole('tab', { name, exact: true });
+    await expect(selectedTab).toHaveAttribute('aria-selected', 'true');
     await expect
       .poll(() =>
         page.evaluate(
@@ -235,10 +240,9 @@ test('Home content enters and exits horizontally in the direction of its tabs', 
     expect(record.frames[0].opacity).toBe(0);
     expect(record.frames.at(-1)).toMatchObject({ x: 0, y: 0, opacity: 1 });
     expect(record.headerDisplayed).toBe(true);
-    await expect(
-      component.locator('.home-header').getByRole('tab', { name, exact: true }),
-    ).toBeVisible();
+    await expect(selectedTab).toBeVisible();
     records.push(record);
+    currentView = view;
   }
   await testInfo.attach('home-content-horizontal-motion', {
     body: JSON.stringify(records, null, 2),
