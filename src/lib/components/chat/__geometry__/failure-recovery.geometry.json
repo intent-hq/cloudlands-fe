@@ -17,7 +17,7 @@
           "paddingRight": 0,
           "width": 310,
           "x": 50,
-          "y": 194
+          "y": 234
         },
         "data-stream-terminal-error=true": {
           "fontSize": 13,
@@ -83,7 +83,7 @@
           "paddingRight": 0,
           "width": 310,
           "x": 50,
-          "y": 406
+          "y": 446
         },
         "[data-testid=\"failure-recovery-preview\"], [data-testid=\"failure-recovery-card\"], [data-testid=\"failure-raw-details\"], .turn-failure-notice, [data-testid=\"queued-message-retry-status\"]#2": {
           "fontSize": 13,
@@ -97,7 +97,7 @@
           "paddingRight": 0,
           "width": 310,
           "x": 50,
-          "y": 490
+          "y": 530
         },
         "data-stream-terminal-error=true": {
           "fontSize": 13,
@@ -149,7 +149,7 @@
           "paddingRight": 0,
           "width": 310,
           "x": 50,
-          "y": 384.64
+          "y": 378
         },
         "data-stream-terminal-error=true": {
           "fontSize": 13,
@@ -163,7 +163,7 @@
           "paddingRight": 12,
           "width": 310,
           "x": 50,
-          "y": 432.64
+          "y": 426
         },
         "data-testid=failure-recovery-preview": {
           "fontSize": 15,
@@ -191,7 +191,7 @@
           "paddingRight": 0,
           "width": 210,
           "x": 68,
-          "y": 668.62
+          "y": 662
         }
       },
       "root": {
