@@ -83,7 +83,7 @@
           tooltip={workspace.title}
           onclick={openWorkspace}
         >
-          <span class="min-w-0 line-clamp-2 break-words">{workspace.title}</span>
+          <span class="min-w-0 line-clamp-2 whitespace-normal break-words">{workspace.title}</span>
         </Button>
       </h2>
       {#if repositoryLabel}

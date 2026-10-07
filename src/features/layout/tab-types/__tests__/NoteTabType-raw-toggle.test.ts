@@ -98,11 +98,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectNoteById: Object.assign(() => mockState.note, { select: () => mockState.note.get() }),
   selectWorkspaceNotesState: () => mockState.notesState,
 }));
-vi.mock('$features/notes/notes-write-service', () => ({
-  createNote: vi.fn(),
-  deleteNote: vi.fn(),
-  updateNoteContent: vi.fn(),
-}));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectIsInitialSpecWriteInProgress: () => mockState.initialSpecWriteInProgress,
   selectInitialAgentId: { select: () => null },
@@ -145,6 +140,7 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', () => ({
 }));
 
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
+import { deleteNotePersistRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 describe('NoteTabType note view modes', () => {
   beforeEach(() => {
@@ -472,8 +468,12 @@ $$\frac{1}{2}$$
     await rerender({ tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } });
     const deletion = await screen.findByRole('menuitem', { name: 'Delete note' });
     await fireEvent.click(deletion);
-    const { deleteNote } = await import('$features/notes/notes-write-service');
-    expect(deleteNote).toHaveBeenCalledExactlyOnceWith('ws-1', 'note-1');
+    expect(mockState.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        asyncActionType: deleteNotePersistRequested.asyncActionType,
+        payload: ['ws-1', 'note-1'],
+      }),
+    );
   });
 
   it('clears pending copy feedback timer when unmounted', async () => {

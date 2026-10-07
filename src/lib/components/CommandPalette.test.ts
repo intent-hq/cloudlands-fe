@@ -36,16 +36,38 @@ const {
     },
   });
 
+  const backendRequestMock = vi.fn(async () => ({ files: [], matches: [] }));
+  const reduxDispatchMock = vi.fn(
+    (action: {
+      asyncActionType?: string;
+      type?: string;
+      payload?: unknown[];
+      success?: (value: unknown) => unknown;
+      failure?: (error: unknown) => unknown;
+    }) => {
+      if (action.asyncActionType === 'workspaceNotes/searchNotesRequested') {
+        const [query, preferWorkspaceId] = action.payload ?? [];
+        void backendRequestMock('search.notes', {
+          query,
+          limit: 10,
+          includeArchived: false,
+          ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
+        }).then(action.success, action.failure);
+      }
+      return action;
+    },
+  );
+
   return {
     gotoMock: vi.fn(),
     navigateToSettingsMock: vi.fn(),
     invokeMock: vi.fn().mockResolvedValue({ files: [] }),
     openMessageMock: vi.fn().mockResolvedValue(undefined),
-    backendRequestMock: vi.fn(async () => ({ files: [], matches: [] })),
+    backendRequestMock,
     workspaceItemsState: { value: [] as any[], subscribers: new Set<(items: any[]) => void>() },
     sessionSessions: { value: [] as any[] },
     localNotes: { value: [] as any[] },
-    reduxDispatchMock: vi.fn(),
+    reduxDispatchMock,
     browserRecentUrls: { value: [] as any[] },
     createSelectorReadable,
     paletteMruEntries: { value: [] as any[] },

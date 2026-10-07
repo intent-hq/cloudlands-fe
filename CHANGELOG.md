@@ -4,6 +4,48 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.211.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.1...v2.211.2) (2026-10-07)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.29 ([#3291](https://github.com/intent-hq/cloudlands-fe/issues/3291)) ([b212a1d](https://github.com/intent-hq/cloudlands-fe/commit/b212a1df26861ee47358ccb15ec0afbcd34a9fa8))
+* restore Assistant preview note reader lifecycle ([#6928](https://github.com/intent-hq/cloudlands-fe/issues/6928)) ([#3287](https://github.com/intent-hq/cloudlands-fe/issues/3287)) ([68a1a90](https://github.com/intent-hq/cloudlands-fe/commit/68a1a90769c0cf4125e321fd48b8f1c85156c5b6))
+* restore command palette preview search lifecycle ([#3288](https://github.com/intent-hq/cloudlands-fe/issues/3288)) ([6c8197a](https://github.com/intent-hq/cloudlands-fe/commit/6c8197a0ca012e0848c1bf55d583086f79f5747f))
+
+## [2.211.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.0...v2.211.1) (2026-10-07)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.28 ([#3286](https://github.com/intent-hq/cloudlands-fe/issues/3286)) ([4331cba](https://github.com/intent-hq/cloudlands-fe/commit/4331cba8e2fbcccf6fb6efab77d02f78814d2175))
+* clarify offline primary client browser recovery ([#3281](https://github.com/intent-hq/cloudlands-fe/issues/3281)) ([c926373](https://github.com/intent-hq/cloudlands-fe/commit/c9263739665c0f228ed74d4d512e0dfcdbf908e1))
+
+## [2.211.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.5...v2.211.0) (2026-10-07)
+
+
+### 🚀 Features
+
+* rename assistant chat threads inline ([#3264](https://github.com/intent-hq/cloudlands-fe/issues/3264)) ([73e8f7e](https://github.com/intent-hq/cloudlands-fe/commit/73e8f7ea9f406940ee0f4bb911195d28b67e5285))
+
+
+### 🐛 Bug Fixes
+
+* allow home right panels to use available width ([#3269](https://github.com/intent-hq/cloudlands-fe/issues/3269)) ([10acb02](https://github.com/intent-hq/cloudlands-fe/commit/10acb022084472d4039ebe4208e4a0323816d5dc))
+* bump intentd sidecar to v0.10.26 ([#3275](https://github.com/intent-hq/cloudlands-fe/issues/3275)) ([6a9caba](https://github.com/intent-hq/cloudlands-fe/commit/6a9caba5e8f02f2019e7eb503fa855815e61fade))
+* bump intentd sidecar to v0.10.27 ([#3279](https://github.com/intent-hq/cloudlands-fe/issues/3279)) ([1cb3793](https://github.com/intent-hq/cloudlands-fe/commit/1cb37931afc6d810fd394a345e0b2cb731408586))
+* **chat:** restore fixture workflows and rejected answer recovery ([#3260](https://github.com/intent-hq/cloudlands-fe/issues/3260)) ([1e319d6](https://github.com/intent-hq/cloudlands-fe/commit/1e319d69ab46bdb9de44308223b3e37d170895f9))
+* clarify selected Home tab in light mode ([#3272](https://github.com/intent-hq/cloudlands-fe/issues/3272)) ([2b544db](https://github.com/intent-hq/cloudlands-fe/commit/2b544dbd94ee99edbd830c42fc99a54e0455af0b))
+* enlarge home status icons and prevent timestamp overlap ([#3274](https://github.com/intent-hq/cloudlands-fe/issues/3274)) ([92e47ba](https://github.com/intent-hq/cloudlands-fe/commit/92e47babae6b308ffe06d7e3b1e0a9a2cc1a6dde))
+* **home:** keep group chevrons beside labels ([#3270](https://github.com/intent-hq/cloudlands-fe/issues/3270)) ([1d7e850](https://github.com/intent-hq/cloudlands-fe/commit/1d7e85093a9959a07dd393da730e26ceba2a8edd))
+* keep home page controls visible and wrap preview titles ([#3259](https://github.com/intent-hq/cloudlands-fe/issues/3259)) ([da7e44b](https://github.com/intent-hq/cloudlands-fe/commit/da7e44bbdd7c566afcec9d57ceab635e8277d538))
+* remove duplicate workspace tab hover frame ([#3268](https://github.com/intent-hq/cloudlands-fe/issues/3268)) ([d804f86](https://github.com/intent-hq/cloudlands-fe/commit/d804f865aa9ab51fea78e6348e6864ed393b4d1c))
+* render diagrams in Assistant note previews ([#3265](https://github.com/intent-hq/cloudlands-fe/issues/3265)) ([6a52a9d](https://github.com/intent-hq/cloudlands-fe/commit/6a52a9df35ef4780cbb7ae52b68f85d069aea9df))
+* restore chat ordering after laptop sleep ([#3250](https://github.com/intent-hq/cloudlands-fe/issues/3250)) ([50821f1](https://github.com/intent-hq/cloudlands-fe/commit/50821f1def448ca125f5272a310d361aa7441da0))
+* restore Linear connection setup and searchable settings ([#3252](https://github.com/intent-hq/cloudlands-fe/issues/3252)) ([57c1ff4](https://github.com/intent-hq/cloudlands-fe/commit/57c1ff4dd0b1e57e60a985a9d5dcfe894174a4e0))
+* separate settings sidebar items by one pixel ([#3251](https://github.com/intent-hq/cloudlands-fe/issues/3251)) ([5bea611](https://github.com/intent-hq/cloudlands-fe/commit/5bea6115e4dcfacc1f70ba9817bef15bc97cea85))
+* **ui:** Clarify homepage toggle selection in light mode ([#3253](https://github.com/intent-hq/cloudlands-fe/issues/3253)) ([d5ba9b6](https://github.com/intent-hq/cloudlands-fe/commit/d5ba9b6a8e4f4fbce9584b44da9ac89184aafaf0))
+
 ## [2.210.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.4...v2.210.5) (2026-10-06)
 
 

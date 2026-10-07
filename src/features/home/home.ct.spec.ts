@@ -273,11 +273,11 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
   await expect(sidebar.getByRole('button', { name: 'All repos', exact: true })).toHaveCount(0);
   const threads = sidebar.getByRole('listbox');
   const planning = threads.getByRole('option', { name: 'Plan the next release', exact: true });
-  await planning.click();
+  await planning.click({ position: { x: 6, y: 6 } });
   await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
     'Plan the next release',
   );
-  await planning.click();
+  await planning.click({ position: { x: 6, y: 6 } });
   await expect(planning).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('ArrowDown');
   await expect(
