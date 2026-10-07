@@ -1664,14 +1664,15 @@ export class DocumentSession {
       });
       this.tableMeasurements.observe(nativeTable);
       this.tableFontObserver?.disconnect();
+      let observedFont = this.tableFont();
       this.tableFontObserver = new MutationObserver(() => {
-        if (
-          !this.pointerSelecting &&
-          !editor.isDestroyed &&
-          this.editor === editor &&
-          this.projection?.table?.window.geometry?.font !== this.tableFont()
-        )
+        if (this.pointerSelecting || editor.isDestroyed || this.editor !== editor) return;
+        const font = this.tableFont();
+        if (font !== observedFont) {
+          // Remember the font before layout writes observed style attributes.
+          observedFont = font;
           this.resizeTable(this.tableViewport);
+        }
       });
       this.tableFontObserver.observe(editor.view.dom, {
         attributes: true,
