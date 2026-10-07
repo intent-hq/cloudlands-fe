@@ -90,6 +90,53 @@ function compactness(blocks: CityBlock[]): number {
   return width * depth + Math.max(width, depth) ** 2 * 0.3;
 }
 
+// Keep straight street corridors open to the city edge. A courtyard or winding
+// alley can leave a neighborhood boxed in when several repositories grow.
+function streetFrontier(blocks: CityBlock[], occupied: ReadonlySet<string>): Set<string> {
+  const rows = new Map<number, { min: number; max: number }>();
+  const columns = new Map<number, { min: number; max: number }>();
+  for (const block of blocks) {
+    const row = rows.get(block.z) ?? { min: block.x, max: block.x };
+    row.min = Math.min(row.min, block.x);
+    row.max = Math.max(row.max, block.x);
+    rows.set(block.z, row);
+    const column = columns.get(block.x) ?? { min: block.z, max: block.z };
+    column.min = Math.min(column.min, block.z);
+    column.max = Math.max(column.max, block.z);
+    columns.set(block.x, column);
+  }
+  return new Set(
+    frontier(blocks, occupied)
+      .filter((block) => {
+        const row = rows.get(block.z);
+        const column = columns.get(block.x);
+        return (
+          !row ||
+          block.x < row.min ||
+          block.x > row.max ||
+          !column ||
+          block.z < column.min ||
+          block.z > column.max
+        );
+      })
+      .map(address),
+  );
+}
+
+function openingCost(districts: CityDistrict[], blocks: CityBlock[], minimum = 1): number {
+  const occupied = new Set(blocks.map(address));
+  const outside = streetFrontier(blocks, occupied);
+  let cost = 0;
+  for (const district of districts) {
+    const openings = frontier(district.blocks, occupied).filter((block) =>
+      outside.has(address(block)),
+    ).length;
+    if (openings < minimum) return Infinity;
+    cost += 1 / openings;
+  }
+  return cost;
+}
+
 // Rectangular neighborhoods share one lattice. Packing considers both orientations
 // and edge contacts, so small repositories fill the city rather than orbiting it.
 function placeDistrict(district: CityDistrict, placed: CityDistrict[]) {
@@ -100,6 +147,8 @@ function placeDistrict(district: CityDistrict, placed: CityDistrict[]) {
   const occupied = new Set(all.map(address));
   let best: CityBlock[] = [];
   let score = Infinity;
+  let fallback: CityBlock[] = [];
+  let fallbackScore = Infinity;
   for (const [width, depth] of [
     [columns, rows],
     [rows, columns],
@@ -129,7 +178,13 @@ function placeDistrict(district: CityDistrict, placed: CityDistrict[]) {
           0,
         );
         if (all.length && !contacts) continue;
-        const candidate = compactness([...all, ...blocks]) - contacts * 0.05;
+        const shape = compactness([...all, ...blocks]) - contacts * 0.05;
+        if (shape < fallbackScore) {
+          fallbackScore = shape;
+          fallback = blocks;
+        }
+        const candidate =
+          shape + 10 * openingCost([...placed, { ...district, blocks }], [...all, ...blocks], 2);
         if (candidate < score) {
           score = candidate;
           best = blocks;
@@ -137,7 +192,8 @@ function placeDistrict(district: CityDistrict, placed: CityDistrict[]) {
       }
     }
   }
-  district.blocks = best;
+  // Older saved layouts may already contain enclosed neighborhoods.
+  district.blocks = best.length ? best : fallback;
 }
 
 function reserveBlocks(districts: CityDistrict[]) {
@@ -150,45 +206,59 @@ function reserveBlocks(districts: CityDistrict[]) {
     placed.push(district);
   }
   const occupied = new Set(placed.flatMap((district) => district.blocks.map(address)));
-  // Add blocks in rounds. Existing blocks and lot addresses never move, even when
-  // several repositories grow together. Keep an opening for neighboring repos.
-  let growing = true;
-  while (growing) {
-    growing = false;
-    for (const district of districts) {
-      if (district.blocks.length * LOTS_PER_BLOCK >= district.capacity) continue;
-      const choices = frontier(district.blocks, occupied);
-      const neighbors = districts
-        .filter((other) => other !== district)
-        .map((other) => frontier(other.blocks, occupied));
-      const available = choices.filter((block) =>
-        neighbors.every(
-          (opening) => opening.length !== 1 || address(opening[0]) !== address(block),
+  // Grow cramped neighborhoods first, keeping street corridors open for their
+  // neighbors. Existing blocks and saved lot addresses never move.
+  const pending = districts.filter(
+    (district) => district.blocks.length * LOTS_PER_BLOCK < district.capacity,
+  );
+  while (pending.length) {
+    pending.sort(
+      (a, b) =>
+        frontier(a.blocks, occupied).length - frontier(b.blocks, occupied).length ||
+        a.repositoryId.localeCompare(b.repositoryId),
+    );
+    const district = pending[0];
+    pending.shift();
+    const choices = frontier(district.blocks, occupied);
+    const all = placed.flatMap((item) => item.blocks);
+    const neighbors = districts.filter((other) => other !== district);
+    const costs = new Map(
+      choices.map((block) => [
+        address(block),
+        openingCost(
+          [...neighbors, { ...district, blocks: [...district.blocks, block] }],
+          [...all, block],
         ),
-      );
-      const candidates = available.length ? available : choices;
-      // A completely enclosed neighborhood can continue on the nearest shared
-      // street block; its saved lots still retain their original addresses.
-      const fallback = candidates.length
-        ? candidates
-        : frontier(
-            placed.flatMap((item) => item.blocks),
-            occupied,
-          );
-      const bounds = blockBounds(district.blocks);
-      const centerX = (bounds.minX + bounds.maxX) / 2;
-      const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-      fallback.sort((a, b) => {
-        const score = (block: CityBlock) =>
+      ]),
+    );
+    const available = choices.filter((block) => Number.isFinite(costs.get(address(block))));
+    const candidates = available.length ? available : choices;
+    // A completely enclosed neighborhood can continue on the nearest shared
+    // street block; its saved lots still retain their original addresses.
+    const fallback = candidates.length
+      ? candidates
+      : frontier(
+          placed.flatMap((item) => item.blocks),
+          occupied,
+        );
+    const bounds = blockBounds(district.blocks);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerZ = (bounds.minZ + bounds.maxZ) / 2;
+    fallback.sort((a, b) => {
+      const score = (block: CityBlock) => {
+        const cost = costs.get(address(block)) ?? Infinity;
+        return (
           compactness([...district.blocks, block]) +
-          Math.hypot(block.x - centerX, block.z - centerZ) * 0.01;
-        return score(a) - score(b) || a.z - b.z || a.x - b.x;
-      });
-      const next = fallback[0];
-      district.blocks.push(next);
-      occupied.add(address(next));
-      growing = true;
-    }
+          (Number.isFinite(cost) ? 10 * cost : 0) +
+          Math.hypot(block.x - centerX, block.z - centerZ) * 0.01
+        );
+      };
+      return score(a) - score(b) || a.z - b.z || a.x - b.x;
+    });
+    const next = fallback[0];
+    district.blocks.push(next);
+    occupied.add(address(next));
+    if (district.blocks.length * LOTS_PER_BLOCK < district.capacity) pending.push(district);
   }
 }
 

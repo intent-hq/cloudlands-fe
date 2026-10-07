@@ -127,17 +127,37 @@ describe('repository neighborhoods on a shared city grid', () => {
     expect(positions(allocateCityLayout(scoped, restored))).toEqual(positions(original));
   });
 
-  it('extends a neighborhood and adds another repo without moving existing addresses', () => {
-    const model = createCityFixture('three');
-    const original = allocateCityLayout(model, emptyCityLayout());
-    const growing = createCityFixture('two-hundred');
-    const expanded = allocateCityLayout(growing, original);
-    const points = positions(expanded);
-    for (const [id, position] of positions(original)) expect(points.get(id)).toEqual(position);
-    for (const district of expanded.districts) expect(connected(district.blocks)).toBe(true);
-    expect(connected(expanded.districts.flatMap((district) => district.blocks))).toBe(true);
-    expect(positions(normalizeCityLayout(JSON.parse(JSON.stringify(expanded))))).toEqual(points);
-  });
+  it.each(['three', 'many-repositories', 'skewed'] as const)(
+    'extends neighborhoods in %s without moving existing addresses',
+    (scenario) => {
+      const model = createCityFixture(scenario);
+      const original = allocateCityLayout(model, emptyCityLayout());
+      const growing =
+        scenario === 'three'
+          ? createCityFixture('two-hundred')
+          : {
+              ...model,
+              buildings: [
+                ...model.buildings,
+                ...model.repositories.flatMap((repository) => {
+                  const sample = model.buildings.find(
+                    (building) => building.repositoryId === repository.id,
+                  )!;
+                  return Array.from({ length: 8 }, (_, index) => ({
+                    ...sample,
+                    id: `new-${repository.id}-${index}`,
+                  }));
+                }),
+              ],
+            };
+      const expanded = allocateCityLayout(growing, original);
+      const points = positions(expanded);
+      for (const [id, position] of positions(original)) expect(points.get(id)).toEqual(position);
+      for (const district of expanded.districts) expect(connected(district.blocks)).toBe(true);
+      expect(connected(expanded.districts.flatMap((district) => district.blocks))).toBe(true);
+      expect(positions(normalizeCityLayout(JSON.parse(JSON.stringify(expanded))))).toEqual(points);
+    },
+  );
 
   it('rejects unknown schemas, conflicting blocks, and invalid addresses', () => {
     expect(normalizeCityLayout({ version: 999, districts: [], plots: [] })).toEqual(
