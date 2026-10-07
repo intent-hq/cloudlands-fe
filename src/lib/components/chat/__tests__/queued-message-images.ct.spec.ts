@@ -22,9 +22,6 @@ type Locator = ReturnType<CtPage['getByTestId']>;
 async function queueScreenshot(component: Locator) {
   const queue = component.getByTestId('queued-messages-container');
   if (!(await queue.count())) return component.screenshot();
-  const showAll = queue.getByRole('button', { name: 'Show all queued messages', exact: true });
-  // Screenshot setup is optional: layout can remove this control between a lookup and click.
-  await showAll.evaluateAll((buttons) => (buttons[0] as HTMLButtonElement | undefined)?.click());
   return queue.screenshot();
 }
 

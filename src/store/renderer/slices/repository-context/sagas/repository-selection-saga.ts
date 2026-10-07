@@ -52,7 +52,8 @@ export function* repositorySelectionSaga() {
     selectPrincipalActionContext,
     function* ({ payload: admission }: SelectorChannelPayload<string | null>) {
       if (!admission) return;
-      yield* takeEvery(repositorySelectionEditRequested, function* ({ payload: [supplied] }) {
+      yield* takeEvery(repositorySelectionEditRequested, function* ({ payload }) {
+        const [supplied, initialCommand] = payload;
         const owner: RepositorySelectionEdit = { ...supplied, root: { ...supplied.root } };
         if (
           owner.admission !== admission ||
@@ -143,9 +144,11 @@ export function* repositorySelectionSaga() {
             if ((yield* selectPrincipalActionContext.effect()) !== admission) return;
             if (result.update) {
               const update = result.update;
-              if (update.type === 'ready')
+              if (update.type === 'ready') {
                 yield* put(repositorySelectionPreviewReceived(owner, update.session.preview));
-              else if (update.type === 'retired')
+                if (initialCommand)
+                  yield* put(repositorySelectionConfirmRequested(owner, initialCommand));
+              } else if (update.type === 'retired')
                 yield* put(repositorySelectionRetired(owner, update.kind));
               else if (update.type === 'unavailable')
                 yield* put(repositorySelectionUnavailable(owner));
