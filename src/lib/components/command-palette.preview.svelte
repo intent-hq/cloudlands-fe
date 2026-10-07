@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { startNoteFixtureReads } from '../../test/note-fixture-sagas';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { ContentType, NoteVisibility, type Note } from '$shared/types';
   import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
@@ -50,7 +51,10 @@
         2,
       ),
     );
+    // Indexed note searches settle through the production read-action owner.
+    const stopNotes = startNoteFixtureReads(appStore);
     return () => {
+      stopNotes();
       appStore.dispatch(clearWorkspaceNotesForWorkspaces([workspaceId]));
       appStore.dispatch(clearWorkspace(workspaceId));
     };

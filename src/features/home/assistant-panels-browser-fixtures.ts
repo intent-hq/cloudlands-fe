@@ -1,3 +1,4 @@
+import { startNoteFixtureReads } from '../../test/note-fixture-sagas';
 import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
 import { assistantPanelLayoutId } from '$shared/assistant-panel-layout';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -50,7 +51,10 @@ export function setupAssistantPanelsFixture(noteContent?: string) {
     'note.presence.subscribe': () => ({ subscriptionId: 'assistant-preview-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),
   });
+  // Standalone previews need the owner of note-read actions as well as the mock bridge.
+  const stopNotes = startNoteFixtureReads(store);
   return () => {
+    stopNotes();
     window.electronAPI = previousBridge;
   };
 }
