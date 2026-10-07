@@ -2,12 +2,13 @@ import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
 import { assistantPanelLayoutId } from '$shared/assistant-panel-layout';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { store } from '$store/renderer/store';
+import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
 import { clearPanelLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 
-export function setupAssistantPanelsFixture() {
+export function setupAssistantPanelsFixture(noteContent?: string) {
   const previousBridge = window.electronAPI;
   registerAllTabTypes();
   store.dispatch(clearPanelLayout(assistantPanelLayoutId(null)));
@@ -33,7 +34,8 @@ export function setupAssistantPanelsFixture() {
               ? '# Second plan\n\nKeep earlier panels in the header picker.'
               : workspaceId === 'example-workspace'
                 ? '# Workspace plan\n\nA separate plan from another workspace.'
-                : '# Plan for the repository\n\nThe Assistant can show this note beside the conversation.\n\n- Open links in the content panel.\n- Keep your chat draft.\n- Reopen earlier notes from the header.',
+                : (noteContent ??
+                  '# Plan for the repository\n\nThe Assistant can show this note beside the conversation.\n\n- Open links in the content panel.\n- Keep your chat draft.\n- Reopen earlier notes from the header.'),
           contentType: 'markdown',
           tags: [],
           isPinned: false,
@@ -49,7 +51,9 @@ export function setupAssistantPanelsFixture() {
     'note.presence.subscribe': () => ({ subscriptionId: 'assistant-preview-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),
   });
+  const stopNotes = store.runSaga(notesReadSaga);
   return () => {
+    stopNotes();
     window.electronAPI = previousBridge;
   };
 }

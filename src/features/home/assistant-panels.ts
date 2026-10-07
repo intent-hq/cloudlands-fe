@@ -5,7 +5,7 @@ import { parseIntentLink } from '$lib/utils/workspaces-link-handler';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
-import { applyNoteUpdated } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { readNoteRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   selectPanelLayoutWorkspace,
   selectHiddenTabs,
@@ -201,7 +201,7 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
   if (info.type !== 'note' && info.type !== 'task') return false;
   const request = nextOpenRequest(layoutId);
   const workspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
-  const note = await appClient.notes.get(info.resourceId, workspaceId);
+  const note = await store.dispatch(readNoteRequested(workspaceId, info.resourceId));
   if (request !== latestOpenRequests.get(layoutId)) return true;
   if (!note || String(note.workspaceId) !== workspaceId) {
     notify.error(m.ui_linkHandler_notFound_title(), {
@@ -209,7 +209,6 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
     });
     return true;
   }
-  store.dispatch(applyNoteUpdated(workspaceId, String(note.id), note));
   store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'preview'));
   showContent(
     { type: 'note', title: note.title, noteId: String(note.id), workspaceId, closable: true },

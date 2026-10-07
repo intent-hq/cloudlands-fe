@@ -1,6 +1,7 @@
 /** Indexed global note queries for the palette (search.notes, PROTOCOL §5.15). */
-import { backendRequest } from '$lib/client/live/backend-transport';
 import { buildMessageTitleSegments } from '$store/renderer/slices/command-palette/command-palette-utils';
+import { store as appStore } from '$store/renderer/store';
+import { searchNotesRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 const NOTE_QUERY_DEBOUNCE_MS = 150;
 const NOTE_RESULT_LIMIT = 10;
@@ -164,12 +165,7 @@ export function createNoteQuery(onUpdate: (update: NoteQueryUpdate) => void): No
         timeout = null;
         let update: NoteQueryUpdate;
         try {
-          const response = await backendRequest<unknown>('search.notes', {
-            query: term,
-            limit: NOTE_RESULT_LIMIT,
-            includeArchived: false,
-            ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
-          });
+          const response = await appStore.dispatch(searchNotesRequested(term, preferWorkspaceId));
           if (id !== generation) return;
           update = adaptNoteSearchResponse(response, workspaces);
         } catch (error) {

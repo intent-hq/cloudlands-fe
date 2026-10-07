@@ -118,6 +118,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   container: home-layout / inline-size;
+  overflow: clip;
 }
 
 .home-header,
@@ -163,6 +164,10 @@
 
 .home-sidebar {
   font-weight: 500;
+}
+
+.home-sidebar [data-tabs-indicator] {
+  background: hsl(var(--selected));
 }
 
 .dark .home-sidebar [data-tabs-indicator] {

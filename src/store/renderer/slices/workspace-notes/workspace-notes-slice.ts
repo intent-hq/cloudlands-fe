@@ -1,6 +1,8 @@
 import type { Note, NoteVersion, TaskStatus } from '$shared/types';
 import { isNoteContentStale } from '$shared/utils/note-content';
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import type { CommentAddParams, CommentRespondParams } from '$lib/client';
+import type { CommentV2 } from '$features/comments/comment-types-v2';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
@@ -18,6 +20,7 @@ import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };
 
 export type NoteEventType = 'note:created' | 'note:updated' | 'note:deleted';
+export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
 
 export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   notes: createCollection<Note, 'id'>('id'),
@@ -32,6 +35,7 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   notesVersion: 0,
   noteVersions: null,
   readyTasks: null,
+  pendingContentByNoteId: {},
 };
 
 export const initialState: WorkspaceNotesState = {
@@ -71,6 +75,9 @@ export const applyNoteUpdated = createAction<[workspaceId: string, noteId: strin
 export const noteEventReceived = createAction<
   [workspaceId: string, noteId: string, eventType: NoteEventType]
 >('workspaceNotes/noteEventReceived');
+export const refreshNoteFromEventRequested = createAction<
+  [workspaceId: string, noteId: string, eventType: NoteEventType]
+>('workspaceNotes/refreshNoteFromEventRequested');
 
 // ---- New actions from notes.store.svelte.ts migration ----
 
@@ -123,23 +130,96 @@ export const removeOptimisticNote = createAction<[workspaceId: string, noteId: s
 
 /** Saga trigger: update note content (from user input, will debounce) */
 export const updateNoteContent = createAction<
-  [workspaceId: string, noteId: string, content: string, immediate?: boolean]
+  [
+    workspaceId: string,
+    noteId: string,
+    content: string,
+    options?: boolean | { immediate?: boolean; baseRev?: number; baseContent?: string },
+  ]
 >('workspaceNotes/updateNoteContent');
+
+export interface AppliedNoteContent {
+  content: string;
+  rev?: number;
+}
+
+export const flushNoteContentRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  AppliedNoteContent | undefined
+>('workspaceNotes/flushNoteContentRequested', 'workspaceNotes/flushNoteContentSettled');
+export const settleNoteContentRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  void
+>('workspaceNotes/settleNoteContentRequested', 'workspaceNotes/settleNoteContentSettled');
+export const ensureNoteContentLoadedRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  boolean
+>(
+  'workspaceNotes/ensureNoteContentLoadedRequested',
+  'workspaceNotes/ensureNoteContentLoadedSettled',
+);
+export const readNoteRequested = createAsyncAction<
+  [workspaceId: string, noteId: string, eventType?: NoteEventType],
+  Note | null
+>('workspaceNotes/readNoteRequested', 'workspaceNotes/readNoteSettled');
+export const searchNotesRequested = createAsyncAction<
+  [query: string, preferWorkspaceId?: string],
+  unknown
+>('workspaceNotes/searchNotesRequested', 'workspaceNotes/searchNotesSettled');
+
+export const addCommentRequested = createAsyncAction<
+  [noteId: string, optimistic: CommentV2, params: CommentAddParams],
+  boolean
+>('workspaceNotes/addCommentRequested', 'workspaceNotes/addCommentSettled');
+export const respondToCommentRequested = createAsyncAction<
+  [noteId: string, optimistic: CommentV2, params: CommentRespondParams],
+  boolean
+>('workspaceNotes/respondToCommentRequested', 'workspaceNotes/respondToCommentSettled');
+export const deleteCommentRequested = createAsyncAction<
+  [noteId: string, commentId: string, workspaceId?: string],
+  { existed: boolean; success: boolean }
+>('workspaceNotes/deleteCommentRequested', 'workspaceNotes/deleteCommentSettled');
+export const resolveCommentRequested = createAsyncAction<
+  [workspaceId: string, noteId: string, commentId: string],
+  boolean
+>('workspaceNotes/resolveCommentRequested', 'workspaceNotes/resolveCommentSettled');
+export const loadNoteCommentsRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  CommentV2[]
+>('workspaceNotes/loadNoteCommentsRequested', 'workspaceNotes/loadNoteCommentsSettled');
+export const commentEventReceived = createAction<
+  [workspaceId: string, noteId: string, kind: 'added' | 'resolved']
+>('workspaceNotes/commentEventReceived');
+export const setNoteContentPending = createAction<
+  [workspaceId: string, noteId: string, pending: boolean]
+>('workspaceNotes/setNoteContentPending');
 
 /** Saga trigger: update note title */
 export const updateNoteTitle = createAction<[workspaceId: string, noteId: string, title: string]>(
   'workspaceNotes/updateNoteTitle',
 );
+export const updateNoteTitlePersistRequested = createAsyncAction<
+  [workspaceId: string, noteId: string, title: string],
+  void
+>('workspaceNotes/updateNoteTitlePersistRequested', 'workspaceNotes/updateNoteTitlePersistSettled');
 
 /** Saga trigger: create a new note */
 export const createNote = createAction<
   [workspaceId: string, data: Omit<import('$shared/types').CreateNoteRequest, 'workspaceId'>]
 >('workspaceNotes/createNote');
+export const createNotePersistRequested = createAsyncAction<
+  [workspaceId: string, data: Omit<import('$shared/types').CreateNoteRequest, 'workspaceId'>],
+  string | undefined
+>('workspaceNotes/createNotePersistRequested', 'workspaceNotes/createNotePersistSettled');
 
 /** Saga trigger: delete a note */
 export const deleteNote = createAction<[workspaceId: string, noteId: string]>(
   'workspaceNotes/deleteNote',
 );
+export const deleteNotePersistRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  void
+>('workspaceNotes/deleteNotePersistRequested', 'workspaceNotes/deleteNotePersistSettled');
 
 /** Saga trigger: update note (metadata like pin, archive, etc.) */
 export const updateNote = createAction<
@@ -384,6 +464,18 @@ workspaceNotesReducer.with(removeOptimisticNote, (state, { payload: [workspaceId
     notesVersion: ws.notesVersion + 1,
   });
 });
+workspaceNotesReducer.with(
+  setNoteContentPending,
+  (state, { payload: [workspaceId, noteId, pending] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    const currentlyPending = ws.pendingContentByNoteId[noteId] === true;
+    if (currentlyPending === pending) return state;
+    const pendingContentByNoteId = { ...ws.pendingContentByNoteId };
+    if (pending) pendingContentByNoteId[noteId] = true;
+    else delete pendingContentByNoteId[noteId];
+    return setWorkspaceState(state, workspaceId, { ...ws, pendingContentByNoteId });
+  },
+);
 workspaceNotesReducer.with(fetchNoteVersions, (state, { payload: [workspaceId, noteId] }) => {
   const ws = getWorkspaceState(state, workspaceId);
   return setWorkspaceState(state, workspaceId, {

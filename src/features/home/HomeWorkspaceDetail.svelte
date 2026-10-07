@@ -88,7 +88,7 @@
           tooltip={m.home_open_workspace()}
           onclick={openWorkspace}
         >
-          <span class="min-w-0 line-clamp-2 break-words">{workspace.title}</span>
+          <span class="min-w-0 line-clamp-2 whitespace-normal break-words">{workspace.title}</span>
           <Fa icon={faArrowRight} class="shrink-0 text-muted-foreground" size="sm" />
         </Button>
       </h2>
