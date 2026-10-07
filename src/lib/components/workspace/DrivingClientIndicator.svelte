@@ -3,8 +3,8 @@
    * Sidebar indicator for the workspace's driving browser client (REV-2,
    * spec Model 8). Rendered only when the workspace has a browser tab and a
    * switch is possible (two or more eligible clients), or the pinned client
-   * is offline; a single eligible client or a workspace without browser tabs
-   * shows nothing. Presentational — the caller resolves the clients and tabs.
+   * is offline, even without browser tabs. Other states stay hidden without
+   * tabs or a choice of client. The caller resolves the clients and tabs.
    */
   import { faGlobe } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -28,7 +28,7 @@
       case 'elsewhere':
         return m.workspace_drivingClient_elsewhere_label({ host: view.hostName });
       case 'offline':
-        return m.workspace_drivingClient_offline_label({ host: view.hostName });
+        return m.workspace_drivingClient_offline_label();
     }
   });
 

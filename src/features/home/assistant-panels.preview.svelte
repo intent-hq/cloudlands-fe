@@ -22,8 +22,6 @@
   import { onDestroy } from 'svelte';
   import HomeAssistantPanels from './HomeAssistantPanels.svelte';
   import { startHomePreview } from './home-preview-lifecycle';
-  import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
-  import { store } from '$store/renderer/store';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -35,10 +33,7 @@
   import './home.css';
 
   let { noteContent }: { noteContent?: string } = $props();
-  const stop = startHomePreview(() => [
-    setupAssistantPanelsFixture(noteContent),
-    ...startWorkspaceNotesSagaFixture(store),
-  ]);
+  const stop = startHomePreview(() => [setupAssistantPanelsFixture(noteContent)]);
   onDestroy(stop);
 
   const links =
