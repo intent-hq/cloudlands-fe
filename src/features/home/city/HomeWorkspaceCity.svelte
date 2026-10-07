@@ -28,12 +28,8 @@
     faRotateRight,
   } from '@fortawesome/free-solid-svg-icons';
   import type { CityBuilding, CityModel, CityRenderingStyle } from './home-city-model';
-  import {
-    allocateCityLayout,
-    cityPlotPosition,
-    emptyCityLayout,
-    type CityLayout,
-  } from './home-city-layout';
+  import { cityPlotPosition, emptyCityLayout, type CityLayout } from './home-city-layout';
+  import { allocateCityLayout } from './home-city-allocation';
   import type { CityFrame, CityScene } from './city-scene';
   import {
     cityBuildingCondition,

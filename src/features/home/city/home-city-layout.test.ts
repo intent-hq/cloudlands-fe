@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createCityFixture, createReservedCityLayout } from './home-city-fixtures';
+import { allocateCityLayout } from './home-city-allocation';
 import {
-  allocateCityLayout,
   cityPlotPosition,
   emptyCityLayout,
   normalizeCityLayout,
