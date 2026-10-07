@@ -7471,5 +7471,14 @@
   "settings_machineName_saved": "计算机名称已保存",
   "home_assistantThread_hooks_label": "活动钩子：{count}",
   "home_assistantThread_monitors_label": "活动监控：{count}",
-  "home_assistantThread_subscriptions_label": "活动订阅：{count}"
+  "home_assistantThread_subscriptions_label": "活动订阅：{count}",
+  "chat_failureRecovery_title_label": "无法完成此回复",
+  "chat_failureRecovery_details_label": "详情",
+  "chat_failureRecovery_copyDetails_label": "复制详情",
+  "chat_failureRecovery_recorded_one": "1 条失败记录",
+  "chat_failureRecovery_recorded_many": "{count} 条失败记录",
+  "chat_failureRecovery_queued_label": "已排队",
+  "chat_failureRecovery_action_label": "需要处理",
+  "chat_failureRecovery_queued_description": "有一条消息正在排队。请使用下方控件进行管理。",
+  "chat_failureRecovery_action_description": "回复在完成前停止了。"
 }
