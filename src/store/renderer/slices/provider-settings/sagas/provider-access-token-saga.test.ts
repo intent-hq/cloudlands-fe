@@ -8,6 +8,7 @@ import {
   stageProviderToken,
   takeProviderToken,
 } from '$features/settings/provider-token-drafts';
+import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import {
   initialState,
@@ -152,6 +153,45 @@ describe('provider access tokens saga', () => {
     await settle();
     expect(h.token().busy).toBe(false);
   });
+  it('coalesces newer deletion events during a pending save and reconciles after its older receipt', async () => {
+    const write = deferred<unknown[]>();
+    mocks.update.mockReturnValueOnce(write.promise);
+    const h = setup();
+    task = h.task;
+    await settle();
+    stageProviderToken('save', 'session', 'race-fixture-token');
+    h.dispatch(providerTokenWriteRequested('codex', 'save', { id: 'save', sessionId: 'session' }));
+    // The save applied, then another client deleted it before the save receipt arrived.
+    for (let revision = 2; revision < 22; revision++) {
+      h.dispatch(settingsChangesReceived([{ path, value: null }], revision));
+    }
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    write.resolve([{ path, value: '********' }]);
+    await settle();
+    expect(h.token()).toMatchObject({ configured: false, status: 'ready', busy: false });
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify([h.state(), h.actions])).not.toContain('race-fixture-token');
+  });
+  it('reconciles a deletion event after a reset acknowledgement is lost', async () => {
+    const reset = deferred<{ path: string; value: null }>();
+    mocks.get.mockResolvedValueOnce({ path, sensitive: true, value: '********' });
+    mocks.reset.mockReturnValueOnce(reset.promise);
+    const h = setup();
+    task = h.task;
+    await settle();
+    expect(h.token().configured).toBe(true);
+    h.dispatch(
+      providerTokenWriteRequested('codex', 'remove', { id: 'remove', sessionId: 'session' }),
+    );
+    for (let revision = 2; revision < 22; revision++) {
+      h.dispatch(settingsChangesReceived([{ path, value: null }], revision));
+    }
+    reset.reject(new Error('lost acknowledgement with sensitive backend detail'));
+    await settle();
+    expect(h.token()).toMatchObject({ configured: false, status: 'ready', busy: false });
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify([h.state(), h.actions])).not.toContain('sensitive backend detail');
+  });
   it('forgets pending drafts when closed and prevents post-close writes', async () => {
     const h = setup();
     task = h.task;
@@ -171,10 +211,12 @@ describe('provider access tokens saga', () => {
     stageProviderToken('save', 'session', 'old-host-token');
     h.dispatch(providerTokenWriteRequested('codex', 'save', { id: 'save', sessionId: 'session' }));
     stageProviderToken('queued', 'session', 'queued-host-token');
+    h.dispatch(settingsChangesReceived([{ path, value: null }], 2));
     h.dispatch(hostExecutionConnectionChanged('new-host'));
     write.resolve([{ path, value: '********' }]);
     await settle();
     expect(h.state().accessTokens).toEqual({});
+    expect(mocks.get).toHaveBeenCalledTimes(1);
     expect(takeProviderToken('queued', 'session')).toBeUndefined();
   });
 });
