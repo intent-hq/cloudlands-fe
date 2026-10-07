@@ -459,16 +459,47 @@
         : null,
   );
   let homeElement = $state<HTMLDivElement | null>(null);
-  let pendingTabFocus: string | null = null;
-  function restoreTabFocus(header: HTMLElement) {
-    if (!pendingTabFocus) return;
-    const value = pendingTabFocus;
-    void tick().then(() => {
-      if (!header.isConnected) return;
-      header.querySelector<HTMLElement>(`[role="tab"][data-value="${value}"]`)?.focus();
-      if (pendingTabFocus === value) pendingTabFocus = null;
-    });
+  const homePanes = new Map<HTMLElement, typeof tab>();
+  let pendingTabFocus = $state<{ value: typeof tab } | null>(null);
+  function syncPaneOwnership(pane: HTMLElement, value: typeof tab) {
+    const active = destination === 'workspaces' && value === tab;
+    pane.inert = !active;
+    if (active) pane.removeAttribute('aria-hidden');
+    else pane.setAttribute('aria-hidden', 'true');
   }
+  function registerHomePane(pane: HTMLElement, value: typeof tab) {
+    homePanes.set(pane, value);
+    syncPaneOwnership(pane, value);
+    return { destroy: () => homePanes.delete(pane) };
+  }
+  // Outgoing keyed effects are paused before outrostart. Keep ownership outside
+  // that branch, including when Svelte resumes an existing pane on reversal.
+  $effect.pre(() => {
+    const currentTab = tab;
+    const currentDestination = destination;
+    untrack(() => {
+      for (const [pane, value] of homePanes) syncPaneOwnership(pane, value);
+      if (currentDestination !== 'workspaces' || pendingTabFocus?.value !== currentTab) {
+        pendingTabFocus = null;
+      }
+    });
+  });
+  $effect(() => {
+    const intent = pendingTabFocus;
+    if (!intent || destination !== 'workspaces' || intent.value !== tab) return;
+    void tick().then(() => {
+      if (pendingTabFocus !== intent || destination !== 'workspaces' || tab !== intent.value)
+        return;
+      const pane = [...homePanes].find(
+        ([node, value]) => value === intent.value && node.isConnected && !node.inert,
+      )?.[0];
+      const trigger = pane?.querySelector<HTMLElement>(
+        `[role="tab"][data-value="${intent.value}"]`,
+      );
+      trigger?.focus();
+      if (trigger && document.activeElement === trigger) pendingTabFocus = null;
+    });
+  });
   let pendingFocusId = $state<string | null>(null);
   function closePreview() {
     pendingFocusId = selectedId;
@@ -761,16 +792,11 @@
             class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
             data-home-destination="workspaces"
             data-home-view={renderedTab}
+            use:registerHomePane={renderedTab}
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
             out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
-            onoutrostart={(event) => {
-              event.currentTarget.inert = true;
-              event.currentTarget.setAttribute('aria-hidden', 'true');
-            }}
-            onintrostart={(event) => {
-              event.currentTarget.inert = false;
-              event.currentTarget.removeAttribute('aria-hidden');
-            }}
+            onoutrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
+            onintrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
           >
             <Tabs.Root
               bind:value={() => renderedTab, () => undefined}
@@ -781,7 +807,7 @@
                 ) {
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
-                  pendingTabFocus = value;
+                  pendingTabFocus = { value };
                   updateView({ tab: value });
                 }
               }}
@@ -791,7 +817,6 @@
               {#snippet children()}
                 {#snippet homeHeader()}
                   <header
-                    use:restoreTabFocus
                     class="home-header flex shrink-0 items-center gap-x-6 border-b border-border px-6"
                   >
                     <Tabs.List
