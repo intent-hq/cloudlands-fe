@@ -189,11 +189,21 @@ describe('canonical Markdown paragraph owner assembly', () => {
       provider({ owner: { sourceRange: { start: 11, end: length + 1 } } }).read(),
     ).rejects.toThrow(/markdown.*range/i);
   });
-  it('rejects a non-paragraph native owner', async () => {
-    await expect(provider({ root: { nodeType: 'heading' } }).read()).rejects.toThrow(
-      /markdown.*owner/i,
+  it('accepts the heading owner emitted by the daemon for a Markdown heading', async () => {
+    // Regression from the real 9cb9054f transport: a markdownBlock boundary
+    // points to a heading container, with matching range/profile/attributes.
+    const result = await provider({ root: { nodeType: 'heading' } }).read();
+    expect(result.text).toBe('**Tail**');
+    expect(result.context).toContainEqual(
+      expect.objectContaining({ kind: 'nativeNode', nodeType: 'heading', sourceRange: blockRange }),
     );
   });
+  it.each(['blockquote', 'codeBlock', 'table', 'unknown'])(
+    'rejects unsupported %s owners',
+    async (nodeType) => {
+      await expect(provider({ root: { nodeType } }).read()).rejects.toThrow(/markdown.*owner/i);
+    },
+  );
   it('rejects mismatched paragraph attributes', async () => {
     await expect(provider({ root: { attributesRef: 'different' } }).read()).rejects.toThrow(
       /markdown.*owner/i,

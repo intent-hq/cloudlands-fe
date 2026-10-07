@@ -163,11 +163,28 @@ export function* canonicalResources(
   });
   for (const binding of requiredBindings) {
     const maps = yield* resolve(binding.sourceMapRef);
+    const owner = context.get(binding.ownerId);
+    const markdownDocument = owner?.kind === 'boundary' && owner.construct === 'markdownDocument';
+    if (markdownDocument && !maps.length && binding.range.start !== binding.range.end)
+      throw new Error('Canonical Markdown document window mapping missing');
     for (const map of maps) {
       if (map.kind !== 'sourceMap') throw new Error('Expected canonical source mapping');
       const owners = yield* resolve(map.ownerRef);
       if (owners.length !== 1 || owners[0].id !== binding.ownerId)
         throw new Error('Canonical mapping owner mismatch');
+      if (
+        markdownDocument &&
+        (map.mapping !== 'omitted' ||
+          map.sourceRange.start >= map.sourceRange.end ||
+          map.sourceRange.start < binding.range.start ||
+          map.sourceRange.end > binding.range.end ||
+          map.renderedRange.start !== 0 ||
+          map.renderedRange.end !== 0 ||
+          map.textRef !== null ||
+          map.textNodeId !== null ||
+          map.textNodeRef !== null)
+      )
+        throw new Error('Canonical Markdown document mapping mismatch');
       if (map.textRef) {
         const text = yield* fragment(map.textRef, 'renderedText');
         if (text.length !== map.renderedRange.end - map.renderedRange.start)
@@ -187,20 +204,23 @@ export function* canonicalResources(
       if (nodes.length !== 1 || nodes[0].kind !== 'nativeNode')
         throw new Error('Invalid canonical native owner');
       if (item.kind === 'boundary' && item.construct === 'markdownBlock') {
-        const paragraph = nodes[0];
+        const block = nodes[0];
         if (
-          paragraph.nodeType !== 'paragraph' ||
-          paragraph.nodeClass !== 'container' ||
-          paragraph.parentRef === null ||
-          paragraph.sourceRange.start !== item.sourceRange.start ||
-          paragraph.sourceRange.end !== item.sourceRange.end ||
-          paragraph.attributesRef !== item.attributesRef ||
-          paragraph.profile !== item.profile ||
-          paragraph.profileVersion !== item.profileVersion
+          !['paragraph', 'heading'].includes(block.nodeType) ||
+          block.nodeClass !== 'container' ||
+          block.parentRef === null ||
+          block.sourceRange.start !== item.sourceRange.start ||
+          block.sourceRange.end !== item.sourceRange.end ||
+          block.attributesRef !== item.attributesRef ||
+          block.profile !== item.profile ||
+          block.profileVersion !== item.profileVersion
         )
-          throw new Error('Canonical Markdown paragraph owner mismatch');
+          throw new Error('Canonical Markdown block owner mismatch');
       }
-      if (item.kind === 'boundary' && item.construct === 'htmlDocument') {
+      if (
+        item.kind === 'boundary' &&
+        ['htmlDocument', 'markdownDocument'].includes(item.construct)
+      ) {
         const root = nodes[0];
         if (
           root.nodeType !== 'doc' ||
@@ -211,7 +231,7 @@ export function* canonicalResources(
           root.profile !== item.profile ||
           root.profileVersion !== item.profileVersion
         )
-          throw new Error('Canonical HTML document root mismatch');
+          throw new Error('Canonical document root mismatch');
       }
     }
     if (item.kind !== 'nativeNode') continue;

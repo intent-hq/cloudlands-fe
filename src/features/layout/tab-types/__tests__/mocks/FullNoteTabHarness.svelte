@@ -20,9 +20,14 @@
   import type { NotePageRequest } from '$lib/client/note-pages';
   import { fullNotePageFixture } from './full-note-page-fixture';
   import NoteTabType from '../../NoteTabType.svelte';
-  let { initialContent = '# Complete note', paging = false } = $props<{
+  let {
+    initialContent = '# Complete note',
+    paging = false,
+    failPages = false,
+  } = $props<{
     initialContent?: string;
     paging?: boolean;
+    failPages?: boolean;
   }>();
   let viewFailure = $state('');
   const originalShow = NoteWindowView.prototype.show;
@@ -129,6 +134,7 @@
       ).page;
       if (q) {
         record('note.get:' + q.kind);
+        if (failPages) throw new Error('Controlled bounded read failure');
         pageReads++;
         if (q.kind === 'source')
           maxPageAt = Math.max(maxPageAt, q.cursor ? Number(q.cursor.slice(1)) : (q.at ?? 0));
@@ -246,7 +252,17 @@
   onDestroy(dispose);
 </script>
 
-<div class="h-[600px] flex flex-col">
+<div class="h-[600px] flex flex-col" data-testid="note-pane">
+  <button
+    onclick={() =>
+      store.dispatch(
+        setWorkspaceEntity({
+          id: WorkspaceId(workspaceId),
+          title: 'Refreshed note workspace',
+          path: '/tmp/note-tab-ct',
+        } as Workspace),
+      )}>Refresh workspace metadata</button
+  >
   <Menu.Root
     ><Menu.Trigger>Commands</Menu.Trigger><Menu.Content
       >{#if header.actions.current}{@render header.actions.current.actions?.()}{/if}</Menu.Content
@@ -263,10 +279,16 @@
       methods,
       viewFailure,
       pageError: $pageSession?.error,
+      generation: $pageSession?.generation,
       windows: Object.fromEntries(
         Object.entries($pageSession?.windows ?? {}).map(([id, w]) => [
           id,
-          { error: w.error, loaded: !!w.value },
+          {
+            error: w.error,
+            loaded: !!w.value,
+            scope: w.value?.scope,
+            sourceRevision: w.value?.sourceRevision,
+          },
         ]),
       ),
       reads,

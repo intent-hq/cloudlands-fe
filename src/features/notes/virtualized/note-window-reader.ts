@@ -209,11 +209,18 @@ function* assembleWindowSteps(
     occurrence?: { range: SourceRange; contextRef: string },
   ): Generator<NotePageRequest, void, NoteReadPage> {
     if (item.kind === 'fragment') throw new Error('Unexpected field in source context');
-    if (item.kind === 'boundary' && item.construct === 'htmlDocument') {
+    if (item.kind === 'boundary' && ['htmlDocument', 'markdownDocument'].includes(item.construct)) {
       if (item.sourceRange.start !== 0 || item.sourceRange.end !== sourceLength)
-        throw new Error('Canonical HTML document range mismatch');
+        throw new Error('Canonical document range mismatch');
       if (occurrence && !item.sourceMapRef)
-        throw new Error('Canonical HTML document window mapping missing');
+        throw new Error('Canonical document window mapping missing');
+      if (
+        item.construct === 'markdownDocument' &&
+        occurrence &&
+        occurrence.range.start === occurrence.range.end &&
+        (sourceLength !== 0 || occurrence.range.start !== 0)
+      )
+        throw new Error('Canonical Markdown document empty window mismatch');
     }
     if (item.kind === 'boundary' && item.construct === 'markdownBlock') {
       if (item.sourceRange.start >= item.sourceRange.end || item.sourceRange.end > sourceLength)

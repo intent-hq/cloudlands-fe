@@ -2,7 +2,10 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, expect, it, vi } from 'vitest';
 import { writable } from 'svelte/store';
 import NoteReadingView from './NoteReadingView.svelte';
-import { pageVisibleRangesChanged } from '$store/renderer/slices/note-pages/note-pages-slice';
+import {
+  pageVisibleRangesChanged,
+  pageWindowRequested,
+} from '$store/renderer/slices/note-pages/note-pages-slice';
 const state = vi.hoisted(() => ({
   dispatch: vi.fn(),
   session: undefined as any,
@@ -42,6 +45,35 @@ vi.mock('./note-window-view', () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+it('requests only an absent window, without retrying loading or failed demand', async () => {
+  const ready = {
+    status: 'ready',
+    panels: { panel: [] },
+    windows: { panel: { loading: true, value: null } },
+  };
+  state.session = writable(ready);
+  render(NoteReadingView, {
+    workspaceId: 'w',
+    noteId: 'n',
+    panelId: 'panel',
+    ownsPanel: false,
+    onFullOperation: vi.fn(),
+  });
+  await waitFor(() => expect(state.view).toBeDefined());
+  expect(state.dispatch).not.toHaveBeenCalledWith(pageWindowRequested('w', 'n', 'panel', 0));
+  state.session.set({ ...ready, windows: {} });
+  await waitFor(() =>
+    expect(state.dispatch).toHaveBeenCalledWith(pageWindowRequested('w', 'n', 'panel', 0)),
+  );
+  state.dispatch.mockClear();
+  state.session.set({
+    ...ready,
+    windows: { panel: { loading: false, value: null, error: 'failed' } },
+  });
+  await waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull());
+  expect(state.dispatch).not.toHaveBeenCalled();
 });
 it('publishes newly visible annotation ranges when composition releases a queued window', async () => {
   const window = { range: { start: 2_000_000, end: 2_000_500 } };

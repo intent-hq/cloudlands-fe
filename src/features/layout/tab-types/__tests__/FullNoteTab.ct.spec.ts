@@ -1,6 +1,38 @@
 import { expect, test } from '../../../../test/ct-test';
 import Harness from './mocks/FullNoteTabHarness.svelte';
 
+test('bounded read failure remains visible inside the note pane', async ({ mount, page }) => {
+  const component = await mount(Harness, { props: { paging: true, failPages: true } });
+  const alert = component.getByRole('alert');
+  await expect(alert).toBeVisible();
+  const pane = (await page.getByTestId('note-pane').boundingBox())!;
+  const error = (await alert.boundingBox())!;
+  expect(error.y).toBeGreaterThanOrEqual(pane.y);
+  expect(error.y + error.height).toBeLessThanOrEqual(pane.y + pane.height);
+  await expect(component.getByTestId('wire')).toContainText('"reads":0');
+});
+
+test('workspace refresh admits a new bounded window for the reopened panel', async ({ mount }) => {
+  const component = await mount(Harness, {
+    props: { paging: true, initialContent: 'Current note' },
+  });
+  const wire = component.getByTestId('wire');
+  const value = async () => JSON.parse((await wire.textContent())!);
+  await expect.poll(async () => (await value()).windows['note-tab']?.loaded).toBe(true);
+  const before = await value();
+  await component.getByRole('button', { name: 'Refresh workspace metadata', exact: true }).click();
+  await expect.poll(async () => (await value()).generation).toBeGreaterThan(before.generation);
+  await expect.poll(async () => (await value()).windows['note-tab']?.loaded).toBe(true);
+  const after = await value();
+  expect(after.pageReads).toBeGreaterThan(before.pageReads);
+  expect(after.windows['note-tab'].scope).toMatchObject({
+    workspaceId: 'complete-note-tab-ct',
+    noteId: 'note',
+  });
+  expect(after.windows['note-tab'].sourceRevision).toBe('r4');
+  expect(after.reads).toBe(0);
+});
+
 for (const raw of [false, true]) {
   test(`normal tab explicitly loads and saves complete ${raw ? 'raw' : 'rich'} source`, async ({
     mount,

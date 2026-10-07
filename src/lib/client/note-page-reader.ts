@@ -223,17 +223,17 @@ function pageItem(value: unknown, kind: NotePageRequest['kind']) {
         typeof i.construct !== 'string' ||
         (i.sourceMapRef === undefined &&
         (String(i.construct).startsWith('htmlTable') ||
-          ['htmlDocument', 'markdownBlock'].includes(String(i.construct)))
+          ['htmlDocument', 'markdownDocument', 'markdownBlock'].includes(String(i.construct)))
           ? i.continuationBefore !== undefined || i.continuationAfter !== undefined
           : typeof i.continuationBefore !== 'boolean' || typeof i.continuationAfter !== 'boolean')
       )
         throw new Error('Invalid context boundary');
-      if (i.construct === 'htmlDocument' || i.construct === 'markdownBlock') {
+      if (['htmlDocument', 'markdownDocument', 'markdownBlock'].includes(String(i.construct))) {
         canonicalProfile(i);
-        const documentOwner = i.construct === 'htmlDocument';
+        const documentOwner = i.construct !== 'markdownBlock';
         const source = object(i.sourceRange);
         if (
-          i.entryPath !== (documentOwner ? 'html' : 'markdown') ||
+          i.entryPath !== (i.construct === 'htmlDocument' ? 'html' : 'markdown') ||
           (documentOwner ? source.start !== 0 : source.start === source.end) ||
           !token(i.nativeRef) ||
           !token(i.attributesRef) ||
@@ -244,7 +244,7 @@ function pageItem(value: unknown, kind: NotePageRequest['kind']) {
         )
           throw new Error(
             documentOwner
-              ? 'Invalid canonical HTML document owner'
+              ? 'Invalid canonical document owner'
               : 'Invalid canonical Markdown paragraph owner',
           );
       }

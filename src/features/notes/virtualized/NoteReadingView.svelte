@@ -129,9 +129,10 @@
     };
   });
   // When the parent owns negotiation its opening effect may run after this
-  // child mounts. Request a window only after the panel exists in page state.
+  // child mounts. A batched close/reopen can keep panelOpen true while deleting
+  // its window. Restore missing demand, without retrying loading/error descriptors.
   $effect(() => {
-    if (!mounted || !panelOpen) return;
+    if (!mounted || !panelOpen || current) return;
     const owner = { workspaceId, noteId, panelId };
     untrack(() =>
       appStore.dispatch(pageWindowRequested(owner.workspaceId, owner.noteId, owner.panelId, 0)),
@@ -166,13 +167,15 @@
   });
 </script>
 
-<div
-  class="h-full min-h-0 overflow-auto"
-  bind:this={element}
-  inert={!ready}
-  aria-busy={!ready && !unavailable}
-  aria-label={m.workspace_noteWithComments_editor_ariaLabel()}
-></div>
-{#if unavailable || current?.error || renderError}
-  <div role="alert">{m.layout_noteTab_contentLoadFailed_error()}</div>
-{/if}
+<div class="flex h-full min-h-0 flex-col">
+  {#if unavailable || current?.error || renderError}
+    <div class="shrink-0" role="alert">{m.layout_noteTab_contentLoadFailed_error()}</div>
+  {/if}
+  <div
+    class="min-h-0 flex-1 overflow-auto"
+    bind:this={element}
+    inert={!ready}
+    aria-busy={!ready && !unavailable}
+    aria-label={m.workspace_noteWithComments_editor_ariaLabel()}
+  ></div>
+</div>
