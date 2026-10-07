@@ -1,7 +1,7 @@
 import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
 
-test('Assistant title edits inline without switching chat or losing a draft', async ({
+test('Assistant sidebar selects threads and only the header edits their titles', async ({
   mount,
   page,
 }, testInfo) => {
@@ -12,13 +12,23 @@ test('Assistant title edits inline without switching chat or losing a draft', as
   const header = component.locator('[data-chief-header-row]');
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('Keep this message while renaming');
-  const title = sidebar.getByRole('button', {
-    name: 'Rename thread Review open pull requests',
+  await expect(sidebar.getByRole('button', { name: /^Rename thread/ })).toHaveCount(0);
+  const thread = sidebar.getByRole('option', {
+    name: 'Review open pull requests',
     exact: true,
   });
+  await thread.getByText('Review open pull requests', { exact: true }).dblclick();
+  await expect(thread).toHaveAttribute('aria-selected', 'true');
+  await expect(header.getByRole('heading')).toHaveText('Review open pull requests');
+  await expect(sidebar.getByRole('textbox', { name: 'Thread name', exact: true })).toHaveCount(0);
+  await thread.focus();
+  await page.keyboard.press('Enter');
+  await expect(component.getByRole('textbox', { name: 'Thread name', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => window.__homeAssistantRename!.calls)).toHaveLength(0);
+  const title = header.getByRole('button', { name: /^Rename thread/ });
   await title.focus();
   await page.keyboard.press('Enter');
-  const input = sidebar.getByRole('textbox', { name: 'Thread name', exact: true });
+  const input = header.getByRole('textbox', { name: 'Thread name', exact: true });
   await expect(input).toBeFocused();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(component.getByRole('button', { name: 'Rename', exact: true })).toHaveCount(0);
@@ -31,13 +41,9 @@ test('Assistant title edits inline without switching chat or losing a draft', as
   await expect(input).toHaveCount(0);
   const renamed = sidebar.getByRole('option', { name: 'Release review — 日本語', exact: true });
   await expect(renamed).toBeVisible();
-  await expect(sidebar.getByRole('option', { selected: true })).toContainText(
-    'Plan the next release',
-  );
-  await expect(header.getByRole('heading')).toHaveText('Plan the next release');
-  await expect(
-    sidebar.getByRole('button', { name: 'Rename thread Release review — 日本語', exact: true }),
-  ).toBeFocused();
+  await expect(renamed).toHaveAttribute('aria-selected', 'true');
+  await expect(header.getByRole('heading')).toHaveText('Release review — 日本語');
+  await expect(title).toBeFocused();
   await expect(composer).toHaveText('Keep this message while renaming');
   expect(await page.evaluate(() => window.__homeAssistantRename!.calls)).toEqual([
     { agentId: 'home-assistant-1', name: 'Release review — 日本語', workspaceId: '__chief__' },
@@ -187,7 +193,7 @@ test('Assistant title keeps failed edits for retry and restores the saved title'
   expect(await page.evaluate(() => window.__homeAssistantRename!.calls)).toHaveLength(2);
 });
 
-test('Assistant title preserves editing and saves across virtualized long history', async ({
+test('Assistant header preserves editing while the sidebar history scrolls', async ({
   mount,
   page,
 }, testInfo) => {
@@ -198,15 +204,18 @@ test('Assistant title preserves editing and saves across virtualized long histor
   const list = sidebar.getByRole('listbox');
   await list.getByRole('option').first().focus();
   await page.keyboard.press('End');
-  await list
-    .getByRole('button', { name: 'Rename thread Assistant conversation 240', exact: true })
-    .click();
-  const input = sidebar.getByRole('textbox', { name: 'Thread name', exact: true });
+  await page.keyboard.press('Enter');
+  const header = component.locator('[data-chief-header-row]');
+  await expect(header.getByRole('heading')).toHaveText('Assistant conversation 240');
+  await expect(sidebar.getByRole('button', { name: /^Rename thread/ })).toHaveCount(0);
+  const title = header.getByRole('button', { name: /^Rename thread/ });
+  await title.click();
+  const input = header.getByRole('textbox', { name: 'Thread name', exact: true });
   await input.fill('Draft before scrolling — 日本語');
   await list.evaluate((element) => {
     element.scrollTop = 0;
   });
-  await expect(input).toHaveCount(0);
+  await expect(input).toHaveValue('Draft before scrolling — 日本語');
   await list.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
@@ -220,12 +229,13 @@ test('Assistant title preserves editing and saves across virtualized long histor
   await list.evaluate((element) => {
     element.scrollTop = 0;
   });
-  await expect(input).toHaveCount(0);
+  await expect(input).toBeDisabled();
   await page.evaluate(() => window.__homeAssistantRename!.release());
+  await expect(input).toHaveCount(0);
+  await expect(header.getByRole('heading')).toHaveText(name.trim());
   await list.getByRole('option').first().focus();
   await page.keyboard.press('End');
-  const title = list.getByRole('button', { name: 'Rename thread ' + name.trim(), exact: true });
-  await expect(title).toBeInViewport();
+  await expect(list.getByRole('option', { name: name.trim(), exact: true })).toBeInViewport();
   await title.click();
   await expect(input).toHaveValue(name.trim());
   await input.press('Escape');
@@ -236,6 +246,58 @@ test('Assistant title preserves editing and saves across virtualized long histor
     contentType: 'image/png',
   });
 });
+
+for (const layout of [
+  { width: 1280, height: 800, theme: 'light' },
+  { width: 760, height: 480, theme: 'dark' },
+]) {
+  test(`Assistant header title fills the available width at ${layout.width}px in ${layout.theme}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: layout.width, height: layout.height });
+    const component = await mount(Preview, {
+      props: { scenario: 'assistant', height: layout.height - 40 },
+    });
+    await page.evaluate((theme) => {
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+    }, layout.theme);
+    await component.getByRole('tab', { name: 'Assistant', exact: true }).click();
+    const header = component.locator('[data-chief-header-row]');
+    await header.getByRole('button', { name: /^Rename thread/ }).click();
+    const input = header.getByRole('textbox', { name: 'Thread name', exact: true });
+    await expect(input).toBeFocused();
+    const name = 'A long release plan with spaces — 日本語 — '.repeat(5);
+    for (const value of ['Plan', name]) {
+      await input.fill(value);
+      const inputBox = (await input.boundingBox())!;
+      const titleBox = (await header.locator(':scope > div').first().boundingBox())!;
+      expect(Math.abs(inputBox.x - titleBox.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(inputBox.width - titleBox.width)).toBeLessThanOrEqual(1);
+      const headerBox = (await header.boundingBox())!;
+      for (const action of [
+        header.getByRole('button', { name: /^Delete thread/ }),
+        header.getByRole('button', { name: 'New Assistant thread', exact: true }),
+      ]) {
+        await expect(action).toBeVisible();
+        const box = (await action.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(inputBox.x + inputBox.width);
+        expect(box.x + box.width).toBeLessThanOrEqual(headerBox.x + headerBox.width);
+      }
+    }
+    await testInfo.attach('assistant-title-full-width', {
+      body: await page.screenshot({ path: testInfo.outputPath('full-width.png') }),
+      contentType: 'image/png',
+    });
+    await input.press('Enter');
+    await expect(header.getByRole('heading')).toHaveText(name.trim());
+    await expect(
+      component
+        .getByRole('navigation', { name: 'Home', exact: true })
+        .getByRole('option', { name: name.trim(), exact: true }),
+    ).toBeVisible();
+  });
+}
 
 test('Assistant title editing is absent in empty and collaborator views', async ({
   mount,
