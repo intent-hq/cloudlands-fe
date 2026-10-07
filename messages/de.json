@@ -7471,5 +7471,14 @@
   "settings_machineName_saved": "Computername gespeichert",
   "home_assistantThread_hooks_label": "Aktive Hooks: {count}",
   "home_assistantThread_monitors_label": "Aktive Überwachungen: {count}",
-  "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}"
+  "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}",
+  "chat_failureRecovery_title_label": "Diese Antwort konnte nicht abgeschlossen werden",
+  "chat_failureRecovery_details_label": "Details anzeigen",
+  "chat_failureRecovery_copyDetails_label": "Details kopieren",
+  "chat_failureRecovery_recorded_one": "1 aufgezeichneter Fehler",
+  "chat_failureRecovery_recorded_many": "{count} aufgezeichnete Fehler",
+  "chat_failureRecovery_queued_label": "In der Warteschlange",
+  "chat_failureRecovery_action_label": "Aktion erforderlich",
+  "chat_failureRecovery_queued_description": "Eine Nachricht wartet. Verwalten Sie sie über die Steuerelemente unten.",
+  "chat_failureRecovery_action_description": "Die Antwort wurde vorzeitig beendet."
 }

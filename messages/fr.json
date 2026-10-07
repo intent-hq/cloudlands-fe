@@ -7471,5 +7471,14 @@
   "settings_machineName_saved": "Nom de la machine enregistré",
   "home_assistantThread_hooks_label": "Hooks actifs : {count}",
   "home_assistantThread_monitors_label": "Surveillances actives : {count}",
-  "home_assistantThread_subscriptions_label": "Abonnements actifs : {count}"
+  "home_assistantThread_subscriptions_label": "Abonnements actifs : {count}",
+  "chat_failureRecovery_title_label": "Impossible de terminer cette réponse",
+  "chat_failureRecovery_details_label": "Détails",
+  "chat_failureRecovery_copyDetails_label": "Copier les détails",
+  "chat_failureRecovery_recorded_one": "1 échec enregistré",
+  "chat_failureRecovery_recorded_many": "{count} échecs enregistrés",
+  "chat_failureRecovery_queued_label": "En attente",
+  "chat_failureRecovery_action_label": "Action requise",
+  "chat_failureRecovery_queued_description": "Un message est en attente. Utilisez ses commandes ci-dessous pour le gérer.",
+  "chat_failureRecovery_action_description": "La réponse a été interrompue avant la fin."
 }
