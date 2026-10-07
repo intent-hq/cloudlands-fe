@@ -95,7 +95,7 @@
      * the wait instead of leaving a bare "Thinking" that looks stalled.
      */
     processQueueHint?: FeOwnedSessionState['processQueueHint'];
-    /** Callback to retry the last message */
+    /** Guarded retry callback; queued input may still need terminal session recovery. */
     onRetry?: () => void;
     /** Callback to retry with a specific model */
     onRetryWithModel?: (model: string) => void;
@@ -452,7 +452,7 @@
                 model: modelUnavailable.nextAvailableModel,
               })}
             </Button>
-          {:else if status === 'error' && onRetry && !attempting && recoveryState !== 'queued'}
+          {:else if status === 'error' && onRetry && !attempting}
             <Button
               variant="secondary"
               size="sm"
