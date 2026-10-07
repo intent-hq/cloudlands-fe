@@ -7496,5 +7496,14 @@
   "desktop_consent_future": "Autoriser les futures sessions de cet agent",
   "desktop_consent_pending": "Envoi de votre décision. En attente de confirmation du bureau.",
   "desktop_consent_title": "Autorisation de contrôle du bureau",
-  "desktop_consent_request": "{agent} souhaite contrôler {computer}"
+  "desktop_consent_request": "{agent} souhaite contrôler {computer}",
+  "chat_failureRecovery_recorded_one": "1 échec enregistré",
+  "chat_failureRecovery_queued_label": "En attente",
+  "chat_failureRecovery_recorded_many": "{count} échecs enregistrés",
+  "chat_failureRecovery_title_label": "Impossible de terminer cette réponse",
+  "chat_failureRecovery_action_label": "Action requise",
+  "chat_failureRecovery_queued_description": "Un message est en attente. Utilisez ses commandes ci-dessous pour le gérer.",
+  "chat_failureRecovery_action_description": "La réponse a été interrompue avant la fin.",
+  "chat_failureRecovery_details_label": "Détails",
+  "chat_failureRecovery_copyDetails_label": "Copier les détails"
 }

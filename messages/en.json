@@ -7496,5 +7496,14 @@
   "desktop_consent_future": "Allow future sessions for this agent",
   "desktop_consent_pending": "Sending your decision. Waiting for the desktop to confirm.",
   "desktop_consent_title": "Desktop control permission",
-  "desktop_consent_request": "{agent} wants to control {computer}"
+  "desktop_consent_request": "{agent} wants to control {computer}",
+  "chat_failureRecovery_recorded_one": "1 recorded failure",
+  "chat_failureRecovery_queued_label": "Queued",
+  "chat_failureRecovery_recorded_many": "{count} recorded failures",
+  "chat_failureRecovery_title_label": "Couldn't complete this response",
+  "chat_failureRecovery_action_label": "Needs attention",
+  "chat_failureRecovery_queued_description": "A message is queued. Use its controls below to manage it.",
+  "chat_failureRecovery_action_description": "The response stopped before it finished.",
+  "chat_failureRecovery_details_label": "Details",
+  "chat_failureRecovery_copyDetails_label": "Copy details"
 }

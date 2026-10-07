@@ -7496,5 +7496,14 @@
   "desktop_consent_future": "允許此代理的未來工作階段",
   "desktop_consent_pending": "正在傳送您的決定，等待桌面確認。",
   "desktop_consent_title": "桌面控制權限",
-  "desktop_consent_request": "{agent} 想要控制 {computer}"
+  "desktop_consent_request": "{agent} 想要控制 {computer}",
+  "chat_failureRecovery_recorded_one": "1 筆失敗記錄",
+  "chat_failureRecovery_queued_label": "已排入佇列",
+  "chat_failureRecovery_recorded_many": "{count} 筆失敗記錄",
+  "chat_failureRecovery_title_label": "無法完成此回覆",
+  "chat_failureRecovery_action_label": "需要處理",
+  "chat_failureRecovery_queued_description": "有一則訊息正在佇列中。請使用下方控制項進行管理。",
+  "chat_failureRecovery_action_description": "回覆在完成前停止了。",
+  "chat_failureRecovery_details_label": "詳細資料",
+  "chat_failureRecovery_copyDetails_label": "複製詳細資料"
 }

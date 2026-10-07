@@ -1190,7 +1190,7 @@
                             <span class="first-line-icon" aria-hidden="true">
                               <ArrowClockwiseIcon size={12} weight="regular" />
                             </span>
-                            <span>{m.chat_queuedMessages_failedWillRetry_label()}</span>
+                            <span>{m.chat_failureRecovery_queued_label()}</span>
                           </div>
                         {/if}
                       </div>

@@ -7496,5 +7496,14 @@
   "desktop_consent_future": "このエージェントの今後のセッションを許可",
   "desktop_consent_pending": "選択を送信しています。デスクトップの確認を待っています。",
   "desktop_consent_title": "デスクトップ操作の許可",
-  "desktop_consent_request": "{agent} が {computer} の操作を求めています"
+  "desktop_consent_request": "{agent} が {computer} の操作を求めています",
+  "chat_failureRecovery_recorded_one": "記録された失敗：1 件",
+  "chat_failureRecovery_queued_label": "待機中",
+  "chat_failureRecovery_recorded_many": "記録された失敗：{count} 件",
+  "chat_failureRecovery_title_label": "この応答を完了できませんでした",
+  "chat_failureRecovery_action_label": "対応が必要です",
+  "chat_failureRecovery_queued_description": "メッセージが待機中です。下の操作で管理できます。",
+  "chat_failureRecovery_action_description": "応答が完了前に停止しました。",
+  "chat_failureRecovery_details_label": "詳細",
+  "chat_failureRecovery_copyDetails_label": "詳細をコピー"
 }
