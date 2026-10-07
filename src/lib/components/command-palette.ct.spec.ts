@@ -1,23 +1,32 @@
 import { expect, test } from '../../test/ct-test';
 import CommandPalettePreview from './command-palette.preview.svelte';
 
-test('initial note search settles after mount and again after remount', async ({ mount, page }) => {
-  const options = {
-    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'context-search' } },
-  };
-  let component = await mount(CommandPalettePreview, options);
-  const preview = page.locator('[data-command-palette-preview]');
-  await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('#context');
-  await expect(preview).toHaveAttribute('data-search-settled', 'context');
-  await expect(page.getByRole('dialog').locator('[data-palette-result]')).toHaveCount(16);
-  await component.unmount();
-  await expect(preview).toHaveCount(0);
-  component = await mount(CommandPalettePreview, options);
-  await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('#context');
-  await expect(preview).toHaveAttribute('data-search-settled', 'context');
-  await expect(page.getByRole('dialog').locator('[data-palette-result]')).toHaveCount(16);
-  await component.unmount();
-});
+for (const { mode, state, count } of [
+  { mode: 'indexed', state: 'indexed-context-search', count: 10 },
+  { mode: 'indexed-plus-local', state: 'context-search', count: 16 },
+  { mode: 'legacy', state: 'legacy-context-search', count: 16 },
+]) {
+  test(`initial ${mode} note search settles after mount and again after remount`, async ({
+    mount,
+    page,
+  }) => {
+    const options = {
+      hooksConfig: { geometrySnapshot: { scene: 'command-palette', state } },
+    };
+    let component = await mount(CommandPalettePreview, options);
+    const preview = page.locator('[data-command-palette-preview]');
+    await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('#context');
+    await expect(preview).toHaveAttribute('data-search-settled', 'context');
+    await expect(page.getByRole('dialog').locator('[data-palette-result]')).toHaveCount(count);
+    await component.unmount();
+    await expect(preview).toHaveCount(0);
+    component = await mount(CommandPalettePreview, options);
+    await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('#context');
+    await expect(preview).toHaveAttribute('data-search-settled', 'context');
+    await expect(page.getByRole('dialog').locator('[data-palette-result]')).toHaveCount(count);
+    await component.unmount();
+  });
+}
 
 test('ordinary open clears the visible recovery filter without disrupting typing or go-to-line', async ({
   mount,
@@ -182,7 +191,7 @@ test('category controls preserve the query, support keyboard cycling, and recove
 }, testInfo) => {
   await page.setViewportSize({ width: 720, height: 740 });
   await mount(CommandPalettePreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'grouped' } },
+    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'legacy-grouped' } },
   });
   const dialog = page.getByRole('dialog');
   const input = dialog.getByRole('textbox');

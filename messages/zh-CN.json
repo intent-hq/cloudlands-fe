@@ -6713,10 +6713,10 @@
   "antigravity_setup_cancel_label": "取消设置",
   "workspace_drivingClient_here_label": "在此客户端使用浏览器",
   "workspace_drivingClient_elsewhere_label": "浏览器位于 {host}",
-  "workspace_drivingClient_offline_label": "浏览器位于 {host}（离线）",
+  "workspace_drivingClient_offline_label": "主客户端离线",
   "workspace_drivingClient_here_description": "此工作区的智能体浏览器标签页和隧道在本应用中运行。",
   "workspace_drivingClient_elsewhere_description": "此工作区的智能体浏览器标签页和隧道在 {host} 上运行。将本应用设为主客户端后，智能体的标签页会移到这里；您自己打开的标签页保持不变，页面状态不会保留。",
-  "workspace_drivingClient_offline_description": "{host} 已断开连接。在其重新连接或您将本应用设为主客户端之前，此工作区的智能体浏览器标签页和隧道将失败。设为主客户端后，智能体的标签页会移到这里，页面状态不会保留。",
+  "workspace_drivingClient_offline_description": "{host} 是主客户端，目前处于离线状态。在其重新连接或您将另一个已连接且支持浏览器功能的客户端设为主客户端之前，此工作区的智能体浏览器操作和隧道都将失败。",
   "workspace_drivingClient_setPrimary_label": "将当前客户端设为主客户端",
   "workspace_drivingClient_setPrimaryDialog_title": "将此客户端设为主客户端？",
   "workspace_drivingClient_setPrimaryDialog_description": "此工作区的浏览器当前由 {host} 控制。它将固定到此客户端，智能体的所有标签页都会移到这里。页面状态不会保留；您自己打开的标签页不受影响。",
@@ -7473,5 +7473,14 @@
   "home_assistantThread_monitors_label": "活动监控：{count}",
   "home_assistantThread_subscriptions_label": "活动订阅：{count}",
   "layout_noteTab_pagedFindLimit_label": "搜索笔记正文，不包括动态任务标签。",
-  "layout_noteTab_pagedFindCapped_label": "显示前 1,000 个匹配结果。"
+  "layout_noteTab_pagedFindCapped_label": "显示前 1,000 个匹配结果。",
+  "chat_failureRecovery_queued_label": "已排队",
+  "chat_failureRecovery_copyDetails_label": "复制详情",
+  "chat_failureRecovery_queued_description": "有一条消息正在排队。请使用下方控件进行管理。",
+  "chat_failureRecovery_action_description": "回复在完成前停止了。",
+  "chat_failureRecovery_recorded_many": "{count} 条失败记录",
+  "chat_failureRecovery_title_label": "无法完成此回复",
+  "chat_failureRecovery_details_label": "详情",
+  "chat_failureRecovery_recorded_one": "1 条失败记录",
+  "chat_failureRecovery_action_label": "需要处理"
 }

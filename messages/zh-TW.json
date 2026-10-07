@@ -6713,10 +6713,10 @@
   "antigravity_setup_cancel_label": "取消設定",
   "workspace_drivingClient_here_label": "在此用戶端使用瀏覽器",
   "workspace_drivingClient_elsewhere_label": "瀏覽器位於 {host}",
-  "workspace_drivingClient_offline_label": "瀏覽器位於 {host}（離線）",
+  "workspace_drivingClient_offline_label": "主要用戶端離線",
   "workspace_drivingClient_here_description": "此工作區的代理程式瀏覽器分頁和通道在本應用程式中執行。",
   "workspace_drivingClient_elsewhere_description": "此工作區的代理程式瀏覽器分頁和通道在 {host} 上執行。將本應用程式設為主要用戶端後，代理程式的分頁會移到這裡；您自己開啟的分頁維持不變，頁面狀態不會保留。",
-  "workspace_drivingClient_offline_description": "{host} 已中斷連線。在其重新連線或您將本應用程式設為主要用戶端之前，此工作區的代理程式瀏覽器分頁和通道都會失敗。設為主要用戶端後，代理程式的分頁會移到這裡，頁面狀態不會保留。",
+  "workspace_drivingClient_offline_description": "{host} 是主要用戶端，目前處於離線狀態。在其重新連線或您將另一個已連線且支援瀏覽器功能的用戶端設為主要用戶端之前，此工作區的代理程式瀏覽器操作和通道都會失敗。",
   "workspace_drivingClient_setPrimary_label": "將目前用戶端設為主要用戶端",
   "workspace_drivingClient_setPrimaryDialog_title": "將此用戶端設為主要用戶端？",
   "workspace_drivingClient_setPrimaryDialog_description": "此工作區的瀏覽器目前由 {host} 控制。它將固定到此用戶端，代理程式的所有分頁都會移到這裡。頁面狀態不會保留；您自己開啟的分頁不受影響。",
@@ -7473,5 +7473,14 @@
   "home_assistantThread_monitors_label": "作用中的監控：{count}",
   "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}",
   "layout_noteTab_pagedFindLimit_label": "搜尋筆記內文，不包括動態任務標籤。",
-  "layout_noteTab_pagedFindCapped_label": "顯示前 1,000 個相符結果。"
+  "layout_noteTab_pagedFindCapped_label": "顯示前 1,000 個相符結果。",
+  "chat_failureRecovery_queued_label": "已排入佇列",
+  "chat_failureRecovery_copyDetails_label": "複製詳細資料",
+  "chat_failureRecovery_queued_description": "有一則訊息正在佇列中。請使用下方控制項進行管理。",
+  "chat_failureRecovery_action_description": "回覆在完成前停止了。",
+  "chat_failureRecovery_recorded_many": "{count} 筆失敗記錄",
+  "chat_failureRecovery_title_label": "無法完成此回覆",
+  "chat_failureRecovery_details_label": "詳細資料",
+  "chat_failureRecovery_recorded_one": "1 筆失敗記錄",
+  "chat_failureRecovery_action_label": "需要處理"
 }

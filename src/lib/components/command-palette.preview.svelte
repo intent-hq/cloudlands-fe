@@ -10,10 +10,12 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setupPaletteNoteSearchFixture } from './command-palette-browser-fixtures';
+  import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
-  function setup(longNames = false) {
+  function setup(longNames = false, legacy = false, indexedOnly = false) {
     const notes: Note[] = Array.from({ length: 16 }, (_, index) => ({
       id: NoteId(`preview-palette-note-${index}`),
       workspaceId,
@@ -32,7 +34,10 @@
       createdAt: timestamp,
       updatedAt: timestamp,
     }));
-    appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    const stopSearch = legacy ? setupPaletteNoteSearchFixture() : setupPaletteNoteSearch(notes);
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: indexedOnly ? [] : notes }),
+    );
     appStore.dispatch(
       setChangesData(
         workspaceId,
@@ -50,7 +55,11 @@
         2,
       ),
     );
+    let stopped = false;
     return () => {
+      if (stopped) return;
+      stopped = true;
+      stopSearch();
       appStore.dispatch(clearWorkspaceNotesForWorkspaces([workspaceId]));
       appStore.dispatch(clearWorkspace(workspaceId));
     };
@@ -59,8 +68,12 @@
   function setupGitLab(enabled: boolean) {
     return () => {
       const before = appStore.state.userPreferences.labsGitLabEnabled;
+      const stopSearch = setupPaletteNoteSearch();
       appStore.dispatch(setLabsGitLabEnabled(enabled));
-      return () => appStore.dispatch(setLabsGitLabEnabled(before));
+      return () => {
+        stopSearch();
+        appStore.dispatch(setLabsGitLabEnabled(before));
+      };
     };
   }
 
@@ -72,13 +85,25 @@
       grouped: { props: { initialQuery: '' }, setup },
       context: { props: { initialQuery: '#' }, setup },
       'context-search': { props: { initialQuery: '#context' }, setup },
+      'indexed-context-search': {
+        props: { initialQuery: '#context' },
+        setup: () => setup(false, false, true),
+      },
+      'legacy-context-search': {
+        props: { initialQuery: '#context' },
+        setup: () => setup(false, true),
+      },
+      'legacy-grouped': { props: { initialQuery: '' }, setup: () => setup(false, true) },
       search: { props: { initialQuery: 'context' }, setup },
       empty: { props: { initialQuery: 'no-matching-context-xyz' }, setup },
       'empty-category': { props: { initialQuery: '@' }, setup },
       'long-names': { props: { initialQuery: '#' }, setup: () => setup(true) },
       'go-to-line': { props: { initialQuery: ':42' }, setup },
       'invalid-line': { props: { initialQuery: ':0' }, setup },
-      'no-workspace': { props: { initialQuery: '', withoutWorkspace: true } },
+      'no-workspace': {
+        props: { initialQuery: '', withoutWorkspace: true },
+        setup: setupPaletteNoteSearch,
+      },
       multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
       'gitlab-off': {
         props: { initialQuery: 'GitLab', withoutWorkspace: true },

@@ -273,7 +273,7 @@ test('retries a rejected submission before preparation while preserving the newe
   await editor.pressSequentially('Keep the newer draft');
   await component.update({ props: { ...props, settleSubmission: 'rejected' } });
   await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(0);
-  await component.getByRole('button', { name: 'Try again', exact: true }).click();
+  await component.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(1);
   await expect(editor).toContainText('Keep the newer draft');
 });

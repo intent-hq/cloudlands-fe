@@ -1228,6 +1228,66 @@ describe('WorkspaceProgressCard driving browser client', () => {
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
   });
 
+  it('clears the offline warning on reconnect without changing the primary client', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OTHER,
+      resolved: null,
+    });
+    seedPanelTabs([]);
+    const { container } = await renderDrivingCard();
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
+
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'workspace',
+      clientId: OTHER,
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { emitState: () => void }).emitState();
+    await tick();
+    expect(drivingIndicator(container)).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+  });
+
+  it('keeps the offline warning until a confirmed primary switch is reported by the daemon', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OTHER,
+      resolved: null,
+    });
+    seedPanelTabs([]);
+    const { container } = await renderDrivingCard();
+    await openSetPrimaryDialog(container);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+    await fireEvent.click(screen.getByRole('button', CONFIRM_SET_PRIMARY));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'browserClients/setWorkspaceBrowserClientRequested',
+        payload: ['ws-1', OWN],
+      }),
+    );
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
+
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OWN,
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { emitState: () => void }).emitState();
+    await tick();
+    expect(drivingIndicator(container)).toBeNull();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    const action = screen.getByRole('button', SET_PRIMARY);
+    expect((action as HTMLButtonElement).disabled).toBe(true);
+    expect(action.getAttribute('data-checked')).toBe('true');
+  });
+
   it('disables recovery while this app does not yet know its own client id', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
       source: 'default',

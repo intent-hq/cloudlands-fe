@@ -2,6 +2,7 @@ import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
 import { assistantPanelLayoutId } from '$shared/assistant-panel-layout';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { store } from '$store/renderer/store';
+import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
 import { clearPanelLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
@@ -50,8 +51,14 @@ export function setupAssistantPanelsFixture(noteContent?: string) {
     'note.presence.subscribe': () => ({ subscriptionId: 'assistant-preview-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),
   });
+  const bridge = window.electronAPI;
+  const [stopNotes] = startWorkspaceNotesSagaFixture(store);
+  let stopped = false;
   return () => {
-    window.electronAPI = previousBridge;
+    if (stopped) return;
+    stopped = true;
+    stopNotes();
+    if (window.electronAPI === bridge) window.electronAPI = previousBridge;
   };
 }
 

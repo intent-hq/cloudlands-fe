@@ -7,9 +7,9 @@ import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-no
 
 const listeners = new Set<(query: string) => void>();
 
-/** Keep the test-only settlement marker and fixture resources owned by the preview element. */
+/** Observe settlement for this element; the preview setup owns its bridge and note saga. */
 export function paletteNoteSearchFixture(node: HTMLElement) {
-  const destroy = setupPaletteNoteSearchFixture((query) => {
+  const destroy = observePaletteNoteSearchFixture((query) => {
     node.dataset.searchSettled = query;
   });
   return { destroy };
@@ -29,8 +29,20 @@ function* observePaletteFixtureSearches() {
   });
 }
 
-/** Serial preview mounts exercise legacy local discovery, including all 16 seeded notes. */
-export function setupPaletteNoteSearchFixture(onSettled: (query: string) => void) {
+function observePaletteNoteSearchFixture(onSettled: (query: string) => void) {
+  listeners.add(onSettled);
+  const stopObserver = store.runSaga(observePaletteFixtureSearches);
+  let stopped = false;
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    listeners.delete(onSettled);
+    stopObserver();
+  };
+}
+
+/** Serial legacy preview mounts exercise local discovery, including all 16 seeded notes. */
+export function setupPaletteNoteSearchFixture(onSettled?: (query: string) => void) {
   const previousBridge = window.electronAPI;
   installMockElectronBridge({
     'search.notes': (raw) => {
@@ -67,14 +79,12 @@ export function setupPaletteNoteSearchFixture(onSettled: (query: string) => void
     },
   });
   const bridge = window.electronAPI;
-  listeners.add(onSettled);
-  const stopObserver = store.runSaga(observePaletteFixtureSearches);
+  const stopObserver = onSettled ? observePaletteNoteSearchFixture(onSettled) : () => {};
   const [stopNotes] = startWorkspaceNotesSagaFixture(store);
   let stopped = false;
   return () => {
     if (stopped) return;
     stopped = true;
-    listeners.delete(onSettled);
     stopObserver();
     stopNotes();
     if (window.electronAPI === bridge) window.electronAPI = previousBridge;

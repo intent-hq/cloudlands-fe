@@ -103,6 +103,7 @@ it('restores its bridge and cannot release a remounted owner twice', async () =>
 });
 
 it('owns the element settlement marker until the action is destroyed', async () => {
+  const fixture = start();
   const node = document.createElement('div');
   const action = paletteNoteSearchFixture(node);
   stops.push(action.destroy);
@@ -111,6 +112,7 @@ it('owns the element settlement marker until the action is destroyed', async () 
   await settle();
   expect(node.dataset.searchSettled).toBe('context');
   action.destroy();
+  fixture.stop();
   start();
   await store.dispatch(searchNotesRequested('missing', workspaceId));
   await settle();
