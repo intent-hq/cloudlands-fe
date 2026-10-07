@@ -24,6 +24,7 @@ test('Assistant sidebar selects threads and only the header edits their titles',
   await page.keyboard.press('Enter');
   await expect(component.getByRole('textbox', { name: 'Thread name', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => window.__homeAssistantRename!.calls)).toHaveLength(0);
+  await expect(composer).toHaveAttribute('contenteditable', 'true');
   await composer.fill('Keep this message while renaming');
   const title = header.getByRole('button', { name: /^Rename thread/ });
   await title.focus();

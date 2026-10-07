@@ -9,12 +9,12 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
-  import { scrollFade } from '$lib/actions/scroll-fade';
 
   let {
     workspaces,
     selectedId,
     onselect,
+    oncontextmenu,
     archived = false,
     showRepository = true,
     groups,
@@ -22,6 +22,7 @@
     workspaces: Workspace[];
     selectedId: string | null;
     onselect: (id: string) => void;
+    oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
@@ -54,20 +55,18 @@
 </script>
 
 <div
-  class="min-h-0 flex-1 overflow-auto px-6 pb-5"
+  class="min-h-0 min-w-0 flex-1 overflow-auto px-6 pb-5"
   data-home-board
-  use:scrollFade={{ axis: 'x' }}
   aria-label={m.home_board_view()}
 >
   <div
-    class="grid min-h-full w-full gap-4"
-    style:grid-template-columns={`repeat(${displayColumns.length}, minmax(15rem, 1fr))`}
+    class="grid w-full content-start grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3"
   >
     {#each displayColumns as group (group.id)}
       {@const items = group.items}
       <section class="flex min-w-0 flex-col self-stretch" aria-label={group.label}>
         <h3
-          class="sticky top-0 z-20 flex items-center gap-2 bg-background px-2 py-3 type-caption font-medium"
+          class="sticky top-0 z-20 flex min-w-0 items-center gap-2 [overflow-wrap:anywhere] bg-background px-2 py-3 type-caption font-medium"
         >
           {group.label}
         </h3>
@@ -79,8 +78,10 @@
               active={selectedId === workspace.id}
               aria-pressed={selectedId === workspace.id}
               wrapContent={false}
-              class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-4 text-left shadow-xs"
+              class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
               onclick={() => onselect(workspace.id)}
+              oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
+              onkeydown={(event) => oncontextmenu?.(event, workspace)}
               aria-label={workspace.title}
             >
               <span class="flex items-start justify-between gap-3">
@@ -89,7 +90,7 @@
                     ><Tooltip.Trigger
                       >{#snippet child({ props: homeTooltipProps })}<span
                           {...homeTooltipProps}
-                          class="min-w-0 line-clamp-2 break-words font-medium"
+                          class="min-w-0 line-clamp-2 [overflow-wrap:anywhere] font-medium"
                         >
                           {workspace.title}
                         </span>{/snippet}</Tooltip.Trigger
@@ -100,7 +101,7 @@
               </span>
               {#if workspace.statusMessage}
                 <span
-                  class="home-workspace-summary mt-2 line-clamp-2 break-words type-caption text-muted-foreground"
+                  class="home-workspace-summary mt-2 line-clamp-2 [overflow-wrap:anywhere] type-caption text-muted-foreground"
                 >
                   {workspace.statusMessage}
                 </span>
