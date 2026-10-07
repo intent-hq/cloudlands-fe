@@ -17,7 +17,7 @@ for (const id of ids) {
     const editor = component.getByTestId('message-input').locator('.tiptap-editor');
     await editor.click();
     await editor.pressSequentially('Send a new message after failure');
-    await component.getByRole('button', { name: 'Try again', exact: true }).click();
+    await component.getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(component.getByText(content, { exact: true })).toHaveCount(1);
     await expect(editor).toContainText('Send a new message after failure');
     await editor.press('Enter');
