@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { ContentType, NoteVisibility, type Note } from '$shared/types';
@@ -25,7 +26,9 @@
 
   const workspaceId = 'full-note-ct';
   const noteId = 'raw-note';
-  const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const dispose = startRootStoreLifecycle(store, {
+    startSagas: () => startWorkspaceNotesSagaFixture(store),
+  });
   let visible = $state(true);
   let editor: { finishEditing(): Promise<void> };
   let resolveSave: (() => void) | undefined, rejectSave: (() => void) | undefined;

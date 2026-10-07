@@ -39,6 +39,12 @@ export const selectNewlyCreatedNoteId = store.createSelector(
     state.workspaceNotes.byWorkspaceId[workspaceId]?.newlyCreatedNoteId ?? null,
 );
 
+export const selectHasPendingNoteContent = store.createSelector(
+  (state, workspaceId: string, noteId: string): boolean =>
+    state.workspaceNotes.byWorkspaceId[workspaceId]?.pendingContentByNoteId[noteId] === true ||
+    !!state.workspaceNotes.retainedDrafts?.[JSON.stringify([workspaceId, noteId])],
+);
+
 // ============================================================================
 // Note item selectors
 // ============================================================================
@@ -77,4 +83,9 @@ export const selectNoteVersions = store.createSelector(
 export const selectSpecTaskLinks = store.createSelector(
   (state, workspaceId: string): string[] | null =>
     state.workspaceNotes.byWorkspaceId[workspaceId]?.specTaskLinks ?? null,
+);
+
+export const selectRetainedNoteDraft = store.createSelector(
+  (state, workspaceId: string, noteId: string) =>
+    state.workspaceNotes.retainedDrafts?.[JSON.stringify([workspaceId, noteId])],
 );

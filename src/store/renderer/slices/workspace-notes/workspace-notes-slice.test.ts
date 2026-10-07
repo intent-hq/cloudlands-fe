@@ -54,6 +54,7 @@ describe('workspaceNotesReducer', () => {
         loadWorkspaceNotesSucceeded([WS_1, WS_2], notesByWorkspace),
       ),
     ).toEqual({
+      retainedDrafts: {},
       byWorkspaceId: {
         [WS_1]: {
           ...emptyWorkspaceNotesState,
@@ -200,6 +201,7 @@ describe('workspaceNotesReducer', () => {
     );
 
     expect(workspaceNotesReducer(loadedState, clearWorkspaceNotesForWorkspaces([WS_1]))).toEqual({
+      retainedDrafts: {},
       byWorkspaceId: {
         [WS_2]: loadedState.byWorkspaceId[WS_2],
       },

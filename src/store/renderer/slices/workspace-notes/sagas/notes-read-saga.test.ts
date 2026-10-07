@@ -13,9 +13,15 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  commentEventReceived,
+  ensureNoteContentLoadedRequested,
+  loadNoteCommentsRequested,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  readNoteRequested,
+  refreshNoteFromEventRequested,
+  searchNotesRequested,
   selectNote,
   specTaskLinksReceived,
   workspaceNotesReducer,
@@ -69,7 +75,15 @@ function harness(seed: Note[] = [], notePages?: ReturnType<typeof notePagesReduc
   );
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
-    actions.push(action);
+    channel.put(action);
+    if (
+      action.type !== readNoteRequested.type &&
+      action.type !== readNoteRequested.success.type &&
+      action.type !== readNoteRequested.failure.type &&
+      action.type !== refreshNoteFromEventRequested.type
+    ) {
+      actions.push(action);
+    }
     return action;
   };
   const task = runSaga(
@@ -83,7 +97,6 @@ function harness(seed: Note[] = [], notePages?: ReturnType<typeof notePagesReduc
     state: () => workspaceNotes,
     send: (action: Parameters<typeof workspaceNotesReducer>[1]) => {
       dispatch(action);
-      channel.put(action);
     },
   };
 }
@@ -207,6 +220,122 @@ describe('notesReadSaga', () => {
     pending.resolve([]);
     await settle();
     expect(run.actions).toEqual([loadWorkspaceNotesSucceeded([WS], { [WS]: [] })]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles every concurrent full-content request while only the latest seq applies', async () => {
+    const pending = deferred<Note>();
+    const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
+    const run = harness([note('note-1', { content: '', contentLength: 4 })]);
+    const first = ensureNoteContentLoadedRequested(WS, 'note-1');
+    const second = ensureNoteContentLoadedRequested(WS, 'note-1');
+    const third = ensureNoteContentLoadedRequested(WS, 'note-1');
+
+    run.channel.put(first);
+    run.channel.put(second);
+    run.channel.put(third);
+    await settle();
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-1', WS],
+      ['note-1', WS],
+    ]);
+
+    pending.resolve(note('note-1', { content: 'body', contentLength: 4 }));
+    await expect(Promise.all([first.promise, second.promise, third.promise])).resolves.toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([
+      applyNoteUpdated(WS, 'note-1', note('note-1', { content: 'body', contentLength: 4 })),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles stale reads without applying an older seq result', async () => {
+    const older = deferred<Note>();
+    const newer = deferred<Note>();
+    vi.spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    const run = harness([note('note-1')]);
+    const first = readNoteRequested(WS, 'note-1');
+    const second = readNoteRequested(WS, 'note-1');
+
+    run.channel.put(first);
+    run.channel.put(second);
+    await settle();
+    newer.resolve(note('note-1', { title: 'Newest' }));
+    await expect(second.promise).resolves.toEqual(note('note-1', { title: 'Newest' }));
+    older.resolve(note('note-1', { title: 'Stale' }));
+    await expect(first.promise).resolves.toEqual(note('note-1', { title: 'Stale' }));
+
+    expect(run.actions).toEqual([
+      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Newest' })),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('uses seq to keep event refreshes newer than an overlapping content read', async () => {
+    const first = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(note('note-1', { content: 'final', contentLength: 5, rev: 6 }));
+    const run = harness([note('note-1', { content: '', contentLength: 4, rev: 4 })]);
+    const ensure = ensureNoteContentLoadedRequested(WS, 'note-1');
+
+    run.channel.put(ensure);
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-1', WS],
+      ['note-1', WS],
+    ]);
+
+    first.resolve(note('note-1', { content: 'intermediate', contentLength: 12, rev: 5 }));
+    await expect(ensure.promise).resolves.toBe(true);
+    await settle();
+    expect(get.mock.calls).toHaveLength(3);
+    expect(run.actions.filter((action) => action.type === applyNoteUpdated.type).at(-1)).toEqual(
+      applyNoteUpdated(
+        WS,
+        'note-1',
+        note('note-1', { content: 'final', contentLength: 5, rev: 6 }),
+      ),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a successful leading note refresh when its trailing read fails', async () => {
+    const first = deferred<Note>();
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(first.promise)
+      .mockRejectedValueOnce(new Error('offline'));
+    const run = harness([note('note-1')]);
+
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    first.resolve(note('note-1', { title: 'Leading result' }));
+
+    await vi.waitFor(() => {
+      expect(get).toHaveBeenCalledTimes(2);
+      expect(run.actions).toEqual([
+        applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Leading result' })),
+      ]);
+    });
+    expect(run.task.isRunning()).toBe(true);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -375,10 +504,30 @@ describe('notesReadSaga', () => {
       ['note-1', WS],
       ['note-1', WS],
     ]);
-    expect(run.actions).toEqual([
-      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Intermediate' })),
-      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Final' })),
-    ]);
+    await vi.waitFor(() => {
+      expect(run.actions).toEqual([
+        applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Intermediate' })),
+        applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Final' })),
+      ]);
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not resurrect a deleted note when an earlier event read finishes late', async () => {
+    const pending = deferred<Note>();
+    vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
+    const run = harness([note('note-1')]);
+
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
+    await settle();
+    run.channel.put(noteEventReceived(WS, 'note-1', 'note:deleted'));
+    await settle();
+    expect(run.actions).toEqual([applyNoteDeleted(WS, 'note-1')]);
+
+    pending.resolve(note('note-1', { title: 'Stale result' }));
+    await settle();
+    expect(run.actions).toEqual([applyNoteDeleted(WS, 'note-1')]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -497,6 +646,61 @@ describe('notesReadSaga', () => {
 
     expect(get.mock.calls).toEqual([['note-1', WS]]);
     expect(run.actions).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles comment loading with the protocol rows for its live consumer to apply', async () => {
+    const comments = [{ id: 'comment-1', noteId: 'note-1', workspaceId: WS }] as never;
+    const list = vi.spyOn(appClient.comments, 'list').mockResolvedValue(comments);
+    const run = harness();
+    const action = loadNoteCommentsRequested(WS, 'note-1');
+
+    run.channel.put(action);
+    await expect(action.promise).resolves.toBe(comments);
+
+    expect(list.mock.calls).toEqual([['note-1', WS]]);
+    expect(run.actions).toEqual([action.success(comments)]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('single-flights comment event bursts with one trailing reconciliation', async () => {
+    const first = deferred<never[]>();
+    const list = vi
+      .spyOn(appClient.comments, 'list')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce([]);
+    const run = harness();
+
+    run.channel.put(commentEventReceived(WS, 'note-1', 'added'));
+    run.channel.put(commentEventReceived(WS, 'note-1', 'resolved'));
+    run.channel.put(commentEventReceived(WS, 'note-1', 'added'));
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+
+    first.resolve([]);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sends the exact indexed search request and settles its correlated result', async () => {
+    const transport = await import('$lib/client/live/backend-transport');
+    const response = { matches: [], total: 0 };
+    const request = vi.spyOn(transport, 'backendRequest').mockResolvedValue(response);
+    const run = harness();
+    const action = searchNotesRequested('wombat', WS);
+
+    run.channel.put(action);
+    await expect(action.promise).resolves.toBe(response);
+    expect(request).toHaveBeenCalledWith('search.notes', {
+      query: 'wombat',
+      limit: 10,
+      includeArchived: false,
+      preferWorkspaceId: WS,
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -638,4 +842,21 @@ describe('full spec editor alongside a paged viewer', () => {
       await run.task.toPromise();
     },
   );
+});
+
+it('keeps comment events and explicit comment demand bounded while a paged viewer owns the note', async () => {
+  const list = vi.spyOn(appClient.comments, 'list').mockResolvedValue([]);
+  const pages = notePagesReducer(undefined, pagePanelOpened(WS, 'paged-note', 'viewer'));
+  const run = harness([note('paged-note')], pages);
+  try {
+    run.channel.put(commentEventReceived(WS, 'paged-note', 'added'));
+    const request = loadNoteCommentsRequested(WS, 'paged-note');
+    run.channel.put(request);
+    await expect(request.promise).resolves.toEqual([]);
+    expect(list).not.toHaveBeenCalled();
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
 });

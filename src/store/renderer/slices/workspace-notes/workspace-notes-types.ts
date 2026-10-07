@@ -31,8 +31,18 @@ export type WorkspaceNotesWorkspaceState = {
   specDeleted: boolean;
   specTaskLinksGeneration: number;
   specTaskLinks: string[] | null;
+  pendingContentByNoteId: Record<string, true>;
+};
+
+export type RetainedNoteDraft = {
+  workspaceId: string;
+  noteId: string;
+  content: string;
+  rev?: number;
+  error?: string;
 };
 
 export type WorkspaceNotesState = {
+  retainedDrafts: Record<string, RetainedNoteDraft>;
   byWorkspaceId: Record<string, WorkspaceNotesWorkspaceState>;
 };

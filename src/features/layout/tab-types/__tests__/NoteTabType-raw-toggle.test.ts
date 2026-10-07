@@ -167,6 +167,7 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', () => ({
 }));
 
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
+import { deleteNotePersistRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 describe('NoteTabType note view modes', () => {
   beforeEach(() => {
@@ -518,8 +519,6 @@ $$\frac{1}{2}$$
   it.each([undefined, 'assistant-layout'])(
     'preserves spec protection and deletes from the owning layout %s',
     async (layoutId) => {
-      const { deleteNote } = await import('$features/notes/notes-write-service');
-      vi.mocked(deleteNote).mockClear();
       const { rerender } = render(NoteTabTypeHeaderHarness, {
         props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' }, layoutId },
       });
@@ -535,7 +534,12 @@ $$\frac{1}{2}$$
         type: 'panelLayout/closeTab',
         payload: [layoutId ?? 'ws-1', 'tab-1'],
       });
-      expect(deleteNote).toHaveBeenCalledExactlyOnceWith('ws-1', 'note-1');
+      expect(mockState.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: deleteNotePersistRequested.asyncActionType,
+          payload: ['ws-1', 'note-1'],
+        }),
+      );
     },
   );
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { startWorkspaceNotesSagaFixture } from '../../../../../test/fixtures/workspace-notes-saga-fixture';
   import { NoteWindowView } from '$features/notes/virtualized/note-window-view';
   import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
   import { onDestroy, untrack } from 'svelte';
@@ -9,7 +10,6 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { notePagesSaga } from '$store/renderer/slices/note-pages/sagas/note-pages-saga';
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { ContentType, NoteVisibility, type Note, type Workspace } from '$shared/types';
   import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
@@ -231,7 +231,9 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Test-only router forwards to the scripted preload fixture, without fetching domain data.
   ].map((channel) => overrideMockIpcHandler(channel, (payload) => api.invoke(channel, payload)));
   onDestroy(() => restoreClipboard.reverse().forEach((restore) => restore()));
-  const dispose = startRootStoreLifecycle(store, { startSagas: (s) => [s.runSaga(notePagesSaga)] });
+  const dispose = startRootStoreLifecycle(store, {
+    startSagas: (s) => startWorkspaceNotesSagaFixture(s),
+  });
   store.dispatch(
     setWorkspaceEntity({
       id: WorkspaceId(workspaceId),

@@ -1072,6 +1072,13 @@ export interface ChatTranscript {
    */
   resumed?: boolean;
   /**
+   * Local reconnect recovery: the full snapshot replaces cached canonical
+   * history, but unacknowledged optimistic user rows remain until their echo.
+   * Separate from the daemon's resume/reset disposition; never on a suffix
+   * or delta, and consumed only on a fresh snapshot application.
+   */
+  resetCachedTranscript?: true;
+  /**
    * Stamped `true` on the emit produced by applying any snapshot push
    * (initial hydration, re-registration, or mid-stream recovery/reset) —
    * absent on delta emits. Consumers use it to tell "the daemon just served

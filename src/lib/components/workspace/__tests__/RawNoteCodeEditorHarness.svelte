@@ -7,12 +7,15 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
   import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
   import RawNoteCodeEditor from '../RawNoteCodeEditor.svelte';
 
   const workspaceId = 'raw-note-ct';
   const noteId = 'raw-note';
-  const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const dispose = startRootStoreLifecycle(store, {
+    startSagas: startWorkspaceNotesSagaFixture,
+  });
   let visible = $state(true);
   let persisted = $state('# Original');
   let requests = $state<unknown[]>([]);
