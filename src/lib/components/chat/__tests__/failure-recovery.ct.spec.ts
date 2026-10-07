@@ -38,14 +38,21 @@ test('real transcript compacts failures once, preserves partial output, and clea
   ).toBeVisible();
 });
 
-test('queued recovery uses existing queue actions and retired sessions remain read-only', async ({
+test('queued recovery retains terminal Retry and retired sessions remain read-only', async ({
   mount,
-}) => {
+}, testInfo) => {
   const component = await mount(Preview, { props: { state: 'queued', width: 320 } });
   await expect(component.getByTestId('failure-recovery-card')).toHaveCount(1);
   await expect(component.getByTestId('queued-message-retry-status')).toHaveText('Queued');
   await expect(component.getByRole('button', { name: 'Send immediately' })).toBeVisible();
-  await expect(component.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  const retry = component.getByRole('button', { name: 'Retry', exact: true });
+  await expect(retry).toBeVisible();
+  await retry.focus();
+  await expect(retry).toBeFocused();
+  await testInfo.attach('queued-terminal-retry', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
   await component.update({ props: { state: 'retired', width: 320 } });
   await expect(component.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
   await expect(component.getByRole('button', { name: 'Send immediately' })).toHaveCount(0);
