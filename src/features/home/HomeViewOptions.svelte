@@ -15,7 +15,7 @@
         {...props}
         variant="ghost"
         size="icon-sm"
-        class="shrink-0 rounded-full bg-muted/50"
+        class="home-control-fill shrink-0 rounded-full"
         aria-label={m.home_view_options()}
         tooltip={m.home_view_options()}
       >

@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { SPECIALISTS, getSpecialistById } from '../../src/lib/constants/specialists';
 import {
   formatSpecialistsForPrompt,
+  getEffectiveSpecialist,
   initSpecialistsService,
 } from '../../src/features/agent/main/specialists.service';
 
@@ -126,18 +127,18 @@ describe('Specialist Prompts Verification', () => {
       expect(uiDesigner!.defaultModel).toBeUndefined();
     });
 
-    it('chief-of-staff should use the user default model and document app workflows', () => {
-      const chief = getSpecialistById('chief-of-staff');
-      expect(chief).toBeDefined();
-      expect(chief!.defaultModel).toBeUndefined();
-      expect(chief!.defaultBehaviorPrompt).toContain('ws.app.workspaces.*');
-      expect(chief!.defaultBehaviorPrompt).toContain('proposal cards');
-      expect(chief!.defaultBehaviorPrompt).toContain('confirmation cards');
-      expect(chief!.defaultBehaviorPrompt).toContain('NavLink');
+    it('chief-of-staff should load bundled app workflows and inherit the user default model', () => {
+      const chief = getEffectiveSpecialist('chief-of-staff');
+      expect(chief).not.toBeNull();
+      expect(chief!.model).toBe('');
+      expect(chief!.behaviorPrompt).toContain('ws.app.workspaces.*');
+      expect(chief!.behaviorPrompt).toContain('proposal cards');
+      expect(chief!.behaviorPrompt).toContain('confirmation cards');
+      expect(chief!.behaviorPrompt).toContain('NavLink');
     });
 
-    it('chief-of-staff should document positional completion-only messaging', () => {
-      const prompt = getSpecialistById('chief-of-staff')!.defaultBehaviorPrompt;
+    it('chief-of-staff should load positional completion-only messaging', () => {
+      const prompt = getEffectiveSpecialist('chief-of-staff')!.behaviorPrompt;
 
       expect(prompt).toContain('ws.app.agents.send(agentId, message, priority?)');
       expect(prompt).toContain('ws.app.agents.ask(agentId, message, priority?)');
