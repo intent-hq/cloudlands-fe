@@ -26,11 +26,16 @@ test('Home handles rapid tab and filter changes with motion enabled', async ({
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(Preview);
+  let currentTab = 'Workspaces';
   for (const name of ['Pull requests', 'Linear issues', 'Workspaces']) {
     await component
       .locator('.home-tabs')
+      .filter({
+        has: page.getByRole('tab', { name: new RegExp(`^${currentTab}`), selected: true }),
+      })
       .getByRole('tab', { name: new RegExp(`^${name}`) })
       .click();
+    currentTab = name;
   }
   await component
     .getByRole('group', { name: 'Status', exact: true })
