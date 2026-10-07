@@ -671,6 +671,13 @@ export class LiveChatClient implements ChatClient {
     // reconnect, backoff retry) need the full newest page, not a delta from
     // an anchor the reconciler no longer represents.
     let resumeAnchor = options?.sinceMessageId;
+    // A reconnect's bounded full page cannot validate the retained history:
+    // an omitted partial may have finalized outside that window, and missed
+    // rows or transcript edits may leave gaps. Reset consumers along with
+    // the reconciler, without treating optimistic sends as invalidated by
+    // the daemon (unlike a declined resume).
+    // Keep this pending across retries until a recovery snapshot applies.
+    let resetCachedTranscript = false;
     // Observational lifecycle phase (deduped). Reporting NEVER alters the
     // subscription's behavior — registration, retry, and gap semantics are
     // unchanged whether or not a listener is attached.
@@ -774,6 +781,7 @@ export class LiveChatClient implements ChatClient {
     const emitSnapshot = (
       resumed: boolean | undefined,
       diagnostic: StreamLifecycleDiagnostic,
+      resetCache = false,
     ): void => {
       if (disposed) return;
       const transcript = reconciler.transcript();
@@ -782,6 +790,7 @@ export class LiveChatClient implements ChatClient {
           ...transcript,
           fromSnapshot: true,
           ...(resumed === undefined ? {} : { resumed }),
+          ...(resetCache ? { resetCachedTranscript: true as const } : {}),
         });
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'delivered' });
       } catch (error) {
@@ -826,9 +835,11 @@ export class LiveChatClient implements ChatClient {
         const resumed = extractResumedFlag(push.snapshot);
         resumeAnchor = undefined;
         if (reconciler.applySnapshot(push.seq, push.snapshot)) {
+          const resetCache = resetCachedTranscript && resumed === undefined;
+          resetCachedTranscript = false;
           const reconcilerResult = sawSnapshot ? 'reset' : 'applied';
           sawSnapshot = true;
-          emitSnapshot(resumed, { ...diagnostic, reconcilerResult });
+          emitSnapshot(resumed, { ...diagnostic, reconcilerResult }, resetCache);
         } else {
           reportStreamLifecycle({
             ...diagnostic,
@@ -1045,6 +1056,9 @@ export class LiveChatClient implements ChatClient {
     // re-register for a fresh seq-0 snapshot.
     const offReconnect = onBackendReconnected(() => {
       if (disposed) return;
+      // Before first hydration the original resume anchor still represents
+      // the consumer's baseline, so its suffix must continue to merge.
+      resetCachedTranscript ||= sawSnapshot;
       transportGeneration += 1;
       generation += 1;
       reportStreamLifecycle({

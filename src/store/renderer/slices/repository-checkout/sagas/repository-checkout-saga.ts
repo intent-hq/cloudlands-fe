@@ -1,5 +1,14 @@
 import { eventChannel, buffers } from 'redux-saga';
-import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancelled,
+  delay,
+  fork,
+  put,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
@@ -16,6 +25,7 @@ import {
 } from '../repository-checkout-selectors';
 import {
   opened,
+  checkoutRepoConfigRequested,
   closed,
   invalidDraftOpened,
   projectQueryChanged,
@@ -33,6 +43,7 @@ import {
   checkoutProjectReceived,
   checkoutBranchesReceived,
   checkoutBranchRestored,
+  checkoutBranchResolutionChanged,
   checkoutWarmChanged,
 } from '../repository-checkout-slice';
 
@@ -229,6 +240,16 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
     if (!form?.projectRequest || !runtime.session) return;
     const revision = form.projectRevision,
       originalDraft = form.draft;
+    let branchRevision = form.branchesRevision;
+    yield* put(
+      checkoutBranchResolutionChanged(
+        runtime.formId,
+        runtime.scopeKey,
+        revision,
+        branchRevision,
+        true,
+      ),
+    );
     try {
       const response = yield* call([runtime.session, runtime.session.project], form.projectRequest);
       if (yield* authorityFailure(runtime, response)) return;
@@ -245,6 +266,16 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
       // The daemon resolves MR/issue URLs to their target project. No PR-head rewrite.
       yield* put(checkoutProjectReceived(runtime.formId, runtime.scopeKey, revision, detail));
       yield* put(branchQueryChanged(runtime.formId, runtime.scopeKey, ''));
+      branchRevision = (yield* current(runtime))?.branchesRevision ?? branchRevision;
+      yield* put(
+        checkoutBranchResolutionChanged(
+          runtime.formId,
+          runtime.scopeKey,
+          revision,
+          branchRevision,
+          true,
+        ),
+      );
       const desired =
         getItem(form.branchByProject, detail.project.projectPath)?.branch ??
         (originalDraft?.instanceBaseUrl === runtime.session.capture.instanceBaseUrl &&
@@ -293,6 +324,16 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
     } catch {
       if ((yield* current(runtime))?.projectRevision === revision)
         yield* fail(runtime, unreachable);
+    } finally {
+      yield* put(
+        checkoutBranchResolutionChanged(
+          runtime.formId,
+          runtime.scopeKey,
+          revision,
+          branchRevision,
+          false,
+        ),
+      );
     }
   }
   function* open(action: ReturnType<typeof opened>): SagaGenerator<void> {
@@ -363,6 +404,43 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
     yield* takeEvery([closed, invalidDraftOpened], function* ({ payload: [id] }) {
       const runtime = runtimes.get(id);
       if (runtime) dispose(runtime);
+    });
+    yield* takeEvery(checkoutRepoConfigRequested, function* (action) {
+      const [id, scope, query] = action.payload;
+      const runtime = runtimeFor(id, scope);
+      const matches = (form: RepositoryCheckoutForm | null) =>
+        form?.capture?.checkoutId === query.checkoutId &&
+        form.capture.revision === query.revision &&
+        form.project?.projectPath === query.projectPath &&
+        form.branch?.name === query.branch &&
+        form.branch.commitSha === query.commitSha;
+      try {
+        if (!runtime || !matches(yield* current(runtime))) {
+          yield* put(action.success(retired));
+          return;
+        }
+        if (!runtime.session?.repoConfig) {
+          yield* put(action.success({ status: 'unsupported' }));
+          return;
+        }
+        const value = yield* call([runtime.session, runtime.session.repoConfig], query);
+        // Authority refusals invalidate the original binding even after the
+        // selected project changes; content and branch failures are selection-local.
+        if (yield* authorityFailure(runtime, value)) {
+          yield* put(action.success(value));
+          return;
+        }
+        if (!matches(yield* current(runtime))) {
+          yield* put(action.success(retired));
+          return;
+        }
+        yield* put(action.success(value));
+      } catch {
+        yield* put(action.success(unreachable));
+      } finally {
+        // A cancelled root must also settle the initializer's bounded probe.
+        if (yield* cancelled()) yield* put(action.success(retired));
+      }
     });
     yield* takeEvery(recoveryRequested, function* ({ payload: [id, scope] }) {
       const form = yield* selectCheckoutForm.effect(id);

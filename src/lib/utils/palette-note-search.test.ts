@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backendRequest } from '$lib/client/live/backend-transport';
 import { WorkspaceStatus } from '$shared/types';
 import {
   adaptNoteSearchResponse,
@@ -10,9 +9,27 @@ import {
   type NoteQueryUpdate,
 } from './palette-note-search';
 
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
+const storeControl = vi.hoisted(() => ({ search: vi.fn() }));
 
-const request = vi.mocked(backendRequest);
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    dispatch: (action: {
+      type: string;
+      asyncActionType?: string;
+      payload: [string, string?];
+      success: (value: unknown) => unknown;
+      failure: (error: unknown) => unknown;
+    }) => {
+      if (action.asyncActionType !== 'workspaceNotes/searchNotesRequested') return action;
+      void storeControl.search(...action.payload).then(action.success, action.failure);
+      return action;
+    },
+  });
+});
+
+const request = storeControl.search;
 const match = (overrides: Partial<IndexedNoteMatch> = {}): IndexedNoteMatch => ({
   noteId: 'spec',
   workspaceId: 'workspace-a',
@@ -193,7 +210,7 @@ describe('note query controller', () => {
     vi.useRealTimers();
   });
 
-  it('debounces rapid typing by 150ms and sends the exact global request', async () => {
+  it('debounces rapid typing by 150ms and dispatches the correlated search request', async () => {
     controller.query('wom', 'workspace-a', []);
     await vi.advanceTimersByTimeAsync(100);
     controller.query('wombat', 'workspace-a', []);
@@ -201,12 +218,7 @@ describe('note query controller', () => {
     expect(request).not.toHaveBeenCalled();
     expect(latest()).toEqual({ items: [], loading: true, capability: 'unknown', fallback: true });
     await vi.advanceTimersByTimeAsync(1);
-    expect(request).toHaveBeenCalledExactlyOnceWith('search.notes', {
-      query: 'wombat',
-      limit: 10,
-      includeArchived: false,
-      preferWorkspaceId: 'workspace-a',
-    });
+    expect(request).toHaveBeenCalledExactlyOnceWith('wombat', 'workspace-a');
     expect(latest()).toMatchObject({
       loading: false,
       capability: 'indexed',
@@ -218,11 +230,7 @@ describe('note query controller', () => {
   it('omits preference and hard workspace scope when no workspace is active', async () => {
     controller.query('wombat', undefined, []);
     await vi.advanceTimersByTimeAsync(150);
-    expect(request).toHaveBeenCalledExactlyOnceWith('search.notes', {
-      query: 'wombat',
-      limit: 10,
-      includeArchived: false,
-    });
+    expect(request).toHaveBeenCalledExactlyOnceWith('wombat', undefined);
   });
 
   it('distinguishes indexed zero results from an empty legacy response', async () => {
@@ -324,12 +332,7 @@ describe('note query controller', () => {
     expect(latest()?.items).toEqual([]);
     pending.resolve(indexed([match({ title: 'Old ranking' })]));
     await vi.advanceTimersByTimeAsync(150);
-    expect(request).toHaveBeenLastCalledWith('search.notes', {
-      query: 'wombat',
-      limit: 10,
-      includeArchived: false,
-      preferWorkspaceId: 'workspace-b',
-    });
+    expect(request).toHaveBeenLastCalledWith('wombat', 'workspace-b');
     expect(latest()?.items[0]).toMatchObject({
       label: 'Search plan',
       workspaceName: 'New metadata',

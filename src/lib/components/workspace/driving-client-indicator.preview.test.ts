@@ -58,8 +58,8 @@ describe('driving client indicator preview', () => {
         selectWorkspaceDrivingClient.select(store.state, PREVIEW_WORKSPACE_ID),
       ),
     ).toMatchObject({ mode: 'elsewhere', canSwitchHere: true });
-    // An idle offline pin stays silent.
-    expect(seededView('pinned-offline')).toBeNull();
+    // An offline pin offers recovery even before an agent opens a tab.
+    expect(seededView('pinned-offline')).toMatchObject({ mode: 'offline' });
     expect(selectWorkspaceHasAgentBrowserTabs.select(store.state, PREVIEW_WORKSPACE_ID)).toBe(
       false,
     );

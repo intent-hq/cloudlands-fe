@@ -1,13 +1,13 @@
 <script lang="ts">
   import SetupScriptModal from '../SetupScriptModal.svelte';
 
-  let { onClose }: { onClose?: () => void } = $props();
+  let { onClose, onCommit }: { onClose?: () => void; onCommit?: () => void } = $props();
 
   let open = $state(true);
   let value = $state('echo one');
 </script>
 
-<SetupScriptModal bind:open bind:value scriptName="One" {onClose}>
+<SetupScriptModal bind:open bind:value scriptName="One" {onClose} {onCommit}>
   {#snippet editor(current, setValue)}
     <button type="button" data-testid="edit-script" onclick={() => setValue('echo two')}>
       {current}

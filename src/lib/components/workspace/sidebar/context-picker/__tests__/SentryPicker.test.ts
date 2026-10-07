@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SentryIssueResult } from '$features/sentry-auth/types';
 
@@ -63,6 +63,7 @@ vi.mock('$store/renderer/store', async () => {
 
 import SentryPicker from '../SentryPicker.svelte';
 import LinearPicker from '../LinearPicker.svelte';
+import { startLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
 import { warmImport } from '../../../../../../test/warm-import';
 
 // Protocol-shaped issue per SentryIssueResult (features/sentry-auth/types.ts).
@@ -108,6 +109,19 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+it('closes the Linear context picker before opening connection settings', async () => {
+  wire.request.mockResolvedValue({ authenticated: false });
+  render(LinearPicker, { props: baseProps });
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Connect Linear' }));
+
+  expect(baseProps.onClose).toHaveBeenCalledOnce();
+  expect(storeMocks.dispatch).toHaveBeenCalledWith(startLinearAuth());
+  expect(baseProps.onClose.mock.invocationCallOrder[0]).toBeLessThan(
+    storeMocks.dispatch.mock.invocationCallOrder.at(-1)!,
+  );
 });
 
 describe('SentryPicker direct-client fetch', () => {

@@ -24,8 +24,11 @@
     selectNoteById,
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { createNote, deleteNote } from '$features/notes/notes-write-service';
-  import { ensureNoteContentLoaded } from '$features/notes/notes-read-service';
+  import {
+    createNotePersistRequested,
+    deleteNotePersistRequested,
+    ensureNoteContentLoadedRequested,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { isSpecNote } from '$shared/constants/notes';
   import { isNoteContentStale } from '$shared/utils/note-content';
   import { invoke } from '$lib/electron-bridge';
@@ -106,7 +109,7 @@
   $effect(() => {
     const noteId = tab.noteId;
     if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
-    void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
+    void appStore.dispatch(ensureNoteContentLoadedRequested(workspaceId, noteId)).then((loaded) => {
       if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
     });
   });
@@ -225,7 +228,7 @@
     isNoteDeleting = true;
     try {
       appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id));
-      void deleteNote(workspaceId, noteIdToDelete);
+      void appStore.dispatch(deleteNotePersistRequested(workspaceId, noteIdToDelete));
 
       // Show undo toast
       const { notify } = await import('$lib/components/patterns/notify');
@@ -239,14 +242,16 @@
                   label: m.ui_workspaceActions_undo_label(),
                   onClick: () => {
                     try {
-                      void createNote(savedNote.workspaceId, {
-                        title: savedNote.title,
-                        content: savedNote.content,
-                        contentType: savedNote.contentType,
-                        tags: savedNote.tags,
-                        parentId: savedNote.parentId,
-                        visibility: savedNote.visibility,
-                      });
+                      void appStore.dispatch(
+                        createNotePersistRequested(savedNote.workspaceId, {
+                          title: savedNote.title,
+                          content: savedNote.content,
+                          contentType: savedNote.contentType,
+                          tags: savedNote.tags,
+                          parentId: savedNote.parentId,
+                          visibility: savedNote.visibility,
+                        }),
+                      );
                       notify.dismiss(toastId);
                     } catch (err) {
                       logger.error('Failed to restore note', err);

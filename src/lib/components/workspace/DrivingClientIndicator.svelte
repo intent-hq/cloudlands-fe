@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Show the machine currently used by agent browser tabs or desktop control.
+  // Show agent activity and offline primary-client recovery, even without tabs.
   import { faGlobe } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { TooltipRich } from '$lib/components/ui/tooltip';
@@ -29,7 +29,7 @@
       case 'elsewhere':
         return m.workspace_drivingClient_elsewhere_label({ host: view.hostName });
       case 'offline':
-        return m.workspace_drivingClient_offline_label({ host: view.hostName });
+        return m.workspace_drivingClient_offline_label();
     }
   });
 

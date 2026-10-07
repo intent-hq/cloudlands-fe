@@ -168,7 +168,13 @@
   onscroll={handleScroll}
 >
   <div class="mx-auto w-full max-w-4xl px-6 pb-32 pt-6" bind:this={renderedContent}>
-    <MarkdownViewer {content} {workspaceId} taskBlockRenderMode="content" renderRichFencesAsCode />
+    <MarkdownViewer
+      {content}
+      {workspaceId}
+      taskBlockRenderMode="content"
+      renderRichFencesAsCode
+      renderDiagrams
+    />
   </div>
 </section>
 

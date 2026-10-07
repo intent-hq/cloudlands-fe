@@ -31,16 +31,12 @@ vi.mock('svelte', async (importOriginal) => ({
 const {
   onBackendNotificationSpy,
   backendRequestSpy,
-  applyNoteFromEventSpy,
-  applyCommentFromEventSpy,
   workspaceServiceListSpy,
   capturedHandlers,
   capturedReconnectHandlers,
 } = vi.hoisted(() => ({
   onBackendNotificationSpy: vi.fn(),
   backendRequestSpy: vi.fn(),
-  applyNoteFromEventSpy: vi.fn(),
-  applyCommentFromEventSpy: vi.fn(),
   workspaceServiceListSpy: vi.fn(() => Promise.resolve({ ok: true, data: [] })),
   capturedHandlers: [] as Array<(n: { method: string; params?: unknown }) => void>,
   // RESUB-1: capture reconnect listeners so a test can simulate a daemon
@@ -72,20 +68,6 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { list: workspaceServiceListSpy },
 }));
-// Mock the notes-read-service so the bridge's note:* routing is observable
-// without touching the real appClient.notes.list seam.
-vi.mock('$features/notes/notes-read-service', () => ({
-  applyNoteFromEvent: applyNoteFromEventSpy,
-  createNotesReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
-  __resetNotesReadServiceForTests: () => {},
-}));
-// Mock the comments-read-service so the bridge's comment:* routing is
-// observable without touching the real appClient.comments.list seam.
-vi.mock('$features/comments/comments-read-service', () => ({
-  applyCommentFromEvent: applyCommentFromEventSpy,
-  __resetCommentsReadServiceForTests: () => {},
-}));
-
 // The bridge routes `agent:created`/`agent:updated` through the shared
 // read-service so the transcript-preserving merge is exercised in one place.
 // Fake it here so the tests can assert the bridge hits the correct seam and
@@ -6970,7 +6952,6 @@ describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () 
   });
 
   beforeEach(async () => {
-    applyNoteFromEventSpy.mockClear();
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
@@ -6979,73 +6960,89 @@ describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () 
 
   afterEach(() => vi.clearAllMocks());
 
-  it('routes note:created/updated/deleted envelopes to applyNoteFromEvent with the workspaceId + noteId', async () => {
+  it('routes note:created/updated/deleted envelopes to canonical workspace-notes actions', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const { noteEventReceived } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-1',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:created',
-          actor: { type: 'system' },
-          data: { noteId: 'note-1', path: '/x', action: 'create' },
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-1',
+            workspaceId: WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:created',
+            actor: { type: 'system' },
+            data: { noteId: 'note-1', path: '/x', action: 'create' },
+          },
         },
-      },
-    });
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-2',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:updated',
-          actor: { type: 'system' },
-          data: { noteId: 'note-2', path: '/y', action: 'update' },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-2',
+            workspaceId: WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:updated',
+            actor: { type: 'system' },
+            data: { noteId: 'note-2', path: '/y', action: 'update' },
+          },
         },
-      },
-    });
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-3',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:deleted',
-          actor: { type: 'system' },
-          data: { noteId: 'note-3', path: '/z', action: 'delete' },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-3',
+            workspaceId: WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:deleted',
+            actor: { type: 'system' },
+            data: { noteId: 'note-3', path: '/z', action: 'delete' },
+          },
         },
-      },
-    });
+      });
 
-    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, 'note-1', 'note:created');
-    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, 'note-2', 'note:updated');
-    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, 'note-3', 'note:deleted');
+      expect(dispatchSpy).toHaveBeenCalledWith(noteEventReceived(WS, 'note-1', 'note:created'));
+      expect(dispatchSpy).toHaveBeenCalledWith(noteEventReceived(WS, 'note-2', 'note:updated'));
+      expect(dispatchSpy).toHaveBeenCalledWith(noteEventReceived(WS, 'note-3', 'note:deleted'));
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 
   it('drops note:* events without a workspaceId envelope', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-no-ws',
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:updated',
-          actor: { type: 'system' },
-          data: { noteId: 'note-x', path: '/x', action: 'update' },
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-no-ws',
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:updated',
+            actor: { type: 'system' },
+            data: { noteId: 'note-x', path: '/x', action: 'update' },
+          },
         },
-      },
-    });
+      });
 
-    expect(applyNoteFromEventSpy).not.toHaveBeenCalled();
+      expect(dispatchSpy.mock.calls.map(([action]) => action.type)).not.toContain(
+        'workspaceNotes/noteEventReceived',
+      );
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 });
 
@@ -8803,7 +8800,6 @@ describe('daemonEventsBridge (comment:added / comment:resolved → applyCommentF
   beforeAll(() => appStore.init());
 
   beforeEach(async () => {
-    applyCommentFromEventSpy.mockClear();
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
@@ -8812,60 +8808,80 @@ describe('daemonEventsBridge (comment:added / comment:resolved → applyCommentF
 
   afterEach(() => vi.clearAllMocks());
 
-  it('routes comment:added and comment:resolved envelopes to applyCommentFromEvent with (workspaceId, noteId, kind)', async () => {
+  it('routes comment:added and comment:resolved envelopes to canonical workspace-notes actions', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const { commentEventReceived } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-comment-1',
-          workspaceId: COMMENT_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'comment:added',
-          actor: { type: 'agent', id: AGENT },
-          data: { noteId: 'note-c1', commentId: 'c-1' },
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-comment-1',
+            workspaceId: COMMENT_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'comment:added',
+            actor: { type: 'agent', id: AGENT },
+            data: { noteId: 'note-c1', commentId: 'c-1' },
+          },
         },
-      },
-    });
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-comment-2',
-          workspaceId: COMMENT_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'comment:resolved',
-          actor: { type: 'user', id: 'u1' },
-          data: { noteId: 'note-c1', threadId: 't-1', resolved: true },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-comment-2',
+            workspaceId: COMMENT_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'comment:resolved',
+            actor: { type: 'user', id: 'u1' },
+            data: { noteId: 'note-c1', threadId: 't-1', resolved: true },
+          },
         },
-      },
-    });
+      });
 
-    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, 'note-c1', 'added');
-    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, 'note-c1', 'resolved');
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        commentEventReceived(COMMENT_WS, 'note-c1', 'added'),
+      );
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        commentEventReceived(COMMENT_WS, 'note-c1', 'resolved'),
+      );
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 
   it('drops comment:* events without a noteId', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-comment-no-note',
-          workspaceId: COMMENT_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'comment:added',
-          actor: { type: 'system' },
-          data: {},
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-comment-no-note',
+            workspaceId: COMMENT_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'comment:added',
+            actor: { type: 'system' },
+            data: {},
+          },
         },
-      },
-    });
+      });
 
-    expect(applyCommentFromEventSpy).not.toHaveBeenCalled();
+      expect(dispatchSpy.mock.calls.map(([action]) => action.type)).not.toContain(
+        'workspaceNotes/commentEventReceived',
+      );
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 });
 

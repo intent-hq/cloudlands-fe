@@ -1,10 +1,20 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  export const preview = definePreview({
+  import {
+    ASSISTANT_DIAGRAM_NOTE,
+    ASSISTANT_DIAGRAM_ERROR_NOTE,
+    ASSISTANT_DIAGRAM_EXAMPLE_NOTE,
+  } from './assistant-note-diagrams-fixtures';
+  export const preview = definePreview<{ noteContent?: string }>({
     id: 'assistant-panels',
     title: 'Assistant content panels',
     defaultState: 'default',
-    states: { default: { props: {} } },
+    states: {
+      default: { props: {} },
+      diagrams: { props: { noteContent: ASSISTANT_DIAGRAM_NOTE } },
+      'diagram-errors': { props: { noteContent: ASSISTANT_DIAGRAM_ERROR_NOTE } },
+      'diagram-examples': { props: { noteContent: ASSISTANT_DIAGRAM_EXAMPLE_NOTE } },
+    },
   });
 </script>
 
@@ -22,7 +32,8 @@
   } from './assistant-panels-browser-fixtures';
   import './home.css';
 
-  const stop = startHomePreview(() => [setupAssistantPanelsFixture()]);
+  let { noteContent }: { noteContent?: string } = $props();
+  const stop = startHomePreview(() => [setupAssistantPanelsFixture(noteContent)]);
   onDestroy(stop);
 
   const links =

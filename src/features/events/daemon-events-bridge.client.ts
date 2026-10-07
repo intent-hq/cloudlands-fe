@@ -62,8 +62,8 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      flows through the same dispatch with its exact daemon message and
  *      `resetFirstChunk: false` so the spinner shows the startup phase until
  *      the first chunk / stream:end / failed clears it.
- *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
- *      notes-read-service, which dispatches `applyNoteCreated`/
+ *   4. `note:*` (workspace-scoped, §7) → `noteEventReceived` in the registered
+ *      workspace-notes saga, which dispatches `applyNoteCreated`/
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
  *      panel while the workspace is open. The same events also trigger a
@@ -79,11 +79,11 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      or opening the note. The event payload is self-sufficient
  *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
  *      directly without a follow-up fetch.
- *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
- *      the comments-read-service, which refetches the affected note's comments
+ *   6. `comment:added` / `comment:resolved` (§6.5) → `commentEventReceived` in
+ *      the workspace-notes saga, which refetches the affected note's comments
  *      and reconciles the global comments slice per-comment (add / update /
  *      remove) so other notes' comments stay intact. Wired the same way
- *      `note:*` funnels through the notes-read-service.
+ *      `note:*` funnels through the same registered saga owner.
  *   7. `pr:linked` / `pr:updated` / `pr:unlinked` (§7.6) → `updateWorkspaceEntity`
  *      on the workspace slice with `{ prNumber, prUrl, prStatus, activePullRequest }`
  *      (or the cleared shape on unlink). This replaces the legacy main→renderer
@@ -240,8 +240,10 @@ import {
   navigateAwayIfViewing,
 } from '$features/workspace/navigate-away-if-viewing';
 import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { applyNoteFromEvent } from '$features/notes/notes-read-service';
-import { applyCommentFromEvent } from '$features/comments/comments-read-service';
+import {
+  commentEventReceived,
+  noteEventReceived,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   ensureAgentSession,
   notePendingQuestionMarkerProjection,
@@ -2093,7 +2095,7 @@ function handleNoteEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyNoteFromEvent(workspaceId, noteId, type);
+  appStore.dispatch(noteEventReceived(workspaceId, noteId, type));
   debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
@@ -2149,7 +2151,7 @@ function handleCommentEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyCommentFromEvent(workspaceId, noteId, kind);
+  appStore.dispatch(commentEventReceived(workspaceId, noteId, kind));
 }
 
 /**

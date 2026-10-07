@@ -74,9 +74,10 @@ export function resolveDrivingClientSwitch(clients: ResolvedBrowserClients): Dri
   };
 }
 
-/** An idle pin is silent; agent activity shows its computer even with one client. */
+/** Offline pins offer recovery; agent activity shows its computer even with one client. */
 export function resolveDrivingClientView(input: DrivingClientInput): DrivingClientView | null {
-  if (!input.activeComputerName && !input.hasBrowserTabs) return null;
+  if (!input.activeComputerName && !input.hasBrowserTabs && input.driving?.connected !== false)
+    return null;
   if (!input.activeComputerName && !input.driving) return null;
   const view = resolveDrivingClientSwitch(input);
   if (input.activeComputerName) {

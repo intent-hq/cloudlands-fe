@@ -620,12 +620,18 @@
           <div class="home-sidebar-header flex shrink-0 items-center">
             <Tabs.List
               aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
-              class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1"
+              class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1 [&_[data-tabs-indicator]]:bg-muted-foreground dark:[&_[data-tabs-indicator]]:bg-surface-3"
             >
-              <Tabs.Trigger value="workspaces" class="min-w-0 px-1 font-medium">
+              <Tabs.Trigger
+                value="workspaces"
+                class="min-w-0 px-1 font-medium data-[state=active]:text-background dark:data-[state=active]:text-foreground"
+              >
                 {m.home_tab_workspaces()}
               </Tabs.Trigger>
-              <Tabs.Trigger value="assistant" class="min-w-0 px-1 font-medium">
+              <Tabs.Trigger
+                value="assistant"
+                class="min-w-0 px-1 font-medium data-[state=active]:text-background dark:data-[state=active]:text-foreground"
+              >
                 {m.home_assistant()}
               </Tabs.Trigger>
             </Tabs.List>
@@ -799,38 +805,18 @@
                       aria-label={m.home_views()}
                     >
                       <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
-                      <Tooltip.Provider
-                        ><Tooltip.Root
-                          ><Tooltip.Trigger
-                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                                {...homeTooltipProps}
-                                value="prs"
-                                aria-label={m.home_tab_prs()}
-                              >
-                                <span class="home-tab-label">{m.home_tab_prs()}</span>
-                                <span class="home-tab-logo" aria-hidden="true"
-                                  ><GitHubIcon size={18} /></span
-                                >
-                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                          ><Tooltip.Content>{m.home_tab_prs()}</Tooltip.Content></Tooltip.Root
-                        ></Tooltip.Provider
-                      >
-                      <Tooltip.Provider
-                        ><Tooltip.Root
-                          ><Tooltip.Trigger
-                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                                {...homeTooltipProps}
-                                value="linear"
-                                aria-label={m.home_tab_linear()}
-                              >
-                                <span class="home-tab-label">{m.home_tab_linear()}</span>
-                                <span class="home-tab-logo" aria-hidden="true"
-                                  ><LinearIcon size={18} /></span
-                                >
-                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                          ><Tooltip.Content>{m.home_tab_linear()}</Tooltip.Content></Tooltip.Root
-                        ></Tooltip.Provider
-                      >
+                      <Tabs.Trigger value="prs" aria-label={m.home_tab_prs()}>
+                        <span class="home-tab-label">{m.home_tab_prs()}</span>
+                        <span class="home-tab-logo" aria-hidden="true"
+                          ><GitHubIcon size={18} /></span
+                        >
+                      </Tabs.Trigger>
+                      <Tabs.Trigger value="linear" aria-label={m.home_tab_linear()}>
+                        <span class="home-tab-label">{m.home_tab_linear()}</span>
+                        <span class="home-tab-logo" aria-hidden="true"
+                          ><LinearIcon size={18} /></span
+                        >
+                      </Tabs.Trigger>
                     </Tabs.List>
                     <div class="home-header-actions ml-auto flex items-center gap-2 py-2">
                       {#if selectedRepositoryGithubUrl}
@@ -1020,7 +1006,7 @@
                                 </span>
                               {/snippet}
                               {#snippet trailing()}<span
-                                  class="workspace-row-meta flex items-center gap-2 text-muted-foreground"
+                                  class="workspace-row-meta flex shrink-0 items-center gap-2 text-muted-foreground"
                                 >
                                   {#if $pinnedIds$.includes(item.id)}<Tooltip.Provider
                                       ><Tooltip.Root
@@ -1037,7 +1023,7 @@
                                     >{/if}
                                   <HomeWorkspaceStatus workspace={item} />
                                   <span
-                                    class="inline-flex w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
+                                    class="inline-flex min-w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
                                     data-home-row-time
                                   >
                                     <HomeActivityTime workspace={item} />
@@ -1113,17 +1099,19 @@
                                     <Button
                                       variant="plain"
                                       size="sm"
-                                      class="w-full justify-start px-2"
+                                      class="w-full justify-start gap-1.5 px-2"
+                                      labelClass="flex-initial"
                                       aria-expanded={group.expanded}
                                       aria-label={group.label}
                                       onclick={() =>
                                         setGroupExpanded(group.id, !group.expanded, group.items)}
                                     >
-                                      <span class="flex-1 text-left font-medium text-foreground"
+                                      <span class="text-left font-medium text-foreground"
                                         >{group.label}</span
                                       >
                                       {#snippet trailingIcon()}<Fa
                                           icon={group.expanded ? faChevronDown : faChevronRight}
+                                          class="size-3 text-muted-foreground"
                                         />{/snippet}
                                     </Button>
                                   </h3>
