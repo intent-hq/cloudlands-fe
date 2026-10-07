@@ -10,10 +10,12 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setupPaletteSearchPreview as setupSearch } from './command-palette.preview-fixtures';
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
   function setup(longNames = false) {
+    const stopSearch = setupSearch();
     const notes: Note[] = Array.from({ length: 16 }, (_, index) => ({
       id: NoteId(`preview-palette-note-${index}`),
       workspaceId,
@@ -51,6 +53,7 @@
       ),
     );
     return () => {
+      stopSearch();
       appStore.dispatch(clearWorkspaceNotesForWorkspaces([workspaceId]));
       appStore.dispatch(clearWorkspace(workspaceId));
     };
@@ -58,9 +61,13 @@
 
   function setupGitLab(enabled: boolean) {
     return () => {
+      const stopSearch = setupSearch();
       const before = appStore.state.userPreferences.labsGitLabEnabled;
       appStore.dispatch(setLabsGitLabEnabled(enabled));
-      return () => appStore.dispatch(setLabsGitLabEnabled(before));
+      return () => {
+        stopSearch();
+        appStore.dispatch(setLabsGitLabEnabled(before));
+      };
     };
   }
 
@@ -77,7 +84,7 @@
       'long-names': { props: { initialQuery: '#' }, setup: () => setup(true) },
       'go-to-line': { props: { initialQuery: ':42' }, setup },
       'invalid-line': { props: { initialQuery: ':0' }, setup },
-      'no-workspace': { props: { initialQuery: '', withoutWorkspace: true } },
+      'no-workspace': { props: { initialQuery: '', withoutWorkspace: true }, setup: setupSearch },
       multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
       'gitlab-off': {
         props: { initialQuery: 'GitLab', withoutWorkspace: true },
