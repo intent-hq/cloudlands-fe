@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.211.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.2...v2.211.3) (2026-10-07)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.30 ([#3296](https://github.com/intent-hq/cloudlands-fe/issues/3296)) ([586e002](https://github.com/intent-hq/cloudlands-fe/commit/586e0029e379917448333efaf94bad185b154821))
+* clarify repeated response failures and recovery ([#3285](https://github.com/intent-hq/cloudlands-fe/issues/3285)) ([aed0b4b](https://github.com/intent-hq/cloudlands-fe/commit/aed0b4bae8496d7bef57367b1cb5a7814e71319e))
+* keep message navigation aligned during lazy hydration ([#3293](https://github.com/intent-hq/cloudlands-fe/issues/3293)) ([bc274a0](https://github.com/intent-hq/cloudlands-fe/commit/bc274a074355b4f0b43b444dcdcc98a163d49573))
+
 ## [2.211.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.1...v2.211.2) (2026-10-07)
 
 
