@@ -1274,9 +1274,11 @@ describe('ChatPanel mounted lifecycle', () => {
     const reactivatedOverlay = screen.getByTestId('pinned-user-prompt');
     expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
-    expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(scroll);
+    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).toBe(scroll);
+    resolveTarget(scroll);
+    expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
   });
 
@@ -4096,10 +4098,10 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
     await tick();
     flushFrame();
-    await vi.waitFor(() => {
-      expect(replacementBounds).toHaveBeenCalled();
-      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    });
+    await vi.waitFor(() => expect(mocks.animateScrollTo).toHaveBeenCalledOnce());
+    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    resolveTarget(getContainer());
+    expect(replacementBounds).toHaveBeenCalled();
   });
 
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {

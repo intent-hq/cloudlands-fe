@@ -4296,37 +4296,45 @@
     duration: number = 150,
     getContainer = beginScrollNavigation(),
   ) {
-    if (!getContainer() || !scrollContainer) return;
+    const getTargetContainer = () => {
+      const container = getContainer();
+      // Transcript replacement can remove the target while its viewport survives.
+      // Cancel before the next geometry read or animation write in that case.
+      return container?.contains(element) ? container : null;
+    };
+    const container = getTargetContainer();
+    if (!container) return;
 
     // Explicit navigation owns the viewport until the user returns to bottom.
     // Programmatic scroll events intentionally do not release followBottom.
     shouldFollowBottom = false;
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const elementRect = element.getBoundingClientRect();
-
-    let targetScrollTop: number;
-    if (block === 'center') {
-      targetScrollTop =
-        scrollContainer.scrollTop +
-        (elementRect.top - containerRect.top) -
-        containerRect.height / 2 +
-        elementRect.height / 2;
-    } else if (block === 'start') {
-      targetScrollTop = getMessageNavigationStartScrollTop({
-        currentScrollTop: scrollContainer.scrollTop,
-        targetTop: elementRect.top,
-        containerTop: containerRect.top,
-        headerBottom: getRenderedPanelHeaderBottom(),
-      });
-    } else {
-      targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
-    }
+    const targetScrollTop = (container: HTMLElement) => {
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      if (block === 'center') {
+        return (
+          container.scrollTop +
+          (elementRect.top - containerRect.top) -
+          containerRect.height / 2 +
+          elementRect.height / 2
+        );
+      }
+      if (block === 'start') {
+        return getMessageNavigationStartScrollTop({
+          currentScrollTop: container.scrollTop,
+          targetTop: elementRect.top,
+          containerTop: containerRect.top,
+          headerBottom: getRenderedPanelHeaderBottom(),
+        });
+      }
+      return container.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
+    };
 
     if (prefersReducedMotion()) {
-      scrollContainer.scrollTop = targetScrollTop;
+      container.scrollTop = targetScrollTop(container);
       return;
     }
-    animateScrollTo(getContainer, targetScrollTop, duration);
+    animateScrollTo(getTargetContainer, targetScrollTop, duration);
   }
 
   /**
