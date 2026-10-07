@@ -10,6 +10,26 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
+  import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
+
+  function startSearchFixture() {
+    const previousBridge = window.electronAPI;
+    installMockElectronBridge({
+      'search.fileNames': () => ({ files: [] }),
+      'search.messages': () => ({ matches: [] }),
+      'search.notes': () => ({
+        requestId: 'palette-preview-notes',
+        indexed: true,
+        matches: [],
+      }),
+    });
+    const stops = startWorkspaceNotesSagaFixture(appStore);
+    return () => {
+      stops.forEach((stop) => stop());
+      window.electronAPI = previousBridge;
+    };
+  }
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
@@ -92,8 +112,10 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import CommandPalette from './CommandPalette.svelte';
   import { Button } from '$lib/components/ui/button';
+  onDestroy(startSearchFixture());
   let {
     initialQuery = '',
     withoutWorkspace = false,
