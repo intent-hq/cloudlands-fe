@@ -1032,6 +1032,11 @@ export const scrollbackSeekSettled = createAction<
   ]
 >('chatState/scrollbackSeekSettled');
 
+/** Release an interrupted seek without overwriting a reconnect's cursors. */
+export const scrollbackSeekReleased = createAction<[agentId: string]>(
+  'chatState/scrollbackSeekReleased',
+);
+
 /** Latch daemon capability without settling another request's active window. */
 export const historySeekUnsupportedDetected = createAction<[agentId: string]>(
   'chatState/historySeekUnsupportedDetected',
@@ -1602,6 +1607,9 @@ chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens
     scrollbackGapToken: tokens.prevToken,
     ...(unsupported ? { historySeekUnsupported: true } : {}),
   }),
+);
+chatStateReducer.with(scrollbackSeekReleased, (state, { payload: [agentId] }) =>
+  updateAgent(state, agentId, { fetchingHistorySeek: false }),
 );
 chatStateReducer.with(historySeekUnsupportedDetected, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { historySeekUnsupported: true }),

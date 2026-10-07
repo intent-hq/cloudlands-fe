@@ -219,6 +219,123 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     );
   });
 
+  it.each([false, true])(
+    'ignores initial progressive snapshot replay after history (complete: %s)',
+    (complete) => {
+      const reconciler = new ChatTranscriptReconciler('agent-1');
+      const initial = {
+        ...SEEDED_SNAPSHOT,
+        historyDelivery: 'progressive',
+        initialHistory: { target: 20, received: 1, complete: false },
+      };
+      reconciler.applySnapshot(0, initial);
+      expect(
+        reconciler.applyHistory(1, {
+          target: 20,
+          received: 2,
+          complete: false,
+          message: { ...SEEDED_SNAPSHOT.messages[0], id: 'older', seq: 0 },
+        }),
+      ).toBe('applied');
+      if (complete)
+        expect(
+          reconciler.applyHistory(2, {
+            target: 20,
+            received: 2,
+            complete: true,
+            nextToken: null,
+            truncated: false,
+            totalMessages: 2,
+          }),
+        ).toBe('applied');
+      const before = reconciler.transcript();
+      expect(reconciler.applySnapshot(0, structuredClone(initial))).toBe(false);
+      expect(reconciler.transcript()).toEqual(before);
+      expect(
+        reconciler.applyDelta(complete ? 3 : 2, { added: [], updated: [], removedIds: [] }),
+      ).toBe('applied');
+      // A changed restart remains authoritative even with seq reset to zero.
+      expect(
+        reconciler.applySnapshot(0, {
+          ...initial,
+          messages: [{ ...SEEDED_SNAPSHOT.messages[0], id: 'restart' }],
+        }),
+      ).toBe(true);
+      expect(reconciler.transcript().messages.map((message) => message.id)).toEqual(['restart']);
+      expect(
+        reconciler.applyHistory(1, {
+          target: 20,
+          received: 1,
+          complete: true,
+          nextToken: null,
+          truncated: false,
+          totalMessages: 1,
+        }),
+      ).toBe('applied');
+      expect(reconciler.applySnapshot(2, SEEDED_SNAPSHOT)).toBe(true);
+      expect(reconciler.transcript().initialHistory).toBeUndefined();
+    },
+  );
+
+  it.each([false, true])(
+    'cancels watchdog retry when history resumes during backoff (complete: %s)',
+    async (complete) => {
+      vi.useFakeTimers();
+      mockChatSubscribe();
+      const seen: Array<import('../app-client').ChatTranscript> = [];
+      const phases: string[] = [];
+      const off = new LiveChatClient().subscribe(
+        'agent-1',
+        (value) => seen.push(value),
+        (phase) => phases.push(phase),
+      );
+      try {
+        await vi.advanceTimersByTimeAsync(0);
+        snapshotPush('sub-1', 0, {
+          ...SEEDED_SNAPSHOT,
+          historyDelivery: 'progressive',
+          initialHistory: { target: 20, received: 1, complete: false },
+        });
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(phases.at(-1)).toBe('delayed');
+        emit({
+          method: 'subscription.push',
+          params: {
+            subscriptionId: 'sub-1',
+            kind: 'history',
+            seq: 1,
+            history: {
+              target: 20,
+              received: complete ? 1 : 2,
+              complete,
+              ...(complete
+                ? { nextToken: null, truncated: false, totalMessages: 1 }
+                : { message: { ...SEEDED_SNAPSHOT.messages[0], id: 'older', seq: 0 } }),
+            },
+          },
+        });
+        expect(seen.at(-1)?.initialHistory?.complete).toBe(complete);
+        expect(phases.at(-1)).toBe('live');
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(
+          mockedRequest.mock.calls.filter(([method]) => method === 'chat.subscribe'),
+        ).toHaveLength(1);
+        if (!complete) {
+          // Accepted progress starts a fresh watchdog; a later genuine stall still resets cache.
+          await vi.advanceTimersByTimeAsync(5000);
+          expect(
+            mockedRequest.mock.calls.filter(([method]) => method === 'chat.subscribe'),
+          ).toHaveLength(2);
+          snapshotPush('sub-2', 0, SEEDED_SNAPSHOT);
+          expect(seen.at(-1)?.resetCachedTranscript).toBe(true);
+        }
+      } finally {
+        off();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('recovers stalled progressive delivery and rejects the old completion', async () => {
     vi.useFakeTimers();
     mockChatSubscribe();

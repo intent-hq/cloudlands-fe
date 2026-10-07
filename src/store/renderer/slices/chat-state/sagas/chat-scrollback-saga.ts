@@ -111,6 +111,7 @@ import {
   scrollbackGapPageSettled,
   scrollbackOlderPageSettled,
   scrollbackSeekSettled,
+  scrollbackSeekReleased,
   historySeekUnsupportedDetected,
 } from '../chat-state-slice';
 import {
@@ -443,6 +444,7 @@ type ScrollbackTokens = { nextToken: string | null; prevToken: string | null };
 interface PreviousUserMessageWalk {
   /** Read synchronously by the promise-based walk between pages. */
   stopped: boolean;
+  interruptedByInitialHistory: boolean;
   /** Epoch captured after reserving the seek slot; null while unreserved. */
   epoch: number | null;
   tokens: ScrollbackTokens;
@@ -456,6 +458,7 @@ const PREVIOUS_USER_MESSAGE_WAKE_TYPES = [
   scrollbackOlderPageSettled.type,
   scrollbackGapPageSettled.type,
   scrollbackSeekSettled.type,
+  scrollbackSeekReleased.type,
   scrollbackContinuationReset.type,
   chatTranscriptSnapshotApplied.type,
   previousUserMessageLoadRequested.type,
@@ -487,7 +490,7 @@ function* previousUserMessageLoadIsCurrent(
   if (!(yield* selectAgentSession.effect(agentId))) return false;
   const chat = yield* selectChatAgentState.effect(agentId);
   if (chat.previousUserMessageLoad?.requestId !== requestId) return false;
-  return epoch === null || chat.scrollbackDiscardEpoch === epoch;
+  return epoch === null || (!chat.initialHistoryPending && chat.scrollbackDiscardEpoch === epoch);
 }
 
 /** Ordinal (from the oldest message) of the clicked row, for the landing estimate. */
@@ -520,7 +523,14 @@ function* stopPreviousUserMessageWalkWhenStale(
 ): SagaGenerator<void> {
   while (!walk.stopped) {
     yield* take(PREVIOUS_USER_MESSAGE_WAKE_TYPES);
-    if (!(yield* previousUserMessageLoadIsCurrent(agentId, requestId, epoch))) walk.stopped = true;
+    // Latch across completion: an old page remains stale even if initial
+    // delivery finishes before its response arrives.
+    if ((yield* selectChatAgentState.effect(agentId)).initialHistoryPending) {
+      walk.interruptedByInitialHistory = true;
+      walk.stopped = true;
+    } else if (!(yield* previousUserMessageLoadIsCurrent(agentId, requestId, epoch))) {
+      walk.stopped = true;
+    }
   }
 }
 
@@ -616,6 +626,7 @@ function* previousUserMessageLoadWorker(
   const [workspaceId, agentId, requestId, currentMessageId] = action.payload;
   const walk: PreviousUserMessageWalk = {
     stopped: false,
+    interruptedByInitialHistory: false,
     epoch: null,
     tokens: { nextToken: null, prevToken: null },
   };
@@ -634,9 +645,13 @@ function* previousUserMessageLoadWorker(
       ),
     });
     walk.stopped = true;
-    if (released || walk.epoch === null) return;
+    if (released || walk.epoch === null || walk.interruptedByInitialHistory) return;
     while (true) {
       const next = (yield* take(PREVIOUS_USER_MESSAGE_WAKE_TYPES)) as ObservedAction;
+      if ((yield* selectChatAgentState.effect(agentId)).initialHistoryPending) {
+        walk.interruptedByInitialHistory = true;
+        return;
+      }
       if (isPreviousUserMessageRelease(next, agentId, requestId)) return;
       if (!(yield* selectAgentSession.effect(agentId))) return;
       if (yield* discardedSince(agentId, walk.epoch)) return;
@@ -648,7 +663,11 @@ function* previousUserMessageLoadWorker(
       (yield* selectAgentSession.effect(agentId)) &&
       !(yield* discardedSince(agentId, walk.epoch))
     ) {
-      yield* put(scrollbackSeekSettled(agentId, walk.tokens));
+      yield* put(
+        walk.interruptedByInitialHistory
+          ? scrollbackSeekReleased(agentId)
+          : scrollbackSeekSettled(agentId, walk.tokens),
+      );
     }
   }
 }

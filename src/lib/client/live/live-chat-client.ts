@@ -524,6 +524,9 @@ export class ChatTranscriptReconciler {
    * compares payload fingerprints: a divergent re-emit carries rows
    * persisted while the stream was down and must rebuild too, or they stay
    * hidden until the next gap resnapshot (intent-hq/monorepo#2716).
+   * Progressive initial snapshots are replayable after history advances:
+   * an identical seq-0 must retain the received rows and sequence. A changed
+   * snapshot or an atomic recovery snapshot still rebuilds the transcript.
    */
   applySnapshot(seq: number, raw: unknown): boolean | 'invalid' {
     const payload = isRecord(raw) ? raw : {};
@@ -540,7 +543,12 @@ export class ChatTranscriptReconciler {
     )
       return 'invalid';
     const fingerprint = fingerprintSnapshot(raw);
-    if (this.seeded && seq + 1 === this.expectedSeq && fingerprint === this.snapshotFingerprint) {
+    if (
+      this.seeded &&
+      fingerprint === this.snapshotFingerprint &&
+      (seq + 1 === this.expectedSeq ||
+        (seq === 0 && progress !== undefined && seq < this.expectedSeq))
+    ) {
       return false;
     }
     this.snapshotFingerprint = fingerprint;
@@ -969,7 +977,13 @@ export class LiveChatClient implements ChatClient {
                 push.delta ?? { added: [], updated: [], removedIds: [] },
               );
         if (outcome === 'applied') {
-          if (push.kind === 'history') watchInitialHistory();
+          if (push.kind === 'history') {
+            // Progress during watchdog backoff makes that retry obsolete.
+            // Keep resetCachedTranscript for any subsequent recovery snapshot.
+            resetBackoff();
+            setPhase('live');
+            watchInitialHistory();
+          }
           emit({ ...diagnostic, reconcilerResult: 'applied' }, push.kind === 'history');
           if (
             push.kind === 'history' &&
