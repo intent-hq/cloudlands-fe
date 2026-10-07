@@ -1,9 +1,15 @@
 import { appClient } from '$lib/client';
+import { invalidateSettingsReadCache } from '$lib/client/live/live-settings-client';
 
 function configured(value: unknown): boolean {
   if (value === '********') return true;
   if (value === null) return false;
   throw new Error('Invalid token settings response');
+}
+
+/** Invalidate before event-driven reads, independent of notification listener order. */
+export function invalidateProviderToken(path: string): void {
+  invalidateSettingsReadCache([path]);
 }
 
 export async function readProviderToken(path: string): Promise<{ configured: boolean }> {

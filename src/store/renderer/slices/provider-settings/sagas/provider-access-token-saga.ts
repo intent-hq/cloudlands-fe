@@ -1,6 +1,10 @@
 import { providerTokenCapability } from '$shared/provider-catalog';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
-import { readProviderToken, writeProviderToken } from '$features/settings/provider-access-token';
+import {
+  invalidateProviderToken,
+  readProviderToken,
+  writeProviderToken,
+} from '$features/settings/provider-access-token';
 import {
   clearProviderTokenDrafts,
   takeProviderToken,
@@ -85,6 +89,7 @@ function* refreshChangedTokens(action: ReturnType<typeof settingsChangesReceived
   for (const entry of yield* selectProviderCatalogEntries.effect()) {
     const token = providerTokenCapability(entry);
     if (token && changes.some(({ path }) => path === token.settingPath)) {
+      yield* call(invalidateProviderToken, token.settingPath);
       yield* put(providerTokenReadRequested(entry.id));
     }
   }
