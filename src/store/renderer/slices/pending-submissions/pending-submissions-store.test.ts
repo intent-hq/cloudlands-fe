@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StreamingStore } from '@themislib/themis/streaming-store';
-import type { Workspace } from '$shared/types';
+import { AgentStatus, type AgentSession, type Workspace } from '$shared/types';
 import { createAdmittedLegacyPrincipal } from '../../../../test/fixtures/admitted-legacy-principal';
 import { reducers } from '../../reducer';
 import { admitAgentSubmission } from './pending-submissions-admission';
 import { replaceAgentQueue } from '../agent-queue/agent-queue-slice';
+import {
+  bulkUpsertSessions,
+  replaceMessages,
+  updateSession,
+} from '../agent-session/agent-session-slice';
+import { chatSendFailed, chatErrorCleared } from '../chat-state/chat-state-slice';
 import {
   selectAgentSubmissionDisplay,
   selectPendingSubmissionDisplay,
@@ -38,6 +44,98 @@ function fixture() {
 }
 
 describe('pending submissions with the production renderer store', () => {
+  it('projects failure evidence for the requested workspace and follows recovery without changing queue controls', () => {
+    const store = fixture();
+    const timestamp = '2026-10-07T06:00:00.123456Z';
+    store.dispatch(
+      bulkUpsertSessions([
+        {
+          id: 'agent',
+          workspaceId: 'workspace',
+          name: 'Agent',
+          backendSessionId: null,
+          messages: [],
+          status: AgentStatus.Error,
+          stopReason: 'Provider failed',
+          stopReasonTimestamp: timestamp,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        } as AgentSession,
+      ]),
+    );
+    store.dispatch(
+      replaceMessages('agent', [
+        {
+          id: 'failure',
+          role: 'system',
+          timestamp,
+          seq: 1,
+          contentBlocks: [
+            { type: 'text', text: 'Provider failed', meta: { kind: 'turn-failure' } },
+          ],
+        },
+      ]),
+    );
+    store.dispatch(chatSendFailed('agent', 'Provider failed'));
+    store.dispatch(
+      replaceAgentQueue(
+        'agent',
+        [
+          {
+            id: 'q',
+            turnId: 'turn',
+            content: 'Keep this original message',
+            position: 0,
+            queuedAt: timestamp,
+            requeuedAfterFailure: true,
+            fileBlocks: [
+              {
+                type: 'file',
+                attachmentId: 'attachment',
+                fileName: 'input.txt',
+                mimeType: 'text/plain',
+              },
+            ],
+          },
+        ],
+        'workspace',
+      ),
+    );
+    const projected = selectAgentSubmissionDisplay.select(store.state, 'agent', 'workspace');
+    expect(projected.failureSummary.current).toMatchObject({
+      state: 'queued',
+      noticeId: 'failure',
+    });
+    expect(projected.queue[0]).toMatchObject({
+      confirmedId: 'q',
+      blocksMutations: false,
+      fileBlocks: [{ attachmentId: 'attachment' }],
+    });
+    expect(
+      selectAgentSubmissionDisplay.select(store.state, 'agent', 'other').failureSummary,
+    ).toMatchObject({
+      history: [],
+      queueRecovery: [],
+      current: { state: 'inactive', error: null },
+    });
+    expect(
+      selectAgentSubmissionDisplay.select(store.state, 'other-agent', 'workspace').failureSummary
+        .history,
+    ).toEqual([]);
+    store.dispatch(replaceAgentQueue('agent', [], 'workspace'));
+    store.dispatch(chatErrorCleared('agent'));
+    store.dispatch(
+      updateSession('agent', { status: AgentStatus.RuntimeIdle, stopReason: 'end_turn' }),
+    );
+    const recovered = selectAgentSubmissionDisplay.select(
+      store.state,
+      'agent',
+      'workspace',
+    ).failureSummary;
+    expect(recovered.current.state).toBe('inactive');
+    expect(recovered.history[0].records.map((record) => record.messageId)).toEqual(['failure']);
+  });
+
   it('retains confirmed queue display before the first local admission', () => {
     const store = fixture();
     store.dispatch(
