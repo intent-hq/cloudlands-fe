@@ -4,6 +4,8 @@
   import { store } from '$store/renderer/store';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import DaemonAuditHarness from '../DaemonAuditHarness.svelte';
+  import DaemonStoppedOverlay from '../DaemonStoppedOverlay.svelte';
+  import DaemonUpdatingOverlay from '../DaemonUpdatingOverlay.svelte';
 
   let {
     scenario = 'external',
@@ -37,7 +39,10 @@
   data-dismissals={dismissals}
   data-background={backgroundActions}
 ></output>
-<DaemonAuditHarness state={scenario} />
+<DaemonAuditHarness state={scenario}>
+  <DaemonUpdatingOverlay />
+  <DaemonStoppedOverlay />
+</DaemonAuditHarness>
 <ReleaseNotesModal
   bind:open={notesOpen}
   releaseNotes={notesStatus === 'ready' ? releaseNotes : null}
