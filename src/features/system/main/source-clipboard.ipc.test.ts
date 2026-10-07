@@ -281,6 +281,20 @@ it.each([
   expect(await fs.readdir(directory)).toEqual([]);
 });
 
+it('rejects the browser adapter before allocation without claiming unknown cleanup', async () => {
+  window.electronAPI = {
+    versions: { electron: '0.0.0-browser' },
+    invoke: mocks.invoke,
+  } as unknown as Window['electronAPI'];
+  const result = await openNoteSourceClipboardSink(input(1)).catch((error: unknown) => error);
+  expect(result).toBeInstanceOf(Error);
+  expect(result).toMatchObject({ message: 'SOURCE_CLIPBOARD_UNSUPPORTED' });
+  expect(result).not.toBeInstanceOf(SourceClipboardCleanupError);
+  expect(mocks.invoke).not.toHaveBeenCalled();
+  expect(mocks.publish).not.toHaveBeenCalled();
+  expect(await fs.readdir(directory)).toEqual([]);
+});
+
 it('cancels a pending begin by id and joins its late physical cleanup', async () => {
   let entered!: () => void, resume!: () => void;
   const started = new Promise<void>((resolve) => {

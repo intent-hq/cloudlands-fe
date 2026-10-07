@@ -1,6 +1,10 @@
-import { call, put, race, take, type SagaGenerator } from 'typed-redux-saga';
+import { buffers, channel } from 'redux-saga';
+import { call, put, race, take, takeEvery, join, type SagaGenerator } from 'typed-redux-saga';
 import { v4 as uuid } from 'uuid';
-import { noteWindowSteps } from '$features/notes/virtualized/note-window-reader';
+import {
+  noteWindowSteps,
+  type NoteWindowAddress,
+} from '$features/notes/virtualized/note-window-reader';
 import {
   noteAssemblyResources,
   notePageRequestKey,
@@ -74,12 +78,17 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
   const generation = n.generation,
     request = owned.request;
   let live = Object.values(n.pages).find((p) => 'snapshotId' in p);
-  const address = {
+  const address: NoteWindowAddress = {
     at: owned.at,
     scope: n.state.scope,
     sourceRevision: n.state.sourceRevision,
-    ...(live && 'snapshotId' in live ? { snapshotId: live.snapshotId } : {}),
+    ...(owned.growth
+      ? { snapshotId: owned.growth.snapshotId, minimumEnd: owned.growth.minimumEnd }
+      : live && 'snapshotId' in live
+        ? { snapshotId: live.snapshotId }
+        : {}),
   };
+  const prefixExpiresAt = owned.growth ? owned.value?.expiresAt : undefined;
   n = undefined;
   owned = undefined;
   live = undefined;
@@ -91,6 +100,8 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
   };
   let steps: ReturnType<typeof noteWindowSteps> | undefined;
   try {
+    if (address.minimumEnd !== undefined && !(Date.parse(prefixExpiresAt ?? '') > Date.now()))
+      throw new Error('Note growth snapshot expired');
     yield* put(a.pageWindowAssemblyStarted(ws, id, panel, generation, request));
     yield* put(
       a.pageResourcesRequested(
@@ -115,6 +126,10 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
         );
       yield* take([workspaceUnmounted, isNotePageEvent]);
     }
+    // Reservation pressure may outlive the pinned snapshot. Refuse before any
+    // source IO, while the old window and DATA lease remain published.
+    if (address.minimumEnd !== undefined && !(Date.parse(prefixExpiresAt ?? '') > Date.now()))
+      throw new Error('Note growth snapshot expired');
     steps = noteWindowSteps(address);
     let next = steps.next();
     while (!next.done) {
@@ -129,6 +144,8 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
       next = steps.next(page);
       page = undefined;
     }
+    if (address.minimumEnd !== undefined && !(Date.parse(next.value.expiresAt ?? '') > Date.now()))
+      throw new Error('Note growth snapshot expired');
     yield* put(
       a.pageWindowSettled(ws, id, panel, generation, request, next.value, null, {
         sponsor: assembly.owner,
@@ -169,10 +186,77 @@ function* ownWindow(
     unmount: call(waitForUnmount, ws),
   });
 }
+function* grow(action: ReturnType<typeof a.pageWindowGrowthRequested>) {
+  const [ws, id, panel, generation, request, minimumEnd] = action.payload;
+  const note: NotePageSession | undefined = yield* selectNotePageSession.effect(ws, id);
+  const window = note?.windows[panel],
+    value = window?.value;
+  // Ignored resize intents never reach takeLatest, so they cannot cancel a newer
+  // explicit navigation or an already-running growth assembly.
+  if (
+    !note ||
+    note.status !== 'ready' ||
+    note.generation !== generation ||
+    !window ||
+    window.loading ||
+    window.error ||
+    window.request !== request ||
+    !value ||
+    !Number.isSafeInteger(minimumEnd) ||
+    minimumEnd <= value.range.end ||
+    minimumEnd > value.sourceLength ||
+    !(Date.parse(value.expiresAt ?? '') > Date.now())
+  )
+    return;
+  yield* put(
+    a.pageWindowRequested(ws, id, panel, value.range.start, {
+      generation,
+      request,
+      snapshotId: value.snapshotId,
+      sourceRevision: value.sourceRevision,
+      start: value.range.start,
+      end: value.range.end,
+      minimumEnd,
+    }),
+  );
+}
 export function* noteWindowSaga() {
+  yield* takeEvery(a.pageWindowGrowthRequested, grow);
+  type WindowAction =
+    ReturnType<typeof a.pageWindowRequested> | ReturnType<typeof a.pagePanelClosed>;
+  // Intake and forwarding are synchronous: no queued requests or extra context
+  // registry. Only reducer-accepted growth may cancel a current window worker.
+  const accepted = channel<WindowAction>(buffers.none());
+  const forwarded = new WeakSet<object>();
   yield* takeLatestInContext(
-    [a.pageWindowRequested, a.pagePanelClosed],
+    accepted,
     (event) => JSON.stringify(event.payload.slice(0, 3)),
     ownWindow,
   );
+  try {
+    yield* takeEvery(a.pagePanelClosed, function* forwardClose(action) {
+      yield* put(accepted, action);
+    });
+    const intake = yield* takeEvery(a.pageWindowRequested, function* forwardRequest(action) {
+      const [ws, id, panel, , growth] = action.payload;
+      if (growth) {
+        const note: NotePageSession | undefined = yield* selectNotePageSession.effect(ws, id);
+        const window = note?.windows[panel];
+        if (
+          !note ||
+          !window?.loading ||
+          note.generation !== growth.generation ||
+          window.request !== growth.request + 1 ||
+          window.growth !== growth ||
+          forwarded.has(growth)
+        )
+          return;
+        forwarded.add(growth);
+      }
+      yield* put(accepted, action);
+    });
+    yield* join(intake);
+  } finally {
+    accepted.close();
+  }
 }

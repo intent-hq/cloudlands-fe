@@ -1,3 +1,4 @@
+import type { NoteWindowGrowth } from './note-pages-types';
 import {
   applyLocalPointSavePublication,
   type LocalPointSavePublication,
@@ -124,8 +125,19 @@ export const pageResourcesTransferred = createAction<[from: string, to: string]>
 export const pagePanelClosed =
   createAction<[workspaceId: string, noteId: string, panelId: string]>('notePages/panelClosed');
 export const pageWindowRequested = createAction<
-  [workspaceId: string, noteId: string, panelId: string, at: number]
+  [workspaceId: string, noteId: string, panelId: string, at: number, growth?: NoteWindowGrowth]
 >('notePages/windowRequested');
+/** Resize intent is checked before it can enter the latest-navigation channel. */
+export const pageWindowGrowthRequested = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    panelId: string,
+    generation: number,
+    request: number,
+    minimumEnd: number,
+  ]
+>('notePages/windowGrowthRequested');
 export const pageWindowRetained = createAction<
   [
     workspaceId: string,
@@ -1066,16 +1078,34 @@ notePagesReducer.with(workspaceUnmounted, (s, { payload: [ws] }) => {
   );
 });
 
-notePagesReducer.with(pageWindowRequested, (s, { payload: [ws, id, panel, at] }) =>
+notePagesReducer.with(pageWindowRequested, (s, { payload: [ws, id, panel, at, growth] }) =>
   update(s, ws, id, (n) => {
     if (!(panel in n.panels) || !Number.isSafeInteger(at) || at < 0) return n;
     const prior = n.windows[panel];
+    if (
+      growth &&
+      (!prior?.value ||
+        prior.loading ||
+        n.status !== 'ready' ||
+        n.generation !== growth.generation ||
+        prior.request !== growth.request ||
+        at !== growth.start ||
+        prior.value.range.start !== growth.start ||
+        prior.value.range.end !== growth.end ||
+        prior.value.sourceRevision !== growth.sourceRevision ||
+        prior.value.snapshotId !== growth.snapshotId ||
+        !Number.isSafeInteger(growth.minimumEnd) ||
+        growth.minimumEnd <= growth.end ||
+        growth.minimumEnd > prior.value.sourceLength)
+    )
+      return n;
     return {
       ...n,
       windows: {
         ...n.windows,
         [panel]: {
           at,
+          growth,
           request: (prior?.request ?? 0) + 1,
           value: prior?.value ?? null,
           resourceOwner: prior?.resourceOwner,
@@ -1121,6 +1151,38 @@ notePagesReducer.with(
     const n = getWorkspaceState(s, ws).notes[id];
     const w = n?.windows[panel];
     if (!n || !w || generation !== n.generation || request !== w.request) return s;
+    // A growth candidate cannot replace the published prefix unless it advances
+    // the exact same snapshot at the same anchor. Rejected DATA stays with its
+    // assembly sponsor and is released by the existing saga finally path.
+    if (w.growth) {
+      const g = w.growth,
+        prior = w.value;
+      if (!w.loading) return s;
+      const advanced =
+        !error &&
+        value &&
+        prior &&
+        n.generation === g.generation &&
+        prior.range.start === g.start &&
+        prior.range.end === g.end &&
+        prior.snapshotId === g.snapshotId &&
+        prior.sourceRevision === g.sourceRevision &&
+        value.snapshotId === g.snapshotId &&
+        value.sourceRevision === g.sourceRevision &&
+        sameNoteScope(value.scope, prior.scope) &&
+        value.sourceLength === prior.sourceLength &&
+        value.range.start === g.start &&
+        value.range.end > g.end &&
+        value.text.startsWith(prior.text) &&
+        n.state &&
+        value.sourceRevision === n.state.sourceRevision &&
+        sameNoteScope(value.scope, n.state.scope);
+      if (!advanced)
+        return update(s, ws, id, (note) => ({
+          ...note,
+          windows: { ...note.windows, [panel]: { ...w, loading: false, error } },
+        }));
+    }
     if (
       value &&
       (!n.state ||

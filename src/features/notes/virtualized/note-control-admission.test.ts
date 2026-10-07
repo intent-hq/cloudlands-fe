@@ -54,6 +54,9 @@ function provider(mode: 'shrink' | 'fixed' | 'stale' | 'cancel' = 'shrink') {
     items,
     nextCursor: null,
   });
+  // Long valid opaque handles keep this fixture over the selected 32 KiB
+  // retained limit without increasing source, per-response wire, or requests.
+  const handle = (id: string) => id + 'h'.repeat(160);
   const reader = new NotePageReader(async (_, params) => {
     const q = params.page as NotePageRequest;
     requests.push(q);
@@ -91,15 +94,18 @@ function provider(mode: 'shrink' | 'fixed' | 'stale' | 'cancel' = 'shrink') {
             : q.ref === 'large-attrs'
               ? [
                   {
-                    id: 'large',
+                    id: 'large-' + (q.cursor ?? '0'),
                     parentId: 'attrs',
-                    key: 'example',
+                    key: 'example-' + (q.cursor ?? '0'),
                     type: 'string',
                     value: 'y'.repeat(6500),
                   },
                 ]
               : [],
-        nextCursor: null,
+        nextCursor:
+          q.ref === 'large-attrs' && Number(q.cursor ?? 0) < 4
+            ? String(Number(q.cursor ?? 0) + 1)
+            : null,
       };
     if (q.kind !== 'context') throw new Error('Unexpected request');
     if (q.contextRef === 'owner') return context([boundary]);
@@ -119,7 +125,7 @@ function provider(mode: 'shrink' | 'fixed' | 'stale' | 'cancel' = 'shrink') {
       const offset = Number(q.cursor ?? 0);
       const items = Array.from({ length: n }, (_, i) => ({
         kind: 'sourceMap',
-        id: 'map' + i,
+        id: handle('map' + i),
         profile: 'canonicalNote',
         profileVersion: 1,
         ownerRef: 'owner',
@@ -128,11 +134,11 @@ function provider(mode: 'shrink' | 'fixed' | 'stale' | 'cancel' = 'shrink') {
         sourceRange: { start: i, end: i + 1 },
         renderedRange: { start: i, end: i + 1 },
         mapping: 'identity',
-        textRef: 'text:' + i,
+        textRef: handle('text:' + i),
       }));
       return {
-        ...context(items.slice(offset, offset + 20)),
-        nextCursor: offset + 20 < n ? String(offset + 20) : null,
+        ...context(items.slice(offset, offset + 5)),
+        nextCursor: offset + 5 < n ? String(offset + 5) : null,
       };
     }
     if (q.contextRef.startsWith('text:'))
@@ -171,8 +177,8 @@ it('shrinks from the actual short failed extent and counts every physical attemp
   });
   expect(w.cost.requests).toBe(p.requests.length);
   expect(w.cost.requests).toBeLessThanOrEqual(96);
-  expect(w.cost.canonicalBytes).toBeLessThanOrEqual(8192);
-  expect(w.cost.canonicalWorkBytes).toBeGreaterThan(8192);
+  expect(w.cost.canonicalBytes).toBeLessThanOrEqual(32768);
+  expect(w.cost.canonicalWorkBytes).toBeGreaterThan(32768);
   expect(w.range).toEqual({ start: 0, end: 16 });
 });
 it('never resets the shared request budget when a required closure cannot shrink', async () => {

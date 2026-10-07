@@ -7482,5 +7482,7 @@
   "chat_failureRecovery_title_label": "Impossible de terminer cette réponse",
   "chat_failureRecovery_details_label": "Détails",
   "chat_failureRecovery_recorded_one": "1 échec enregistré",
-  "chat_failureRecovery_action_label": "Action requise"
+  "chat_failureRecovery_action_label": "Action requise",
+  "notes_reading_previousPart_label": "Partie précédente",
+  "notes_reading_nextPart_label": "Partie suivante"
 }

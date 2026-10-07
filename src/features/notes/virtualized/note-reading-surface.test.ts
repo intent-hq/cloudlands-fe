@@ -261,6 +261,28 @@ it('forwards session invalidation while commit is pending', async () => {
   pending.resolve();
   await copying;
 });
+it('releases known unsupported sink credit and permits a later supported copy', async () => {
+  const { owner, view } = setup();
+  const prefix = view.window;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    fake.open.mockRejectedValueOnce(new Error('SOURCE_CLIPBOARD_UNSUPPORTED'));
+    await expect(owner.copyDocument()).rejects.toThrow('SOURCE_CLIPBOARD_UNSUPPORTED');
+    expect(Object.keys(fake.state.notePages.resourceLedger.owners)).toHaveLength(0);
+    expect(view.window).toBe(prefix);
+  }
+  expect(fake.read).not.toHaveBeenCalled();
+  expect(sink.write).not.toHaveBeenCalled();
+  expect(sink.commit).not.toHaveBeenCalled();
+  expect(Object.keys(fake.state.notePages.resourceLedger.owners)).toHaveLength(0);
+  expect(view.window).toBe(prefix);
+  fake.read.mockResolvedValue(sourcePage());
+  await owner.copyDocument();
+  expect(fake.open).toHaveBeenCalledTimes(3);
+  expect(sink.commit).toHaveBeenCalledOnce();
+  expect(Object.keys(fake.state.notePages.resourceLedger.owners)).toHaveLength(0);
+  owner.dispose();
+});
+
 it('retains only sink credit for an unknown begin cleanup acknowledgement', async () => {
   const { SourceClipboardCleanupError } = await import('$lib/utils/source-clipboard');
   const { owner } = setup();

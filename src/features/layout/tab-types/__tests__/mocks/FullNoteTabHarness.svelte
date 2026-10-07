@@ -24,10 +24,16 @@
     initialContent = '# Complete note',
     paging = false,
     failPages = false,
+    pageChunk = 1024,
+    canonicalPadding = 0,
+    nativeClipboard = false,
   } = $props<{
     initialContent?: string;
     paging?: boolean;
     failPages?: boolean;
+    pageChunk?: number;
+    canonicalPadding?: number;
+    nativeClipboard?: boolean;
   }>();
   let viewFailure = $state('');
   const originalShow = NoteWindowView.prototype.show;
@@ -95,6 +101,7 @@
       };
     },
     'note.subscribe': () => {
+      record('note.subscribe');
       setTimeout(() => {
         for (const callback of listeners.values())
           callback({
@@ -118,7 +125,10 @@
       }, 0);
       return { subscriptionId: 'ct-sub' };
     },
-    'note.unsubscribe': () => ({}),
+    'note.unsubscribe': () => {
+      record('note.unsubscribe');
+      return {};
+    },
     'note.get': (params) => {
       const q = (
         params as {
@@ -138,7 +148,10 @@
         pageReads++;
         if (q.kind === 'source')
           maxPageAt = Math.max(maxPageAt, q.cursor ? Number(q.cursor.slice(1)) : (q.at ?? 0));
-        return fullNotePageFixture(q as NotePageRequest, source, identity());
+        return fullNotePageFixture(q as NotePageRequest, source, identity(), {
+          chunk: pageChunk,
+          canonicalPadding,
+        });
       }
 
       record('note.get');
@@ -166,6 +179,15 @@
     ),
   );
   const api = window.electronAPI!;
+  const previousVersions = api.versions;
+  // Only clipboard-positive fixtures model a native-capable preload. Publication
+  // remains scripted IPC recording, never an operating-system clipboard claim.
+  const clipboardVersions = { ...previousVersions, electron: '42.0.0-clipboard-fixture' };
+  if (nativeClipboard) api.versions = clipboardVersions;
+  onDestroy(() => {
+    if (window.electronAPI === api && api.versions === clipboardVersions)
+      api.versions = previousVersions;
+  });
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Test-only synchronous mock notification registration.
   const originalOn = api.on.bind(api);
   api.on = ((channel: string, callback: (payload: unknown) => void) => {
@@ -286,8 +308,14 @@
           {
             error: w.error,
             loaded: !!w.value,
+            loading: w.loading,
+            range: w.value?.range,
+            growth: w.growth,
+            request: w.request,
             scope: w.value?.scope,
             sourceRevision: w.value?.sourceRevision,
+            snapshotId: w.value?.snapshotId,
+            resourceOwner: w.resourceOwner,
           },
         ]),
       ),

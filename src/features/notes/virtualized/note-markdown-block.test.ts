@@ -65,7 +65,13 @@ describe('canonical Markdown paragraph owner wire contract', () => {
 // Controlled bounded provider for consumer validation; not a production Store or
 // evidence of native rendering parity. The multimegabyte prefix is never supplied.
 function provider(
-  change: { owner?: object; root?: object; snapshot?: string; directWindow?: boolean } = {},
+  change: {
+    owner?: object;
+    root?: object;
+    snapshot?: string;
+    directWindow?: boolean;
+    lexicalDetail?: boolean;
+  } = {},
 ) {
   const seen: NotePageRequest[] = [];
   const selected = { ...owner, ...change.owner };
@@ -99,6 +105,19 @@ function provider(
     if (q.contextRef === 'window')
       return context([
         { ...selected, sourceMapRef: 'maps', continuationBefore: true, continuationAfter: false },
+        ...(change.lexicalDetail
+          ? [
+              {
+                kind: 'boundary',
+                id: 'strong',
+                construct: 'strong',
+                sourceRange: { start: length - 8, end: length },
+                continuationBefore: false,
+                continuationAfter: false,
+                detailRef: 'lexical-details',
+              },
+            ]
+          : []),
       ]);
     if (q.contextRef === 'root')
       return {
@@ -180,6 +199,17 @@ describe('canonical Markdown paragraph owner assembly', () => {
     expect(p.seen).toHaveLength(8);
     expect(result.cost.sourceBytes).toBe(8);
     expect(result.cost.contextBytes).toBeLessThan(8192);
+  });
+  it('does not acquire lexical edit fields for a validated canonical window', async () => {
+    const p = provider({ lexicalDetail: true });
+    const result = await p.read();
+    expect(result.native).toBeDefined();
+    expect(result.details).toEqual({});
+    expect(result.mapBindings).toHaveLength(1);
+    expect(p.seen.some((q) => q.kind === 'context' && q.contextRef === 'lexical-details')).toBe(
+      false,
+    );
+    expect(p.seen).toHaveLength(8);
   });
   it('rejects a stable owner substituted for a window occurrence', async () => {
     await expect(provider({ directWindow: true }).read()).rejects.toThrow(/markdown.*mapping/i);

@@ -7482,5 +7482,7 @@
   "chat_failureRecovery_title_label": "No se pudo completar esta respuesta",
   "chat_failureRecovery_details_label": "Detalles",
   "chat_failureRecovery_recorded_one": "1 fallo registrado",
-  "chat_failureRecovery_action_label": "Requiere atención"
+  "chat_failureRecovery_action_label": "Requiere atención",
+  "notes_reading_previousPart_label": "Parte anterior",
+  "notes_reading_nextPart_label": "Parte siguiente"
 }

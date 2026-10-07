@@ -7482,5 +7482,7 @@
   "chat_failureRecovery_title_label": "無法完成此回覆",
   "chat_failureRecovery_details_label": "詳細資料",
   "chat_failureRecovery_recorded_one": "1 筆失敗記錄",
-  "chat_failureRecovery_action_label": "需要處理"
+  "chat_failureRecovery_action_label": "需要處理",
+  "notes_reading_previousPart_label": "上一部分",
+  "notes_reading_nextPart_label": "下一部分"
 }

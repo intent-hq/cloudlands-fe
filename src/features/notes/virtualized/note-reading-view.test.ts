@@ -24,6 +24,7 @@ vi.mock('./note-window-view', () => ({
       this.options = options;
       state.view = this;
     }
+    updateReadStatus(_available: boolean, _loading: boolean, _failed: boolean) {}
     updateEditing(editing: any) {
       this.options.editing = editing;
     }

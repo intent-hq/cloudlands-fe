@@ -1,3 +1,6 @@
+import { noteWindowSaga } from './note-window-saga';
+import { createNoteReadingSurface } from '$features/notes/virtualized/note-reading-surface';
+import { canonicalGrowthFixture } from '$features/notes/virtualized/__tests__/canonical-growth-fixture';
 import { readNoteReceiptPage } from '$lib/client/note-receipt-reader';
 import { composeNoteEdits } from '$features/notes/virtualized/editing/note-edit-plan';
 import { runSaga, stdChannel } from 'redux-saga';
@@ -79,9 +82,19 @@ function run(client: MockNotePagesClient) {
     channel.put(action);
     return action;
   };
+  let windowOwner: ReturnType<typeof runSaga> | undefined;
+  let windowFork: number | undefined;
   const task = runSaga(
     {
       channel,
+      sagaMonitor: {
+        effectTriggered({ effectId, effect }) {
+          if (effect.type === 'FORK' && effect.payload.fn === noteWindowSaga) windowFork = effectId;
+        },
+        effectResolved(effectId, result) {
+          if (effectId === windowFork) windowOwner = result;
+        },
+      },
       dispatch,
       getState: () => ({ notePages: state }),
       context: {
@@ -104,6 +117,10 @@ function run(client: MockNotePagesClient) {
     dispatch,
     state: () => state,
     task,
+    cancelWindowOwner: () => {
+      expect(windowOwner).toBeDefined();
+      windowOwner!.cancel();
+    },
     subscribe: (fn: () => void) => {
       listeners.add(fn);
       return () => {
@@ -1192,4 +1209,335 @@ it.each([
   r.dispatch(workspaceUnmounted('ws-a'));
   await flush();
   expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+});
+
+it('grows through the real saga with the prefix retained and ignores stale resize intent', async () => {
+  const f = canonicalGrowthFixture({
+    scope,
+    sourceRevision: page.sourceRevision,
+    snapshotId: page.snapshotId,
+    expiresAt: page.expiresAt,
+  });
+  const read = vi.fn(async (_ws, _id, q) => f.page(q));
+  const r = run(
+    new MockNotePagesClient({ capabilities: { backendId: 'db-a', annotations: false }, read }),
+  );
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  // The application's reading surface normally installs this aggregate bound.
+  r.dispatch(
+    a.pageResourceLimitsConfigured(
+      createNoteReadingSurface('ws-a', 'spec', 'p', () => {}).resourceLimits!,
+    ),
+  );
+  clientPush();
+  function clientPush() {
+    (appClient.notes.pages as MockNotePagesClient).push(tuple);
+  }
+  await flush();
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  for (let i = 0; i < 12; i++) await flush();
+  const n = () => r.state().byWorkspaceId['ws-a'].notes.spec;
+  const prior = n().windows.p.value!;
+  expect(prior.range).toEqual({ start: 0, end: 16 });
+  const generation = n().generation,
+    request = n().windows.p.request;
+  r.dispatch(a.pageWindowRetained('ws-a', 'spec', 'p', generation, prior, 'visible-prefix'));
+  r.dispatch(a.pageWindowGrowthRequested('ws-a', 'spec', 'p', generation, request, 32));
+  expect(n().windows.p.value).toBe(prior);
+  // An older intent must not cancel the newly accepted assembly.
+  r.dispatch(a.pageWindowGrowthRequested('ws-a', 'spec', 'p', generation, request, 48));
+  for (let i = 0; i < 20; i++) await flush();
+  expect(n().windows.p.value?.range).toEqual({ start: 0, end: 32 });
+  expect(n().windows.p.value?.text.startsWith(prior.text)).toBe(true);
+  expect(r.state().resourceLedger.owners['visible-prefix']).toBeDefined();
+  r.dispatch(a.pageResourcesReleased('visible-prefix'));
+  expect(r.state().resourceLedger.owners['visible-prefix']).toBeUndefined();
+  expect(Object.keys(r.state().physicalReads)).toHaveLength(0);
+});
+
+it('explicit navigation wins over pending growth and late growth cannot replace it', async () => {
+  const f = canonicalGrowthFixture({
+    scope,
+    sourceRevision: page.sourceRevision,
+    snapshotId: page.snapshotId,
+    expiresAt: page.expiresAt,
+  });
+  const pending = deferred<Awaited<ReturnType<typeof f.page>>>();
+  let hold = false;
+  const read = vi.fn(async (_ws, _id, q) =>
+    hold && q.kind === 'source' && q.at === 0 ? pending.promise : f.page(q),
+  );
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(
+    a.pageResourceLimitsConfigured(
+      createNoteReadingSurface('ws-a', 'spec', 'p', () => {}).resourceLimits!,
+    ),
+  );
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  for (let i = 0; i < 12; i++) await flush();
+  const n = () => r.state().byWorkspaceId['ws-a'].notes.spec;
+  expect(n().windows.p.value?.range.end).toBe(16);
+  hold = true;
+  r.dispatch(
+    a.pageWindowGrowthRequested('ws-a', 'spec', 'p', n().generation, n().windows.p.request, 32),
+  );
+  await flush();
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 32));
+  for (let i = 0; i < 12; i++) await flush();
+  expect(n().windows.p.value?.range).toEqual({ start: 32, end: 48 });
+  pending.resolve(
+    await f.page({ kind: 'source', at: 0, maxSourceBytes: 4096, maxWireBytes: 8192 }),
+  );
+  for (let i = 0; i < 12; i++) await flush();
+  expect(n().windows.p.value?.range).toEqual({ start: 32, end: 48 });
+  expect(Object.keys(r.state().physicalReads)).toHaveLength(0);
+  expect(
+    Object.keys(r.state().resourceLedger.owners).filter((x) => x.startsWith('assembly:')),
+  ).toHaveLength(0);
+});
+
+it.each(['shared', 'clone', 'changed-target'])(
+  'rejected accepted-growth replay does not cancel the deferred read: %s',
+  async (kind) => {
+    const f = canonicalGrowthFixture({
+      scope,
+      sourceRevision: page.sourceRevision,
+      snapshotId: page.snapshotId,
+      expiresAt: page.expiresAt,
+    });
+    const pending = deferred<Awaited<ReturnType<typeof f.page>>>();
+    let hold = false;
+    const read = vi.fn(async (_ws, _id, q) =>
+      hold && q.kind === 'source' && q.at === 0 ? pending.promise : f.page(q),
+    );
+    const client = new MockNotePagesClient({
+      capabilities: { backendId: 'db-a', annotations: false },
+      read,
+    });
+    const r = run(client);
+    const surface = createNoteReadingSurface('ws-a', 'spec', 'p', () => {});
+    r.dispatch(a.pageResourceLimitsConfigured(surface.resourceLimits!));
+    r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+    await flush();
+    client.push(tuple);
+    await flush();
+    r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+    for (let i = 0; i < 12; i++) await flush();
+    const n = () => r.state().byWorkspaceId['ws-a'].notes.spec;
+    const prior = n().windows.p.value!;
+    r.dispatch(a.pageWindowRetained('ws-a', 'spec', 'p', n().generation, prior, 'visible-prefix'));
+    hold = true;
+    r.dispatch(
+      a.pageWindowGrowthRequested('ws-a', 'spec', 'p', n().generation, n().windows.p.request, 32),
+    );
+    await flush();
+    const g = n().windows.p.growth!;
+    const active = n().windows.p;
+    const ledger = r.state().resourceLedger;
+    const count = read.mock.calls.length;
+    expect(ledger.limit).toEqual(surface.resourceLimits);
+    const replay =
+      kind === 'shared' ? g : { ...g, minimumEnd: kind === 'changed-target' ? 48 : g.minimumEnd };
+    r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0, replay));
+    await flush();
+    expect(n().windows.p).toBe(active);
+    expect(read).toHaveBeenCalledTimes(count);
+    expect(r.state().resourceLedger).toBe(ledger);
+    hold = false;
+    pending.resolve(
+      await f.page({ kind: 'source', at: 0, maxSourceBytes: 4096, maxWireBytes: 8192 }),
+    );
+    for (let i = 0; i < 20; i++) await flush();
+    expect(n().windows.p.value?.range).toEqual({ start: 0, end: 32 });
+    expect(n().windows.p.value?.text.startsWith(prior.text)).toBe(true);
+    expect(r.state().resourceLedger.owners['visible-prefix']).toBeDefined();
+    r.dispatch(a.pageResourcesReleased('visible-prefix'));
+    r.dispatch(workspaceUnmounted('ws-a'));
+    await flush();
+    expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+    expect(Object.keys(r.state().physicalReads)).toHaveLength(0);
+    surface.dispose();
+  },
+);
+
+it.each(['intent', 'accepted'])(
+  'expired growth %s preserves prefix ownership and allows explicit navigation',
+  async (kind) => {
+    const f = canonicalGrowthFixture({
+      scope,
+      sourceRevision: page.sourceRevision,
+      snapshotId: page.snapshotId,
+      expiresAt: page.expiresAt,
+    });
+    const read = vi.fn(async (_ws, _id, q) => f.page(q));
+    const client = new MockNotePagesClient({
+      capabilities: { backendId: 'db-a', annotations: false },
+      read,
+    });
+    const r = run(client);
+    const surface = createNoteReadingSurface('ws-a', 'spec', 'p', () => {});
+    r.dispatch(a.pageResourceLimitsConfigured(surface.resourceLimits!));
+    r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+    await flush();
+    client.push(tuple);
+    await flush();
+    r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+    for (let i = 0; i < 12; i++) await flush();
+    const n = () => r.state().byWorkspaceId['ws-a'].notes.spec;
+    const prior = n().windows.p.value!;
+    const oldOwner = n().windows.p.resourceOwner;
+    const request = n().windows.p.request;
+    const count = read.mock.calls.length;
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2100-01-01T00:00:00Z'));
+    if (kind === 'intent')
+      r.dispatch(a.pageWindowGrowthRequested('ws-a', 'spec', 'p', n().generation, request, 32));
+    else
+      r.dispatch(
+        a.pageWindowRequested('ws-a', 'spec', 'p', 0, {
+          generation: n().generation,
+          request,
+          snapshotId: prior.snapshotId,
+          sourceRevision: prior.sourceRevision,
+          start: 0,
+          end: 16,
+          minimumEnd: 32,
+        }),
+      );
+    await flush();
+    expect(n().windows.p.value).toBe(prior);
+    expect(n().windows.p.resourceOwner).toBe(oldOwner);
+    expect(n().windows.p.loading).toBe(false);
+    expect(read).toHaveBeenCalledTimes(count);
+    const before = n().windows.p.request;
+    r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 16));
+    expect(n().windows.p.request).toBe(before + 1);
+    expect(n().windows.p.at).toBe(16);
+    r.dispatch(workspaceUnmounted('ws-a'));
+    await flush();
+    surface.dispose();
+  },
+);
+
+async function growthRuntime(
+  hold?: (
+    q: Parameters<ReturnType<typeof canonicalGrowthFixture>['page']>[0],
+  ) => Promise<Awaited<ReturnType<ReturnType<typeof canonicalGrowthFixture>['page']>>> | undefined,
+) {
+  const f = canonicalGrowthFixture({
+    scope,
+    sourceRevision: page.sourceRevision,
+    snapshotId: page.snapshotId,
+    expiresAt: page.expiresAt,
+  });
+  const read = vi.fn(async (_ws, _id, q) => hold?.(q) ?? f.page(q));
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  const surface = createNoteReadingSurface('ws-a', 'spec', 'p', () => {});
+  r.dispatch(a.pageResourceLimitsConfigured(surface.resourceLimits!));
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  return { ...r, f, read, surface, n: () => r.state().byWorkspaceId['ws-a'].notes.spec };
+}
+it('rechecks pinned expiry after queued DATA admission before starting source IO', async () => {
+  const r = await growthRuntime();
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  for (let i = 0; i < 12; i++) await flush();
+  const prior = r.n().windows.p.value!,
+    oldOwner = r.n().windows.p.resourceOwner;
+  const { noteAssemblyResources } =
+    await import('$features/notes/virtualized/note-assembly-reservation');
+  for (const owner of ['held-a', 'held-b'])
+    r.dispatch(
+      a.pageResourcesRequested(
+        owner,
+        [noteAssemblyResources({ owner, data: owner + '-data', control: owner + '-control' })[0]],
+        12,
+      ),
+    );
+  const calls = r.read.mock.calls.length;
+  r.dispatch(
+    a.pageWindowGrowthRequested('ws-a', 'spec', 'p', r.n().generation, r.n().windows.p.request, 32),
+  );
+  await flush();
+  expect(r.state().resourceLedger.pending).toHaveLength(1);
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2100-01-01T00:00:00Z'));
+  r.dispatch(a.pageResourcesReleased('held-a'));
+  for (let i = 0; i < 12; i++) await flush();
+  expect(r.read).toHaveBeenCalledTimes(calls);
+  expect(r.n().windows.p.loading).toBe(false);
+  expect(r.n().windows.p.value).toBe(prior);
+  expect(r.n().windows.p.resourceOwner).toBe(oldOwner);
+  r.dispatch(a.pageResourcesReleased('held-b'));
+  r.dispatch(workspaceUnmounted('ws-a'));
+  await flush();
+  expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+  r.surface.dispose();
+});
+it('orders interleaved panel growth, explicit navigation and close bursts without dropping requests', async () => {
+  const r = await growthRuntime();
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'q'));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'q', 0));
+  for (let i = 0; i < 24; i++) await flush();
+  expect(r.n().windows.p.value?.range.end).toBe(16);
+  expect(r.n().windows.q.value?.range.end).toBe(16);
+  r.dispatch(
+    a.pageWindowGrowthRequested('ws-a', 'spec', 'p', r.n().generation, r.n().windows.p.request, 32),
+  );
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'q', 16));
+  r.dispatch(a.pagePanelClosed('ws-a', 'spec', 'p'));
+  for (let i = 0; i < 24; i++) await flush();
+  expect(r.n().windows.p).toBeUndefined();
+  expect(r.n().windows.q.value?.range).toEqual({ start: 16, end: 32 });
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  r.dispatch(a.pagePanelClosed('ws-a', 'spec', 'q'));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 32));
+  for (let i = 0; i < 24; i++) await flush();
+  expect(r.n().windows.q).toBeUndefined();
+  expect(r.n().windows.p.value?.range).toEqual({ start: 32, end: 48 });
+  r.dispatch(workspaceUnmounted('ws-a'));
+  await flush();
+  expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+  r.surface.dispose();
+});
+it('cancels the channel owner while a physical read is deferred and releases resources after settlement', async () => {
+  const pending = deferred<any>();
+  let hold = false;
+  const r = await growthRuntime((q) =>
+    hold && q.kind === 'source' && q.at === 0 ? pending.promise : undefined,
+  );
+  hold = true;
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  await flush();
+  expect(r.state().resourceLedger.used.physicalReads).toBe(1);
+  r.cancelWindowOwner();
+  r.dispatch(workspaceUnmounted('ws-a'));
+  await flush();
+  expect(
+    Object.keys(r.state().resourceLedger.owners).filter((x) => x.startsWith('assembly:')),
+  ).toHaveLength(0);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(1);
+  pending.resolve(
+    await r.f.page({ kind: 'source', at: 0, maxSourceBytes: 4096, maxWireBytes: 8192 }),
+  );
+  for (let i = 0; i < 12; i++) await flush();
+  expect(r.state().resourceLedger.used.physicalReads).toBe(0);
+  expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+  expect(r.state().resourceLedger.pending).toHaveLength(0);
+  r.surface.dispose();
 });

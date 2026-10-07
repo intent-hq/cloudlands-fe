@@ -4,10 +4,14 @@ export function fullNotePageFixture(
   q: NotePageRequest,
   source: string,
   identity: Pick<NoteSourcePage, 'scope' | 'sourceRevision' | 'snapshotId' | 'expiresAt'>,
+  options: { chunk?: number; canonicalPadding?: number } = {},
 ): unknown {
   if (q.kind === 'source') {
     const start = q.cursor ? Number(q.cursor.slice(1)) : (q.at ?? 0);
-    const end = Math.min(source.length, start + Math.min(q.maxSourceBytes ?? 4096, 1024));
+    const end = Math.min(
+      source.length,
+      start + Math.min(q.maxSourceBytes ?? 4096, options.chunk ?? 1024),
+    );
     return {
       ...identity,
       kind: 'noteSourcePage',
@@ -101,10 +105,20 @@ export function fullNotePageFixture(
                 id: 'attribute-root',
                 parentId: null,
                 type: 'object',
-                childrenRef: 'empty-attrs',
+                childrenRef: options.canonicalPadding ? 'padding-attrs' : 'empty-attrs',
               },
             ]
-          : [],
+          : q.ref === 'padding-attrs'
+            ? [
+                {
+                  id: 'padding',
+                  parentId: 'attribute-root',
+                  key: 'padding',
+                  type: 'string',
+                  value: 'x'.repeat(options.canonicalPadding ?? 0),
+                },
+              ]
+            : [],
       nextCursor: null,
     };
   throw new Error('Unexpected paged method');

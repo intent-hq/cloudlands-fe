@@ -7482,5 +7482,7 @@
   "chat_failureRecovery_title_label": "이 응답을 완료하지 못했습니다",
   "chat_failureRecovery_details_label": "세부 정보",
   "chat_failureRecovery_recorded_one": "기록된 실패 1건",
-  "chat_failureRecovery_action_label": "조치 필요"
+  "chat_failureRecovery_action_label": "조치 필요",
+  "notes_reading_previousPart_label": "이전 부분",
+  "notes_reading_nextPart_label": "다음 부분"
 }

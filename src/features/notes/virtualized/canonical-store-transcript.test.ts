@@ -61,8 +61,12 @@ for (const version of ['halfopen'] as const)
     });
   }
 
-it('keeps canonical control admission at the original 8 KiB budget', () => {
-  expect(NOTE_WINDOW_LIMITS.canonicalBytes).toBe(8192);
+it('bounds retained canonical graphs independently of source and wire payloads', () => {
+  expect(NOTE_WINDOW_LIMITS.canonicalBytes).toBe(32768);
+  expect(NOTE_WINDOW_LIMITS.sourceBytes).toBe(8192);
+  expect(NOTE_WINDOW_LIMITS.contextBytes).toBe(8192);
+  expect(NOTE_WINDOW_LIMITS.wireBytes).toBe(8192);
+  expect(NOTE_WINDOW_LIMITS.requests).toBe(96);
 });
 
 // Historical unadvertised prototype captures are immutable negative controls.

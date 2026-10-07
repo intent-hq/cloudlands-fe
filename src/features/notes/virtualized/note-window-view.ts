@@ -76,6 +76,8 @@ export interface NoteViewEditing {
 export interface NoteWindowViewOptions {
   workspace?: Workspace;
   seek(position: number): void;
+  /** Optional read-only same-anchor growth; caller validates this exact prefix. */
+  grow?(window: NoteWindow, minimumEnd: number): boolean | void;
   selectionChanged(selection: NoteSourceSelection): void;
   fullOperation(kind: 'copy' | 'search' | 'selectAll', selection: NoteSourceSelection): void;
   editing?: NoteViewEditing;
@@ -829,7 +831,8 @@ export class NoteWindowView {
       }
     );
   }
-  private seekCurrent(position: number, affinity: -1 | 1 = 1) {
+  private seekCurrent(position: number, affinity: -1 | 1 = 1, preserveFind = false) {
+    if (!preserveFind) this.cancelFindSelection();
     if (this.historyBusy) return;
     const coordinates = this.coordinates;
     if (coordinates)
@@ -838,6 +841,13 @@ export class NoteWindowView {
       );
     else this.options.seek(Math.max(0, position));
   }
+  private pendingFindSelection?: {
+    selection: NoteSourceSelection;
+    scope: NoteWindow['scope'];
+    revision: string;
+    snapshotId: string;
+    current(): boolean;
+  };
   window?: NoteWindow;
   private pending?: NoteWindow;
   private currentLease?: WindowLease;
@@ -857,6 +867,15 @@ export class NoteWindowView {
   private applying = false;
   private requested = -1;
   private rate = 0.35;
+  private growthFrame = 0;
+  private growthAttempt?: NoteWindow;
+  private readAvailable = true;
+  private readLoading = false;
+  private readFailed = false;
+  // Only explicit paging records scalar-safe admitted starts. Fixed bounded
+  // history; after eviction or a direct Find jump, source zero is the safe fallback.
+  private pageAnchors: number[] = [];
+  private pageIdentity?: string;
   private frame = 0;
   private domFrame = 0;
   private programmatic = false;
@@ -979,6 +998,7 @@ export class NoteWindowView {
     this.options.editing = editing;
     this.mountedEditing = editing;
     if (changed) {
+      this.cancelFindSelection();
       this.currentLease?.retire?.();
       this.historyOwner = undefined;
       this.historyLease = undefined;
@@ -1049,6 +1069,7 @@ export class NoteWindowView {
     this.options.fullOperation(kind, this.getSelection());
   }
   private physicalIntent = () => {
+    this.cancelFindSelection();
     if (this.retained && this.retained.phase !== 'mounted') return;
     // A user scroll wins over a pending resize correction and over programmatic
     // scroll-event suppression. The next scroll event captures the new anchor.
@@ -1089,6 +1110,7 @@ export class NoteWindowView {
     return () => this.release(owner);
   }
   private compositionStart = () => {
+    this.cancelFindSelection();
     if (this.retained && this.retained.phase !== 'mounted') return;
     this.invalidateSelectionBorrows();
     this.pins.add(this.compositionPin);
@@ -1133,7 +1155,15 @@ export class NoteWindowView {
       this.restoreAnchor();
     } else this.seekCurrent(Math.max(0, position - 1024));
   }
-  setSelection(selection: NoteSourceSelection) {
+  setSelection(
+    selection: NoteSourceSelection,
+    findIntent?: NoteWindowView['pendingFindSelection'],
+    seekStart?: number,
+  ) {
+    if (!findIntent) this.cancelFindSelection();
+    const current = () =>
+      !findIntent || (findIntent.current() && this.pendingFindSelection === findIntent);
+    if (!current()) return;
     const admission = this.historyOwner?.saveAdmission;
     if (admission && (!admission.mutable() || !admission.permitsSelection(selection))) return;
     const leaveSelection = admission?.enter();
@@ -1144,12 +1174,24 @@ export class NoteWindowView {
       if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
       this.selection = { ...selection };
       this.publishSelection();
+      if (!current()) return;
       const w = this.coordinates,
         p = this.projection,
         e = this.editor;
-      if (!w || !p || !e || selection.head < w.start || selection.head > w.end) {
+      if (
+        !w ||
+        !p ||
+        !e ||
+        selection.head < w.start ||
+        selection.head > w.end ||
+        (seekStart !== undefined && (selection.anchor < w.start || selection.anchor > w.end))
+      ) {
         this.navigationAnchor = { source: selection.head, offset: this.scroller.clientHeight / 3 };
-        this.seekCurrent(Math.max(0, selection.head - 1024), selection.headAffinity);
+        this.seekCurrent(
+          seekStart ?? Math.max(0, selection.head - 1024),
+          selection.headAffinity,
+          !!findIntent,
+        );
         return;
       }
       this.applying = true;
@@ -1174,6 +1216,136 @@ export class NoteWindowView {
     } finally {
       leaveSelection?.();
     }
+  }
+  cancelFindSelection() {
+    this.pendingFindSelection = undefined;
+  }
+  /** Explicit Find navigation only. Typing and generic selection never take focus. */
+  selectFindHit(selection: NoteSourceSelection, current: () => boolean) {
+    this.cancelFindSelection();
+    const window = this.window;
+    if (!window) return;
+    const intent = {
+      selection: { ...selection },
+      scope: { ...window.scope },
+      revision: window.sourceRevision,
+      snapshotId: window.snapshotId,
+      current,
+    };
+    this.pendingFindSelection = intent;
+    if (!current() || this.pendingFindSelection !== intent || !this.findSelectionAvailable()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    this.setSelection(selection, intent, Math.min(selection.anchor, selection.head));
+    if (this.pendingFindSelection === intent) this.publishFindSelection();
+  }
+  private retireFindSelection(intent: NonNullable<NoteWindowView['pendingFindSelection']>) {
+    if (this.pendingFindSelection === intent) this.pendingFindSelection = undefined;
+  }
+  private findSelectionAvailable() {
+    return (
+      !this.disposed &&
+      !this.retained &&
+      !this.historyOwner &&
+      !this.historyBusy &&
+      !this.historyCancelled &&
+      !this.transactionRelay?.busy &&
+      !this.pins.size &&
+      !this.editor?.view.composing &&
+      !this.editor?.isEditable &&
+      this.readAvailable &&
+      !this.readFailed
+    );
+  }
+  private publishFindSelection(settled = false) {
+    const intent = this.pendingFindSelection;
+    if (!intent) return;
+    const window = this.window,
+      editor = this.editor,
+      projection = this.projection;
+    const current = () =>
+      intent.current() &&
+      this.pendingFindSelection === intent &&
+      this.findSelectionAvailable() &&
+      this.window === window &&
+      this.editor === editor &&
+      this.projection === projection &&
+      !!window &&
+      sameNoteScope(window.scope, intent.scope) &&
+      window.sourceRevision === intent.revision &&
+      window.snapshotId === intent.snapshotId;
+    if (!current() || !window || !editor || !projection) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const { anchor, head, anchorAffinity, headAffinity } = intent.selection;
+    if (Math.min(anchor, head) < window.range.start || Math.max(anchor, head) > window.range.end) {
+      if (settled) this.retireFindSelection(intent);
+      return;
+    }
+    const view = editor.view,
+      root = view.root;
+    let state = view.state;
+    const pmAnchor = projection.pmAt(anchor, anchorAffinity),
+      pmHead = projection.pmAt(head, headAffinity);
+    const mounted = () =>
+      current() &&
+      editor.view === view &&
+      view.state === state &&
+      this.selection.anchor === anchor &&
+      this.selection.head === head &&
+      state.selection.anchor === pmAnchor &&
+      state.selection.head === pmHead &&
+      projection.sourceAt(pmAnchor) === anchor &&
+      projection.sourceAt(pmHead) === head &&
+      view.dom.isConnected &&
+      view.dom.getRootNode() === root;
+    if (!mounted()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    view.dom.focus({ preventScroll: true });
+    // TipTap emits a focus-only transaction. Preserve the exact document and
+    // selection, then pin the new state before resolving DOM endpoints.
+    if (
+      current() &&
+      editor.view === view &&
+      view.state.doc === state.doc &&
+      view.state.selection.eq(state.selection)
+    )
+      state = view.state;
+    if (!mounted()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const a = view.domAtPos(pmAnchor);
+    if (!mounted()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const h = view.domAtPos(pmHead);
+    if (
+      !mounted() ||
+      !view.dom.contains(a.node) ||
+      !view.dom.contains(h.node) ||
+      !a.node.isConnected ||
+      !h.node.isConnected ||
+      a.node.getRootNode() !== root ||
+      h.node.getRootNode() !== root
+    ) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const selection = (root as Document).getSelection?.() ?? view.dom.ownerDocument.getSelection();
+    if (!mounted() || !selection) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    selection.setBaseAndExtent(a.node, a.offset, h.node, h.offset);
+    const published = mounted();
+    this.retireFindSelection(intent);
+    if (published) this.reveal(anchor);
   }
   private captureAnchor() {
     const e = this.editor,
@@ -1909,6 +2081,7 @@ export class NoteWindowView {
                 !this.historyOwner?.saveAdmission ||
                 this.historyOwner.saveAdmission.permitsSelection(nextSelection)
               ) {
+                this.cancelFindSelection();
                 this.selection = nextSelection;
                 this.publishSelection();
               }
@@ -2078,9 +2251,11 @@ export class NoteWindowView {
         this.selection.head >= coordinates.start &&
         this.selection.head <= coordinates.end
       ) {
-        this.setSelection(this.selection);
+        this.setSelection(this.selection, this.pendingFindSelection);
       }
+      this.publishFindSelection(true);
       this.options.changed?.();
+      this.queueGrowth();
       return true;
     } catch (error) {
       if (!published && this.retained) {
@@ -2366,6 +2541,102 @@ export class NoteWindowView {
       this.scroller.scrollTop += delta;
     }
   }
+  updateReadStatus(available: boolean, loading: boolean, failed: boolean) {
+    this.readAvailable = available;
+    this.readLoading = loading;
+    this.readFailed = failed;
+    if (!available || failed) this.cancelFindSelection();
+    if (!available || loading || failed) {
+      cancelAnimationFrame(this.growthFrame);
+      this.growthFrame = 0;
+    } else this.queueGrowth();
+  }
+  private queueGrowth() {
+    const window = this.window;
+    if (
+      !this.options.grow ||
+      !window ||
+      this.disposed ||
+      this.growthFrame ||
+      !this.readAvailable ||
+      this.readLoading ||
+      this.readFailed ||
+      this.options.editing ||
+      this.retained ||
+      this.historyBusy ||
+      this.pins.size ||
+      this.editor?.view.composing ||
+      window.documentEnd ||
+      this.growthAttempt === window
+    )
+      return;
+    const current = this.measurementBinding();
+    this.growthFrame = requestAnimationFrame(() => {
+      this.growthFrame = 0;
+      if (
+        !current() ||
+        this.window !== window ||
+        !this.readAvailable ||
+        this.readLoading ||
+        this.readFailed ||
+        this.pins.size ||
+        this.editor?.view.composing ||
+        this.options.editing
+      )
+        return;
+      const viewport = this.scroller.getBoundingClientRect(),
+        rect = this.host.getBoundingClientRect();
+      if (
+        !current() ||
+        rect.top < viewport.top - 1 ||
+        rect.bottom >= viewport.bottom ||
+        viewport.height <= 0 ||
+        rect.height <= 0
+      )
+        return;
+      this.growthAttempt = window;
+      const minimumEnd = Math.min(
+        window.sourceLength,
+        window.range.end + Math.max(1, window.range.end - window.range.start),
+      );
+      this.options.grow?.(window, minimumEnd);
+    });
+  }
+  /** Explicit paging works even when the source extent has no scrollbar. */
+  page(direction: -1 | 1) {
+    const window = this.window;
+    if (
+      !window ||
+      this.disposed ||
+      !this.readAvailable ||
+      this.readLoading ||
+      this.options.editing ||
+      this.pins.size
+    )
+      return;
+    if (direction === 1 ? window.range.end >= window.sourceLength : window.range.start === 0)
+      return;
+    const identity = JSON.stringify([window.scope, window.sourceRevision, window.snapshotId]);
+    if (identity !== this.pageIdentity) {
+      this.pageIdentity = identity;
+      this.pageAnchors = [];
+    }
+    let target: number;
+    if (direction === 1) {
+      if (this.pageAnchors.at(-1) !== window.range.start) this.pageAnchors.push(window.range.start);
+      if (this.pageAnchors.length > 16) this.pageAnchors.shift();
+      target = window.range.end;
+    } else {
+      while (this.pageAnchors.length && this.pageAnchors.at(-1)! >= window.range.start)
+        this.pageAnchors.pop();
+      target = this.pageAnchors.pop() ?? 0;
+    }
+    cancelAnimationFrame(this.growthFrame);
+    this.growthFrame = 0;
+    this.navigationAnchor = { source: target, offset: 0 };
+    this.readLoading = true;
+    this.seekCurrent(target, direction);
+  }
   private measure() {
     if (this.retained && this.retained.phase !== 'mounted') return;
     const coordinates = this.coordinates;
@@ -2383,6 +2654,7 @@ export class NoteWindowView {
     if (!current()) return;
     this.anchor = anchor;
     this.restoreAnchor();
+    this.queueGrowth();
   }
   private scroll = () => {
     if (this.retained && this.retained.phase !== 'mounted') return;
@@ -2405,7 +2677,9 @@ export class NoteWindowView {
       const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.length));
       target = Math.floor(this.scroller.scrollTop / rate);
     } else if (rect.bottom < viewport.bottom + 120 && w.end < w.length) {
-      target = Math.max(w.start, w.end - 1024);
+      // A small admitted window cannot overlap itself: request its scalar-safe
+      // end rather than reissuing the current start indefinitely.
+      target = w.end - w.start <= 1024 ? w.end : w.end - 1024;
     } else if (rect.top > viewport.top - 120 && w.start > 0) {
       target = Math.max(0, w.start - 3072);
     }
@@ -2458,6 +2732,7 @@ export class NoteWindowView {
     }
   }
   destroy() {
+    this.cancelFindSelection();
     this.invalidateSelectionBorrows();
     if (this.historyBusy) {
       if (this.currentLease?.initialSelection) this.currentLease.retire?.();
@@ -2466,6 +2741,9 @@ export class NoteWindowView {
     }
     if (this.transactionRelay?.defer('destroy', () => this.destroy())) return;
     this.disposed = true;
+    cancelAnimationFrame(this.growthFrame);
+    this.growthAttempt = undefined;
+    this.pageAnchors = [];
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
     cancelAnimationFrame(this.domFrame);

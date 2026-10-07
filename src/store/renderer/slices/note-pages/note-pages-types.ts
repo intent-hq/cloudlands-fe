@@ -55,12 +55,23 @@ export interface NoteLocalPointSaveRecord {
   readonly receipt?: NoteCommitReceipt;
 }
 
+export interface NoteWindowGrowth {
+  generation: number;
+  request: number;
+  snapshotId: string;
+  sourceRevision: string;
+  start: number;
+  end: number;
+  minimumEnd: number;
+}
+
 export interface NotePageSession {
   panels: Record<string, SourceRange[]>;
   windows: Record<
     string,
     {
       at: number;
+      growth?: NoteWindowGrowth;
       request: number;
       value: NoteWindow | null;
       error: string | null;

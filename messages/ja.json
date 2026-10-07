@@ -7482,5 +7482,7 @@
   "chat_failureRecovery_title_label": "この応答を完了できませんでした",
   "chat_failureRecovery_details_label": "詳細",
   "chat_failureRecovery_recorded_one": "記録された失敗：1 件",
-  "chat_failureRecovery_action_label": "対応が必要です"
+  "chat_failureRecovery_action_label": "対応が必要です",
+  "notes_reading_previousPart_label": "前の部分",
+  "notes_reading_nextPart_label": "次の部分"
 }

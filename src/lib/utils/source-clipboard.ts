@@ -1,4 +1,5 @@
-import { invoke, isElectron } from '$lib/electron-bridge';
+import { invoke } from '$lib/electron-bridge';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   SOURCE_CLIPBOARD_CHUNK_UNITS,
@@ -40,7 +41,7 @@ export async function openNoteSourceClipboardSink(
   raw: SourceClipboardBegin,
   signal?: AbortSignal,
 ): Promise<NoteSourceSink> {
-  if (!isElectron()) throw new Error('SOURCE_CLIPBOARD_UNSUPPORTED');
+  if (!isElectronPlatform()) throw new Error('SOURCE_CLIPBOARD_UNSUPPORTED');
   const input = SourceClipboardBeginSchema.parse(raw);
   let token: string | undefined;
   const abort = async () => {

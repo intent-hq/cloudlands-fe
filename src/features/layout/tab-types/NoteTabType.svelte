@@ -97,6 +97,7 @@
   $effect(() => noteViewNoteIdStore.set(tab.noteId ?? ''));
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(noteViewWorkspaceIdStore);
+  const workspacePresent = $derived(!!$workspace);
   const note = selectNoteById(noteViewWorkspaceIdStore, noteViewNoteIdStore);
   // svelte-ignore state_referenced_locally
   const notesState = selectWorkspaceNotesState(noteViewWorkspaceIdStore);
@@ -160,14 +161,31 @@
     readingView = view;
     pagedSurface?.ready?.(view);
   }
-  function revealPagedHit(index: number) {
+  function revealPagedHit(index: number, explicit = false) {
     if (!pagedHits.length) return;
     pagedHitIndex = (index + pagedHits.length) % pagedHits.length;
     const { start, end } = pagedHits[pagedHitIndex].sourceRange;
-    readingView?.setSelection({ anchor: start, head: end, anchorAffinity: 1, headAffinity: -1 });
-    readingView?.reveal(start);
+    const selection = { anchor: start, head: end, anchorAffinity: 1, headAffinity: -1 } as const;
+    if (explicit) {
+      const view = readingView,
+        generation = findGeneration,
+        identity = pagedSearchIdentity;
+      view?.selectFindHit(
+        selection,
+        () =>
+          readingView === view &&
+          showPagedFind &&
+          generation === findGeneration &&
+          identity === pagedSearchIdentity &&
+          editState === 'view',
+      );
+    } else {
+      readingView?.setSelection(selection);
+      readingView?.reveal(start);
+    }
   }
   async function findPagedText() {
+    readingView?.cancelFindSelection();
     const generation = ++findGeneration,
       surface = pagedSurface;
     pagedHits = [];
@@ -192,6 +210,7 @@
     }
   }
   function closePagedFind() {
+    readingView?.cancelFindSelection();
     findGeneration++;
     pagedHits = [];
     pagedSurface?.cancelRenderedSearch?.();
@@ -266,7 +285,7 @@
     if (
       !selectedReadingSurface ||
       editState !== 'view' ||
-      !$workspace ||
+      !workspacePresent ||
       !workspaceId ||
       !tab.noteId
     )
@@ -589,8 +608,8 @@
         currentMatchIndex={pagedHitIndex}
         totalMatches={pagedHits.length}
         onInput={findPagedText}
-        onPrevious={() => revealPagedHit(pagedHitIndex - 1)}
-        onNext={() => revealPagedHit(pagedHitIndex + 1)}
+        onPrevious={() => revealPagedHit(pagedHitIndex - 1, true)}
+        onNext={() => revealPagedHit(pagedHitIndex + 1, true)}
         onClose={closePagedFind}
       />
       <p class="px-3 text-xs text-muted-foreground">{m.layout_noteTab_pagedFindLimit_label()}</p>

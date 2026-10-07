@@ -9,18 +9,25 @@ export const NOTE_WINDOW_LIMITS = {
   sourceBytes: 8192,
   contextBytes: 8192,
   // Native ancestry, ordered marks and paged attributes carry opaque scoped refs.
-  // Bound this independent graph separately from lexical markup/source payloads.
-  canonicalBytes: 8192,
+  // Real short-note closures retain 12,795–27,360 encoded bytes. This fixed
+  // allowance fits the existing DATA reservation; source/lexical/wire limits
+  // and the shared request budget remain independent and unchanged.
+  canonicalBytes: 32768,
   sourcePages: 16,
   descriptors: 128,
   requests: 96,
   wireBytes: 8192,
   requestSourceBytes: 4096,
 } as const;
+// Stop collecting source pages at the original work threshold, independently
+// of the larger FINAL retained graph allowance (including separator-only pages).
+const CANONICAL_CONTINUATION_BYTES = 4096;
 const size = (value: string) => new TextEncoder().encode(value).length;
 const encoded = (value: unknown) => size(JSON.stringify(value));
 export interface NoteWindowAddress {
   at: number;
+  /** Local same-anchor demand; every absolute assembly checkpoint still applies. */
+  minimumEnd?: number;
   scope: NoteScope;
   sourceRevision: string;
   snapshotId?: string;
@@ -283,34 +290,6 @@ function* assembleWindowSteps(
       throw new WindowAdmissionError('Note descriptor budget exceeded');
     chargeContext(encoded(item), canonical);
     context.set(item.id, item);
-    // Table alignment directories can contain millions of columns. Each admitted
-    // cell carries its own bounded address/alignment; never enumerate that directory.
-    if (
-      'detailRef' in item &&
-      item.detailRef &&
-      !(
-        item.kind === 'boundary' &&
-        [
-          'paragraph',
-          'table',
-          'tableHead',
-          'tableRow',
-          'htmlBlock',
-          'htmlTable',
-          'htmlTableRow',
-          'htmlTableCell',
-        ].includes(item.construct)
-      )
-    ) {
-      const fields: Record<string, string> = {};
-      details[item.id] = fields;
-      yield* collection(item.detailRef, function* (entry) {
-        if (entry.kind !== 'fragment' || entry.field in fields)
-          throw new Error('Invalid note detail directory entry');
-        chargeContext(size(entry.field));
-        fields[entry.field] = yield* field(entry);
-      });
-    }
     if (item.kind === 'boundary' && item.tablePosition && !refs.has(item.tablePosition.tableRef)) {
       refs.add(item.tablePosition.tableRef);
       yield* collection(item.tablePosition.tableRef, descriptor);
@@ -318,6 +297,39 @@ function* assembleWindowSteps(
     if ('parentRef' in item && item.parentRef && !refs.has(item.parentRef)) {
       refs.add(item.parentRef);
       yield* collection(item.parentRef, descriptor);
+    }
+  }
+  function* lexicalDetails(): Generator<NotePageRequest, void, NoteReadPage> {
+    for (const item of context.values()) {
+      if (item.id in details) continue;
+      // Table alignment directories can contain millions of columns. Each admitted
+      // cell carries its own bounded address/alignment; never enumerate that directory.
+      if (
+        'detailRef' in item &&
+        item.detailRef &&
+        !(
+          item.kind === 'boundary' &&
+          [
+            'paragraph',
+            'table',
+            'tableHead',
+            'tableRow',
+            'htmlBlock',
+            'htmlTable',
+            'htmlTableRow',
+            'htmlTableCell',
+          ].includes(item.construct)
+        )
+      ) {
+        const fields: Record<string, string> = {};
+        details[item.id] = fields;
+        yield* collection(item.detailRef, function* (entry) {
+          if (entry.kind !== 'fragment' || entry.field in fields)
+            throw new Error('Invalid note detail directory entry');
+          chargeContext(size(entry.field));
+          fields[entry.field] = yield* field(entry);
+        });
+      }
     }
   }
   let text = '',
@@ -386,12 +398,18 @@ function* assembleWindowSteps(
       );
       boundMaps = mapBindings.length;
     }
+    // Canonical projection uses validated native attributes/marks and source maps.
+    // Lexical delimiter/URL fields are only required by the legacy projection;
+    // their absence does not grant editing authority to a canonical owner.
+    if (!native) yield* lexicalDetails();
     cursor = page.nextCursor ?? undefined;
     if (
       !cursor ||
-      (native !== undefined && Object.keys(native.texts).length > 0) ||
+      (native !== undefined &&
+        Object.keys(native.texts).length > 0 &&
+        (address.minimumEnd === undefined || end >= address.minimumEnd)) ||
       lexicalBytes >= NOTE_WINDOW_LIMITS.contextBytes / 2 ||
-      canonicalBytes >= NOTE_WINDOW_LIMITS.canonicalBytes / 2 ||
+      canonicalBytes >= CANONICAL_CONTINUATION_BYTES ||
       context.size >= NOTE_WINDOW_LIMITS.descriptors / 2
     )
       break;
@@ -450,6 +468,11 @@ export function* noteWindowSteps(
   address: NoteWindowAddress,
   current: () => boolean = () => true,
 ): Generator<NotePageRequest, NoteWindow, NoteReadPage> {
+  if (
+    address.minimumEnd !== undefined &&
+    (!Number.isSafeInteger(address.minimumEnd) || address.minimumEnd <= address.at)
+  )
+    throw new Error('Invalid note window growth target');
   const work = {
     requests: 0,
     wireBytes: 0,

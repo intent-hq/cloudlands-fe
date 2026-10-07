@@ -7482,5 +7482,7 @@
   "chat_failureRecovery_title_label": "Diese Antwort konnte nicht abgeschlossen werden",
   "chat_failureRecovery_details_label": "Details anzeigen",
   "chat_failureRecovery_recorded_one": "1 aufgezeichneter Fehler",
-  "chat_failureRecovery_action_label": "Aktion erforderlich"
+  "chat_failureRecovery_action_label": "Aktion erforderlich",
+  "notes_reading_previousPart_label": "Vorheriger Abschnitt",
+  "notes_reading_nextPart_label": "Nächster Abschnitt"
 }

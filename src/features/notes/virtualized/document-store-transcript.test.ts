@@ -85,7 +85,9 @@ it('replays corrected HTML document resources into the unchanged native literal 
     expect(fixture.requests.filter((q) => q.kind === 'source')).toHaveLength(1);
     expect(w.cost.sourceBytes).toBe(9);
     expect(w.cost.canonicalBytes).toBeLessThanOrEqual(8192);
-    expect(w.cost.requests).toBe(20);
+    // Canonical rendering defers the strong delimiter directory and its two fields.
+    expect(w.details).toEqual({});
+    expect(w.cost.requests).toBe(17);
     expect(projection.sourceAt(2)).toBe(fixture.t.at);
     expect(projection.sourceAt(11)).toBe(fixture.t.source.length);
     console.info('Actual Store document tail costs', w.cost);
@@ -207,23 +209,20 @@ for (const [name, capture] of [
     const actual = nativeFixtureEditor(projected.content);
     try {
       const paragraph = expected.state.doc.lastChild!;
-      // The marked 36-byte source closure retries at16 and admits exactly the
-      // first11 native text units: <div>, bold, space, and the first code letter.
-      expect(actual.getJSON().content).toEqual([
-        name === 'marks' ? paragraph.cut(0, 11).toJSON() : paragraph.toJSON(),
-      ]);
+      // The measured canonical closure fits the selected 32 KiB retained bound.
+      expect(actual.getJSON().content).toEqual([paragraph.toJSON()]);
       if (name === 'marks') {
-        expect(w.range).toEqual({ start: 11, end: 27 });
-        expect(w.text).toBe('<div>**bold** `c');
+        expect(w.range).toEqual({ start: 11, end: 47 });
+        expect(w.text).toBe(f.t.source.slice(11));
       }
       expect(w.canonicalOwners).toContainEqual(
         expect.objectContaining({ construct: 'markdownBlock' }),
       );
-      expect(f.requests.filter((q) => q.kind === 'source').map((q) => q.maxSourceBytes)).toEqual(
-        name === 'marks' ? [4096, 16] : [4096],
-      );
+      expect(f.requests.filter((q) => q.kind === 'source').map((q) => q.maxSourceBytes)).toEqual([
+        4096,
+      ]);
       expect(w.cost.sourceBytes).toBeLessThan(128);
-      expect(w.cost.canonicalBytes).toBeLessThanOrEqual(8192);
+      expect(w.cost.canonicalBytes).toBeLessThanOrEqual(name === 'marks' ? 32768 : 8192);
       expect(w.cost.requests).toBeLessThanOrEqual(96);
       console.info('Actual Store Markdown block costs', name, w.cost);
     } finally {
@@ -234,9 +233,9 @@ for (const [name, capture] of [
 }
 
 // All ordinary reads start at4096 using actual captured requests at these starts.
-// The marked first window may shrink; no fixture response is synthesized.
+// The marked first window now fits the retained bound; no response is synthesized.
 for (const [name, capture, at, nativeStart, nativeEnd] of [
-  ['marks-first', halfopenMarks, 11, 0, 11],
+  ['marks-first', halfopenMarks, 11, 0, undefined],
   ['marks-middle', halfopenMarks, 27, 11, undefined],
   ['marks-tail', halfopenMarks, 43, 21, undefined],
   ['LF-first', halfopenLF, 11, 0, undefined],
@@ -264,7 +263,7 @@ for (const [name, capture, at, nativeStart, nativeEnd] of [
       expect(fixture.requests[0]).toMatchObject({ kind: 'source', at, maxSourceBytes: 4096 });
       expect(window.cost.requests).toBe(fixture.requests.length);
       expect(window.cost.requests).toBeLessThanOrEqual(96);
-      expect(window.cost.canonicalBytes).toBeLessThanOrEqual(8192);
+      expect(window.cost.canonicalBytes).toBeLessThanOrEqual(name === 'marks-first' ? 32768 : 8192);
       console.info('Strict actual navigation costs', name, window.range, window.cost);
     } finally {
       expected.destroy();

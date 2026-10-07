@@ -12,6 +12,7 @@
     pagePanelOpened,
     pagePanelClosed,
     pageWindowRequested,
+    pageWindowGrowthRequested,
     pageVisibleRangesChanged,
     pageWindowRetained,
     pageResourcesReleased,
@@ -23,6 +24,7 @@
     type NoteReadingSurface,
   } from './note-window-view';
   import { prepareNoteWindowDisplay } from './note-window-preparation';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   let {
     workspaceId,
@@ -83,6 +85,23 @@
     const native = new NoteWindowView(element, {
       seek: (at) =>
         appStore.dispatch(pageWindowRequested(owner.workspaceId, owner.noteId, owner.panelId, at)),
+      grow: (prefix, minimumEnd) => {
+        const note = selectNotePageSession.select(appStore.state, owner.workspaceId, owner.noteId);
+        const demand = note?.windows[owner.panelId];
+        if (!note || note.status !== 'ready' || demand?.value !== prefix || demand.loading)
+          return false;
+        appStore.dispatch(
+          pageWindowGrowthRequested(
+            owner.workspaceId,
+            owner.noteId,
+            owner.panelId,
+            note.generation,
+            demand.request,
+            minimumEnd,
+          ),
+        );
+        return true;
+      },
       retainWindow: (value) => {
         const generation = selectNotePageSession.select(
           appStore.state,
@@ -139,6 +158,18 @@
     );
   });
   $effect(() => {
+    view?.updateReadStatus(
+      ready && panelOpen,
+      current?.loading ?? false,
+      !!current?.error || renderError,
+    );
+  });
+  function page(direction: -1 | 1) {
+    if (!ready || !panelOpen || current?.loading || renderError || current?.value !== view?.window)
+      return;
+    view?.page(direction);
+  }
+  $effect(() => {
     const native = view;
     const window = current?.value;
     const available = ready;
@@ -170,6 +201,30 @@
 <div class="flex h-full min-h-0 flex-col">
   {#if unavailable || current?.error || renderError}
     <div class="shrink-0" role="alert">{m.layout_noteTab_contentLoadFailed_error()}</div>
+  {/if}
+  {#if current?.value}
+    <div class="flex shrink-0 gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!ready ||
+          !panelOpen ||
+          current.loading ||
+          renderError ||
+          current.value.range.start === 0}
+        onclick={() => page(-1)}>{m.notes_reading_previousPart_label()}</Button
+      >
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!ready ||
+          !panelOpen ||
+          current.loading ||
+          renderError ||
+          current.value.range.end >= current.value.sourceLength}
+        onclick={() => page(1)}>{m.notes_reading_nextPart_label()}</Button
+      >
+    </div>
   {/if}
   <div
     class="min-h-0 flex-1 overflow-auto"
