@@ -117,6 +117,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   container: home-layout / inline-size;
+  overflow: clip;
 }
 
 .home-header,
