@@ -238,7 +238,7 @@
   "browser_embedded_url_placeholder": "Saisir l'URL...",
   "browser_embedded_viewport_tooltip": "Viewport émulé défini par l'agent : {width}×{height}",
   "browser_linkOpen_loopbackAmbiguity_warning": "L'URL de bouclage a été réécrite vers l'hôte du daemon",
-  "browser_linkOpen_ownerOnlyForward_error": "Seul le propriétaire de l'espace de travail peut ouvrir des ports redirigés sur l'hôte du daemon",
+  "browser_linkOpen_ownerOnlyForward_error": "La redirection de ports nécessite un accès en tant que propriétaire ou membre de l’hôte. Une invitation à l’espace de travail seule ne permet pas la redirection de ports.",
   "browser_overflow_console_label": "Console de développement",
   "browser_overflow_copyUrl_label": "Copier l'URL",
   "browser_overflow_inspector_label": "Inspecteur",

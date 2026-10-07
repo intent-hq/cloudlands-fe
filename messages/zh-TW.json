@@ -238,7 +238,7 @@
   "browser_embedded_url_placeholder": "輸入 URL…",
   "browser_embedded_viewport_tooltip": "智慧體設定的模擬視口：{width}×{height}",
   "browser_linkOpen_loopbackAmbiguity_warning": "回送 URL 已重寫為守護程序主機",
-  "browser_linkOpen_ownerOnlyForward_error": "只有工作區擁有者才能在守護程序主機上開啟轉送連接埠",
+  "browser_linkOpen_ownerOnlyForward_error": "連接埠轉送需要主機擁有者或主機成員的存取權限。僅受邀加入工作區不包含連接埠轉送權限。",
   "browser_overflow_console_label": "主控台",
   "browser_overflow_copyUrl_label": "複製 URL",
   "browser_overflow_inspector_label": "檢查器",
