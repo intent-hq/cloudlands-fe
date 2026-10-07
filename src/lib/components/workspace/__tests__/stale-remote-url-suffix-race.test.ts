@@ -31,8 +31,13 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { repositoryCheckoutReducer } =
+    await import('$store/renderer/slices/repository-checkout/repository-checkout-slice');
   return createAppStoreMockModule({
-    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
+    state: () => ({
+      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+      repositoryCheckout: repositoryCheckoutReducer(undefined, { type: '@@INIT' }),
+    }),
     dispatch: mocks.dispatch,
   });
 });

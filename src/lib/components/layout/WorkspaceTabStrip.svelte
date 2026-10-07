@@ -1,5 +1,4 @@
 <script lang="ts">
-  /* eslint-disable max-lines */
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -1009,7 +1008,7 @@
                 showArrow={false}
                 maxWidth="none"
                 class="absolute -inset-px rounded-[inherit]"
-                contentClass="border-0 bg-transparent p-0 shadow-none"
+                contentClass="border-0! bg-transparent! p-0! shadow-none!"
                 contentContainerClass="space-y-0! p-0!"
               >
                 {#snippet content()}

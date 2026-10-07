@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { tick, untrack, type Snippet } from 'svelte';
   import { slide } from '$lib/motion';
   import {
@@ -28,6 +29,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     selectCurrentConnectionId,
+    selectCurrentConnection,
     selectKeychainSyncState,
     selectSelfPublication,
     selectSelfPublicationBusy,
@@ -44,18 +46,40 @@
   import { selectWebsocketApiSnapshotById } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import {
+    selectPrincipalActionContext,
+    selectPrincipalSnapshot,
+  } from '$store/renderer/slices/principal/principal-selectors';
 
   let {
     expanded = true,
     children,
     onEnabled,
+    active = true,
+    mobileOnly = false,
   }: {
     expanded?: boolean;
     children?: Snippet;
     onEnabled?: () => void;
+    active?: boolean;
+    mobileOnly?: boolean;
   } = $props();
 
   const activeConnectionId$ = selectCurrentConnectionId();
+  const principalContext$ = selectPrincipalActionContext();
+  const principal$ = selectPrincipalSnapshot();
+  const connection$ = selectCurrentConnection();
+  const mobileIdentity = $derived(
+    m.settings_personalDevices_identity_description({
+      person:
+        $principal$?.principal.displayName ??
+        $principal$?.principal.login ??
+        $principal$?.principal.id ??
+        '',
+      host: $connection$?.label ?? '',
+      role: m.settings_personalDevices_owner_label(),
+    }),
+  );
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
   const formId = crypto.randomUUID();
   let identity = { formId, sessionId: '' };
@@ -66,12 +90,19 @@
   let toggleDraft = $state<boolean | null>(null);
   const enabled = $derived($snapshot$.enabled);
   let token = $state('');
+  let personalPairingReady = $state(false);
   const port = $derived($snapshot$.port);
   const certFingerprint = $derived($snapshot$.certFingerprint);
   const localIps = $derived($snapshot$.localIps);
   const availableIps = $derived($snapshot$.availableIps);
   const loading = $derived($load$?.status === 'pending' || (!$form$ && (!isRemote || expanded)));
   const saving = $derived($save$?.status === 'pending');
+  const mobileDisabled = $derived(
+    !enabled ||
+      !(mobileOnly ? personalPairingReady && $principalContext$ : port) ||
+      loading ||
+      saving,
+  );
   const regenerating = $derived(saving);
 
   // Port editing state
@@ -122,8 +153,9 @@
 
   $effect(() => {
     const connectionId = $activeConnectionId$;
-    const active = connectionId === LOCAL_CONNECTION_ID || expanded;
-    if (!active) return;
+    const context = mobileOnly ? $principalContext$ : undefined;
+    if (!active || (mobileOnly ? !context : !(connectionId === LOCAL_CONNECTION_ID || expanded)))
+      return;
     const session = { formId, sessionId: crypto.randomUUID() };
     identity = session;
     showToken = false;
@@ -132,12 +164,15 @@
     const dispose = registerWebsocketCredentials(session.formId, session.sessionId, (value) => {
       token = value.token;
       qrDataUrl = value.qrDataUrl;
+      personalPairingReady = !!value.pairingUri;
     });
     appStore.dispatch(settingsFormOpened(session, 'websocket-api'));
     appStore.dispatch(
       websocketApiRequested(
         { ...session, resource: 'load', requestId: crypto.randomUUID() },
-        { kind: 'load', connectionId },
+        mobileOnly && context
+          ? { kind: 'loadMobile', connectionId, context }
+          : { kind: 'load', connectionId },
       ),
     );
     return () => {
@@ -169,7 +204,12 @@
     appStore.dispatch(
       websocketApiRequested(
         { ...identity, resource: 'save', requestId: crypto.randomUUID() },
-        { kind: 'toggle', enabled: checked, connectionId: $activeConnectionId$ },
+        {
+          kind: 'toggle',
+          enabled: checked,
+          connectionId: $activeConnectionId$,
+          context: mobileOnly ? ($principalContext$ ?? undefined) : undefined,
+        },
       ),
     );
   }
@@ -255,18 +295,29 @@
     );
   }
   function handleCopyShareLink() {
+    if (mobileDisabled) return;
     appStore.dispatch(
       websocketApiRequested(
         { ...identity, resource: 'copy', requestId: crypto.randomUUID() },
-        { kind: 'copy', target: 'share', connectionId: $activeConnectionId$ },
+        {
+          kind: 'copy',
+          target: 'share',
+          connectionId: $activeConnectionId$,
+          context: mobileOnly ? ($principalContext$ ?? undefined) : undefined,
+        },
       ),
     );
   }
   function handleShowQr() {
+    if (mobileDisabled) return;
     appStore.dispatch(
       websocketApiRequested(
         { ...identity, resource: 'qr', requestId: crypto.randomUUID() },
-        { kind: 'qr', connectionId: $activeConnectionId$ },
+        {
+          kind: 'qr',
+          connectionId: $activeConnectionId$,
+          context: mobileOnly ? ($principalContext$ ?? undefined) : undefined,
+        },
       ),
     );
   }
@@ -279,12 +330,26 @@
     );
   }
 
-  const connectionSchema = $derived.by(() =>
+  function retryMobile() {
+    if (!$principalContext$) return;
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'load', requestId: crypto.randomUUID() },
+        { kind: 'loadMobile', connectionId: $activeConnectionId$, context: $principalContext$ },
+      ),
+    );
+  }
+
+  const mobileSchema = $derived(
     defineSettings({
       sections: [
         {
-          id: 'websocket-api',
-          title: m.settings_wsApi_enable_label(),
+          id: 'intent-mobile',
+          title: m.settings_devices_mobile_title(),
+          description:
+            mobileOnly && $load$?.status === 'failed'
+              ? m.settings_personalDevices_pairing_error()
+              : m.settings_wsApi_mobilePairing_description(),
           entries: [
             {
               kind: 'switch',
@@ -293,7 +358,14 @@
               description: m.settings_devices_remoteAccess_description(),
               get: () => toggleDraft ?? enabled,
               set: handleToggle,
-              disabled: () => loading || toggleBusy,
+              disabled: () => loading || toggleBusy || (mobileOnly && !$principalContext$),
+            },
+            {
+              kind: 'custom',
+              id: 'intent-mobile-pairing',
+              label: m.settings_devices_mobile_title(),
+              layout: 'full-width',
+              disabled: mobileDisabled,
             },
           ],
         },
@@ -302,108 +374,78 @@
   );
 </script>
 
-<div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
-  {#if !isRemote || expanded}
-    <SettingsForm schema={connectionSchema} embedded compact={false} />
-  {/if}
-
-  {#if expanded}
-    {#if enabled && tunnelSupported}
-      <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
-        <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
-             old daemons predating the server.tunnel.* settings. -->
-        {#snippet tunnelDescription()}
-          {m.settings_tunnel_enable_description()}{' '}<Button
-            variant="link"
-            size="sm"
-            href="https://github.com/tailscale/tailcat"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="h-auto px-0">{m.settings_tunnel_github_link()}</Button
-          >
-        {/snippet}
-        <section data-tunnel-toggle-row>
-          <SettingsFieldRow
-            id="websocket-tunnel"
-            label={m.settings_tunnel_enable_label()}
-            descriptionContent={tunnelDescription}
-            disabled={toggleBusy || listenSaving}
-          >
-            {#snippet control({ labelId, descriptionId })}
-              <Switch
-                checked={tunnelEnabled}
-                onCheckedChange={handleTunnelToggle}
-                disabled={toggleBusy || listenSaving}
-                ariaLabelledby={labelId}
-                ariaDescribedby={descriptionId}
-              />
-            {/snippet}
-          </SettingsFieldRow>
-        </section>
-      </div>
-    {/if}
-
-    {#if enabled}
-      <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
-        <!-- Mobile App Pairing -->
-        <SettingsFieldRow
-          id="websocket-mobile-pairing"
-          label={m.settings_wsApi_mobilePairing_label()}
-          description={m.settings_wsApi_mobilePairing_description()}
-        >
-          {#snippet control()}
-            <div class="flex flex-wrap gap-2">
-              <Button variant="secondary" size="sm" type="button" onclick={handleShowQr}>
-                <Fa icon={faQrcode} size="sm" />
-                {m.settings_wsApi_showQrCode()}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                onclick={handleCopyShareLink}
-                disabled={!port || loading}
-              >
-                <Fa icon={faCopy} size="sm" />
-                {m.settings_wsApi_shareLink_label()}
-              </Button>
-            </div>
-          {/snippet}
-        </SettingsFieldRow>
-
-        <!-- Publish this backend to iCloud Keychain (local + macOS + sync on
-             + not currently published; re-publish clears the suppression) -->
-        {#if publishStateLoaded && syncSupported && syncEnabled && !selfPublished}
-          <SettingsFieldRow
-            id="websocket-publish-self"
-            label={m.settings_wsApi_publishSelf_label()}
-            description={m.settings_wsApi_publishSelf_description()}
-            disabled={publishBusy}
-          >
-            {#snippet control()}
-              <Button
-                variant="secondary"
-                size="sm"
-                onclick={handlePublishButton}
-                disabled={publishBusy}
-              >
-                {publishSuppressed
-                  ? m.settings_wsApi_publishSelf_republish_label()
-                  : m.settings_wsApi_publishSelf_button_label()}
-              </Button>
-            {/snippet}
-          </SettingsFieldRow>
-        {/if}
-      </div>
-    {/if}
-    <div hidden={!expanded}>
+{#snippet connectionSettings()}
+  <div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
+    {#if expanded}
       <SettingsDisclosure
         label={m.settings_devices_advanced_label()}
         flush
         muted
-        class="pt-4 [&_[data-accordion-trigger]]:flex-none"
+        class="[&_[data-accordion-trigger]]:flex-none"
       >
         <div class="space-y-4">
+          {#if enabled && tunnelSupported}
+            <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
+              <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
+             old daemons predating the server.tunnel.* settings. -->
+              {#snippet tunnelDescription()}
+                {m.settings_tunnel_enable_description()}{' '}<Button
+                  variant="link"
+                  size="sm"
+                  href="https://github.com/tailscale/tailcat"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="h-auto px-0">{m.settings_tunnel_github_link()}</Button
+                >
+              {/snippet}
+              <section data-tunnel-toggle-row>
+                <SettingsFieldRow
+                  id="websocket-tunnel"
+                  label={m.settings_tunnel_enable_label()}
+                  descriptionContent={tunnelDescription}
+                  disabled={toggleBusy || listenSaving}
+                >
+                  {#snippet control({ labelId, descriptionId })}
+                    <Switch
+                      checked={tunnelEnabled}
+                      onCheckedChange={handleTunnelToggle}
+                      disabled={toggleBusy || listenSaving}
+                      ariaLabelledby={labelId}
+                      ariaDescribedby={descriptionId}
+                    />
+                  {/snippet}
+                </SettingsFieldRow>
+              </section>
+            </div>
+          {/if}
+
+          {#if enabled}
+            <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
+              <!-- Publish this backend to iCloud Keychain (local + macOS + sync on
+             + not currently published; re-publish clears the suppression) -->
+              {#if publishStateLoaded && syncSupported && syncEnabled && !selfPublished}
+                <SettingsFieldRow
+                  id="websocket-publish-self"
+                  label={m.settings_wsApi_publishSelf_label()}
+                  description={m.settings_wsApi_publishSelf_description()}
+                  disabled={publishBusy}
+                >
+                  {#snippet control()}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onclick={handlePublishButton}
+                      disabled={publishBusy}
+                    >
+                      {publishSuppressed
+                        ? m.settings_wsApi_publishSelf_republish_label()
+                        : m.settings_wsApi_publishSelf_button_label()}
+                    </Button>
+                  {/snippet}
+                </SettingsFieldRow>
+              {/if}
+            </div>
+          {/if}
           {@render children?.()}
           {#if enabled}
             {#if bindAddressSupported}
@@ -532,7 +574,7 @@
                       <div class="flex min-w-0 w-full items-center gap-2">
                         <code
                           class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 flex-1 truncate"
-                          title={tcAddress}>{tcAddress}</code
+                          use:truncatedTitle={tcAddress}>{tcAddress}</code
                         >
                         <Button
                           variant="ghost"
@@ -579,7 +621,52 @@
           {/if}
         </div>
       </SettingsDisclosure>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet pairingControls({ disabled }: { disabled: boolean })}
+  <div class:opacity-50={!enabled}>
+    {#if !enabled}
+      <p class="mb-3 type-body text-muted-foreground">
+        {m.settings_devices_mobileDisabled_description()}
+      </p>
+    {/if}
+    {#if mobileOnly && $principal$}
+      <p class="mb-3 type-body text-muted-foreground">{mobileIdentity}</p>
+    {/if}
+    <div class="flex flex-wrap gap-2">
+      <Button variant="secondary" size="sm" type="button" onclick={handleShowQr} {disabled}>
+        <Fa icon={faQrcode} size="sm" />
+        {m.settings_wsApi_showQrCode()}
+      </Button>
+      <Button variant="secondary" size="sm" type="button" onclick={handleCopyShareLink} {disabled}>
+        <Fa icon={faCopy} size="sm" />
+        {m.settings_wsApi_shareLink_label()}
+      </Button>
+      {#if mobileOnly && $load$?.status === 'failed'}
+        <Button variant="ghost" size="sm" onclick={retryMobile}
+          >{m.settings_devices_retry_label()}</Button
+        >
+      {/if}
     </div>
+  </div>
+{/snippet}
+
+{#snippet mobilePairing()}
+  {#if active}
+    <SettingsForm
+      schema={mobileSchema}
+      compact={false}
+      custom={{ 'intent-mobile-pairing': pairingControls }}
+    />
+  {/if}
+{/snippet}
+
+<div class="space-y-5">
+  {@render mobilePairing()}
+  {#if active && !mobileOnly}
+    {@render connectionSettings()}
   {/if}
 </div>
 
@@ -587,7 +674,7 @@
   <ContentDialog
     open
     title={m.settings_wsApi_mobilePairing_label()}
-    description={m.settings_wsApi_scanDescription()}
+    description={mobileOnly ? mobileIdentity : m.settings_wsApi_scanDescription()}
     size="sm"
     closeLabel={m.settings_wsApi_close()}
     onClose={handleCloseQr}

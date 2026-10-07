@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /* eslint-disable max-lines */
   import {
     faFile,
@@ -1682,7 +1683,7 @@
                       type="button"
                       variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                      title={pill.content || pill.path || pill.noteId || pill.label}
+                      title={pill.content || pill.path || pill.noteId || undefined}
                       onclick={(e) => {
                         e.stopPropagation();
                         handlePillClick(pill, e);
@@ -1693,7 +1694,7 @@
                       <span
                         class="truncate font-medium"
                         style="max-width: 180px;"
-                        title={pill.label}>{pill.label}</span
+                        use:truncatedTitle={pill.label}>{pill.label}</span
                       >
                     </Button>
                   {/each}
@@ -1704,7 +1705,6 @@
                         >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
                               href={part.url}
                               class="cursor-pointer break-all underline underline-offset-2 hover:opacity-80"
-                              title={part.url}
                               onclick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -1733,12 +1733,7 @@
                         type="button"
                         variant="plain"
                         class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                        title={segment.description ||
-                          segment.path ||
-                          segment.noteId ||
-                          (segment.identifier
-                            ? `${segment.identifier}: ${segment.label}`
-                            : segment.label)}
+                        title={segment.description || segment.path || segment.noteId || undefined}
                         onclick={(e) => {
                           e.stopPropagation();
                           if (segment.url) {
@@ -1773,8 +1768,10 @@
                         {#if segment.identifier}
                           <span class="text-subtle shrink-0">{segment.identifier}</span>
                         {/if}
-                        <span class="truncate" style="max-width: 180px;" title={segment.label}
-                          >{segment.label}</span
+                        <span
+                          class="truncate"
+                          style="max-width: 180px;"
+                          use:truncatedTitle={segment.label}>{segment.label}</span
                         >
                       </Button>
                     {/if}

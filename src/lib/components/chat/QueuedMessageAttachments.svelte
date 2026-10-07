@@ -14,7 +14,7 @@
     handleReferenceImageError,
     openQueuedFileAttachment,
   }: {
-    message: QueuedMessage;
+    message: Pick<QueuedMessage, 'imageBlocks' | 'fileBlocks'>;
     queuedImageSrc: (block: ImageBlock) => string | null;
     openImageLightbox: (block: ImageBlock, opener: HTMLButtonElement, index: number) => void;
     handleReferenceImageError: (block: ImageBlock, src: string) => void;

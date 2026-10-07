@@ -4,4 +4,3 @@ import type { SettingsFormRequest } from '$store/renderer/slices/settings-events
 export const personalPairingRequested = createAction<
   [request: SettingsFormRequest, context: string, kind: 'pair' | 'copy']
 >('personalDevices/pairingRequested');
-export const personalDevicesRefreshRequested = createAction('personalDevices/refreshRequested');

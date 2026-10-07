@@ -13,6 +13,7 @@ export function queuePresentationMessages(rows: PendingQueueDisplayRow[]): Queue
     content: row.content,
     imageBlocks: row.imageBlocks,
     fileBlocks: row.fileBlocks,
+    deliveryGroups: row.deliveryGroups,
     contextItems: row.contextItems,
   }));
 }

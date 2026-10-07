@@ -1,4 +1,3 @@
-import { selectPersonalDevicesSession } from '$features/devices/personal-devices-selectors';
 /**
  * Browser Clients Saga (renderer)
  *
@@ -119,10 +118,9 @@ function* readLiveClients(
     const mounted = action.payload[0]
       ? [action.payload[0]]
       : yield* selectMountedWorkspaceIds.effect();
-    if (mounted.length === 0 && !(yield* selectPersonalDevicesSession.effect())) {
+    if (mounted.length === 0) {
       const clients = yield* call([appClient.clients, appClient.clients.list]);
-      if (epoch === connection.epoch && !(yield* selectPersonalDevicesSession.effect()))
-        yield* put(liveClientsReceived(clients));
+      if (epoch === connection.epoch) yield* put(liveClientsReceived(clients));
     }
     // Own every target before awaiting another workspace. Cleanup/remount must
     // invalidate queued targets as well as requests already in flight.

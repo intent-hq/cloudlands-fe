@@ -1,3 +1,4 @@
+import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 /**
  * Workspace and host invitation acceptance. The host challenge fixes the required provider,
  * instance and stable account; collaboration-capable local daemons prepare that
@@ -1208,8 +1209,7 @@ async function deleteProof(
  */
 function hostLabelFor(connection: InviteConnection, inspection: InviteInspection): string {
   return (
-    nonBlank(inspection.prettyHostname) ??
-    nonBlank(inspection.hostname) ??
+    collaborationMachineName(inspection) ??
     (isTcAddress(connection.host) ? m.connection_unknownHost_label() : connection.host)
   );
 }
@@ -1399,6 +1399,7 @@ function requireSameInvitation(original: InviteInspection, next: InviteInspectio
     'workspaceTitle',
     'hostname',
     'prettyHostname',
+    'collaborationName',
   ] as const) {
     if (JSON.stringify(original[field]) !== JSON.stringify(next[field]))
       throw new InviteCancelledError();

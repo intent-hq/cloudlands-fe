@@ -1,4 +1,5 @@
 import { invoke } from '$lib/electron-bridge';
+import { normalizeGitLabInstanceUrl } from '$lib/utils/gitlab-host';
 import { FORGE_AUTH_CHANNELS } from '../constants';
 import type {
   ForgeAuthResult,
@@ -16,7 +17,17 @@ import type {
 function hostParams(
   provider: ForgeProvider,
   host?: string,
-): { provider: ForgeProvider; host?: string } {
+  instanceBaseUrl?: string,
+): { provider: ForgeProvider; host?: string; instanceBaseUrl?: string } {
+  if (provider === 'gitlab' && (instanceBaseUrl !== undefined || (host && /[/?#\\]/.test(host)))) {
+    const root = normalizeGitLabInstanceUrl(instanceBaseUrl ?? host ?? '');
+    if (!root) throw new Error('Invalid GitLab instance address');
+    const authority = new URL(root).host;
+    if (instanceBaseUrl !== undefined && host && host.toLowerCase() !== authority) {
+      throw new Error('GitLab instance and host disagree');
+    }
+    return { provider, host: authority, instanceBaseUrl: root };
+  }
   return host ? { provider, host } : { provider };
 }
 
@@ -51,7 +62,11 @@ export const forgeAuthClient = {
    * held or logged renderer-side.
    */
   async connect(params: ForgeConnectParams): Promise<ForgeConnectResult> {
-    return await invoke<ForgeConnectResult>(FORGE_AUTH_CHANNELS.CONNECT, params);
+    const { provider, host, instanceBaseUrl, ...credential } = params;
+    return await invoke<ForgeConnectResult>(FORGE_AUTH_CHANNELS.CONNECT, {
+      ...hostParams(provider, host, instanceBaseUrl),
+      ...credential,
+    });
   },
 
   /** `sourceControl.cancelAuth { provider, host? }` — cancels the pending device grant for that host. */

@@ -1,5 +1,6 @@
 import { DEFAULT_GITLAB_HOST } from '$features/forge-auth/constants';
 import type { ForgeAuthMethod, ForgeDeviceFlowInfo, ForgeUser } from '$features/forge-auth/types';
+import { normalizeGitLabInstanceUrl } from '$lib/utils/gitlab-host';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { GitLabAuthChangedStatus, GitLabAuthState } from './gitlab-auth-types';
@@ -11,8 +12,11 @@ import type { GitLabAuthChangedStatus, GitLabAuthState } from './gitlab-auth-typ
 export const initialState: GitLabAuthState = {
   statusReady: false,
   host: DEFAULT_GITLAB_HOST,
+  instanceBaseUrl: null,
   isConfigured: false,
   isAuthenticating: false,
+  isCancelling: false,
+  cancelOutcome: null,
   deviceFlow: null,
   deviceGrantSupported: null,
   user: null,
@@ -84,6 +88,7 @@ export const setGitLabAuthStatus = createAction(
   'gitlabAuth/setAuthStatus',
   (params: {
     host: string;
+    instanceBaseUrl?: string;
     isConfigured: boolean;
     deviceGrantSupported: boolean | null;
     user: ForgeUser | null;
@@ -118,6 +123,11 @@ export const setGitLabAuthError = createAction<[error: string | null]>('gitlabAu
 /** Clear error */
 export const clearGitLabAuthError = createAction('gitlabAuth/clearError');
 
+export const setGitLabCancelling = createAction<[value: boolean]>('gitlabAuth/setCancelling');
+export const setGitLabCancelOutcome = createAction<[value: GitLabAuthState['cancelOutcome']]>(
+  'gitlabAuth/setCancelOutcome',
+);
+
 /** Pending device grant was cancelled */
 export const gitlabAuthCancelled = createAction('gitlabAuth/authCancelled');
 
@@ -133,23 +143,34 @@ export const gitlabAuthReducer = createReducer<GitLabAuthState>(initialState);
 gitlabAuthReducer.with(resetGitLabAdmission, () => ({ ...initialState }));
 gitlabAuthReducer.with(initializeGitLabAuth, (state) => ({ ...state, statusReady: false }));
 gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => {
-  if (host.toLowerCase() === state.host.toLowerCase()) return { ...state, host };
+  const root = /[/?#\\]/.test(host) ? normalizeGitLabInstanceUrl(host) : null;
+  const authority = root ? new URL(root).host : host;
+  const sameAuthority = authority.toLowerCase() === state.host.toLowerCase();
+  const instanceBaseUrl = root ?? (sameAuthority ? state.instanceBaseUrl : null);
+  if (sameAuthority && instanceBaseUrl === state.instanceBaseUrl)
+    return { ...state, host: authority };
   // The configured identity, grant support and any pending grant belong to the
   // previous instance; a new host starts unconfigured until its own status is read.
   return {
     ...state,
-    host,
+    host: authority,
+    instanceBaseUrl,
     statusReady: false,
     isConfigured: false,
     deviceGrantSupported: null,
     user: null,
     method: null,
     deviceFlow: null,
+    isCancelling: false,
+    cancelOutcome: null,
   };
 });
 gitlabAuthReducer.with(setGitLabAuthStatus, (state, { payload }) => ({
   ...state,
   host: payload.host,
+  instanceBaseUrl:
+    payload.instanceBaseUrl ??
+    (payload.host.toLowerCase() === state.host.toLowerCase() ? state.instanceBaseUrl : null),
   statusReady: true,
   isConfigured: payload.isConfigured,
   deviceGrantSupported: payload.deviceGrantSupported,
@@ -159,6 +180,7 @@ gitlabAuthReducer.with(setGitLabAuthStatus, (state, { payload }) => ({
 gitlabAuthReducer.with(setGitLabAuthenticating, (state, { payload: [isAuthenticating] }) => ({
   ...state,
   isAuthenticating,
+  ...(isAuthenticating ? { isCancelling: false, cancelOutcome: null } : {}),
   error: isAuthenticating ? null : state.error,
 }));
 gitlabAuthReducer.with(setGitLabDeviceFlowInfo, (state, { payload: [deviceFlow] }) => ({
@@ -188,6 +210,16 @@ gitlabAuthReducer.with(setGitLabAuthError, (state, { payload: [error] }) => ({
   deviceFlow: null,
 }));
 gitlabAuthReducer.with(clearGitLabAuthError, (state) => ({ ...state, error: null }));
+gitlabAuthReducer.with(setGitLabCancelling, (state, { payload: [isCancelling] }) => ({
+  ...state,
+  isCancelling,
+  ...(isCancelling ? { cancelOutcome: null } : {}),
+}));
+gitlabAuthReducer.with(setGitLabCancelOutcome, (state, { payload: [cancelOutcome] }) => ({
+  ...state,
+  isCancelling: false,
+  cancelOutcome,
+}));
 gitlabAuthReducer.with(gitlabAuthCancelled, (state) => ({
   ...state,
   isAuthenticating: false,

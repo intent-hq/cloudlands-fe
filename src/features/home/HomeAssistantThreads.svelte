@@ -1,0 +1,99 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { ListRow, ListView } from '$lib/components/patterns/collection';
+  import AssistantThreadTitle from '$lib/components/chat/AssistantThreadTitle.svelte';
+  import { createAssistantThreadRename } from '$lib/components/chat/assistant-thread-rename.svelte';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import { m } from '$shared/paraglide/messages.js';
+  import { store as appStore } from '$store/renderer/store';
+  import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    selectChiefActiveAgentId,
+    selectChiefThreads,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
+  import {
+    backgroundHooksSubscribeRequested,
+    backgroundHooksUnsubscribeRequested,
+  } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+  import {
+    prMonitorsSubscribeRequested,
+    prMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import {
+    scriptMonitorsSubscribeRequested,
+    scriptMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/script-monitor/script-monitor-slice';
+  import HomeAssistantThreadActivity from './HomeAssistantThreadActivity.svelte';
+
+  const threads$ = selectChiefThreads();
+  const activeAgentId$ = selectChiefActiveAgentId();
+  const hidesActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
+  const renameConsumerId = crypto.randomUUID();
+  const renameOutcome$ = selectAgentMutationUi(CHIEF_WORKSPACE_ID, renameConsumerId);
+  const rename = createAssistantThreadRename(renameConsumerId, renameOutcome$, hidesActions$);
+  let selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
+
+  onMount(() => {
+    appStore.dispatch(backgroundHooksSubscribeRequested(CHIEF_WORKSPACE_ID));
+    appStore.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    appStore.dispatch(scriptMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    return () => {
+      appStore.dispatch(backgroundHooksUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(scriptMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+    };
+  });
+
+  function chooseThread(agentId: string) {
+    selectedKeys = [agentId];
+    appStore.dispatch(setChiefActiveAgentId(agentId));
+    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+  }
+</script>
+
+<ListView
+  items={$threads$}
+  getKey={(thread) => thread.agentId}
+  getText={(thread) => thread.title}
+  selectable="single"
+  bind:selectedKeys
+  onActivate={(thread) => chooseThread(thread.agentId)}
+  ariaLabel={m.layout_chiefCard_threadPicker_ariaLabel()}
+  virtualize
+  rowHeight={36}
+  class="min-h-0 flex-1"
+>
+  {#snippet row({ item: thread })}
+    <ListRow class="min-h-9 px-2 py-2" role="group" aria-label={thread.title}>
+      {#snippet title()}
+        {#if !$hidesActions$}
+          <AssistantThreadTitle {thread} {rename} class="h-5! type-caption font-normal" />
+        {:else}
+          <span title={thread.title}>{thread.title}</span>
+        {/if}
+      {/snippet}
+      {#snippet trailing()}
+        <HomeAssistantThreadActivity agentId={thread.agentId} />
+        {#if thread.isActive}
+          <span
+            class="size-1.5 shrink-0 rounded-full bg-primary"
+            role="img"
+            aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+          ></span>
+        {/if}
+      {/snippet}
+    </ListRow>
+  {/snippet}
+  {#snippet empty()}
+    <p role="status" class="px-2 py-3 type-caption text-muted-foreground">
+      {m.layout_chiefCard_noThreads_label()}
+    </p>
+  {/snippet}
+</ListView>
+
+{#if rename.error}
+  <p role="alert" class="type-caption shrink-0 px-2 py-2 text-danger">{rename.error}</p>
+{/if}

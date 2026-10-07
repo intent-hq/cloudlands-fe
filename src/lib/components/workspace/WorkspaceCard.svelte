@@ -38,10 +38,6 @@
     type SidebarMenuEntry,
     type SidebarMenuItem,
   } from '$lib/components/ui/sidebar-context-menu/types';
-  import {
-    incrementContextMenuOpen,
-    decrementContextMenuOpen,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import type { Workspace } from '$shared/types';
   import type { PullRequestInfo } from '$shared/types';
   import { writable } from 'svelte/store';
@@ -584,7 +580,6 @@
 
   let contextMenu: (SidebarContextPosition & { workspaceId: string }) | null = $state(null);
   let overflowMenuOpen = $state(false);
-  let hadContextMenu = false;
   let menuWorkspaceId: string | undefined;
 
   $effect(() => {
@@ -622,14 +617,6 @@
 
   $effect(() => {
     if (overflowMenuOpen) contextMenu = null;
-    const isOpen = contextMenu !== null || overflowMenuOpen;
-
-    if (isOpen && !hadContextMenu) {
-      appStore.dispatch(incrementContextMenuOpen());
-    } else if (!isOpen && hadContextMenu) {
-      appStore.dispatch(decrementContextMenuOpen());
-    }
-    hadContextMenu = isOpen;
   });
 
   onDestroy(() => {
@@ -640,7 +627,6 @@
       hoverCardFocusSuppressionTimer = null;
     }
     closeHoverCard();
-    if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
   function getContextMenuItems(): SidebarMenuEntry[] {

@@ -17,6 +17,11 @@ import { isCtContractPath } from './ct-contract-paths.mjs';
 import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
 import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
+import { resolveUnitSelections } from './verify-unit-selection.mjs';
+import {
+  generatedBuildConfigPrerequisite,
+  requiresTransferSelectionFixtures,
+} from './unit-test-prerequisites.mjs';
 import {
   acquireVerificationLock,
   ctLockKey,
@@ -134,7 +139,14 @@ export function parseArgs(argv) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
-    else if (arg === '--help' || arg === '-h') result.help = true;
+    else if (arg === '--resolved-plan') result.resolvedPlan = true;
+    else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
+      const value =
+        arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
+      if (!/^\d+$/.test(value ?? '') || !Number.isSafeInteger(Number(value)))
+        throw new Error('--max-unit-files requires a nonnegative safe integer');
+      result.maxUnitFiles = Number(value);
+    } else if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--base' || arg.startsWith('--base=')) {
       const value = arg === '--base' ? argv[(index += 1)] : arg.slice('--base='.length);
       if (!value || value.startsWith('-')) throw new Error('missing value for option: --base');
@@ -142,6 +154,8 @@ export function parseArgs(argv) {
     } else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else result.paths.push(arg);
   }
+  if (result.dryRun && (result.resolvedPlan || result.maxUnitFiles !== undefined))
+    throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
   return result;
 }
 
@@ -897,8 +911,42 @@ export function createVerificationPlan(files, options = {}) {
       ]),
     );
   }
+  // These are planner-owned selections using the standard unit config. Pass only
+  // their file filters to the shared launcher policy; related selection remains
+  // conservative because it can reach any consumer through the import graph.
+  const unitSelections = new Map([
+    ['vitest-direct', directUnit],
+    ['vitest-declared', declaredUnit],
+    ['vitest-full', []],
+    ['vitest-related', ['related', ...relatedSources]],
+  ]);
+  const prerequisiteId = 'transfer-selection-fixtures';
+  const prerequisites = [];
+  const buildConfig = generatedBuildConfigPrerequisite({ root });
+  for (const check of checks) {
+    // Every unit lane imports generated config, including repo-wide UI invariants.
+    if (!check.id.startsWith('vitest-')) continue;
+    check.dependsOn = [buildConfig.id];
+    const selection = unitSelections.get(check.id);
+    if (selection && requiresTransferSelectionFixtures(selection, { root })) {
+      check.dependsOn.push(prerequisiteId);
+    }
+  }
+  if (checks.some((check) => check.dependsOn?.includes(buildConfig.id))) {
+    prerequisites.push(buildConfig);
+  }
+  if (checks.some((check) => check.dependsOn?.includes(prerequisiteId))) {
+    prerequisites.push({
+      id: prerequisiteId,
+      label: 'Validate canonical transfer-selection fixtures',
+      executable: process.execPath,
+      args: [resolve(REPO_ROOT, 'scripts/transfer-selection-fixtures.mjs')],
+      lockKind: null,
+    });
+  }
   return {
     files,
+    prerequisites,
     checks,
     fallbackReasons: [...new Set(fallbackReasons)].sort(),
     triggerViolations: declared.violations.map((entry) => entry.path),
@@ -926,16 +974,32 @@ export function printPlan(plan, dryRun, log = console.log) {
       `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
     );
   }
+  if (plan.prerequisites?.length) {
+    log('verify:changed: prerequisites (before all selected checks)');
+    for (const prerequisite of plan.prerequisites) {
+      log(
+        `  - ${prerequisite.id}: ${[prerequisite.executable, ...prerequisite.args].map(shellQuote).join(' ')}`,
+      );
+    }
+  }
   log(`verify:changed: ${plan.checks.length} check(s)`);
   for (const check of plan.checks) {
-    log(`  - ${check.label}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`);
+    const dependencies = check.dependsOn?.length
+      ? ` [requires: ${check.dependsOn.join(', ')}]`
+      : '';
+    log(
+      `  - ${check.label}${dependencies}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`,
+    );
   }
   if (dryRun) log('verify:changed: dry-run; no commands were run');
 }
 
 async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
-  const launcher = pnpmInvocation(check.args);
+  const launcher =
+    check.executable === 'pnpm'
+      ? pnpmInvocation(check.args)
+      : { executable: check.executable, args: check.args, shell: false };
   // A locked check spawns the CT launcher, which takes the same `ct-<port>`
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
@@ -968,6 +1032,50 @@ export async function runVerificationPlan(plan, root, options = {}) {
   const lockPath = options.lockPath ?? defaultLockPath;
   const log = options.log ?? console.log;
 
+  // Keep prerequisites separate from checks so {...plan, checks: selectedChecks}
+  // retains them. Resolve every reference before spawning anything, then validate
+  // once before ALL selected checks, including an earlier unrelated test lane.
+  const required = new Set(plan.checks.flatMap((check) => check.dependsOn ?? []));
+  const prerequisites = [...required].map((id) => {
+    const prerequisite = plan.prerequisites?.find((entry) => entry.id === id);
+    if (!prerequisite) throw new Error(`Missing prerequisite ${id} in verification plan`);
+    return prerequisite;
+  });
+  for (const prerequisite of prerequisites) await run(prerequisite, root);
+
+  let selections;
+  const printSelections = (resolved, complete) => {
+    const files = [...new Set(resolved.flatMap((selection) => selection.files))].sort();
+    log(
+      `verify:changed: ${complete ? 'resolved' : 'partially resolved'} unit files: ${files.length} unique`,
+    );
+    for (const file of files) log(`  - ${file}`);
+    for (const selection of resolved) {
+      log(`  ${selection.id}: ${selection.files.length} file(s)`);
+      for (const file of selection.files) log(`    - ${file}`);
+    }
+    return files;
+  };
+  try {
+    selections = await (options.resolveUnitSelections ?? resolveUnitSelections)(plan, root);
+  } catch (error) {
+    printSelections(error.selections ?? [], false);
+    throw new Error(
+      `${error.message}\nNo selected checks ran. Repair discovery and retry --resolved-plan; for an explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+      { cause: error },
+    );
+  }
+  const unitFiles = printSelections(selections, true);
+  if (options.maxUnitFiles !== undefined && unitFiles.length > options.maxUnitFiles) {
+    throw new Error(
+      `${unitFiles.length} unit files exceed --max-unit-files ${options.maxUnitFiles}. No selected checks ran; no coverage was truncated.\nReview --resolved-plan, then rerun the same command with --max-unit-files ${unitFiles.length} (or omit the limit). Explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+    );
+  }
+  if (options.resolvedPlan) {
+    log('verify:changed: resolved-plan; prerequisites and discovery only, no selected checks ran');
+    return;
+  }
+
   for (const check of plan.checks) {
     const lockKey = verificationLockKey(check, env);
     if (!lockKey) {
@@ -998,7 +1106,9 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    log(
+      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--max-unit-files N] [--base <ref>] [paths...]',
+    );
     log(
       `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
     );
@@ -1030,7 +1140,11 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   if (!deps.ok) throw new Error(deps.reason);
   const i18n = await ensureI18n(root);
   if (!i18n.ok) throw new Error(i18n.reason);
-  await runPlan(plan, root);
+  await runPlan(plan, root, {
+    resolvedPlan: args.resolvedPlan,
+    maxUnitFiles: args.maxUnitFiles,
+    log,
+  });
   return 0;
 }
 

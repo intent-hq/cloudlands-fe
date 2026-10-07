@@ -891,6 +891,41 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
     return { client, sockets, onHelloResult };
   }
 
+  it('ignores an older concurrent rehello response after a newer hello confirms identity', async () => {
+    const { client, sockets, onHelloResult } = makeHelloClient();
+    try {
+      client.start();
+      sockets[0].open();
+      await flush();
+      sockets[0].receive(`${JSON.stringify({ id: 1, result: helloResult('cli-7f3a') })}\n`);
+      await flush();
+      const older = client.request('client.hello', { name: 'Older' });
+      const newer = client.request('client.hello', { name: 'Newer' });
+      await flush();
+      const olderFrame = JSON.parse(sockets[0].writes[1]);
+      const newerFrame = JSON.parse(sockets[0].writes[2]);
+      expect(olderFrame.params.clientId).toBe('cli-7f3a');
+      expect(newerFrame.params.clientId).toBe('cli-7f3a');
+      sockets[0].receive(
+        `${JSON.stringify({ id: newerFrame.id, result: helloResult('current:cli-7f3a') })}\n`,
+      );
+      await newer;
+      const current = client.getRepositoryConnection();
+      expect(current).not.toBeNull();
+      sockets[0].receive(
+        `${JSON.stringify({ id: olderFrame.id, result: helloResult('stale:cli-7f3a') })}\n`,
+      );
+      await older;
+      expect(onHelloResult.mock.calls.map(([result]) => result.clientId)).toEqual([
+        'cli-7f3a',
+        'current:cli-7f3a',
+      ]);
+      expect(client.getRepositoryConnection()).toBe(current);
+    } finally {
+      client.dispose();
+    }
+  });
+
   // protocol-version-ok: retained registered-root contract across known generations.
   describe.each(['file.read', 'file.readChunk'])('scoped %s support', (method) => {
     it.each([
@@ -1282,6 +1317,34 @@ describe('captured repository socket dispatch', () => {
     await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
     return { client, sockets, factory };
   }
+  it('observes acknowledged node capabilities without retiring the connection or sending hello', async () => {
+    const { client, sockets } = await connected({
+      clientId: 'confirmed-client',
+      server: { capabilities: { agentNodes: 1, localNodeIsolation: 1, agentPlatformRouting: 1 } },
+    });
+    const connection = client.getRepositoryConnection();
+    expect(client.getNodeCapabilities()).toEqual({
+      agentNodes: 1,
+      localNodeIsolation: 1,
+      agentPlatformRouting: 1,
+    });
+    expect(client.getRepositoryConnection()).toBe(connection);
+    expect(sockets[0].writes).toHaveLength(1);
+    const hello = client.request('client.hello');
+    expect(client.getNodeCapabilities()).toBeNull();
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
+    sockets[0].receive(
+      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true}}}}\n',
+    );
+    await hello;
+    expect(client.getNodeCapabilities()).toEqual({
+      agentNodes: 0,
+      localNodeIsolation: 0,
+      agentPlatformRouting: 0,
+    });
+    client.dispose();
+    expect(client.getNodeCapabilities()).toBeNull();
+  });
   it('requires a positive current hello and sends synchronously on the first connection', async () => {
     const { client, sockets } = await connected();
     const connection = client.getRepositoryConnection();
@@ -1301,6 +1364,7 @@ describe('captured repository socket dispatch', () => {
     async (hello) => {
       const { client, sockets } = await connected(hello);
       expect(client.getRepositoryConnection()).toBeNull();
+      expect(client.getNodeCapabilities()).toBeNull();
       await expect(client.requestOnCapturedConnection({}, 'git.status')).rejects.toThrow();
       expect(sockets[0].writes).toHaveLength(1);
     },
@@ -1310,6 +1374,7 @@ describe('captured repository socket dispatch', () => {
     const original = client.getRepositoryConnection()!;
     sockets[0].emit('close');
     expect(client.getRepositoryConnection()).toBeNull();
+    expect(client.getNodeCapabilities()).toBeNull();
     await vi.waitFor(() => expect(sockets).toHaveLength(2));
     sockets[1].open();
     await vi.waitFor(() => expect(sockets[1].writes).toHaveLength(1));

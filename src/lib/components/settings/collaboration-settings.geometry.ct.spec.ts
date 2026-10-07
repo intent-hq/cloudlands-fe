@@ -23,12 +23,7 @@ for (const state of ['member', 'unknown', 'disabled']) {
       page.getByRole('region', { name: 'Share this instance', exact: true }),
     ).toHaveCount(0);
     if (state === 'member') {
-      await expect(page.getByTestId('collaboration-current-identity')).toContainText('Taylor Chen');
       await expect(page.getByTestId('guest-sessions-instances')).toContainText('Studio host');
-    } else if (state === 'unknown') {
-      await expect(page.getByRole('button', { name: 'Sign in for collaboration' })).toBeDisabled();
-    } else {
-      await expect(page.getByTestId('collaboration-current-identity')).toHaveCount(0);
     }
   });
 }
@@ -60,44 +55,17 @@ test('unlinked owner opens and cancels invitation using the keyboard without los
   ).toBeLessThanOrEqual(1);
 });
 
-test('current identity remains distinct from the host roster and joined host identity', async ({
-  mount,
-  page,
-}) => {
+test('host roster and joined host retain their own identities', async ({ mount, page }) => {
   await mount(Preview, {
     hooksConfig: {
       geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-populated' },
     },
   });
-  await expect(page.getByTestId('collaboration-current-identity')).toContainText('Taylor Chen');
-  await expect(page.getByTestId('collaboration-current-identity')).not.toContainText(
-    'Instance owner',
-  );
   await expect(page.getByTestId('hosted-workspace-roster')).toContainText('Design system');
   await expect(page.getByTestId('hosted-workspace-roster')).toContainText('Jules Martin');
   await expect(page.getByTestId('guest-sessions-instances')).toContainText('taylor-work');
   await expect(page.getByRole('button', { name: 'Remove all guests', exact: true })).toBeVisible();
 });
-
-for (const state of ['remote-member', 'remote-empty', 'remote-unknown']) {
-  test(`${state} shows only this host identity without local sign-in`, async ({ mount, page }) => {
-    await mount(Preview, {
-      hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state } },
-    });
-    await expect(page.getByRole('button', { name: /Sign in/ })).toHaveCount(0);
-    const summary = page.getByTestId('collaboration-current-identity');
-    if (state === 'remote-member') {
-      await expect(summary).toContainText('Robin Patel');
-      await expect(summary).toContainText('gitlab.example');
-      await expect(summary).not.toContainText('Taylor Chen');
-    } else if (state === 'remote-empty') {
-      await expect(summary).toContainText('No collaboration identity is linked to your user');
-      await expect(summary).not.toContainText('Sign in');
-    } else {
-      await expect(summary).toContainText('unavailable until this connection is ready');
-    }
-  });
-}
 
 for (const width of [390, 1100]) {
   test(`separates real workspace sharing from joined instances at ${width}px`, async ({
@@ -134,3 +102,31 @@ for (const width of [390, 1100]) {
     ).toBeLessThanOrEqual(1);
   });
 }
+
+test('machine name can be saved and reset with the keyboard on a narrow settings page', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await mount(Preview, {
+    hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-empty' } },
+  });
+  const input = page.getByRole('textbox', { name: 'Machine name', exact: true });
+  await expect(input).toBeEnabled();
+  await input.fill('  Design studio  ');
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await expect(save).toBeEnabled();
+  await page.keyboard.press('Tab');
+  await expect(save).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(input).toHaveValue('Design studio');
+  const reset = page.getByRole('button', { name: 'Use default name', exact: true });
+  await expect(reset).toBeEnabled();
+  await reset.focus();
+  await page.keyboard.press('Enter');
+  await expect(input).toHaveValue('');
+  await expect(input).toHaveAttribute('placeholder', 'Studio');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+  ).toBeLessThanOrEqual(1);
+});

@@ -181,9 +181,14 @@ async function renderMenu(workspaceId = '') {
 }
 
 function openInLabels(container: HTMLElement): string[] {
-  return Array.from(
-    container.querySelectorAll<HTMLSpanElement>('button span[title^="Open in "]'),
-  ).map((label) => label.textContent?.trim() ?? '');
+  return within(container)
+    .getAllByRole('button', { name: /^Open in / })
+    .map(
+      (button) =>
+        within(button)
+          .getByText(/^Open in /)
+          .textContent?.trim() ?? '',
+    );
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not

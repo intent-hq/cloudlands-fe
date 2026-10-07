@@ -1,7 +1,6 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { onDestroy, untrack } from 'svelte';
-  import WebSocketApiSettings from './WebSocketApiSettings.svelte';
   import {
     Button,
     Input,
@@ -555,24 +554,19 @@
     </p>
   {/if}
 
-  {#if device.isLocal}
-    <div
-      class="px-4 pb-4 sm:px-5"
-      hidden={$currentConnectionId$ !== device.id && panelMode !== 'edit'}
-    >
-      <WebSocketApiSettings expanded={panelMode === 'edit'} onEnabled={() => onOpenPanel('edit')}>
-        <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
-          {#snippet control()}
-            <DeviceIconPicker
-              record={device}
-              bind:value={localDeviceIcon}
-              disabled={busy !== null}
-              portal={true}
-              onchange={(value) => void updateLocalDeviceIcon(value)}
-            />
-          {/snippet}
-        </SettingsFieldRow>
-      </WebSocketApiSettings>
+  {#if device.isLocal && panelMode === 'edit'}
+    <div class="px-4 pb-4 sm:px-5">
+      <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
+        {#snippet control()}
+          <DeviceIconPicker
+            record={device}
+            bind:value={localDeviceIcon}
+            disabled={busy !== null}
+            portal={true}
+            onchange={(value) => void updateLocalDeviceIcon(value)}
+          />
+        {/snippet}
+      </SettingsFieldRow>
     </div>
   {/if}
 

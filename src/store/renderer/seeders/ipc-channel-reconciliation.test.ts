@@ -549,12 +549,22 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:request',
   'backend:subscribe',
   'backend:unsubscribe',
+  // Onboarding preparation invokes the real preload directly so main captures
+  // the sender's daemon connection before discovery. Without preload it skips;
+  // web onboarding independently uses the captured BackendTransport. Covered by
+  // provider-adapter-preparation.client.test.ts, including mock-router bypass.
+  'providers:prepare-adapters',
   // Resource details capture the original real preload bridge. Without it,
   // capture rejects before IPC; the mock client independently reports unavailable.
   // Mock bridging would bypass the original-connection admission and retirement.
   'backend:repository-resource:capture',
   'backend:repository-resource:detail',
   'backend:repository-resource:release',
+  // Checkout sessions bind the original real preload bridge and host connection.
+  // Mock bridging would bypass capture/currentness; preview clients report unavailable.
+  'backend:repository-checkout:capture',
+  'backend:repository-checkout:request',
+  'backend:repository-checkout:release',
   // Console-owner status query (#1928): main-process-owned state (which
   // window is the last-focused non-HUD window) invoked directly on the real
   // preload bridge (console-owner-status.ts guards on its presence; without

@@ -80,7 +80,12 @@ export const selectWorkspaceDrivingClient = store.createSelector(
     } else if (browserClient?.source === 'workspace') {
       driving = { clientId: browserClient.clientId, connected: false };
     }
-    return { eligibleClients, ownClientId: slice.ownClientId ?? '', driving };
+    return {
+      eligibleClients,
+      ownClientId: slice.ownClientId ?? '',
+      driving,
+      pinnedClientId: browserClient?.source === 'workspace' ? browserClient.clientId : null,
+    };
   },
 );
 

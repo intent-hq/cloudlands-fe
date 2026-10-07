@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /** Agent summary with Redux-owned streaming state and line changes. */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import { notify } from '$lib/components/patterns/notify';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -29,7 +30,14 @@
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentNodeStatusLabel } from './agent-node-status-label';
-  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
+  import {
+    nodeCapabilitiesRequested,
+    agentHubActionRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    selectNodeCapabilities,
+    selectNodeOperationBusy,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
@@ -65,7 +73,6 @@
     faBell,
     faBellSlash,
     faCircleInfo,
-    faFolderOpen,
     faPen,
     faRightLeft,
     faStop,
@@ -75,11 +82,7 @@
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import { invoke } from '$lib/electron-bridge';
-  import {
-    selectHidesAgentLifecycleActions,
-    selectIsWorkspaceHostLocal,
-  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { backgroundModeMenuItems } from './agent-background-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
@@ -223,20 +226,14 @@
   let replaceAgentModalOpen = $state(false);
   let retireAgentModalOpen = $state(false);
   const retirementSupported$ = selectAgentRetirementSupported();
-  // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
-  // machine, so the client platform matches; PanelTabBar idiom).
-  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
-  const isMac =
-    typeof navigator !== 'undefined' &&
-    // @ts-expect-error - userAgentData is not in all browsers
-    (navigator.userAgentData?.platform === 'macOS' ||
-      /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
-  // i18n-ignore (Explorer/Finder are OS brand names)
-  const fileManagerName = isWindows
-    ? 'Explorer'
-    : isMac
-      ? 'Finder'
-      : m.chat_agentCard_fileManager_label();
+
+  const nodeCapabilities$ = selectNodeCapabilities();
+  const hubBusy$ = selectNodeOperationBusy();
+  function manageHub(operation: 'merge' | 'discard') {
+    const wsId = $agent$?.workspaceId;
+    closeContextMenu();
+    if (wsId) appStore.dispatch(agentHubActionRequested(String(wsId), agentId, operation));
+  }
 
   async function startEditing() {
     if (readOnly || isEditing) return;
@@ -323,6 +320,7 @@
     const position = getSidebarContextPosition(e);
     if (!position) return;
     contextMenu = { ...position, sourcePanelId: findSourcePanelId(e.currentTarget) };
+    if ($agent$?.effectiveIsolation === 'isolated') appStore.dispatch(nodeCapabilitiesRequested());
     void appStore.dispatch(agentRetirementSupportRequested());
     // Read detail-only menu fields on demand; items update when they arrive.
     const wsId = $agent$?.workspaceId ?? workspace?.id;
@@ -396,37 +394,23 @@
       });
     }
 
-    // Reveal the agent's CoW sandbox directory. Sandboxes are cloned from the
-    // workspace checkout, so they live on the workspace's host — only offered
-    // when the agent has a sandbox, the daemon runs on this machine (PROTOCOL
-    // §5.14 locality) AND the workspace checkout lives on the daemon host,
-    // i.e. not a remote (SSH) workspace (monorepo#2171).
-    const sandboxPath = agentSandboxPath;
-    const sandboxWsId = $agent$?.workspaceId
-      ? String($agent$.workspaceId)
-      : workspace?.id
-        ? String(workspace.id)
-        : '';
-    if (
-      sandboxPath &&
-      !hasNodeOwnedAgentPath($agent$) &&
-      selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)
-    ) {
+    if ($agent$?.effectiveIsolation === 'isolated') {
       items.push({
-        id: 'reveal-sandbox',
-        label: m.chat_agentCard_menu_revealIn_label({ fileManager: fileManagerName }),
-        icon: faFolderOpen,
-        onClick: async () => {
-          closeContextMenu();
-          try {
-            await invoke('shell:showItemInFolder', { path: sandboxPath });
-          } catch (error) {
-            notify.error(
-              error instanceof Error
-                ? error.message
-                : m.chat_agentCard_revealFailed_error({ fileManager: fileManagerName }),
-            );
-          }
+        id: 'hub-merge',
+        label: $nodeCapabilities$.agentNodes
+          ? m.agent_hub_merge()
+          : m.agent_placement_unavailable(),
+        disabled: !$nodeCapabilities$.agentNodes || $hubBusy$ || !$agent$?.checkpoint?.id,
+        onClick: () => {
+          void manageHub('merge');
+        },
+      });
+      items.push({
+        id: 'hub-discard',
+        label: m.agent_hub_discard(),
+        disabled: !$nodeCapabilities$.agentNodes || $hubBusy$,
+        onClick: () => {
+          void manageHub('discard');
         },
       });
     }
@@ -641,12 +625,6 @@
 
   const effectiveStatusLabel = $derived(getAgentNodeStatusLabel($agent$) ?? statusLabel);
 
-  // Sandbox directory for sandboxed agents (daemon-provided metadata).
-  const agentSandboxPath = $derived.by(() => {
-    const path = $agent$?.metadata?.sandboxPath || $agent$?.agentMetadata?.sandboxPath;
-    return typeof path === 'string' && path.length > 0 ? path : null;
-  });
-
   // Single preview value for the persistent container below, from the shared
   // canonical selector (attention → live text → live tool → user line →
   // digest/report → persisted fallbacks; see selectAgentPreview) so
@@ -726,6 +704,7 @@
           ? String(workspace.id)
           : undefined;
       if (!wsId) return;
+      if (openAssistantAgentFromEvent(event, wsId, agentId)) return;
       appStore.dispatch(
         openAgentTabRequested(wsId, {
           agentId,
@@ -931,7 +910,7 @@
                 <p
                   class="ml-2.5 min-w-0 flex-1 truncate whitespace-nowrap text-sm {INLINE_PEEK_TYPOGRAPHY_CLASS}"
                   data-testid="agent-card-preview"
-                  title={inlinePreviewText}
+                  use:truncatedTitle={inlinePreviewText}
                   aria-label={inlinePreviewText}
                 >
                   {inlinePreviewText}
@@ -998,7 +977,7 @@
             {:else if $preview$.kind === 'report'}
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
-                title={$preview$.text}
+                use:truncatedTitle={$preview$.text}
               >
                 {$preview$.text}
               </p>
@@ -1006,7 +985,7 @@
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
                 data-testid="agent-card-preview"
-                title={$preview$.text}
+                use:truncatedTitle={$preview$.text}
               >
                 {$preview$.text}
               </p>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * In-app quit confirmation dialog (replaces the native message box when a
    * renderer window is available). Shows, before quitting/restarting:
@@ -197,7 +198,7 @@
                 </span>
               {/if}
             {/snippet}
-            {#snippet title()}<span class="block truncate" title={workspace.name}
+            {#snippet title()}<span class="block truncate" use:truncatedTitle={workspace.name}
                 >{workspace.name}</span
               >{/snippet}
             {#snippet trailing()}

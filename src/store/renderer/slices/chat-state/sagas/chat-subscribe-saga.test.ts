@@ -969,7 +969,11 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
 
     // The read saga's shell upsert lands → the deferred snapshot replays.
-    seedSession(agentId);
+    seedSession(agentId, {
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    });
     await vi.waitFor(() => {
       expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
         totalMessages: 2,
@@ -980,6 +984,13 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       'm-pre-1',
       'm-pre-2',
     ]);
+    // This replay is the snapshot's first application, so its idle verdict
+    // must still reconcile stale metadata in the newly hydrated session.
+    expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    });
   });
 
   it('waits for the post-reducer batch commit instead of a membership-only upsert', async () => {

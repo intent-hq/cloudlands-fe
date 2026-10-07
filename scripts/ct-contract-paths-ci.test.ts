@@ -617,6 +617,13 @@ describe('authored browser tests require their complete PR suites', () => {
     ['playwright/app-stubs/navigation.ts', true],
     ['test/vite-harness-cache.mjs', true],
     ['test/fixtures/browser-lifetime/main.cjs', true],
+    ['test/fixtures/repository-checkout/playwright.config.ts', true],
+    ['test/fixtures/repository-checkout/main.ts', true],
+    ['src/features/backend/main/repository-checkout-feed.ts', true],
+    ['src/lib/client/live/repository-checkout-transport.ts', true],
+    ['src/shared/types/repository-checkout.ts', true],
+    ['.github/workflows/browser-tests.yml', true],
+    ['.github/workflows/intent-pr.yml', true],
     ['package.json', true],
     ['pnpm-lock.yaml', true],
     ['svelte.config.js', true],
@@ -624,6 +631,7 @@ describe('authored browser tests require their complete PR suites', () => {
     ['src/features/browser/view.svelte', false],
     ['playwright-ct.config.ts', false],
     ['test/fixtures/browser-lifetime-other/main.cjs', false],
+    ['test/fixtures/repository-checkout-other/main.ts', false],
   ])('classifies Electron setup path %s as required=%s', (file, required) => {
     const { root, base } = checkoutWith(file);
     const output = join(root, 'github-output');
@@ -785,7 +793,7 @@ describe('shared browser jobs and nightly routing', () => {
     const ct = jobLines('test-ct', browserWorkflow);
     expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
     expect(field(ct, 'fail-fast')).toBe('false');
-    expect(jobField(ct, 'timeout-minutes')).toBe('40');
+    expect(jobField(ct, 'timeout-minutes')).toBe('50');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
       '--max-old-space-size=8192',
     );

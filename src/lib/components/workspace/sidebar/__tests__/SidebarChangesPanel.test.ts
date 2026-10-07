@@ -1,6 +1,6 @@
 import { m } from '$shared/paraglide/messages.js';
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -801,13 +801,7 @@ describe('SidebarChangesPanel', () => {
     it('dispatches a refresh intent with the explicit workspace ID', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       const { container } = await renderPanel();
-      const refresh = await waitFor(() => {
-        const button = container.querySelector<HTMLButtonElement>(
-          'button[title="Refresh git status"]',
-        );
-        expect(button).not.toBeNull();
-        return button!;
-      });
+      const refresh = await within(container).findByRole('button', { name: 'Refresh git status' });
       mockDispatch.mockClear();
 
       await fireEvent.click(refresh);
@@ -2964,11 +2958,8 @@ describe('SidebarChangesPanel', () => {
       const { refreshAcceptChangesStatus } =
         await import('$store/renderer/slices/changes/changes-slice');
       const clickRefresh = async (container: HTMLElement) => {
-        const btn = container.querySelector(
-          'button[title="Refresh git status"]',
-        ) as HTMLButtonElement | null;
-        expect(btn).not.toBeNull();
-        await fireEvent.click(btn!);
+        const btn = within(container).getByRole('button', { name: 'Refresh git status' });
+        await fireEvent.click(btn);
         await new Promise((r) => setTimeout(r, 0));
       };
 

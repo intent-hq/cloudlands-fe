@@ -382,23 +382,30 @@
     cancelActiveTranscription();
   }
 
+  async function restoreComposerFocus() {
+    await tick();
+    if (!containerRef) return;
+    const active = containerRef.ownerDocument.activeElement;
+    if (active && active !== containerRef.ownerDocument.body && !containerRef.contains(active))
+      return;
+    await focus();
+  }
+
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
     previousDisabled = disabled;
 
     if (justEnabled) {
-      void tick().then(() => focus());
+      void restoreComposerFocus();
     }
   });
 
-  // Mirror of the justEnabled effect for the transient editor lock: the
-  // composer takes focus again as soon as the lock releases.
   $effect(() => {
     const justUnlocked = previousInputLocked && !inputLocked;
     previousInputLocked = inputLocked;
 
     if (justUnlocked) {
-      void tick().then(() => focus());
+      void restoreComposerFocus();
     }
   });
 

@@ -8,6 +8,7 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
@@ -52,6 +53,8 @@
     queued = false,
     suggestions = false,
     questions = false,
+    newerQuestion = false,
+    staleAnswerTranscript = false,
     transcript = false,
     responseDelivered = false,
     initializeStore = true,
@@ -73,11 +76,13 @@
     queued?: boolean;
     suggestions?: boolean;
     questions?: boolean;
+    newerQuestion?: boolean;
+    staleAnswerTranscript?: boolean;
     transcript?: boolean;
     responseDelivered?: boolean;
     initializeStore?: boolean;
     submissionSupport?: boolean;
-    settleSubmission?: 'history' | 'queue' | 'rejected';
+    settleSubmission?: 'history' | 'queue' | 'rejected' | 'uncertain' | 'evidence';
     submissionStage?: 'started' | 'ack';
     queuePhase?: 'ready' | 'foreign' | 'restored';
     followUp?: 'blocker' | 'discussion';
@@ -113,8 +118,9 @@
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: () => [] })
+    ? startRootStoreLifecycle(store, { startSagas: startChatFixtureSagas })
     : () => {};
+  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store);
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -356,7 +362,10 @@
       store.dispatch(
         chatLastAttemptedMessageSet(
           agentId,
-          buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
+          buildRecordedAttempt(pending.content, {
+            messageMetadata: pending.messageMetadata,
+            submission: { scope, id: pending.id },
+          }),
         ),
       );
     } else {
@@ -380,15 +389,32 @@
       displayName: null,
       avatarUrl: null,
     };
-    if (settleSubmission === 'rejected') {
+    if (settleSubmission === 'rejected' || settleSubmission === 'uncertain') {
       store.dispatch(
         chatLastAttemptedMessageSet(
           agentId,
-          buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
+          buildRecordedAttempt(pending.content, {
+            messageMetadata: pending.messageMetadata,
+            submission: { scope, id: pending.id },
+          }),
         ),
       );
-      store.dispatch(pendingSubmissionSettled(scope, pending.id, 'rejected', Date.now()));
-      store.dispatch(chatSendFailed(agentId, 'Request rejected'));
+      store.dispatch(pendingSubmissionSettled(scope, pending.id, settleSubmission, Date.now()));
+      store.dispatch(
+        chatSendFailed(
+          agentId,
+          settleSubmission === 'rejected' ? 'Request rejected' : 'Connection lost after write',
+        ),
+      );
+    } else if (settleSubmission === 'evidence') {
+      store.dispatch(
+        pendingEvidenceObserved(
+          scope,
+          'history',
+          [{ submissionIds: [pending.id], author }],
+          Date.now(),
+        ),
+      );
     } else if (settleSubmission === 'queue') {
       store.dispatch(
         pendingSubmissionSettled(scope, pending.id, 'accepted', Date.now(), undefined, true),
@@ -401,7 +427,7 @@
         timestamp,
         contentBlocks: [{ type: 'text' as const, text: pending.content }],
         author,
-        metadata: { submissionIds: [pending.id] },
+        metadata: { ...pending.messageMetadata, submissionIds: [pending.id] },
       };
       store.dispatch(
         pendingEvidenceObserved(
@@ -417,6 +443,20 @@
         }),
       );
     }
+  });
+  $effect(() => {
+    if (!staleAnswerTranscript) return;
+    store.dispatch(updateSession(agentId, { messages: session.messages }));
+  });
+  $effect(() => {
+    if (!newerQuestion) return;
+    const next = { ...session.messages[0], id: 'composer-question-new' };
+    store.dispatch(
+      updateSession(agentId, {
+        messages: [...store.state.agentSessions.byAgentId[agentId].messages, next],
+        metadata: { pendingQuestionsMessageId: next.id },
+      }),
+    );
   });
   $effect(() => {
     if (!queuePhase) return;
@@ -554,6 +594,7 @@
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
   onDestroy(() => {
+    stopChatSagas.forEach((stop) => stop());
     disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));

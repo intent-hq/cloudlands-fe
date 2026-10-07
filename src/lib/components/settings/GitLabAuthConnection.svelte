@@ -8,7 +8,7 @@
   import { logoutGitLab } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import {
     selectGitLabAuthError,
-    selectGitLabAuthHost,
+    selectGitLabAuthInstanceBaseUrl,
     selectGitLabAuthIsAuthenticating,
     selectGitLabAuthIsConfigured,
     selectGitLabAuthUser,
@@ -21,7 +21,7 @@
   let showConnectForm = $state(false);
 
   const gitlabEnabled$ = selectLabsGitLabEnabled();
-  const host$ = selectGitLabAuthHost();
+  const instance$ = selectGitLabAuthInstanceBaseUrl();
   const isConfigured$ = selectGitLabAuthIsConfigured();
   const isAuthenticating$ = selectGitLabAuthIsAuthenticating();
   const user$ = selectGitLabAuthUser();
@@ -55,7 +55,7 @@
   function handleDisconnect() {
     isDisconnecting = true;
     showConnectForm = false;
-    // Revokes the credential stored for the connection's host (state.host).
+    // The saga revokes the credential for the original complete instance.
     appStore.dispatch(logoutGitLab());
     // The saga handles the async revoke; reset local UI state shortly after.
     setTimeout(() => {
@@ -71,7 +71,7 @@
         <Fa icon={faGitlab} class="size-4" />
       </div>
       <div class="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
-        <div class="flex min-w-0 items-center gap-3">
+        <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <!-- i18n-ignore (brand name) -->
           <span class="type-body font-medium text-foreground">GitLab</span>
           {#if $isConfigured$}
@@ -84,8 +84,8 @@
               {/if}
             </span>
             <span
-              class="type-body truncate text-muted-foreground"
-              data-testid="gitlab-connection-host">{$host$}</span
+              class="type-body break-all text-muted-foreground"
+              data-testid="gitlab-connection-host">{$instance$}</span
             >
           {/if}
         </div>

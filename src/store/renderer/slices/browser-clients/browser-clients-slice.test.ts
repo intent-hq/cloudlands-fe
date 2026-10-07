@@ -148,6 +148,7 @@ describe('browserClientsReducer', () => {
       eligibleClients: [],
       ownClientId: '',
       driving: null,
+      pinnedClientId: null,
     });
 
     const viewer: LiveClient = {
@@ -174,6 +175,7 @@ describe('browserClientsReducer', () => {
         { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
       ],
       ownClientId: 'cli-desk',
+      pinnedClientId: null,
       driving: { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
     });
 
@@ -350,4 +352,32 @@ describe('authenticated Devices view lifetime', () => {
     );
     expect(getItems(state.authenticatedClients!)).toHaveLength(2);
   });
+});
+
+// Exact persisted targets remain offline; a matching suffix is not continuity.
+describe('identity drift selectors', () => {
+  it.each(['desktop', 'alice:desktop'])(
+    'does not alias stale pin or tab host %s to a nested ID',
+    (stale) => {
+      const nested = { ...desk, clientId: `bob:${stale}` };
+      let state = browserClientsReducer(initialState, liveClientsReceived([nested]));
+      state = browserClientsReducer(state, liveClientsReceived([nested], 'ws-1'));
+      state = browserClientsReducer(state, ownClientIdReceived(nested.clientId));
+      state = browserClientsReducer(
+        state,
+        workspaceBrowserClientReceived('ws-1', {
+          source: 'workspace',
+          clientId: stale,
+          resolved: null,
+        }),
+      );
+      expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toEqual({
+        clientId: stale,
+        connected: false,
+      });
+      expect(selectBrowserTabHost.select(asState(state), stale).connected).toBe(false);
+      expect(selectLiveClient.select(asState(state), stale)).toBeUndefined();
+      expect(selectBrowserTabHost.select(asState(state), nested.clientId).connected).toBe(true);
+    },
+  );
 });

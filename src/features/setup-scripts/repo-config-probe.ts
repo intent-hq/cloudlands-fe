@@ -23,11 +23,19 @@ import { fetchGitHubRepoConfigSetupScript, fetchRepoConfigSetupScript } from './
 export interface RepoIdentity {
   path: string | null;
   /**
-   * Only `'local'` and `'github'` are meaningful to the probe; other values
-   * (e.g. the initializers' `'remote'` / `'new'`) pass through and disable it.
+   * Local and GitHub use the shared readers; GitLab uses the captured checkout
+   * reader supplied by its initializer. Remote/new selections disable detection.
    */
   type: 'local' | 'github' | (string & {}) | null | undefined;
   githubUrl?: string | null;
+  /** Canonical remote repository plus its original checkout binding and selected commit. */
+  gitlab?: {
+    instanceBaseUrl: string;
+    projectPath: string;
+    checkoutId: string;
+    revision: string;
+    commitSha?: string;
+  } | null;
   /**
    * Selected branch/ref. Part of the probe identity for GitHub selections
    * (monorepo#835): `.intent/config.json` can differ between branches, so a
@@ -46,6 +54,11 @@ export interface RepoIdentity {
  * (last-used restore, cache invalidation).
  */
 export function repoIdentityKey(identity: RepoIdentity): string | null {
+  if (identity.type === 'gitlab') {
+    return identity.gitlab
+      ? JSON.stringify(['gitlab', identity.gitlab.instanceBaseUrl, identity.gitlab.projectPath])
+      : null;
+  }
   return identity.type === 'github'
     ? `${identity.path}\u0000${identity.githubUrl || ''}`
     : identity.path;
@@ -59,6 +72,15 @@ export function repoIdentityKey(identity: RepoIdentity): string | null {
  */
 export function probeIdentityKey(identity: RepoIdentity): string | null {
   const repoKey = repoIdentityKey(identity);
+  if (identity.type === 'gitlab') {
+    return JSON.stringify([
+      repoKey,
+      identity.branch ?? '',
+      identity.gitlab?.commitSha ?? '',
+      identity.gitlab?.checkoutId ?? '',
+      identity.gitlab?.revision ?? '',
+    ]);
+  }
   return identity.type === 'github' ? `${repoKey}\u0000${identity.branch || ''}` : repoKey;
 }
 
@@ -82,6 +104,12 @@ export interface RepoConfigProbeOptions {
   isSetupScriptModalOpen: () => boolean;
   /** Whether the user picked/edited a custom script (read untracked). */
   isCustomSetupScript: () => boolean;
+  /** GitLab read is dispatched through the existing checkout saga/session. */
+  readScript?: () => Promise<string | null>;
+  /** Keep an unavailable read distinct from a confirmed missing config. */
+  onProbeError?: () => void;
+  /** Scheduler run is still current, including selection round-trips and disposal. */
+  isCurrentRun?: () => boolean;
   /** Spinner on the setup-script control. */
   setLoading: (loading: boolean) => void;
   /**
@@ -103,8 +131,8 @@ export interface RepoConfigProbeOptions {
  * Returns a promise that settles when the probe (if any) has completed and
  * its result has been applied/cached — never rejects.
  *
- * Silent degradation: a missing config, auth failure, or transport error
- * folds to "no script" in the fetch helpers — never an error here.
+ * Local/GitHub retain their tolerant fetch semantics. The captured GitLab
+ * reader reports failure through onProbeError, separately from missing config.
  */
 export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): Promise<void> {
   const { identity, preservedRestoredState } = options;
@@ -114,22 +142,38 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): Pro
   options.setLoading(false);
   const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
   const github = !!path && type === 'github' ? parseGitHubUrl(identity.githubUrl || path) : null;
-  if (!isLocalProbe && !github) return Promise.resolve();
+  const isGitLabProbe =
+    type === 'gitlab' && !!identity.gitlab?.commitSha && !!identity.branch && !!options.readScript;
+  if (!isLocalProbe && !github && !isGitLabProbe) return Promise.resolve();
   const scriptAtFetchStart = untrack(options.getSetupScript);
   options.setLoading(true);
   return (async () => {
-    const script = isLocalProbe
-      ? await fetchRepoConfigSetupScript(path)
-      : await fetchGitHubRepoConfigSetupScript(
-          github!.owner,
-          github!.repo,
-          identity.branch || undefined,
-        );
+    let script: string | null;
+    try {
+      script = isGitLabProbe
+        ? await options.readScript!()
+        : isLocalProbe
+          ? await fetchRepoConfigSetupScript(path)
+          : await fetchGitHubRepoConfigSetupScript(
+              github!.owner,
+              github!.repo,
+              identity.branch || undefined,
+            );
+    } catch {
+      if (
+        untrack(() => probeIdentityKey(options.getCurrentIdentity())) === probeKey &&
+        options.isCurrentRun?.() !== false
+      ) {
+        options.setLoading(false);
+        options.onProbeError?.();
+      }
+      return;
+    }
     // Staleness guard: user switched repos — or, for GitHub, the branch —
     // while the read was in flight (compare the full ref-aware identity;
     // GitHub repos can share a clone path)
     const currentKey = untrack(() => probeIdentityKey(options.getCurrentIdentity()));
-    if (currentKey !== probeKey) return;
+    if (currentKey !== probeKey || options.isCurrentRun?.() === false) return;
     options.setLoading(false);
     options.onProbeResult(script);
     if (!script) return;
@@ -197,6 +241,7 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
   let preservedRestoredState = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  let generation = 0;
   // Probe activity tracked for `settled()`: the last started probe, plus a
   // wait handle that resolves when a pending debounced re-probe fires or is
   // cancelled (so awaiters never hang on the debounce window).
@@ -223,6 +268,8 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
       const probeKey = probeIdentityKey(options.identity);
       if (probeKey === previousProbeKey) return;
       previousProbeKey = probeKey;
+      const run = ++generation;
+      probeOptions.isCurrentRun = () => !disposed && run === generation;
       clearPendingTimer();
 
       if (repoKey !== previousRepoKey) {

@@ -8,13 +8,9 @@
   import { page } from '$app/state';
   import { store } from '$store/renderer/configured-store';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { openPanel, setPanelWidth } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 
-  let {
-    sidebarWidth = 288,
-    admittedOwner = false,
-  }: { sidebarWidth?: number; admittedOwner?: boolean } = $props();
+  let { admittedOwner = false }: { admittedOwner?: boolean } = $props();
   const previousPrincipal = untrack(() => {
     const previous = store.state.principal;
     if (admittedOwner) admitLegacyPrincipal();
@@ -36,10 +32,6 @@
   Object.assign(page, {
     url: new URL('http://localhost/workspace/geometry-gamma'),
     params: { id: 'geometry-gamma' },
-  });
-  $effect(() => {
-    store.dispatch(openPanel('all-workspaces'));
-    store.dispatch(setPanelWidth(sidebarWidth));
   });
 </script>
 

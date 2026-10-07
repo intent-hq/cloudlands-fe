@@ -31,6 +31,12 @@ registerMockIpcHandler(BACKEND.GET_STATUS, async () => {
   };
 });
 
+// The mock has no acknowledged daemon hello. Do not advertise node authority.
+registerMockIpcHandler(BACKEND.NODE_CAPABILITIES, async () => ({
+  ok: true,
+  result: { server: { capabilities: null } },
+}));
+
 /**
  * Sidecar spawn fallback (#439). Only the Electron main process can spawn the
  * intentd sidecar (ipcMain handler in features/backend/main/backend.ipc.ts);

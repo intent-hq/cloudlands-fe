@@ -247,8 +247,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/layout/panel-system/PanelLayout.svelte',
   'src/lib/components/layout/panel-system/PanelTabBar.svelte',
   'src/lib/components/layout/sidebar-nav/SidebarNav.svelte',
-  'src/lib/components/layout/sidebar-nav/cards/ActiveWorkspacesCard.svelte',
-  'src/lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte',
   'src/lib/components/markdown/MarkdownViewer.svelte',
   'src/lib/components/markdown/MermaidRenderer.svelte',
   'src/lib/components/modals/FeatureCodeDialog.svelte',

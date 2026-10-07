@@ -36,9 +36,9 @@ const mockState = {
   panelLayout: { byWorkspaceId: {} as Record<string, unknown> },
   agentSessions: { byAgentId: {} },
   workspaceAgents: { byWorkspaceId: {} as Record<string, { foregroundAgentIds: string[] }> },
+  homeWorkspaces: { tab: 'workspaces', groupBy: 'none' },
   sidebarNav: {
     panelItem: null as string | null,
-    allSpacesViewMode: 'recent',
     multiSelectTabOrder: [],
     multiSelectSelectedTabIdsByWorkspaceId: {},
     showCreateModal: false,
@@ -240,7 +240,7 @@ describe('encoder (two windows, one owner)', () => {
 
     owner = 'B';
     manager.detent('ENC_CW');
-    expect(navigateA).toHaveBeenCalledTimes(1);
+    expect(navigateA).toHaveBeenCalledTimes(2);
     expect(navigateB).toHaveBeenCalledTimes(1);
   });
 });

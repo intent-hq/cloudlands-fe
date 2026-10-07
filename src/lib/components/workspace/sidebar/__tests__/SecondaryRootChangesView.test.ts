@@ -711,14 +711,14 @@ describe('SecondaryRootChangesView', () => {
     ];
     mocks.getStatus.mockResolvedValueOnce({ ok: true, data: initial });
     mocks.getStatus.mockResolvedValueOnce({ ok: true, data: refreshed });
-    const { getByTestId, getByTitle } = await renderView(makeEntry('main', 'root-9', 'bound111'));
+    const { getByTestId, getByRole } = await renderView(makeEntry('main', 'root-9', 'bound111'));
     await waitFor(() =>
       expect(getByTestId('secondary-root-all-changes').textContent).toContain(
         '1 file changed in Workspace',
       ),
     );
 
-    await fireEvent.click(getByTitle('Refresh git status'));
+    await fireEvent.click(getByRole('button', { name: 'Refresh git status' }));
 
     await waitFor(() =>
       expect(getByTestId('secondary-root-all-changes').textContent).toContain(

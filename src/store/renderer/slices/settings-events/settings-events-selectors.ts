@@ -1,3 +1,8 @@
+import {
+  selectCanAdministerHost,
+  selectCollaborationReady,
+  selectPrincipalActionContext,
+} from '../principal/principal-selectors';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '$store/renderer/store';
 import type { SettingsFormIdentity, SettingsFormRequest } from './settings-events-types';
@@ -51,6 +56,14 @@ export const selectSettingsFormOperation = store.createSelector(
 
 export const selectSettingsFormRequestCurrent = store.createSelector(
   (state, request: SettingsFormRequest) => {
+    const form = selectSettingsForm.select(state, request);
+    if (
+      form?.kind === 'collaboration-machine-name' &&
+      (!selectCanAdministerHost.select(state) ||
+        !selectCollaborationReady.select(state) ||
+        selectPrincipalActionContext.select(state) !== request.sessionId)
+    )
+      return false;
     const operation = selectSettingsFormOperation.select(state, request, request.resource);
     return operation?.requestId === request.requestId && operation.status === 'pending';
   },

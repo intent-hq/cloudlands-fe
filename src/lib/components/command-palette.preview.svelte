@@ -13,11 +13,15 @@
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
-  function setup() {
+  function setup(longNames = false) {
     const notes: Note[] = Array.from({ length: 16 }, (_, index) => ({
       id: NoteId(`preview-palette-note-${index}`),
       workspaceId,
-      title: index === 0 ? 'Project context' : `Context ${index}: accessible keyboard navigation`,
+      title: longNames
+        ? 'Command palette accessibility and keyboard navigation across every workspace and repository — implementation notes'
+        : index === 0
+          ? 'Project context'
+          : `Context ${index}: accessible keyboard navigation`,
       content: '',
       contentType: ContentType.Markdown,
       tags: ['Design review', 'Keyboard and pointer interactions'],
@@ -67,6 +71,13 @@
     states: {
       grouped: { props: { initialQuery: '' }, setup },
       context: { props: { initialQuery: '#' }, setup },
+      search: { props: { initialQuery: 'context' }, setup },
+      empty: { props: { initialQuery: 'no-matching-context-xyz' }, setup },
+      'empty-category': { props: { initialQuery: '@' }, setup },
+      'long-names': { props: { initialQuery: '#' }, setup: () => setup(true) },
+      'go-to-line': { props: { initialQuery: ':42' }, setup },
+      'invalid-line': { props: { initialQuery: ':0' }, setup },
+      'no-workspace': { props: { initialQuery: '', withoutWorkspace: true } },
       multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
       'gitlab-off': {
         props: { initialQuery: 'GitLab', withoutWorkspace: true },

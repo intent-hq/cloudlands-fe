@@ -199,7 +199,8 @@ const logger = createLogger('LifecycleReadSaga');
 /**
  * Skip a non-forced `pr.refresh` when the last successful refresh is within this window.
  * `lastRefreshTime` is only stamped on success, so a failed/errored refresh never arms
- * the TTL and the next trigger will retry immediately.
+ * the TTL and the next trigger can retry the command. The daemon still applies
+ * automatic admission before spending forge quota.
  */
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
 /** Initial/latest page size; pages arrive newest→oldest and are stored oldest→newest. */
@@ -379,7 +380,11 @@ function* refreshMembershipSummary(
   yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
 }
 
-function* refreshPrStatus(workspaceId: string, force: boolean): SagaGenerator<void> {
+function* refreshPrStatus(
+  workspaceId: string,
+  force: boolean,
+  isManual: boolean,
+): SagaGenerator<void> {
   if (!force) {
     const lastRefreshTime = yield* selectPRStatusLastRefreshTime.effect(workspaceId);
     if (lastRefreshTime != null && Date.now() - lastRefreshTime < PR_STATUS_REFRESH_TTL_MS) {
@@ -391,6 +396,8 @@ function* refreshPrStatus(workspaceId: string, force: boolean): SagaGenerator<vo
     const refresh: Awaited<ReturnType<typeof appClient.git.prRefresh>> = yield* call(
       [appClient.git, appClient.git.prRefresh],
       workspaceId,
+      // Forced hydration/reconnect bypasses only this renderer's freshness cache.
+      { automatic: !isManual },
     );
     if (refresh === null) {
       yield* put(prStatusRefreshCompleted(workspaceId, false, 'pr.refresh failed'));
@@ -1525,11 +1532,11 @@ function* terminalsWorker(
 }
 
 function* prStatusWorker(action: ReturnType<typeof refreshPRStatusRequested>) {
-  const [workspaceId, force] = action.payload;
+  const [workspaceId, force, isManual] = action.payload;
   if (!workspaceId) return;
   try {
     yield* race({
-      read: call(refreshPrStatus, workspaceId, force),
+      read: call(refreshPrStatus, workspaceId, force, isManual),
       reconnected: take(backendReconnected),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });

@@ -7,15 +7,17 @@
   import type { ConnectionsListResult } from '$shared/types/connections';
   import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
   import { setupApiSettingsPreview } from '../../../test/api-rtk-settings-preview';
-
   import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+  import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
   import {
     principalContextChanged,
     principalReceived,
   } from '$store/renderer/slices/principal/principal-slice';
+
   import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   function setup(remote = false, multiplayer = false) {
+    const previousApi = window.electronAPI;
     const previousMultiplayer = appStore.state.userPreferences.labsMultiplayerEnabled;
     const state = appStore.state.connections;
     const previous: ConnectionsListResult = {
@@ -82,6 +84,32 @@
         ],
       }),
     );
+    if (remote) {
+      admitLegacyPrincipal();
+      const state = withHostPrincipal(appStore.state).principal;
+      const principal = { ...state.snapshot!.principal, displayName: 'Alex' };
+      appStore.dispatch(
+        principalReceived(
+          {
+            context: state.context!,
+            invalidation: appStore.state.principal.invalidation,
+            presentationVersion: appStore.state.principal.presentationVersion,
+          },
+          { ...state.snapshot!, principal },
+        ),
+      );
+      installMockElectronBridge({
+        'pairing.getSelfInfo': () => ({
+          version: 1,
+          uri: 'intent://pair?v=1&host=192.0.2.8&port=5181&fp=AB&token=preview-not-a-real-credential',
+          hosts: ['192.0.2.8'],
+          port: 5181,
+          fingerprint: 'AB',
+          token: 'preview-not-a-real-credential',
+          principal,
+        }),
+      });
+    }
     if (multiplayer) {
       admitLegacyPrincipal();
       appStore.dispatch(setLabsMultiplayerEnabled(true));
@@ -102,7 +130,9 @@
       }
       stopApi();
       stopPublication();
+      window.electronAPI = previousApi;
       appStore.dispatch(connectionsListReceived(previous));
+      if (remote) appStore.dispatch(principalContextChanged(null));
     };
   }
 
@@ -116,7 +146,14 @@
       'local-expanded': { props: { expanded: true }, setup: () => setup() },
       'remote-window': { props: {}, setup: () => setup(true) },
       'remote-expanded': { props: { expanded: true }, setup: () => setup(true) },
+      'remote-access-disabled': { props: { accessEnabled: false }, setup: () => setup(true) },
       'access-disabled': { props: { accessEnabled: false }, setup: () => setup() },
+      mobile: { props: { mobilePage: true }, setup: () => setup() },
+      'mobile-disabled': {
+        props: { mobilePage: true, accessEnabled: false },
+        setup: () => setup(),
+      },
+      'mobile-remote': { props: { mobilePage: true }, setup: () => setup(true) },
     },
   });
 </script>
@@ -125,9 +162,13 @@
   import { onDestroy, untrack } from 'svelte';
   import { appClient, localMachineClient, type SettingDefinitionWithValue } from '$lib/client';
   import DevicesSettings from './DevicesSettings.svelte';
+  import MobileSettings from '$features/settings/MobileSettings.svelte';
 
-  let { expanded = false, accessEnabled = true }: { expanded?: boolean; accessEnabled?: boolean } =
-    $props();
+  let {
+    expanded = false,
+    accessEnabled = true,
+    mobilePage = false,
+  }: { expanded?: boolean; accessEnabled?: boolean; mobilePage?: boolean } = $props();
   const previous = {
     list: appClient.settings.list,
     update: appClient.settings.update,
@@ -180,4 +221,7 @@
   });
 </script>
 
-<div class="bg-background p-4"><DevicesSettings localSettingsRequested={expanded ? 1 : 0} /></div>
+<div class="bg-background p-4">
+  {#if mobilePage}<MobileSettings />
+  {:else}<DevicesSettings initialEditedMachine={expanded ? 'local' : undefined} />{/if}
+</div>

@@ -14,6 +14,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
   owner: '007-B1',
   callers: [
     'src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte',
+    'src/features/home/HomeLoading.svelte',
     'src/features/layout/tab-types/FileTabType.svelte',
     'src/features/layout/tab-types/NoteTabType.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
@@ -24,7 +25,6 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/lib/components/code-review/CodeReviewPanel.svelte',
     'src/lib/components/code-review/CodeReviewTabContent.svelte',
     'src/lib/components/file-explorer/file-tree-view.svelte',
-    'src/lib/components/layout/sidebar-nav/WorkspaceCardSkeleton.svelte',
     'src/lib/components/notes/primitives/ReferenceBlock.svelte',
     'src/lib/components/patterns/screen/LoadingState.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',

@@ -29,14 +29,9 @@ import {
 } from '../../panel-layout/panel-layout-slice';
 import { TAB_REMOVAL_ACTIONS } from '../../panel-layout/panel-layout-action-utils';
 import {
-  closeAll as closeAllSidebar,
-  closeHoverCards,
   closePanel as closeSidebarPanel,
   hydrateSidebarNav,
   openPanel as openSidebarPanel,
-  setExpandedItem,
-  setHoveredItem,
-  togglePanel as toggleSidebarPanel,
 } from '../../sidebar-nav/sidebar-nav-slice';
 import {
   selectCurrentlyViewedAgentId,
@@ -68,16 +63,7 @@ const TAB_BOUNDARY_ACTIONS = [
   reopenClosedPanelColumn,
   reopenClosedTab,
 ];
-const CHIEF_BOUNDARY_ACTIONS = [
-  setHoveredItem,
-  setExpandedItem,
-  closeHoverCards,
-  openSidebarPanel,
-  closeSidebarPanel,
-  toggleSidebarPanel,
-  closeAllSidebar,
-  hydrateSidebarNav,
-];
+const CHIEF_BOUNDARY_ACTIONS = [openSidebarPanel, closeSidebarPanel, hydrateSidebarNav];
 const TAB_REMOVAL_ACTION_TYPES = new Set(TAB_REMOVAL_ACTIONS.map((action) => action.type));
 
 type BoundarySnapshotTracker = {

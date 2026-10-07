@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
@@ -32,6 +32,7 @@ import { store as appStore } from '$store/renderer/store';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 import { flushNoteContent } from '$features/notes/notes-write-service';
+import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
 import RawNoteCodeEditor from '../RawNoteCodeEditor.svelte';
 
 const testStore = appStore as typeof appStore & {
@@ -63,7 +64,12 @@ function seed(content: string, rev: number) {
   appStore.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [note] }));
 }
 
-beforeAll(() => appStore.init());
+let stopWorkspaceNotesSaga: (() => void) | undefined;
+beforeAll(() => {
+  appStore.init();
+  [stopWorkspaceNotesSaga] = startWorkspaceNotesSagaFixture(appStore);
+});
+afterAll(() => stopWorkspaceNotesSaga?.());
 afterEach(() => {
   cleanup();
   vi.clearAllTimers();

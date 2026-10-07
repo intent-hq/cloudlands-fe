@@ -243,7 +243,11 @@ function fence(initial = true) {
 }
 type Pool = typeof import('../backend.ipc');
 let pool: Pool | undefined;
+const hostPlatform = process.platform;
 beforeEach(() => {
+  // This fixture joins main-pool owners only. The macOS keychain engine is
+  // auxiliary and cannot produce a clean retirement receipt (intent#6837).
+  Object.defineProperty(process, 'platform', { value: 'linux' });
   vi.resetModules();
   vi.stubEnv('INTENTD_SOCKET', '/controlled-lifecycle.sock');
   edge.sockets = [];
@@ -274,6 +278,7 @@ afterEach(() => {
   edge.frames.removeAllListeners();
   vi.unstubAllEnvs();
   vi.useRealTimers();
+  Object.defineProperty(process, 'platform', { value: hostPlatform });
 });
 async function load(enrolled = true) {
   pool = await import('../backend.ipc');
@@ -678,14 +683,19 @@ describe('enrolled real pool and original callback ownership', () => {
     await expect(lifecycle.retire(fence())).rejects.toThrow('presence');
   });
 
-  it('P8 preserves the unenrolled immediate void disposer and refuses retroactive or duplicate enrollment', async () => {
-    const { pool } = await load(false);
-    const client = pool.getLocalBackendClient();
-    expect(() => pool.enrollBackendClientLifecycle()).toThrow('unowned empty pool');
-    expect(() => client.beginRetirement()).toThrow('not enrolled');
-    expect(pool.disposeAllBackendClients()).toBeUndefined();
-    expect(edge.sockets[0]!.destroyed).toBe(true);
-  });
+  it.each(['linux', 'darwin'] as const)(
+    'P8 preserves the unenrolled immediate void disposer and refuses retroactive or duplicate enrollment on %s',
+    async (platform) => {
+      const { pool } = await load(false);
+      Object.defineProperty(process, 'platform', { value: platform });
+      const client = pool.getLocalBackendClient();
+      await connection(client);
+      expect(() => pool.enrollBackendClientLifecycle()).toThrow('unowned empty pool');
+      expect(() => client.beginRetirement()).toThrow('not enrolled');
+      expect(pool.disposeAllBackendClients()).toBeUndefined();
+      expect(edge.sockets[0]!.destroyed).toBe(true);
+    },
+  );
 
   it('P8 refuses a second enrollment before any allocation', async () => {
     const { pool, lifecycle } = await load();
@@ -736,6 +746,30 @@ function mainHelpers(): MainHelpers {
   ) as MainHelpers;
 }
 describe('actual main finalization fence and original pool', () => {
+  it('observes current node capabilities through IPC without a replacement hello', async () => {
+    edge.respond = (_socket, frame) =>
+      frame.method === 'client.hello'
+        ? {
+            clientId: 'acknowledged-original',
+            server: { capabilities: { agentNodes: 1, agentPlatformRouting: 1 } },
+          }
+        : defaultReply(frame);
+    const { pool } = await load();
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    await settledTurn();
+    const { event } = await localWindow();
+    const original = client.getRepositoryConnection();
+    const hellos = edge.writes.filter((entry) => entry.endsWith(':client.hello')).length;
+    expect(await invoke(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, event, undefined)).toEqual({
+      ok: true,
+      result: {
+        server: { capabilities: { agentNodes: 1, localNodeIsolation: 0, agentPlatformRouting: 1 } },
+      },
+    });
+    expect(client.getRepositoryConnection()).toBe(original);
+    expect(edge.writes.filter((entry) => entry.endsWith(':client.hello'))).toHaveLength(hellos);
+  });
   for (const roots of [5, 7])
     it(`F1/F2/F3 ${roots} original roots and late release stay usable until final retirement`, async () => {
       const { completionLedger, finalClientPoolJoin } = mainHelpers();
@@ -962,6 +996,35 @@ describe('actual main finalization concurrency', () => {
 
 /** Late auxiliary admission uses the real registered handler and original facade close. */
 describe('pool auxiliary admission at retirement', () => {
+  it.each(['pool', 'member'] as const)(
+    'refuses %s retirement when the macOS keychain owner is unjoined',
+    async (scope) => {
+      const { pool, lifecycle } = await load();
+      const client = pool.getLocalBackendClient();
+      await connection(client);
+      await settledTurn();
+      const original = edge.sockets[0];
+      // Enter the macOS branch only at retirement: no native keychain work
+      // runs, but the real production exclusion and rejection must survive.
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const memberFence = fence(false);
+      const member = scope === 'member' ? lifecycle.retireMember(client, memberFence) : undefined;
+      const boundary = fence();
+      const retirement = lifecycle.retire(boundary);
+      const globalFailure = expect(retirement).rejects.toThrow(
+        'Unjoined auxiliary pool owners: keychain-engine',
+      );
+      const memberFailure = member
+        ? expect(member).rejects.toThrow('Original member has unjoined auxiliary owners')
+        : Promise.resolve();
+      memberFence.set(true);
+      await Promise.all([globalFailure, memberFailure]);
+      expect(lifecycle.retire(boundary)).toBe(retirement);
+      expect(lifecycle.admissionOpen()).toBe(false);
+      expect(original.destroyed).toBe(false);
+    },
+  );
+
   it('retains late auxiliary admission while the original facade close is pending', async () => {
     const connectionModule = await import('../backend-connection');
     const held = deferred<Awaited<ReturnType<typeof connectionModule.captureFingerprint>>>();
@@ -2223,10 +2286,14 @@ describe('M genuine delayed feed producers', () => {
 
 describe('M actual fixture original Member fence', () => {
   it('M24 shares original intermediate quiescence and admits Guest only after its member closes', async () => {
+    // Remote status refresh reads local preferences before lazily probing the
+    // local daemon. One event-loop turn does not join that filesystem read.
+    const localProbe = nextFrame('server.pairingInfo', 'local');
     const observed = await loadDirect();
     const { pool, lifecycle } = observed;
     const client = await pool.connectBackendClient('remote-A');
     await connection(client);
+    await localProbe;
     await settledTurn();
     const initialSockets = [...edge.sockets];
     const memberSocket = edge.sockets.find((socket) => socket.owner === 'remote-A.test')!;

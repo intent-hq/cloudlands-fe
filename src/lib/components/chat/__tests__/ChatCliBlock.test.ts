@@ -51,13 +51,12 @@ describe('ChatCliBlock', () => {
 
     const copyButton = getByTestId('chat-cli-copy');
     expect(copyButton.getAttribute('aria-label')).toBe('Copy command');
-    expect(copyButton.getAttribute('title')).toBe('Copy command');
 
     await fireEvent.click(copyButton);
     expect(clipboardWriteText).toHaveBeenCalledWith(command);
 
     await vi.waitFor(() => {
-      expect(copyButton.getAttribute('title')).toBe('Copied');
+      expect(copyButton.getAttribute('aria-label')).toBe('Copied');
     });
   });
 });

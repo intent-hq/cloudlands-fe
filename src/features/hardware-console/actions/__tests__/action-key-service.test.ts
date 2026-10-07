@@ -1061,6 +1061,17 @@ describe('persistence key on the daemon bag', () => {
   });
 });
 
+it('marks fallback action mappings as unsuccessful hydration', async () => {
+  vi.mocked(appClient.settings.get).mockResolvedValue(null);
+  invokeActionKeySaga();
+  await vi.waitFor(() =>
+    expect(dispatched).toContainEqual({
+      type: 'hardwareConsole/hydrateActionMapping',
+      payload: [normalizeActionMappingsByModel(undefined), false],
+    }),
+  );
+});
+
 describe('action-key persist helpers on a failed bag read', () => {
   it('persistHardwareConsoleActionMapping rejects and does not write', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);

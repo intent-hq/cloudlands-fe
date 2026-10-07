@@ -108,17 +108,6 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
-vi.mock('$lib/components/ui/tooltip', async () => {
-  const SlotOnly = (await import('./mocks/SlotOnly.svelte')).default;
-  return {
-    Provider: SlotOnly,
-    Root: SlotOnly,
-    Trigger: SlotOnly,
-    Content: SlotOnly,
-    TooltipShortcut: SlotOnly,
-  };
-});
-
 import { store as appStore } from '$store/renderer/store';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -626,7 +615,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const trailingSlot = within(agentRow('agent-active')).getByTestId('agent-card-trailing-slot');
     expect(trailingSlot.className).toContain('w-14');
-    const timestamp = trailingSlot.querySelector('[title]');
+    const timestamp = trailingSlot.querySelector('[data-tooltip-trigger]');
     expect(timestamp?.className).toContain('type-caption');
     expect(timestamp?.className).toContain('text-right');
     expect(timestamp?.className).toContain('group-hover/watch:opacity-0');
@@ -1783,7 +1772,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
   });
 
-  it('truncates long streaming activity without changing row height', async () => {
+  it('preserves long streaming activity in the preview', async () => {
     const wsId = 'ws-long-activity';
     const longText =
       'This is a very long streaming activity message that should be truncated to prevent horizontal overflow and maintain compact row height across different viewport sizes and zoom levels';
@@ -1807,11 +1796,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const preview = await screen.findByTestId('agent-card-preview');
 
-    // Verify truncation classes are applied
-    expect(preview.className).toContain('truncate');
-    expect(preview.className).toContain('whitespace-nowrap');
-    // Verify the full long text is set as title attribute for accessibility
-    expect(preview.getAttribute('title')).toContain('very long streaming');
+    expect(preview.textContent?.trim()).toBe(longText);
   });
 
   it('handles Unicode and emoji in streaming activity text', async () => {

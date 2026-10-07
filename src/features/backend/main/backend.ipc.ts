@@ -1,3 +1,4 @@
+import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
 import { registerNativeReviewHandlers } from './native-review-lifecycle';
@@ -58,6 +59,8 @@ import {
 import { JsonRpcError } from './json-rpc-errors';
 import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import { createRepositoryResourceFeed } from './repository-resource-feed';
+import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
+import { registerRepositoryCheckoutHandlers } from './repository-checkout-lifecycle';
 import { registerRepositoryResourceHandlers } from './repository-resource-lifecycle';
 import { createRepositoryAuthorityFeed } from './repository-authority-feed';
 import { createRepositorySelectionFeed } from './repository-selection-feed';
@@ -401,6 +404,8 @@ const repositoryFeeds = new WeakMap<
   ReturnType<typeof createRepositoryAuthorityFeed>
 >();
 const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryResourceFeed>>();
+const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
+let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
@@ -806,6 +811,7 @@ function retireOriginalMember(
   try {
     repositoryRoutes?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
+    checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
     // Original disconnect side effects run once while the transport and admitted releases remain alive.
@@ -836,6 +842,7 @@ function retireOriginalMember(
     app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, client);
     repositoryFeeds.get(client)?.dispose();
     resourceFeeds.get(client)?.dispose();
+    checkoutFeeds.get(client)?.dispose();
     selectionFeeds.get(client)?.dispose();
     nativeReviewFeeds.get(client)?.dispose();
     scope.listeners.add(wake);
@@ -989,11 +996,13 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
+        checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
         for (const client of scope.members.keys()) {
           repositoryFeeds.get(client)?.dispose();
           resourceFeeds.get(client)?.dispose();
+          checkoutFeeds.get(client)?.dispose();
           selectionFeeds.get(client)?.dispose();
           nativeReviewFeeds.get(client)?.dispose();
         }
@@ -1617,6 +1626,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
+  checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
   backendClients.delete(id);
@@ -1638,6 +1648,7 @@ export function disconnectBackendClient(id: string): void {
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   repositoryFeeds.get(instance)?.dispose();
   resourceFeeds.get(instance)?.dispose();
+  checkoutFeeds.get(instance)?.dispose();
   selectionFeeds.get(instance)?.dispose();
   nativeReviewFeeds.get(instance)?.dispose();
   instance.dispose();
@@ -1764,6 +1775,8 @@ function createAdditionalBackendClient(
   config: BackendConnectionConfig,
   invitedCredential?: guestSessionsStore.InvitedCredentialLease,
 ): JsonRpcClient {
+  // The hello provider/result and socket must retain the same credential context.
+  const clientConfig = Object.freeze({ ...config });
   // A fresh pool member starts with clean cert/auth/protocol-mismatch guards
   // for its backend — its own connect + `client.hello` re-detects any failure.
   clearBackendFailureState(id);
@@ -1878,7 +1891,7 @@ function createAdditionalBackendClient(
           },
         }
       : {}),
-    config,
+    config: clientConfig,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
     // half-open socket. `host.status` is the transport-agnostic capability
     // probe (PROTOCOL.md §5.14) — answered on BOTH UDS and WSS.
@@ -1899,7 +1912,7 @@ function createAdditionalBackendClient(
     // it alone advertises `capabilities.browserExec` plus the app's name and
     // host identification (the auxiliary setup/transfer/quit clients stay
     // clientId-only).
-    helloParams: async () => ({ ...(await buildMainClientHelloParams()) }),
+    helloParams: async () => ({ ...(await buildMainClientHelloParams(clientConfig)) }),
     onHelloResult: (result, producer) =>
       poolWork(
         'hello-result',
@@ -1910,8 +1923,14 @@ function createAdditionalBackendClient(
               ? (result as { clientId?: unknown; protocolVersion?: unknown })
               : undefined;
           const clientId = obj?.clientId;
-          if (typeof clientId === 'string' && clientId.length > 0) {
-            void poolWork('persist-client-id', owner, () => persistClientId(clientId));
+          if (
+            backendClients.get(id) === instance &&
+            typeof clientId === 'string' &&
+            clientId.length > 0
+          ) {
+            void poolWork('persist-client-id', owner, () =>
+              persistClientId(clientId, clientConfig),
+            );
           }
           // T15: `protocolVersion` from the handshake feeds the protocol-compat
           // check — record it for local, compare it against local for a remote,
@@ -1998,6 +2017,7 @@ function createAdditionalBackendClient(
   if (typeof instance.onRepositoryConnectionEvent === 'function') {
     repositoryFeeds.set(instance, createRepositoryAuthorityFeed(instance));
     resourceFeeds.set(instance, createRepositoryResourceFeed(instance));
+    checkoutFeeds.set(instance, createRepositoryCheckoutFeed(instance));
     selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
     nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
@@ -2192,6 +2212,7 @@ function createAdditionalBackendClient(
     instance.beginRetirement();
     repositoryFeeds.get(instance)?.dispose();
     resourceFeeds.get(instance)?.dispose();
+    checkoutFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
     poolChanged();
@@ -2474,12 +2495,52 @@ function captureRemoteHostnameOwned(id: string, parent?: PoolOwner): Promise<voi
   );
 }
 
+// One generation across hello captures and renderer polls: the newest request owns the label.
+const guestHostnameReads = new WeakMap<JsonRpcClient, number>();
+function beginGuestHostnameRead(
+  id: string,
+  client: JsonRpcClient,
+): guestSessionsStore.InvitedCommitGuard | undefined {
+  const admitted = invitedConnectionGuards.get(id);
+  if (!admitted?.()) return undefined;
+  const generation = (guestHostnameReads.get(client) ?? 0) + 1;
+  guestHostnameReads.set(client, generation);
+  return Object.assign(
+    () =>
+      backendClients.get(id) === client &&
+      admitted() &&
+      guestHostnameReads.get(client) === generation,
+    { credential: admitted.credential },
+  );
+}
+
+function refreshGuestHostname(
+  id: string,
+  result: unknown,
+  guard: guestSessionsStore.InvitedCommitGuard,
+  parent?: PoolOwner,
+): Promise<void> {
+  return poolWork('refreshGuestHostname', parent, async (owner) => {
+    try {
+      if (!guard()) return;
+      const name = collaborationMachineName(result);
+      if (name && (await guestSessionsStore.setHostname(id, name, guard)))
+        await broadcastGuestSessionsChangedOwned(owner);
+    } catch (error) {
+      recordPoolError(owner, error);
+      logger.warn('Failed to refresh collaboration machine name', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+
 async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Promise<void> {
   try {
     // Snapshot this backend's pooled client; the id-keyed pool lookup below
     // protects against a stale capture after the client is disposed.
     const client = poolClient(owner, getBackendClientForId(id));
-    const guard = invitedConnectionGuards.get(id);
+    const guard = beginGuestHostnameRead(id, client);
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
     const result = await observeStatus(client, 'captureRemoteHostname', owner, () =>
@@ -2492,9 +2553,7 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
     if (backendClients.get(id) === client) {
       if (guest) {
         if (!guard?.()) return;
-        if (hostname && (await guestSessionsStore.setHostname(id, hostname, guard))) {
-          await broadcastGuestSessionsChangedOwned(owner);
-        }
+        await refreshGuestHostname(id, result, guard, owner);
         return;
       }
       const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
@@ -3509,9 +3568,10 @@ async function requestGuestWorkspaceLeave(id: string, workspaceId: string): Prom
   };
   if (pooled && pooled.getStatus() === 'connected') return request(pooled);
   const { config } = await buildConfigForConnection(id);
+  const clientConfig = Object.freeze({ ...config });
   const client = new JsonRpcClient({
-    config,
-    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    config: clientConfig,
+    helloParams: async () => ({ clientId: await getOrCreateClientId(clientConfig) }),
   });
   client.on('error', () => {});
   let timer: NodeJS.Timeout | undefined;
@@ -4207,6 +4267,15 @@ export function registerBackendHandlers(): void {
       return feed.capture(connection, root);
     },
   });
+  checkoutRoutes = registerRepositoryCheckoutHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    capture: (client, connection, query) => {
+      const feed = checkoutFeeds.get(client);
+      if (!feed) return Promise.reject(new Error('REPOSITORY_CHECKOUT_UNAVAILABLE'));
+      return feed.capture(connection, query);
+    },
+    errorPayload: toErrorPayload,
+  });
   resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, workspaceId) => {
@@ -4235,6 +4304,7 @@ export function registerBackendHandlers(): void {
       }
       if (
         method.startsWith('sourceControl.read.') ||
+        method.startsWith('sourceControl.checkout.') ||
         method === 'workspace.repositoryContext' ||
         method === 'workspace.repositoryContext.capture' ||
         method === 'workspace.repositoryContext.release' ||
@@ -4255,6 +4325,22 @@ export function registerBackendHandlers(): void {
           // i18n-ignore (internal route diagnostic; facade emits a typed unavailable state)
           error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: 'Repository route required' },
         };
+      }
+      if (
+        method === 'workspace.create' &&
+        payload.params !== null &&
+        typeof payload.params === 'object' &&
+        Object.prototype.hasOwnProperty.call(payload.params, 'repositoryCheckout')
+      ) {
+        if (payload.localMachine === true || !checkoutRoutes)
+          return {
+            ok: false,
+            error: {
+              code: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+              message: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+            },
+          };
+        return checkoutRoutes.create(event, payload.params, payload.timeoutMs);
       }
       // `timeoutMs` is an optional per-call override forwarded verbatim to the
       // JSON-RPC client. Long daemon operations (e.g. `git.pull`, whose own
@@ -4282,7 +4368,10 @@ export function registerBackendHandlers(): void {
           );
           return { ok: true, result };
         }
+        const nameGuard =
+          method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
         const result = await client.request(method, payload?.params, { timeoutMs });
+        if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
         const expected = invitedClientCredentials.get(client);
         if (expected && method === 'principal.me') {
           const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);
@@ -4322,6 +4411,15 @@ export function registerBackendHandlers(): void {
       }
     },
   );
+
+  ipcMain.handle(BACKEND.NODE_CAPABILITIES, (event) => {
+    try {
+      const { client } = getBackendClientForIpcEvent(event);
+      return { ok: true, result: { server: { capabilities: client.getNodeCapabilities() } } };
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
 
   ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
     const { backendId, client } = getBackendClientForIpcEvent(event);
@@ -5251,6 +5349,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
+  checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();
   for (const [id, instance] of backendClients) {
@@ -5266,6 +5365,7 @@ export function disposeAllBackendClients(): void {
     disposeTransferConnectionsForBackend(id);
     repositoryFeeds.get(instance)?.dispose();
     resourceFeeds.get(instance)?.dispose();
+    checkoutFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
     instance.dispose();

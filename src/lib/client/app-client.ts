@@ -1,4 +1,5 @@
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
+import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
   ScriptArchiveFilter,
   ScriptArchiveResult,
@@ -209,6 +210,7 @@ export interface MutationResult extends SubmissionCorrelation {
  *   `name`-present ⇒ explicitly set.
  */
 export interface AgentCreateRequest {
+  placement?: AgentPlacement;
   workspaceId: string;
   prompt?: string;
   model?: string;
@@ -1069,6 +1071,13 @@ export interface ChatTranscript {
    */
   resumed?: boolean;
   /**
+   * Local reconnect recovery: the full snapshot replaces cached canonical
+   * history, but unacknowledged optimistic user rows remain until their echo.
+   * Separate from the daemon's resume/reset disposition; never on a suffix
+   * or delta, and consumed only on a fresh snapshot application.
+   */
+  resetCachedTranscript?: true;
+  /**
    * Stamped `true` on the emit produced by applying any snapshot push
    * (initial hydration, re-registration, or mid-stream recovery/reset) —
    * absent on delta emits. Consumers use it to tell "the daemon just served
@@ -1421,6 +1430,8 @@ export interface GitDiffsOptions {
 }
 
 export interface GitClient {
+  /** Read the local origin only; no fetch or provider request. Null means no usable observation. */
+  originUrl(repoPath: string): Promise<string | null>;
   /** `forceRefresh` bypasses client and daemon status caches for post-mutation reconciliation. */
   status(workspaceId: string, options?: { forceRefresh?: boolean }): Promise<GitStatus | null>;
   changes(workspaceId: string): Promise<GitStatus | null>;
@@ -1461,9 +1472,10 @@ export interface GitClient {
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
    * relink-after-merge, stale-link clearing) for one workspace on demand and
    * returns the post-refresh linkage state. An active PR is not required.
-   * Errors fold to `null`.
+   * Automatic callers opt into daemon idle admission; omitted options preserve
+   * explicit refresh semantics. Errors fold to `null`.
    */
-  prRefresh(workspaceId: string): Promise<PrRefreshResult | null>;
+  prRefresh(workspaceId: string, options?: { automatic: boolean }): Promise<PrRefreshResult | null>;
   /**
    * Path-based branch listing (`git.getBranches`, §5.6). Used by the
    * workspace initializer to populate the branch picker against an arbitrary
@@ -1979,6 +1991,7 @@ export interface SkillsClient {
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
 export interface SpecialistDef {
+  runsOn?: AgentPlacement;
   /** Original Claude definition; read-only in Intent. */
   importedFrom?: 'claude-code';
   /** Unsupported settings that prevent launching this imported definition. */
@@ -2368,6 +2381,13 @@ export interface GitHubIssueDetails {
 }
 
 export interface IntegrationsClient {
+  captureRepositoryCheckout(
+    query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
+  ): Promise<
+    import('$shared/types/repository-checkout').CheckoutResult<
+      import('$shared/types/repository-checkout').RepositoryCheckoutSession
+    >
+  >;
   /** Admitted GitLab details on the original workspace connection; never falls back. */
   captureRepositoryResource(
     workspaceId: string,

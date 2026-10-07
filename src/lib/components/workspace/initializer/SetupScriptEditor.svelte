@@ -23,6 +23,8 @@
 
   interface Props {
     repoPath?: string;
+    /** Qualified repository identity for last-used defaults, separate from a filesystem path. */
+    repositoryKey?: string;
     /**
      * Source URL for GitHub selections — their `repoPath` is only the clone
      * destination, which two different repos can share, so the last-used
@@ -47,6 +49,7 @@
 
   let {
     repoPath = '',
+    repositoryKey,
     githubUrl = null,
     projectType = undefined,
     repoConfigScript = null,
@@ -78,9 +81,14 @@
   const LAST_USED_SCRIPT_ID = 'last-used';
 
   // Last-used setup script for this repo (localStorage; read on repo change)
-  const lastUsedScript = $derived(
-    repoPath ? getLastUsedSetupScript(repoPath, githubUrl) : undefined,
-  );
+  const lastUsedScript = $derived.by(() => {
+    const key = repositoryKey ?? repoPath;
+    const saved = key ? getLastUsedSetupScript(key, githubUrl) : undefined;
+    // A persisted snapshot is not evidence of the current branch's config.
+    return saved?.nameSource === 'repo-config'
+      ? { ...saved, name: 'Custom', nameSource: 'custom' as const }
+      : saved;
+  });
 
   // Build a map of script id -> content, label, and name source for quick lookup
   const scriptMap = $derived.by(() => {
@@ -155,10 +163,9 @@
     } else if (newValue) {
       // No template selected but has content - treat as custom
       hasUserEdited = true;
-    } else {
-      // Empty content with no template - not custom
-      hasUserEdited = false;
     }
+    // Clearing an existing custom choice keeps its identity. An untouched
+    // blank already has hasUserEdited=false and remains eligible for defaults.
   }
 
   // Find "Copy config files only" template ID (it's the 'generic' template)
@@ -175,13 +182,15 @@
   // BUT: If value is already set (e.g., from restored form state), treat it as user-edited
   $effect(() => {
     // Read repoPath to create dependency
-    const currentRepo = repoPath;
+    const currentRepo = repositoryKey ?? repoPath;
 
     // Only run when repo actually changes (null means first run)
     if (currentRepo === previousRepoPath) return;
 
-    // Check if value was pre-populated (e.g., from restored form state)
-    const hasPrePopulatedValue = previousRepoPath === null && value && value.trim().length > 0;
+    // Explicit custom choices include empty scripts. Preserve them on reopen;
+    // untouched blanks still receive the normal repository/default selection.
+    const hasPrePopulatedValue =
+      previousRepoPath === null && (isCustomScript || value.trim().length > 0);
 
     // Update tracking variable without triggering effect
     previousRepoPath = currentRepo;
@@ -193,7 +202,11 @@
         let matched = false;
         const trimmedValue = value.trim();
         for (const [id, entry] of scriptMap.entries()) {
-          if (trimmedValue === entry.content.trim()) {
+          if (
+            trimmedValue === entry.content.trim() &&
+            entry.source === scriptNameSource &&
+            entry.label === scriptName
+          ) {
             selectedScriptId = id;
             customName = entry.label;
             customNameSource = entry.source;
@@ -219,7 +232,7 @@
 
     // Priority: repo-committed config script, then last used script for this repo
     const hasRepoConfig = !!repoConfigScript;
-    const lastUsed = currentRepo ? getLastUsedSetupScript(currentRepo, githubUrl) : undefined;
+    const lastUsed = lastUsedScript;
 
     // Use untrack only for internal state mutations to avoid infinite loops
     // But keep value assignment tracked so UI updates

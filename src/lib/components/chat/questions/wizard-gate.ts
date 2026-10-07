@@ -1,3 +1,6 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { selectPendingSubmissionEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+import { getAnsweredQuestionsMessageIds } from './answer-message';
 import type { AgentMessage } from '$shared/types';
 import { getQuestionFromResourceBlock } from '$shared/types/question-resource';
 import type { StoreState } from '$store/renderer/types';
@@ -14,6 +17,28 @@ import {
   isQuestionSetAnsweredInQueue,
   type PendingQuestionSet,
 } from './pending-questions';
+
+/** Local answer intent is scoped to admission, never written into daemon markers.
+ * Retired contributions keep their tag while authoritative evidence is ahead of
+ * the transcript/queue render. Rejection restores the ordinary wizard gate;
+ * uncertainty stays on the existing reconciliation-and-warned-retry path.
+ * Queue evidence uses the current queue, so removing an undelivered answer
+ * restores its question instead of keeping a retired enqueue hidden forever.
+ */
+function hasSubmittedAnswer(state: StoreState, agentId: string, messageId: string): boolean {
+  const scope = state.pendingSubmissions?.byAgentId[agentId]?.scope;
+  const entry = scope ? selectPendingSubmissionEntry.select(state, scope) : undefined;
+  if (!entry) return false;
+  return [
+    ...getItems(entry.submissions),
+    ...getItems(entry.processing),
+    ...getItems(entry.tombstones).filter(
+      (item) => item.reason === 'history' || item.reason === 'processing',
+    ),
+  ].some((item) =>
+    getAnsweredQuestionsMessageIds({ metadata: item.messageMetadata }).includes(messageId),
+  );
+}
 
 /**
  * Production wizard gate. The daemon's `pendingQuestionsMessageId` metadata is
@@ -79,7 +104,7 @@ export function deriveWizardPendingQuestions(
         marker.kind === 'set' ? marker.messageId : marker.kind === 'cleared' ? '' : undefined,
         queuedMessages,
       );
-  if (!pending) return null;
+  if (!pending || hasSubmittedAnswer(state, agentId, pending.messageId)) return null;
   if (isQuestionMessageDismissed(session?.metadata, pending.messageId)) return null;
   return pending;
 }
@@ -131,6 +156,7 @@ export function deriveAgentHasPendingQuestion(
   const session = state.agentSessions?.byAgentId[agentId];
   const marker = classifyPendingQuestionMarker(session?.metadata?.pendingQuestionsMessageId);
   if (marker.kind !== 'set') return false;
+  if (hasSubmittedAnswer(state, agentId, marker.messageId)) return false;
   if (isQuestionMessageDismissed(session?.metadata, marker.messageId)) return false;
   if (isQuestionSetAnswered(messages, marker.messageId)) return false;
   const queuedMessages = selectAgentQueueMessages.select(state, agentId);
@@ -163,6 +189,7 @@ export function deriveMarkedQuestionRecoveryState(
     state.agentSessions?.byAgentId[agentId]?.metadata?.pendingQuestionsMessageId,
   );
   if (marker.kind !== 'set') return null;
+  if (hasSubmittedAnswer(state, agentId, marker.messageId)) return null;
   if (selectAgentMessageById.select(state, agentId, marker.messageId)) return null;
   const recovery = state.chatState?.byAgentId[agentId]?.pendingQuestionRecovery;
   if (recovery?.messageId === marker.messageId) {

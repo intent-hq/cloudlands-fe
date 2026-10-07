@@ -83,7 +83,9 @@ function* hydrateActionKeys(): SagaGenerator<boolean> {
     yield* put(hydrateHardwareConsoleCycleScopes(hydrated.cycleScopeByFamily));
   } catch (error) {
     logger.error('Action-mapping hydration failed; dispatching defaults', { error });
-    yield* put(hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)));
+    yield* put(
+      hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined), false),
+    );
     yield* put(hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(undefined)));
     return false;
   }

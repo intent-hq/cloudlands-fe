@@ -55,8 +55,10 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
   );
   const previousUpdateSetting = appClient.settings.update;
   const previousList = workspaceClient.list;
+  const previousOriginUrl = appClient.git.originUrl;
   const previousGetSetting = appClient.settings.get;
   workspaceClient.list = async () => ({ ok: true, data: [] });
+  appClient.git.originUrl = async () => null;
   appClient.settings.get = async () => null;
   invalidateCowIsolationSetting();
   appStore.dispatch(setWorkspaceInitializerRecentRepos([]));
@@ -99,6 +101,7 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
     stopPersistence?.();
     restoreRegistry();
     workspaceClient.list = previousList;
+    appClient.git.originUrl = previousOriginUrl;
     appClient.settings.get = previousGetSetting;
     appClient.settings.update = previousUpdateSetting;
     invalidateCowIsolationSetting();
