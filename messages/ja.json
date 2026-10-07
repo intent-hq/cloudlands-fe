@@ -6957,6 +6957,7 @@
   "home_assistant_description": "計画を立て、質問し、作業を調整する場所です。",
   "home_filter_all": "すべてのワークスペース",
   "home_filter_attention": "対応が必要",
+  "home_filter_pr_ready": "PR 準備完了",
   "home_filter_running": "実行中",
   "home_filter_unread": "未読",
   "home_filter_archived": "アーカイブ済み",

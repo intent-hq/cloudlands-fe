@@ -6957,6 +6957,7 @@
   "home_assistant_description": "Un lugar para planificar, hacer preguntas y coordinar su trabajo.",
   "home_filter_all": "Todos los espacios de trabajo",
   "home_filter_attention": "Requieren su atención",
+  "home_filter_pr_ready": "PR lista",
   "home_filter_running": "En ejecución",
   "home_filter_unread": "Sin leer",
   "home_filter_archived": "Archivados",

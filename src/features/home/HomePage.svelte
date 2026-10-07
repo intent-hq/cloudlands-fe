@@ -73,6 +73,7 @@
     faFolder,
     faCircleExclamation,
     faPlay,
+    faCodePullRequest,
     faPlus,
     faChevronDown,
     faChevronRight,
@@ -313,6 +314,7 @@
       [
         { id: 'all', label: m.home_integrations_all(), icon: faLayerGroup },
         { id: 'attention', label: m.home_filter_attention(), icon: faCircleExclamation },
+        { id: 'pr-ready', label: m.home_filter_pr_ready(), icon: faCodePullRequest },
         { id: 'running', label: m.home_filter_running(), icon: faPlay },
       ] as const satisfies readonly { id: HomeFilter; label: string; icon: unknown }[]
     ).map((item) => ({
@@ -347,7 +349,7 @@
   const selectedWorkspace = $derived(
     filteredWorkspaces.find((workspace) => workspace.id === selectedId),
   );
-  const triageOrder = ['needs-you', 'running', 'inactive'] as const;
+  const triageOrder = ['needs-you', 'pr-ready', 'running', 'inactive'] as const;
   // Hiding a group that holds the selected workspace also closes the preview;
   // otherwise the selection would keep the group open and the button inert.
   function setGroupExpanded(group: string, expanded: boolean, items: Workspace[]) {
@@ -361,6 +363,8 @@
     switch (group) {
       case 'needs-you':
         return m.home_filter_attention();
+      case 'pr-ready':
+        return m.home_filter_pr_ready();
       case 'running':
         return m.home_filter_running();
       case 'blocked':

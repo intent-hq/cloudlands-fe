@@ -13,6 +13,10 @@
   declare global {
     interface Window {
       __homeAssistantPreview?: { removeSelectedThread: () => void };
+      __homePrReadyPreview?: {
+        setReadyStatus: (status: 'pr_ready' | 'in_progress') => void;
+        pinReady: () => void;
+      };
     }
   }
 
@@ -21,6 +25,7 @@
       | 'populated'
       | 'status-icons'
       | 'board'
+      | 'pr-ready'
       | 'empty'
       | 'assistant'
       | 'assistant-streaming'
@@ -45,6 +50,7 @@
       populated: { props: { scenario: 'populated' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       board: { props: { scenario: 'board' } },
+      'pr-ready': { props: { scenario: 'pr-ready' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
@@ -141,6 +147,54 @@
         id: WorkspaceId(item.id),
       }) as Workspace,
   );
+  const prReadyFixtures: Workspace[] = [
+    ...fixtures,
+    ...[
+      {
+        id: 'home-ready-review',
+        title: 'Review before merging',
+        displayStatus: 'pr_ready',
+        attention: 'review_required',
+      },
+      {
+        id: 'home-ready-question',
+        title: 'Answer before merging',
+        displayStatus: 'needs_attention',
+      },
+      {
+        id: 'home-ready-blocked',
+        title: 'Resolve blocker before merging',
+        displayStatus: 'blocked',
+      },
+      { id: 'home-ready-failed', title: 'Resolve failure before merging', displayStatus: 'failed' },
+      {
+        id: 'home-ready-archived',
+        title: 'Archived ready workspace',
+        displayStatus: 'pr_ready',
+        status: WorkspaceStatus.Archived,
+      },
+      {
+        id: 'home-ready-deleted',
+        title: 'Deleted ready workspace',
+        displayStatus: 'pr_ready',
+        status: WorkspaceStatus.Deleted,
+      },
+      {
+        id: 'home-ready-deleting',
+        title: 'Deleting ready workspace',
+        displayStatus: 'pr_ready',
+        pendingDeleteAt: '2026-10-07T00:00:00Z',
+      },
+    ].map(
+      (item) =>
+        ({
+          ...fixtures[3],
+          attention: undefined,
+          ...item,
+          id: WorkspaceId(item.id),
+        }) as Workspace,
+    ),
+  ];
   const statusFixtures: Workspace[] = [
     ...fixtures.filter((workspace) => workspace.status === WorkspaceStatus.Active),
     {
@@ -231,7 +285,9 @@
   import { startHomePreviewFixtures } from './home-preview-lifecycle';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import {
+    bulkUpdateWorkspaceEntities,
     replaceWorkspaceList,
+    updateWorkspaceEntity,
     setWorkspaceHasLoaded,
     setWorkspaceError,
   } from '$store/renderer/slices/workspace/workspace-slice';
@@ -239,6 +295,7 @@
   import {
     closePanel,
     hydrateSidebarNav,
+    togglePinWorkspace,
     openPanel,
     setChiefActiveAgentId,
     setShowCreateModal,
@@ -279,13 +336,30 @@
       store.dispatch(removeSession(id));
     },
   };
+  window.__homePrReadyPreview = {
+    setReadyStatus(status) {
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity(WorkspaceId('home-ready'), { displayStatus: status }),
+        ]),
+      );
+    },
+    pinReady() {
+      store.dispatch(togglePinWorkspace('home-ready'));
+    },
+  };
   $effect.pre(() => {
     admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
     store.dispatch(closePanel());
     store.dispatch(resetHomeWorkspaceView());
     store.dispatch(
       hydrateSidebarNav({
-        pinnedWorkspaceIds: scenario === 'status-icons' ? ['home-complete'] : previousPinnedIds,
+        pinnedWorkspaceIds:
+          scenario === 'status-icons'
+            ? ['home-complete']
+            : scenario === 'pr-ready'
+              ? []
+              : previousPinnedIds,
       }),
     );
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
@@ -321,7 +395,12 @@
       replaceWorkspaceList(
         scenario === 'empty'
           ? []
-          : (scenario === 'status-icons' ? statusFixtures : fixtures).map((workspace) => ({
+          : (scenario === 'status-icons'
+              ? statusFixtures
+              : scenario === 'pr-ready'
+                ? prReadyFixtures
+                : fixtures
+            ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
             })),
@@ -428,6 +507,7 @@
     store.dispatch(hydrateSidebarNav({ pinnedWorkspaceIds: previousPinnedIds }));
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
+    delete window.__homePrReadyPreview;
     dispose();
   });
 </script>

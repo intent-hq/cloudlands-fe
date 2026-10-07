@@ -1,7 +1,12 @@
 <script lang="ts">
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
-  import { faCircleCheck, faCircleQuestion, faCircleExclamation } from '$lib/icons/phosphor-icons';
+  import {
+    faCircleCheck,
+    faCircleQuestion,
+    faCircleExclamation,
+    faCodePullRequest,
+  } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
   import { getHomeStatusCause } from './home-attention';
   import { m } from '$shared/paraglide/messages.js';
@@ -46,6 +51,8 @@
           icon: faCircleQuestion,
           color: '',
         };
+      case 'pr-ready':
+        return { label: m.home_filter_pr_ready(), icon: faCodePullRequest, color: 'text-success' };
       case 'running':
         return { label: m.home_filter_running(), icon: null, color: 'text-primary' };
       case 'blocked':

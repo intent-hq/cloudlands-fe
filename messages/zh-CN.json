@@ -6957,6 +6957,7 @@
   "home_assistant_description": "在这里制定计划、提出问题并协调工作。",
   "home_filter_all": "所有工作区",
   "home_filter_attention": "需要你处理",
+  "home_filter_pr_ready": "PR 已就绪",
   "home_filter_running": "运行中",
   "home_filter_unread": "未读",
   "home_filter_archived": "已归档",

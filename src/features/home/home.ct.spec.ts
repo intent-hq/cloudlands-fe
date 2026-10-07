@@ -94,7 +94,7 @@ test('Home handles rapid tab and filter changes with motion enabled', async ({
     .click();
   await component
     .getByRole('group', { name: 'Status', exact: true })
-    .getByRole('button', { name: /^All \d/ })
+    .getByRole('button', { name: /^All\b/ })
     .click();
   const rows = component.getByRole('option');
   await expect(rows).toHaveCount(6);
@@ -136,7 +136,7 @@ test('Home filters and previews workspaces without entering them', async ({
     .getByRole('group', { name: 'Status', exact: true })
     .getByRole('button', { name: /^Needs you/ })
     .click();
-  await expect(list.getByRole('option')).toHaveCount(2);
+  await expect(list.getByRole('option')).toHaveCount(1);
   await list.getByRole('option').first().focus();
   await page.keyboard.press('Enter');
   await expect(component.locator('[data-home-detail]')).toBeVisible();
@@ -148,7 +148,7 @@ test('Home filters and previews workspaces without entering them', async ({
   await expect(list).toContainText('Explore alternative layouts');
   await component
     .getByRole('group', { name: 'Status', exact: true })
-    .getByRole('button', { name: /^All \d/ })
+    .getByRole('button', { name: /^All\b/ })
     .click();
   await component.getByRole('button', { name: 'acme/platform', exact: true }).click();
   await expect(list.getByRole('option')).toHaveCount(2);
@@ -165,7 +165,7 @@ test('Home sections start open and all support collapse, expansion and keyboard 
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const component = await mount(Preview);
-  for (const label of ['Needs you', 'Running', 'Done & idle']) {
+  for (const label of ['Needs you', 'PR ready', 'Running', 'Done & idle']) {
     const toggle = component
       .locator('[data-home-group]')
       .getByRole('button', { name: label, exact: true });
@@ -242,6 +242,109 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+test('Home PR-ready category follows visible scope and live status changes', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+  await page.evaluate(() => {
+    document.documentElement.classList.remove('dark');
+    document.documentElement.classList.add('light');
+  });
+  const component = await mount(Preview, { props: { scenario: 'pr-ready' } });
+  const statuses = component.getByRole('group', { name: 'Status', exact: true });
+  const readyList = component.getByRole('listbox', { name: 'PR ready', exact: true });
+  await expect(readyList.getByRole('option')).toHaveCount(1);
+  await expect(statuses.getByRole('button', { name: /^Needs you/ })).toHaveText(
+    /^\s*Needs you\s*5\s*$/,
+  );
+  await expect(statuses.getByRole('button', { name: /^PR ready/ })).toHaveText(
+    /^\s*PR ready\s*1\s*$/,
+  );
+  for (const [id, group] of [
+    ['home-ready-review', 'needs-you'],
+    ['home-ready-question', 'needs-you'],
+    ['home-ready-blocked', 'blocked'],
+    ['home-ready-failed', 'blocked'],
+  ]) {
+    await expect(
+      component.locator(`[data-home-workspace="${id}"] [data-home-status]`),
+    ).toHaveAttribute('data-home-status', group);
+  }
+  await statuses.getByRole('button', { name: /^Needs you/ }).click();
+  await expect(component.getByRole('option')).toHaveCount(5);
+  await expect(component.locator('[data-home-workspace="home-ready"]')).toHaveCount(0);
+  await statuses.getByRole('button', { name: /^PR ready/ }).click();
+  await expect(component.getByRole('option')).toHaveCount(1);
+  await statuses.getByRole('button', { name: /^All\b/ }).click();
+  await page.evaluate(() => window.__homePrReadyPreview!.pinReady());
+  await expect(
+    component.getByRole('listbox', { name: 'Pinned', exact: true }).getByRole('option'),
+  ).toHaveCount(1);
+  await expect(readyList).toHaveCount(0);
+  await component.getByRole('button', { name: 'Board view', exact: true }).click();
+  const board = component.locator('[data-home-board]');
+  const readyColumn = board.getByRole('region', { name: 'PR ready', exact: true });
+  await expect(readyColumn.locator('[data-home-workspace]')).toHaveCount(1);
+  await testInfo.attach('home-pr-ready-light', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-pr-ready-light.png') }),
+    contentType: 'image/png',
+  });
+  await component.getByRole('searchbox').fill('onboarding');
+  await expect(readyColumn).toHaveCount(0);
+  await component.getByRole('searchbox').fill('');
+  await expect(readyColumn).toBeVisible();
+  await component.getByRole('button', { name: 'acme/platform', exact: true }).click();
+  await expect(readyColumn).toHaveCount(0);
+  await component.getByRole('button', { name: /^All repos\b/ }).click();
+  await expect(readyColumn).toBeVisible();
+  await component.getByRole('searchbox').fill('selected workspace');
+  const readyCard = readyColumn.locator('[data-home-workspace="home-ready"]');
+  await readyCard.focus();
+  await page.keyboard.press('Enter');
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await page.evaluate(() => window.__homePrReadyPreview!.setReadyStatus('in_progress'));
+  await expect(readyColumn).toHaveCount(0);
+  await expect(
+    board
+      .getByRole('region', { name: 'Running', exact: true })
+      .locator('[data-home-workspace="home-ready"]'),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(board.locator('[data-home-workspace="home-ready"]')).toBeFocused();
+  await page.evaluate(() => window.__homePrReadyPreview!.setReadyStatus('pr_ready'));
+  await expect(readyColumn).toBeVisible();
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.evaluate(() => {
+    document.documentElement.classList.remove('light');
+    document.documentElement.classList.add('dark');
+  });
+  await page.setViewportSize({ width: 900, height: 740 });
+  await component.getByRole('searchbox').fill('');
+  await expect(readyColumn).toBeVisible();
+  expect(
+    await component
+      .locator('[data-home-page]')
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: 'PR ready', exact: true }).click();
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await testInfo.attach('home-pr-ready-dark-narrow', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-pr-ready-dark-narrow.png') }),
+    contentType: 'image/png',
+  });
+  await page.evaluate(() => window.__homePrReadyPreview!.setReadyStatus('in_progress'));
+  await expect(readyColumn).toHaveCount(0);
+  await expect(component.getByRole('heading', { name: 'No matching workspaces' })).toBeVisible();
+  await testInfo.attach('home-pr-ready-empty', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-pr-ready-empty.png') }),
+    contentType: 'image/png',
+  });
 });
 
 test('Home keeps Assistant and owner creation hidden for collaborators', async ({
@@ -514,7 +617,7 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await component.getByRole('searchbox').clear();
   await groupBy('Status');
-  await expect(board.locator('section')).toHaveCount(3);
+  await expect(board.locator('section')).toHaveCount(4);
   const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);
