@@ -6,11 +6,14 @@
   import { goto } from '$app/navigation';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
-  import {
-    getSidebarContextPosition,
-    type SidebarContextPosition,
-    type SidebarMenuEntry,
+  import type {
+    SidebarContextPosition,
+    SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getHomeWorkspaceContextPosition,
+    restoreHomeWorkspaceFocus,
+  } from './home-workspace-menu';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -109,15 +112,9 @@
   const pinnedIds$ = selectPinnedWorkspaceIds();
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
-    const position = getSidebarContextPosition(event);
+    const position = getHomeWorkspaceContextPosition(event);
     if (!position) return;
-    contextMenu = {
-      ...position,
-      returnFocus:
-        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
-        position.returnFocus,
-      workspace,
-    };
+    contextMenu = { ...position, workspace };
   }
   function workspaceMenu(workspace: Workspace): SidebarMenuEntry[] {
     const pinned = $pinnedIds$.includes(workspace.id);
@@ -140,14 +137,7 @@
           contextMenu = null;
           store.dispatch(togglePinWorkspace(workspace.id));
           if (!pinned) updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } });
-          void tick().then(() => {
-            requestAnimationFrame(() =>
-              homeElement
-                ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-                ?.closest<HTMLElement>('[role="option"], button')
-                ?.focus(),
-            );
-          });
+          restoreHomeWorkspaceFocus(() => homeElement, workspace.id);
         },
       },
     ];
