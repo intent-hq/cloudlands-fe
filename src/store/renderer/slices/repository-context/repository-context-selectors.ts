@@ -80,6 +80,23 @@ export const selectRepositorySelectionForEdit: AppSelector<
     : null;
 });
 
+export const selectRepositorySelectionPending = store.createSelector(
+  (state, workspaceId: string) => {
+    const edits = state.repositoryContext.selectionEdits;
+    return (
+      !!edits &&
+      getItems(edits).some(
+        (edit) =>
+          edit.owner.root.workspaceId === workspaceId &&
+          edit.owner.admission === selectPrincipalActionContext.select(state) &&
+          (edit.status === 'capturing' ||
+            (edit.status === 'pending' &&
+              (!edit.observation || edit.observation.attempt?.status === 'pending'))),
+      )
+    );
+  },
+);
+
 /** Presentation of only the original edit owner; no private route or server reference. */
 export const selectNativeReviewForOwner: AppSelector<
   NativeReviewAttemptState | null,

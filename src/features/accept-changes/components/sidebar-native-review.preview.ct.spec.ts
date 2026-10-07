@@ -2,6 +2,29 @@ import { test, expect } from '../../../test/ct-test';
 import Preview from './sidebar-native-review.preview.svelte';
 
 test.describe.configure({ retries: 0 });
+
+test('mixed-provider PR destination can be selected by keyboard without a separate save dialog', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 420, height: 950 });
+  await mount(Preview, { props: { mixed: true } });
+  const picker = page.getByRole('combobox', { name: 'PR repository' });
+  await expect(picker).toBeVisible();
+  await picker.focus();
+  await picker.press('Enter');
+  await picker.press('Home');
+  await picker.press('Enter');
+  await expect(page.getByRole('textbox', { name: 'Target branch', exact: true })).toBeVisible();
+  await expect(picker).toContainText('origin · GitLab');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await picker.focus();
+  await picker.press('Enter');
+  await picker.press('End');
+  await picker.press('Enter');
+  await expect(picker).toContainText('github · GitHub');
+  await expect(page.getByRole('textbox', { name: 'Target branch', exact: true })).toHaveCount(0);
+});
 type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 async function fill(page: Page, branch = 'release/literal ') {
   await page.getByTestId('pr-create-button').click();
