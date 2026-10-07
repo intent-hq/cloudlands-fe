@@ -6,6 +6,7 @@ import { clearPanelLayout } from '$store/renderer/slices/panel-layout/panel-layo
 import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
 
 export function setupAssistantPanelsFixture(noteContent?: string) {
   const previousBridge = window.electronAPI;
@@ -50,8 +51,11 @@ export function setupAssistantPanelsFixture(noteContent?: string) {
     'note.presence.subscribe': () => ({ subscriptionId: 'assistant-preview-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),
   });
+  const fixtureBridge = window.electronAPI;
+  const stopNotes = store.runSaga(notesReadSaga);
   return () => {
-    window.electronAPI = previousBridge;
+    stopNotes();
+    if (window.electronAPI === fixtureBridge) window.electronAPI = previousBridge;
   };
 }
 
