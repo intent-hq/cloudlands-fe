@@ -1,6 +1,6 @@
 import type { CityModel } from './home-city-model';
 import { CITY_COMPACT_CELLS, reserveCityBlocks, type CityLayout } from './home-city-layout';
-import { cityBuildingSprite, cityRepositoryZone } from './home-city-sprites';
+import { cityBuildingSprite, cityBuildingZone, cityRepositoryZone } from './home-city-sprites';
 
 /** Keep native sprite selection out of saved-layout validation used across processes. */
 export function allocateCityLayout(model: CityModel, previous: CityLayout): CityLayout {
@@ -10,7 +10,7 @@ export function allocateCityLayout(model: CityModel, previous: CityLayout): City
     model.buildings.map((building) => {
       const sprite = cityBuildingSprite(
         building,
-        zones.get(building.repositoryId) ?? 'residential',
+        cityBuildingZone(building.id, zones.get(building.repositoryId) ?? 'commercial'),
       );
       return [building.id, sprite.lot[0] === 1 && sprite.lot[1] === 1];
     }),

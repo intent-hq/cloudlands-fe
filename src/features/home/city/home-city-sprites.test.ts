@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import catalog from './assets/simcity/catalog.json';
+import catalog from './assets/simcity/catalog.json' with { type: 'json' };
 import { createCityFixture } from './home-city-fixtures';
 import { cityFloors, type CityBuilding } from './home-city-model';
 import {
   cityBuildingCondition,
+  cityBuildingZone,
   cityBuildingSprite,
   cityParkSprite,
   cityRepositoryZone,
@@ -27,8 +28,11 @@ const area = (sprite: { lot: readonly number[] }) => sprite.lot[0] * sprite.lot[
 describe('city sprite selection', () => {
   it.each([
     ['industrial', ['platform', 'backend', 'infra', 'api', 'build', 'tools']],
-    ['commercial', ['studio', 'app', 'web', 'frontend']],
-    ['residential', ['explorations', 'research', 'notes', 'docs', 'personal']],
+    [
+      'commercial',
+      ['studio', 'app', 'web', 'frontend', 'explorations', 'research', 'notes', 'docs', 'personal'],
+    ],
+    ['residential', ['residential', 'housing']],
   ] as const)('associates %s repositories by name or canonical ID', (zone, names) => {
     for (const name of names) {
       expect(cityRepositoryZone({ id: 'unclassified', name: `acme/${name}-service` })).toBe(zone);
@@ -42,11 +46,11 @@ describe('city sprite selection', () => {
       name: 'Untitled',
     }));
     const selected = repositories.map(cityRepositoryZone);
-    expect(new Set(selected)).toEqual(new Set(zones));
+    expect(new Set(selected)).toEqual(new Set(['commercial', 'industrial']));
     expect(repositories.map((repo) => cityRepositoryZone({ ...repo, name: 'Renamed' }))).toEqual(
       selected,
     );
-    for (const zone of zones)
+    for (const zone of ['commercial', 'industrial'])
       expect(selected.filter((value) => value === zone).length).toBeGreaterThan(10);
   });
 
@@ -88,13 +92,124 @@ describe('city sprite selection', () => {
       const small = cityBuildingSprite(withFiles(0), zone);
       const medium = cityBuildingSprite(withFiles(7), zone);
       const large = cityBuildingSprite(withFiles(128), zone);
-      expect(area(small)).toBeLessThan(area(medium));
-      expect(area(medium)).toBeLessThan(area(large));
+      expect(small.lot).toEqual([2, 2]);
+      expect([4, 9]).toContain(area(medium));
+      expect([9, 16]).toContain(area(large));
       expect(cityBuildingSprite(withFiles(1), zone)).toEqual(small);
       expect(cityBuildingSprite(withFiles(15), zone)).toEqual(medium);
       expect(cityBuildingSprite(withFiles(1_000_000), zone)).toEqual(large);
       expect(cityBuildingSprite(withFiles(null), zone)).toEqual(small);
       expect(cityBuildingSprite({ ...withFiles(null), floors: 8 }, zone)).toEqual(small);
+    }
+  });
+
+  it('keeps explicit residential zones and mixes commercial/industrial by stable workspace ID', () => {
+    expect(cityRepositoryZone({ id: 'api', name: 'platform', zone: 'residential' })).toBe(
+      'residential',
+    );
+    const ids = Array.from({ length: 120 }, (_, i) => `workspace-${i}`);
+    for (const preferred of ['commercial', 'industrial'] as const) {
+      const selected = ids.map((id) => cityBuildingZone(id, preferred));
+      expect(new Set(selected)).toEqual(new Set(['commercial', 'industrial']));
+      const retained = selected.filter((zone) => zone === preferred).length;
+      expect(retained).toBeGreaterThanOrEqual(75);
+      expect(retained).toBeLessThanOrEqual(105);
+      expect([...ids].reverse().map((id) => cityBuildingZone(id, preferred))).toEqual(
+        [...selected].reverse(),
+      );
+      for (const id of ids) expect(cityBuildingZone(id, 'residential')).toBe('residential');
+    }
+  });
+
+  // Shared ID prefixes must not collapse a visible neighborhood to one zone.
+  it('mixes the first twenty padded city fixture IDs', () => {
+    const ids = Array.from(
+      { length: 20 },
+      (_, i) => `city-workspace-${String(i + 1).padStart(3, '0')}`,
+    );
+    for (const preferred of ['commercial', 'industrial'] as const) {
+      const selected = ids.map((id) => cityBuildingZone(id, preferred));
+      const retained = selected.filter((zone) => zone === preferred).length;
+      expect(retained).toBeGreaterThanOrEqual(10);
+      expect(retained).toBeLessThanOrEqual(18);
+      expect(new Set(selected)).toEqual(new Set(['commercial', 'industrial']));
+    }
+  });
+
+  it.each(['padded-city', 'common-prefix-uuid'] as const)(
+    'distributes zones, lot sizes and designs for %s workspace IDs',
+    (shape) => {
+      const ids = Array.from({ length: 120 }, (_, i) =>
+        shape === 'padded-city'
+          ? `city-workspace-${String(i + 1).padStart(3, '0')}`
+          : `6621c8f6-7bbe-4e59-bcd0-${(i + 1).toString(16).padStart(12, '0')}`,
+      );
+      for (const preferred of ['commercial', 'industrial'] as const) {
+        const selected = ids.map((id) => cityBuildingZone(id, preferred));
+        const retained = selected.filter((zone) => zone === preferred).length;
+        expect(retained).toBeGreaterThanOrEqual(75);
+        expect(retained).toBeLessThanOrEqual(105);
+        expect([...ids].reverse().map((id) => cityBuildingZone(id, preferred))).toEqual(
+          [...selected].reverse(),
+        );
+        for (const [files, minimumVariety, largerArea] of [
+          [7, 15, 9],
+          [128, 10, 16],
+        ]) {
+          const sprites = ids.map((id) =>
+            cityBuildingSprite({ ...withFiles(files), id }, preferred),
+          );
+          expect(new Set(sprites.map((sprite) => sprite.id)).size).toBeGreaterThanOrEqual(
+            minimumVariety,
+          );
+          const larger = sprites.filter((sprite) => area(sprite) === largerArea).length;
+          expect(larger).toBeGreaterThanOrEqual(75);
+          expect(larger).toBeLessThanOrEqual(105);
+          for (const [i, id] of ids.entries()) {
+            expect(
+              cityBuildingSprite({ ...withFiles(files), id, title: 'Renamed' }, preferred),
+            ).toEqual(sprites[i]);
+          }
+        }
+      }
+    },
+  );
+
+  it('uses larger native buildings with broad medium/high designs in commercial and industrial cities', () => {
+    const excluded = new Set(['Grass Lot', 'Crop Circle', 'Barn', 'Farm House', 'Greenhouse']);
+    const ids = Array.from({ length: 120 }, (_, i) => `workspace-${i}`);
+    for (const zone of ['commercial', 'industrial'] as const) {
+      for (const [tier, files, allowedAreas, minimumVariety] of [
+        ['medium', 7, [4, 9], 15],
+        ['high', 128, [9, 16], 10],
+      ] as const) {
+        const selections = ids.map((id) => cityBuildingSprite({ ...withFiles(files), id }, zone));
+        const distinct = new Set(selections.map((sprite) => sprite.id)).size;
+        const larger = selections.filter((sprite) => area(sprite) === allowedAreas[1]).length;
+        console.info(
+          `City variety: ${zone} ${tier}, ${distinct} designs / 120 IDs, ${larger} larger lots`,
+        );
+        expect(distinct).toBeGreaterThanOrEqual(minimumVariety);
+        expect(larger).toBeGreaterThan(60);
+        expect(new Set(selections.map(area))).toEqual(new Set(allowedAreas));
+        for (const sprite of selections) {
+          expect(sprite.lot.every((length) => length >= 2)).toBe(true);
+          if (zone === 'industrial') expect(excluded.has(sprite.name)).toBe(false);
+          expect(sprite.frames).toEqual(
+            catalog.buildings.find((candidate) => candidate.id === sprite.id)?.frames,
+          );
+        }
+      }
+    }
+    for (const zone of zones) {
+      for (const status of ['idle', 'running', 'blocked'] as const) {
+        for (const files of [null, 0, 7, 128]) {
+          for (const id of ids) {
+            const sprite = cityBuildingSprite({ ...withFiles(files), id, status }, zone);
+            expect(sprite.lot.every((length) => length >= 2)).toBe(true);
+          }
+        }
+      }
     }
   });
 

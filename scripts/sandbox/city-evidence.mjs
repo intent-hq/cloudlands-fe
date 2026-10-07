@@ -389,10 +389,19 @@ try {
             0,
             'Focused city stops drawing at rest',
           );
-          assert.ok(
-            result.rendererFocused.triangles > result.rendererAtRest.triangles,
-            'Selection restores detailed building geometry',
-          );
+          const rendering = await page.locator('[data-city]').getAttribute('data-city-rendering');
+          if (rendering === 'sprites') {
+            assert.equal(
+              result.rendererFocused.triangles,
+              result.rendererAtRest.triangles,
+              'Native sprites retain their full detail while the camera focuses',
+            );
+          } else {
+            assert.ok(
+              result.rendererFocused.triangles > result.rendererAtRest.triangles,
+              'Selection restores detailed building geometry',
+            );
+          }
         }
         await page.keyboard.press('Home');
         await blur(page);

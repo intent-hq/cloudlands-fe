@@ -13,7 +13,7 @@ export interface CityPlot {
   repositoryId: string;
   districtId: string;
   slot: number;
-  /** Native 1x1 buildings share a 4x4 lot; larger buildings own the whole lot. */
+  /** Reserved subcell address from an older layout with one-tile buildings. */
   cell?: number;
 }
 export interface CityLayout {
@@ -28,7 +28,8 @@ interface CityPosition {
 }
 
 export const CITY_BLOCK_SIZE = 9.6;
-export const CITY_SPRITE_TILE_SIZE = 0.65;
+export const CITY_SPRITE_TILE_SIZE = 0.8;
+const COMPACT_TILE_SIZE = 0.65;
 const COMPACT_GRID = 4;
 export const CITY_COMPACT_CELLS = COMPACT_GRID ** 2;
 const LOTS_PER_BLOCK = 4;
@@ -435,12 +436,9 @@ export function cityPlotPosition(
 ): CityPosition {
   const block = district.blocks[Math.floor(plot.slot / LOTS_PER_BLOCK)];
   const lot = plot.slot % LOTS_PER_BLOCK;
-  const dx =
-    plot.cell === undefined ? 0 : ((plot.cell % COMPACT_GRID) - 1.5) * CITY_SPRITE_TILE_SIZE;
+  const dx = plot.cell === undefined ? 0 : ((plot.cell % COMPACT_GRID) - 1.5) * COMPACT_TILE_SIZE;
   const dz =
-    plot.cell === undefined
-      ? 0
-      : (Math.floor(plot.cell / COMPACT_GRID) - 1.5) * CITY_SPRITE_TILE_SIZE;
+    plot.cell === undefined ? 0 : (Math.floor(plot.cell / COMPACT_GRID) - 1.5) * COMPACT_TILE_SIZE;
   return {
     x: block.x * CITY_BLOCK_SIZE + (lot % 2 ? LOT_OFFSET : -LOT_OFFSET) + dx,
     z: block.z * CITY_BLOCK_SIZE + (lot < 2 ? -LOT_OFFSET : LOT_OFFSET) + dz,

@@ -2,13 +2,19 @@ import * as THREE from 'three';
 import type { CityBuilding, CityModel } from './home-city-model';
 import {
   CITY_BLOCK_SIZE,
+  CITY_SPRITE_TILE_SIZE,
   cityPlotPosition,
   citySeed,
   type CityBlock,
   type CityDistrict,
   type CityLayout,
 } from './home-city-layout';
-import { cityBuildingSprite, cityParkSprite, cityRepositoryZone } from './home-city-sprites';
+import {
+  cityBuildingSprite,
+  cityBuildingZone,
+  cityParkSprite,
+  cityRepositoryZone,
+} from './home-city-sprites';
 import {
   CitySpriteArt,
   citySpriteHeight,
@@ -28,6 +34,8 @@ interface CityAnchor {
   x: number;
   y: number;
   z: number;
+  width: number;
+  depth: number;
   district: CityDistrict;
 }
 interface StreetInstance {
@@ -86,7 +94,6 @@ export class CityArt {
   private readonly ring: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   private matches: ReadonlySet<string> = new Set();
   private readonly occupiedPlots = new Set<string>();
-  private readonly compactOwners = new Set<string>();
 
   constructor(
     model: CityModel,
@@ -98,7 +105,6 @@ export class CityArt {
     const plots = layout.plots.filter((plot) => activeIds.has(plot.id));
     for (const plot of plots) {
       this.occupiedPlots.add(`${plot.districtId}:${plot.slot}`);
-      if (plot.cell !== undefined) this.compactOwners.add(plot.id);
     }
     this.districts = layout.districts.filter((district) =>
       plots.some((plot) => plot.districtId === district.id),
@@ -123,23 +129,25 @@ export class CityArt {
       const zone = zones.get(building.repositoryId);
       if (!plot || !district || !zone) continue;
       const position = cityPlotPosition(plot, district);
-      const sprite = cityBuildingSprite(building, zone);
+      const sprite = cityBuildingSprite(building, cityBuildingZone(building.id, zone));
       this.placements.push({ sprite, x: position.x, z: position.z, owner: building.id });
       this.anchors.set(building.id, {
         id: building.id,
         x: position.x,
         z: position.z,
         y: citySpriteHeight(sprite) + 0.15,
+        width: sprite.lot[0] * CITY_SPRITE_TILE_SIZE,
+        depth: sprite.lot[1] * CITY_SPRITE_TILE_SIZE,
         district,
       });
     }
     this.sprites = new CitySpriteArt(atlas, this.placements, theme.background);
     this.group.add(this.sprites.group);
     const ringGeometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-1.5, 0, -1.5),
-      new THREE.Vector3(1.5, 0, -1.5),
-      new THREE.Vector3(1.5, 0, 1.5),
-      new THREE.Vector3(-1.5, 0, 1.5),
+      new THREE.Vector3(-0.5, 0, -0.5),
+      new THREE.Vector3(0.5, 0, -0.5),
+      new THREE.Vector3(0.5, 0, 0.5),
+      new THREE.Vector3(-0.5, 0, 0.5),
     ]);
     this.geometries.push(ringGeometry);
     this.ring = new THREE.LineLoop(
@@ -238,7 +246,7 @@ export class CityArt {
     this.ring.visible = !!anchor;
     if (anchor) {
       this.ring.position.set(anchor.x, 0.1, anchor.z);
-      this.ring.scale.setScalar(this.compactOwners.has(anchor.id) ? 0.25 : 1);
+      this.ring.scale.set(anchor.width + 0.12, 1, anchor.depth + 0.12);
     }
   }
 

@@ -34,6 +34,7 @@
   import {
     cityBuildingCondition,
     cityBuildingSprite,
+    cityBuildingZone,
     cityRepositoryZone,
     type CityCondition,
     type CityZone,
@@ -94,6 +95,17 @@
   const repoRows = $derived(model.repositories);
   const repoById = $derived(new Map(repoRows.map((repo) => [repo.id, repo])));
   const zones = $derived(new Map(repoRows.map((repo) => [repo.id, cityRepositoryZone(repo)])));
+  const sprites = $derived(
+    new Map(
+      model.buildings.map((building) => [
+        building.id,
+        cityBuildingSprite(
+          building,
+          cityBuildingZone(building.id, zones.get(building.repositoryId) ?? 'commercial'),
+        ),
+      ]),
+    ),
+  );
   const results = $derived(model.buildings.filter((building) => matching.has(building.id)));
   const selected = $derived(selectedId ? buildings.get(selectedId) : undefined);
   const plots = $derived(
@@ -484,12 +496,11 @@
             data-city-slot={plots.get(label.id)?.slot}
             data-city-cell={plots.get(label.id)?.cell}
             data-city-match={matching.has(label.id)}
-            data-city-zone={zones.get(building.repositoryId)}
+            data-city-zone={sprites.get(label.id)?.zone}
             data-city-condition={cityBuildingCondition(building.status)}
-            data-city-sprite={cityBuildingSprite(
-              building,
-              zones.get(building.repositoryId) ?? 'residential',
-            ).id}
+            data-city-sprite={sprites.get(label.id)?.id}
+            data-city-lot-x={sprites.get(label.id)?.lot[0]}
+            data-city-lot-z={sprites.get(label.id)?.lot[1]}
           >
             <Button
               variant="ghost"
@@ -568,7 +579,7 @@
       <div class="city-inspector-top">
         <span class="city-inspector-repo"
           >{repoById.get(selected.repositoryId)?.name} · {zoneLabel(
-            zones.get(selected.repositoryId),
+            sprites.get(selected.id)?.zone,
           )}</span
         ><Button
           variant="ghost"

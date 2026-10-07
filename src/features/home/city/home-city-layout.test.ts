@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { createCityFixture, createReservedCityLayout } from './home-city-fixtures';
 import { allocateCityLayout } from './home-city-allocation';
 import {
+  CITY_SPRITE_TILE_SIZE,
   cityPlotPosition,
   emptyCityLayout,
   normalizeCityLayout,
   type CityLayout,
 } from './home-city-layout';
+import { cityBuildingSprite, cityBuildingZone, cityRepositoryZone } from './home-city-sprites';
 
 // Prevent detached neighborhoods, overlapping buildings, lost reservations,
 // nondeterministic placement, and moving addresses when Home hides or adds work.
@@ -20,6 +22,22 @@ const positions = (layout: CityLayout) =>
       ),
     ]),
   );
+
+function legacyPackedLayout(): CityLayout {
+  const model = createCityFixture('packed');
+  const repositoryId = model.repositories[0].id;
+  return {
+    version: 3,
+    districts: [{ id: repositoryId, repositoryId, blocks: [{ x: 0, z: 0 }], capacity: 4 }],
+    plots: model.buildings.map((building, index) => ({
+      id: building.id,
+      repositoryId,
+      districtId: repositoryId,
+      slot: index < 18 ? Math.floor(index / 16) : index - 16,
+      ...(index < 18 ? { cell: index % 16 } : {}),
+    })),
+  };
+}
 
 function connected(blocks: { x: number; z: number }[]): boolean {
   const remaining = new Set(blocks.map((block) => `${block.x}:${block.z}`));
@@ -44,7 +62,8 @@ describe('repository neighborhoods on a shared city grid', () => {
   it.each(['two-hundred', 'many-repositories', 'skewed'] as const)(
     'forms a compact connected city with separate contiguous repos for %s',
     (scenario) => {
-      const layout = allocateCityLayout(createCityFixture(scenario), emptyCityLayout());
+      const model = createCityFixture(scenario);
+      const layout = allocateCityLayout(model, emptyCityLayout());
       expect(layout.districts).toHaveLength(scenario === 'two-hundred' ? 3 : 25);
       expect(layout.plots).toHaveLength(200);
       const blocks = layout.districts.flatMap((district) => district.blocks);
@@ -57,17 +76,25 @@ describe('repository neighborhoods on a shared city grid', () => {
       const width = Math.max(...blocks.map((b) => b.x)) - Math.min(...blocks.map((b) => b.x)) + 1;
       const depth = Math.max(...blocks.map((b) => b.z)) - Math.min(...blocks.map((b) => b.z)) + 1;
       expect(width * depth).toBeLessThanOrEqual(blocks.length * 2);
-      const points = layout.plots.map((plot) => ({
-        ...positions(layout).get(plot.id)!,
-        size: plot.cell === undefined ? 3 : 0.65,
-      }));
+      const addresses = positions(layout);
+      const points = model.buildings.map((building) => {
+        const repository = model.repositories.find((repo) => repo.id === building.repositoryId)!;
+        const sprite = cityBuildingSprite(
+          building,
+          cityBuildingZone(building.id, cityRepositoryZone(repository)),
+        );
+        return {
+          ...addresses.get(building.id)!,
+          width: sprite.lot[0] * CITY_SPRITE_TILE_SIZE,
+          depth: sprite.lot[1] * CITY_SPRITE_TILE_SIZE,
+        };
+      });
       for (let i = 0; i < points.length; i++) {
         for (let j = i + 1; j < points.length; j++) {
-          const gap = (points[i].size + points[j].size) / 2;
           expect(
             Math.max(
-              Math.abs(points[i].x - points[j].x) - gap,
-              Math.abs(points[i].z - points[j].z) - gap,
+              Math.abs(points[i].x - points[j].x) - (points[i].width + points[j].width) / 2,
+              Math.abs(points[i].z - points[j].z) - (points[i].depth + points[j].depth) / 2,
             ),
           ).toBeGreaterThanOrEqual(-1e-8);
         }
@@ -93,39 +120,42 @@ describe('repository neighborhoods on a shared city grid', () => {
     ).toEqual(original);
   });
 
-  it('packs sixteen native one-tile workspaces into one lot and spills without overlap', () => {
+  it('gives even low-volume workspaces their own full plots without overlap', () => {
     const model = createCityFixture('packed');
     const layout = allocateCityLayout(model, emptyCityLayout());
-    const small = layout.plots.filter((plot) => plot.cell !== undefined);
-    expect(small).toHaveLength(18);
-    expect(new Set(small.slice(0, 16).map((plot) => plot.slot)).size).toBe(1);
-    expect(new Set(small.slice(0, 16).map((plot) => plot.cell)).size).toBe(16);
-    expect(new Set(small.slice(16).map((plot) => plot.slot)).size).toBe(1);
-    expect(small[16].slot).not.toBe(small[0].slot);
-    const large = layout.plots.filter((plot) => plot.cell === undefined);
-    expect(large).toHaveLength(2);
-    expect(new Set(layout.plots.map((plot) => plot.slot)).size).toBe(4);
-    expect(layout.districts[0].blocks).toHaveLength(1);
+    expect(layout.plots.every((plot) => plot.cell === undefined)).toBe(true);
+    expect(new Set(layout.plots.map((plot) => plot.slot)).size).toBe(20);
+    expect(layout.districts[0].blocks.length).toBeGreaterThanOrEqual(5);
+    expect(layout.districts[0].blocks.length).toBeLessThanOrEqual(6);
     const addresses = [...positions(layout).values()].map(({ x, z }) => `${x}:${z}`);
     expect(new Set(addresses).size).toBe(model.buildings.length);
     expect(normalizeCityLayout(JSON.parse(JSON.stringify(layout)))).toEqual(layout);
+    expect(
+      allocateCityLayout(
+        {
+          ...model,
+          buildings: model.buildings.map((building) => ({
+            ...building,
+            files: 128,
+            floors: 8,
+            status: 'complete' as const,
+          })),
+        },
+        layout,
+      ),
+    ).toBe(layout);
   });
 
-  it('reserves hidden compact cells and moves only a workspace that outgrows its cell', () => {
+  it('upgrades visible legacy compact workspaces while retaining hidden and full-size addresses', () => {
     const model = createCityFixture('packed');
-    const original = allocateCityLayout(model, emptyCityLayout());
-    const scoped = { ...model, buildings: model.buildings.slice(1, 3) };
-    expect(allocateCityLayout(scoped, original)).toBe(original);
+    const original = legacyPackedLayout();
+    const first = positions(original).get(model.buildings[0].id)!;
+    expect(first.x).toBeCloseTo(-2.775, 12);
+    expect(first.z).toBeCloseTo(-2.775, 12);
+    expect(normalizeCityLayout(JSON.parse(JSON.stringify(original)))).toEqual(original);
     const target = model.buildings[0];
-    const promoted = allocateCityLayout(
-      {
-        ...model,
-        buildings: model.buildings.map((building) =>
-          building.id === target.id ? { ...building, files: 100, floors: 8 } : building,
-        ),
-      },
-      original,
-    );
+    const scoped = { ...model, buildings: [target] };
+    const promoted = allocateCityLayout(scoped, original);
     const grown = promoted.plots.find((plot) => plot.id === target.id)!;
     expect(grown.cell).toBeUndefined();
     expect(grown.slot).not.toBe(original.plots[0].slot);
@@ -134,10 +164,19 @@ describe('repository neighborhoods on a shared city grid', () => {
       if (id !== target.id) expect(moved.get(id)).toEqual(position);
     }
     expect(normalizeCityLayout(JSON.parse(JSON.stringify(promoted)))).toEqual(promoted);
+    expect(allocateCityLayout(scoped, promoted)).toBe(promoted);
+    const expanded = allocateCityLayout(model, promoted);
+    expect(expanded.plots.every((plot) => plot.cell === undefined)).toBe(true);
+    expect(new Set([...positions(expanded).values()].map(({ x, z }) => `${x}:${z}`)).size).toBe(
+      model.buildings.length,
+    );
+    for (const building of [target, ...model.buildings.slice(18)]) {
+      expect(positions(expanded).get(building.id)).toEqual(moved.get(building.id));
+    }
   });
 
   it('rejects duplicate compact cells, invalid cells, and full-lot collisions', () => {
-    const layout = allocateCityLayout(createCityFixture('packed'), emptyCityLayout());
+    const layout = legacyPackedLayout();
     const sample = layout.plots[0];
     const restored = normalizeCityLayout({
       ...layout,
