@@ -22,7 +22,7 @@
     faPlay,
     faCheck,
     faCircle,
-    faCloud,
+    faCube,
     faRotateLeft,
     faRotateRight,
   } from '@fortawesome/free-solid-svg-icons';
@@ -34,7 +34,6 @@
     type CityLayout,
   } from './home-city-layout';
   import type { CityFrame, CityScene } from './city-scene';
-  import sky from './assets/cloud-sky.png';
   import './city.css';
 
   let {
@@ -72,14 +71,12 @@
   let disposed = false;
   let frame = $state<CityFrame>({
     buildings: [],
-    repositories: [],
     zoom: 1,
     draws: 0,
     triangles: 0,
     moving: false,
     yaw: 0,
     elevation: 0,
-    sky: { x: 0, y: 0, scale: 1 },
   });
   const matching = $derived(new Set(matchingIds));
   const buildings = $derived(new Map(model.buildings.map((building) => [building.id, building])));
@@ -360,15 +357,9 @@
   data-city-yaw={frame.yaw}
   data-city-elevation={frame.elevation}
   aria-label={m.home_city_title()}
-  style:--city-sky={`url('${sky}')`}
   in:fade={{ tier: 'slow' }}
   out:fly={{ axis: 'y', distance: -8, tier: 'moderate' }}
 >
-  <div
-    class="city-atmosphere"
-    aria-hidden="true"
-    style:transform={`translate3d(${frame.sky.x}px, ${frame.sky.y}px, 0) scale(${frame.sky.scale})`}
-  ></div>
   <div
     bind:this={viewport}
     class="city-viewport"
@@ -377,24 +368,6 @@
     aria-label={m.home_city_orbit()}
     aria-describedby="city-keyboard-hint"
   ></div>
-  <div
-    class="city-near-clouds"
-    aria-hidden="true"
-    style:transform={`translate3d(${frame.sky.x * 1.8}px, ${frame.sky.y * 1.8}px, 0) scale(${1 + (frame.sky.scale - 1) * 1.8})`}
-  ></div>
-
-  <header class="city-heading">
-    <div class="city-eyebrow">
-      <Fa icon={faCloud} />
-      <h2>{m.home_city_title()}</h2>
-    </div>
-    <p>
-      {m.home_city_subtitle({
-        workspaces: formatInteger(model.buildings.length),
-        repositories: formatInteger(model.repositories.length),
-      })}
-    </p>
-  </header>
   <div class="city-top-actions">
     <Button
       variant="ghost"
@@ -407,40 +380,27 @@
     >
     <Button
       variant="ghost"
-      size="sm"
-      class="city-tool city-index-toggle"
+      size="icon-sm"
+      class="city-tool"
       aria-label={m.home_city_index()}
+      tooltip={m.home_city_index()}
       aria-expanded={indexOpen}
       aria-controls="city-workspace-index"
-      onclick={() => (indexOpen = !indexOpen)}
-      ><Fa icon={faList} /><span class="city-index-toggle-label">{m.home_city_index()}</span
-      ></Button
+      onclick={() => (indexOpen = !indexOpen)}><Fa icon={faList} /></Button
+    >
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      class="city-tool"
+      aria-label={m.home_city_shortcuts()}
+      tooltip={m.home_city_shortcuts()}
+      tooltipShortcut="?"
+      onclick={() => (helpOpen = true)}><Fa icon={faKeyboard} /></Button
     >
   </div>
 
   {#if ready && !failed}
     <div class="city-labels">
-      {#each frame.repositories as label (label.id)}
-        {#if label.visible}
-          <div class="city-repo-anchor" style:left={`${label.x}px`} style:top={`${label.y}px`}>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="city-repo-label"
-              data-city-repository={label.repositoryId}
-              aria-label={m.home_city_repository_label({
-                name: repoById.get(label.repositoryId)?.name ?? '',
-                count: formatInteger(label.count),
-              })}
-              onclick={() => scene?.focusRepository(label.repositoryId)}
-            >
-              <span>{repoById.get(label.repositoryId)?.name}</span><span class="city-repo-count"
-                >{formatInteger(label.count)}</span
-              >
-            </Button>
-          </div>
-        {/if}
-      {/each}
       {#each frame.buildings as label (label.id)}
         {@const building = buildings.get(label.id)}
         {#if building}
@@ -473,10 +433,6 @@
                 ><Fa icon={statusIcon(building.status)} /></span
               ><span class="city-building-name">{building.title}</span>
             </Button>
-            {#if selectedId === label.id}<span
-                class="city-label-status"
-                data-status={building.status}>{statusLabel(building.status)}</span
-              >{/if}
             <span class="city-leader" aria-hidden="true"></span>
           </div>
         {/if}
@@ -486,12 +442,12 @@
 
   {#if !ready && !failed}
     <div class="city-message" role="status">
-      <Fa icon={faCloud} />
+      <Fa icon={faCube} />
       <p>{m.home_city_loading()}</p>
     </div>
   {:else if failed}
     <div class="city-message city-fallback" role="status">
-      <Fa icon={faCloud} />
+      <Fa icon={faCube} />
       <h3>{m.home_city_fallback_title()}</h3>
       <p>{m.home_city_fallback_description()}</p>
       <div class="city-message-actions">
@@ -503,7 +459,7 @@
     </div>
   {:else if model.buildings.length === 0}
     <div class="city-message">
-      <Fa icon={faCloud} />
+      <Fa icon={faCube} />
       <h3>{m.home_city_no_workspaces()}</h3>
       <p>{m.home_city_empty_description()}</p>
     </div>
@@ -533,7 +489,6 @@
       in:fly={{ axis: 'y', distance: 8, tier: 'moderate' }}
       out:fade={{ tier: 'fast' }}
     >
-      <div class="city-inspector-rule"></div>
       <div class="city-inspector-top">
         <span class="city-inspector-repo">{repoById.get(selected.repositoryId)?.name}</span><Button
           variant="ghost"
@@ -589,12 +544,6 @@
       </div>
       {#if selected.workspace.branch}<p class="city-branch">{selected.workspace.branch}</p>{/if}
     </aside>
-  {:else if ready && !failed && results.length > 0}
-    <div class="city-welcome" in:fade={{ tier: 'moderate' }}>
-      <div class="city-inspector-rule"></div>
-      <p>{m.home_city_intro()}</p>
-      <span>{m.home_city_select_hint()}</span>
-    </div>
   {/if}
 
   {#if indexOpen}
@@ -616,7 +565,19 @@
         {#each model.repositories as repo (repo.id)}
           {@const items = results.filter((building) => building.repositoryId === repo.id)}
           {#if items.length}<div class="city-index-repo">
-              <h4>{repo.name}<span>{formatInteger(items.length)}</span></h4>
+              <h4>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="city-index-repository"
+                  aria-label={m.home_city_repository_label({
+                    name: repo.name,
+                    count: formatInteger(items.length),
+                  })}
+                  onclick={() => scene?.focusRepository(repo.id)}
+                  >{repo.name}<span>{formatInteger(items.length)}</span></Button
+                >
+              </h4>
               {#each items as building (building.id)}
                 <Button
                   variant="ghost"
@@ -699,7 +660,6 @@
       tooltipShortcut="−"
       onclick={() => scene?.zoom(1.25)}><Fa icon={faMinus} /></Button
     >
-    <span class="city-camera-divider"></span>
     <Button
       variant="ghost"
       size="icon-sm"
@@ -713,10 +673,11 @@
   </div>
 
   <footer class="city-footer">
-    <div class="city-nav-hint" id="city-keyboard-hint">
+    <div class="city-nav-hint">
       <Button
         variant="ghost"
         size="icon-sm"
+        class="city-tool"
         disabled={!results.length}
         aria-label={m.home_city_previous()}
         tooltip={m.home_city_previous()}
@@ -724,25 +685,17 @@
         onclick={() => cycle(-1)}><Fa icon={faArrowLeft} /></Button
       ><Button
         variant="ghost"
-        size="sm"
-        class="city-next"
-        disabled={!results.length}
-        onclick={() => cycle()}><kbd>N</kbd>{m.home_city_next()}<Fa icon={faArrowRight} /></Button
-      ><span class="city-drag-hint">{m.home_city_drag_hint()}</span>
-    </div>
-    <div class="city-legend">
-      <span class="city-floor-icon" aria-hidden="true">▂▅▇</span><span
-        >{m.home_city_size_legend()}</span
-      ><Button
-        variant="ghost"
         size="icon-sm"
-        aria-label={m.home_city_shortcuts()}
-        tooltip={m.home_city_shortcuts()}
-        tooltipShortcut="?"
-        onclick={() => (helpOpen = true)}><Fa icon={faKeyboard} /></Button
+        class="city-tool"
+        disabled={!results.length}
+        aria-label={m.home_city_next()}
+        tooltip={m.home_city_next()}
+        tooltipShortcut="N"
+        onclick={() => cycle()}><Fa icon={faArrowRight} /></Button
       >
     </div>
   </footer>
+  <p class="sr-only" id="city-keyboard-hint">{m.home_city_drag_hint()}</p>
   <p class="sr-only" aria-live="polite">
     {selected
       ? m.home_city_building_label({ title: selected.title, status: statusLabel(selected.status) })

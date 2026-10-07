@@ -14,14 +14,12 @@ interface CityLabel {
 }
 export interface CityFrame {
   buildings: CityLabel[];
-  repositories: (CityLabel & { repositoryId: string; count: number })[];
   zoom: number;
   draws: number;
   triangles: number;
   moving: boolean;
   yaw: number;
   elevation: number;
-  sky: { x: number; y: number; scale: number };
 }
 interface CameraView {
   x: number;
@@ -65,10 +63,45 @@ export class CityScene {
   private readonly unsubscribeMotion: () => void;
   private readonly abort = new AbortController();
   private readonly raycaster = new THREE.Raycaster();
+  // World-space lines share the city's camera, so every gesture keeps them aligned.
+  private readonly grid = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: { ink: { value: new THREE.Color() } },
+      vertexShader: `
+        varying vec2 world;
+        void main() {
+          vec4 positionInWorld = modelMatrix * vec4(position, 1.0);
+          world = positionInWorld.xz;
+          gl_Position = projectionMatrix * viewMatrix * positionInWorld;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 ink;
+        varying vec2 world;
+        float gridLine(float spacing) {
+          vec2 cell = world / spacing;
+          vec2 footprint = max(fwidth(cell), vec2(0.0001));
+          vec2 distanceToLine = abs(fract(cell - 0.5) - 0.5) / footprint;
+          float line = 1.0 - min(min(distanceToLine.x, distanceToLine.y), 1.0);
+          // Fade subpixel cells instead of letting dense lines shimmer during zoom.
+          return line * (1.0 - smoothstep(0.15, 0.45, max(footprint.x, footprint.y)));
+        }
+        void main() {
+          float alpha = max(gridLine(2.0) * 0.12, gridLine(10.0) * 0.22);
+          gl_FragColor = vec4(ink, alpha);
+          #include <colorspace_fragment>
+        }
+      `,
+    }),
+  );
+  private readonly themeObserver: MutationObserver;
   private art: CityArt | null = null;
-  private model: CityModel = { repositories: [], buildings: [] };
   private matches = new Set<string>();
   private selected: string | null = null;
+  private hovered: string | null = null;
   private width = 1;
   private height = 1;
   private view: CameraView = {
@@ -132,6 +165,21 @@ export class CityScene {
     const fill = new THREE.DirectionalLight('#c9e5ff', 1.1);
     fill.position.set(10, 9, -20);
     this.scene.add(fill);
+    this.grid.rotation.x = -Math.PI / 2;
+    this.grid.position.y = -2;
+    this.scene.add(this.grid);
+    const updateGridColor = () => {
+      this.grid.material.uniforms.ink.value.setStyle(getComputedStyle(this.host).color);
+      this.invalidate();
+    };
+    this.themeObserver = new MutationObserver(updateGridColor);
+    for (let element: HTMLElement | null = host; element; element = element.parentElement) {
+      this.themeObserver.observe(element, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme'],
+      });
+    }
+    updateGridColor();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.intersection = new IntersectionObserver(([entry]) => {
@@ -164,7 +212,8 @@ export class CityScene {
       { signal },
     );
     options.interactionRoot.addEventListener('pointerdown', this.pointerDown, { signal });
-    this.canvas.addEventListener('pointermove', this.pointerMove, { signal });
+    options.interactionRoot.addEventListener('pointermove', this.pointerMove, { signal });
+    options.interactionRoot.addEventListener('pointerleave', () => this.hover(null), { signal });
     this.canvas.addEventListener('pointerup', this.pointerUp, { signal });
     this.canvas.addEventListener('pointercancel', this.pointerCancel, { signal });
     this.canvas.addEventListener('lostpointercapture', this.pointerCancel, { signal });
@@ -197,7 +246,6 @@ export class CityScene {
     matches: readonly string[],
     selected: string | null,
   ) {
-    this.model = model;
     this.matches = new Set(matches);
     this.selected = selected;
     const structure = JSON.stringify([
@@ -473,30 +521,14 @@ export class CityScene {
       if (progress === 1) this.motion = null;
     }
     this.setCamera(this.view);
+    const size =
+      (this.view.span * Math.max(1, this.width / this.height) * 4) / Math.sin(this.view.elevation);
+    this.grid.scale.set(size, size, 1);
+    this.grid.position.set(this.view.x, -2, this.view.z);
     this.renderer.render(this.scene, this.camera);
     this.projectLabels();
     if (this.motion) this.invalidate();
   };
-
-  private skyParallax() {
-    if (prefersReducedMotion()) return { x: 0, y: 0, scale: 1 };
-    const view = this.view;
-    const dx = view.x - this.home.x,
-      dz = view.z - this.home.z;
-    const right = dx * Math.cos(view.yaw) - dz * Math.sin(view.yaw);
-    const forward = dx * Math.sin(view.yaw) + dz * Math.cos(view.yaw);
-    return {
-      x:
-        Math.tanh(-right / this.home.span + Math.sin(view.yaw - DEFAULT_YAW) * 0.6) *
-        this.width *
-        0.045,
-      y:
-        Math.tanh(-forward / this.home.span + (view.elevation - DEFAULT_ELEVATION) * 1.5) *
-        this.height *
-        0.045,
-      scale: 1 + Math.tanh(Math.log(this.home.span / view.span)) * 0.025,
-    };
-  }
 
   private projectLabels() {
     if (!this.art) return;
@@ -509,55 +541,22 @@ export class CityScene {
         visible: Math.abs(point.x) < 0.95 && Math.abs(point.y) < 0.88,
       };
     };
-    const boxes: { x: number; y: number; width: number; height: number }[] = [];
-    const modelById = new Map(this.model.buildings.map((building) => [building.id, building]));
-    const anchors = [...this.art.anchors.values()].sort(
-      (a, b) =>
-        Number(b.id === this.selected) - Number(a.id === this.selected) ||
-        Number(this.matches.has(b.id)) - Number(this.matches.has(a.id)) ||
-        Number(modelById.get(b.id)?.status === 'attention') -
-          Number(modelById.get(a.id)?.status === 'attention'),
-    );
-    const budget = Math.max(2, Math.floor((this.width * this.height) / 68000));
-    let labels = 0;
-    const buildings = anchors.map((anchor) => {
+    const buildings = [...this.art.anchors.values()].map((anchor) => {
       const point = project(anchor.id, anchor.x, anchor.y + 0.5, anchor.z);
-      const width = Math.min(190, 36 + (modelById.get(anchor.id)?.title.length ?? 0) * 6.4);
-      const box = { x: point.x - width / 2, y: point.y - 32, width, height: 42 };
-      const overlaps = boxes.some(
-        (other) =>
-          box.x < other.x + other.width + 8 &&
-          box.x + box.width + 8 > other.x &&
-          box.y < other.y + other.height &&
-          box.y + box.height > other.y,
-      );
-      const selected = point.id === this.selected;
       point.visible =
-        point.visible && this.matches.has(point.id) && (selected || (!overlaps && labels < budget));
-      if (point.visible) {
-        boxes.push(box);
-        labels++;
-      }
+        point.visible &&
+        this.matches.has(point.id) &&
+        (point.id === this.selected || point.id === this.hovered);
       return point;
-    });
-    const anchorsByIsland = new Map<string, number>();
-    for (const anchor of anchors)
-      anchorsByIsland.set(anchor.island.id, (anchorsByIsland.get(anchor.island.id) ?? 0) + 1);
-    const repositories = this.art.islands.map((island) => {
-      const point = project(island.id, island.x, 0.05, island.z + island.radius + 0.55);
-      const count = anchorsByIsland.get(island.id) ?? 0;
-      return { ...point, repositoryId: island.repositoryId, count };
     });
     this.options.onframe({
       buildings,
-      repositories,
       zoom: this.home.span / this.view.span,
       draws: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
       moving: !!this.motion,
       yaw: this.view.yaw,
       elevation: this.view.elevation,
-      sky: this.skyParallax(),
     });
   }
 
@@ -587,9 +586,7 @@ export class CityScene {
 
   private inputTarget(event: Event): HTMLElement | null {
     return event.target instanceof Element
-      ? event.target.closest<HTMLElement>(
-          '[data-city-canvas], [data-city-building], [data-city-repository]',
-        )
+      ? event.target.closest<HTMLElement>('[data-city-canvas], [data-city-building]')
       : null;
   }
 
@@ -597,6 +594,7 @@ export class CityScene {
     const target = this.inputTarget(event);
     if (!target || (event.button !== 0 && event.button !== 1 && event.button !== 2)) return;
     event.preventDefault();
+    this.hover(null);
     this.host.focus({ preventScroll: true });
     this.canvas.setPointerCapture(event.pointerId);
     this.motion = null;
@@ -618,7 +616,13 @@ export class CityScene {
   private pointerMove = (event: PointerEvent) => {
     const previous = this.pointers.get(event.pointerId);
     if (!previous) {
-      this.canvas.style.cursor = this.pick(event) ? 'pointer' : 'grab';
+      const target = this.inputTarget(event);
+      const id =
+        target === this.canvas
+          ? this.pick(event)
+          : (target?.getAttribute('data-city-building') ?? null);
+      this.hover(id);
+      this.canvas.style.cursor = id ? 'pointer' : 'grab';
       return;
     }
     const dx = event.clientX - previous.x,
@@ -673,6 +677,7 @@ export class CityScene {
     this.canvas.style.cursor = 'grab';
   };
   private cancelGesture = () => {
+    this.hover(null);
     const ids = [...this.pointers.keys()];
     this.pointers.clear();
     for (const id of ids) {
@@ -683,6 +688,7 @@ export class CityScene {
   private wheel = (event: WheelEvent) => {
     if (!this.inputTarget(event)) return;
     event.preventDefault();
+    this.hover(null);
     const unit =
       event.deltaMode === WheelEvent.DOM_DELTA_LINE
         ? 16
@@ -711,6 +717,12 @@ export class CityScene {
     else this.pan(-dx, -dy);
   };
 
+  private hover(id: string | null) {
+    if (id === this.hovered) return;
+    this.hovered = id;
+    this.invalidate();
+  }
+
   dispose() {
     this.disposed = true;
     this.cancelGesture();
@@ -719,6 +731,9 @@ export class CityScene {
     this.unsubscribeMotion();
     this.observer.disconnect();
     this.intersection.disconnect();
+    this.themeObserver.disconnect();
+    this.grid.geometry.dispose();
+    this.grid.material.dispose();
     this.art?.dispose();
     this.environment.dispose();
     this.scene.traverse((object) => {
