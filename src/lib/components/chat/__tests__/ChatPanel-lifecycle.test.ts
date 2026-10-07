@@ -1274,10 +1274,18 @@ describe('ChatPanel mounted lifecycle', () => {
     const reactivatedOverlay = screen.getByTestId('pinned-user-prompt');
     expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
-    expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(scroll);
+    const [getContainer, measureTarget] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).toBe(scroll);
+    expect(measureTarget).toEqual(expect.any(Function));
+    expect(sourceTurnRect).not.toHaveBeenCalled();
+    const target = measureTarget(scroll);
+    expect(sourceTurnRect).toHaveBeenCalledOnce();
+    sourceTurnRect.mockReturnValue({ top: 40, bottom: 460, height: 420 } as DOMRect);
+    expect(measureTarget(scroll)).toBe(target - 40);
     expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
+    turn.remove();
+    expect(getContainer()).toBeNull();
   });
 
   it('consumes a targeted browser capture and includes its image and context in the next send', async () => {
@@ -4096,10 +4104,16 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
     await tick();
     flushFrame();
-    await vi.waitFor(() => {
-      expect(replacementBounds).toHaveBeenCalled();
-      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    });
+    await vi.waitFor(() => expect(mocks.animateScrollTo).toHaveBeenCalledOnce());
+    const [getContainer, measureTarget] = mocks.animateScrollTo.mock.calls[0];
+    const scroll = screen.getByTestId('chat-transcript-scroll-viewport');
+    expect(getContainer()).toBe(scroll);
+    expect(measureTarget).toEqual(expect.any(Function));
+    expect(replacementBounds).not.toHaveBeenCalled();
+    measureTarget(scroll);
+    expect(replacementBounds).toHaveBeenCalledOnce();
+    messageB.remove();
+    expect(getContainer()).toBeNull();
   });
 
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
