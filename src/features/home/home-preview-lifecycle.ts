@@ -4,14 +4,17 @@ import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import { startChatFixtureSagas } from '../../test/chat-fixture-sagas';
 import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
 import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-browser-fixtures';
+import { setupHomeAssistantRenameFixtures } from './home-assistant-rename-browser-fixtures';
 
 export function startHomePreviewFixtures() {
   return startHomePreview(() => {
     const stopIntegrations = setupHomeIntegrationsFixtures(store);
     const stopActivity = setupHomeAssistantActivityFixtures();
+    const stopRenames = setupHomeAssistantRenameFixtures();
     return [
       ...startChatFixtureSagas(store),
       () => {
+        stopRenames();
         stopActivity();
         stopIntegrations();
       },
