@@ -459,26 +459,38 @@
         : null,
   );
   let homeElement = $state<HTMLDivElement | null>(null);
-  $effect.pre(() => {
-    const activeView = destination === 'workspaces' ? tab : null;
-    // Outgoing keyed effects pause; hide their controls before animation callbacks run.
-    for (const panel of homeElement?.querySelectorAll<HTMLElement>('[data-home-view]') ?? []) {
-      const active = panel.dataset.homeView === activeView;
-      panel.inert = !active;
-      if (active) panel.removeAttribute('aria-hidden');
-      else panel.setAttribute('aria-hidden', 'true');
-    }
-  });
-  let pendingTabFocus: string | null = null;
-  function restoreTabFocus(header: HTMLElement) {
-    if (!pendingTabFocus) return;
-    const value = pendingTabFocus;
-    void tick().then(() => {
-      if (!header.isConnected) return;
-      header.querySelector<HTMLElement>(`[role="tab"][data-value="${value}"]`)?.focus();
-      if (pendingTabFocus === value) pendingTabFocus = null;
-    });
+  const homePanes = new Map<HTMLElement, typeof tab>();
+  let tabFocus = $state<{ value: typeof tab } | null>(null);
+  function syncPaneOwnership(pane: HTMLElement, value: typeof tab) {
+    pane.inert = destination !== 'workspaces' || value !== tab;
+    if (!pane.inert) pane.removeAttribute('aria-hidden');
+    else pane.setAttribute('aria-hidden', 'true');
   }
+  function registerHomePane(pane: HTMLElement, value: typeof tab) {
+    homePanes.set(pane, value);
+    syncPaneOwnership(pane, value);
+    return { destroy: () => homePanes.delete(pane) };
+  }
+  $effect.pre(() => {
+    const activeTab = destination === 'workspaces' ? tab : null;
+    untrack(() => {
+      for (const [pane, value] of homePanes) syncPaneOwnership(pane, value);
+      if (tabFocus?.value !== activeTab) tabFocus = null;
+    });
+  });
+  $effect(() => {
+    const intent = tabFocus;
+    if (!intent || destination !== 'workspaces' || intent.value !== tab) return;
+    void tick().then(() => {
+      if (tabFocus !== intent || destination !== 'workspaces' || tab !== intent.value) return;
+      const pane = [...homePanes].find(
+        ([node, value]) => value === intent.value && node.isConnected && !node.inert,
+      )?.[0];
+      const trigger = pane?.querySelector<HTMLElement>(`[role=tab][data-value="${intent.value}"]`);
+      trigger?.focus();
+      if (trigger && document.activeElement === trigger) tabFocus = null;
+    });
+  });
   let pendingFocusId = $state<string | null>(null);
   function closePreview() {
     pendingFocusId = selectedId;
@@ -777,14 +789,16 @@
             class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
             data-home-destination="workspaces"
             data-home-view={renderedTab}
+            use:registerHomePane={renderedTab}
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
             out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
             onoutrostart={(event) => {
               event.currentTarget.inert = true;
               event.currentTarget.setAttribute('aria-hidden', 'true');
+              if (tabFocus?.value === renderedTab) tabFocus = null;
             }}
             onintrostart={(event) => {
-              if (!event.currentTarget.inert) event.currentTarget.removeAttribute('aria-hidden');
+              if (!event.currentTarget.inert) syncPaneOwnership(event.currentTarget, renderedTab);
             }}
           >
             <Tabs.Root
@@ -796,7 +810,7 @@
                 ) {
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
-                  pendingTabFocus = value;
+                  tabFocus = { value };
                   updateView({ tab: value });
                 }
               }}
@@ -806,7 +820,6 @@
               {#snippet children()}
                 {#snippet homeHeader()}
                   <header
-                    use:restoreTabFocus
                     class="home-header flex shrink-0 items-center gap-x-6 border-b border-border px-6"
                   >
                     <Tabs.List

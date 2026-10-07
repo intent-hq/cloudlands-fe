@@ -18,7 +18,7 @@
 </script>
 
 <div
-  class="flex max-h-[calc(100dvh-8rem)] min-w-0 flex-col gap-3"
+  class="flex max-h-[min(calc(100dvh-8rem),calc(var(--toast-max-height,100dvh)-2rem))] min-w-0 flex-col gap-3"
   role="group"
   aria-label={m.desktop_consent_title()}
 >
