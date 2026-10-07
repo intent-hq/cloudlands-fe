@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import catalog from './assets/simcity/catalog.json';
+import catalog from './assets/simcity/catalog.json' with { type: 'json' };
 import { citySpriteRotation, type CitySprite, type CitySpriteFrame } from './home-city-sprites';
 import { CITY_SPRITE_TILE_SIZE } from './home-city-layout';
 

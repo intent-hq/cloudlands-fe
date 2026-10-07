@@ -1,4 +1,4 @@
-import catalog from './assets/simcity/catalog.json';
+import catalog from './assets/simcity/catalog.json' with { type: 'json' };
 import { cityFloors, type CityBuilding } from './home-city-model';
 
 export type CityZone = 'residential' | 'commercial' | 'industrial';
