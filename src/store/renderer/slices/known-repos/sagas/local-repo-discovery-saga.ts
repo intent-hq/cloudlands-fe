@@ -7,8 +7,9 @@ import { localRepoOptions } from '$features/onboarding/utils/local-repo-options'
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { Workspace } from '$shared/types';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
-import { connectionsListReceived } from '../../connections/connections-slice';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import type { DirectoryPickerListing } from '../../directory-picker/directory-picker-slice';
+import { selectLocalRepoDiscoveryConnection } from '../known-repos-selectors';
 import {
   discoverLocalReposRequested,
   localRepoDiscoveryFailed,
@@ -19,7 +20,7 @@ import {
   resetLocalRepoDiscovery,
 } from '../known-repos-slice';
 
-function* discover(backendId: string): SagaGenerator<void> {
+function* discover(backendId: string, connection: string): SagaGenerator<void> {
   yield* put(localRepoDiscoveryStarted(backendId));
   try {
     // Never infer emptiness from the initial, not-yet-hydrated Redux arrays.
@@ -30,6 +31,7 @@ function* discover(backendId: string): SagaGenerator<void> {
         includeArchived: true,
       }),
     });
+    if (connection !== (yield* selectLocalRepoDiscoveryConnection.effect())) return;
     if (!Array.isArray(registry?.repos) || !Array.isArray(list?.workspaces)) {
       throw new Error('Invalid repository discovery preflight response');
     }
@@ -39,6 +41,7 @@ function* discover(backendId: string): SagaGenerator<void> {
       return;
     }
     const { home } = yield* call(backendRequest<DirectoryPickerListing>, 'host.listDirectory', {});
+    if (connection !== (yield* selectLocalRepoDiscoveryConnection.effect())) return;
     // host.listDirectory falls back to filesystem root if HOME cannot be
     // resolved. That is not permission to turn a home scan into a disk crawl.
     // Reject ambiguous paths rather than resolving against the renderer's host
@@ -59,39 +62,45 @@ function* discover(backendId: string): SagaGenerator<void> {
       'workspace.findRepositories',
       { directory: home },
     );
+    if (connection !== (yield* selectLocalRepoDiscoveryConnection.effect())) return;
     const options = repositories.map((path) => ({ path, name: getRepoFolderName(path) || path }));
     yield* put(
       localRepoDiscoverySucceeded(backendId, localRepoOptions([], list.workspaces, options)),
     );
   } catch {
     // Non-blocking status, never an automatic retry or raw filesystem error in the UI.
-    yield* put(localRepoDiscoveryFailed(backendId));
+    if (connection === (yield* selectLocalRepoDiscoveryConnection.effect()))
+      yield* put(localRepoDiscoveryFailed(backendId));
   }
 }
 
-/** One attempt per picker session; local-tab remounts never own the operation. */
+/** One attempt per picker session and connection; local-tab remounts never own the operation. */
 export function* localRepoDiscoverySaga(): SagaGenerator<void> {
   let worker: Task | undefined;
   let open = false;
   let requested = false;
   let attempted = false;
-  let backendId = yield* selectActiveBackendId();
 
   function* resetAttempt(): SagaGenerator<void> {
     if (worker) yield* cancel(worker);
     worker = undefined;
     attempted = false;
-    backendId = yield* selectActiveBackendId();
     yield* put(resetLocalRepoDiscovery());
   }
 
   function* startIfRequested(): SagaGenerator<void> {
-    const nextBackendId = yield* selectActiveBackendId();
-    if (nextBackendId !== backendId) yield* resetAttempt();
-    if (open && requested && !attempted) {
+    const connection = yield* selectLocalRepoDiscoveryConnection.effect();
+    if (open && requested && !attempted && connection) {
       attempted = true;
-      worker = yield* fork(discover, backendId);
+      worker = yield* fork(discover, yield* selectActiveBackendId(), connection);
     }
+  }
+
+  function* connectionChanged(): SagaGenerator<void> {
+    // The same reset clears Redux results. Clear the task-local attempt too,
+    // including reconnects to the same backend, and wait while disconnected.
+    yield* resetAttempt();
+    yield* startIfRequested();
   }
 
   function* openPicker(action: ReturnType<typeof onboardingPickerOpened>): SagaGenerator<void> {
@@ -118,6 +127,6 @@ export function* localRepoDiscoverySaga(): SagaGenerator<void> {
     takeEvery(onboardingPickerOpened, openPicker),
     takeEvery(onboardingPickerClosed, closePicker),
     takeEvery(discoverLocalReposRequested, requestDiscovery),
-    takeEvery(connectionsListReceived, startIfRequested),
+    takeEvery(hostExecutionConnectionChanged, connectionChanged),
   ]);
 }

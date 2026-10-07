@@ -52,7 +52,14 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { localRepoDiscoverySaga } from '$store/renderer/slices/known-repos/sagas/local-repo-discovery-saga';
+import { hostExecutionSaga } from '$store/renderer/slices/host-execution/sagas/host-execution-saga';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { resetMockIpcRouter, setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
 // Side-effect import: bridges `file:getDirectoryStatus` → daemon `host.directoryStatus`.
 import '$store/renderer/seeders/host-bridge-seeder';
@@ -127,6 +134,10 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
 
   beforeEach(() => {
     disposeStore = appStore.init();
+    admitLegacyPrincipal();
+    appStore.dispatch(
+      hostExecutionConnectionChanged(selectPrincipalConnectionContext.select(appStore.state)),
+    );
     // Unrelated channels invoked during tab mount (github auth/search) resolve
     // to undefined instead of rejecting as unbridged.
     setMockIpcInvokeFallback(undefined);
@@ -207,6 +218,67 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     } finally {
       cleanup();
       stop();
+    }
+  });
+
+  it('recovers rendered suggestions through the real host lifecycle without changing a manual selection', async () => {
+    mockDaemon();
+    const fallback = backendRequestMock.getMockImplementation()!;
+    let repositories = ['/home/dev/before-reconnect'];
+    backendRequestMock.mockImplementation(((method: string, params?: unknown) => {
+      if (method === 'workspace.findRepositories') return Promise.resolve({ repositories });
+      if (method === 'providers.catalog') return Promise.resolve(MOCK_PROVIDER_CATALOG);
+      return fallback(method, params);
+    }) as never);
+    const stopHost = appStore.runSaga(hostExecutionSaga);
+    const stopDiscovery = appStore.runSaga(localRepoDiscoverySaga);
+    const scans = () =>
+      backendRequestMock.mock.calls.filter(([method]) => method === 'workspace.findRepositories');
+    try {
+      // Initial host binding clears preferences; hydrate after that reset, as at boot.
+      appStore.dispatch(hydrateWorkspaceInitializer({}));
+      const selections: ProjectSelection[] = [];
+      render(ProjectPickerMessage, {
+        props: { onProjectChange: (value) => selections.push(value) },
+      });
+      await waitFor(() => expect(appStore.state.knownRepos.discovery.status).toBe('complete'));
+      await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.onboarding_localRepoTab_browse_ariaLabel() }),
+      );
+      await waitFor(() => expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH));
+      const selection = selections.at(-1);
+      appStore.dispatch(connectionStatusChanged('disconnected'));
+      await waitFor(() => expect(appStore.state.knownRepos.discovery.status).toBe('idle'));
+      await waitFor(() =>
+        expect(screen.queryByRole('option', { name: /before-reconnect/ })).toBeNull(),
+      );
+      expect(scans()).toHaveLength(1);
+      expect(selections.at(-1)).toEqual(selection);
+      repositories = ['/home/dev/after-reconnect'];
+      appStore.dispatch(connectionStatusChanged('connected'));
+      await tick();
+      expect(scans()).toHaveLength(1);
+      appStore.dispatch(daemonEventsSubscribed());
+      admitLegacyPrincipal();
+      await waitFor(() => expect(appStore.state.knownRepos.discovery.status).toBe('complete'));
+      await waitFor(() =>
+        expect(screen.getByRole('option', { name: /after-reconnect/ })).toBeTruthy(),
+      );
+      expect(screen.queryByRole('option', { name: /before-reconnect/ })).toBeNull();
+      expect(selections.at(-1)).toEqual(selection);
+      expect(scans()).toEqual([
+        ['workspace.findRepositories', { directory: '/home/dev' }],
+        ['workspace.findRepositories', { directory: '/home/dev' }],
+      ]);
+      appStore.dispatch(connectionStatusChanged('connected'));
+      admitLegacyPrincipal();
+      await tick();
+      expect(scans()).toHaveLength(2);
+    } finally {
+      cleanup();
+      stopDiscovery();
+      stopHost();
     }
   });
 

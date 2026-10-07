@@ -4,7 +4,21 @@ import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
-import { connectionsListReceived } from '../../connections/connections-slice';
+import { createAdmittedLegacyPrincipal } from '../../../../../test/fixtures/admitted-legacy-principal';
+import { connectionsListReceived, connectionsReducer } from '../../connections/connections-slice';
+import {
+  connectionStatusChanged,
+  daemonHealthReducer,
+} from '../../daemon-health/daemon-health-slice';
+import {
+  hostExecutionConnectionChanged,
+  hostExecutionReducer,
+} from '../../host-execution/host-execution-slice';
+import { getPrincipalConnectionContext } from '../../principal/principal-context';
+import {
+  daemonEventsSubscribed,
+  workspaceEventsReducer,
+} from '../../workspace-events/workspace-events-slice';
 import {
   discoverLocalReposRequested,
   initialState,
@@ -20,34 +34,52 @@ const settle = async () => {
 };
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 function harness() {
   const channel = stdChannel();
-  let knownRepos = initialState;
-  let backendId = 'local';
-  const send = (action: Parameters<typeof knownReposReducer>[1]) => {
-    knownRepos = knownReposReducer(knownRepos, action);
+  const connection = createAdmittedLegacyPrincipal();
+  let state = {
+    ...connection,
+    knownRepos: initialState,
+    hostExecution: hostExecutionReducer(
+      undefined,
+      hostExecutionConnectionChanged(getPrincipalConnectionContext(connection)),
+    ),
+  };
+  const send = (action: Parameters<typeof knownReposReducer>[1], bind = true) => {
+    state = {
+      ...state,
+      knownRepos: knownReposReducer(state.knownRepos, action),
+      connections: connectionsReducer(state.connections, action),
+      daemonHealth: daemonHealthReducer(state.daemonHealth, action),
+      workspaceEvents: workspaceEventsReducer(state.workspaceEvents, action),
+      hostExecution: hostExecutionReducer(state.hostExecution, action),
+    };
     channel.put(action);
+    // Replay the host owner's binding after reducers, including same-host epochs.
+    const next = getPrincipalConnectionContext(state);
+    if (bind && next !== state.hostExecution.connection) send(hostExecutionConnectionChanged(next));
   };
   const task = runSaga(
     {
       channel,
       dispatch: send,
-      getState: () => ({ knownRepos, connections: { windowBackendId: backendId } }),
+      getState: () => state,
     },
     localRepoDiscoverySaga,
   );
   tasks.push(task);
   return {
     send,
-    state: () => knownRepos.discovery,
+    state: () => state.knownRepos.discovery,
     stop: () => task.cancel(),
     switchBackend: (id: string) => {
-      backendId = id;
       send(connectionsListReceived({ connections: [], activeId: id, windowBackendId: id }));
     },
   };
@@ -365,6 +397,156 @@ describe('onboarding local repository discovery', () => {
     expect(run.state().status).toBe('complete');
   });
 
+  it.each(['repo.list', 'workspace.list', 'host.listDirectory', 'workspace.findRepositories'])(
+    'cancels pending %s on disconnect and recovers once the same host is ready',
+    async (method) => {
+      const stale = deferred<unknown>();
+      mockBackend({ [method]: stale.promise });
+      const run = harness();
+      run.send(onboardingPickerOpened(true));
+      await settle();
+      expect(run.state().status).toBe('loading');
+      const beforeDisconnect = mocks.request.mock.calls.length;
+      run.send(connectionStatusChanged('disconnected'));
+      run.send(discoverLocalReposRequested());
+      stale.resolve(
+        method === 'repo.list'
+          ? { repos: [] }
+          : method === 'workspace.list'
+            ? { workspaces: [] }
+            : method === 'host.listDirectory'
+              ? home
+              : { repositories: ['/home/dev/stale'] },
+      );
+      await settle();
+      expect(run.state().status).toBe('idle');
+      expect(mocks.request).toHaveBeenCalledTimes(beforeDisconnect);
+      mockBackend();
+      run.send(connectionStatusChanged('connected'));
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(beforeDisconnect);
+      run.send(daemonEventsSubscribed());
+      await settle();
+      expect(mocks.request.mock.calls.slice(beforeDisconnect)).toEqual([
+        ['repo.list', {}],
+        ['workspace.list', { includeArchived: true }],
+        ['host.listDirectory', {}],
+        ['workspace.findRepositories', { directory: '/home/dev' }],
+      ]);
+      expect(run.state().status).toBe('complete');
+      expect(getItems(run.state().repos)).toEqual([{ path: '/home/dev/code/app', name: 'app' }]);
+    },
+  );
+
+  it.each(['success', 'failure'])(
+    'discards late %s while the same-host replacement scan is pending',
+    async (outcome) => {
+      const stale = deferred<{ repositories: string[] }>();
+      mockBackend({ 'workspace.findRepositories': stale.promise });
+      const run = harness();
+      run.send(onboardingPickerOpened(true));
+      await settle();
+      run.send(connectionStatusChanged('disconnected'));
+      const fresh = deferred<{ repositories: string[] }>();
+      mockBackend({ 'workspace.findRepositories': fresh.promise });
+      run.send(connectionStatusChanged('connected'));
+      run.send(daemonEventsSubscribed());
+      await settle();
+      if (outcome === 'success') stale.resolve({ repositories: ['/home/dev/stale'] });
+      else stale.reject(new Error('old connection failed'));
+      await settle();
+      expect(run.state().status).toBe('loading');
+      expect(getItems(run.state().repos)).toEqual([]);
+      fresh.resolve({ repositories: ['/home/dev/fresh'] });
+      await settle();
+      expect(run.state().status).toBe('complete');
+      expect(getItems(run.state().repos)).toEqual([{ path: '/home/dev/fresh', name: 'fresh' }]);
+      expect(mocks.request).toHaveBeenCalledTimes(8);
+    },
+  );
+
+  it.each(['complete', 'error'])(
+    'recovers from %s without reopening and ignores unchanged connection notifications',
+    async (status) => {
+      mockBackend(
+        status === 'error' ? { 'workspace.findRepositories': new Error('unavailable') } : {},
+      );
+      const run = harness();
+      run.send(onboardingPickerOpened(true));
+      await settle();
+      expect(run.state().status).toBe(status);
+      run.send(connectionStatusChanged('disconnected'));
+      expect(run.state().status).toBe('idle');
+      mockBackend({ 'workspace.findRepositories': { repositories: ['/home/dev/recovered'] } });
+      run.send(connectionStatusChanged('connected'));
+      run.send(daemonEventsSubscribed());
+      await settle();
+      for (let i = 0; i < 3; i++) {
+        run.switchBackend('local');
+        run.send(connectionStatusChanged('connected'));
+        run.send(discoverLocalReposRequested());
+      }
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(8);
+      expect(run.state().status).toBe('complete');
+      expect(getItems(run.state().repos)).toEqual([
+        { path: '/home/dev/recovered', name: 'recovered' },
+      ]);
+    },
+  );
+
+  it.each(['closed', 'non-local'])(
+    'does not discover after reconnect with a %s picker',
+    async (picker) => {
+      mockBackend();
+      const run = harness();
+      run.send(onboardingPickerOpened(picker === 'closed'));
+      if (picker === 'closed') run.send(onboardingPickerClosed());
+      await settle();
+      const count = mocks.request.mock.calls.length;
+      run.send(connectionStatusChanged('disconnected'));
+      run.send(connectionStatusChanged('connected'));
+      run.send(daemonEventsSubscribed());
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(count);
+      expect(run.state().status).toBe('idle');
+    },
+  );
+
+  it('waits for initial connection readiness and host binding before discovery', async () => {
+    mockBackend();
+    const run = harness();
+    run.send(connectionStatusChanged('disconnected'));
+    run.send(onboardingPickerOpened(true));
+    run.send(connectionStatusChanged('connected'));
+    run.send(daemonEventsSubscribed(), false);
+    run.send(discoverLocalReposRequested(), false);
+    await settle();
+    expect(mocks.request).not.toHaveBeenCalled();
+    run.switchBackend('local');
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(4);
+    expect(run.state().status).toBe('complete');
+  });
+
+  it.each(['success', 'failure'])(
+    'fences a stale preflight %s before the host reset is delivered',
+    async (outcome) => {
+      const stale = deferred<{ repos: [] }>();
+      mockBackend({ 'repo.list': stale.promise });
+      const run = harness();
+      run.send(onboardingPickerOpened(true));
+      run.send(connectionStatusChanged('disconnected'), false);
+      if (outcome === 'success') stale.resolve({ repos: [] });
+      else stale.reject(new Error('old preflight failed'));
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      expect(run.state().status).toBe('loading');
+      run.send(connectionStatusChanged('disconnected'));
+      expect(run.state().status).toBe('idle');
+    },
+  );
+
   it('keeps an immediately reopened session when an older scan resolves last', async () => {
     const stale = deferred<{ repositories: string[] }>();
     mockBackend({ 'workspace.findRepositories': stale.promise });
@@ -415,12 +597,16 @@ describe('onboarding local repository discovery', () => {
     run.stop();
     const stoppedState = run.state();
     scan.resolve({ repositories: ['/home/dev/stale'] });
+    await settle();
+    expect(run.state()).toEqual(stoppedState);
     run.send(onboardingPickerClosed());
     run.send(onboardingPickerOpened(true));
     run.send(discoverLocalReposRequested());
     run.switchBackend('remote');
     await settle();
     expect(mocks.request).toHaveBeenCalledTimes(4);
-    expect(run.state()).toEqual(stoppedState);
+    // The host owner still resets the reducer, but no discovery watcher remains.
+    expect(run.state().status).toBe('idle');
+    expect(getItems(run.state().repos)).toEqual([]);
   });
 });
