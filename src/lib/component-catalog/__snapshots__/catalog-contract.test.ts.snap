@@ -101,7 +101,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
           <span class="block truncate">
             "Edit"
         <span aria-hidden="true" class="flex h-lh items-center ml-5 shrink-0">
-          <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+          <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
             "⌘E"
       <div aria-disabled="false" aria-expanded="false" aria-haspopup="menu" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-action-id="export" data-dropdown-menu-item="" data-dropdown-menu-sub-trigger="" data-menu-item="true" data-slot="menu-sub-trigger" data-state="closed" id="bits-<id>" role="menuitem" tabindex="-1">
         <span aria-hidden="true" class="flex h-lh items-center justify-center shrink-0 w-4" data-slot="menu-item-leading">
@@ -2081,7 +2081,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:form:form-st
                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                         "Delete"
               <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "⌘↵"
                 <div>
                   <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-action="secondary" data-slot="button" type="button">
@@ -2120,7 +2120,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:form:form-st
                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                         "Delete"
               <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "⌘↵"
                 <div>
                   <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-action="secondary" data-slot="button" type="button">
@@ -2161,7 +2161,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:form:form-st
                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                         "Delete"
               <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "⌘↵"
                 <div>
                   <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-action="secondary" data-slot="button" type="button">
@@ -2200,7 +2200,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:form:form-st
                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                         "Delete"
               <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "⌘↵"
                 <div>
                   <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-action="secondary" data-slot="button" type="button">
@@ -2239,7 +2239,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:form:form-st
                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                         "Delete"
               <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "⌘↵"
                 <div>
                   <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-action="secondary" data-slot="button" type="button">
@@ -2278,7 +2278,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:form:form-st
                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                         "Delete"
               <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "⌘↵"
                 <div>
                   <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-action="secondary" data-slot="button" type="button">
@@ -8610,18 +8610,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:kbd:shortc
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="shortcut-chip-states" data-catalog-preview="kbd">
             <div class="gap-4 grid grid-cols-1 min-w-0 overflow-hidden w-full" data-catalog-renderer-fixture="shortcut-chip-states">
               <div class="flex flex-wrap gap-3 items-center" data-catalog-rendered-state="single-key modifier key-sequence long-key light dark zoom-200">
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "Esc"
                 <div aria-label="Command K shortcut" class="flex gap-1 items-center">
-                  <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                  <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                     "⌘"
                   <span aria-hidden="true">
                     "+"
-                  <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                  <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                     "K"
-                <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "Enter"
-                <kbd class="font-normal leading-none min-w-16 shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                <kbd class="font-normal leading-none min-w-16 shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                   "Page Down"
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -9884,7 +9884,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                         <span class="flex-1 min-w-0 truncate">
                           "Explain the latest changes"
                         <span class="bg-background border border-border h-5 inline-flex items-center px-1 rounded-sm shrink-0">
-                          <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                          <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                             "Alt+1"
                         <svg aria-hidden="true" class="opacity-70 shrink-0" role="img">
                           <rect>
@@ -9893,7 +9893,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                         <span class="flex-1 min-w-0 truncate">
                           "Draft a concise release note"
                         <span class="bg-background border border-border h-5 inline-flex items-center px-1 rounded-sm shrink-0">
-                          <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                          <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                             "Alt+2"
                         <svg aria-hidden="true" class="duration-spring-fast opacity-0 shrink-0 transition-opacity" role="img">
                           <rect>
@@ -9902,7 +9902,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                         <span class="flex-1 min-w-0 truncate">
                           "List the remaining risks"
                         <span class="bg-background border border-border h-5 inline-flex items-center px-1 rounded-sm shrink-0">
-                          <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                          <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                             "Alt+3"
                         <svg aria-hidden="true" class="duration-spring-fast opacity-0 shrink-0 transition-opacity" role="img">
                           <rect>
@@ -18939,7 +18939,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <span class="block truncate">
                           "Attach files"
                       <span aria-hidden="true" class="flex h-lh items-center ml-5 shrink-0">
-                        <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                        <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                           "⇧⌘A"
                     <div aria-disabled="false" aria-expanded="false" aria-haspopup="menu" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-dropdown-menu-sub-trigger="" data-menu-item="true" data-slot="menu-sub-trigger" data-state="closed" id="bits-<id>" role="menuitem" tabindex="-1">
                       "More actions"
@@ -19371,7 +19371,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div class="[&_kbd]:text-background/70 bg-foreground max-w-56 overlay-surface px-2 py-1 text-background text-balance tooltip-motion type-caption w-fit whitespace-pre-wrap z-(--layer-tooltip)" data-align="start" data-overlay-surface="true" data-side="bottom" data-slot="tooltip-content" data-state="instant-open" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
                       <span class="flex gap-2 items-center">
                         "Open command menu"
-                        <kbd class="font-normal leading-none shrink-0 text-muted-foreground/75 type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
+                        <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                           "⌘K"
                       <div class="bg-foreground data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)] data-[side=left]:-translate-y-[calc(50%_-_3px)] data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2 data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)] rotate-45 rounded-[2px] size-2.5 z-(--layer-tooltip)" data-side="bottom" id="bits-<id>">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
