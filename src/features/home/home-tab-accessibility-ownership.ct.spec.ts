@@ -1,5 +1,6 @@
 import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
+import LifecycleHarness from './home-ownership-lifecycle-harness.svelte';
 
 declare global {
   interface Window {
@@ -10,8 +11,115 @@ declare global {
       release: () => void;
       restore: () => void;
     };
+    __homeDeparture: {
+      pane: HTMLElement;
+      observed: {
+        connected: boolean;
+        inert: boolean;
+        ariaHidden: string | null;
+        focusAccepted: boolean;
+      }[];
+      held: Animation[];
+      restore: () => void;
+    };
   }
 }
+
+test('Home departure revokes ownership and reentry restores the same pane', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(LifecycleHarness);
+  const toggle = component.getByRole('button', { name: 'Toggle Home', exact: true });
+  const tabs = component.locator('.home-tabs');
+  await expect(tabs.getByRole('tab')).toHaveCount(3);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document
+          .querySelector('[data-home-page]')!
+          .getAnimations({ subtree: true })
+          .every((animation) => animation.playState === 'finished'),
+      ),
+    )
+    .toBe(true);
+
+  await page.evaluate(() => {
+    const pane = document.querySelector<HTMLElement>('[data-home-view="workspaces"]')!;
+    const original = Element.prototype.animate;
+    const held: Animation[] = [];
+    const observed: typeof window.__homeDeparture.observed = [];
+    const record = () => {
+      const tab = pane.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')!;
+      tab.focus();
+      observed.push({
+        connected: pane.isConnected,
+        inert: pane.inert,
+        ariaHidden: pane.getAttribute('aria-hidden'),
+        focusAccepted: document.activeElement === tab,
+      });
+    };
+    pane.addEventListener('outrostart', record);
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = original.call(this, keyframes, options);
+      const duration = typeof options === 'number' ? options : options?.duration;
+      // Keep the real outer outro present after observing its real start event.
+      // Do not condition the hold on inert: the regression incorrectly clears it.
+      if (this === pane && observed.length > 0 && typeof duration === 'number' && duration > 0) {
+        animation.pause();
+        held.push(animation);
+      }
+      return animation;
+    };
+    window.__homeDeparture = {
+      pane,
+      observed,
+      held,
+      restore: () => {
+        Element.prototype.animate = original;
+        pane.removeEventListener('outrostart', record);
+        for (const animation of held) animation.play();
+      },
+    };
+  });
+  try {
+    await toggle.click();
+    await expect.poll(() => page.evaluate(() => window.__homeDeparture.observed.length)).toBe(1);
+    const departure = await page.evaluate(() => ({
+      observed: window.__homeDeparture.observed,
+      held: window.__homeDeparture.held.length,
+      connected: window.__homeDeparture.pane.isConnected,
+    }));
+    await testInfo.attach('outer-home-departure', {
+      body: JSON.stringify(departure, null, 2),
+      contentType: 'application/json',
+    });
+    expect(departure.observed).toEqual([
+      { connected: true, inert: true, ariaHidden: 'true', focusAccepted: false },
+    ]);
+    expect(departure.held).toBeGreaterThan(0);
+    expect(departure.connected).toBe(true);
+    expect(await tabs.getByRole('tab').count()).toBe(0);
+    await expect(toggle).toBeFocused();
+
+    await toggle.click();
+    await expect(tabs.getByRole('tab')).toHaveCount(3);
+    expect(
+      await page.evaluate(
+        () =>
+          document.querySelector('[data-home-view="workspaces"]') === window.__homeDeparture.pane,
+      ),
+    ).toBe(true);
+    await expect(toggle).toBeFocused();
+    await page.evaluate(() => window.__homeDeparture.restore());
+    await tabs.getByRole('tab', { name: 'Pull requests', exact: true }).click();
+    await expect(tabs.getByRole('tab', { name: 'Pull requests', exact: true })).toBeFocused();
+    await expect(tabs.getByRole('tab', { selected: true })).toHaveCount(1);
+  } finally {
+    await page.evaluate(() => window.__homeDeparture.restore());
+  }
+});
 
 for (const { reducedMotion, holdOutgoing, label } of [
   { reducedMotion: 'no-preference', holdOutgoing: true, label: 'held motion' },

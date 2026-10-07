@@ -475,13 +475,10 @@
   // Outgoing keyed effects are paused before outrostart. Keep ownership outside
   // that branch, including when Svelte resumes an existing pane on reversal.
   $effect.pre(() => {
-    const currentTab = tab;
-    const currentDestination = destination;
+    const activeTab = destination === 'workspaces' ? tab : null;
     untrack(() => {
       for (const [pane, value] of homePanes) syncPaneOwnership(pane, value);
-      if (currentDestination !== 'workspaces' || pendingTabFocus?.value !== currentTab) {
-        pendingTabFocus = null;
-      }
+      if (pendingTabFocus?.value !== activeTab) pendingTabFocus = null;
     });
   });
   $effect(() => {
@@ -795,7 +792,13 @@
             use:registerHomePane={renderedTab}
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
             out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
-            onoutrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
+            onoutrostart={(event) => {
+              // An outer route can leave without changing this component's tab
+              // or destination. A real outro always relinquishes ownership.
+              event.currentTarget.inert = true;
+              event.currentTarget.setAttribute('aria-hidden', 'true');
+              if (pendingTabFocus?.value === renderedTab) pendingTabFocus = null;
+            }}
             onintrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
           >
             <Tabs.Root
