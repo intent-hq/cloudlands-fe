@@ -12,21 +12,10 @@
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
-  import {
-    requestArchiveWorkspace,
-    requestUnarchiveWorkspace,
-    requestDeleteWorkspace,
-  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import {
-    faThumbtack,
-    faBoxArchive,
-    faBoxOpen,
-    faTrash,
-    faArrowUpRightFromSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import { createHomeWorkspaceMenu } from './home-workspace-menu';
+  import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
@@ -108,6 +97,14 @@
   } = $props();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
+  function openWorkspace(id: string) {
+    contextMenu = null;
+    store.dispatch(openWorkspaceTab(id));
+    void goto(`/workspace/${encodeURIComponent(id)}`);
+  }
+  function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    openHomeWorkspaceFromEvent(event, id, openWorkspace);
+  }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
@@ -118,67 +115,14 @@
     };
   }
   function workspaceMenu(workspace: Workspace): SidebarMenuEntry[] {
-    const pinned = $pinnedIds$.includes(workspace.id);
-    const items: SidebarMenuEntry[] = [
-      {
-        id: 'open',
-        label: m.home_open_workspace(),
-        icon: faArrowUpRightFromSquare,
-        onClick: () => {
-          contextMenu = null;
-          store.dispatch(openWorkspaceTab(workspace.id));
-          void goto(`/workspace/${encodeURIComponent(workspace.id)}`);
-        },
-      },
-      {
-        id: 'pin',
-        label: pinned ? m.workspace_card_unpin_ariaLabel() : m.workspace_card_pin_ariaLabel(),
-        icon: faThumbtack,
-        onClick: () => {
-          contextMenu = null;
-          store.dispatch(togglePinWorkspace(workspace.id));
-          if (!pinned) updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } });
-          void tick().then(() =>
-            homeElement
-              ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-              ?.closest<HTMLElement>('[role="option"]')
-              ?.focus(),
-          );
-        },
-      },
-    ];
-    if (!selectHidesOwnerWorkspaceActions.select(store.state, workspace.id)) {
-      const archived = workspace.status === WorkspaceStatusEnum.Archived;
-      items.push(
-        { type: 'separator' },
-        {
-          id: 'archive',
-          label: archived
-            ? m.ui_workspaceActions_unarchiveSpace_label()
-            : m.workspace_card_archive_label(),
-          icon: archived ? faBoxOpen : faBoxArchive,
-          onClick: () => {
-            contextMenu = null;
-            store.dispatch(
-              archived
-                ? requestUnarchiveWorkspace(workspace.id)
-                : requestArchiveWorkspace(workspace.id),
-            );
-          },
-        },
-        {
-          id: 'delete',
-          label: m.workspace_card_deleteSpace_label(),
-          icon: faTrash,
-          destructive: true,
-          onClick: () => {
-            contextMenu = null;
-            store.dispatch(requestDeleteWorkspace(workspace.id));
-          },
-        },
-      );
-    }
-    return items;
+    return createHomeWorkspaceMenu(workspace, {
+      pinned: $pinnedIds$.includes(workspace.id),
+      onOpen: openWorkspace,
+      onClose: () => (contextMenu = null),
+      expandPinned: () =>
+        updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
+      getHomeElement: () => homeElement,
+    });
   }
   const workspaces$ = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
@@ -935,6 +879,7 @@
                             {selectedId}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
+                            onopen={openWorkspace}
                             archived={filter === 'archived'}
                           />
                         {:else}
@@ -942,6 +887,7 @@
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
+                              onclick={(event) => openModifiedWorkspace(event, item.id)}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}
@@ -1057,6 +1003,16 @@
                             scroll: boolean,
                           )}
                             <ListView
+                              onkeydowncapture={(event) => {
+                                const option =
+                                  event.target instanceof HTMLElement
+                                    ? event.target.closest<HTMLElement>('[role="option"]')
+                                    : null;
+                                const id =
+                                  option?.querySelector<HTMLElement>('[data-home-workspace]')
+                                    ?.dataset.homeWorkspace;
+                                if (id) openModifiedWorkspace(event, id);
+                              }}
                               onkeydown={(event) => {
                                 const option =
                                   event.target instanceof HTMLElement
