@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { prefersReducedMotion, spring } from '$lib/motion';
 import { onReducedMotionChange } from '$lib/utils/reduced-motion';
 import type { CityModel } from './home-city-model';
 import type { CityLayout } from './home-city-layout';
-import { CityArt, CITY_DETAIL_LIMIT } from './city-art';
+import { CityArt, CITY_DETAIL_LIMIT, type CityTheme } from './city-art';
 
 interface CityLabel {
   id: string;
@@ -59,7 +58,6 @@ export class CityScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly observer: ResizeObserver;
   private readonly intersection: IntersectionObserver;
-  private readonly environment: THREE.WebGLRenderTarget;
   private readonly unsubscribeMotion: () => void;
   private readonly abort = new AbortController();
   private readonly raycaster = new THREE.Raycaster();
@@ -134,52 +132,28 @@ export class CityScene {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     this.renderer.setClearColor(0, 0);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.canvas = this.renderer.domElement;
     this.canvas.dataset.cityCanvas = '';
     this.canvas.setAttribute('aria-hidden', 'true');
     this.host.append(this.canvas);
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const room = new RoomEnvironment();
-    this.environment = pmrem.fromScene(room, 0.05);
-    this.scene.environment = this.environment.texture;
-    this.scene.environmentIntensity = 0.9;
-    room.dispose();
-    pmrem.dispose();
-    this.scene.add(new THREE.HemisphereLight('#e6f4ff', '#c2b6a3', 1.15));
-    const sun = new THREE.DirectionalLight('#fff0d3', 3);
-    sun.position.set(-18, 30, 8);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -40;
-    sun.shadow.camera.right = 40;
-    sun.shadow.camera.top = 40;
-    sun.shadow.camera.bottom = -40;
-    sun.shadow.camera.far = 100;
-    sun.shadow.normalBias = 0.04;
-    sun.shadow.bias = -0.0002;
-    this.scene.add(sun);
-    const fill = new THREE.DirectionalLight('#c9e5ff', 1.1);
-    fill.position.set(10, 9, -20);
-    this.scene.add(fill);
     this.grid.rotation.x = -Math.PI / 2;
     this.grid.position.y = -2;
     this.scene.add(this.grid);
-    const updateGridColor = () => {
-      this.grid.material.uniforms.ink.value.setStyle(getComputedStyle(this.host).color);
+    const updateTheme = () => {
+      const theme = this.readTheme();
+      this.grid.material.uniforms.ink.value.copy(theme.foreground);
+      this.art?.setTheme(theme);
       this.invalidate();
     };
-    this.themeObserver = new MutationObserver(updateGridColor);
+    this.themeObserver = new MutationObserver(updateTheme);
     for (let element: HTMLElement | null = host; element; element = element.parentElement) {
       this.themeObserver.observe(element, {
         attributes: true,
         attributeFilter: ['class', 'style', 'data-theme'],
       });
     }
-    updateGridColor();
+    updateTheme();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.intersection = new IntersectionObserver(([entry]) => {
@@ -259,7 +233,7 @@ export class CityScene {
         this.scene.remove(this.art.group);
         this.art.dispose();
       }
-      this.art = new CityArt(model, layout, selected);
+      this.art = new CityArt(model, layout, this.readTheme(), selected);
       this.scene.add(this.art.group);
       this.structure = structure;
       this.bounds.makeEmpty();
@@ -723,6 +697,32 @@ export class CityScene {
     this.invalidate();
   }
 
+  private readTheme(): CityTheme {
+    // Resolve CSS colors through the browser so aliases and color-mix work too.
+    const probe = document.createElement('span');
+    probe.style.display = 'none';
+    this.options.interactionRoot.append(probe);
+    const color = (token: string) => {
+      probe.style.color = `var(${token})`;
+      return new THREE.Color().setStyle(getComputedStyle(probe).color);
+    };
+    const theme = {
+      background: color('--diagram-canvas'),
+      foreground: color('--city-ink'),
+      muted: color('--city-muted'),
+      accent: color('--city-accent'),
+      statuses: {
+        running: color('--city-running'),
+        attention: color('--city-attention'),
+        blocked: color('--city-blocked'),
+        complete: color('--city-complete'),
+        idle: color('--city-idle'),
+      },
+    };
+    probe.remove();
+    return theme;
+  }
+
   dispose() {
     this.disposed = true;
     this.cancelGesture();
@@ -735,11 +735,6 @@ export class CityScene {
     this.grid.geometry.dispose();
     this.grid.material.dispose();
     this.art?.dispose();
-    this.environment.dispose();
-    this.scene.traverse((object) => {
-      if (object instanceof THREE.Light && 'shadow' in object)
-        (object.shadow as THREE.LightShadow).dispose();
-    });
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();
