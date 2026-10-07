@@ -113,7 +113,19 @@ for (const state of ['external', 'updating']) {
         'data-dismissals',
         '1',
       );
-      await expect.poll(() => hitTest(page.getByTestId('daemon-stopped-spawn-sidecar'))).toBe(true);
+      await expect(page.getByTestId('daemon-stopped-overlay')).toBeVisible();
+      if (state === 'external') {
+        await expect
+          .poll(() => hitTest(page.getByTestId('daemon-stopped-spawn-sidecar')))
+          .toBe(true);
+      } else {
+        await expect(page.getByTestId('daemon-stopped-overlay')).toContainText(
+          'The app is restarting it automatically.',
+        );
+      }
+      await expect
+        .poll(() => hitTest(page.getByRole('button', { name: 'Background action', exact: true })))
+        .toBe(false);
       await capture(page, testInfo, 'recovery');
       await component.update({ props: { connected: true } });
       await expect(page.getByTestId('daemon-stopped-overlay')).toHaveCount(0);
