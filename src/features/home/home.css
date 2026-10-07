@@ -165,10 +165,6 @@
   font-weight: 500;
 }
 
-.home-sidebar [data-tabs-indicator] {
-  background: hsl(var(--selected));
-}
-
 .dark .home-sidebar [data-tabs-indicator] {
   background: hsl(var(--surface-5));
   box-shadow: var(--elevation-raised);
