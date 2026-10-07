@@ -74,6 +74,7 @@ interface DesktopPosition extends DesktopPoint {
 export type DesktopAction =
   | { kind: 'listDisplay' }
   | { kind: 'screenshot'; displayId?: string; layoutId?: string }
+  | ({ kind: 'move' } & DesktopPosition)
   | ({ kind: 'click'; button?: 'left' | 'right'; clickCount?: 1 | 2 } & DesktopPosition)
   | { kind: 'type'; text: string }
   | { kind: 'keypress'; key: string; modifiers?: DesktopModifier[] }

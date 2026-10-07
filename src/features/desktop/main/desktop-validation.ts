@@ -29,6 +29,7 @@ const desktopActionSchema = z.discriminatedUnion('kind', [
   z
     .object({ kind: z.literal('screenshot'), displayId: id.optional(), layoutId: id.optional() })
     .strict(),
+  z.object({ kind: z.literal('move'), ...position }).strict(),
   z
     .object({
       kind: z.literal('click'),

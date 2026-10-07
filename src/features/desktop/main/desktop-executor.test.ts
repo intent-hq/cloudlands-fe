@@ -203,7 +203,7 @@ describe('desktop display selection', () => {
     expect(t.overlay.pulse).not.toHaveBeenCalled();
     await t.executor.invalidate('agent_end');
   });
-  it.each(['click', 'scroll', 'drag'] as const)(
+  it.each(['move', 'click', 'scroll', 'drag'] as const)(
     'rejects missing selection for multi-display %s without input',
     async (kind) => {
       const t = setup();
@@ -702,6 +702,121 @@ describe('desktop startup failure authority', () => {
       }
     },
   );
+});
+
+describe('cursor-only movement', () => {
+  const point = { kind: 'move' as const, x: 12, y: 24, layoutId: 'layout' };
+  async function prepareMove(t: ReturnType<typeof setup>) {
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    return t.prepare({ ...point, layoutId: listed.result.layoutId });
+  }
+  it('executes an authorized move through the real adapter without any button operation', async () => {
+    const t = setup();
+    const request = vi.fn(async () => ({ ok: true }));
+    const adapter = new DesktopNativeAdapter(request);
+    vi.mocked(t.native.input).mockImplementation(adapter.input.bind(adapter));
+    await t.activate();
+    const ticket = await prepareMove(t);
+    await expect(t.handle(ticket)).resolves.toMatchObject({ result: { ok: true } });
+    expect(request.mock.calls).toEqual([
+      ['move', { display, x: 12, y: 24, layout: [display] }],
+      ['releaseInput'],
+    ]);
+    expect(t.native.capture).not.toHaveBeenCalled();
+    expect(t.overlay.pulse).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end', false);
+  });
+  it('requires explicit active authority and rejects a changed connection epoch', async () => {
+    const t = setup();
+    await expect(t.prepare(point)).rejects.toMatchObject(error('desktop-not-active'));
+    expect(t.native.acquire).not.toHaveBeenCalled();
+    await t.activate();
+    const ticket = await prepareMove(t);
+    await expect(t.handle({ ...ticket, connectionEpoch: 'old' })).rejects.toMatchObject(
+      error('forbidden'),
+    );
+    expect(t.native.input).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end', false);
+  });
+  it.each(['stop', 'expired', 'layout'] as const)(
+    'rejects %s before native movement',
+    async (cause) => {
+      const t = setup();
+      await t.activate();
+      const ticket = await prepareMove(t);
+      if (cause === 'stop') await t.executor.stop('session');
+      if (cause === 'expired') t.advance(10001);
+      if (cause === 'layout')
+        vi.mocked(t.native.layout).mockResolvedValue([{ ...display, scaleFactor: 1 }]);
+      await expect(t.handle(ticket)).rejects.toMatchObject(
+        error(
+          cause === 'stop'
+            ? 'desktop-not-active'
+            : cause === 'expired'
+              ? 'desktop-command-expired'
+              : 'desktop-stale-layout',
+        ),
+      );
+      expect(t.native.input).not.toHaveBeenCalled();
+      await t.executor.invalidate('agent_end', false);
+    },
+  );
+  it('rejects stale layout tokens and coordinates beyond screenshot bounds', async () => {
+    const t = setup();
+    await t.activate();
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    await expect(t.prepare(point)).rejects.toMatchObject(error('desktop-stale-layout'));
+    for (const coords of [
+      { x: display.width, y: 0 },
+      { x: 0, y: display.height },
+    ]) {
+      await expect(
+        t.prepare({ ...point, ...coords, layoutId: listed.result.layoutId }),
+      ).rejects.toMatchObject(error('invalid-params'));
+    }
+    expect(t.native.input).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end', false);
+  });
+  it.each(['before', 'during'] as const)(
+    'honors cancellation %s movement without a button continuation',
+    async (when) => {
+      const abort = new AbortController();
+      const request = vi.fn(async (op: string) => {
+        if (when === 'during' && op === 'move') abort.abort();
+        return {};
+      });
+      if (when === 'before') abort.abort();
+      await expect(
+        new DesktopNativeAdapter(request).input(point, display, () => {}, abort.signal, [display]),
+      ).rejects.toThrow();
+      expect(request.mock.calls.map(([op]) => op)).toEqual(
+        when === 'before' ? ['releaseInput'] : ['move', 'releaseInput'],
+      );
+    },
+  );
+  it.each([
+    { x: -1 },
+    { y: Infinity },
+    { layoutId: undefined },
+    { button: 'right' },
+    { clickCount: 2 },
+    { from: { x: 0, y: 0 } },
+    { to: { x: 1, y: 1 } },
+  ])('rejects malformed move parameters (case %#)', (extra) => {
+    expect(() =>
+      parseDesktopRequest({
+        operation: 'prepareCommand',
+        ...session,
+        commandId: 'c',
+        sequence: 1,
+        action: { ...point, ...extra },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('strict desktop validation', () => {

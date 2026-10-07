@@ -35,6 +35,9 @@ jobs:
         run: |
           xcrun swiftc native/desktop/macos/PermissionPrompts.swift native/desktop/tests/macos/main.swift -o /tmp/desktop-permission-tests
           /tmp/desktop-permission-tests
+      - name: Compile macOS cursor movement functional test
+        if: runner.os == 'macOS'
+        run: xcrun swiftc -parse-as-library native/desktop/tests/macos/PointerMove.swift -o /tmp/desktop-pointer-tests
       - name: Observe native Windows capture and input
         if: runner.os == 'Windows'
         timeout-minutes: 5

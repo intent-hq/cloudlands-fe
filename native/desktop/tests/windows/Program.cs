@@ -50,7 +50,9 @@ static class Program {
     static async Task Run(Form target) {
         using var input=new TextBox { Location=new Point(20,20),Width=300 };
         target.Controls.Add(input);
-        int right=0, doubled=0, scroll=0, dragged=0;
+        int right=0, doubled=0, scroll=0, dragged=0, buttonEvents=0;
+        target.MouseDown+=(_,_)=>buttonEvents++;
+        target.MouseUp+=(_,_)=>buttonEvents++;
         target.MouseUp+=(_,e)=>{if(e.Button==MouseButtons.Right)right++;};
         target.MouseDoubleClick+=(_,e)=>{if(e.Button==MouseButtons.Left)doubled++;};
         target.MouseWheel+=(_,e)=>scroll+=e.Delta;
@@ -96,10 +98,16 @@ static class Program {
             Directory.CreateDirectory("native/desktop/tests/windows/artifacts");
             bitmap.Save("native/desktop/tests/windows/artifacts/capture.png");
         }
-        async Task Move(Point p) => await peer.Call("move",new {display,x=p.X-screen.Bounds.X,y=p.Y-screen.Bounds.Y});
+        async Task Move(Point p) => await peer.Call("move",new {display,layout,x=p.X-screen.Bounds.X,y=p.Y-screen.Bounds.Y});
         async Task Button(string button,bool down) => await peer.Call("button",new {button,down,clickCount=1});
         var point=target.PointToScreen(new Point(200,150));
-        await Move(point); await Button("right",true); await Button("right",false);
+        await Move(point);
+        await Observe(()=>Math.Abs(Cursor.Position.X-point.X)<=1 && Math.Abs(Cursor.Position.Y-point.Y)<=1,"cursor-only screenshot-coordinate movement");
+        Require(buttonEvents==0 && right==0 && doubled==0 && dragged==0,"Cursor move synthesized a button event");
+        Require((GetAsyncKeyState(1)&0x8000)==0 && (GetAsyncKeyState(2)&0x8000)==0,"Cursor move held a mouse button");
+        await peer.Call("move",new {display,layout=Array.Empty<object>(),x=0,y=0},"desktop-stale-layout");
+        Require(Math.Abs(Cursor.Position.X-point.X)<=1 && Math.Abs(Cursor.Position.Y-point.Y)<=1,"Rejected move changed the cursor");
+        await Button("right",true); await Button("right",false);
         await Observe(()=>right==1,"right click");
         for(int i=0;i<2;i++) { await Button("left",true); await Button("left",false); }
         await Observe(()=>doubled>0,"double click");

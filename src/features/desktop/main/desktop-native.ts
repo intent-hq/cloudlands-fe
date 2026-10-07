@@ -227,6 +227,9 @@ export class DesktopNativeAdapter implements DesktopNative {
     const move = (x: number, y: number) => step('move', { display, x, y });
     try {
       switch (action.kind) {
+        case 'move':
+          await move(action.x, action.y);
+          break;
         case 'click':
           await move(action.x, action.y);
           for (let i = 1; i <= (action.clickCount ?? 1); i++) {
