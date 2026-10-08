@@ -18,6 +18,33 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
   valid: [
     {
       filename,
+      code: `${panel} vi.mock('${selectors}', async () => ({
+        ...${shared}, selectChatError: liveSelector,
+      } satisfies Record<string, unknown>));`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => ({
+        ...await importOriginal(), selectChatError: liveSelector,
+      } satisfies Record<string, unknown>));`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => importOriginal());`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async () => vi.importActual('${selectors}'));`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => {
+        const actual = importOriginal();
+        return { ...await actual, selectChatError: liveSelector };
+      });`,
+    },
+    {
+      filename,
       code: `import type ChatPanel from '../ChatPanel.svelte'; ${incomplete}`,
     },
     {
@@ -72,6 +99,28 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
     { filename, code: `${panel} vi.doMock(import('${selectors}'), async () => ${shared});` },
   ],
   invalid: [
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => ({
+        ...importOriginal(), selectChatError: liveSelector,
+      }));`,
+      errors: [error],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async () => ({
+        ...vi.importActual('${selectors}'), selectChatError: liveSelector,
+      }));`,
+      errors: [error],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => {
+        const actual = importOriginal();
+        return { ...actual, selectChatError: liveSelector };
+      });`,
+      errors: [error],
+    },
     {
       filename,
       code: `import ChatPanel from '$lib/components/chat/ChatPanel.svelte';

@@ -20,8 +20,8 @@ function unwrap(node) {
   while (
     node &&
     [
-      'AwaitExpression',
       'TSAsExpression',
+      'TSSatisfiesExpression',
       'TSTypeAssertion',
       'TSNonNullExpression',
       'ChainExpression',
@@ -101,8 +101,14 @@ export default {
       node = unwrap(node);
       if (!node || seen.has(node)) return null;
       seen = new Set(seen).add(node);
+      // Vitest awaits a returned module promise; object spread does not.
+      // Preserve that distinction through aliases until an explicit await.
+      if (node.type === 'AwaitExpression') {
+        const value = origin(node.argument, factory, module, seen);
+        return value?.startsWith('promise:') ? value.slice(8) : value;
+      }
       if (node.type === 'ImportExpression')
-        return modulePath(node) === scaffoldPath ? 'scaffold' : null;
+        return modulePath(node) === scaffoldPath ? 'promise:scaffold' : null;
       if (node.type === 'Identifier') {
         const binding = variable(node);
         if (!binding || binding.references.some((ref) => ref.isWrite() && !ref.init)) return null;
@@ -140,9 +146,9 @@ export default {
           firstParam?.type === 'Identifier' &&
           variable(node.callee) === variable(firstParam)
         )
-          return 'defaults';
+          return 'promise:defaults';
         if (isViCall(node, ['importActual']) && modulePath(node.arguments[0]) === module)
-          return 'defaults';
+          return 'promise:defaults';
       }
       if (
         node.type === 'ObjectExpression' &&
@@ -195,7 +201,9 @@ export default {
           }
           if (
             values.length > 0 &&
-            values.every((value) => origin(value, factory, module) === 'defaults')
+            values.every((value) =>
+              ['defaults', 'promise:defaults'].includes(origin(value, factory, module)),
+            )
           )
             continue;
           context.report({
