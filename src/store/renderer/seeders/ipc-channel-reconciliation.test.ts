@@ -513,6 +513,13 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
  * retired or rewritten as a statically-resolvable invoke.
  */
 const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
+  // The custom-view saga serializes requests through a runtime-selected channel.
+  // Reconcile these against the installer barrel, not only the isolated bridge tests.
+  ['custom-views:list', 'features/custom-views/custom-views-saga.ts (requestWorker)'],
+  ['custom-views:save', 'features/custom-views/custom-views-saga.ts (requestWorker)'],
+  ['custom-views:remove', 'features/custom-views/custom-views-saga.ts (requestWorker)'],
+  ['custom-views:start', 'features/custom-views/custom-views-saga.ts (requestWorker)'],
+  ['custom-views:stop', 'features/custom-views/custom-views-saga.ts (requestWorker)'],
   // provider-models.client.ts dispatches the uniform `<provider>:get-models`
   // channels through its PROVIDER_MODEL_CHANNELS map; the concrete channel is
   // selected at runtime by providerId, so the scanner cannot see them.
