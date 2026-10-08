@@ -295,7 +295,7 @@ function questionAttentionScenario(
     statusMessage: 'A teammate needs an answer before implementation can continue.',
     agentSummary: {
       agentIds: [agentId],
-      agents: [{ id: agentId, name: 'Leah', status: 'waiting', parentAgentId: null }],
+      agents: [{ id: agentId, name: 'Leah', status: 'waiting' }],
     } as Workspace['agentSummary'],
   });
   return scenario(
@@ -415,9 +415,9 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           agentSummary: {
             agentIds: [blockerId, questionId, unreadId],
             agents: [
-              { id: blockerId, name: 'Maya', status: 'waiting', parentAgentId: null },
-              { id: questionId, name: 'Jules', status: 'waiting', parentAgentId: null },
-              { id: unreadId, name: 'Rowan', status: 'completed', parentAgentId: null },
+              { id: blockerId, name: 'Maya', status: 'waiting' },
+              { id: questionId, name: 'Jules', status: 'waiting' },
+              { id: unreadId, name: 'Rowan', status: 'completed' },
             ],
           } as Workspace['agentSummary'],
         });
@@ -456,8 +456,8 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
           agentSummary: {
             agentIds: [discussionId, unreadId],
             agents: [
-              { id: discussionId, name: 'Nora', status: 'waiting', parentAgentId: null },
-              { id: unreadId, name: 'Owen', status: 'completed', parentAgentId: null },
+              { id: discussionId, name: 'Nora', status: 'waiting' },
+              { id: unreadId, name: 'Owen', status: 'completed' },
             ],
           } as Workspace['agentSummary'],
         });

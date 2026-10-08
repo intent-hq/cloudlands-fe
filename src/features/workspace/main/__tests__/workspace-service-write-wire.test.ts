@@ -161,7 +161,21 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
   });
 
   it('updateWorkspace sends workspace.update with workspaceId + camelCase fields; no client updatedAt', async () => {
-    const ws = seed();
+    const ws = seed({
+      agentSummary: {
+        count: 1,
+        agentIds: ['agent-a'],
+        agents: [
+          {
+            id: 'agent-a',
+            name: 'Coordinator',
+            status: 'active',
+            isStreaming: false,
+            isResponding: false,
+          },
+        ],
+      },
+    });
     daemonWorkspaces.set(ws.id, { ...ws });
 
     const result = await service.updateWorkspace({ id: ws.id, title: 'Renamed' });
@@ -176,6 +190,7 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     if (result.ok) {
       expect(result.data.title).toBe('Renamed');
       expect(result.data.updatedAt).toBe('2024-06-01T00:00:00.000Z');
+      expect(result.data.agentSummary).toEqual(ws.agentSummary);
     }
   });
 

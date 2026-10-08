@@ -54,6 +54,13 @@ import type { Workspace } from '$shared/types';
 import { seedMockStore } from '../mock-bootstrap';
 import { appClient } from '$lib/client';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
+import { LiveWorkspacesClient } from '$lib/client/live/live-workspaces-client';
+import { workspaceClient } from '../slices/workspace/utils/workspace.client';
+import { replaceWorkspaceList } from '../slices/workspace/workspace-slice';
+import {
+  selectDashboardWorkspaceAgentIds,
+  selectDashboardWorkspaceDetails,
+} from '../slices/hud/hud-selectors';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedAppClient = vi.mocked(appClient);
@@ -150,6 +157,67 @@ describe('workspaces-seeder legacy IPC bridges', () => {
   });
 
   describe('workspace:list → daemon workspace.list', () => {
+    it('carries daemon agent rows through the Home IPC bridge into dashboard cards', async () => {
+      const id = '11111111-1111-4111-8111-111111111111';
+      mockedRequest.mockResolvedValueOnce({
+        workspaces: [
+          {
+            id,
+            title: 'Live workspace',
+            branch: 'main',
+            status: 'Active',
+            createdAt: '2026-10-08T20:00:00Z',
+            updatedAt: '2026-10-08T20:00:00Z',
+            agentSummary: {
+              count: 2,
+              agentIds: ['root', 'worker'],
+              agents: [
+                {
+                  id: 'root',
+                  name: 'Coordinator',
+                  status: 'idle',
+                  isStreaming: false,
+                  isResponding: false,
+                },
+                {
+                  id: 'worker',
+                  name: 'Implementation',
+                  status: 'active',
+                  parentAgentId: 'root',
+                  isStreaming: false,
+                  isResponding: false,
+                },
+              ],
+            },
+          },
+        ],
+      });
+      const liveClient = new LiveWorkspacesClient();
+      mockedAppClient.workspaces.list.mockImplementationOnce((options) => liveClient.list(options));
+      workspaceClient.clearCache();
+
+      const result = await workspaceClient.list({ lite: true });
+
+      expect(mockedRequest.mock.calls).toEqual([['workspace.list', { includeArchived: true }]]);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.error);
+      appStore.dispatch(replaceWorkspaceList(result.data));
+      expect(selectDashboardWorkspaceAgentIds.select(appStore.state, id)).toEqual([
+        'root',
+        'worker',
+      ]);
+      expect(selectDashboardWorkspaceDetails.select(appStore.state, id).agents).toMatchObject([
+        { id: 'root', name: 'Coordinator', depth: 0 },
+        {
+          id: 'worker',
+          name: 'Implementation',
+          parentAgentId: 'root',
+          depth: 1,
+          bucket: 'running',
+        },
+      ]);
+    });
+
     it('forwards to workspace.list and wraps the workspaces in {success, data}', async () => {
       // PROTOCOL §5.1: workspace.list → { workspaces: Workspace[] }.
       mockedAppClient.workspaces.list.mockResolvedValueOnce([
