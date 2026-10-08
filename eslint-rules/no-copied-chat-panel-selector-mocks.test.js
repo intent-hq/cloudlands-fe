@@ -18,6 +18,14 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
   valid: [
     {
       filename,
+      code: `${panel} vi.mock('${selectors}', { spy: true });`,
+    },
+    {
+      filename,
+      code: `${panel} vi.doMock(import('${selectors}'), { spy: true });`,
+    },
+    {
+      filename,
       code: `${panel} vi.mock('${selectors}', async () => ({
         ...${shared}, selectChatError: liveSelector,
       } satisfies Record<string, unknown>));`,
@@ -99,6 +107,26 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
     { filename, code: `${panel} vi.doMock(import('${selectors}'), async () => ${shared});` },
   ],
   invalid: [
+    {
+      filename,
+      code: `${panel} vi.mock('../ChatPanel.svelte', { spy: true }); ${incomplete}`,
+      errors: [error],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('../ChatPanel.svelte', async (importOriginal) => importOriginal()); ${incomplete}`,
+      errors: [error],
+    },
+    {
+      filename,
+      code: `${panel} vi.doMock('../ChatPanel.svelte', async () => await vi.importActual('../ChatPanel.svelte')); ${incomplete}`,
+      errors: [error],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', { spy: false });`,
+      errors: [error],
+    },
     {
       filename,
       code: `${panel} vi.mock('${selectors}', async (importOriginal) => ({

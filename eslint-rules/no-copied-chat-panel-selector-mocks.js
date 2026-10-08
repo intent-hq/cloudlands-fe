@@ -162,6 +162,35 @@ export default {
       return null;
     }
 
+    function preservesExports(mock, module) {
+      const factory = unwrap(mock.arguments[1]);
+      if (factory?.type === 'ObjectExpression') {
+        return factory.properties.some(
+          (prop) =>
+            prop.type === 'Property' &&
+            (prop.key.name ?? literal(prop.key)) === 'spy' &&
+            literal(prop.value) === true,
+        );
+      }
+      if (!functions.has(factory?.type)) return false;
+      const values =
+        factory.body.type !== 'BlockStatement'
+          ? [factory.body]
+          : returns
+              .filter(
+                (node) =>
+                  source.getAncestors(node).findLast((parent) => functions.has(parent.type)) ===
+                  factory,
+              )
+              .map((node) => node.argument);
+      return (
+        values.length > 0 &&
+        values.every((value) =>
+          ['defaults', 'promise:defaults'].includes(origin(value, factory, module)),
+        )
+      );
+    }
+
     return {
       ImportDeclaration(node) {
         if (node.importKind !== 'type') imports.add(modulePath(node.source));
@@ -178,34 +207,16 @@ export default {
       'Program:exit'() {
         if (
           !imports.has(panelPath) ||
-          mocks.some((mock) => modulePath(mock.arguments[0]) === panelPath)
+          mocks.some(
+            (mock) =>
+              modulePath(mock.arguments[0]) === panelPath && !preservesExports(mock, panelPath),
+          )
         )
           return;
         for (const mock of mocks) {
           const module = modulePath(mock.arguments[0]);
           if (!factories.has(module)) continue;
-          const factory = unwrap(mock.arguments[1]);
-          let values = [];
-          if (functions.has(factory?.type)) {
-            values =
-              factory.body.type !== 'BlockStatement'
-                ? [factory.body]
-                : returns
-                    .filter(
-                      (node) =>
-                        source
-                          .getAncestors(node)
-                          .findLast((parent) => functions.has(parent.type)) === factory,
-                    )
-                    .map((node) => node.argument);
-          }
-          if (
-            values.length > 0 &&
-            values.every((value) =>
-              ['defaults', 'promise:defaults'].includes(origin(value, factory, module)),
-            )
-          )
-            continue;
+          if (preservesExports(mock, module)) continue;
           context.report({
             node: mock,
             messageId: 'sharedDefaults',
