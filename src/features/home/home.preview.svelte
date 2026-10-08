@@ -16,6 +16,8 @@
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
         updateWorkspace: (id: string, changes: Partial<Workspace>) => void;
+        updateAgent: (id: string, changes: Partial<AgentSession>) => void;
+        updateTokens: (id: string, outputTokens: number) => void;
       };
     }
   }
@@ -53,6 +55,7 @@
       board: { props: { scenario: 'board' } },
       dashboard: { props: { scenario: 'dashboard' } },
       'dashboard-repository': { props: { scenario: 'dashboard-repository' } },
+      'dashboard-live': { props: { scenario: 'dashboard-repository', height: 1120 } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
@@ -235,6 +238,7 @@
   import { onDestroy } from 'svelte';
   import HomePage from './HomePage.svelte';
   import { homeIntegrationsFixtures } from './home-integrations-fixtures';
+  import { dashboardAgentFixtures } from './home-dashboard-fixtures';
   import { store } from '$store/renderer/store';
   import { startHomePreviewFixtures } from './home-preview-lifecycle';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
@@ -265,7 +269,12 @@
   import {
     bulkUpsertSessions,
     removeSession,
+    updateSession,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    tokenUsageReceived,
+    clearWorkspaceTokenUsage,
+  } from '$store/renderer/slices/token-usage/token-usage-slice';
 
   import {
     chatTranscriptSnapshotApplied,
@@ -284,6 +293,22 @@
     }),
     updateWorkspace: (id, changes) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, changes)])),
+    updateAgent: (id, changes) => store.dispatch(updateSession(id, changes)),
+    updateTokens: (id, outputTokens) =>
+      store.dispatch(
+        tokenUsageReceived(id, {
+          byAgentId: {},
+          byModel: {},
+          lastScanAt: null,
+          totals: {
+            inputTokens: 1_000,
+            outputTokens,
+            cacheReadTokens: 200,
+            cacheCreationTokens: 100,
+            thoughtTokens: 50,
+          },
+        }),
+      ),
   };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
@@ -346,6 +371,37 @@
       ),
     );
     store.dispatch(setWorkspaceHasLoaded(true));
+    for (const agent of dashboardAgentFixtures) store.dispatch(removeSession(agent.id));
+    for (const workspace of fixtures) store.dispatch(clearWorkspaceTokenUsage(workspace.id));
+    if (scenario === 'dashboard' || scenario === 'dashboard-repository') {
+      store.dispatch(
+        bulkUpsertSessions(dashboardAgentFixtures, { preserveExplicitRuntimeFlags: false }),
+      );
+      for (const workspace of fixtures) {
+        const agents = dashboardAgentFixtures.filter((agent) => agent.workspaceId === workspace.id);
+        store.dispatch(
+          bulkUpdateWorkspaceEntities([
+            updateWorkspaceEntity(workspace.id, {
+              agentSummary: {
+                agentIds: agents.map((agent) => agent.id),
+                ...{
+                  count: agents.length,
+                  agents: agents.map((agent) => ({
+                    id: agent.id,
+                    name: agent.name,
+                    status: agent.status,
+                    parentAgentId: agent.parentAgentId,
+                    lastActivity: agent.updatedAt,
+                  })),
+                },
+              },
+            }),
+          ]),
+        );
+      }
+      window.__homeWorkspacePreview?.updateTokens('home-running', 11_000);
+      window.__homeWorkspacePreview?.updateTokens('home-review', 4_500);
+    }
     store.dispatch(
       setWorkspaceError(scenario === 'error' ? 'The daemon connection was interrupted.' : null),
     );
@@ -452,6 +508,8 @@
   onDestroy(() => {
     store.dispatch(hydrateSidebarNav({ pinnedWorkspaceIds: previousPinnedIds }));
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
+    dashboardAgentFixtures.forEach((agent) => store.dispatch(removeSession(agent.id)));
+    fixtures.forEach((workspace) => store.dispatch(clearWorkspaceTokenUsage(workspace.id)));
     delete window.__homeAssistantPreview;
     delete window.__homeWorkspacePreview;
     dispose();
