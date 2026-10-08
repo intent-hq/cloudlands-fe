@@ -28,7 +28,7 @@ jobs:
         run: node scripts/browser-test-artifacts.mjs manifest
       - name: Upload expected artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: browser-test-manifest
           path: browser-test-manifest.json

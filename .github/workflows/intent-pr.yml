@@ -851,7 +851,7 @@ jobs:
             --maxWorkers=2 2>&1 | tee -a .cache/portable-fixtures/tests.log
       - name: Retain native fixture evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: portable-fixtures-${{ matrix.zone.name }}-${{ github.run_attempt }}
           path: .cache/portable-fixtures/

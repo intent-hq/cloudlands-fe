@@ -368,7 +368,7 @@ jobs:
           find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \) -exec ls -lh {} \;
 
       - name: Upload macOS release assets
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: release-macos-${{ matrix.arch }}
           path: |
@@ -529,7 +529,7 @@ jobs:
           find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.blockmap" -o -name "latest.yml" \) -exec ls -lh {} \;
 
       - name: Upload Windows release assets
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: release-windows
           path: |
@@ -689,7 +689,7 @@ jobs:
           find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.blockmap" -o -name "latest-linux*.yml" \) -exec ls -lh {} \;
 
       - name: Upload Linux release assets
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: release-linux-${{ matrix.arch }}
           path: |
