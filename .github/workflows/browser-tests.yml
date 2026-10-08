@@ -231,7 +231,7 @@ jobs:
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (monorepo#2887).
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: playwright-ct-report-${{ matrix.shard }}-of-4
           path: |
@@ -273,7 +273,7 @@ jobs:
         run: node scripts/browser-test-artifacts.mjs record quarantine 1
       - name: Upload quarantine report
         if: ${{ always() && matrix.shard == 1 }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: playwright-ct-report-quarantine
           path: |
@@ -372,7 +372,7 @@ jobs:
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (same as test-ct).
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: playwright-root-report-${{ matrix.shard }}
           path: |
@@ -476,7 +476,7 @@ jobs:
         # The evidence JSON (electron-lifetime-evidence.json per test) and
         # capture PNGs are Playwright attachments under test-results/.
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: playwright-electron-lifetime-report
           path: |
