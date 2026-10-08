@@ -651,8 +651,39 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   await expect(list.getByRole('option')).toHaveCount(2);
   await expect(component.getByRole('alert')).toHaveCount(0);
   const filter = component.getByRole('combobox', { name: 'Home views', exact: true });
+  const previousGeneration = await page.evaluate(
+    () => window.__homeIntegrationBrowser!.readSearchState().generation,
+  );
   await filter.click();
   await page.getByRole('option', { name: 'Created by me', exact: true }).click();
+  // The old linked row remains visible during debounce. Wait for this generation,
+  // including its linked result, before the next filter can supersede it.
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.calls))
+    .toContainEqual({
+      method: 'github.pulls.search',
+      params: {
+        workspaceId: 'home-route',
+        limit: 30,
+        owner: 'acme',
+        repo: 'studio',
+        repos: [{ owner: 'acme', repo: 'platform' }],
+        filter: 'created',
+        state: 'open',
+      },
+    });
+  await expect
+    .poll(async () => {
+      const state = await page.evaluate(() => window.__homeIntegrationBrowser!.readSearchState());
+      return (
+        state.generation > previousGeneration &&
+        state.status === 'ready' &&
+        state.filter === 'created' &&
+        !state.closed &&
+        state.linkedIds.includes('other/service#901')
+      );
+    })
+    .toBe(true);
   await expect(list).toContainText('Linked service fix');
   const status = component.getByRole('combobox', { name: 'Status', exact: true });
   await status.click();
@@ -667,6 +698,17 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   expect(
     calls.filter((c) => c.method === 'github.pulls.get' && c.params.number === 901),
   ).toHaveLength(3);
+  expect(calls.filter((c) => c.method === 'github.pulls.get' && c.params.number === 901)).toEqual(
+    Array.from({ length: 3 }, () => ({
+      method: 'github.pulls.get',
+      params: {
+        owner: 'other',
+        repo: 'service',
+        number: 901,
+        workspaceId: 'home-route',
+      },
+    })),
+  );
   await testInfo.attach('linked-state-wire', {
     body: JSON.stringify(calls, null, 2),
     contentType: 'application/json',

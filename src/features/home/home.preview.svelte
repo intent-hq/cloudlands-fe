@@ -13,6 +13,9 @@
   declare global {
     interface Window {
       __homeAssistantPreview?: { removeSelectedThread: () => void };
+      __homeWorkspacePreview?: {
+        navigation: () => { currentTabId: string | null; tabOrder: string[] };
+      };
     }
   }
 
@@ -267,6 +270,12 @@
   const dispose = startHomePreviewFixtures();
   const previousPinnedIds = store.state.sidebarNav.pinnedWorkspaceIds;
   const showCreateModal$ = selectShowCreateModal();
+  window.__homeWorkspacePreview = {
+    navigation: () => ({
+      currentTabId: store.state.tabState.currentTabId,
+      tabOrder: store.state.tabState.workspaceStacks.flat(),
+    }),
+  };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
   store.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
@@ -428,6 +437,7 @@
     store.dispatch(hydrateSidebarNav({ pinnedWorkspaceIds: previousPinnedIds }));
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
+    delete window.__homeWorkspacePreview;
     dispose();
   });
 </script>

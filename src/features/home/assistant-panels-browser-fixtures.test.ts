@@ -133,11 +133,13 @@ it('leaves a newer fixture bridge and request log owned after old cleanup', () =
   const current = setupAssistantPanelsFixture('Current request owner');
   stops.push(current);
   const bridge = window.electronAPI,
-    requests = scope.assistantNoteRequests;
+    requests = scope.assistantNoteRequests,
+    panels = window.__assistantPanels;
   old();
   old();
   expect(window.electronAPI).toBe(bridge);
   expect(scope.assistantNoteRequests).toBe(requests);
+  expect(window.__assistantPanels).toBe(panels);
 });
 
 it('opens metadata for a note already paged elsewhere without an unleased full read', async () => {
@@ -154,7 +156,7 @@ it('opens metadata for a note already paged elsewhere without an unleased full r
   await expect(
     store.dispatch(readNoteRequested('example-workspace', 'plan')),
   ).resolves.toMatchObject({ id: 'plan', workspaceId: 'example-workspace' });
-  const layoutId = assistantPanelLayoutId(null);
+  const layoutId = assistantPanelLayoutId('assistant-source');
   store.dispatch(
     initializeLayout(layoutId, {
       root: { type: 'panel', panelId: 'assistant-content' },
@@ -235,7 +237,7 @@ it('does not reopen retained metadata removed during a workspace lookup', async 
   await expect(
     store.dispatch(readNoteRequested('example-workspace', 'plan')),
   ).resolves.toMatchObject({ id: 'plan' });
-  const layoutId = assistantPanelLayoutId(null);
+  const layoutId = assistantPanelLayoutId('assistant-source');
   store.dispatch(
     initializeLayout(layoutId, {
       root: { type: 'panel', panelId: 'assistant-content' },
@@ -350,3 +352,140 @@ it('rejects a held strict save without mutation and rechecks revision after wait
     rev: 2,
   });
 });
+
+it('releases its held RPC read and restores the prior thread controls on disposal', async () => {
+  const { appClient } = await import('$lib/client');
+  stops.push(startRootStoreLifecycle(store, { startSagas: () => [] }));
+  const previousPanels = window.__assistantPanels;
+  const stop = setupAssistantPanelsFixture('Held thread source');
+  stops.push(stop);
+  const panels = window.__assistantPanels!;
+  panels.holdNextRead();
+  let settled = false;
+  const read = appClient.notes.get('plan', CHIEF_WORKSPACE_ID).then((note) => {
+    settled = true;
+    return note;
+  });
+  await vi.waitFor(() =>
+    expect(panels.calls).toEqual([{ workspaceId: CHIEF_WORKSPACE_ID, noteId: 'plan' }]),
+  );
+  expect(settled).toBe(false);
+  stop();
+  await expect(read).resolves.toMatchObject({ content: 'Held thread source' });
+  expect(window.__assistantPanels).toBe(previousPanels);
+  stop();
+  expect(window.__assistantPanels).toBe(previousPanels);
+});
+
+it.each([
+  { heldBackground: false, newerBackground: false },
+  { heldBackground: true, newerBackground: false },
+  { heldBackground: false, newerBackground: true },
+])(
+  'keeps retained metadata requests ordered across a held workspace lookup: %j',
+  async ({ heldBackground, newerBackground }) => {
+    const { appClient } = await import('$lib/client');
+    const workspaceGet = vi.spyOn(appClient.workspaces, 'get');
+    const { pagePanelOpened, pagePanelClosed } =
+      await import('$store/renderer/slices/note-pages/note-pages-slice');
+    const { selectNotePageSession } =
+      await import('$store/renderer/slices/note-pages/note-pages-selectors');
+    const { initializeLayout } =
+      await import('$store/renderer/slices/panel-layout/panel-layout-slice');
+    const { selectPanelLayoutWorkspace } =
+      await import('$store/renderer/slices/panel-layout/panel-layout-selectors');
+    const { selectNoteViewMode } =
+      await import('$store/renderer/slices/transient-ui/transient-ui-selectors');
+    const { assistantPanelLayoutId } = await import('$shared/assistant-panel-layout');
+    const { showAssistantContent } = await import('./assistant-panels');
+    stops.push(startHomePreview(() => [setupAssistantPanelsFixture()]));
+    const workspaceId = 'example-workspace';
+    for (const noteId of ['plan', 'second']) {
+      await expect(store.dispatch(readNoteRequested(workspaceId, noteId))).resolves.toMatchObject({
+        id: noteId,
+        workspaceId,
+      });
+      store.dispatch(pagePanelOpened(workspaceId, noteId, 'retained-' + noteId));
+    }
+    const layoutId = assistantPanelLayoutId('assistant-source');
+    store.dispatch(
+      initializeLayout(layoutId, {
+        root: { type: 'panel', panelId: 'assistant-content' },
+        panels: { 'assistant-content': { id: 'assistant-content', tabs: [], activeTabId: null } },
+        focusedPanelId: null,
+      }),
+    );
+    const readers = ['plan', 'second'].map(
+      (id) => selectNotePageSession.select(store.state, workspaceId, id)?.panels['retained-' + id],
+    );
+    expect(readers.every(Boolean)).toBe(true);
+    const planMode = selectNoteViewMode.select(store.state, workspaceId, 'plan');
+    const originalInvoke = window.electronAPI.invoke.bind(window.electronAPI);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding = false;
+    const invoke = vi.spyOn(window.electronAPI, 'invoke').mockImplementation(async (...args) => {
+      const result = await originalInvoke(...args);
+      if ((args[1] as { method?: string })?.method === 'workspace.get' && !holding) {
+        holding = true;
+        await held;
+      }
+      return result;
+    });
+    const opening = showAssistantContent('intent://local/example-workspace/note/plan', {
+      agentId: 'assistant-source',
+      background: heldBackground,
+    });
+    let newerOpening: Promise<boolean> | undefined;
+    try {
+      await vi.waitFor(() => expect(holding).toBe(true));
+      newerOpening = showAssistantContent('intent://local/example-workspace/note/second', {
+        agentId: 'assistant-source',
+        background: newerBackground,
+      });
+      // Same-workspace lookups share one in-flight RPC. Both requests must
+      // reach that lookup before it is released; awaiting the second first deadlocks.
+      await vi.waitFor(() => expect(workspaceGet).toHaveBeenCalledTimes(2));
+      expect(workspaceGet.mock.calls).toEqual([[workspaceId], [workspaceId]]);
+      expect(workspaceGet.mock.results[0].value).toBe(workspaceGet.mock.results[1].value);
+      expect(
+        invoke.mock.calls.filter(
+          ([, request]) => (request as { method?: string })?.method === 'workspace.get',
+        ),
+      ).toHaveLength(1);
+      const beforeRelease = selectPanelLayoutWorkspace.select(store.state, layoutId).panels[
+        'assistant-content'
+      ];
+      expect(beforeRelease.tabs).toHaveLength(0);
+      release();
+      await Promise.all([opening, newerOpening]);
+      const panel = selectPanelLayoutWorkspace.select(store.state, layoutId).panels[
+        'assistant-content'
+      ];
+      expect(panel.tabs.map((tab) => tab.noteId)).toEqual(
+        newerBackground ? ['plan', 'second'] : ['second'],
+      );
+      expect(panel.tabs.find((tab) => tab.id === panel.activeTabId)?.noteId).toBe(
+        newerBackground ? 'plan' : 'second',
+      );
+      if (!newerBackground)
+        expect(selectNoteViewMode.select(store.state, workspaceId, 'plan')).toBe(planMode);
+      expect(
+        invoke.mock.calls.filter(
+          ([, request]) => (request as { method?: string })?.method === 'note.get',
+        ),
+      ).toHaveLength(0);
+      for (const [i, id] of ['plan', 'second'].entries())
+        expect(
+          selectNotePageSession.select(store.state, workspaceId, id)?.panels['retained-' + id],
+        ).toBe(readers[i]);
+    } finally {
+      release();
+      await Promise.all([opening, newerOpening]);
+      for (const id of ['plan', 'second'])
+        store.dispatch(pagePanelClosed(workspaceId, id, 'retained-' + id));
+    }
+  },
+);

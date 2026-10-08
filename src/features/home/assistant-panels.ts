@@ -43,11 +43,33 @@ export const selectAssistantPanelLayoutId = store.createSelector((state) => {
   return assistantPanelLayoutId(thread?.agentId ?? null);
 });
 
-const latestOpenRequests = new Map<string, number>();
-function nextOpenRequest(layoutId: string) {
-  const request = (latestOpenRequests.get(layoutId) ?? 0) + 1;
+interface OpenRequest {
+  explicit: number;
+  background?: number;
+}
+const latestOpenRequests = new Map<string, Required<OpenRequest>>();
+interface AssistantContentOptions {
+  preserveFocus?: boolean;
+  background?: boolean;
+  agentId?: string;
+  layoutId?: string;
+}
+function nextOpenRequest(layoutId: string, background = false): OpenRequest {
+  const previous = latestOpenRequests.get(layoutId) ?? { explicit: 0, background: 0 };
+  const request = {
+    explicit: previous.explicit + (background ? 0 : 1),
+    background: previous.background + (background ? 1 : 0),
+  };
   latestOpenRequests.set(layoutId, request);
-  return request;
+  return background ? request : { explicit: request.explicit };
+}
+function isCurrentOpenRequest(layoutId: string, request: OpenRequest) {
+  const latest = latestOpenRequests.get(layoutId);
+  return (
+    latest !== undefined &&
+    request.explicit === latest.explicit &&
+    (request.background === undefined || request.background === latest.background)
+  );
 }
 
 async function restoreAssistantLayout(layoutId: string) {
@@ -65,7 +87,11 @@ async function restoreAssistantLayout(layoutId: string) {
   });
 }
 
-function showContent(tab: Omit<PanelTab, 'id'>, preserveFocus: boolean, layoutId: string) {
+function showContent(
+  tab: Omit<PanelTab, 'id'>,
+  options: AssistantContentOptions,
+  layoutId: string,
+) {
   const layout = selectPanelLayoutWorkspace.select(store.state, layoutId);
   if (
     !layout.panels[ASSISTANT_CONTENT_PANEL_ID] ||
@@ -105,15 +131,20 @@ function showContent(tab: Omit<PanelTab, 'id'>, preserveFocus: boolean, layoutId
       true,
       undefined,
       false,
-      preserveFocus,
+      options.background || options.preserveFocus,
+      undefined,
+      options.background,
     ),
   );
 }
 
 /** Shared by chat links and ws.app.ui.navigate, without replacing the Assistant conversation. */
-export async function showAssistantContent(url: string, preserveFocus = false): Promise<boolean> {
+export async function showAssistantContent(
+  url: string,
+  options: AssistantContentOptions = {},
+): Promise<boolean> {
   try {
-    return await openAssistantContent(url, preserveFocus);
+    return await openAssistantContent(url, options);
   } catch (error) {
     notify.error(m.ui_linkHandler_notFound_title(), {
       description: error instanceof Error ? error.message : String(error),
@@ -122,16 +153,39 @@ export async function showAssistantContent(url: string, preserveFocus = false): 
   }
 }
 
-async function openAssistantContent(url: string, preserveFocus: boolean): Promise<boolean> {
-  const layoutId = selectAssistantPanelLayoutId.select(store.state);
-  await restoreAssistantLayout(layoutId);
+async function openAssistantContent(
+  url: string,
+  options: AssistantContentOptions,
+): Promise<boolean> {
   const workspaceMatch = /^(?:\/workspace\/|intent:\/\/local\/workspace\/)([^/?#]+)\/?$/.exec(url);
+  const agentMatch = /^intent:\/\/local\/([^/?#]+)\/agent\/([^/?#]+)$/.exec(url);
+  const info = url.startsWith('intent://') ? parseIntentLink(url) : null;
+  const browserLink = /^https?:\/\//.test(url) && !isAuthUrl(url);
+  if (
+    !workspaceMatch &&
+    !agentMatch &&
+    !browserLink &&
+    !(info?.valid && ['file', 'message', 'note', 'task'].includes(info.type))
+  )
+    return false;
+  if (workspaceMatch && [CHIEF_WORKSPACE_ID, 'new'].includes(workspaceMatch[1])) return false;
+  const threads = selectChiefThreads.select(store.state);
+  const layoutId = options.agentId
+    ? assistantPanelLayoutId(options.agentId)
+    : options.background
+      ? threads.length === 1
+        ? assistantPanelLayoutId(threads[0].agentId)
+        : null
+      : (options.layoutId ?? selectAssistantPanelLayoutId.select(store.state));
+  // Older events have no sender; multiple threads make their destination ambiguous.
+  if (!layoutId) return true;
+  const request = nextOpenRequest(layoutId, options.background);
+  await restoreAssistantLayout(layoutId);
+  if (!isCurrentOpenRequest(layoutId, request)) return true;
   if (workspaceMatch) {
     const workspaceId = workspaceMatch[1];
-    if (workspaceId === CHIEF_WORKSPACE_ID || workspaceId === 'new') return false;
-    const request = nextOpenRequest(layoutId);
     const workspace = await appClient.workspaces.get(workspaceId);
-    if (request !== latestOpenRequests.get(layoutId)) return true;
+    if (!isCurrentOpenRequest(layoutId, request)) return true;
     if (!workspace) {
       notify.error(m.workspace_loader_notFound_title());
       return true;
@@ -139,19 +193,17 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
     store.dispatch(setWorkspaceEntity(workspace));
     showContent(
       { type: 'workspace', title: workspace.title, workspaceId, closable: true },
-      preserveFocus,
+      options,
       layoutId,
     );
     return true;
   }
-  const agentMatch = /^intent:\/\/local\/([^/?#]+)\/agent\/([^/?#]+)$/.exec(url);
-  if (agentMatch) return showAssistantAgent(agentMatch[1], agentMatch[2], preserveFocus, layoutId);
-  if (/^https?:\/\//.test(url)) {
-    if (isAuthUrl(url)) return false;
-    const request = nextOpenRequest(layoutId);
+  if (agentMatch)
+    return showAssistantAgent(agentMatch[1], agentMatch[2], options, layoutId, request);
+  if (browserLink) {
     const { resolveBrowserLinkForOpen } = await import('$lib/utils/browser-link-open');
     const resolved = await resolveBrowserLinkForOpen(url);
-    if (request !== latestOpenRequests.get(layoutId)) return true;
+    if (!isCurrentOpenRequest(layoutId, request)) return true;
     showContent(
       {
         type: 'browser',
@@ -161,19 +213,16 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
         workspaceId: CHIEF_WORKSPACE_ID,
         closable: true,
       },
-      preserveFocus,
+      options,
       layoutId,
     );
     return true;
   }
-  if (!url.startsWith('intent://')) return false;
-  const info = parseIntentLink(url);
-  if (!info.valid) return false;
+  if (!info?.valid) return false;
   const targetWorkspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
   if (info.type === 'file') {
-    const request = nextOpenRequest(layoutId);
     const workspace = await appClient.workspaces.get(targetWorkspaceId);
-    if (request !== latestOpenRequests.get(layoutId)) return true;
+    if (!isCurrentOpenRequest(layoutId, request)) return true;
     if (!workspace) {
       notify.error(m.workspace_loader_notFound_title());
       return true;
@@ -188,7 +237,7 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
         closable: true,
         data: { line: info.line, filePathIsLiteral: true },
       },
-      preserveFocus,
+      options,
       layoutId,
     );
     return true;
@@ -197,13 +246,13 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
     return showAssistantAgent(
       targetWorkspaceId,
       info.agentId,
-      preserveFocus,
+      options,
       layoutId,
+      request,
       info.resourceId,
     );
   }
   if (info.type !== 'note' && info.type !== 'task') return false;
-  const request = nextOpenRequest(layoutId);
   const workspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
   const retained = selectNoteById.select(store.state, workspaceId, info.resourceId);
   const paged = selectNotePageSession.select(store.state, workspaceId, info.resourceId);
@@ -222,7 +271,7 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
       selectWorkspaceById.select(store.state, workspaceId) ?? appClient.workspaces.get(workspaceId),
     ).catch(() => null),
   ]);
-  if (request !== latestOpenRequests.get(layoutId)) return true;
+  if (!isCurrentOpenRequest(layoutId, request)) return true;
   // The workspace lookup may outlive deletion or cleanup of retained metadata.
   const note = retainedIdentity
     ? selectNoteById.select(store.state, workspaceId, info.resourceId)
@@ -247,10 +296,13 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
       );
     },
   );
-  if (!alreadyOpen) store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'editor'));
+  const existingViewMode =
+    store.state.transientUi.byWorkspaceId[workspaceId]?.noteViewModeByNoteId[String(note.id)];
+  if (!alreadyOpen && (!options.background || existingViewMode === undefined))
+    store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'editor'));
   showContent(
     { type: 'note', title: note.title, noteId: String(note.id), workspaceId, closable: true },
-    preserveFocus,
+    options,
     layoutId,
   );
   return true;
@@ -259,11 +311,11 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
 async function showAssistantAgent(
   workspaceId: string,
   agentId: string,
-  preserveFocus: boolean,
+  options: AssistantContentOptions,
   layoutId: string,
+  request: OpenRequest,
   messageId?: string,
 ): Promise<boolean> {
-  const request = nextOpenRequest(layoutId);
   const agent = await appClient.agents.get(
     agentId,
     workspaceId === CHIEF_WORKSPACE_ID ? undefined : workspaceId,
@@ -271,7 +323,7 @@ async function showAssistantAgent(
   if (workspaceId === CHIEF_WORKSPACE_ID && agent) workspaceId = String(agent.workspaceId);
   const workspace =
     workspaceId === CHIEF_WORKSPACE_ID ? null : await appClient.workspaces.get(workspaceId);
-  if (request !== latestOpenRequests.get(layoutId)) return true;
+  if (!isCurrentOpenRequest(layoutId, request)) return true;
   if (
     (!workspace && workspaceId !== CHIEF_WORKSPACE_ID) ||
     !agent ||
@@ -284,10 +336,10 @@ async function showAssistantAgent(
   store.dispatch(upsertSession(agent));
   showContent(
     { type: 'agent', title: agent.name ?? agentId, agentId, workspaceId, closable: true },
-    preserveFocus,
+    options,
     layoutId,
   );
-  if (messageId) {
+  if (messageId && !options.background) {
     const { openMessage } = await import('$lib/utils/open-message');
     void openMessage({ workspaceId, agentId, messageId, contentAlreadyOpen: true });
   }
