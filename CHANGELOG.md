@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.212.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.212.0...v2.212.1) (2026-10-08)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.33 ([#3310](https://github.com/intent-hq/cloudlands-fe/issues/3310)) ([dda5960](https://github.com/intent-hq/cloudlands-fe/commit/dda596007acb7ea3c001491c53b3808712aa90a6))
+* preserve flowchart clearance during reduced-motion sizing ([#3292](https://github.com/intent-hq/cloudlands-fe/issues/3292)) ([d54a701](https://github.com/intent-hq/cloudlands-fe/commit/d54a701ca5c82cad5db8bb0adb262141eaf13896))
+
 ## [2.212.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.5...v2.212.0) (2026-10-08)
 
 
