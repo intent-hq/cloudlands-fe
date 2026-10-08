@@ -20,6 +20,7 @@ export interface GeometrySnapshotSuiteOptions<Props extends Record<string, unkno
   component: Component<Props>;
   states?: string[];
   widths?: number[];
+  viewportHeight?: number;
   selector?: string;
   snapshotPath: string;
 }
@@ -232,7 +233,7 @@ export function defineGeometrySnapshotSuite<Props extends Record<string, unknown
           );
           if (platformError) throw new Error(platformError);
         }
-        await page.setViewportSize({ width, height: 1200 });
+        await page.setViewportSize({ width, height: options.viewportHeight ?? 1200 });
         const root = page.locator('#root');
         await root.evaluate((element, requestedWidth) => {
           element.setAttribute(
