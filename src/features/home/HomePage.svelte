@@ -16,7 +16,7 @@
   import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
-  import { tick, untrack } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
   import HomeWorkspaceControls from './HomeWorkspaceControls.svelte';
@@ -62,7 +62,6 @@
     faFolder,
     faCircleExclamation,
     faPlay,
-    faPlus,
     faChevronDown,
     faChevronRight,
   } from '@fortawesome/free-solid-svg-icons';
@@ -77,8 +76,7 @@
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
-  import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
-  import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
+  import HomeHeader from './HomeHeader.svelte';
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
   import { openHomeIntegrationUrl } from './home-integrations-slice';
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
@@ -89,7 +87,10 @@
   import type { HomeIntegrationsState } from './home-integrations-types';
   import CustomViewsSidebar from '$features/custom-views/components/CustomViewsSidebar.svelte';
   import CustomViewPanel from '$features/custom-views/components/CustomViewPanel.svelte';
-  import { selectCustomViewState } from '$features/custom-views/custom-views-selectors';
+  import {
+    selectCustomViews,
+    selectCustomViewState,
+  } from '$features/custom-views/custom-views-selectors';
   import { selectCustomView } from '$features/custom-views/custom-views-slice';
   import { hasCapability } from '$lib/utils/platform-capabilities';
 
@@ -140,6 +141,16 @@
     !$collaborator$ && (preview || hasCapability('customViews')),
   );
   const selectedCustomViewId = $derived(customViewsAvailable ? $customViews$.selectedId : null);
+  const customViewItems$ = selectCustomViews();
+  let openedCustomViewId = $state<string | null>(null);
+  const openedCustomView = $derived(
+    customViewsAvailable
+      ? $customViewItems$.find((view) => view.id === (selectedCustomViewId ?? openedCustomViewId))
+      : undefined,
+  );
+  $effect(() => {
+    if (selectedCustomViewId) openedCustomViewId = selectedCustomViewId;
+  });
   $effect(() => {
     if (!preview && !$collaborator$ && !$knownReposLoaded$) store.dispatch(loadKnownRepos());
   });
@@ -167,6 +178,7 @@
     else if (value === 'workspaces') store.dispatch(closePanel());
   }
   function chooseCustomView(id: string) {
+    mainDirection = 1;
     store.dispatch(closePanel());
     store.dispatch(selectCustomView(id));
   }
@@ -175,6 +187,7 @@
   const repoKey = $derived($view$.repoKey);
   const filter = $derived($view$.filter);
   const tab = $derived($view$.tab);
+  const activeHomeTab = $derived(selectedCustomViewId ? 'custom' : tab);
   const query = $derived($view$.query);
   const selectedId = $derived($view$.selectedId);
   function updateView(changes: Parameters<typeof updateHomeWorkspaceView>[0]) {
@@ -418,21 +431,21 @@
         : null,
   );
   let homeElement = $state<HTMLDivElement | null>(null);
-  const homePanes = new Map<HTMLElement, typeof tab>();
-  let tabFocus = $state<{ value: typeof tab } | null>(null);
-  function syncPaneOwnership(pane: HTMLElement, value: typeof tab) {
-    pane.inert = destination !== 'workspaces' || selectedCustomViewId !== null || value !== tab;
+  const homePanes = new Map<HTMLElement, typeof activeHomeTab>();
+  let tabFocus = $state<{ value: typeof activeHomeTab } | null>(null);
+  function syncPaneOwnership(pane: HTMLElement, value: typeof activeHomeTab) {
+    pane.inert = destination !== 'workspaces' || value !== activeHomeTab;
     if (!pane.inert) pane.removeAttribute('aria-hidden');
     else pane.setAttribute('aria-hidden', 'true');
   }
-  function registerHomePane(pane: HTMLElement, value: typeof tab) {
+  function registerHomePane(pane: HTMLElement, value: typeof activeHomeTab) {
     homePanes.set(pane, value);
     syncPaneOwnership(pane, value);
     return { destroy: () => homePanes.delete(pane) };
   }
   // Sync outside paused keyed effects, including same-pane reversal.
   $effect.pre(() => {
-    const activeTab = destination === 'workspaces' && !selectedCustomViewId ? tab : null;
+    const activeTab = destination === 'workspaces' ? activeHomeTab : null;
     untrack(() => {
       for (const [pane, value] of homePanes) syncPaneOwnership(pane, value);
       if (tabFocus?.value !== activeTab) tabFocus = null;
@@ -440,9 +453,10 @@
   });
   $effect(() => {
     const intent = tabFocus;
-    if (!intent || destination !== 'workspaces' || intent.value !== tab) return;
+    if (!intent || destination !== 'workspaces' || intent.value !== activeHomeTab) return;
     void tick().then(() => {
-      if (tabFocus !== intent || destination !== 'workspaces' || tab !== intent.value) return;
+      if (tabFocus !== intent || destination !== 'workspaces' || activeHomeTab !== intent.value)
+        return;
       const pane = [...homePanes].find(
         ([node, value]) => value === intent.value && node.isConnected && !node.inert,
       )?.[0];
@@ -483,7 +497,7 @@
   homeWorkspaceMotion(
     () => homeElement ?? undefined,
     () => [listGroups, boardGroups, filteredWorkspaces, $view$.view],
-    () => tab,
+    () => activeHomeTab,
   );
   function createWorkspace() {
     const repoPath = selectedRepository?.repoPath;
@@ -510,6 +524,7 @@
       event.key === 'Escape' &&
       !event.defaultPrevented &&
       selectedWorkspace &&
+      !selectedCustomViewId &&
       tab === 'workspaces'
     ) {
       event.preventDefault();
@@ -747,20 +762,12 @@
           </HomeAssistantPanels>
         </div>
       {/if}
-      {#if destination === 'workspaces' && selectedCustomViewId}
-        <div
-          class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
-          data-home-destination="custom"
-        >
-          <CustomViewPanel viewId={selectedCustomViewId} {preview} />
-        </div>
-      {/if}
-      {#if destination === 'workspaces' && !selectedCustomViewId}
-        {#key tab}
-          {@const renderedTab = untrack(() => tab)}
+      {#if destination === 'workspaces'}
+        {#key activeHomeTab}
+          {@const renderedTab = untrack(() => activeHomeTab)}
           <div
             class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
-            data-home-destination="workspaces"
+            data-home-destination={renderedTab === 'custom' ? 'custom' : 'workspaces'}
             data-home-view={renderedTab}
             use:registerHomePane={renderedTab}
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
@@ -777,63 +784,35 @@
               bind:value={() => renderedTab, () => undefined}
               onValueChange={(value) => {
                 if (
-                  value !== tab &&
-                  (value === 'workspaces' || value === 'prs' || value === 'linear')
+                  value !== activeHomeTab &&
+                  (value === 'workspaces' ||
+                    value === 'prs' ||
+                    value === 'linear' ||
+                    (value === 'custom' && openedCustomView))
                 ) {
-                  const order = ['workspaces', 'prs', 'linear'];
-                  mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
+                  const order = ['workspaces', 'prs', 'linear', 'custom'];
+                  mainDirection = order.indexOf(value) > order.indexOf(activeHomeTab) ? 1 : -1;
                   tabFocus = { value };
-                  updateView({ tab: value });
+                  if (value === 'custom' && openedCustomView) chooseCustomView(openedCustomView.id);
+                  else if (value === 'workspaces' || value === 'prs' || value === 'linear') {
+                    store.dispatch(selectCustomView(null));
+                    updateView({ tab: value });
+                  }
                 }
               }}
               variant="underline"
               class="flex min-h-0 flex-1 flex-col"
             >
               {#snippet children()}
-                {#snippet homeHeader()}
-                  <header
-                    class="home-header flex shrink-0 items-center gap-x-6 border-b border-border px-6"
-                  >
-                    <Tabs.List
-                      class="home-tabs min-w-0 flex-1 gap-5 px-0"
-                      aria-label={m.home_views()}
-                    >
-                      <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
-                      <Tabs.Trigger value="prs" aria-label={m.home_tab_prs()}>
-                        <span class="home-tab-label">{m.home_tab_prs()}</span>
-                        <span class="home-tab-logo" aria-hidden="true"
-                          ><GitHubIcon size={18} /></span
-                        >
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="linear" aria-label={m.home_tab_linear()}>
-                        <span class="home-tab-label">{m.home_tab_linear()}</span>
-                        <span class="home-tab-logo" aria-hidden="true"
-                          ><LinearIcon size={18} /></span
-                        >
-                      </Tabs.Trigger>
-                    </Tabs.List>
-                    <div class="home-header-actions ml-auto flex items-center gap-2 py-2">
-                      {#if selectedRepositoryGithubUrl}
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={m.home_repository_metadata_open_github()}
-                          tooltip={m.home_repository_metadata_open_github()}
-                          onclick={() => {
-                            if (selectedRepositoryGithubUrl)
-                              store.dispatch(openHomeIntegrationUrl(selectedRepositoryGithubUrl));
-                          }}><GitHubIcon size={16} /></Button
-                        >
-                      {/if}
-                      {#if !$collaborator$}<div class="home-create">
-                          <Button variant="primary" size="sm" onclick={createWorkspace}
-                            >{#snippet leadingIcon()}<Fa
-                                icon={faPlus}
-                              />{/snippet}{m.home_new_workspace()}</Button
-                          >
-                        </div>{/if}
-                    </div>
-                  </header>
+                {#snippet homeHeader(customActions?: Snippet)}
+                  <HomeHeader
+                    customViewName={openedCustomView?.name}
+                    repositoryGithubUrl={selectedRepositoryGithubUrl}
+                    canCreate={!$collaborator$}
+                    onCreate={createWorkspace}
+                    onOpenRepository={(url) => store.dispatch(openHomeIntegrationUrl(url))}
+                    actions={customActions}
+                  />
                 {/snippet}
                 <Tabs.Content value="workspaces" class="mt-0 min-h-0 flex-1 overflow-hidden">
                   {#if renderedTab === 'workspaces'}
@@ -1174,6 +1153,17 @@
                       />
                     </div>{/if}</Tabs.Content
                 >
+                <Tabs.Content value="custom" class="mt-0 min-h-0 flex-1 overflow-hidden">
+                  {#if renderedTab === 'custom' && selectedCustomViewId}
+                    <div class="home-panel flex h-full min-h-0 min-w-0 flex-col bg-background">
+                      <CustomViewPanel
+                        viewId={selectedCustomViewId}
+                        header={homeHeader}
+                        {preview}
+                      />
+                    </div>
+                  {/if}
+                </Tabs.Content>
               {/snippet}
             </Tabs.Root>
           </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { toStore } from 'svelte/store';
+  import type { Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { ActionBar } from '$lib/components/patterns/action-menu';
@@ -23,7 +24,15 @@
   import { customViewFrameUrl } from '../custom-views-model';
   import CustomViewFrame from './CustomViewFrame.svelte';
 
-  let { viewId, preview = false }: { viewId: string; preview?: boolean } = $props();
+  let {
+    viewId,
+    preview = false,
+    header,
+  }: {
+    viewId: string;
+    preview?: boolean;
+    header?: Snippet<[Snippet]>;
+  } = $props();
   const viewId$ = toStore(() => viewId);
   const view$ = selectCustomViewById(viewId$);
   const runtime$ = selectCustomViewRuntime(viewId$);
@@ -55,10 +64,10 @@
   aria-label={$view$?.name ?? m.custom_views_title()}
 >
   {#if $view$}
-    <header class="flex shrink-0 justify-end border-b border-border px-3 py-1">
+    {#snippet actions()}
       <ActionBar
         visibleCount={0}
-        overflowLabel={m.custom_views_actions({ name: $view$.name })}
+        overflowLabel={m.custom_views_actions({ name: $view$?.name ?? m.custom_views_title() })}
         actions={[
           { id: 'edit', label: m.custom_views_edit(), disabled: $state$.busy },
           {
@@ -85,7 +94,14 @@
           else if (id === 'remove') void remove();
         }}
       />
-    </header>
+    {/snippet}
+    {#if header}
+      {@render header(actions)}
+    {:else}
+      <header class="flex shrink-0 justify-end border-b border-border px-3 py-1">
+        {@render actions()}
+      </header>
+    {/if}
     {#if url}
       {#key viewId + url}<CustomViewFrame {viewId} {url} title={$view$.name} />{/key}
     {:else if error}
