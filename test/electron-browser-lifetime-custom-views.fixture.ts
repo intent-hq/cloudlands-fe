@@ -1,11 +1,18 @@
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createServer as createTcpServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'vite';
 import { customViewsChannels, type CustomViewsResponse } from '../src/shared/types/custom-views';
+
+declare global {
+  interface Window {
+    customViewNativeInvoke: (channel: string, payload?: unknown) => Promise<CustomViewsResponse>;
+    customViewNativeError?: string;
+  }
+}
 
 test.describe('custom homepage views in Electron', () => {
   test('starts a local view, isolates its frame, and persists its registration', async ({}, testInfo) => {
@@ -45,10 +52,49 @@ test.describe('custom homepage views in Electron', () => {
         },
       },
     });
-    const renderer = createServer((_request, response) => {
+    const rendererEntry = join(directory, 'renderer.ts');
+    await writeFile(
+      rendererEntry,
+      [
+        `import { invoke } from ${JSON.stringify(resolve('src/shared/generated/ipc-client.ts'))};`,
+        `import { registerCustomViewsBridge } from ${JSON.stringify(resolve('src/store/renderer/seeders/custom-views-bridge-seeder.ts'))};`,
+        'registerCustomViewsBridge();',
+        'Object.assign(window, { customViewNativeInvoke: invoke });',
+      ].join('\n'),
+    );
+    await build({
+      configFile: false,
+      logLevel: 'error',
+      resolve: { alias: { $shared: resolve('src/shared'), $lib: resolve('src/lib') } },
+      define: {
+        'process.env.INTENT_BUILD_TARGET': JSON.stringify('electron'),
+        'process.env.NODE_ENV': JSON.stringify('production'),
+        'process.env.DEBUG': JSON.stringify('false'),
+      },
+      build: {
+        outDir: directory,
+        emptyOutDir: false,
+        lib: {
+          entry: rendererEntry,
+          name: 'CustomViewsFixture',
+          formats: ['iife'],
+          fileName: () => 'renderer.js',
+        },
+      },
+    });
+    const rendererBundle = await readFile(join(directory, 'renderer.js'));
+    const renderer = createServer((request, response) => {
+      if (request.url === '/renderer.js') {
+        response.setHeader('Content-Type', 'text/javascript');
+        response.end(
+          "window.addEventListener('error', (event) => { window.customViewNativeError = event.message; });\n" +
+            rendererBundle.toString(),
+        );
+        return;
+      }
       response.setHeader('Content-Type', 'text/html');
       response.end(
-        '<!doctype html><title>Custom view native fixture</title><main id="view"></main>',
+        '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; frame-src http://127.0.0.1:*;"><title>Custom view native fixture</title><main id="view"></main><script src="/renderer.js"></script>',
       );
     });
     await new Promise<void>((done) => renderer.listen(0, '127.0.0.1', done));
@@ -94,13 +140,16 @@ test.describe('custom homepage views in Electron', () => {
     try {
       app = await launch();
       let page = await app.firstWindow();
-      await page.waitForFunction(() => !!window.electronAPI);
+      await page.waitForFunction(
+        () => !!window.customViewNativeInvoke || !!window.customViewNativeError,
+      );
+      expect(await page.evaluate(() => window.customViewNativeError)).toBeUndefined();
       const invoke = (channel: string, payload?: unknown) =>
         page.evaluate(
           ({ channel, payload }) =>
             payload === undefined
-              ? window.electronAPI.invoke(channel)
-              : window.electronAPI.invoke(channel, payload),
+              ? window.customViewNativeInvoke(channel)
+              : window.customViewNativeInvoke(channel, payload),
           { channel, payload },
         ) as Promise<CustomViewsResponse>;
       const saved = await invoke(customViewsChannels.save, {
@@ -157,7 +206,7 @@ test.describe('custom homepage views in Electron', () => {
       await app.close();
       app = await launch();
       page = await app.firstWindow();
-      await page.waitForFunction(() => !!window.electronAPI);
+      await page.waitForFunction(() => !!window.customViewNativeInvoke);
       const restored = await invoke(customViewsChannels.list);
       expect(restored.success).toBe(true);
       if (!restored.success) throw new Error(restored.error.message);
@@ -177,6 +226,31 @@ test.describe('custom homepage views in Electron', () => {
         .toBe('running');
       const removed = await invoke(customViewsChannels.remove, { id });
       expect(removed.success && removed.data.views).toEqual([]);
+      await expect
+        .poll(() =>
+          fetch(runningUrl).then(
+            () => true,
+            () => false,
+          ),
+        )
+        .toBe(false);
+      const forQuit = await invoke(customViewsChannels.save, {
+        name: 'Quit cleanup',
+        directory,
+        command: 'node server.cjs',
+        port,
+        icon: 'terminal',
+      });
+      if (!forQuit.success) throw new Error(forQuit.error.message);
+      await invoke(customViewsChannels.start, { id: forQuit.data.views[0].id });
+      await expect
+        .poll(async () => {
+          const response = await invoke(customViewsChannels.list);
+          return response.success ? response.data.runtimes[0].status : response.error.code;
+        })
+        .toBe('running');
+      await app.close();
+      app = undefined;
       await expect
         .poll(() =>
           fetch(runningUrl).then(

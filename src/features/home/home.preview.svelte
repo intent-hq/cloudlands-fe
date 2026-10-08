@@ -310,7 +310,7 @@
       id: '3910986a-c690-409d-bd54-9a98aa6297d3',
       name: 'Project dashboard',
       directory: '/Users/sam/projects/dashboard',
-      command: 'npm run dev -- --host 127.0.0.1',
+      command: 'npm run dev -- --host 127.0.0.1 --port $PORT',
       port: 4317,
       icon: 'chart' as const,
     };
