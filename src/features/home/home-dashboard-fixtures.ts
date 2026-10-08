@@ -3,7 +3,7 @@ import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 
 const activityAt = new Date(Date.now() - 120_000).toISOString();
 
-export const dashboardAgentFixtures: AgentSession[] = [
+export const dashboardAgentFixtures = [
   {
     id: 'dashboard-coordinator',
     workspaceId: 'home-running',
@@ -62,4 +62,4 @@ export const dashboardAgentFixtures: AgentSession[] = [
   id: AgentId(agent.id),
   workspaceId: WorkspaceId(agent.workspaceId),
   parentAgentId: agent.parentAgentId ? AgentId(agent.parentAgentId) : undefined,
-}));
+})) satisfies AgentSession[];

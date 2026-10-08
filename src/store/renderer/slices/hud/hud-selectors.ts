@@ -198,10 +198,7 @@ const selectHudWorkspaces = store.createSelector((state): Workspace[] => {
 });
 
 /**
- * The `agentSummary` aggregate is typed as the slim `WorkspaceAgentIdSummary`
- * on the FE `Workspace`, but the daemon emits the richer
- * `{ count, agents, agentIds }` form (PROTOCOL §5.1) and `normalizeWorkspace`
- * spreads it through verbatim. Read `agents` structurally when present.
+ * Read the daemon's agentSummary rows (PROTOCOL §5.1) when present.
  *
  * Rows whose wire `status` is `deleted` (PROTOCOL §5.5 AgentStatus) and rows
  * inside the delete grace window (`isAgentDeletionPending`, the transient
