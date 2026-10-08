@@ -15,6 +15,7 @@
     workspaces,
     selectedId,
     onselect,
+    onmenu,
     archived = false,
     showRepository = true,
     groups,
@@ -22,6 +23,7 @@
     workspaces: Workspace[];
     selectedId: string | null;
     onselect: (id: string) => void;
+    onmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
@@ -84,6 +86,8 @@
               wrapContent={false}
               class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-4 text-left shadow-xs"
               onclick={() => onselect(workspace.id)}
+              oncontextmenu={(event) => onmenu?.(event, workspace)}
+              onkeydown={(event) => onmenu?.(event, workspace)}
               aria-label={workspace.title}
             >
               <span class="flex items-start justify-between gap-3">

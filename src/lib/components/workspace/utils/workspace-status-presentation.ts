@@ -1,3 +1,4 @@
+import { workspaceReminderStatus } from '$shared/utils/workspace-attention-reminder';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
   faCircleCheck,
@@ -20,7 +21,7 @@ export type WorkspaceStatusPresentationState = WorkspaceDisplayStatus | 'waiting
 
 export type WorkspaceStatusPresentationInput = Pick<
   Workspace,
-  'displayStatus' | 'activity' | 'attention' | 'waiting'
+  'displayStatus' | 'activity' | 'attention' | 'waiting' | 'attentionReminder'
 >;
 
 export interface WorkspaceStatusPresentation {
@@ -101,9 +102,9 @@ function labelFor(state: WorkspaceStatusPresentationState): string {
 export function resolveWorkspaceStatusState(
   input: WorkspaceStatusPresentationInput,
 ): WorkspaceStatusPresentationState {
-  const displayStatus = isWorkspaceDisplayStatus(input.displayStatus)
-    ? input.displayStatus
-    : 'not_started';
+  const projected = workspaceReminderStatus(input);
+  if (projected === 'waiting') return 'waiting';
+  const displayStatus = isWorkspaceDisplayStatus(projected) ? projected : 'not_started';
   if (HIGH_PRIORITY_STATES.has(displayStatus)) return displayStatus;
   if (input.attention === 'unread') return 'unread';
   if (input.waiting === true) return 'waiting';

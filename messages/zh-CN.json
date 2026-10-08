@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "暂时忽略",
+  "workspace_ops_dismissFailed_error": "无法忽略此提醒，请重试。",
+  "home_status_waiting": "正在等待你的回复；当前提醒已忽略。",
   "workspace_setupScript_configUnavailable_description": "无法读取仓库的设置脚本。请在创建工作区之前检查所选脚本。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "在此设备上启用远程访问以连接 Intent Mobile。",

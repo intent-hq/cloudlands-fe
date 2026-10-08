@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "지금은 숨기기",
+  "workspace_ops_dismissFailed_error": "이 알림을 숨기지 못했습니다. 다시 시도하세요.",
+  "home_status_waiting": "응답을 기다리는 중입니다. 현재 알림은 숨겨져 있습니다.",
   "workspace_setupScript_configUnavailable_description": "저장소의 설정 스크립트를 읽을 수 없습니다. 워크스페이스를 만들기 전에 선택한 스크립트를 확인하세요.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Intent Mobile을 연결하려면 이 기기에서 원격 액세스를 활성화하세요.",

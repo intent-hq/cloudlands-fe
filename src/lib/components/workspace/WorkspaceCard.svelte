@@ -1,8 +1,12 @@
 <script lang="ts">
   /* eslint-disable max-lines -- merging hover-card keyboard and interaction behavior exceeds the limit */
+  import { dismissibleWorkspaceReasons } from '$shared/utils/workspace-attention-reminder';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import { requestDismissWorkspaceAttention } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { page } from '$app/state';
   import {
     faArrowUpRightFromSquare,
+    faBellSlash,
     faBoxArchive,
     faCheck,
     faKeyboard,
@@ -38,7 +42,7 @@
     type SidebarMenuEntry,
     type SidebarMenuItem,
   } from '$lib/components/ui/sidebar-context-menu/types';
-  import type { Workspace } from '$shared/types';
+  import type { Workspace, AttentionReminderReason } from '$shared/types';
   import type { PullRequestInfo } from '$shared/types';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
@@ -580,6 +584,22 @@
 
   let contextMenu: (SidebarContextPosition & { workspaceId: string }) | null = $state(null);
   let overflowMenuOpen = $state(false);
+  const hasOverflowMenu = $derived(
+    Boolean(onOpenInNewWindow) ||
+      Boolean(workspace && dismissibleWorkspaceReasons(workspace).length),
+  );
+  let reminderSnapshot = $state<{
+    reasons: AttentionReminderReason[];
+    principalContext: string | null;
+  } | null>(null);
+  function captureReminderMenu() {
+    reminderSnapshot = workspace
+      ? {
+          reasons: dismissibleWorkspaceReasons(workspace),
+          principalContext: selectPrincipalActionContext.select(appStore.state),
+        }
+      : null;
+  }
   let menuWorkspaceId: string | undefined;
 
   $effect(() => {
@@ -600,6 +620,7 @@
       contextMenu = null;
       return;
     }
+    captureReminderMenu();
     contextMenu = {
       ...position,
       returnFocus:
@@ -692,6 +713,31 @@
       }
     }
 
+    const reminder =
+      contextMenu || overflowMenuOpen
+        ? reminderSnapshot
+        : workspace
+          ? {
+              reasons: dismissibleWorkspaceReasons(workspace),
+              principalContext: selectPrincipalActionContext.select(appStore.state),
+            }
+          : null;
+    if (reminder?.reasons.length && reminder.principalContext)
+      items.push({
+        id: 'dismiss-attention',
+        label: m.workspace_card_dismissForNow_label(),
+        icon: faBellSlash,
+        onClick: () => {
+          appStore.dispatch(
+            requestDismissWorkspaceAttention(
+              workspace.id,
+              reminder.reasons,
+              reminder.principalContext!,
+            ),
+          );
+          closeContextMenu();
+        },
+      });
     if ($hidesOwnerActions$) return items;
 
     items.push({
@@ -991,7 +1037,7 @@
       {/if}
     </div>
 
-    {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
+    {#if actions || hasOverflowMenu || onTogglePin || (isUnread && onMarkAsRead)}
       <div
         bind:this={actionsElement}
         class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
@@ -1042,9 +1088,13 @@
           </Button>
         {/if}
         {@render actions?.()}
-        {#if onOpenInNewWindow}
+        {#if hasOverflowMenu}
           <SidebarOverflowMenu
             bind:open={overflowMenuOpen}
+            returnFocus={rowElement?.querySelector<HTMLElement>('[data-workspace-card-trigger]')}
+            onOpenChange={(open) => {
+              if (open) captureReminderMenu();
+            }}
             items={getContextMenuItems()}
             ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
             class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"

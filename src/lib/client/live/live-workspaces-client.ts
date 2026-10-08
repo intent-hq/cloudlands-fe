@@ -27,6 +27,7 @@ import { createRepositoryContextTransport } from './repository-context-transport
  */
 import { WorkspaceStatus, createWorkspaceId } from '$shared/types';
 import type {
+  AttentionReminderReason,
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
   Workspace,
@@ -376,6 +377,15 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   // daemon's `workspace:attention-changed` event drives the reactive clear.
   async markSeen(id: string): Promise<MutationResult> {
     return runMutation('workspace.markSeen', { workspaceId: id });
+  }
+
+  async dismissAttention(id: string, reasons?: AttentionReminderReason[]): Promise<Workspace> {
+    const result = await backendRequest<{ workspace: Record<string, unknown> }>(
+      'workspace.dismissAttention',
+      { workspaceId: id, ...(reasons === undefined ? {} : { reasons }) },
+    );
+    if (!result?.workspace) throw new Error('Missing workspace.dismissAttention workspace');
+    return normalizeWorkspace(result.workspace);
   }
 
   async setActive(id: string): Promise<MutationResult> {

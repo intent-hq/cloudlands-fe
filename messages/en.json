@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "Dismiss for now",
+  "workspace_ops_dismissFailed_error": "Could not dismiss this reminder. Try again.",
+  "home_status_waiting": "Waiting for your response; the current reminder is dismissed.",
   "workspace_setupScript_configUnavailable_description": "Could not read the repository setup script. Review the selected script before creating the workspace.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Enable remote access on this device to connect Intent Mobile.",

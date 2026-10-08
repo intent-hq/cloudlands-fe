@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "Vorerst ausblenden",
+  "workspace_ops_dismissFailed_error": "Diese Erinnerung konnte nicht ausgeblendet werden. Versuche es erneut.",
+  "home_status_waiting": "Wartet auf deine Antwort; die aktuelle Erinnerung ist ausgeblendet.",
   "workspace_setupScript_configUnavailable_description": "Das Setup-Skript des Repositorys konnte nicht gelesen werden. Prüfe das ausgewählte Skript, bevor du den Arbeitsbereich erstellst.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Aktiviere den Fernzugriff auf diesem Gerät, um Intent Mobile zu verbinden.",

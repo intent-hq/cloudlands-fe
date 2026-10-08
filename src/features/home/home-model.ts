@@ -1,3 +1,7 @@
+import {
+  workspaceReminderStatus,
+  workspaceReminderDismissed,
+} from '$shared/utils/workspace-attention-reminder';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 
@@ -11,21 +15,28 @@ export interface HomeRepository {
 }
 
 export type HomeTriageGroup = 'needs-you' | 'pr-ready' | 'running' | 'blocked' | 'done' | 'idle';
-export type HomeTriageInput = Pick<Workspace, 'displayStatus' | 'activity' | 'attention'>;
+export type HomeTriageInput = Pick<
+  Workspace,
+  'displayStatus' | 'activity' | 'attention' | 'attentionReminder'
+>;
 
 /** Mutually exclusive Home groups based only on daemon-owned structured signals. */
 export function getHomeTriageGroup(workspace: HomeTriageInput): HomeTriageGroup {
+  const status = workspaceReminderStatus(workspace);
   if (workspace.displayStatus === 'blocked' || workspace.displayStatus === 'failed') {
     return 'blocked';
   }
-  if (workspace.attention === 'review_required' || workspace.displayStatus === 'needs_attention') {
+  if (
+    (!workspaceReminderDismissed(workspace) && workspace.attention === 'review_required') ||
+    status === 'needs_attention'
+  ) {
     return 'needs-you';
   }
-  if (workspace.displayStatus === 'pr_ready') return 'pr-ready';
-  if (workspace.activity === 'agent_running' || workspace.displayStatus === 'in_progress') {
+  if (status === 'pr_ready') return 'pr-ready';
+  if (workspace.activity === 'agent_running' || status === 'in_progress') {
     return 'running';
   }
-  if (workspace.displayStatus === 'complete' || workspace.displayStatus === 'pr_merged') {
+  if (status === 'complete' || status === 'pr_merged') {
     return 'done';
   }
   return 'idle';
