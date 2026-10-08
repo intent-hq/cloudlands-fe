@@ -18,28 +18,26 @@ export function workspaceReminderStatus(workspace: WorkspaceReminderInput) {
 export function applyWorkspaceReminderAcknowledgement(
   workspace: Workspace,
   response: Workspace,
+  requestedReminder: Workspace['attentionReminder'],
 ): Workspace {
-  const reminder = response.attentionReminder;
   const current = workspace.attentionReminder;
-  const staleAcknowledgement =
-    reminder?.dismissed &&
-    current?.dismissed !== true &&
-    current?.reasons.some(
-      (reason) =>
-        !reminder.reasons.some(
-          (pair) => pair.id === reason.id && pair.revision === reason.revision,
-        ),
-    );
-  const stalePartialAcknowledgement =
-    current?.dismissed &&
-    reminder?.dismissed === false &&
-    reminder.reasons.every((reason) =>
-      current.reasons.some((pair) => pair.id === reason.id && pair.revision === reason.revision),
-    );
+  const superseded =
+    current !== requestedReminder &&
+    (!current ||
+      !requestedReminder ||
+      current.dismissed !== requestedReminder.dismissed ||
+      current.displayStatus !== requestedReminder.displayStatus ||
+      current.reasons.length !== requestedReminder.reasons.length ||
+      current.reasons.some(
+        (reason) =>
+          !requestedReminder.reasons.some(
+            (pair) => pair.id === reason.id && pair.revision === reason.revision,
+          ),
+      ));
+  if (superseded) return workspace;
   return {
     ...workspace,
-    attentionReminder:
-      staleAcknowledgement || stalePartialAcknowledgement ? current : (reminder ?? current),
+    attentionReminder: response.attentionReminder ?? current,
   };
 }
 

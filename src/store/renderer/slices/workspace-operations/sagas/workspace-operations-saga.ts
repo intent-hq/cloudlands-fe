@@ -862,6 +862,7 @@ function* dismissAttention(
   const current = () => selectPrincipalActionContext.select(store.state) === principalContext;
   if (!current()) return;
   try {
+    const requestedReminder = (yield* selectWorkspaceById.effect(workspaceId))?.attentionReminder;
     const workspace = yield* call(
       [appClient.workspaces, appClient.workspaces.dismissAttention],
       workspaceId,
@@ -870,7 +871,11 @@ function* dismissAttention(
     if (current()) {
       const latest = yield* selectWorkspaceById.effect(workspaceId);
       if (latest && latest.status !== WorkspaceStatusEnum.Deleted)
-        yield* put(setWorkspaceEntity(applyWorkspaceReminderAcknowledgement(latest, workspace)));
+        yield* put(
+          setWorkspaceEntity(
+            applyWorkspaceReminderAcknowledgement(latest, workspace, requestedReminder),
+          ),
+        );
     }
   } catch (error) {
     if (!current()) return;

@@ -324,44 +324,135 @@ for (const destination of ['search', 'another workspace'] as const) {
   });
 }
 
-test('A late partial dismissal cannot undo a newer acknowledgement', async ({
-  mount,
-  page,
-}, testInfo) => {
-  const component = await mount(Preview);
-  const row = component.getByRole('option', { name: 'Review onboarding' });
-  await row.focus();
-  await page.keyboard.press('Shift+F10');
-  await page.evaluate(() => {
-    window.__homeDismiss!.addReason();
-    window.__homeDismiss!.holdNextResponse();
+for (const surface of ['home', 'sidebar'] as const) {
+  for (const change of ['newer acknowledgement', 'resolved reason'] as const) {
+    test(`A late partial dismissal preserves a ${change} in ${surface}`, async ({
+      mount,
+      page,
+    }, testInfo) => {
+      const component = await mount(Preview, { props: { sidebar: surface === 'sidebar' } });
+      const row =
+        surface === 'home'
+          ? component.getByRole('option', { name: 'Review onboarding' })
+          : component.locator('[data-workspace-card-trigger]');
+      const status =
+        surface === 'home'
+          ? row.locator('[data-home-status]')
+          : component.locator('[data-workspace-status]');
+      const attribute = surface === 'home' ? 'data-home-status' : 'data-workspace-status';
+      const waiting = surface === 'home' ? 'idle' : 'waiting';
+      await row.focus();
+      await page.keyboard.press('Shift+F10');
+      await page.evaluate(() => {
+        window.__homeDismiss!.addReason();
+        window.__homeDismiss!.holdNextResponse();
+      });
+      await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+      await expect.poll(() => page.evaluate(() => window.__homeDismiss!.calls.length)).toBe(1);
+      expect(await page.evaluate(() => window.__homeDismiss!.calls[0])).toEqual({
+        channel: IPC_CHANNELS.BACKEND.REQUEST,
+        method: 'workspace.dismissAttention',
+        params: { workspaceId: 'dismiss-review', reasons: observedReasons },
+      });
+      await testInfo.attach(`${surface}-${change}-before`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+      if (change === 'resolved reason') {
+        await page.evaluate(() => window.__homeDismiss!.resolveAddedReason());
+      } else {
+        await row.focus();
+        await page.keyboard.press('Shift+F10');
+        await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+        await expect
+          .poll(() => page.evaluate(() => window.__homeDismiss!.responses.length))
+          .toBe(1);
+      }
+      await expect(status).toHaveAttribute(attribute, waiting);
+      const beforeReply = await page.evaluate(() => window.__homeDismiss!.snapshot());
+      await page.evaluate(() => window.__homeDismiss!.release());
+      await expect
+        .poll(() => page.evaluate(() => window.__homeDismiss!.responses.length))
+        .toBe(change === 'resolved reason' ? 1 : 2);
+      await page.evaluate(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+      );
+      await expect(status).toHaveAttribute(attribute, waiting);
+      await expect(row).toBeFocused();
+      expect(await page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder)).toEqual(
+        beforeReply.attentionReminder,
+      );
+      if (change === 'resolved reason')
+        expect(beforeReply.attentionReminder?.reasons).toEqual(observedReasons);
+      await page.evaluate(() => window.__homeDismiss!.refresh());
+      await expect(status).toHaveAttribute(attribute, waiting);
+      await testInfo.attach(`${surface}-${change}-after`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+      await testInfo.attach(`${surface}-${change}-wire`, {
+        body: JSON.stringify(
+          {
+            beforeReply,
+            ...(await page.evaluate(() => ({
+              requests: window.__homeDismiss!.calls,
+              responses: window.__homeDismiss!.responses,
+              current: window.__homeDismiss!.snapshot(),
+            }))),
+          },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      });
+    });
+  }
+
+  test(`A dismissal response can reveal a fresh server reason in ${surface}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(Preview, { props: { sidebar: surface === 'sidebar' } });
+    const row =
+      surface === 'home'
+        ? component.getByRole('option', { name: 'Review onboarding' })
+        : component.locator('[data-workspace-card-trigger]');
+    await row.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.evaluate(() => window.__homeDismiss!.holdNext());
+    await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__homeDismiss!.calls.length)).toBe(1);
+    await page.evaluate(() => {
+      window.__homeDismiss!.addReason(false);
+      window.__homeDismiss!.release();
+    });
+    await expect
+      .poll(() => page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.reasons))
+      .toEqual([...observedReasons, { id: 'agent:another:question', revision: 'question-2' }]);
+    await expect(
+      surface === 'home'
+        ? row.locator('[data-home-status]')
+        : component.locator('[data-workspace-status]'),
+    ).toHaveAttribute(
+      surface === 'home' ? 'data-home-status' : 'data-workspace-status',
+      surface === 'home' ? 'needs-you' : 'needs_attention',
+    );
+    expect(await page.evaluate(() => window.__homeDismiss!.calls[0])).toEqual({
+      channel: IPC_CHANNELS.BACKEND.REQUEST,
+      method: 'workspace.dismissAttention',
+      params: { workspaceId: 'dismiss-review', reasons: observedReasons },
+    });
+    await testInfo.attach(`${surface}-fresh-server-reason`, {
+      body: JSON.stringify(
+        await page.evaluate(() => ({
+          requests: window.__homeDismiss!.calls,
+          responses: window.__homeDismiss!.responses,
+          current: window.__homeDismiss!.snapshot(),
+        })),
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
   });
-  await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.calls.length)).toBe(1);
-  await row.focus();
-  await page.keyboard.press('Shift+F10');
-  await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
-  await expect(row.locator('[data-home-status]')).toHaveAccessibleName(/Waiting/);
-  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.responses.length)).toBe(1);
-  await page.evaluate(() => window.__homeDismiss!.release());
-  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.responses.length)).toBe(2);
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-  await expect(row.locator('[data-home-status]')).toHaveAccessibleName(/Waiting/);
-  await page.evaluate(() => window.__homeDismiss!.refresh());
-  await expect(row.locator('[data-home-status]')).toHaveAccessibleName(/Waiting/);
-  await testInfo.attach('late-partial-dismissal', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-  await testInfo.attach('late-partial-dismissal-wire', {
-    body: JSON.stringify(
-      await page.evaluate(() => ({
-        requests: window.__homeDismiss!.calls,
-        responses: window.__homeDismiss!.responses,
-      })),
-      null,
-      2,
-    ),
-    contentType: 'application/json',
-  });
-});
+}

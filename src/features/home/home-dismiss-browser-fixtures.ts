@@ -73,7 +73,9 @@ declare global {
       failNext: () => void;
       release: () => void;
       refresh: () => void;
-      addReason: () => void;
+      addReason: (publish?: boolean) => void;
+      resolveAddedReason: () => void;
+      snapshot: () => Workspace;
       setStatus: (status: 'blocked' | 'failed' | 'in_progress') => void;
       setActivity: (activity: 'idle' | 'agent_running') => void;
     };
@@ -99,6 +101,7 @@ export function setupHomeDismissFixtures(collaborator = false) {
   const responses: Workspace[] = [];
   const reads: string[] = [];
   const saved = new Map<string, Workspace>();
+  const acknowledged = new Map<string, AttentionReminderReason[]>();
   let hold = false,
     fail = false,
     holdResponse = false;
@@ -112,6 +115,21 @@ export function setupHomeDismissFixtures(collaborator = false) {
     const reminder = workspace.attentionReminder;
     if (!reminder) throw new Error(`Missing reminder projection: ${workspace.id}`);
     return reminder;
+  };
+  const projectReminder = (workspace: Workspace, reasons: AttentionReminderReason[]) => {
+    const receipt = acknowledged.get(workspace.id) ?? [];
+    const dismissed = reasons.every((reason) =>
+      receipt.some((pair) => pair.id === reason.id && pair.revision === reason.revision),
+    );
+    return {
+      reasons,
+      dismissed,
+      displayStatus: dismissed
+        ? workspace.activity === 'agent_running'
+          ? ('in_progress' as const)
+          : ('waiting' as const)
+        : ('needs_attention' as const),
+    };
   };
   const patch = (workspace: Workspace) => store.dispatch(setWorkspaceEntity(workspace));
   window.__homeDismiss = {
@@ -155,8 +173,8 @@ export function setupHomeDismissFixtures(collaborator = false) {
       const current = get();
       patch(saved.get(current.id) ?? { ...current });
     },
-    addReason: () => {
-      const current = get();
+    addReason: (publish = true) => {
+      const current = saved.get(get().id) ?? get();
       const workspace: Workspace = {
         ...current,
         attentionReminder: {
@@ -169,8 +187,19 @@ export function setupHomeDismissFixtures(collaborator = false) {
         },
       };
       saved.set(workspace.id, workspace);
+      if (publish) patch(workspace);
+    },
+    resolveAddedReason: () => {
+      const current = get();
+      const server = saved.get(current.id) ?? current;
+      const reasons = reminderOf(server).reasons.filter(
+        (reason) => reason.id !== 'agent:another:question',
+      );
+      const workspace = { ...current, attentionReminder: projectReminder(current, reasons) };
+      saved.set(workspace.id, workspace);
       patch(workspace);
     },
+    snapshot: () => get(),
     setActivity: (activity) => {
       const current = get();
       const server = saved.get(current.id) ?? current;
@@ -224,22 +253,22 @@ export function setupHomeDismissFixtures(collaborator = false) {
       }
       if (shouldFail)
         return { ok: false, error: { code: 'DISMISS_REJECTED', message: 'Dismiss unavailable' } };
-      const current = get(params.workspaceId);
+      const current = saved.get(params.workspaceId) ?? get(params.workspaceId);
       const reasons = reminderOf(current).reasons;
-      const dismissed = reasons.every((reason) =>
-        params.reasons.some((pair) => pair.id === reason.id && pair.revision === reason.revision),
-      );
+      const receipt = [...(acknowledged.get(current.id) ?? [])];
+      for (const reason of reasons) {
+        if (
+          params.reasons.some(
+            (pair) => pair.id === reason.id && pair.revision === reason.revision,
+          ) &&
+          !receipt.some((pair) => pair.id === reason.id && pair.revision === reason.revision)
+        )
+          receipt.push({ ...reason });
+      }
+      acknowledged.set(current.id, receipt);
       const workspace: Workspace = {
         ...current,
-        attentionReminder: {
-          reasons,
-          dismissed,
-          displayStatus: dismissed
-            ? current.activity === 'agent_running'
-              ? 'in_progress'
-              : 'waiting'
-            : 'needs_attention',
-        },
+        attentionReminder: projectReminder(current, reasons),
       };
       saved.set(workspace.id, workspace);
       if (holdResponse) {
