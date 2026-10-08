@@ -1,0 +1,15 @@
+{
+  "include": ["src/**", "scripts/**", "test/**", "tests/**", "e2e/**", "eslint-rules/**"],
+  "exclude": ["src/shared/paraglide/**"],
+  "aliases": {
+    "@": "src",
+    "$lib": "src/lib",
+    "$store": "src/store",
+    "$features": "src/features",
+    "$shared": "src/shared",
+    "$app": "src/__mocks__/$app"
+  },
+  "maxContextChars": 20000,
+  "maxFragments": 24,
+  "maxDepth": 4
+}
