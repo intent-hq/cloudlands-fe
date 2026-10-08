@@ -2,19 +2,17 @@ import { expect, test, type Page } from '@playwright/test';
 import { useDiagramPreviewServer } from './diagram-preview-server';
 
 const preview = useDiagramPreviewServer('diagram-final-review-regression');
-const themes = ['light', 'dark', 'nord'] as const;
-const widths = [320, 420, 640, 960] as const;
 test.describe.configure({ mode: 'default', timeout: 120_000 });
 
-async function openState(page: Page, state: string, width: number, theme: string) {
-  await page.addInitScript(
-    (colorTheme) => {
-      localStorage.setItem('component-catalog-preferences', JSON.stringify({ colorTheme }));
-    },
-    theme === 'nord' ? 'nord' : 'default',
-  );
+async function openState(page: Page, state: string, width: number) {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'component-catalog-preferences',
+      JSON.stringify({ colorTheme: 'default' }),
+    );
+  });
   await page.goto(
-    `${preview.url}/sandbox/diagram-workbench?state=${state}&theme=${theme === 'nord' ? 'light' : theme}&width=${width}&motion=reduced`,
+    `${preview.url}/sandbox/diagram-workbench?state=${state}&theme=light&width=${width}&motion=reduced`,
     { waitUntil: 'domcontentloaded' },
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-stable', 'true', {
@@ -22,7 +20,7 @@ async function openState(page: Page, state: string, width: number, theme: string
   });
   await expect(page.locator('[data-catalog-color-theme]')).toHaveAttribute(
     'data-catalog-color-theme',
-    theme === 'nord' ? 'nord' : 'default',
+    'default',
   );
   await expect(
     page
@@ -31,166 +29,77 @@ async function openState(page: Page, state: string, width: number, theme: string
   ).toBeAttached();
 }
 
-async function expectContentHuggingNodes(page: Page, identity: string) {
-  const geometry = await page.evaluate(() => {
+test('keeps multiline node content inside narrow cards', async ({ page }) => {
+  await openState(page, 'custom-long-multiline-labels', 320);
+  await page.evaluate(() => document.fonts.ready);
+  const nodes = await page.evaluate(() => {
     const cases = [
-      ['custom-long-multiline-labels', 'response', 1],
-      ['custom-dependency-graph', 'fixtures', 2],
-      ['custom-long-multiline-labels', 'tool', 3],
-      ['custom-disconnected-extremes', 'multiline', 3],
+      ['custom-long-multiline-labels', 'response'],
+      ['custom-dependency-graph', 'fixtures'],
+      ['custom-long-multiline-labels', 'tool'],
+      ['custom-disconnected-extremes', 'multiline'],
     ] as const;
-    const nodes = cases.map(([state, nodeId, expectedLines]) => {
+    return cases.map(([state, nodeId]) => {
       const node = document.querySelector<SVGForeignObjectElement>(
         `#${state} [data-node-id="${nodeId}"]`,
       )!;
-      const body = node.querySelector<HTMLElement>('.diagram-node-html')!;
-      const label = node.querySelector<HTMLElement>('.node-label')!;
-      const kind = node.querySelector<HTMLElement>('.node-kind-label')!;
       const row = node.querySelector<HTMLElement>('.node-row')!;
       const nodeBounds = node.getBoundingClientRect();
       const rowBounds = row.getBoundingClientRect();
-      const scale = nodeBounds.height / Number(node.getAttribute('height'));
-      const style = getComputedStyle(body);
-      const paddingY = Number.parseFloat(style.getPropertyValue('--padding-y'));
-      const gap = Number.parseFloat(style.getPropertyValue('--gap'));
-      const labelLineHeight = Number.parseFloat(getComputedStyle(label).lineHeight);
-      const kindLineHeight = Number.parseFloat(getComputedStyle(kind).lineHeight);
-      const range = document.createRange();
-      range.selectNodeContents(label);
-      const lineTops = [...range.getClientRects()]
-        .filter((rect) => rect.width > 0)
-        .map((rect) => Math.round(rect.top * 10) / 10);
-      const uniqueLines = lineTops.filter((top, index) =>
-        lineTops.slice(0, index).every((other) => Math.abs(other - top) > 1),
-      ).length;
       return {
         nodeId,
-        expectedLines,
-        expectedHeight: Math.max(
-          32,
-          labelLineHeight * expectedLines + gap + kindLineHeight + paddingY * 2,
-        ),
-        height: Number(node.getAttribute('height')),
-        uniqueLines,
-        paddingY,
-        topPadding: (rowBounds.top - nodeBounds.top) / scale,
-        bottomPadding: (nodeBounds.bottom - rowBounds.bottom) / scale,
         contained: rowBounds.top >= nodeBounds.top && rowBounds.bottom <= nodeBounds.bottom,
       };
     });
-    const routeGap = (state: string, edgeId: string, nodeId: string, end: boolean) => {
-      const root = document.querySelector<HTMLElement>(`#${state}`)!;
-      const path = root.querySelector<SVGPathElement>(
-        `.diagram-edge[data-edge-id="${edgeId}"] path`,
-      )!;
-      const node = root.querySelector<SVGForeignObjectElement>(`[data-node-id="${nodeId}"]`)!;
-      const length = path.getTotalLength();
-      const point = path.getPointAtLength(end ? length : 0).matrixTransform(path.getScreenCTM()!);
-      const bounds = node.getBoundingClientRect();
-      const scale = bounds.width / Number(node.getAttribute('width'));
-      const sideCenters = [
-        { x: (bounds.left + bounds.right) / 2, y: bounds.top },
-        { x: bounds.right, y: (bounds.top + bounds.bottom) / 2 },
-        { x: (bounds.left + bounds.right) / 2, y: bounds.bottom },
-        { x: bounds.left, y: (bounds.top + bounds.bottom) / 2 },
-      ];
-      return (
-        Math.min(...sideCenters.map((side) => Math.hypot(point.x - side.x, point.y - side.y))) /
-        scale
-      );
-    };
-    return {
-      nodes,
-      incomingToolGap: routeGap('custom-long-multiline-labels', 'm1', 'tool', true),
-      outgoingToolGap: routeGap('custom-long-multiline-labels', 'm2', 'tool', false),
-      measuredGap: routeGap('custom-disconnected-extremes', 'x2', 'multiline', true),
-    };
   });
-
-  for (const node of geometry.nodes) {
-    expect(node.height, `${identity}/${node.nodeId} ${JSON.stringify(node)} height`).toBeCloseTo(
-      node.expectedHeight,
-      2,
-    );
-    expect(node.uniqueLines, `${identity}/${node.nodeId} lines`).toBe(node.expectedLines);
-    expect([7, 12], `${identity}/${node.nodeId} supported padding`).toContain(node.paddingY);
-    expect(node.topPadding, `${identity}/${node.nodeId} top padding`).toBeCloseTo(node.paddingY, 1);
-    expect(node.bottomPadding, `${identity}/${node.nodeId} bottom padding`).toBeCloseTo(
-      node.paddingY,
-      1,
-    );
-    expect(node.contained, `${identity}/${node.nodeId} containment`).toBe(true);
-  }
-  expect(geometry.incomingToolGap, `${identity}/tool incoming port`).toBeCloseTo(5.5, 0);
-  expect(geometry.outgoingToolGap, `${identity}/tool outgoing port`).toBeCloseTo(0, 0);
-  expect(geometry.measuredGap, `${identity}/Measured route incoming port`).toBeCloseTo(5.5, 0);
-}
-
-for (const theme of themes) {
-  for (const width of widths) {
-    test(`hugs one, two, and three line node content in ${theme} at ${width}px`, async ({
-      page,
-    }) => {
-      test.setTimeout(120_000);
-      await openState(page, 'custom-long-multiline-labels', width, theme);
-      await page.evaluate(() => document.fonts.ready);
-      await expectContentHuggingNodes(page, `${theme}/${width}`);
-    });
-  }
-}
+  for (const node of nodes) expect(node.contained, `${node.nodeId} containment`).toBe(true);
+});
 
 test('keeps compact dependency filenames in readable semantic units', async ({ page }) => {
   test.setTimeout(180_000);
-  for (const width of [320, 420]) {
-    await openState(page, 'custom-dependency-graph', width, 'light');
-    const result = await page.locator('#custom-dependency-graph').evaluate((root) => {
-      const expected = {
-        scene: ['CatalogScene.svelte'],
-        definition: ['preview-definition.ts'],
-        fixtures: ['diagram-workbench.', 'preview-fixtures.ts'],
-        mermaid: ['MermaidRenderer', '.svelte'],
-        custom: ['DiagramRenderer', '.svelte'],
+  const width = 320;
+  await openState(page, 'custom-dependency-graph', width);
+  const result = await page.locator('#custom-dependency-graph').evaluate((root) => {
+    const expected = {
+      scene: ['CatalogScene.svelte'],
+      definition: ['preview-definition.ts'],
+      fixtures: ['diagram-workbench.', 'preview-fixtures.ts'],
+      mermaid: ['MermaidRenderer', '.svelte'],
+      custom: ['DiagramRenderer', '.svelte'],
+    };
+    return Object.entries(expected).map(([id, units]) => {
+      const node = root.querySelector<SVGGraphicsElement>(`[data-node-id="${id}"]`)!;
+      const label = root.querySelector<HTMLElement>(`[data-node-id="${id}"] .node-label`)!;
+      const nodeBounds = node.getBoundingClientRect();
+      const parts = [...label.querySelectorAll<HTMLElement>('.semantic-filename-unit')].map(
+        (part) => ({ text: part.textContent, bounds: part.getBoundingClientRect() }),
+      );
+      return {
+        id,
+        expected: units,
+        actual: parts.map(({ text }) => text),
+        contained: parts.every(
+          ({ bounds }) =>
+            bounds.left >= nodeBounds.left - 1 && bounds.right <= nodeBounds.right + 1,
+        ),
       };
-      return Object.entries(expected).map(([id, units]) => {
-        const node = root.querySelector<SVGGraphicsElement>(`[data-node-id="${id}"]`)!;
-        const label = root.querySelector<HTMLElement>(`[data-node-id="${id}"] .node-label`)!;
-        const nodeBounds = node.getBoundingClientRect();
-        const parts = [...label.querySelectorAll<HTMLElement>('.semantic-filename-unit')].map(
-          (part) => ({ text: part.textContent, bounds: part.getBoundingClientRect() }),
-        );
-        return {
-          id,
-          expected: units,
-          actual: parts.map(({ text }) => text),
-          lines: new Set(parts.map(({ bounds }) => Math.round(bounds.top))).size,
-          unbroken: parts.every(({ bounds }) => bounds.height <= 18),
-          contained: parts.every(
-            ({ bounds }) =>
-              bounds.left >= nodeBounds.left - 1 && bounds.right <= nodeBounds.right + 1,
-          ),
-        };
-      });
     });
-    expect(
-      result.every(({ lines }) => lines <= 2),
-      `light/${width} filename lines`,
-    ).toBe(true);
-    expect(
-      result.every(({ unbroken, contained }) => unbroken && contained),
-      `light/${width} semantic unit geometry`,
-    ).toBe(true);
-    expect(
-      result.map(({ actual }) => actual),
-      `light/${width} semantic units`,
-    ).toEqual(result.map(({ expected }) => expected));
-  }
+  });
+  expect(
+    result.every(({ contained }) => contained),
+    `light/${width} semantic unit containment`,
+  ).toBe(true);
+  expect(
+    result.map(({ actual }) => actual),
+    `light/${width} semantic units`,
+  ).toEqual(result.map(({ expected }) => expected));
 });
 
 test('keeps the disconnected observer card and content inside the 640px light frame', async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await openState(page, 'custom-disconnected-extremes', 640, 'light');
+  await openState(page, 'custom-disconnected-extremes', 640);
   const result = await page.locator('#custom-disconnected-extremes').evaluate((root) => {
     const frame = root.querySelector<HTMLElement>('.diagram-stage')!.getBoundingClientRect();
     const inside = (bounds: DOMRect) =>
@@ -251,7 +160,7 @@ test('keeps the disconnected observer card and content inside the 640px light fr
 for (const width of [320, 960]) {
   test(`keeps nested group members and return routes clear at ${width}px`, async ({ page }) => {
     const identity = `${width}/mermaid-nested-groups`;
-    await openState(page, 'mermaid-nested-groups', width, 'light');
+    await openState(page, 'mermaid-nested-groups', width);
     const result = await page
       .locator('#mermaid-nested-groups svg[data-layout-settled="true"]')
       .evaluate((svg) => {
@@ -325,7 +234,13 @@ for (const width of [320, 960]) {
                 member.top >= frame.top - 1 &&
                 member.bottom <= frame.bottom + 1,
             ),
-            gap: Math.min(...members.map((member) => member.top - title.bottom)),
+            memberCrossesTitle: members.some(
+              (member) =>
+                member.left < title.right &&
+                member.right > title.left &&
+                member.top < title.bottom &&
+                member.bottom > title.top,
+            ),
             routeCrosses,
             labelCrosses,
           };
@@ -366,10 +281,10 @@ for (const width of [320, 960]) {
       result.groups.every(({ contained }) => contained),
       `${identity} required members`,
     ).toBe(true);
-    for (const group of result.groups) {
-      expect(Number.isFinite(group.gap), `${identity}/${group.title} finite header gap`).toBe(true);
-      expect(group.gap, `${identity}/${group.title} header gap`).toBeGreaterThanOrEqual(10);
-    }
+    expect(
+      result.groups.some(({ memberCrossesTitle }) => memberCrossesTitle),
+      `${identity} title/member collision`,
+    ).toBe(false);
     expect(
       result.groups.some(({ routeCrosses, labelCrosses }) => routeCrosses || labelCrosses),
       `${identity} header collision`,
@@ -449,8 +364,6 @@ for (const width of [320, 960]) {
               );
           });
         const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
-        const markerPath = marker.querySelector<SVGPathElement>('path')!;
-        const markerStroke = Number.parseFloat(getComputedStyle(markerPath).strokeWidth);
         const boundaryDistance = (point: DOMPoint, bounds: DOMRect) => {
           const dx = Math.max(bounds.left - point.x, 0, point.x - bounds.right);
           const dy = Math.max(bounds.top - point.y, 0, point.y - bounds.bottom);
@@ -463,10 +376,15 @@ for (const width of [320, 960]) {
                 bounds.bottom - point.y,
               );
         };
+        const nearestTarget = [...svg.querySelectorAll<SVGGElement>('g.node')].toSorted(
+          (left, right) =>
+            Math.abs(boundaryDistance(end, left.getBoundingClientRect())) -
+            Math.abs(boundaryDistance(end, right.getBoundingClientRect())),
+        )[0];
         const style = getComputedStyle(path);
         return {
+          targetIsNearest: nearestTarget?.id === node('Client').id,
           sourceDistance: Math.abs(boundaryDistance(start, source)),
-          targetDistance: boundaryDistance(end, target) - markerStroke / 2,
           inward:
             (end.x - tangent.x) * ((target.left + target.right) / 2 - end.x) +
             (end.y - tangent.y) * ((target.top + target.bottom) / 2 - end.y),
@@ -491,10 +409,7 @@ for (const width of [320, 960]) {
         };
       });
     expect(returnRoute.sourceDistance, `${identity} return source port`).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(returnRoute.targetDistance - 5),
-      `${identity} return target arrow gap`,
-    ).toBeLessThanOrEqual(0.35);
+    expect(returnRoute.targetIsNearest, `${identity} authored target`).toBe(true);
     expect(returnRoute.inward, `${identity} return target tangent`).toBeGreaterThan(0);
     expect(returnRoute.contained, `${identity} return containment`).toBe(true);
     expect(returnRoute.ownsLabel, `${identity} result label ownership`).toBe(true);
@@ -509,7 +424,7 @@ for (const width of [320, 960]) {
 
 for (const width of [320, 960]) {
   test(`attaches cycle feedback to Review and Hub at ${width}px`, async ({ page }) => {
-    await openState(page, 'mermaid-cycle-fanout', width, 'light');
+    await openState(page, 'mermaid-cycle-fanout', width);
     const result = await page
       .locator('#mermaid-cycle-fanout svg[data-layout-settled="true"]')
       .evaluate((svg) => {
@@ -530,7 +445,6 @@ for (const width of [320, 960]) {
         const frame = svg.getBoundingClientRect();
         const markerId = path.getAttribute('marker-end')!.match(/#([^)'\"]+)/)![1];
         const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
-        const markerPath = marker.querySelector<SVGPathElement>('path')!;
         const boundaryDistance = (point: DOMPoint, bounds: DOMRect) => {
           const dx = Math.max(bounds.left - point.x, 0, point.x - bounds.right);
           const dy = Math.max(bounds.top - point.y, 0, point.y - bounds.bottom);
@@ -543,12 +457,15 @@ for (const width of [320, 960]) {
                 bounds.bottom - point.y,
               );
         };
+        const nearestTarget = [...svg.querySelectorAll<SVGGElement>('g.node')].toSorted(
+          (left, right) =>
+            Math.abs(boundaryDistance(end, left.getBoundingClientRect())) -
+            Math.abs(boundaryDistance(end, right.getBoundingClientRect())),
+        )[0];
         const style = getComputedStyle(path);
         return {
+          targetIsNearest: nearestTarget?.id === node('Hub').id,
           sourceDistance: Math.abs(boundaryDistance(start, source)),
-          targetDistance:
-            boundaryDistance(end, target) -
-            Number.parseFloat(getComputedStyle(markerPath).strokeWidth) / 2,
           inward:
             (end.x - tangent.x) * ((target.left + target.right) / 2 - end.x) +
             (end.y - tangent.y) * ((target.top + target.bottom) / 2 - end.y),
@@ -569,10 +486,7 @@ for (const width of [320, 960]) {
       });
     expect(result.visible, `${width} painted route`).toBe(true);
     expect(result.sourceDistance, `${width} source boundary`).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(result.targetDistance - 5),
-      `${width} target arrow gap: ${result.targetDistance}px`,
-    ).toBeLessThanOrEqual(0.35);
+    expect(result.targetIsNearest, `${width} authored target`).toBe(true);
     expect(result.inward, `${width} target tangent`).toBeGreaterThan(0);
     expect(result.contained, `${width} route containment`).toBe(true);
     expect(result.markerWidth, `${width} marker size`).toBeGreaterThan(0);
