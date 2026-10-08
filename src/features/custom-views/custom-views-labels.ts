@@ -7,11 +7,7 @@ import {
   faTerminal,
   faTableColumns,
 } from '@fortawesome/free-solid-svg-icons';
-import type {
-  CustomViewErrorCode,
-  CustomViewIcon,
-  CustomViewRuntime,
-} from '$shared/types/custom-views';
+import type { CustomViewErrorCode, CustomViewIcon } from '$shared/types/custom-views';
 
 export const customViewIconDefinitions = {
   globe: faGlobe,
@@ -30,14 +26,6 @@ export function customViewIconLabel(icon: CustomViewIcon): string {
     terminal: m.custom_views_icon_terminal,
     grid: m.custom_views_icon_grid,
   }[icon]();
-}
-export function customViewStatusLabel(status: CustomViewRuntime['status']): string {
-  return {
-    stopped: m.custom_views_stopped,
-    starting: m.custom_views_starting,
-    running: m.custom_views_running,
-    error: m.custom_views_failed,
-  }[status]();
 }
 export function customViewErrorMessage(code: CustomViewErrorCode): string {
   return {
