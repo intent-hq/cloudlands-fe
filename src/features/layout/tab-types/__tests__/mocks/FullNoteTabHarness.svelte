@@ -3,6 +3,7 @@
   import { NoteWindowView } from '$features/notes/virtualized/note-window-view';
   import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
   import { onDestroy, untrack } from 'svelte';
+  import { Toast, toast } from '$lib/components/ui/toast';
   import * as Menu from '$lib/components/ui/menu';
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -17,9 +18,11 @@
     installMockElectronBridge,
     type MockBackendMethodHandler,
   } from '../../../../../test/ct-mock-electron-bridge';
+  import type { NoteDeleteReceipt, NoteDeleteScheduleRequest } from '$lib/client/note-delete';
   import type { NotePageRequest } from '$lib/client/note-pages';
   import { fullNotePageFixture } from './full-note-page-fixture';
   import NoteTabType from '../../NoteTabType.svelte';
+  import NotesPanel from '$lib/components/workspace/sidebar/NotesPanel.svelte';
   let {
     initialContent = '# Complete note',
     paging = false,
@@ -27,6 +30,10 @@
     pageChunk = 1024,
     canonicalPadding = 0,
     nativeClipboard = false,
+    deleteUndo = false,
+    deleteMode = 'supported',
+    sidebarDelete = false,
+    nativeDelete = false,
   } = $props<{
     initialContent?: string;
     paging?: boolean;
@@ -34,6 +41,10 @@
     pageChunk?: number;
     canonicalPadding?: number;
     nativeClipboard?: boolean;
+    deleteUndo?: boolean;
+    sidebarDelete?: boolean;
+    nativeDelete?: boolean;
+    deleteMode?: 'supported' | 'unsupported' | 'lost-ack' | 'rejected';
   }>();
   let viewFailure = $state('');
   const originalShow = NoteWindowView.prototype.show;
@@ -56,6 +67,25 @@
   let source = $state(initialContent),
     rev = 4;
   let methods = $state<string[]>([]);
+  let deleted = $state(false);
+  let restored = $state<Record<string, unknown> | null>(null);
+  let deleteRequest = $state<unknown>(null);
+  let graceOperation = $state<NoteDeleteReceipt | null>(null);
+  let graceSubscriptions = $state<
+    { workspaceId: string; handle: string; subscriptionId: string }[]
+  >([]);
+  let graceUnsubscriptions = $state<string[]>([]);
+  let graceGenericSubscriptions = $state(0);
+  const activeGraceHandles = new Set<string>();
+  const graceEpoch = '22d5f71d-8a89-42da-b6c7-d4b27a3a1748';
+  const graceTick = () => Math.floor(performance.now());
+  let graceSequence = 0;
+  const graceSnapshot = () => ({
+    epoch: graceEpoch,
+    serverTickMs: graceTick(),
+    sequence: graceSequence,
+  });
+
   const record = (method: string) => untrack(() => methods.push(method));
   let reads = $state(0),
     writes = $state(0);
@@ -95,7 +125,11 @@
       return {
         server: {
           capabilities: paging
-            ? { notePagingRead: 1, notePagingBackendId: scope.backendId }
+            ? {
+                notePagingRead: 1,
+                notePagingBackendId: scope.backendId,
+                ...(deleteUndo && deleteMode !== 'unsupported' ? { noteDeleteGrace: 1 } : {}),
+              }
             : { notePaging: 1 },
         },
       };
@@ -158,6 +192,105 @@
       reads++;
       return { ...note, content: source, contentLength: source.length, rev };
     },
+    'note.deleteStatus': (params) => {
+      record('note.deleteStatus');
+      if (!deleteUndo || deleteMode === 'unsupported') throw new Error('Grace unavailable');
+      const p = params as { workspaceId: string; noteId?: string; operationKey?: unknown };
+      if (p.workspaceId !== workspaceId || (p.noteId && p.noteId !== noteId))
+        throw new Error('Status scope mismatch');
+      const operation = graceOperation;
+      const pending =
+        operation && operation.state === 'PENDING'
+          ? [
+              {
+                operationKey: operation.operationKey,
+                noteId,
+                noteInstanceId: 'i',
+                state: operation.state,
+                sequence: operation.sequence,
+                deadlineTickMs: operation.deadlineTickMs,
+                deleteAt: operation.deleteAt,
+                canCancel: true,
+              },
+            ]
+          : [];
+      return {
+        ...graceSnapshot(),
+        current:
+          p.noteId && !deleted
+            ? { noteInstanceId: 'i', revision: rev, sourceRevision: 'r' + rev }
+            : null,
+        pending,
+        operation: p.operationKey
+          ? (operation ?? { operationKey: p.operationKey, state: 'UNKNOWN', reason: 'unavailable' })
+          : null,
+      };
+    },
+    'note.deleteSchedule': (params) => {
+      record('note.deleteSchedule');
+      if (!deleteUndo || deleteMode === 'unsupported') throw new Error('Grace unavailable');
+      const p = params as NoteDeleteScheduleRequest;
+      if (
+        p.workspaceId !== workspaceId ||
+        p.noteId !== noteId ||
+        p.expectedVersion !== rev ||
+        p.sourceRevision !== 'r' + rev ||
+        p.noteInstanceId !== 'i' ||
+        p.operationKey.epoch !== graceEpoch
+      )
+        throw new Error('Schedule identity/revision mismatch');
+      if (deleteMode === 'rejected') throw new Error('Controlled schedule rejection');
+      deleteRequest = p;
+      graceOperation = {
+        operationKey: p.operationKey,
+        workspaceId,
+        noteId,
+        noteInstanceId: 'i',
+        state: 'PENDING',
+        sequence: ++graceSequence,
+        deadlineTickMs: graceTick() + 15000,
+        deleteAt: new Date(Date.now() + 15000).toISOString(),
+        expiresTickMs: null,
+        reason: null,
+      };
+      if (deleteMode === 'lost-ack') throw new Error('Controlled lost schedule acknowledgement');
+      return { ...graceSnapshot(), operation: graceOperation };
+    },
+    'note.deleteCancel': (params) => {
+      record('note.deleteCancel');
+      const p = params as { workspaceId: string; noteId: string; operationKey: unknown };
+      if (
+        !graceOperation ||
+        graceOperation.state !== 'PENDING' ||
+        p.workspaceId !== workspaceId ||
+        p.noteId !== noteId ||
+        JSON.stringify(p.operationKey) !== JSON.stringify(graceOperation.operationKey)
+      )
+        throw new Error('Cancel identity mismatch');
+      graceOperation = {
+        ...graceOperation,
+        state: 'CANCELLED',
+        sequence: ++graceSequence,
+        expiresTickMs: graceTick() + 300000,
+        reason: 'cancelled',
+      };
+      return { ...graceSnapshot(), operation: graceOperation };
+    },
+    'note.delete': () => {
+      record('note.delete');
+      throw new Error('Immediate deletion is forbidden in this fixture');
+    },
+    'note.create': () => {
+      record('note.create');
+      throw new Error('Recreation is forbidden in this fixture');
+    },
+    'note.list': () => ({
+      notes: restored
+        ? [{ ...note, ...restored, id: 'restored-note', contentLength: undefined }]
+        : deleted
+          ? []
+          : [note],
+    }),
     'note.update': (params) => {
       record('note.update');
       const p = params as { expectedVersion: number; content: string };
@@ -180,12 +313,16 @@
   );
   const api = window.electronAPI!;
   const previousVersions = api.versions;
-  // Only clipboard-positive fixtures model a native-capable preload. Publication
-  // remains scripted IPC recording, never an operating-system clipboard claim.
+  // Explicit clipboard/Delete fixtures model a native-capable preload. These
+  // remain scripted IPC controls, never operating-system acceptance.
   const clipboardVersions = { ...previousVersions, electron: '42.0.0-clipboard-fixture' };
-  if (nativeClipboard) api.versions = clipboardVersions;
+  const operationVersions =
+    deleteUndo && nativeDelete
+      ? { ...previousVersions, electron: '42.0.0-note-delete-fixture' }
+      : clipboardVersions;
+  if (nativeClipboard || (deleteUndo && nativeDelete)) api.versions = operationVersions;
   onDestroy(() => {
-    if (window.electronAPI === api && api.versions === clipboardVersions)
+    if (window.electronAPI === api && api.versions === operationVersions)
       api.versions = previousVersions;
   });
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Test-only synchronous mock notification registration.
@@ -215,6 +352,46 @@
       sequence: number;
       utf8Bytes: number;
     };
+    if (deleteUndo && channel === IPC_CHANNELS.BACKEND.NODE_CAPABILITIES) {
+      if (payload !== undefined) throw new Error('Capability observation takes no request body');
+      record('backend.nodeCapabilities');
+      return {
+        ok: true,
+        result: {
+          server: { capabilities: deleteMode === 'unsupported' ? {} : { noteDeleteGrace: 1 } },
+        },
+      };
+    }
+    if (deleteUndo && channel === IPC_CHANNELS.BACKEND.NOTE_DELETE_SUBSCRIPTION.SUBSCRIBE) {
+      if (payload !== workspaceId) throw new Error('Delete subscription workspace mismatch');
+      return untrack(() => {
+        const index = graceSubscriptions.length + 1;
+        const binding = {
+          workspaceId,
+          handle: `grace-handle-${index}`,
+          subscriptionId: `grace-sub-${index}`,
+        };
+        activeGraceHandles.add(binding.handle);
+        graceSubscriptions.push(binding);
+        return {
+          ok: true,
+          result: { handle: binding.handle, subscriptionId: binding.subscriptionId },
+        };
+      });
+    }
+    if (deleteUndo && channel === IPC_CHANNELS.BACKEND.NOTE_DELETE_SUBSCRIPTION.UNSUBSCRIBE) {
+      if (typeof payload !== 'string' || !activeGraceHandles.delete(payload))
+        throw new Error('Delete cleanup requires its exact active opaque handle');
+      untrack(() => graceUnsubscriptions.push(payload));
+      return { ok: true, result: undefined };
+    }
+    if (
+      deleteUndo &&
+      (channel === IPC_CHANNELS.BACKEND.SUBSCRIBE || channel === IPC_CHANNELS.BACKEND.UNSUBSCRIBE)
+    ) {
+      untrack(() => graceGenericSubscriptions++);
+      throw new Error('Delete subscription cannot use generic IPC fallback');
+    }
     const c = IPC_CHANNELS.SYSTEM;
     if (channel === c.SOURCE_CLIPBOARD_BEGIN) {
       clipboardSource = '';
@@ -272,7 +449,15 @@
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: [note] }));
   const header = createPanelHeaderContext();
   onDestroy(dispose);
+  onDestroy(() => {
+    if (deleteUndo) toast.dismiss();
+  });
 </script>
+
+{#if deleteUndo}<Toast /><button onclick={dispose}>Stop note fixture lifecycle</button>{/if}
+{#if sidebarDelete}<div data-testid="delete-sidebar">
+    <NotesPanel {workspaceId} notes={[note]} />
+  </div>{/if}
 
 <div class="h-[600px] flex flex-col" data-testid="note-pane">
   <button
@@ -287,7 +472,7 @@
   >
   <Menu.Root
     ><Menu.Trigger>Commands</Menu.Trigger><Menu.Content
-      >{#if header.actions.current}{@render header.actions.current.actions?.()}{/if}</Menu.Content
+      >{#if header.actions.current}{@render header.actions.current.actions?.()}{#if deleteUndo}{@render header.actions.current.destructive?.()}{/if}{/if}</Menu.Content
     ></Menu.Root
   >
   <NoteTabType
@@ -296,9 +481,17 @@
     isActive
     isPanelFocused
   />
-  <output data-testid="wire"
+  <output hidden data-testid="wire"
     >{JSON.stringify({
       methods,
+      deleted,
+      deleteRequest,
+      graceOperation,
+      graceSubscriptions,
+      graceUnsubscriptions,
+      graceGenericSubscriptions,
+      original: { ...note, content: source, rev },
+      restored,
       viewFailure,
       pageError: $pageSession?.error,
       generation: $pageSession?.generation,

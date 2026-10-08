@@ -1,3 +1,4 @@
+import type { NoteDeleteView, NoteDeleteRecoveryDraft } from './note-delete-state';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Note, NoteVersion } from '$shared/types';
 
@@ -43,6 +44,12 @@ export type RetainedNoteDraft = {
 };
 
 export type WorkspaceNotesState = {
+  deleteObservationErrors?: Record<string, string>;
+  deleteObservationPaused?: Record<string, number>;
+  deleteObservationChecking?: Record<string, number>;
+  deleteOperations?: Record<string, NoteDeleteView>;
+  deleteRecoveryReservations?: Record<string, true>;
+  deleteRecoveryDrafts?: Record<string, NoteDeleteRecoveryDraft>;
   retainedDrafts: Record<string, RetainedNoteDraft>;
   byWorkspaceId: Record<string, WorkspaceNotesWorkspaceState>;
 };

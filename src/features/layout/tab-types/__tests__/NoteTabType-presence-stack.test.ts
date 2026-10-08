@@ -101,7 +101,13 @@ vi.mock('$lib/utils/client-logger', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mockState.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({
+      workspaceNotes: { byWorkspaceId: {}, retainedDrafts: {} },
+      daemonHealth: { connectionGeneration: 1 },
+    }),
+    dispatch: mockState.dispatch,
+  });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,

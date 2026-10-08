@@ -1,3 +1,11 @@
+import type {
+  NoteDeleteView,
+  NoteDeleteRecoveryDraft,
+  NoteDeleteDraftOwner,
+} from './note-delete-state';
+
+import { noteDeleteDraftKey } from './note-delete-state';
+import { noteDeleteKey } from './note-delete-state';
 import type { Note, NoteVersion, TaskStatus } from '$shared/types';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
@@ -55,6 +63,69 @@ export const initialState: WorkspaceNotesState = {
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceNotesState);
+
+export const noteDeleteViewChanged = createAction<[view: NoteDeleteView]>(
+  'workspaceNotes/noteDeleteViewChanged',
+);
+
+export const noteDeleteRecoveryRetained = createAction<[draft: NoteDeleteRecoveryDraft]>(
+  'workspaceNotes/noteDeleteRecoveryRetained',
+);
+
+export const scheduleNoteDeleteRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  NoteDeleteView
+>('workspaceNotes/scheduleNoteDeleteRequested', 'workspaceNotes/scheduleNoteDeleteSettled');
+
+export const cancelNoteDeleteRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  NoteDeleteView
+>('workspaceNotes/cancelNoteDeleteRequested', 'workspaceNotes/cancelNoteDeleteSettled');
+
+export const checkNoteDeleteRequested = createAsyncAction<
+  [workspaceId: string, noteId: string],
+  NoteDeleteView | undefined
+>('workspaceNotes/checkNoteDeleteRequested', 'workspaceNotes/checkNoteDeleteSettled');
+
+export const noteDeleteWorkspaceObserved = createAction<[workspaceId: string, owner: string]>(
+  'workspaceNotes/noteDeleteWorkspaceObserved',
+);
+
+export const noteDeleteWorkspaceUnobserved = createAction<[workspaceId: string, owner: string]>(
+  'workspaceNotes/noteDeleteWorkspaceUnobserved',
+);
+
+export const noteDeleteRecoveryReserved = createAction<
+  [owner: NoteDeleteDraftOwner, reserved: boolean]
+>('workspaceNotes/noteDeleteRecoveryReserved');
+
+export const noteDeleteRecoveryDiscarded = createAction<[owner: NoteDeleteDraftOwner]>(
+  'workspaceNotes/noteDeleteRecoveryDiscarded',
+);
+
+export const noteDeleteInputObserved = createAction<[owner: NoteDeleteDraftOwner]>(
+  'workspaceNotes/noteDeleteInputObserved',
+);
+
+export const noteDeleteViewRetired = createAction<[view: NoteDeleteView]>(
+  'workspaceNotes/noteDeleteViewRetired',
+);
+
+export const noteDeleteObservationFailed = createAction<
+  [
+    workspaceId: string,
+    error: string | null,
+    admission?: { backendGeneration: number; paused: boolean },
+  ]
+>('workspaceNotes/noteDeleteObservationFailed');
+
+export const noteDeleteWorkspaceCheckRequested = createAction<[workspaceId: string]>(
+  'workspaceNotes/noteDeleteWorkspaceCheckRequested',
+);
+
+export const noteDeleteObservationCheckingChanged = createAction<
+  [workspaceId: string, backendGeneration: number, checking: boolean]
+>('workspaceNotes/noteDeleteObservationCheckingChanged');
 
 export const specTaskLinksReceived = createAction<
   [workspaceId: string, ids: string[] | null, generation?: number]
@@ -648,3 +719,70 @@ workspaceNotesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => (
     ]),
   ),
 }));
+
+// Deletion receipts and unresolved display authority outlive a mounted workspace.
+workspaceNotesReducer.with(noteDeleteViewChanged, (state, { payload: [view] }) => ({
+  ...state,
+  deleteOperations: {
+    ...state.deleteOperations,
+    [noteDeleteKey(view.backendGeneration, view.workspaceId, view.noteId)]: view,
+  },
+}));
+workspaceNotesReducer.with(noteDeleteRecoveryRetained, (state, { payload: [draft] }) => ({
+  ...state,
+  deleteRecoveryDrafts: {
+    ...state.deleteRecoveryDrafts,
+    [JSON.stringify([draft.backendGeneration, draft.workspaceId, draft.noteId, draft.ownerId])]:
+      draft,
+  },
+}));
+
+workspaceNotesReducer.with(noteDeleteRecoveryReserved, (state, { payload: [owner, reserved] }) => {
+  const reservations = { ...state.deleteRecoveryReservations };
+  const key = noteDeleteDraftKey(owner);
+  if (reserved) reservations[key] = true;
+  else delete reservations[key];
+  return { ...state, deleteRecoveryReservations: reservations };
+});
+workspaceNotesReducer.with(noteDeleteRecoveryDiscarded, (state, { payload: [owner] }) => {
+  const drafts = { ...state.deleteRecoveryDrafts };
+  delete drafts[noteDeleteDraftKey(owner)];
+  return { ...state, deleteRecoveryDrafts: drafts };
+});
+
+workspaceNotesReducer.with(noteDeleteViewRetired, (state, { payload: [view] }) => {
+  const key = noteDeleteKey(view.backendGeneration, view.workspaceId, view.noteId);
+  const current = state.deleteOperations?.[key];
+  if (current?.owner !== view.owner || current.held || current.hidden) return state;
+  const operations = { ...state.deleteOperations };
+  delete operations[key];
+  return { ...state, deleteOperations: operations };
+});
+
+workspaceNotesReducer.with(
+  noteDeleteObservationFailed,
+  (state, { payload: [workspaceId, error, admission] }) => {
+    const paused = { ...state.deleteObservationPaused };
+    if (admission) {
+      // A late old-connection response cannot undo a newer connection's pause.
+      if ((paused[workspaceId] ?? -1) > admission.backendGeneration) return state;
+      if (admission.paused) paused[workspaceId] = admission.backendGeneration;
+      else delete paused[workspaceId];
+    }
+    const errors = { ...state.deleteObservationErrors };
+    if (error) errors[workspaceId] = error;
+    else delete errors[workspaceId];
+    return { ...state, deleteObservationErrors: errors, deleteObservationPaused: paused };
+  },
+);
+
+workspaceNotesReducer.with(
+  noteDeleteObservationCheckingChanged,
+  (state, { payload: [workspaceId, backendGeneration, checking] }) => {
+    const pending = { ...state.deleteObservationChecking };
+    if ((pending[workspaceId] ?? -1) > backendGeneration) return state;
+    if (checking) pending[workspaceId] = backendGeneration;
+    else delete pending[workspaceId];
+    return { ...state, deleteObservationChecking: pending };
+  },
+);

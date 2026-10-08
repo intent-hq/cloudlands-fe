@@ -1,3 +1,5 @@
+import { getStrictBackendBindingForWebContents } from '../../../main/window-backend';
+import { registerNoteDeleteSubscriptionHandlers } from './note-delete-subscription';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
@@ -4255,6 +4257,30 @@ async function forgetConnectionLockedOriginal(
 export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
+
+  registerNoteDeleteSubscriptionHandlers(ipcMain, {
+    errorPayload: toErrorPayload,
+    capture: (event) => {
+      const binding = getStrictBackendBindingForWebContents(event.sender);
+      const { backendId, client } = getBackendClientForIpcEvent(event);
+      const connection = client.getRepositoryConnection();
+      if (
+        !binding ||
+        event.senderFrame !== binding.frame ||
+        binding.backendId !== backendId ||
+        !connection
+      )
+        throw new Error('Note deletion connection unavailable');
+      return {
+        incarnation: connection.incarnation,
+        principal: binding.frame,
+        isLive: () =>
+          getStrictBackendBindingForWebContents(event.sender) === binding &&
+          client.getRepositoryConnection() === connection,
+        request: (method, params) => client.requestOnCapturedConnection(connection, method, params),
+      };
+    },
+  });
 
   nativeReviewRoutes = registerNativeReviewHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),

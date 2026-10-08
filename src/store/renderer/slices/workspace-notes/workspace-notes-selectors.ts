@@ -89,3 +89,10 @@ export const selectRetainedNoteDraft = store.createSelector(
   (state, workspaceId: string, noteId: string) =>
     state.workspaceNotes.retainedDrafts?.[JSON.stringify([workspaceId, noteId])],
 );
+
+export const selectNoteDeleteView = store.createSelector(
+  (state, workspaceId: string, noteId: string) =>
+    state.workspaceNotes.deleteOperations?.[
+      JSON.stringify([state.daemonHealth?.connectionGeneration ?? 0, workspaceId, noteId])
+    ],
+);

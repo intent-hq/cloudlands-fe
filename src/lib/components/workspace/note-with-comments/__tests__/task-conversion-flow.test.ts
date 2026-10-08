@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note } from '$shared/types';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -16,6 +16,27 @@ import {
   restoreNoteVersion,
   settleNoteContentRequested,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+
+import { prepareNoteDeleteEditors } from '$features/notes/note-delete-editors';
+const deleteGate = vi.hoisted(() => ({
+  held: false,
+  listeners: new Set<(held: boolean) => void>(),
+  retain: vi.fn((_draft: unknown) => true),
+  input: vi.fn(),
+  release: vi.fn(),
+  reserve: vi.fn<() => (() => void) | undefined>(),
+}));
+vi.mock('$features/notes/note-delete-gate', () => ({
+  isNoteDeleteHeld: () => deleteGate.held,
+  subscribeNoteDeleteHold: (_ws: string, _note: string, listener: (held: boolean) => void) => {
+    listener(deleteGate.held);
+    deleteGate.listeners.add(listener);
+    return () => deleteGate.listeners.delete(listener);
+  },
+  retainNoteDeleteDraft: deleteGate.retain,
+  reserveNoteDeleteDraft: deleteGate.reserve,
+  notifyNoteDeleteInput: deleteGate.input,
+}));
 
 const {
   mockDispatch,
@@ -675,6 +696,9 @@ async function startPersistenceOwner(options: { versions?: boolean } = {}) {
 describe('NoteWithComments task conversion regression', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    deleteGate.held = false;
+    deleteGate.reserve.mockReset().mockImplementation(() => deleteGate.release);
+    deleteGate.listeners.clear();
     mockUpdateNoteContent.mockReset();
     mockHasPendingNoteContent.mockReset().mockReturnValue(false);
     mockFlushNoteContent.mockReset().mockResolvedValue(undefined);
@@ -742,6 +766,171 @@ describe('NoteWithComments task conversion regression', () => {
     await Promise.resolve();
     await tick();
   }
+
+  async function readyDeleteEditor() {
+    if (!getNoteById('baseline'))
+      replaceNotes([createNote('baseline', 'Baseline', 'Baseline content', { rev: 4 })]);
+    selectCurrentNote('baseline');
+    const view = await renderInitializedNote();
+    await waitFor(() => expect(view.container.querySelector('[aria-busy="false"]')).toBeTruthy());
+    const ownedEditor = () =>
+      editorInstances.find(
+        (editor) =>
+          !editor.isDestroyed && editor.view.dom === view.container.querySelector('.ProseMirror'),
+      );
+    await waitFor(() => expect(ownedEditor()).toBeDefined());
+    return { view, editor: ownedEditor()! };
+  }
+  const deleteScope = { backendGeneration: 0, workspaceId: WORKSPACE_ID, noteId: 'baseline' };
+
+  it('keeps rich editing read-only until a recovery reservation is admitted', async () => {
+    deleteGate.reserve.mockReturnValueOnce(undefined);
+    const { view, editor } = await readyDeleteEditor();
+    expect(editor.isEditable).toBe(false);
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    await fireEvent.click(view.getByRole('alert').querySelector('button')!);
+    await tick();
+    expect(editor.isEditable).toBe(true);
+  });
+
+  it('keeps rich editing frozen after Done settles during deletion preparation', async () => {
+    const { view, editor } = await readyDeleteEditor();
+    let acknowledge!: () => void;
+    mockSettleNoteContent.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const done = view.component.finishEditing();
+    await tick();
+    await waitFor(() => expect(mockSettleNoteContent).toHaveBeenCalled());
+    const preparing = prepareNoteDeleteEditors(deleteScope);
+    acknowledge();
+    await done;
+    const lease = await preparing;
+    try {
+      await tick();
+      expect(editor.isEditable).toBe(false);
+      expect(lease.current()).toBe(true);
+    } finally {
+      lease.release();
+    }
+    await tick();
+    expect(editor.isEditable).toBe(true);
+  });
+
+  it('flushes actual rich source and waits for acknowledgement before authorizing deletion', async () => {
+    const { editor } = await readyDeleteEditor();
+    editor.commands.insertContent('local draft ');
+    let acknowledge!: () => void;
+    mockSettleNoteContent.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    let prepared = false;
+    const preparing = prepareNoteDeleteEditors(deleteScope).then(
+      (lease) => {
+        prepared = true;
+        return { lease };
+      },
+      (error: unknown) => ({ error }),
+    );
+    try {
+      await waitFor(() => expect(mockSettleNoteContent).toHaveBeenCalled());
+      expect(prepared).toBe(false);
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'baseline',
+        expect.stringContaining('local draft'),
+        expect.objectContaining({ immediate: true, strict: true, baseContent: 'Baseline content' }),
+      );
+      acknowledge();
+      const result = await preparing;
+      if ('error' in result) throw result.error;
+      expect(result.lease.current()).toBe(true);
+    } finally {
+      acknowledge?.();
+      const result = await preparing;
+      if ('lease' in result) result.lease.release();
+    }
+  });
+
+  it('rejects a failed rich acknowledgement and keeps the editor draft available', async () => {
+    const { editor } = await readyDeleteEditor();
+    editor.commands.insertContent('conflicted draft ');
+    mockSettleNoteContent.mockRejectedValueOnce(new Error('strict-base conflict'));
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow('strict-base conflict');
+    await tick();
+    expect(editor.getText()).toContain('conflicted draft');
+    expect(editor.isEditable).toBe(true);
+  });
+
+  it('refuses deletion preparation when the canonical note disappears and preserves the rich draft', async () => {
+    const { editor } = await readyDeleteEditor();
+    editor.commands.insertContent('keep missing-note draft ');
+    replaceNotes([]);
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow(
+      'The note is no longer available',
+    );
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    expect(mockSettleNoteContent).not.toHaveBeenCalled();
+    expect(editor.getText()).toContain('keep missing-note draft');
+  });
+
+  it('rejects two dirty rich views before either competing draft is flushed', async () => {
+    const first = await readyDeleteEditor();
+    const second = await readyDeleteEditor();
+    expect(first.editor).not.toBe(second.editor);
+    expect(first.editor.isDestroyed).toBe(false);
+    expect(second.editor.isDestroyed).toBe(false);
+    first.editor.commands.insertContent('first local draft ');
+    second.editor.commands.insertContent('second local draft ');
+    expect(first.editor.view.dom).toBe(first.view.container.querySelector('.ProseMirror'));
+    expect(second.editor.view.dom).toBe(second.view.container.querySelector('.ProseMirror'));
+    expect(first.editor.getText()).toContain('first local draft');
+    expect(second.editor.getText()).toContain('second local draft');
+    expect(first.editor.getText()).not.toBe(second.editor.getText());
+    const preparing = prepareNoteDeleteEditors(deleteScope);
+    try {
+      await expect(preparing).rejects.toThrow('Save or close competing note drafts');
+    } finally {
+      await preparing.then(
+        (lease) => lease.release(),
+        () => {},
+      );
+    }
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    expect(first.editor.getText()).toContain('first local draft');
+    expect(second.editor.getText()).toContain('second local draft');
+  });
+
+  it('retains the rich draft without a teardown save when remote deletion holds the note', async () => {
+    const { view, editor } = await readyDeleteEditor();
+    editor.commands.insertContent('recover me ');
+    deleteGate.held = true;
+    deleteGate.listeners.forEach((listener) => listener(true));
+    view.unmount();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    expect(deleteGate.retain).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...deleteScope,
+        content: expect.stringContaining('recover me'),
+        baseContent: 'Baseline content',
+        ownerId: expect.any(String),
+      }),
+    );
+  });
+
+  it('rejects rich IME composition before any deletion flush', async () => {
+    const { view } = await readyDeleteEditor();
+    await fireEvent.compositionStart(view.container.querySelector('.ProseMirror')!);
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+  });
 
   it('keeps the newest note when conversions complete in reverse order', async () => {
     const view = await renderInitializedNote();

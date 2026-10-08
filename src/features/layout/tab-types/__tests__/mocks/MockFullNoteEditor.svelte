@@ -2,6 +2,7 @@
   export const fullEditControl = {
     finish: async (): Promise<void> => {},
     mounts: [] as Array<boolean | undefined>,
+    instances: [] as Array<string | undefined>,
   };
 </script>
 
@@ -9,8 +10,9 @@
   import { onMount } from 'svelte';
   onMount(() => {
     fullEditControl.mounts.push(rawView);
+    fullEditControl.instances.push(noteInstanceId);
   });
-  let { rawView }: { rawView?: boolean } = $props();
+  let { rawView, noteInstanceId }: { rawView?: boolean; noteInstanceId?: string } = $props();
   export function finishEditing() {
     return fullEditControl.finish();
   }

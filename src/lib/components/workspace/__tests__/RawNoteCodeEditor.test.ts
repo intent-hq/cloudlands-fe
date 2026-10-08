@@ -27,6 +27,16 @@ const mockState = vi.hoisted(() => {
   };
 });
 
+vi.mock('$features/notes/note-delete-gate', () => ({
+  isNoteDeleteHeld: () => false,
+  subscribeNoteDeleteHold: (_ws: string, _note: string, listener: (held: boolean) => void) => {
+    listener(false);
+    return () => {};
+  },
+  retainNoteDeleteDraft: vi.fn(() => true),
+  reserveNoteDeleteDraft: vi.fn(() => () => {}),
+  notifyNoteDeleteInput: vi.fn(),
+}));
 vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
   default: (await import('$features/layout/tab-types/__tests__/mocks/MockCodeEditor.svelte'))
     .default,
@@ -41,10 +51,10 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectHasPendingNoteContent: { select: () => false },
   selectNoteById: { select: mockState.noteSelect },
 }));
 vi.mock('$features/notes/notes-write-service', () => ({
-  hasPendingNoteContent: vi.fn(() => false),
   subscribeNoteContentFailure: vi.fn(() => () => {}),
 }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({

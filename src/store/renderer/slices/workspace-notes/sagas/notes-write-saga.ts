@@ -41,6 +41,7 @@ import {
   selectNoteById,
   selectWorkspaceNotesState,
   selectRetainedNoteDraft,
+  selectNoteDeleteView,
 } from '../workspace-notes-selectors';
 import {
   addOptimisticNote,
@@ -693,6 +694,8 @@ function* handleContentAction(
 }
 
 function* retryContent(workspaceId: string, noteId: string) {
+  if ((yield* selectNoteDeleteView.effect(workspaceId, noteId))?.held)
+    throw new Error('Check note deletion status before retrying this draft.');
   const retained = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
   if (!retained?.error) return;
   const current = yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId);

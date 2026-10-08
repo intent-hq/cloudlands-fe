@@ -1,3 +1,4 @@
+import type { NoteDeleteSubscription } from '$shared/note-delete-subscription-ledger';
 import type { RepositoryResourceSession } from '$shared/types/repository-resource-read';
 import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
 import type { RepositorySelectionSession } from '$shared/types/repository-selection';
@@ -149,6 +150,8 @@ export interface BackendTransport {
     params?: unknown,
     options?: BackendRequestOptions,
   ): Promise<T>;
+  /** Grace-only subscription bound to its physical owner; absent means unavailable. */
+  subscribeNoteDeletion?(workspaceId: string): Promise<NoteDeleteSubscription>;
   /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */
   subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T>;
   /** Unsubscribe from daemon events (`events.unsubscribe`). Best-effort. */

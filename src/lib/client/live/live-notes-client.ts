@@ -1,5 +1,6 @@
 import { readNoteTaskLinks } from '../note-task-links';
 import { LiveNotePagesClient } from './live-note-pages-client';
+import { LiveNoteDeleteClient } from './live-note-delete-client';
 /**
  * Live notes domain backed by the intentd daemon.
  *
@@ -146,6 +147,7 @@ class LiveLineAttributionClient implements LineAttributionClient {
 }
 
 export class LiveNotesClient implements NotesClient {
+  readonly deletion = new LiveNoteDeleteClient();
   readonly pages = new LiveNotePagesClient();
 
   listTaskLinks(workspaceId: string, noteId: string): Promise<string[] | null> {

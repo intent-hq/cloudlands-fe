@@ -1,3 +1,4 @@
+import type { NoteDeleteSubscriptionAck } from '$shared/note-delete-subscription-ledger';
 import {
   NativeReviewInputSchema,
   NativeReviewPreparedViewSchema,
@@ -542,6 +543,43 @@ export function createElectronIpcBackendTransport(): BackendTransport {
       if (options?.localMachine) invokePayload.localMachine = true;
       const response = (await api.invoke(BACKEND.REQUEST, invokePayload)) as BackendResult<T>;
       return unwrap(response);
+    },
+
+    async subscribeNoteDeletion(workspaceId: string) {
+      const api = electronAPI();
+      if (!api)
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge unavailable' });
+      const ack = unwrap(
+        (await api.invoke(
+          BACKEND.NOTE_DELETE_SUBSCRIPTION.SUBSCRIBE,
+          workspaceId,
+        )) as BackendResult<NoteDeleteSubscriptionAck>,
+      );
+      if (
+        !ack ||
+        typeof ack.handle !== 'string' ||
+        !ack.handle ||
+        ack.handle.length > 128 ||
+        typeof ack.subscriptionId !== 'string' ||
+        !ack.subscriptionId ||
+        ack.subscriptionId.length > 256
+      )
+        throw new BackendError({
+          code: 'NOTE_DELETE_SUBSCRIPTION_INVALID',
+          message: 'Invalid bound note deletion subscription',
+        });
+      return {
+        subscriptionId: ack.subscriptionId,
+        unsubscribe: async () => {
+          // The captured bridge invokes a main-owned handle; window routing is not consulted.
+          unwrap(
+            (await api.invoke(
+              BACKEND.NOTE_DELETE_SUBSCRIPTION.UNSUBSCRIBE,
+              ack.handle,
+            )) as BackendResult<void>,
+          );
+        },
+      };
     },
 
     async subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T> {

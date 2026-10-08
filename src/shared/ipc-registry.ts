@@ -957,6 +957,10 @@ export const IPC_CHANNELS = {
       RELEASE: 'backend:repository-resource:release',
       RETIRED: 'backend:repository-resource:retired',
     },
+    NOTE_DELETE_SUBSCRIPTION: {
+      SUBSCRIBE: 'backend:note-delete-subscription:subscribe',
+      UNSUBSCRIBE: 'backend:note-delete-subscription:unsubscribe',
+    },
     NOTE_SAVE_CONNECTION: {
       CAPTURE: 'backend:note-save-connection:capture',
       REQUEST: 'backend:note-save-connection:request',

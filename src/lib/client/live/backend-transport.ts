@@ -252,3 +252,16 @@ export function captureBackendRepositoryCheckout(query: CheckoutCaptureQuery) {
     );
   return transport.captureRepositoryCheckout(query);
 }
+
+/** Capture once: cleanup authority remains with this exact subscription's transport owner. */
+export function subscribeBackendNoteDeletion(workspaceId: string) {
+  const transport = resolveBackendTransport();
+  if (!transport.subscribeNoteDeletion)
+    return Promise.reject(
+      new BackendError({
+        code: 'NOTE_DELETE_SUBSCRIPTION_UNAVAILABLE',
+        message: 'Bound note deletion subscription unavailable',
+      }),
+    );
+  return transport.subscribeNoteDeletion(workspaceId);
+}

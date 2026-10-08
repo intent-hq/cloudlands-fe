@@ -1,13 +1,25 @@
 <script lang="ts">
-  import {
-    subscribeNoteContentFailure,
-    hasPendingNoteContent,
-  } from '$features/notes/notes-write-service';
+  import { subscribeNoteContentFailure } from '$features/notes/notes-write-service';
   import { onDestroy } from 'svelte';
+  import {
+    isNoteDeleteHeld,
+    subscribeNoteDeleteHold,
+    retainNoteDeleteDraft,
+    reserveNoteDeleteDraft,
+    notifyNoteDeleteInput,
+  } from '$features/notes/note-delete-gate';
+  import { Button } from '$lib/components/ui/button';
+  import { m } from '$shared/paraglide/messages.js';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
-  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import {
+    selectNoteById,
+    selectHasPendingNoteContent,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    settleNoteContentRequested,
+    updateNoteContent,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { selectLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -25,6 +37,10 @@
     };
     editable?: boolean;
     isPanelFocused?: boolean;
+    onDeleteInput?: () => void;
+    deleteHeld?: boolean;
+    recoveryOwnerId?: string;
+    recoveryAdmitted?: boolean;
   }
 
   let {
@@ -35,6 +51,10 @@
     initialDraft,
     editable = true,
     isPanelFocused = false,
+    onDeleteInput,
+    deleteHeld = false,
+    recoveryOwnerId,
+    recoveryAdmitted = false,
   }: Props = $props();
 
   const lineWrapping = selectLineWrapping();
@@ -69,6 +89,122 @@
     return initialDraft?.rev ?? rev;
   }
 
+  // svelte-ignore state_referenced_locally -- inherited recovery owner is stable for the keyed raw editor lifetime
+  const ownerId = recoveryOwnerId ?? crypto.randomUUID();
+  const backendGeneration = appStore.state.daemonHealth?.connectionGeneration ?? 0;
+  const recoveryScope = {
+    backendGeneration,
+    workspaceId: getInitialWorkspaceId(),
+    noteId: getInitialNoteId(),
+    ownerId,
+  };
+  // svelte-ignore state_referenced_locally -- standalone editors own their reservation; nested raw inherits its rich owner slot
+  let releaseRecoveryReservation = recoveryOwnerId
+    ? undefined
+    : reserveNoteDeleteDraft(recoveryScope);
+  let locallyAdmitted = $state(!!releaseRecoveryReservation);
+  const hasRecoveryReservation = $derived(recoveryOwnerId ? recoveryAdmitted : locallyAdmitted);
+  const ownsRecoveryBinding = $derived(
+    workspaceId === recoveryScope.workspaceId && noteId === recoveryScope.noteId,
+  );
+  function retryRecoveryReservation(): void {
+    if (recoveryOwnerId || releaseRecoveryReservation) return;
+    releaseRecoveryReservation = reserveNoteDeleteDraft(recoveryScope);
+    locallyAdmitted = !!releaseRecoveryReservation;
+  }
+  let localDeletionHeld = $state(false);
+  let domainDeletionHeld = $state(false);
+  let backendRetired = $state(false);
+  let inputVersion = 0;
+  let composing = false;
+  let lastSubmittedDraft: PendingRawSave | null = null;
+  function deletionHeld(): boolean {
+    return (
+      !hasRecoveryReservation ||
+      deleteHeld ||
+      localDeletionHeld ||
+      domainDeletionHeld ||
+      (appStore.state.daemonHealth?.connectionGeneration ?? 0) !== backendGeneration ||
+      isNoteDeleteHeld(editorContentWorkspaceId, editorContentNoteId)
+    );
+  }
+  $effect(() =>
+    subscribeNoteDeleteHold(workspaceId, noteId, (held) => {
+      backendRetired =
+        (appStore.state.daemonHealth?.connectionGeneration ?? 0) !== backendGeneration;
+      domainDeletionHeld = held;
+      if (held && saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = null;
+      }
+    }),
+  );
+  export function setDeletionHeld(held: boolean): void {
+    localDeletionHeld = held;
+    if (held && saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+  }
+  export function getDeleteState() {
+    return {
+      ownerId,
+      version: `${ownerId}:${inputVersion}`,
+      dirty:
+        editorContent !== lastSavedContent ||
+        (!!lastSubmittedDraft &&
+          (saveFailed ||
+            selectHasPendingNoteContent.select(
+              appStore.state,
+              editorContentWorkspaceId,
+              editorContentNoteId,
+            ))),
+      composing,
+      current:
+        hasRecoveryReservation &&
+        ownsRecoveryBinding &&
+        editorContentWorkspaceId === workspaceId &&
+        editorContentNoteId === noteId &&
+        backendGeneration === (appStore.state.daemonHealth?.connectionGeneration ?? 0),
+    };
+  }
+  export function retainDeleteDraft(): void {
+    if (!hasRecoveryReservation) return;
+    const target =
+      pendingRawSave ??
+      (saveFailed ||
+      selectHasPendingNoteContent.select(
+        appStore.state,
+        editorContentWorkspaceId,
+        editorContentNoteId,
+      )
+        ? lastSubmittedDraft
+        : null) ??
+      createPendingRawSave();
+    if (target.content === target.lastSavedContent) return;
+    retainNoteDeleteDraft({
+      workspaceId: target.workspaceId,
+      noteId: target.noteId,
+      backendGeneration,
+      ownerId,
+      content: target.content,
+      baseContent: target.lastSavedContent,
+      rev: target.baseRev,
+    });
+  }
+
+  export async function flushForDeletion(): Promise<void> {
+    if (
+      !getDeleteState().current ||
+      composing ||
+      domainDeletionHeld ||
+      isNoteDeleteHeld(workspaceId, noteId)
+    )
+      throw new Error('The note editor is no longer available for deletion');
+    flushPendingSave(true);
+    await appStore.dispatch(settleNoteContentRequested(workspaceId, noteId));
+  }
+
   let saveFailed = $state(false);
   $effect(() =>
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous subscription to the sanctioned write-service queue; this does not fetch domain data.
@@ -97,7 +233,7 @@
   // baseline and revision until the normal full-save service accepts it.
   let initialDraftStaged = false;
   $effect(() => {
-    if (!initialDraft || initialDraftStaged || !editable) return;
+    if (!initialDraft || initialDraftStaged || !editable || deletionHeld()) return;
     initialDraftStaged = true;
     const pending = createPendingRawSave();
     pendingRawSave = pending;
@@ -111,9 +247,12 @@
   $effect(() => {
     const latestContent = currentContent;
     const latestRev = rev;
-    if (isUserEditing || saveFailed) return;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous write-queue status prevents remote echoes from replacing an unsaved draft.
-    if (hasPendingNoteContent(workspaceId, noteId) && latestContent !== editorContent) return;
+    if (isUserEditing || saveFailed || deletionHeld()) return;
+    if (
+      selectHasPendingNoteContent.select(appStore.state, workspaceId, noteId) &&
+      latestContent !== editorContent
+    )
+      return;
     if (
       editorContentWorkspaceId === workspaceId &&
       editorContentNoteId === noteId &&
@@ -125,9 +264,9 @@
     if (latestContent !== editorContent) {
       editorContent = latestContent;
       lastSavedContent = latestContent;
-      editorContentWorkspaceId = workspaceId;
-      editorContentNoteId = noteId;
     }
+    editorContentWorkspaceId = workspaceId;
+    editorContentNoteId = noteId;
     editorContentRev = latestRev;
   });
 
@@ -136,16 +275,29 @@
   }
 
   function setNoteContentFromEditor(nextContent: string): void {
-    if (!editable || nextContent === editorContent) return;
+    if (
+      !hasRecoveryReservation ||
+      (!ownsRecoveryBinding && !deletionHeld()) ||
+      nextContent === editorContent ||
+      (!editable && !deletionHeld())
+    )
+      return;
     editorContent = nextContent;
-    editorContentWorkspaceId = workspaceId;
-    editorContentNoteId = noteId;
-    if (!editable) return;
+    if (!deletionHeld()) {
+      editorContentWorkspaceId = workspaceId;
+      editorContentNoteId = noteId;
+    }
+    inputVersion++;
 
     isUserEditing = true;
     if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
     const pendingSave = createPendingRawSave(nextContent);
     pendingRawSave = pendingSave;
+    if (deletionHeld()) {
+      saveDebounceTimer = null;
+      notifyDeleteInput();
+      return;
+    }
     saveDebounceTimer = setTimeout(() => {
       saveDebounceTimer = null;
       saveRawContent(pendingSave);
@@ -154,22 +306,47 @@
     }, 1000);
   }
 
+  function notifyDeleteInput(): void {
+    if (onDeleteInput) onDeleteInput();
+    else if (deletionHeld())
+      notifyNoteDeleteInput({
+        workspaceId: editorContentWorkspaceId,
+        noteId: editorContentNoteId,
+        backendGeneration,
+        ownerId,
+      });
+  }
+
   function createPendingRawSave(nextContent = editorContent): PendingRawSave {
     return {
-      workspaceId,
-      noteId,
+      workspaceId: editorContentWorkspaceId,
+      noteId: editorContentNoteId,
       content: nextContent,
       lastSavedContent,
       baseRev: editorContentRev,
     };
   }
 
-  function saveRawContent(target = createPendingRawSave(), immediate = false): void {
-    if (pendingRawSave === target) pendingRawSave = null;
+  function saveRawContent(
+    target = createPendingRawSave(),
+    immediate = false,
+    preparingDelete = false,
+  ): void {
+    if (
+      (deletionHeld() && !preparingDelete) ||
+      isNoteDeleteHeld(target.workspaceId, target.noteId) ||
+      backendGeneration !== (appStore.state.daemonHealth?.connectionGeneration ?? 0)
+    )
+      return;
     if (!target.workspaceId || !target.noteId || target.content === target.lastSavedContent) return;
 
     const note = selectNoteById.select(appStore.state, target.workspaceId, target.noteId);
-    if (!note) return;
+    if (!note) {
+      if (preparingDelete) throw new Error('The note is no longer available');
+      return;
+    }
+    if (pendingRawSave === target) pendingRawSave = null;
+    lastSubmittedDraft = target;
 
     if (target.workspaceId === workspaceId && target.noteId === noteId) {
       lastSavedContent = target.content;
@@ -186,32 +363,65 @@
     );
   }
 
-  export function flushPendingSave(): void {
+  export function flushPendingSave(preparingDelete = false): void {
     if (saveDebounceTimer) {
       clearTimeout(saveDebounceTimer);
       saveDebounceTimer = null;
     }
     if (pendingRawSave) {
-      saveRawContent(pendingRawSave, true);
+      saveRawContent(pendingRawSave, true, preparingDelete);
       return;
     }
     if (editorContentWorkspaceId === workspaceId && editorContentNoteId === noteId) {
-      saveRawContent(createPendingRawSave(), true);
+      saveRawContent(createPendingRawSave(), true, preparingDelete);
     }
   }
 
   onDestroy(() => {
-    flushPendingSave();
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+    if (deletionHeld()) retainDeleteDraft();
+    else flushPendingSave();
+    releaseRecoveryReservation?.();
   });
+  function trackComposition(element: HTMLElement) {
+    const start = () => {
+      composing = true;
+      inputVersion++;
+      notifyDeleteInput();
+    };
+    const end = () => {
+      composing = false;
+    };
+    element.addEventListener('compositionstart', start);
+    element.addEventListener('compositionend', end);
+    return {
+      destroy() {
+        element.removeEventListener('compositionstart', start);
+        element.removeEventListener('compositionend', end);
+      },
+    };
+  }
 </script>
 
-<div class="flex-1 min-h-0 w-full" data-testid="raw-note-view">
+<div class="flex-1 min-h-0 w-full" data-testid="raw-note-view" use:trackComposition>
+  {#if !recoveryOwnerId && !hasRecoveryReservation}
+    <div role="alert" class="px-4 py-2 text-sm">
+      <p>{m.notes_delete_recoveryCapacity_error()}</p>
+      <Button size="sm" onclick={retryRecoveryReservation}>{m.ui_combobox_retry_label()}</Button>
+    </div>
+  {/if}
   <CodeEditor
     bind:value={getNoteContentForEditor, setNoteContentFromEditor}
     allowLargeContent={true}
     initialSelection={initialDraft?.selection}
     language="markdown"
-    readOnly={!editable}
+    readOnly={!editable ||
+      !hasRecoveryReservation ||
+      !ownsRecoveryBinding ||
+      deleteHeld ||
+      localDeletionHeld ||
+      domainDeletionHeld ||
+      backendRetired}
     fileName={noteFilePath}
     {workspaceId}
     filePath={noteFilePath}

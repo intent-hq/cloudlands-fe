@@ -17,7 +17,15 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import NoteDeleteStatus from '$features/notes/NoteDeleteStatus.svelte';
+  import {
+    captureNoteDeleteTab,
+    closeScheduledNoteTab,
+    noteDeleteUiTarget,
+    observeNoteDeletionWorkspace,
+    scheduleNoteDeleteFromUi,
+    selectNoteDeletion,
+  } from '$features/notes/note-delete-ui';
 
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
@@ -29,11 +37,7 @@
     selectNoteById,
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import {
-    createNotePersistRequested,
-    deleteNotePersistRequested,
-    ensureNoteContentLoadedRequested,
-  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { ensureNoteContentLoadedRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { beginFullNoteEdit } from '$features/notes/notes-read-service';
   import { isSpecNote } from '$shared/constants/notes';
   import { isNoteContentStale } from '$shared/utils/note-content';
@@ -50,7 +54,6 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -90,6 +93,7 @@
   let assistantRawView = $state(false);
   const editOwnerIdentity = $derived(JSON.stringify([layoutId, tab.id, workspaceId, tab.noteId]));
   let loadedEditIdentity = $state('');
+  let loadedEditNoteInstanceId = $state<string | undefined>();
 
   const scrollPositions = selectAllScrollPositions();
   const scrollPosition = $derived($scrollPositions[tab.id]);
@@ -104,6 +108,13 @@
   const workspace = selectWorkspaceById(noteViewWorkspaceIdStore);
   const workspacePresent = $derived(!!$workspace);
   const note = selectNoteById(noteViewWorkspaceIdStore, noteViewNoteIdStore);
+  const deletion = selectNoteDeletion(noteViewWorkspaceIdStore, noteViewNoteIdStore);
+  const deletionBusy = $derived($deletion?.held || $deletion?.phase === 'preparing');
+  const deletionObserver = `note-tab:${crypto.randomUUID()}`;
+  $effect(() => {
+    if (!workspacePresent || !workspaceId) return;
+    return observeNoteDeletionWorkspace(workspaceId, deletionObserver);
+  });
   // svelte-ignore state_referenced_locally
   const notesState = selectWorkspaceNotesState(noteViewWorkspaceIdStore);
   const noteViewModeStore = selectNoteViewMode(noteViewWorkspaceIdStore, noteViewNoteIdStore);
@@ -238,18 +249,25 @@
       editLease = undefined;
       editState = 'view';
       loadedEditIdentity = '';
+      loadedEditNoteInstanceId = undefined;
       pendingFinish = undefined;
       leavingEdit = false;
     };
   });
 
   async function startFullEdit() {
-    if (!noteEditable || !$workspace || !tab.noteId || editState === 'loading') return;
+    if (deletionBusy || !noteEditable || !$workspace || !tab.noteId || editState === 'loading')
+      return;
     editLease?.release();
     const ownerWorkspace = workspaceId,
       ownerNote = tab.noteId,
       ownerLayout = layoutId,
       ownerTab = tab.id;
+    const scope = $pageSession?.state?.scope;
+    const noteInstanceId =
+      scope?.workspaceId === ownerWorkspace && scope.noteId === ownerNote
+        ? scope.noteInstanceId
+        : undefined;
     const lease = beginFullNoteEdit(ownerWorkspace, ownerNote);
     editLease = lease;
     editState = 'loading';
@@ -270,6 +288,7 @@
       cancelFullEdit();
       return;
     }
+    loadedEditNoteInstanceId = loaded ? noteInstanceId : undefined;
     loadedEditIdentity = loaded ? identity : '';
     editState = loaded ? 'editing' : 'error';
     if (!loaded) {
@@ -282,6 +301,7 @@
     editLease = undefined;
     editState = 'view';
     loadedEditIdentity = '';
+    loadedEditNoteInstanceId = undefined;
   }
   let pendingFinish:
     | {
@@ -374,6 +394,7 @@
   // owner alive lets reconnect renegotiate an older daemon without a full reopen.
   $effect(() => {
     if (
+      $deletion?.held ||
       !selectedReadingSurface ||
       editState !== 'view' ||
       !workspacePresent ||
@@ -414,6 +435,7 @@
   $effect(() => {
     const noteId = tab.noteId;
     if (
+      $deletion?.held ||
       editState !== 'view' ||
       pagedSurface ||
       !isActive ||
@@ -508,6 +530,7 @@
         editState === 'view'),
   );
   const noteContentState = $derived.by<NoteContentState>(() => {
+    if ($deletion?.held) return 'read-only';
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
     if (awaitingEditSource) return 'loading';
@@ -561,59 +584,20 @@
   }
 
   async function handleDeleteNote() {
-    if (!tab.noteId || isNoteDeleting) return;
-    if (isSpecNote(tab.noteId)) {
-      const { notify } = await import('$lib/components/patterns/notify');
-      notify.error(m.layout_noteTab_cannotDeleteSpec_error());
-      return;
-    }
-    const noteIdToDelete = tab.noteId;
-
-    const savedNote = $note ? { ...$note } : null;
-    const noteTitle = $note?.title || m.layout_tabTypes_note_title();
+    if (!tab.noteId || isNoteDeleting || deletionBusy) return;
+    const ownerWorkspace = workspaceId;
+    const ownerNote = tab.noteId;
+    const captured = captureNoteDeleteTab(
+      layoutId ?? workspaceId,
+      tab.id,
+      ownerWorkspace,
+      ownerNote,
+    );
+    const title = $note?.title || m.layout_tabTypes_note_title();
     isNoteDeleting = true;
     try {
-      appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id));
-      void appStore.dispatch(deleteNotePersistRequested(workspaceId, noteIdToDelete));
-
-      // Show undo toast
-      const { notify } = await import('$lib/components/patterns/notify');
-      const toastId = notify.warning(
-        m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
-        withToastCountdown(
-          {
-            duration: 15000,
-            action: savedNote
-              ? {
-                  label: m.ui_workspaceActions_undo_label(),
-                  onClick: () => {
-                    try {
-                      void appStore.dispatch(
-                        createNotePersistRequested(savedNote.workspaceId, {
-                          title: savedNote.title,
-                          content: savedNote.content,
-                          contentType: savedNote.contentType,
-                          tags: savedNote.tags,
-                          parentId: savedNote.parentId,
-                          visibility: savedNote.visibility,
-                        }),
-                      );
-                      notify.dismiss(toastId);
-                    } catch (err) {
-                      logger.error('Failed to restore note', err);
-                      notify.error(m.layout_noteTab_restoreFailed_error());
-                    }
-                  },
-                }
-              : undefined,
-          },
-          { pauseOnHover: false },
-        ),
-      );
-    } catch (error) {
-      logger.error('Failed to delete note', error);
-      const { notify } = await import('$lib/components/patterns/notify');
-      notify.error(m.layout_noteTab_deleteFailed_error());
+      const result = await scheduleNoteDeleteFromUi(ownerWorkspace, ownerNote, title);
+      if (result) closeScheduledNoteTab(captured, result);
     } finally {
       isNoteDeleting = false;
     }
@@ -656,7 +640,7 @@
     <NoteViewSettingsDropdown
       {workspaceId}
       noteId={tab.noteId}
-      canEdit={!!$workspace && noteEditable}
+      canEdit={!!$workspace && noteEditable && !deletionBusy}
       embedded
     />
   {/if}
@@ -682,20 +666,29 @@
       icon={faTrash}
       label={m.layout_noteTab_deleteNote_tooltip()}
       onclick={handleDeleteNote}
-      disabled={isNoteDeleting}
+      disabled={isNoteDeleting || deletionBusy}
       destructive
     />
   {/if}
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col">
-  <div class="min-h-0 flex-1">
+  {#if $deletion}
+    {#key $deletion.owner}
+      <NoteDeleteStatus target={noteDeleteUiTarget($deletion)} />
+    {/key}
+  {/if}
+  <div
+    class="min-h-0 flex-1"
+    hidden={$deletion?.held && $deletion.phase !== 'preparing'}
+    inert={deletionBusy}
+  >
     <NoteContentSurface state={noteContentState}>
       {#if tab.noteId}
         {#if selectedReadingSurface && $workspace}
           <div class="flex items-center gap-2 p-2">
             {#if editState === 'view'}
-              <Button size="sm" onclick={startFullEdit} disabled={!noteEditable}
+              <Button size="sm" onclick={startFullEdit} disabled={!noteEditable || deletionBusy}
                 >{m.menu_edit()}</Button
               >
             {:else if editState === 'editing'}
@@ -739,6 +732,7 @@
           {#key workspaceId + ':' + tab.noteId}
             <NoteWithComments
               bind:this={fullEditor}
+              noteInstanceId={loadedEditNoteInstanceId}
               rawView={assistantLayout ? assistantRawView : undefined}
               workspace={$workspace}
               noteId={tab.noteId}
@@ -795,6 +789,10 @@
           />
         {:else if $workspace}
           <NoteWithComments
+            noteInstanceId={$pageSession?.state?.scope?.workspaceId === workspaceId &&
+            $pageSession.state.scope.noteId === tab.noteId
+              ? $pageSession.state.scope.noteInstanceId
+              : undefined}
             workspace={$workspace}
             noteId={tab.noteId}
             editable={noteEditable}

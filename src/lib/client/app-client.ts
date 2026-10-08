@@ -1,4 +1,5 @@
 import type { NotePagesClient } from './note-pages';
+import type { NoteDeleteClient } from './note-delete';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -1608,6 +1609,8 @@ export interface LineAttributionClient {
 }
 
 export interface NotesClient {
+  /** Optional daemon-owned deletion grace; unsupported clients must not fall back to immediate deletion. */
+  deletion?: NoteDeleteClient;
   /** Explicit opt-in; complete legacy Note methods remain separate. */
   pages?: NotePagesClient;
   listTaskLinks?(workspaceId: string, noteId: string): Promise<string[] | null>;
