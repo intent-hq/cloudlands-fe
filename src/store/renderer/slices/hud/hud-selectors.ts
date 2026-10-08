@@ -58,6 +58,16 @@ import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import { classifyTool } from '$lib/utils/tool-classifier';
 import { getLastMeaningfulLine } from '$lib/utils/text-utils';
 import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
+import {
+  deriveAgentHasPendingQuestion,
+  deriveMarkedQuestionRecoveryState,
+  deriveWizardPendingQuestions,
+} from '$lib/components/chat/questions/wizard-gate';
+import { selectWorkspaceTokenUsage } from '../token-usage/token-usage-selectors';
+import {
+  DASHBOARD_AGENT_DETAIL_LIMIT,
+  type DashboardWorkspaceDetails,
+} from '../dashboard-details/dashboard-details-types';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
 
@@ -137,8 +147,14 @@ export const selectHudQuestionsByAgentId = store.createSelector(
   (state) => state.hud?.questionsByAgentId ?? {},
 );
 
-/** Whether an agent has a captured, unanswered question. */
+/** Canonical pending question, with live HUD capture as the pre-marker fallback. */
 export const selectHudAgentHasPendingQuestion = store.createSelector((state, agentId: string) => {
+  const session = state.agentSessions?.byAgentId[agentId];
+  const canonical = deriveAgentHasPendingQuestion(state, agentId, session?.messages ?? []);
+  // A written marker (including the empty clear) is authoritative. HUD
+  // captures are only a fallback for sessions predating that field.
+  if (session?.metadata?.pendingQuestionsMessageId !== undefined) return canonical;
+  if (canonical) return true;
   const question = state.hud?.questionsByAgentId?.[agentId];
   if (!question) return false;
   const metadata = (state.agentSessions?.byAgentId[agentId]?.metadata ?? {}) as Record<
@@ -679,6 +695,10 @@ function cardAttentionSnippet(
   );
   for (const agent of gated) {
     if (!agent.hasQuestion) continue;
+    const session = state.agentSessions?.byAgentId[agent.id];
+    const pending = deriveWizardPendingQuestions(state, agent.id, session?.messages ?? []);
+    if (pending) return { kind: 'question', text: pending.questions[0].question };
+    if (session?.metadata?.pendingQuestionsMessageId !== undefined) continue;
     const question = state.hud.questionsByAgentId[agent.id];
     if (question?.question) return { kind: 'question', text: question.question };
   }
@@ -823,7 +843,6 @@ interface HudAgentBucketInfo {
  */
 function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBucketInfo {
   const session = state.agentSessions?.byAgentId[info.id];
-  const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
   const attentionKind = session ? (getAgentAttentionRequest(session)?.kind ?? null) : null;
   // Waiting check: the canonical selector (PascalCase `Waiting` status /
   // `isWaitingOnTool` / waiting-for-other-agents) plus the lowercase wire
@@ -909,9 +928,7 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
   // any non-failed base — including `running`, exactly like an outstanding
   // attention request does: the user still owes an answer while the agent
   // works on an unrelated message.
-  const question = state.hud.questionsByAgentId[info.id];
-  const hasQuestion =
-    base !== 'failed' && !!question && !isQuestionMessageDismissed(metadata, question.messageId);
+  const hasQuestion = base !== 'failed' && selectHudAgentHasPendingQuestion.select(state, info.id);
   const bucket =
     base === 'failed' ? 'failed' : attentionKind !== null || hasQuestion ? 'needs-attention' : base;
   return { bucket, attentionKind, hasQuestion, isRunning: base === 'running' };
@@ -1001,7 +1018,16 @@ function previewLineText(preview: AgentPreview | null): string | null {
  * one `agentBucketOf` evaluation per agent.
  */
 function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
-  const infos = agentInfosOf(workspace);
+  const infos = agentInfosOf(workspace).filter((info) => {
+    const session = state.agentSessions?.byAgentId[info.id];
+    return (
+      !session ||
+      ((!session.workspaceId || String(session.workspaceId) === String(workspace.id)) &&
+        session.status !== 'deleted' &&
+        !session.pendingDeleteAt &&
+        !session.retiredAt)
+    );
+  });
   const bucketById = new Map(infos.map((info) => [info.id, agentBucketOf(state, info)] as const));
   const tree = orderAgentTree(infos, siblingOrderComparator(bucketById));
   return tree.map(({ info, depth, parentAgentId }) => {
@@ -1016,7 +1042,10 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
       id: info.id,
       name: info.name,
       bucket,
-      lastActivityTs: info.lastActivity ?? null,
+      lastActivityTs:
+        typeof session?.lastActivity === 'string'
+          ? session.lastActivity
+          : (info.lastActivity ?? null),
       // Canonical preview chain (selectAgentPreview — same precedence as the
       // AgentCard footer) rendered to the HUD's plain-string line.
       line: previewLineText(selectAgentPreview.select(state, info.id)),
@@ -1145,6 +1174,68 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
     };
   });
 });
+
+/** Keyed dashboard projection; reading a card never starts the HUD runtime. */
+export const selectDashboardWorkspaceDetails = store.createSelector(
+  (state, workspaceId: string): DashboardWorkspaceDetails => {
+    const workspace = getItem(state.workspace.workspaces, workspaceId as WorkspaceId);
+    if (
+      !workspace ||
+      workspace.status === WorkspaceStatus.Archived ||
+      workspace.status === WorkspaceStatus.Deleted
+    ) {
+      return { agents: [], attentionSnippet: null, tokens: null };
+    }
+    const agents = cardAgentsOf(workspace, state);
+    const usage = selectWorkspaceTokenUsage.select(state, workspaceId);
+    return {
+      agents: keepLiveWithAncestors(agents),
+      // Home's workspace entity is kept fresh by the shared daemon-events
+      // bridge. HUD-only overrides can outlive its separate subscription.
+      attentionSnippet: cardAttentionSnippet(state, cardStateKey(workspace), agents),
+      tokens: usage.isStale ? null : sumHudUsageTotals(usage.totals),
+    };
+  },
+);
+
+/**
+ * Include idle roots in initial reads: their metadata may carry attention or
+ * completion watches omitted from the slim summary. Never load entire lazy bins.
+ */
+export const selectDashboardWorkspaceAgentIds = store.createSelector(
+  (state, workspaceId: string): string[] => {
+    const workspace = getItem(state.workspace.workspaces, workspaceId as WorkspaceId);
+    if (
+      !workspace ||
+      workspace.status === WorkspaceStatus.Archived ||
+      workspace.status === WorkspaceStatus.Deleted
+    )
+      return [];
+    return cardAgentsOf(workspace, state)
+      .slice(0, DASHBOARD_AGENT_DETAIL_LIMIT)
+      .map((agent) => agent.id);
+  },
+);
+
+/** Reuse the chat owner's one-row recovery for pending questions outside the loaded tail. */
+export const selectDashboardWorkspaceQuestionRecoveries = store.createSelector(
+  (state, workspaceId: string): Array<{ agentId: string; messageId: string }> => {
+    const details = selectDashboardWorkspaceDetails.select(state, workspaceId);
+    const ids = new Set(selectDashboardWorkspaceAgentIds.select(state, workspaceId));
+    return details.agents.flatMap((agent) => {
+      if (
+        !ids.has(agent.id) ||
+        !agent.topLevel ||
+        agent.isBackground ||
+        !agent.hasQuestion ||
+        isMutedAgent(state, agent.id)
+      )
+        return [];
+      const recovery = deriveMarkedQuestionRecoveryState(state, agent.id);
+      return recovery?.shouldRequest ? [{ agentId: agent.id, messageId: recovery.messageId }] : [];
+    });
+  },
+);
 
 const WORKSPACE_TAB_STATUS_VISIBLE_LIMIT = 4;
 
