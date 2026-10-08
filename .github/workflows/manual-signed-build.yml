@@ -1194,7 +1194,7 @@ jobs:
         with:
           node-version: '22'
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: manual-macos-dmg-${{ matrix.arch }}
           path: isolated-package
