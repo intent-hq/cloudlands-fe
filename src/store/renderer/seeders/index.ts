@@ -28,6 +28,7 @@ import './settings-legacy-bridge-seeder';
 import './misc-ui-events-seeder';
 import './panel-layout-bridge-seeder';
 import './auto-update-bridge-seeder';
+import './custom-views-bridge-seeder';
 import './release-notes-bridge-seeder';
 import './window-state-bridge-seeder';
 import './power-bridge-seeder';
