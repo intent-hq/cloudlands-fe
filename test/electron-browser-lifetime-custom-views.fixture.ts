@@ -138,7 +138,7 @@ test.describe('custom homepage views in Electron', () => {
       childEntry,
       [
         `import { createCustomViewTheme } from ${JSON.stringify(resolve('src/shared/custom-view-sdk/index.ts'))};`,
-        `const theme = createCustomViewTheme({ parentOrigin: ${JSON.stringify(new URL(url).origin)} });`,
+        'const theme = createCustomViewTheme();',
         'Object.assign(window, { customViewTheme: theme, customViewDocumentId: crypto.randomUUID() });',
         'theme.subscribe((snapshot) => { document.getElementById("theme-json").textContent = JSON.stringify(snapshot); });',
         'window.addEventListener("pagehide", () => theme.dispose());',
@@ -170,7 +170,7 @@ test.describe('custom homepage views in Electron', () => {
         "const http = require('node:http');",
         "const fs = require('node:fs');",
         "const child = fs.readFileSync(require('node:path').join(__dirname, 'child.js'));",
-        "http.createServer((req, res) => { res.setHeader('Cache-Control', 'no-store'); if (req.url === '/child.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(child); return; } res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><h1>Custom view is running</h1><label>Draft <input id=\"draft\"></label><pre id=\"theme-json\"></pre><script src=\"/child.js\"></script>'); }).listen(Number(process.env.PORT), process.env.HOST);",
+        "http.createServer((req, res) => { res.setHeader('Cache-Control', 'no-store'); if (req.url === '/child.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(child); return; } res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><style>body{background:hsl(var(--background));color:hsl(var(--foreground));font-family:system-ui;padding:1rem}input{background:hsl(var(--card));color:inherit;border:2px solid hsl(var(--primary));border-radius:var(--radius-medium);padding:.5rem}pre{white-space:pre-wrap;overflow:auto;max-height:360px}</style><h1>Custom view is running</h1><label>Draft <input id=\"draft\"></label><pre id=\"theme-json\"></pre><script src=\"/child.js\"></script>'); }).listen(Number(process.env.PORT), process.env.HOST);",
       ].join('\n'),
     );
     const env = Object.fromEntries(
@@ -202,6 +202,7 @@ test.describe('custom homepage views in Electron', () => {
         () => !!window.customViewNativeInvoke || !!window.customViewNativeError,
       );
       expect(await page.evaluate(() => window.customViewNativeError)).toBeUndefined();
+      expect(page.url()).toBe('app://workspaces/');
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       const invoke = (channel: string, payload?: unknown) =>
         page.evaluate(
@@ -233,6 +234,8 @@ test.describe('custom homepage views in Electron', () => {
         document.documentElement.style.setProperty('--custom-view-private-check', 'private');
         const frame = document.createElement('iframe');
         frame.title = 'Native custom view';
+        frame.style.width = '100%';
+        frame.style.height = '600px';
         frame.sandbox.add('allow-scripts', 'allow-forms', 'allow-same-origin');
         frame.src = src;
         document.getElementById('view')!.append(frame);
@@ -346,6 +349,10 @@ test.describe('custom homepage views in Electron', () => {
       await expectTheme('dark', false);
       expect(await child.evaluate(() => window.customViewDocumentId)).toBe(initialDocument);
       await expect(frame.getByLabel('Draft')).toHaveValue('Keep this draft during theme changes');
+      await testInfo.attach('custom-view-custom-theme-in-electron', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
 
       const readyBeforeReload = await page.evaluate(() => window.customViewReadyCount);
       await child.evaluate(() => window.location.reload());
