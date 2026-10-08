@@ -7504,6 +7504,8 @@
   "notes_delete_changed_error": "This deletion is no longer current. Check the note’s status.",
   "notes_delete_requestFailed_error": "Could not confirm deletion. Check the note’s status.",
   "notes_delete_checkFailed_error": "Could not confirm the note’s status. Try again.",
+  "notes_editor_missingIdentity_label": "This editor is no longer linked to a note. Reopen the note to continue.",
+  "notes_editor_anonymousDraft_label": "Unsaved edits are still shown. Export or discard them before opening the requested note.",
   "notes_delete_recoveryCapacity_error": "This editor is read-only because recovery storage is full. Save or discard a recovered draft, then retry.",
   "notes_delete_workspaceCheckFailed_error": "Could not verify note deletion status for this workspace. Check status to try again.",
   "notes_delete_recovery_label": "Recovered drafts",

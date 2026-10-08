@@ -1,3 +1,8 @@
+import {
+  captureNotePublicationOwner,
+  isNotePublicationOwnerCurrent,
+  isNotePublicationLifetimeCurrent,
+} from './note-publication-owner';
 import { buffers } from 'redux-saga';
 import { ownedActionChannel } from '$store/renderer/utils/owned-action-channel';
 import {
@@ -41,6 +46,7 @@ import {
   ensureNoteContentLoadedRequested,
   loadNoteCommentsRequested,
   loadWorkspaceNotesFailed,
+  setWorkspaceNotesLoading,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
   readNoteRequested,
@@ -87,6 +93,7 @@ function isDeletedNote(action: ObservedAction, workspaceId: string, noteId: stri
 function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
   if (current.loading || (!force && current.initialized)) return;
+  const publicationOwner = yield* captureNotePublicationOwner(workspaceId);
   try {
     const fetchSlimListAndLinks = async (id: string) => {
       const [rows, links] = await Promise.all([
@@ -103,6 +110,11 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
     };
     const { rows, links } = yield* call(fetchSlimListAndLinks, workspaceId);
     const latest = yield* selectWorkspaceNotesState.effect(workspaceId);
+    if (!(yield* isNotePublicationOwnerCurrent(publicationOwner))) {
+      if (yield* isNotePublicationLifetimeCurrent(publicationOwner))
+        yield* put(setWorkspaceNotesLoading([workspaceId], false));
+      return;
+    }
     const summaryCurrent = latest.specTaskLinksGeneration === current.specTaskLinksGeneration;
     const acceptedRows = summaryCurrent
       ? rows
@@ -114,10 +126,19 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
     const notes = acceptedRows.map(toRuntimeNote);
     if (links !== null || current.specTaskLinks !== null)
       yield* put(specTaskLinksReceived(workspaceId, links, current.specTaskLinksGeneration));
-    yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    yield* put(
+      loadWorkspaceNotesSucceeded(
+        [workspaceId],
+        { [workspaceId]: notes },
+        ...(current.deleteReadAuthority
+          ? ([{ [workspaceId]: current.deleteReadAuthority }] as const)
+          : ([] as const)),
+      ),
+    );
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);
     if (spec) yield* put(selectNote(workspaceId, String(spec.id)));
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(publicationOwner))) return;
     logger.error('Failed to hydrate workspace notes', error);
     yield* put(
       loadWorkspaceNotesFailed(
@@ -195,6 +216,8 @@ function isReleasedEdit(
 function* loadFullNoteEditWorker(action: ReturnType<typeof loadFullNoteEditRequested>) {
   const [workspaceId, noteId, leaseId] = action.payload;
   const current = () => isFullNoteEditLeaseCurrent(workspaceId, noteId, leaseId);
+  const publicationOwner = yield* captureNotePublicationOwner(workspaceId);
+  const readAuthority = publicationOwner.readAuthority;
   const ended = yield* ownedActionChannel(
     [
       backendReconnected.type,
@@ -234,6 +257,7 @@ function* loadFullNoteEditWorker(action: ReturnType<typeof loadFullNoteEditReque
     const pending = yield* selectHasPendingNoteContent.effect(workspaceId, noteId);
     if (
       cleanup ||
+      !(yield* isNotePublicationOwnerCurrent(publicationOwner)) ||
       !current() ||
       !found ||
       String(found.id) !== noteId ||
@@ -249,7 +273,14 @@ function* loadFullNoteEditWorker(action: ReturnType<typeof loadFullNoteEditReque
       yield* put(action.success(false));
       return;
     }
-    yield* put(applyNoteUpdated(workspaceId, noteId, toRuntimeNote(found)));
+    yield* put(
+      applyNoteUpdated(
+        workspaceId,
+        noteId,
+        toRuntimeNote(found),
+        ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+      ),
+    );
     yield* put(action.success(current()));
   } catch (error) {
     logger.error('Failed to load complete note for editing', error);
@@ -263,6 +294,8 @@ function* loadFullNoteEditWorker(action: ReturnType<typeof loadFullNoteEditReque
 function* readNoteWorker(action: ReturnType<typeof readNoteRequested>) {
   const [workspaceId, noteId, eventType] = action.payload;
   const key = `${workspaceId}:${noteId}`;
+  const publicationOwner = yield* captureNotePublicationOwner(workspaceId);
+  const readAuthority = publicationOwner.readAuthority;
   latestNoteReadSeq.set(key, Math.max(latestNoteReadSeq.get(key) ?? 0, action.seq));
   try {
     if (yield* call(blocksFullRead, workspaceId, noteId)) {
@@ -279,6 +312,7 @@ function* readNoteWorker(action: ReturnType<typeof readNoteRequested>) {
     });
     const note =
       !cleanup &&
+      (yield* isNotePublicationOwnerCurrent(publicationOwner)) &&
       found &&
       String(found.id) === noteId &&
       String(found.workspaceId) === workspaceId &&
@@ -288,9 +322,22 @@ function* readNoteWorker(action: ReturnType<typeof readNoteRequested>) {
     if (note && latestNoteReadSeq.get(key) === action.seq) {
       const existing = yield* selectNoteById.effect(workspaceId, noteId);
       if (eventType === 'note:created' && !existing) {
-        yield* put(applyNoteCreated(workspaceId, note));
+        yield* put(
+          applyNoteCreated(
+            workspaceId,
+            note,
+            ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+          ),
+        );
       } else {
-        yield* put(applyNoteUpdated(workspaceId, noteId, note));
+        yield* put(
+          applyNoteUpdated(
+            workspaceId,
+            noteId,
+            note,
+            ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+          ),
+        );
       }
     }
     yield* put(action.success(note));

@@ -43,7 +43,9 @@ beforeEach(async () => {
   vi.resetModules();
   spawn.mockReset();
   getBackendClient.mockReset();
-  directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ip-')));
+  directory = fs.realpathSync(
+    fs.mkdtempSync(path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'ip-')),
+  );
   const policy = await import('../../../../main/isolated-test-profile');
   profile = policy.prepareIsolatedTestProfile(directory, 'manual-123-1', 'a'.repeat(40));
   policy.activateIsolatedTestProfile(profile);

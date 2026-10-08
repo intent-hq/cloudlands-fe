@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test } from '../../../../test/ct-test';
 import Harness from './FullNoteEditorHarness.svelte';
 
@@ -150,3 +151,119 @@ for (const preferRaw of [false, true]) {
     await expect(view.getByTestId('requests')).not.toContainText('blocked');
   });
 }
+
+test('dirty anonymous edits stay with their original editor across repeated note-ID requests', async ({
+  mount,
+  page,
+}) => {
+  const view = await mount(Harness, {
+    props: { initialContent: 'Original', initiallyAnonymous: true, recoveryCapacityFull: true },
+  });
+  const editor = view.locator('.tiptap');
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' anonymous draft');
+  await view.getByRole('button', { name: 'Assign note ID', exact: true }).click();
+  const draft = view.getByTestId('anonymous-note-draft');
+  await expect(draft).toBeVisible();
+  await expect(editor).toHaveText('Original anonymous draft');
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await view.getByRole('button', { name: 'Assign another note ID' }).click();
+  await expect(editor).toHaveText('Original anonymous draft');
+  await expect(draft).toBeVisible();
+  await expect(view.getByTestId('requests')).toHaveText('[]');
+  const downloading = page.waitForEvent('download');
+  await draft.getByRole('button', { name: 'Export draft' }).click();
+  const download = await downloading;
+  expect(await readFile((await download.path())!, 'utf8')).toContain('Original anonymous draft');
+  // Export does not discard or adopt the newly requested owner.
+  await expect(draft).toBeVisible();
+  await expect(editor).toHaveText('Original anonymous draft');
+  await view.getByRole('button', { name: 'Assign note ID', exact: true }).click();
+  await draft.getByRole('button', { name: 'Discard draft' }).click();
+  await expect(draft).toHaveCount(0);
+  await expect(editor).toHaveText('Original');
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await expect(view.getByRole('alert')).toContainText('recovery storage is full');
+  await expect(view.getByTestId('requests')).toHaveText('[]');
+  await view.getByRole('button', { name: 'Release recovery slot' }).click();
+  await view.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' assigned edit');
+  await expect(view.getByTestId('persisted')).toContainText('Original assigned edit');
+  await expect(view.getByTestId('requests')).not.toContainText('anonymous draft');
+});
+
+test('a clean anonymous editor adopts a note ID and respects its existing deletion hold', async ({
+  mount,
+}) => {
+  const view = await mount(Harness, {
+    props: { initialContent: 'Original', initiallyAnonymous: true },
+  });
+  const editor = view.locator('.tiptap');
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await view.getByRole('button', { name: 'Hold persisted note' }).click();
+  await view.getByRole('button', { name: 'Assign note ID', exact: true }).click();
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await expect(view.getByTestId('anonymous-note-draft')).toHaveCount(0);
+  await expect(view.getByTestId('requests')).toHaveText('[]');
+});
+
+test('an initially persisted editor still requires a recovery slot before accepting input', async ({
+  mount,
+}) => {
+  const view = await mount(Harness, {
+    props: { initialContent: 'Original', recoveryCapacityFull: true },
+  });
+  await expect(view.locator('.tiptap')).toHaveAttribute('contenteditable', 'false');
+  await expect(view.getByRole('alert')).toContainText('recovery storage is full');
+  await expect(view.getByTestId('requests')).toHaveText('[]');
+  await view.getByRole('button', { name: 'Release recovery slot' }).click();
+  await view.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(view.locator('.tiptap')).toHaveAttribute('contenteditable', 'true');
+});
+
+test('anonymous editors preserve an explicit read-only permission', async ({ mount }) => {
+  const view = await mount(Harness, {
+    props: { initialContent: 'Original', initiallyAnonymous: true, editable: false },
+  });
+  await expect(view.locator('.tiptap')).toHaveAttribute('contenteditable', 'false');
+  await expect(view.getByTestId('requests')).toHaveText('[]');
+});
+
+test('losing a persisted note ID cannot turn a held editor into an anonymous editable draft', async ({
+  mount,
+}) => {
+  const view = await mount(Harness, { props: { initialContent: 'Original' } });
+  const editor = view.locator('.tiptap');
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await view.getByRole('button', { name: 'Hold persisted note' }).click();
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await view.getByRole('button', { name: 'Remove note ID' }).click();
+  await expect(view.getByRole('alert')).toContainText('no longer linked to a note');
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await expect(view.getByTestId('anonymous-note-draft')).toHaveCount(0);
+  await expect(view.getByTestId('requests')).toHaveText('[]');
+  // Reattaching the same ID restores the identified-note guard, including its hold.
+  await view.getByRole('button', { name: 'Assign note ID', exact: true }).click();
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await expect(view.getByRole('alert')).toHaveCount(0);
+});
+
+test('an existing note incarnation without its note ID is not an anonymous editor', async ({
+  mount,
+}) => {
+  const view = await mount(Harness, {
+    props: {
+      initialContent: 'Original',
+      initiallyAnonymous: true,
+      initialInstanceId: 'persisted-instance',
+    },
+  });
+  await expect(view.getByRole('alert')).toContainText('no longer linked to a note');
+  await expect(view.locator('.tiptap')).toHaveAttribute('contenteditable', 'false');
+  await expect(view.getByTestId('requests')).toHaveText('[]');
+});

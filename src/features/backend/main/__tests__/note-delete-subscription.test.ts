@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import type { NoteDeleteSubscriptionOrigin } from '$shared/note-delete-subscription-ledger';
+import type { NativeNoteDeleteSubscriptionOrigin } from '../note-delete-subscription';
 beforeEach(() => vi.resetModules());
 const event = () =>
   ({ sender: { isDestroyed: () => false }, senderFrame: {} }) as IpcMainInvokeEvent;
@@ -17,10 +17,17 @@ async function fixture() {
   const wireB = vi.fn(async (method: string) =>
     method === 'events.subscribe' ? { subscriptionId: 'same-id' } : { success: true },
   );
-  const capture = vi.fn((e: IpcMainInvokeEvent): NoteDeleteSubscriptionOrigin => {
+  const physicalCloseSource = { onPhysicalSocketClosed: vi.fn(() => () => {}) };
+  const capture = vi.fn((e: IpcMainInvokeEvent): NativeNoteDeleteSubscriptionOrigin => {
     const captured = current,
       wire = captured === socketA ? wireA : wireB;
-    return { incarnation: captured, principal: e.senderFrame!, isLive: () => true, request: wire };
+    return {
+      physicalCloseSource,
+      incarnation: captured,
+      principal: e.senderFrame!,
+      isLive: () => true,
+      request: wire,
+    };
   });
   registerNoteDeleteSubscriptionHandlers(
     {
@@ -34,6 +41,7 @@ async function fixture() {
     },
   );
   return {
+    physicalCloseSource,
     wireA,
     wireB,
     capture,
@@ -52,6 +60,7 @@ it('shares native debt across renderer frames and does not refill on a new frame
   const refused = await f.subscribe(event());
   expect(refused).toMatchObject({ ok: false, error: { code: 'NOTE_DELETE_REGISTRATION_LIMIT' } });
   expect(f.wireA).toHaveBeenCalledTimes(64);
+  expect(f.physicalCloseSource.onPhysicalSocketClosed).toHaveBeenCalledOnce();
 });
 it('uses captured native cleanup after backend switch and refuses a different renderer frame', async () => {
   const f = await fixture(),

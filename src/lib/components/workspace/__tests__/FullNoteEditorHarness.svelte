@@ -1,12 +1,16 @@
 <script lang="ts">
   import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
   import { onDestroy } from 'svelte';
+  import { reserveNoteDeleteDraft } from '$features/notes/note-delete-gate';
   import { Button } from '$lib/components/ui/button';
   import { ContentType, NoteVisibility, type Note } from '$shared/types';
   import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import {
+    loadWorkspaceNotesSucceeded,
+    noteDeleteViewChanged,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
   import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
   import NoteWithComments from '../NoteWithComments.svelte';
@@ -17,15 +21,22 @@
     preferRaw = false,
     editable = true,
     holdSaves = false,
+    initiallyAnonymous = false,
+    initialInstanceId,
+    recoveryCapacityFull = false,
   } = $props<{
     initialContent?: string;
     preferRaw?: boolean;
     editable?: boolean;
     holdSaves?: boolean;
+    initiallyAnonymous?: boolean;
+    initialInstanceId?: string;
+    recoveryCapacityFull?: boolean;
   }>();
 
   const workspaceId = 'full-note-ct';
-  const noteId = 'raw-note';
+  const persistedNoteId = 'raw-note';
+  let noteId = $state<string | undefined>(initiallyAnonymous ? undefined : persistedNoteId);
   const dispose = startRootStoreLifecycle(store, {
     startSagas: () => startWorkspaceNotesSagaFixture(store),
   });
@@ -45,7 +56,7 @@
   let requests = $state<unknown[]>([]);
   let rev = 4;
   const initialNote: Note = {
-    id: NoteId(noteId),
+    id: NoteId(persistedNoteId),
     workspaceId: WorkspaceId(workspaceId),
     title: 'Raw note',
     content: initialContent,
@@ -61,7 +72,7 @@
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: [initialNote] }));
 
   const workspace = { id: WorkspaceId(workspaceId), title: 'Full note' } as Workspace;
-  store.dispatch(setNoteViewMode(workspaceId, noteId, preferRaw ? 'raw' : 'editor'));
+  store.dispatch(setNoteViewMode(workspaceId, persistedNoteId, preferRaw ? 'raw' : 'editor'));
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Browser test installs a mock daemon boundary; production writes use the real service.
   installMockElectronBridge({
     'note.get': () => ({ ...initialNote, content: persisted, rev }),
@@ -86,12 +97,47 @@
       }),
     );
   }
-  onDestroy(dispose);
+  const reservations: Array<() => void> = [];
+  if (recoveryCapacityFull) {
+    for (let i = 0; i < 256; i++) {
+      const release = reserveNoteDeleteDraft({
+        backendGeneration: store.state.daemonHealth.connectionGeneration,
+        workspaceId,
+        noteId: `reserved-${i}`,
+        ownerId: `capacity-${i}`,
+      });
+      if (!release) throw new Error(`Recovery fixture could not reserve slot ${i}`);
+      reservations.push(release);
+    }
+  }
+  function holdPersistedNote() {
+    store.dispatch(
+      noteDeleteViewChanged({
+        backendGeneration: store.state.daemonHealth.connectionGeneration,
+        workspaceId,
+        noteId: persistedNoteId,
+        owner: 'anonymous-compatibility-fixture',
+        phase: 'uncertain',
+        held: true,
+        hidden: false,
+        canCancel: false,
+      }),
+    );
+  }
+  onDestroy(() => {
+    reservations.splice(0).forEach((release) => release());
+    dispose();
+  });
 </script>
 
 <div class="flex h-[600px] flex-col">
   <div>
     <Button onclick={() => (visible = !visible)}>Toggle editor</Button>
+    <Button onclick={() => (noteId = persistedNoteId)}>Assign note ID</Button>
+    <Button onclick={() => (noteId = 'other-note')}>Assign another note ID</Button>
+    <Button onclick={() => (noteId = undefined)}>Remove note ID</Button>
+    <Button onclick={() => reservations.pop()?.()}>Release recovery slot</Button>
+    <Button onclick={holdPersistedNote}>Hold persisted note</Button>
     <Button onclick={updateExternally}>External update</Button>
     <Button onclick={done}>Done editing</Button>
     <Button onclick={() => resolveSave?.()}>Accept save</Button>
@@ -103,6 +149,8 @@
       bind:this={editor}
       {workspace}
       {noteId}
+      noteInstanceId={initialInstanceId}
+      content={initialContent}
       {editable}
       showComments={false}
       isPanelFocused={true}

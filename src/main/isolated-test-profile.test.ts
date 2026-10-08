@@ -7,7 +7,9 @@ import { isolatedTestEnvironment, prepareIsolatedTestProfile } from './isolated-
 const roots: string[] = [];
 const backend = '1234567890123456789012345678901234567890';
 function home(): string {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-')));
+  const root = fs.realpathSync(
+    fs.mkdtempSync(path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'it-')),
+  );
   roots.push(root);
   return root;
 }
@@ -17,6 +19,16 @@ afterEach(() => {
 });
 
 describe('isolated manual package state', () => {
+  it('rejects an overlong canonical socket path before creating profile state', () => {
+    const base = home();
+    const original = path.join(base, 'long-home-'.repeat(12));
+    fs.mkdirSync(original, { mode: 0o700 });
+    expect(() => prepareIsolatedTestProfile(original, 'manual-123-1', backend)).toThrow(
+      'socket path is too long',
+    );
+    expect(fs.readdirSync(original)).toEqual([]);
+  });
+
   it('leaves normal state untouched and binds both processes to private paths on relaunch', () => {
     const original = home();
     const normal = path.join(original, 'Library', 'Application Support', 'intentd');

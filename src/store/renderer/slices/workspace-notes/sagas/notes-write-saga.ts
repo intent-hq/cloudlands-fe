@@ -1,3 +1,9 @@
+import {
+  captureNotePublicationOwner,
+  isNotePublicationOwnerCurrent,
+  isNotePublicationLifetimeCurrent,
+  type NotePublicationOwner,
+} from './note-publication-owner';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
@@ -218,14 +224,25 @@ function optimisticNote(
   };
 }
 
-function* refetchWorkspaceNotes(workspaceId: string) {
+function* refetchWorkspaceNotes(workspaceId: string, priorOwner?: NotePublicationOwner) {
+  if (priorOwner && !(yield* isNotePublicationOwnerCurrent(priorOwner))) return;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const readAuthority = owner.readAuthority;
   try {
     const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
       [appClient.notes, appClient.notes.list],
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     const notes = response.map(toRuntimeNote);
-    yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    yield* put(
+      loadWorkspaceNotesSucceeded(
+        [workspaceId],
+        { [workspaceId]: notes },
+        ...(readAuthority ? ([{ [workspaceId]: readAuthority }] as const) : ([] as const)),
+      ),
+    );
   } catch (error) {
     logger.error('Failed to refetch notes after a mutation error', error);
   }
@@ -235,7 +252,10 @@ function* reconcileConflict(
   workspaceId: string,
   noteId: string,
   result: MutationResult,
+  owner: NotePublicationOwner,
 ): SagaGenerator<boolean> {
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return true;
+  const readAuthority = owner.readAuthority;
   if (!result.conflict) return false;
   const current = result.conflict.current;
   if (current && typeof current === 'object') {
@@ -245,10 +265,15 @@ function* reconcileConflict(
     // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
     const cached = yield* selectNoteById.effect(workspaceId, canonicalId);
     yield* put(
-      applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
+      applyNoteUpdated(
+        workspaceId,
+        canonicalId,
+        withPreservedUnmetDependsOn(note, cached),
+        ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+      ),
     );
   } else {
-    yield* call(refetchWorkspaceNotes, workspaceId);
+    yield* call(refetchWorkspaceNotes, workspaceId, owner);
   }
   logger.warn('Note mutation conflicted; reloaded the latest version', { noteId });
   notify.warning(m.notes_writeService_noteChanged_label(), {
@@ -311,10 +336,14 @@ function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
+  owner: NotePublicationOwner,
 ): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId, seq } = command;
   const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  // Acknowledgement settles its real request, but cannot republish into a later note lifetime.
+  if (!(yield* isNotePublicationOwnerCurrent(owner)))
+    return nextRev === undefined ? { content: echoed } : { content: echoed, rev: nextRev };
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
@@ -343,6 +372,8 @@ function forgetDraft(key: string, draft: PendingContent): void {
 
 function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent | undefined> {
   const { workspaceId, noteId } = command;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
   const key = noteKey(workspaceId, noteId);
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   // The rev the draft is based on is always sent; it is absent only when the
@@ -366,12 +397,19 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
           rev,
           workspaceId,
         );
-        return yield* call(applyContentSaveResult, command, rev, {
-          success: true,
-          newContent: saved.content,
-          noteRev: saved.rev,
-        });
+        return yield* call(
+          applyContentSaveResult,
+          command,
+          rev,
+          {
+            success: true,
+            newContent: saved.content,
+            noteRev: saved.rev,
+          },
+          owner,
+        );
       } catch (error) {
+        if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
         const failure = error instanceof Error ? error : new Error(String(error));
         const rpcCode = (error as { rpcCode?: number } | null)?.rpcCode;
         if (rpcCode !== -32005 && rev !== undefined) {
@@ -382,6 +420,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
             /* Keep the unacknowledged draft. */
           }
           if (
+            (yield* isNotePublicationOwnerCurrent(owner)) &&
             current &&
             current.id === noteId &&
             current.workspaceId === workspaceId &&
@@ -391,13 +430,20 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
             !isNoteContentStale(current) &&
             current.rev > rev
           ) {
-            return yield* call(applyContentSaveResult, command, rev, {
-              success: true,
-              newContent: current.content,
-              noteRev: current.rev,
-            });
+            return yield* call(
+              applyContentSaveResult,
+              command,
+              rev,
+              {
+                success: true,
+                newContent: current.content,
+                noteRev: current.rev,
+              },
+              owner,
+            );
           }
         }
+        if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
         failed = true;
         const newest = (unackedDrafts.get(key) ?? []).at(-1) ?? command;
         pendingContent.set(key, newest);
@@ -422,22 +468,24 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       rev,
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
     if (!result.success) {
       logger.error('Failed to save note content', result.error);
       notify.error(m.notes_writeService_saveFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
-      yield* call(refetchWorkspaceNotes, workspaceId);
+      yield* call(refetchWorkspaceNotes, workspaceId, owner);
       return undefined;
     }
-    return yield* call(applyContentSaveResult, command, rev, result);
+    return yield* call(applyContentSaveResult, command, rev, result, owner);
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
     logger.error('Failed to save note content', error);
-    yield* call(refetchWorkspaceNotes, workspaceId);
+    yield* call(refetchWorkspaceNotes, workspaceId, owner);
     return undefined;
   } finally {
     // Cancellation is handled by workspace cleanup; it never acknowledges a write.
-    if (failed || (yield* cancelled())) return;
+    if (failed || (yield* cancelled()) || !(yield* isNotePublicationOwnerCurrent(owner))) return;
     forgetDraft(key, command);
     if (command.strict) {
       const newest = (unackedDrafts.get(key) ?? []).at(-1);
@@ -514,6 +562,8 @@ function* resolveComment(command: ResolveCommentCommand): SagaGenerator<boolean>
 
 function* saveMetadata(command: MetadataCommand) {
   const { workspaceId, noteId, patch, rollback, titleOnly } = command;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   const rev = note?.rev;
   try {
@@ -524,8 +574,9 @@ function* saveMetadata(command: MetadataCommand) {
       rev,
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     if (!result.success) {
-      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
+      if (yield* call(reconcileConflict, workspaceId, noteId, result, owner)) return;
       logger.error(
         titleOnly ? 'Failed to update note title' : 'Failed to update note metadata',
         result.error,
@@ -542,12 +593,16 @@ function* saveMetadata(command: MetadataCommand) {
     if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
   } catch (error) {
     logger.error('Failed to update note metadata', error);
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
   }
 }
 
 function* removeNote(command: DeleteCommand) {
   const { workspaceId, noteId, snapshot } = command;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const readAuthority = owner.readAuthority;
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.delete],
@@ -555,16 +610,32 @@ function* removeNote(command: DeleteCommand) {
       snapshot?.rev,
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     if (result.success) return;
-    if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
+    if (yield* call(reconcileConflict, workspaceId, noteId, result, owner)) return;
     logger.error('Failed to delete note', result.error);
     notify.error(m.notes_writeService_deleteFailed_error(), {
       description: result.error ?? m.notes_writeService_unknown_error(),
     });
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (snapshot)
+      yield* put(
+        applyNoteCreated(
+          workspaceId,
+          snapshot,
+          ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+        ),
+      );
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     logger.error('Failed to delete note', error);
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (snapshot)
+      yield* put(
+        applyNoteCreated(
+          workspaceId,
+          snapshot,
+          ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+        ),
+      );
   }
 }
 
@@ -983,12 +1054,16 @@ function* createNewNote(
   const optimistic = optimisticNote(workspaceId, tempId, data);
   let keepOptimistic = true;
   yield* put(addOptimisticNote(workspaceId, optimistic));
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const readAuthority = owner.readAuthority;
 
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.create],
       createRequest(workspaceId, data),
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
     if (!result.success) {
       yield* put(removeOptimisticNote(workspaceId, tempId));
       keepOptimistic = false;
@@ -1001,8 +1076,15 @@ function* createNewNote(
         [appClient.notes, appClient.notes.list],
         workspaceId,
       );
+      if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
       const notes = response.map(toRuntimeNote);
-      yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+      yield* put(
+        loadWorkspaceNotesSucceeded(
+          [workspaceId],
+          { [workspaceId]: notes },
+          ...(readAuthority ? ([{ [workspaceId]: readAuthority }] as const) : ([] as const)),
+        ),
+      );
       keepOptimistic = false;
       const created = notes.find((note) => !before.has(String(note.id)));
       if (!created) return undefined;
@@ -1014,7 +1096,11 @@ function* createNewNote(
       return undefined;
     }
   } finally {
-    if (keepOptimistic && (yield* cancelled())) {
+    if (
+      keepOptimistic &&
+      (yield* isNotePublicationLifetimeCurrent(owner)) &&
+      ((yield* cancelled()) || !(yield* isNotePublicationOwnerCurrent(owner)))
+    ) {
       yield* put(removeOptimisticNote(workspaceId, tempId));
     }
   }

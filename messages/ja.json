@@ -7504,6 +7504,8 @@
   "notes_delete_changed_error": "この削除操作は現在のものではありません。ノートの状況を確認してください。",
   "notes_delete_requestFailed_error": "削除を確認できませんでした。ノートの状況を確認してください。",
   "notes_delete_checkFailed_error": "ノートの状況を確認できませんでした。もう一度お試しください。",
+  "notes_editor_missingIdentity_label": "このエディターはノートにリンクされていません。続行するにはノートを開き直してください。",
+  "notes_editor_anonymousDraft_label": "未保存の編集内容を引き続き表示しています。指定されたノートを開く前に、エクスポートするか破棄してください。",
   "notes_delete_recoveryCapacity_error": "復元用ストレージがいっぱいのため、このエディターは読み取り専用です。復元された下書きを保存または破棄してから、もう一度お試しください。",
   "notes_delete_workspaceCheckFailed_error": "このワークスペースのノートの削除状態を確認できませんでした。状態を確認して再試行してください。",
   "notes_delete_recovery_label": "復元された下書き",

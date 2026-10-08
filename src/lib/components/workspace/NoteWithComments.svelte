@@ -250,12 +250,12 @@
 
   // Props
   let {
-    workspace,
-    noteId,
-    noteInstanceId,
-    content = '',
+    workspace: requestedWorkspace,
+    noteId: requestedNoteId,
+    noteInstanceId: requestedNoteInstanceId,
+    content: requestedContent = '',
     editable = true,
-    rawView,
+    rawView: requestedRawView,
     showSuggestions = true,
     showComments = true,
     shouldFocus = false,
@@ -289,6 +289,71 @@
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
   } = $props();
+
+  // Anonymous editors have no persistence owner. Keep their existing editor bound
+  // to the original input after user edits; a later prop change cannot assign
+  // those edits to a persisted note or erase them during owner reinitialization.
+  // This holds one live editor, not an additional global recovery entry.
+  let anonymousOwner = $state.raw<{
+    workspace: Workspace;
+    content: string;
+    noteInstanceId?: string;
+    rawView?: boolean;
+  }>();
+  let workspace = $derived(anonymousOwner?.workspace ?? requestedWorkspace);
+  let noteId = $derived(anonymousOwner ? undefined : requestedNoteId);
+  let noteInstanceId = $derived(
+    anonymousOwner ? anonymousOwner.noteInstanceId : requestedNoteInstanceId,
+  );
+  let content = $derived(anonymousOwner ? anonymousOwner.content : requestedContent);
+  let rawView = $derived(anonymousOwner ? anonymousOwner.rawView : requestedRawView);
+  let anonymousOwnerChanged = $derived(
+    !!anonymousOwner &&
+      (requestedWorkspace.id !== anonymousOwner.workspace.id ||
+        !!requestedNoteId ||
+        requestedNoteInstanceId !== anonymousOwner.noteInstanceId ||
+        requestedContent !== anonymousOwner.content ||
+        requestedRawView !== anonymousOwner.rawView),
+  );
+  // Once this instance adopts a persisted identity, losing that identity is
+  // a broken binding, not permission to start an unrelated anonymous draft.
+  let acceptsAnonymousInput = $state(!requestedNoteId && !requestedNoteInstanceId);
+  $effect.pre(() => {
+    if (noteId || noteInstanceId) acceptsAnonymousInput = false;
+  });
+  let missingPersistedIdentity = $derived(!noteId && !acceptsAnonymousInput);
+  let anonymousExportFailed = $state(false);
+  function exportAnonymousDraft(): void {
+    if (!anonymousOwner || !editor || editor.isDestroyed) return;
+    anonymousExportFailed = false;
+    try {
+      const draft = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
+      const url = URL.createObjectURL(new Blob([draft], { type: 'text/markdown;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'anonymous-note.md';
+      try {
+        document.body.append(link);
+        link.click();
+      } finally {
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+    } catch {
+      anonymousExportFailed = true;
+    }
+  }
+  function discardAnonymousDraft(): void {
+    if (!anonymousOwnerChanged) return;
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = null;
+    if (userTypingTimeout) clearTimeout(userTypingTimeout);
+    userTypingTimeout = null;
+    isUserTyping = false;
+    hasUserEditedSinceLastSave = false;
+    anonymousExportFailed = false;
+    anonymousOwner = undefined;
+  }
 
   // One cache-busting token per editor instance: every debounced external
   // re-process keeps identical workspace image URLs instead of re-fetching
@@ -559,7 +624,9 @@
   let lastSubmittedRichDraft: { content: string; baseContent: string; rev?: number } | undefined;
   function deletionHeld(): boolean {
     return (
-      !recoveryAdmitted ||
+      (!!noteId && !recoveryAdmitted) ||
+      anonymousOwnerChanged ||
+      missingPersistedIdentity ||
       localDeletionHeld ||
       domainDeletionHeld ||
       editorBackendGeneration !== (appStore.state.daemonHealth?.connectionGeneration ?? 0) ||
@@ -624,7 +691,16 @@
     const targetWorkspace = workspace.id;
     const targetNote = noteId;
     const targetInstance = noteInstanceId;
-    if (!targetNote) return;
+    if (!targetNote) {
+      return untrack(() => {
+        deleteScope = undefined;
+        deleteRegistration = undefined;
+        recoveryAdmitted = false;
+        recoveryAdmissionAttempted = false;
+        localDeletionHeld = false;
+        domainDeletionHeld = false;
+      });
+    }
     return untrack(() => {
       const scope = {
         backendGeneration: editorBackendGeneration,
@@ -1018,6 +1094,7 @@
 
   function moveGrowingNoteToRaw(): boolean {
     if (
+      !noteId ||
       !editor ||
       editor.isDestroyed ||
       composing ||
@@ -1123,10 +1200,17 @@
     // post-apply reset tail used to gate this too and only dropped real
     // keystrokes (no edit flag, no save timer → the keystroke was overwritten
     // by the next external apply and never persisted; monorepo#535).
-    if (!recoveryAdmitted || shouldIgnoreLocalEditorUpdate({ isInitializing })) {
+    if (
+      missingPersistedIdentity ||
+      (!!noteId && !recoveryAdmitted) ||
+      shouldIgnoreLocalEditorUpdate({ isInitializing })
+    ) {
       return;
     }
 
+    if (!noteId && !anonymousOwner) {
+      anonymousOwner = { workspace: { ...workspace }, content, noteInstanceId, rawView };
+    }
     isUserTyping = true;
     hasUserEditedSinceLastSave = true;
     invalidateDeleteInput();
@@ -2495,7 +2579,24 @@
   aria-label={m.workspace_noteWithComments_editor_ariaLabel()}
   tabindex="-1"
 >
-  {#if recoveryAdmissionAttempted && !recoveryAdmitted}
+  {#if missingPersistedIdentity}
+    <div role="alert" class="px-4 py-2 text-sm">
+      <p>{m.notes_editor_missingIdentity_label()}</p>
+    </div>
+  {/if}
+  {#if anonymousOwnerChanged}
+    <div role="alert" class="px-4 py-2 text-sm" data-testid="anonymous-note-draft">
+      <p>{m.notes_editor_anonymousDraft_label()}</p>
+      <Button size="sm" onclick={exportAnonymousDraft}
+        >{m.notes_delete_recoveryExport_label()}</Button
+      >
+      <Button size="sm" variant="ghost" onclick={discardAnonymousDraft}
+        >{m.notes_delete_recoveryDiscard_label()}</Button
+      >
+      {#if anonymousExportFailed}<p>{m.layout_fileTab_downloadFailed_error()}</p>{/if}
+    </div>
+  {/if}
+  {#if noteId && recoveryAdmissionAttempted && !recoveryAdmitted}
     <div role="alert" class="px-4 py-2 text-sm">
       <p>{m.notes_delete_recoveryCapacity_error()}</p>
       <Button size="sm" onclick={retryRecoveryReservation}>{m.ui_combobox_retry_label()}</Button>

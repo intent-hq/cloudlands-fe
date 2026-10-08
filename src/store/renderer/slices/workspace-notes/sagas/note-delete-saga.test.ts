@@ -47,6 +47,8 @@ import {
   noteDeleteWorkspaceCheckRequested,
   noteDeleteRecoveryRetained,
   noteDeleteInputObserved,
+  noteDeleteRecoveryReserved,
+  noteDeleteRecoveryDiscarded,
 } from '../workspace-notes-slice';
 const epoch = 'c0e57cf0-775e-4a25-9e2d-3a8fb076b332';
 const identity = { noteInstanceId: 'original', revision: 4, sourceRevision: 'r4' };
@@ -269,7 +271,7 @@ it('snapshot absence cannot display a possibly deleted cached row', async () => 
   operation = null;
   exists = false;
   await store.dispatch(checkNoteDeleteRequested('ws', 'note'));
-  expect(getView()).toMatchObject({ held: true, hidden: true, canCancel: false });
+  expect(getView()).toBeUndefined();
   expect(control.state.workspaceNotes.byWorkspaceId.ws.notes.map.note).toBeUndefined();
 });
 it('coalesces event bursts into bounded snapshots and unsubscribes on unmount', async () => {
@@ -405,7 +407,7 @@ it.each(['cancelled', 'deleted'] as const)(
       expect(getView()).toMatchObject({ held: false, hidden: false });
       expect(control.state.workspaceNotes.byWorkspaceId.ws.notes.map.note.id).toBe('note');
     } else {
-      expect(getView()).toMatchObject({ held: true, hidden: true });
+      expect(getView()).toBeUndefined();
       expect(control.state.workspaceNotes.byWorkspaceId.ws.notes.map.note).toBeUndefined();
     }
   },
@@ -763,4 +765,188 @@ it('does not let a retired observation clear a replacement observation busy stat
   rejections[1](registrationRefusal());
   await flush();
   expect(control.state.workspaceNotes.deleteObservationChecking.ws).toBeUndefined();
+});
+
+// Terminal retirement must preserve unresolved work, rather than spend its finite slots.
+it.each([257, 1025])(
+  'does not charge %i confirmed absent deletions to unresolved operation limits',
+  async (count) => {
+    const pending = await store.dispatch(scheduleNoteDeleteRequested('ws', 'note'));
+    const draft = {
+      backendGeneration: 1,
+      ...scope,
+      ownerId: 'recovery-owner',
+      content: 'retained draft',
+      baseContent: 'strict base',
+      rev: 4,
+    };
+    store.dispatch(noteDeleteRecoveryRetained(draft));
+    const receipts = new Map<string, NoteDeleteReceipt>();
+    control.api.schedule.mockImplementation(async (request: any) => {
+      const receipt: NoteDeleteReceipt = {
+        workspaceId: request.workspaceId,
+        noteId: request.noteId,
+        noteInstanceId: request.noteInstanceId,
+        operationKey: request.operationKey,
+        state: 'DELETED',
+        sequence: ++sequence,
+        deadlineTickMs: tick,
+        deleteAt: '2026-10-08T16:00:00Z',
+        expiresTickMs: tick + 300000,
+        reason: null,
+      };
+      receipts.set(request.noteId, receipt);
+      return { epoch, serverTickMs: tick, sequence, operation: receipt };
+    });
+    control.api.status.mockImplementation(async (request: any) => {
+      if (!request.noteId || request.noteId === 'note') return status(request);
+      const receipt = receipts.get(request.noteId);
+      return {
+        epoch,
+        serverTickMs: tick,
+        sequence,
+        current: receipt
+          ? null
+          : { noteInstanceId: 'instance-' + request.noteId, revision: 4, sourceRevision: 'r4' },
+        pending: [],
+        operation: request.operationKey ? receipt : null,
+      };
+    });
+    for (let n = 0; n < count; n++) {
+      const noteId = 'finished-' + n;
+      store.dispatch(
+        applyNoteUpdated(
+          'ws',
+          noteId,
+          { id: noteId, workspaceId: 'ws', title: noteId, content: '', rev: 4 } as Note,
+          control.state.workspaceNotes.byWorkspaceId.ws.deleteReadAuthority,
+        ),
+      );
+      if (n === 0) {
+        const owner = { ...draft, noteId };
+        store.dispatch(noteDeleteRecoveryReserved(owner, true));
+        store.dispatch(noteDeleteRecoveryRetained(owner));
+      }
+      await store.dispatch(scheduleNoteDeleteRequested('ws', noteId));
+      await store.dispatch(checkNoteDeleteRequested('ws', noteId));
+    }
+    store.dispatch(noteDeleteWorkspaceObserved('ws', 'panel'));
+    await vi.advanceTimersByTimeAsync(51);
+    expect(control.state.workspaceNotes.deleteObservationErrors?.ws).toBeUndefined();
+    expect(
+      control.state.workspaceNotes.deleteOperations[noteDeleteKey(1, 'ws', 'note')],
+    ).toMatchObject({ held: true, hidden: true, ownedOperation: pending.ownedOperation });
+    expect(control.state.workspaceNotes.deleteRecoveryDrafts[noteDeleteDraftKey(draft)]).toEqual(
+      draft,
+    );
+    expect(Object.keys(control.state.workspaceNotes.deleteOperations).length).toBeLessThan(256);
+    expect(
+      control.state.workspaceNotes.deleteOperations[noteDeleteKey(1, 'ws', 'finished-0')],
+    ).toMatchObject({ held: true, hidden: true, terminalAbsent: expect.anything() });
+    expect(
+      control.state.workspaceNotes.deleteRecoveryDrafts[
+        noteDeleteDraftKey({ ...draft, noteId: 'finished-0' })
+      ].content,
+    ).toBe(draft.content);
+  },
+);
+
+it('does not retire historical DELETED receipts when targeted status names a replacement', async () => {
+  const send = control.api.schedule.getMockImplementation();
+  control.api.schedule.mockImplementation(async (request: any) => {
+    const result = await send(request);
+    operation = { ...result.operation, state: 'DELETED', sequence: ++sequence };
+    control.api.status.mockImplementation(async (request: any) => ({
+      ...status(request),
+      current: { ...identity, noteInstanceId: 'replacement' },
+      pending: [],
+    }));
+    return { epoch, serverTickMs: tick, sequence, operation };
+  });
+  await store.dispatch(scheduleNoteDeleteRequested('ws', 'note'));
+  expect(getView()).toMatchObject({ held: true, hidden: true, failureCode: 'replaced' });
+  expect(getView().terminalAbsent).toBeUndefined();
+  expect(control.state.workspaceNotes.byWorkspaceId.ws.notes.map.note).toBeDefined();
+});
+it('keeps an absence unresolved while a physical committing operation still exists', async () => {
+  await store.dispatch(scheduleNoteDeleteRequested('ws', 'note'));
+  operation = { ...operation!, state: 'COMMITTING', sequence: ++sequence };
+  exists = false;
+  await store.dispatch(checkNoteDeleteRequested('ws', 'note'));
+  expect(getView()).toMatchObject({ held: true, hidden: true, phase: 'uncertain' });
+  expect(getView().terminalAbsent).toBeUndefined();
+});
+it('waits for a cancellation physical promise before retiring independently confirmed absence', async () => {
+  await store.dispatch(scheduleNoteDeleteRequested('ws', 'note'));
+  let finishCancel!: (result: any) => void;
+  control.api.cancel.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finishCancel = resolve;
+      }),
+  );
+  const cancellation = store.dispatch(cancelNoteDeleteRequested('ws', 'note'));
+  const cancellationSettled = cancellation.catch(() => undefined);
+  await flush();
+  operation = { ...operation!, state: 'DELETED', sequence: ++sequence };
+  exists = false;
+  try {
+    await store.dispatch(checkNoteDeleteRequested('ws', 'note'));
+    expect(getView()?.terminalAbsent).toBeDefined();
+    expect(getView().held).toBe(true);
+  } finally {
+    finishCancel({ epoch, serverTickMs: tick, sequence, operation });
+    await cancellationSettled;
+  }
+  expect(getView()).toBeUndefined();
+});
+
+it('does not consume an absence response after newer canonical metadata appeared during its request', async () => {
+  await store.dispatch(scheduleNoteDeleteRequested('ws', 'note'));
+  let finish!: (result: NoteDeleteStatusResponse) => void;
+  control.api.status.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const check = store.dispatch(checkNoteDeleteRequested('ws', 'note'));
+  await flush();
+  const replacement = {
+    id: 'note',
+    workspaceId: 'ws',
+    title: 'replacement',
+    content: 'new text',
+    rev: 5,
+  } as Note;
+  store.dispatch(applyNoteUpdated('ws', 'note', replacement));
+  finish({
+    epoch,
+    serverTickMs: tick,
+    sequence: ++sequence,
+    current: null,
+    pending: [],
+    operation: null,
+  });
+  await check;
+  expect(getView()).toMatchObject({ held: true, phase: 'uncertain' });
+  expect(getView().terminalAbsent).toBeUndefined();
+  expect(control.state.workspaceNotes.byWorkspaceId.ws.notes.map.note.content).toBe('new text');
+});
+
+it('retires a terminal editor pin after the exact reservation and retained draft are both released', async () => {
+  await store.dispatch(scheduleNoteDeleteRequested('ws', 'note'));
+  const owner = { backendGeneration: 1, ...scope, ownerId: 'editor' };
+  store.dispatch(noteDeleteRecoveryReserved(owner, true));
+  store.dispatch(noteDeleteRecoveryRetained({ ...owner, content: 'draft', baseContent: 'base' }));
+  operation = { ...operation!, state: 'DELETED', sequence: ++sequence };
+  exists = false;
+  await store.dispatch(checkNoteDeleteRequested('ws', 'note'));
+  expect(getView()?.terminalAbsent).toBeDefined();
+  const calls = control.api.status.mock.calls.length;
+  store.dispatch(noteDeleteRecoveryReserved(owner, false));
+  expect(getView().held).toBe(true);
+  store.dispatch(noteDeleteRecoveryDiscarded(owner));
+  expect(getView()).toBeUndefined();
+  expect(control.api.status).toHaveBeenCalledTimes(calls);
 });

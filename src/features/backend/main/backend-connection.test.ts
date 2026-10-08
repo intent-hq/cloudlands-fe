@@ -2391,16 +2391,41 @@ describe('testWssConnection saved-route probes', () => {
       socket.once('close', () => sockets.delete(socket));
       accepted();
     });
-    await new Promise<void>((resolve) => stalled.listen(daemon.port, '127.0.0.2', resolve));
-    const handshakes = daemon.secureConnections;
-    const request = vi.fn(() => ({ result: null }));
-    daemon.handler = request;
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
+      // macOS does not configure the Linux 127/8 aliases; use a bound local endpoint.
+      let primaryHost: string | undefined;
+      const failures: unknown[] = [];
+      for (const host of ['::1', '127.0.0.2']) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const onError = (error: Error) => {
+              stalled.off('listening', onListening);
+              reject(error);
+            };
+            const onListening = () => {
+              stalled.off('error', onError);
+              resolve();
+            };
+            stalled.once('error', onError);
+            stalled.once('listening', onListening);
+            stalled.listen({ port: daemon.port, host, ipv6Only: true });
+          });
+          primaryHost = host;
+          break;
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (!primaryHost)
+        throw new AggregateError(failures, 'No distinct loopback endpoint available');
+      const handshakes = daemon.secureConnections;
+      const request = vi.fn(() => ({ result: null }));
+      daemon.handler = request;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       await testWssConnection({
         ...config(),
-        host: '127.0.0.2',
-        hosts: ['127.0.0.2', daemon.host, `  ${daemon.host}  `, ''],
+        host: primaryHost,
+        hosts: [primaryHost, daemon.host, `  ${daemon.host}  `, ''],
       });
       // No clock advancement: success cannot wait for the stalled primary's deadline.
       expect(vi.getTimerCount()).toBe(0);
@@ -2419,7 +2444,7 @@ describe('testWssConnection saved-route probes', () => {
       vi.useRealTimers();
       accepted();
       for (const socket of sockets) socket.destroy();
-      await new Promise<void>((resolve) => stalled.close(() => resolve()));
+      if (stalled.listening) await new Promise<void>((resolve) => stalled.close(() => resolve()));
     }
   });
 

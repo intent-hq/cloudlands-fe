@@ -1,3 +1,7 @@
+import {
+  captureNotePublicationOwner,
+  isNotePublicationOwnerCurrent,
+} from './note-publication-owner';
 import { buffers, type Channel } from 'redux-saga';
 import {
   actionChannel,
@@ -39,15 +43,19 @@ function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolea
 }
 
 function* fetchVersions(workspaceId: string, noteId: string) {
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
   try {
     const response: Awaited<ReturnType<typeof appClient.notes.listVersions>> = yield* call(
       [appClient.notes, appClient.notes.listVersions],
       workspaceId,
       noteId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     const versions = response.map(toRuntimeNoteVersion);
     yield* put(applyNoteVersions(workspaceId, noteId, versions));
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     logger.error('Failed to fetch note versions', error);
     yield* put(
       applyNoteVersionsError(workspaceId, error instanceof Error ? error.message : String(error)),
@@ -56,6 +64,9 @@ function* fetchVersions(workspaceId: string, noteId: string) {
 }
 
 function* restoreVersion(workspaceId: string, noteId: string, versionId: string) {
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const readAuthority = owner.readAuthority;
   // The daemon dispatches requests concurrently, so the restore must not be
   // issued until every debounced, queued, or in-flight content save has been
   // acknowledged by the unified mutation owner.
@@ -63,12 +74,14 @@ function* restoreVersion(workspaceId: string, noteId: string, versionId: string)
     const settle = settleNoteContentRequested(workspaceId, noteId);
     yield* put(settle);
     yield* call(() => settle.promise);
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     const result: Awaited<ReturnType<typeof appClient.notes.restoreVersion>> = yield* call(
       [appClient.notes, appClient.notes.restoreVersion],
       workspaceId,
       noteId,
       versionId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     if (!result.success) {
       logger.error('Failed to restore note version', {
         workspaceId,
@@ -87,11 +100,13 @@ function* restoreVersion(workspaceId: string, noteId: string, versionId: string)
           workspaceId,
           noteId,
           withPreservedUnmetDependsOn(toRuntimeNote(result.note), cached),
+          ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
         ),
       );
     }
     yield* call(fetchVersions, workspaceId, noteId);
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     logger.error('Error restoring note version', error);
     yield* put(
       applyNoteVersionsError(workspaceId, error instanceof Error ? error.message : String(error)),

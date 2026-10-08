@@ -23,6 +23,7 @@ import {
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import {
   workspaceUnmounted,
+  workspaceDeleted,
   backendReconnected,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
@@ -61,8 +62,50 @@ export const initialState: WorkspaceNotesState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceNotesState);
+const {
+  getWorkspaceState,
+  setWorkspaceState: setScopedWorkspaceState,
+  clearWorkspaceState: clearScopedWorkspaceState,
+} = createWorkspaceScopedHelpers(emptyWorkspaceNotesState);
+
+function nextPublicationCounter(value: number | undefined): number | undefined {
+  const current = value ?? 0;
+  return Number.isSafeInteger(current) && current >= 0 && current < Number.MAX_SAFE_INTEGER
+    ? current + 1
+    : undefined;
+}
+
+function setWorkspaceState(
+  state: WorkspaceNotesState,
+  workspaceId: string,
+  workspace: WorkspaceNotesWorkspaceState,
+): WorkspaceNotesState {
+  const lifetime = state.byWorkspaceId[workspaceId]?.publicationLifetime;
+  if (lifetime !== undefined)
+    return setScopedWorkspaceState(state, workspaceId, {
+      ...workspace,
+      publicationLifetime: lifetime,
+    });
+  const next = nextPublicationCounter(state.nextPublicationLifetime);
+  if (next === undefined) return { ...state, publicationAuthorityExhausted: true };
+  return setScopedWorkspaceState({ ...state, nextPublicationLifetime: next }, workspaceId, {
+    ...workspace,
+    publicationLifetime: next,
+  });
+}
+
+function clearWorkspaceState(state: WorkspaceNotesState, workspaceId: string): WorkspaceNotesState {
+  const next = nextPublicationCounter(state.nextPublicationLifetime);
+  const cleared = clearScopedWorkspaceState(state, workspaceId);
+  return next === undefined
+    ? { ...cleared, publicationAuthorityExhausted: true }
+    : { ...cleared, nextPublicationLifetime: next };
+}
+
+/** Internal publication bookkeeping; does not start hydration or change note contents. */
+export const ensureNotePublicationLifetime = createAction<[workspaceId: string]>(
+  'workspaceNotes/ensureNotePublicationLifetime',
+);
 
 export const noteDeleteViewChanged = createAction<[view: NoteDeleteView]>(
   'workspaceNotes/noteDeleteViewChanged',
@@ -137,7 +180,11 @@ export const setWorkspaceNotesLoading = createAction<[workspaceIds: string[], is
   'workspaceNotes/setWorkspaceNotesLoading',
 );
 export const loadWorkspaceNotesSucceeded = createAction<
-  [workspaceIds: string[], notesByWorkspace: Record<string, Note[]>]
+  [
+    workspaceIds: string[],
+    notesByWorkspace: Record<string, Note[]>,
+    readAuthority?: Record<string, string | undefined>,
+  ]
 >('workspaceNotes/loadWorkspaceNotesSucceeded');
 export const loadWorkspaceNotesFailed = createAction<[workspaceIds: string[], error: string]>(
   'workspaceNotes/loadWorkspaceNotesFailed',
@@ -148,15 +195,15 @@ export const workspaceNotesHydrationRequested = createAction<
 export const applyTaskStatusChanged = createAction<
   [workspaceId: string, noteId: string, newStatus: TaskStatus]
 >('workspaceNotes/applyTaskStatusChanged');
-export const applyNoteCreated = createAction<[workspaceId: string, note: Note]>(
-  'workspaceNotes/applyNoteCreated',
-);
+export const applyNoteCreated = createAction<
+  [workspaceId: string, note: Note, readAuthority?: string]
+>('workspaceNotes/applyNoteCreated');
 export const applyNoteDeleted = createAction<[workspaceId: string, noteId: string]>(
   'workspaceNotes/applyNoteDeleted',
 );
-export const applyNoteUpdated = createAction<[workspaceId: string, noteId: string, note: Note]>(
-  'workspaceNotes/applyNoteUpdated',
-);
+export const applyNoteUpdated = createAction<
+  [workspaceId: string, noteId: string, note: Note, readAuthority?: string]
+>('workspaceNotes/applyNoteUpdated');
 export const noteEventReceived = createAction<
   [workspaceId: string, noteId: string, eventType: NoteEventType]
 >('workspaceNotes/noteEventReceived');
@@ -366,6 +413,18 @@ const applyReadyTasksError = createAction<[workspaceId: string, error: string]>(
 );
 
 export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState);
+workspaceNotesReducer.with(ensureNotePublicationLifetime, (state, { payload: [workspaceId] }) => {
+  if (
+    state.publicationAuthorityExhausted ||
+    state.byWorkspaceId[workspaceId]?.publicationLifetime !== undefined
+  )
+    return state;
+  return setWorkspaceState(state, workspaceId, getWorkspaceState(state, workspaceId));
+});
+// A replaced workspace ID starts a different publication lifetime; recovery owners stay separate.
+workspaceNotesReducer.with(workspaceDeleted, (state, { payload: [workspaceId] }) =>
+  clearWorkspaceState(state, workspaceId),
+);
 workspaceNotesReducer.with(
   specTaskLinksReceived,
   (state, { payload: [workspaceId, ids, generation] }) => {
@@ -432,9 +491,11 @@ workspaceNotesReducer.with(
 );
 workspaceNotesReducer.with(
   loadWorkspaceNotesSucceeded,
-  (state, { payload: [workspaceIds, notesByWorkspace] }) => {
+  (state, { payload: [workspaceIds, notesByWorkspace, readAuthority] }) => {
+    if (state.publicationAuthorityExhausted) return state;
     return workspaceIds.reduce((nextState, workspaceId) => {
       const workspaceState = getWorkspaceState(nextState, workspaceId);
+      if (readAuthority?.[workspaceId] !== workspaceState.deleteReadAuthority) return nextState;
       // Slim-projection merge (§5.2): a slim row carries no content, so when
       // the cache already holds the full body at the same rev, keep it — a
       // re-list must never clobber loaded content. A slim row with a newer
@@ -505,16 +566,21 @@ workspaceNotesReducer.with(
     });
   },
 );
-workspaceNotesReducer.with(applyNoteCreated, (state, { payload: [workspaceId, note] }) => {
-  const workspaceState = state.byWorkspaceId[workspaceId];
-  if (!workspaceState?.initialized) return state;
+workspaceNotesReducer.with(
+  applyNoteCreated,
+  (state, { payload: [workspaceId, note, readAuthority] }) => {
+    if (state.publicationAuthorityExhausted) return state;
+    const workspaceState = state.byWorkspaceId[workspaceId];
+    if (!workspaceState?.initialized || readAuthority !== workspaceState.deleteReadAuthority)
+      return state;
 
-  return setWorkspaceState(state, workspaceId, {
-    ...workspaceState,
-    notes: addItem(workspaceState.notes, note),
-    notesVersion: workspaceState.notesVersion + 1,
-  });
-});
+    return setWorkspaceState(state, workspaceId, {
+      ...workspaceState,
+      notes: addItem(workspaceState.notes, note),
+      notesVersion: workspaceState.notesVersion + 1,
+    });
+  },
+);
 workspaceNotesReducer.with(applyNoteDeleted, (state, { payload: [workspaceId, noteId] }) => {
   const ws = getWorkspaceState(state, workspaceId);
   const notes = removeItem(ws.notes, noteId as Note['id']);
@@ -528,29 +594,34 @@ workspaceNotesReducer.with(applyNoteDeleted, (state, { payload: [workspaceId, no
     notesVersion: ws.notesVersion + 1,
   });
 });
-workspaceNotesReducer.with(applyNoteUpdated, (state, { payload: [workspaceId, noteId, note] }) => {
-  if (note.workspaceId !== workspaceId) return state;
+workspaceNotesReducer.with(
+  applyNoteUpdated,
+  (state, { payload: [workspaceId, noteId, note, readAuthority] }) => {
+    if (state.publicationAuthorityExhausted) return state;
+    if (note.workspaceId !== workspaceId) return state;
 
-  const workspaceState = getWorkspaceState(state, workspaceId);
-  const existingNote = getItem(workspaceState.notes, noteId as Note['id']);
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    if (readAuthority !== workspaceState.deleteReadAuthority) return state;
+    const existingNote = getItem(workspaceState.notes, noteId as Note['id']);
 
-  // Rev gate (monorepo#533): a refetch triggered by an older `note:updated`
-  // event can land after a newer state was already applied (or after
-  // `advanceNoteRev` recorded a daemon ack). A strictly-lower rev is
-  // definitively stale — dropping it prevents reverting newer content.
-  if (existingNote?.rev !== undefined && note.rev !== undefined && note.rev < existingNote.rev) {
-    return state;
-  }
+    // Rev gate (monorepo#533): a refetch triggered by an older `note:updated`
+    // event can land after a newer state was already applied (or after
+    // `advanceNoteRev` recorded a daemon ack). A strictly-lower rev is
+    // definitively stale — dropping it prevents reverting newer content.
+    if (existingNote?.rev !== undefined && note.rev !== undefined && note.rev < existingNote.rev) {
+      return state;
+    }
 
-  return setWorkspaceState(state, workspaceId, {
-    ...workspaceState,
-    notes: upsertItem(workspaceState.notes, {
-      ...note,
-      id: existingNote?.id ?? (noteId as Note['id']),
-    }),
-    notesVersion: workspaceState.notesVersion + 1,
-  });
-});
+    return setWorkspaceState(state, workspaceId, {
+      ...workspaceState,
+      notes: upsertItem(workspaceState.notes, {
+        ...note,
+        id: existingNote?.id ?? (noteId as Note['id']),
+      }),
+      notesVersion: workspaceState.notesVersion + 1,
+    });
+  },
+);
 // ---- New reducers from notes.store.svelte.ts migration ----
 workspaceNotesReducer.with(selectNote, (state, { payload: [workspaceId, noteId] }) => {
   const ws = getWorkspaceState(state, workspaceId);
@@ -721,13 +792,24 @@ workspaceNotesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => (
 }));
 
 // Deletion receipts and unresolved display authority outlive a mounted workspace.
-workspaceNotesReducer.with(noteDeleteViewChanged, (state, { payload: [view] }) => ({
-  ...state,
-  deleteOperations: {
-    ...state.deleteOperations,
-    [noteDeleteKey(view.backendGeneration, view.workspaceId, view.noteId)]: view,
-  },
-}));
+workspaceNotesReducer.with(noteDeleteViewChanged, (state, { payload: [view] }) => {
+  const next = {
+    ...state,
+    deleteOperations: {
+      ...state.deleteOperations,
+      [noteDeleteKey(view.backendGeneration, view.workspaceId, view.noteId)]: view,
+    },
+  };
+  if (!view.terminalAbsent) return next;
+  const workspace = getWorkspaceState(next, view.workspaceId);
+  // Rechecking a retained owner is another absence boundary, never a return to its old token.
+  const sequence = nextPublicationCounter(state.deleteReadAuthoritySequence);
+  if (sequence === undefined) return { ...next, publicationAuthorityExhausted: true };
+  return setWorkspaceState({ ...next, deleteReadAuthoritySequence: sequence }, view.workspaceId, {
+    ...workspace,
+    deleteReadAuthority: `absence:${sequence}`,
+  });
+});
 workspaceNotesReducer.with(noteDeleteRecoveryRetained, (state, { payload: [draft] }) => ({
   ...state,
   deleteRecoveryDrafts: {
@@ -753,7 +835,28 @@ workspaceNotesReducer.with(noteDeleteRecoveryDiscarded, (state, { payload: [owne
 workspaceNotesReducer.with(noteDeleteViewRetired, (state, { payload: [view] }) => {
   const key = noteDeleteKey(view.backendGeneration, view.workspaceId, view.noteId);
   const current = state.deleteOperations?.[key];
-  if (current?.owner !== view.owner || current.held || current.hidden) return state;
+  if (current !== view) return state;
+  if (!current.terminalAbsent && (current.held || current.hidden)) return state;
+  if (current.terminalAbsent) {
+    const recoveryKeys = new Set([
+      ...Object.keys(state.deleteRecoveryReservations ?? {}),
+      ...Object.keys(state.deleteRecoveryDrafts ?? {}),
+    ]);
+    const hasEditorOrDraft = [...recoveryKeys].some((key) => {
+      const [backendGeneration, workspaceId, noteId] = JSON.parse(key) as [number, string, string];
+      return (
+        backendGeneration === view.backendGeneration &&
+        workspaceId === view.workspaceId &&
+        noteId === view.noteId
+      );
+    });
+    if (
+      hasEditorOrDraft ||
+      state.retainedDrafts[JSON.stringify([view.workspaceId, view.noteId])] ||
+      state.byWorkspaceId[view.workspaceId]?.pendingContentByNoteId[view.noteId]
+    )
+      return state;
+  }
   const operations = { ...state.deleteOperations };
   delete operations[key];
   return { ...state, deleteOperations: operations };

@@ -7504,6 +7504,8 @@
   "notes_delete_changed_error": "이 삭제는 더 이상 현재 작업이 아닙니다. 노트 상태를 확인하세요.",
   "notes_delete_requestFailed_error": "삭제를 확인하지 못했습니다. 노트 상태를 확인하세요.",
   "notes_delete_checkFailed_error": "노트 상태를 확인하지 못했습니다. 다시 시도하세요.",
+  "notes_editor_missingIdentity_label": "이 편집기는 더 이상 노트에 연결되어 있지 않습니다. 계속하려면 노트를 다시 여세요.",
+  "notes_editor_anonymousDraft_label": "저장하지 않은 편집 내용이 계속 표시됩니다. 요청한 노트를 열기 전에 내보내거나 삭제하세요.",
   "notes_delete_recoveryCapacity_error": "복구 저장 공간이 가득 차서 이 편집기는 읽기 전용입니다. 복구된 초안을 저장하거나 삭제한 후 다시 시도하세요.",
   "notes_delete_workspaceCheckFailed_error": "이 워크스페이스의 노트 삭제 상태를 확인하지 못했습니다. 상태를 확인하여 다시 시도하세요.",
   "notes_delete_recovery_label": "복구된 초안",

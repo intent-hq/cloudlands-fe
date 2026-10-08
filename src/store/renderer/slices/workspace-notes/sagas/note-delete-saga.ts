@@ -9,6 +9,10 @@ import {
   checkNoteDeleteRequested,
   noteDeleteViewChanged,
   noteDeleteViewRetired,
+  noteDeleteRecoveryReserved,
+  noteDeleteRecoveryDiscarded,
+  setRetainedNoteDraft,
+  setNoteContentPending,
   noteDeleteWorkspaceObserved,
   noteDeleteWorkspaceUnobserved,
   noteDeleteInputObserved,
@@ -28,6 +32,7 @@ import type {
 
 const MAX_OPERATIONS = 1024;
 let scheduling = false;
+let schedulingKey: string | undefined;
 let controls = 0;
 const checking = new Map<string, Promise<NoteDeleteView | undefined>>();
 const cancelling = new Map<string, Promise<NoteDeleteView>>();
@@ -39,6 +44,18 @@ const lookup = (workspaceId: string, noteId: string) =>
 function publish(view: NoteDeleteView): NoteDeleteView {
   store.dispatch(noteDeleteViewChanged(view));
   return view;
+}
+function retireTerminal(view: NoteDeleteView): void {
+  const key = noteDeleteKey(view.backendGeneration, view.workspaceId, view.noteId);
+  const latest = store.state.workspaceNotes.deleteOperations?.[key];
+  if (
+    latest?.owner === view.owner &&
+    latest.terminalAbsent &&
+    schedulingKey !== key &&
+    !checking.has(key) &&
+    !cancelling.has(key)
+  )
+    store.dispatch(noteDeleteViewRetired(latest));
 }
 function ownerCurrent(view: NoteDeleteView): boolean {
   return current(view) && lookup(view.workspaceId, view.noteId)?.owner === view.owner;
@@ -108,11 +125,20 @@ function receiptView(
   result: NoteDeleteOperationResponse,
   started: number,
 ): NoteDeleteView {
+  const latest = lookup(previous.workspaceId, previous.noteId);
+  if (
+    latest?.owner === previous.owner &&
+    latest.epoch === result.epoch &&
+    ((latest.sequence ?? 0) > result.sequence ||
+      (!!latest.terminalAbsent && latest.sequence === result.sequence))
+  )
+    return latest;
   const operation = result.operation;
   if (operation.state === 'UNKNOWN')
     return {
       ...previous,
       phase: 'uncertain',
+      terminalAbsent: undefined,
       held: true,
       canCancel: false,
       error: 'The deletion outcome is unknown. Check status before making another change.',
@@ -125,6 +151,7 @@ function receiptView(
   return {
     ...previous,
     receipt,
+    terminalAbsent: undefined,
     pending: undefined,
     epoch: result.epoch,
     sequence: result.sequence,
@@ -154,7 +181,8 @@ function receiptView(
 /** One physical preparation/schedule at a time, with no awaiting admission queue. */
 async function schedule(workspaceId: string, noteId: string): Promise<NoteDeleteView> {
   requireRegistration(workspaceId, lookup(workspaceId, noteId));
-  for (const view of Object.values(store.state.workspaceNotes.deleteOperations ?? {}))
+  for (const view of Object.values(store.state.workspaceNotes.deleteOperations ?? {})) {
+    retireTerminal(view);
     if (
       !view.held &&
       !view.hidden &&
@@ -162,6 +190,7 @@ async function schedule(workspaceId: string, noteId: string): Promise<NoteDelete
       now() - view.settledAt >= 300000
     )
       store.dispatch(noteDeleteViewRetired(view));
+  }
   if (!workspaceId || !noteId || noteId === 'spec') throw new Error('This note cannot be deleted.');
   if (scheduling || lookup(workspaceId, noteId)?.held)
     throw new Error('A note deletion is already pending. Check its status.');
@@ -184,6 +213,7 @@ async function schedule(workspaceId: string, noteId: string): Promise<NoteDelete
     canCancel: false,
   });
   let editors: Awaited<ReturnType<typeof prepareNoteDeleteEditors>> | undefined;
+  schedulingKey = noteDeleteKey(view.backendGeneration, workspaceId, noteId);
   let issued: NoteDeleteScheduleRequest | undefined;
   let unavailable = false;
   try {
@@ -262,7 +292,7 @@ async function schedule(workspaceId: string, noteId: string): Promise<NoteDelete
     view = receiptView(view, response, started);
     if (view.phase === 'cancelled' || view.phase === 'failed') view.hidden = false;
     publish(view);
-    if (view.phase === 'deleted') store.dispatch(applyNoteDeleted(workspaceId, noteId));
+    if (view.phase === 'deleted') view = (await reconcile(workspaceId, noteId)) ?? view;
     return view;
   } catch (error) {
     if (isRegistrationLimit(error)) {
@@ -287,6 +317,8 @@ async function schedule(workspaceId: string, noteId: string): Promise<NoteDelete
   } finally {
     editors?.release(); // Component domain hold remains authoritative after local preparation ends.
     scheduling = false;
+    schedulingKey = undefined;
+    retireTerminal(view);
   }
 }
 
@@ -304,6 +336,7 @@ async function reconcile(
   const work = (async () => {
     const api = client();
     const started = now();
+    const observedNote = selectNoteById.select(store.state, workspaceId, noteId);
     const status: NoteDeleteStatusResponse = await control(() =>
       api.status({
         workspaceId,
@@ -322,13 +355,55 @@ async function reconcile(
     let view = status.operation
       ? receiptView(prior, { ...status, operation: status.operation }, started)
       : prior;
+    if (status.current) view = { ...view, terminalAbsent: undefined };
     if (view.failureCode === 'registration-limit')
       view = { ...view, failureCode: undefined, error: undefined };
     clearWorkspacePause(workspaceId, prior.backendGeneration);
     // Snapshot absence alone never restores a cached row: this is a targeted current identity read.
-    if (!status.current) {
+    const currentNote = selectNoteById.select(store.state, workspaceId, noteId);
+    const pageInstance =
+      store.state.notePages?.byWorkspaceId[workspaceId]?.notes[noteId]?.state?.scope.noteInstanceId;
+    if (
+      !status.current &&
+      ((currentNote && currentNote !== observedNote) ||
+        (pageInstance && prior.noteInstanceId && pageInstance !== prior.noteInstanceId))
+    ) {
+      view = {
+        ...view,
+        phase: 'uncertain',
+        terminalAbsent: undefined,
+        held: true,
+        hidden: prior.hidden,
+        canCancel: false,
+        error: 'The current note changed while deletion was being verified.',
+      };
+    } else if (!status.current) {
+      const activeReceipt =
+        status.operation &&
+        ['PENDING', 'COMMITTING', 'OUTCOME_UNKNOWN'].includes(status.operation.state);
+      const terminalAbsent =
+        prior.noteInstanceId && !status.pending.length && !activeReceipt
+          ? { epoch: status.epoch, sequence: status.sequence }
+          : undefined;
+      view = {
+        ...view,
+        held: true,
+        hidden: true,
+        canCancel: false,
+        terminalAbsent,
+        ...(terminalAbsent
+          ? {
+              settledAt: now(),
+              phase: 'deleted' as const,
+              pending: undefined,
+              deadline: undefined,
+              error: undefined,
+            }
+          : {}),
+      };
+      // Fence in-flight metadata before removing the row. Held remains continuous.
+      publish({ ...view, epoch: status.epoch, sequence: status.sequence });
       store.dispatch(applyNoteDeleted(workspaceId, noteId));
-      view = { ...view, held: true, hidden: true, canCancel: false };
     } else if (prior.noteInstanceId && status.current.noteInstanceId !== prior.noteInstanceId) {
       view = {
         ...view,
@@ -390,6 +465,7 @@ async function reconcile(
     throw error;
   } finally {
     if (checking.get(key) === work) checking.delete(key);
+    retireTerminal(prior);
   }
 }
 async function cancel(workspaceId: string, noteId: string): Promise<NoteDeleteView> {
@@ -441,6 +517,7 @@ async function cancel(workspaceId: string, noteId: string): Promise<NoteDeleteVi
     throw error;
   } finally {
     if (cancelling.get(key) === work) cancelling.delete(key);
+    retireTerminal(prior);
   }
 }
 /** Subscription leases own only callbacks/timers; authoritative markers live in Redux. */
@@ -508,7 +585,10 @@ async function refresh(observation: Observation) {
     // This is never a per-row query of the note list.
     const affected = new Set(
       observedViews(observation.workspaceId)
-        .filter((v) => v.held || v.hidden || v.failureCode === 'registration-limit')
+        .filter(
+          (v) =>
+            !v.terminalAbsent && (v.held || v.hidden || v.failureCode === 'registration-limit'),
+        )
         .map((v) => v.noteId),
     );
     for (const marker of snapshot.pending) {
@@ -634,6 +714,7 @@ function observe(workspaceId: string, owner: string) {
           backendGeneration: generation(),
           owner: crypto.randomUUID(),
           phase: 'uncertain',
+          terminalAbsent: undefined,
           held: true,
           canCancel: false,
         });
@@ -683,6 +764,18 @@ function unobserve(workspaceId: string, owner: string) {
 }
 export function* noteDeleteSaga() {
   try {
+    yield* takeEvery(
+      [
+        noteDeleteRecoveryReserved,
+        noteDeleteRecoveryDiscarded,
+        setRetainedNoteDraft,
+        setNoteContentPending,
+      ],
+      function* () {
+        for (const view of Object.values(store.state.workspaceNotes.deleteOperations ?? {}))
+          retireTerminal(view);
+      },
+    );
     yield* takeEvery(noteDeleteWorkspaceCheckRequested, function* ({ payload: [workspaceId] }) {
       const observation = observations.get(workspaceId);
       // Explicit checks may try physical admission again after unrelated cleanup.
@@ -692,7 +785,7 @@ export function* noteDeleteSaga() {
     yield* takeEvery(noteDeleteInputObserved, function* ({ payload: [scope] }) {
       if (scope.backendGeneration !== generation()) return;
       const view = lookup(scope.workspaceId, scope.noteId);
-      if (!view?.held || view.phase === 'preparing') return;
+      if (!view?.held || view.terminalAbsent || view.phase === 'preparing') return;
       try {
         if (view.canCancel) yield* call(cancel, scope.workspaceId, scope.noteId);
         else yield* call(reconcile, scope.workspaceId, scope.noteId);

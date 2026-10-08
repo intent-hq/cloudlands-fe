@@ -1,3 +1,5 @@
+import { noteDeleteRecoveryReserved } from '../workspace-notes-slice';
+import { noteDeleteViewChanged, noteDeleteViewRetired } from '../workspace-notes-slice';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -80,7 +82,9 @@ function harness(seed: Note[] = [], notePages?: ReturnType<typeof notePagesReduc
       action.type !== readNoteRequested.type &&
       action.type !== readNoteRequested.success.type &&
       action.type !== readNoteRequested.failure.type &&
-      action.type !== refreshNoteFromEventRequested.type
+      action.type !== refreshNoteFromEventRequested.type &&
+      // Internal identity allocation is reduced above; keep publication assertions unchanged.
+      action.type !== 'workspaceNotes/ensureNotePublicationLifetime'
     ) {
       actions.push(action);
     }
@@ -854,6 +858,103 @@ it('keeps comment events and explicit comment demand bounded while a paged viewe
     run.channel.put(request);
     await expect(request.promise).resolves.toEqual([]);
     expect(list).not.toHaveBeenCalled();
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it('fences a pre-deletion workspace list after terminal history has retired', async () => {
+  const pending = deferred<Note[]>();
+  vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+  vi.spyOn(appClient.notes, 'list')
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValueOnce([note('new-note')]);
+  const run = harness([note('old-note')]);
+  try {
+    run.send(workspaceNotesHydrationRequested(WS, 1, true));
+    await settle();
+    const deleted = {
+      backendGeneration: 1,
+      workspaceId: WS,
+      noteId: 'old-note',
+      noteInstanceId: 'old-instance',
+      owner: 'confirmed-owner',
+      phase: 'deleted' as const,
+      held: true,
+      hidden: true,
+      canCancel: false,
+      terminalAbsent: { epoch: 'epoch', sequence: 4 },
+    };
+    run.send(noteDeleteViewChanged(deleted));
+    run.send(applyNoteDeleted(WS, 'old-note'));
+    run.send(noteDeleteViewRetired(deleted));
+    pending.resolve([note('old-note')]);
+    await settle();
+    expect(run.state().byWorkspaceId[WS].notes.map['old-note']).toBeUndefined();
+    expect(run.state().byWorkspaceId[WS].loading).toBe(false);
+    run.send(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+    expect(run.state().byWorkspaceId[WS].notes.map['new-note']).toBeDefined();
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it('rejects a late list captured before B deletion when retained A is rechecked afterward', async () => {
+  const pending = deferred<Note[]>();
+  vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+  const list = vi
+    .spyOn(appClient.notes, 'list')
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValueOnce([note('b', { content: 'fresh read', rev: 2 })]);
+  const run = harness([note('b', { content: 'old b', rev: 9 })]);
+  try {
+    const a = {
+      backendGeneration: 1,
+      workspaceId: WS,
+      noteId: 'a',
+      noteInstanceId: 'a-instance',
+      owner: 'owner-a',
+      phase: 'deleted' as const,
+      held: true,
+      hidden: true,
+      canCancel: false,
+      terminalAbsent: { epoch: 'epoch', sequence: 1 },
+    };
+    run.send(
+      noteDeleteRecoveryReserved(
+        { backendGeneration: 1, workspaceId: WS, noteId: 'a', ownerId: 'editor-a' },
+        true,
+      ),
+    );
+    run.send(noteDeleteViewChanged(a));
+    run.send(workspaceNotesHydrationRequested(WS, 1, true));
+    await settle();
+    expect(list).toHaveBeenCalledOnce();
+    const b = { ...a, noteId: 'b', noteInstanceId: 'b-instance', owner: 'owner-b' };
+    run.send(noteDeleteViewChanged(b));
+    run.send(applyNoteDeleted(WS, 'b'));
+    run.send(noteDeleteViewRetired(b));
+    const tokenB = run.state().byWorkspaceId[WS].deleteReadAuthority;
+    run.send(
+      loadWorkspaceNotesSucceeded(
+        [WS],
+        { [WS]: [note('b', { content: 'replacement b', rev: 1 })] },
+        { [WS]: tokenB },
+      ),
+    );
+    run.send(noteDeleteViewChanged({ ...a }));
+    pending.resolve([note('b', { content: 'old b', rev: 9 })]);
+    await settle();
+    expect(run.state().byWorkspaceId[WS].notes.map.b.content).toBe('replacement b');
+    expect(Object.values(run.state().deleteOperations ?? {})).toEqual([a]);
+    run.send(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+    expect(run.state().byWorkspaceId[WS].notes.map.b.content).toBe('fresh read');
   } finally {
     run.task.cancel();
     await run.task.toPromise();

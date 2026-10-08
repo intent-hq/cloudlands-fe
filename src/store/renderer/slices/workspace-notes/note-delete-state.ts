@@ -28,6 +28,8 @@ export interface NoteDeleteView {
   error?: string;
   failureCode?: 'unavailable' | 'replaced' | 'registration-limit';
   settledAt?: number;
+  /** Targeted current absence, not merely a historical DELETED receipt. */
+  terminalAbsent?: { epoch: string; sequence: number };
   waitingForSlimRevision?: number;
 }
 export interface NoteDeleteRecoveryDraft {

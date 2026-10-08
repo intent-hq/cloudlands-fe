@@ -4272,6 +4272,7 @@ export function registerBackendHandlers(): void {
       )
         throw new Error('Note deletion connection unavailable');
       return {
+        physicalCloseSource: client,
         incarnation: connection.incarnation,
         principal: binding.frame,
         isLive: () =>

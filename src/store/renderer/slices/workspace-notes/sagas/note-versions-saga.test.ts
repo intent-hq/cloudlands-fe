@@ -1,3 +1,13 @@
+import {
+  daemonHealthReducer,
+  connectionStatusChanged,
+} from '../../daemon-health/daemon-health-slice';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  noteDeleteViewChanged,
+  noteDeleteViewRetired,
+  applyNoteDeleted,
+} from '../workspace-notes-slice';
 import { runSaga, stdChannel } from 'redux-saga';
 import { all, call } from 'typed-redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -74,17 +84,23 @@ function harness(seed: Note | Note[] = note(), onError?: (error: Error) => void)
     undefined,
     loadWorkspaceNotesSucceeded(Object.keys(notesByWorkspace), notesByWorkspace),
   );
+  let daemonHealth = daemonHealthReducer(undefined, connectionStatusChanged('connected'));
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
-    actions.push(action);
+    daemonHealth = daemonHealthReducer(daemonHealth, action);
+    // Record publication effects; internal lifetime allocation is still reduced above.
+    if (action.type !== 'workspaceNotes/ensureNotePublicationLifetime') actions.push(action);
     channel.put(action);
     return action;
   };
   function* saga() {
     yield* all([call(noteVersionsSaga), call(notesWriteSaga)]);
   }
-  const task = runSaga({ channel, dispatch, onError, getState: () => ({ workspaceNotes }) }, saga);
-  return { actions, channel, getState: () => workspaceNotes, task };
+  const task = runSaga(
+    { channel, dispatch, onError, getState: () => ({ workspaceNotes, daemonHealth }) },
+    saga,
+  );
+  return { actions, channel, dispatch, getState: () => workspaceNotes, task };
 }
 
 describe('noteVersionsSaga', () => {
@@ -338,3 +354,95 @@ it('keeps version operations alive when a retained strict draft refuses settleme
     vi.restoreAllMocks();
   }
 });
+
+it('does not publish a late restored version into a replacement after terminal retirement', async () => {
+  let finish!: (result: { success: boolean; note: Note }) => void;
+  vi.spyOn(appClient.notes, 'restoreVersion').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.spyOn(appClient.notes, 'listVersions').mockResolvedValue([]);
+  const run = harness();
+  try {
+    run.channel.put(restoreNoteVersion(WS, NOTE, 'version-1'));
+    for (let i = 0; i < 8; i++) await settle();
+    const deleted = {
+      backendGeneration: 1,
+      workspaceId: WS,
+      noteId: NOTE,
+      noteInstanceId: 'old-instance',
+      owner: 'confirmed-owner',
+      phase: 'deleted' as const,
+      held: true,
+      hidden: true,
+      canCancel: false,
+      terminalAbsent: { epoch: 'epoch', sequence: 4 },
+    };
+    run.dispatch(noteDeleteViewChanged(deleted));
+    run.dispatch(applyNoteDeleted(WS, NOTE));
+    run.dispatch(noteDeleteViewRetired(deleted));
+    run.dispatch(
+      loadWorkspaceNotesSucceeded(
+        [WS],
+        { [WS]: [note({ content: 'replacement body', rev: 1 })] },
+        { [WS]: run.getState().byWorkspaceId[WS].deleteReadAuthority },
+      ),
+    );
+    finish({ success: true, note: note({ content: 'old restored body', rev: 8 }) });
+    for (let i = 0; i < 8; i++) await settle();
+    expect(run.getState().byWorkspaceId[WS].notes.map[NOTE].content).toBe('replacement body');
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it.each(['reconnect', 'workspace-reuse'] as const)(
+  'rejects a late restore response after %s and permits a fresh restore',
+  async (change) => {
+    let finish!: (result: { success: boolean; note: Note }) => void;
+    const restore = vi.spyOn(appClient.notes, 'restoreVersion').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const list = vi.spyOn(appClient.notes, 'listVersions').mockResolvedValue([]);
+    const run = harness();
+    try {
+      run.channel.put(restoreNoteVersion(WS, NOTE, 'version-1'));
+      for (let i = 0; i < 8; i++) await settle();
+      expect(restore).toHaveBeenCalledOnce();
+      if (change === 'reconnect') {
+        run.dispatch(connectionStatusChanged('disconnected'));
+        run.dispatch(connectionStatusChanged('connected'));
+      } else run.dispatch(workspaceDeleted(WS, [], 'replaced'));
+      run.dispatch(
+        loadWorkspaceNotesSucceeded([WS], { [WS]: [note({ content: 'replacement', rev: 1 })] }),
+      );
+      finish({ success: true, note: note({ content: 'old restored body', rev: 99 }) });
+      for (let i = 0; i < 8; i++) await settle();
+      expect(run.getState().byWorkspaceId[WS].notes.map[NOTE]).toMatchObject({
+        content: 'replacement',
+        rev: 1,
+      });
+      expect(list).not.toHaveBeenCalled();
+      restore.mockResolvedValue({
+        success: true,
+        note: note({ content: 'fresh restore', rev: 2 }),
+      });
+      run.channel.put(restoreNoteVersion(WS, NOTE, 'version-2'));
+      for (let i = 0; i < 8; i++) await settle();
+      expect(restore).toHaveBeenCalledTimes(2);
+      expect(run.getState().byWorkspaceId[WS].notes.map[NOTE].content).toBe('fresh restore');
+      expect(list).toHaveBeenCalledOnce();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.restoreAllMocks();
+    }
+  },
+);

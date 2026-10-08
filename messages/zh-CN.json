@@ -7504,6 +7504,8 @@
   "notes_delete_changed_error": "此删除操作已不是当前操作。请检查笔记状态。",
   "notes_delete_requestFailed_error": "无法确认删除。请检查笔记状态。",
   "notes_delete_checkFailed_error": "无法确认笔记状态。请重试。",
+  "notes_editor_missingIdentity_label": "此编辑器已不再关联笔记。请重新打开笔记以继续。",
+  "notes_editor_anonymousDraft_label": "未保存的编辑内容仍显示在此处。请先导出或丢弃这些内容，再打开请求的笔记。",
   "notes_delete_recoveryCapacity_error": "恢复存储空间已满，此编辑器为只读模式。请保存或丢弃已恢复的草稿，然后重试。",
   "notes_delete_workspaceCheckFailed_error": "无法验证此工作区的笔记删除状态。请检查状态以重试。",
   "notes_delete_recovery_label": "已恢复的草稿",

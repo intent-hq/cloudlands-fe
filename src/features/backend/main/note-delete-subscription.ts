@@ -1,3 +1,4 @@
+import type { JsonRpcClient } from './json-rpc-client';
 import { randomUUID } from 'node:crypto';
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -10,10 +11,15 @@ import {
 
 // One ledger for every renderer and handler lifetime in this main process.
 const ledger = new NoteDeleteSubscriptionLedger(randomUUID);
+type PhysicalCloseSource = Pick<JsonRpcClient, 'onPhysicalSocketClosed'>;
+export type NativeNoteDeleteSubscriptionOrigin = NoteDeleteSubscriptionOrigin & {
+  physicalCloseSource: PhysicalCloseSource;
+};
+const observedClients = new WeakSet<PhysicalCloseSource>();
 export function registerNoteDeleteSubscriptionHandlers(
   ipc: Pick<IpcMain, 'handle'>,
   deps: {
-    capture(event: IpcMainInvokeEvent): NoteDeleteSubscriptionOrigin;
+    capture(event: IpcMainInvokeEvent): NativeNoteDeleteSubscriptionOrigin;
     errorPayload(error: unknown): unknown;
   },
 ) {
@@ -25,7 +31,14 @@ export function registerNoteDeleteSubscriptionHandlers(
   ipc.handle(channels.SUBSCRIBE, async (event, workspaceId: unknown) => {
     try {
       const workspace = noteDeleteWorkspace(workspaceId);
-      return { ok: true, result: await ledger.subscribe(deps.capture(event), workspace) };
+      const origin = deps.capture(event);
+      if (!observedClients.has(origin.physicalCloseSource)) {
+        origin.physicalCloseSource.onPhysicalSocketClosed((incarnation) =>
+          ledger.connectionClosed(incarnation),
+        );
+        observedClients.add(origin.physicalCloseSource);
+      }
+      return { ok: true, result: await ledger.subscribe(origin, workspace) };
     } catch (error) {
       return { ok: false, error: errorPayload(error) };
     }

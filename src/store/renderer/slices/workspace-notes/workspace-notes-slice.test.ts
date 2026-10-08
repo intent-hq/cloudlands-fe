@@ -55,9 +55,11 @@ describe('workspaceNotesReducer', () => {
       ),
     ).toEqual({
       retainedDrafts: {},
+      nextPublicationLifetime: 2,
       byWorkspaceId: {
         [WS_1]: {
           ...emptyWorkspaceNotesState,
+          publicationLifetime: 1,
           notes: {
             idField: 'id',
             ids: ['note-1'],
@@ -69,6 +71,7 @@ describe('workspaceNotesReducer', () => {
         },
         [WS_2]: {
           ...emptyWorkspaceNotesState,
+          publicationLifetime: 2,
           notes: {
             idField: 'id',
             ids: [],
@@ -186,6 +189,7 @@ describe('workspaceNotesReducer', () => {
 
     expect(state.byWorkspaceId[WS_1]).toEqual({
       ...emptyWorkspaceNotesState,
+      publicationLifetime: 1,
       loading: false,
       error: 'boom',
     });
@@ -202,6 +206,7 @@ describe('workspaceNotesReducer', () => {
 
     expect(workspaceNotesReducer(loadedState, clearWorkspaceNotesForWorkspaces([WS_1]))).toEqual({
       retainedDrafts: {},
+      nextPublicationLifetime: 3,
       byWorkspaceId: {
         [WS_2]: loadedState.byWorkspaceId[WS_2],
       },
@@ -458,4 +463,33 @@ describe('workspaceNotesReducer', () => {
     expect(nextState.byWorkspaceId[WS_1]).toBeUndefined();
     expect(nextState.byWorkspaceId[WS_2]).toEqual(loadedState.byWorkspaceId[WS_2]);
   });
+});
+
+it('renews publication lifetime on workspace reuse while preserving other live owners', () => {
+  const loaded = workspaceNotesReducer(
+    undefined,
+    loadWorkspaceNotesSucceeded([WS_1, WS_2], {
+      [WS_1]: [mockNote('note-1')],
+      [WS_2]: [mockNote('note-2', WS_2)],
+    }),
+  );
+  const edited = workspaceNotesReducer(
+    loaded,
+    applyLocalNoteUpdate(WS_1, 'note-1', { title: 'ordinary edit' }),
+  );
+  expect(edited.byWorkspaceId[WS_1].publicationLifetime).toBe(
+    loaded.byWorkspaceId[WS_1].publicationLifetime,
+  );
+  const unmounted = workspaceNotesReducer(edited, workspaceUnmounted(WS_1));
+  const recreated = workspaceNotesReducer(
+    unmounted,
+    loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1')] }),
+  );
+  expect(recreated.byWorkspaceId[WS_1].publicationLifetime).not.toBe(
+    loaded.byWorkspaceId[WS_1].publicationLifetime,
+  );
+  expect(recreated.byWorkspaceId[WS_2].publicationLifetime).toBe(
+    loaded.byWorkspaceId[WS_2].publicationLifetime,
+  );
+  expect(Object.keys(recreated.byWorkspaceId)).toHaveLength(2);
 });

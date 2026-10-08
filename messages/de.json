@@ -7504,6 +7504,8 @@
   "notes_delete_changed_error": "Diese Löschung ist nicht mehr aktuell. Prüfe den Status der Notiz.",
   "notes_delete_requestFailed_error": "Die Löschung konnte nicht bestätigt werden. Prüfe den Status der Notiz.",
   "notes_delete_checkFailed_error": "Der Status der Notiz konnte nicht bestätigt werden. Versuche es erneut.",
+  "notes_editor_missingIdentity_label": "Dieser Editor ist nicht mehr mit einer Notiz verknüpft. Öffne die Notiz erneut, um fortzufahren.",
+  "notes_editor_anonymousDraft_label": "Ungespeicherte Änderungen werden weiterhin angezeigt. Exportiere oder verwirf sie, bevor du die angeforderte Notiz öffnest.",
   "notes_delete_recoveryCapacity_error": "Dieser Editor ist schreibgeschützt, weil der Wiederherstellungsspeicher voll ist. Speichere oder verwirf einen wiederhergestellten Entwurf und versuche es erneut.",
   "notes_delete_workspaceCheckFailed_error": "Der Löschstatus der Notizen in diesem Arbeitsbereich konnte nicht überprüft werden. Prüfe den Status, um es erneut zu versuchen.",
   "notes_delete_recovery_label": "Wiederhergestellte Entwürfe",

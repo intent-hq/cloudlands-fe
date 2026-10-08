@@ -170,6 +170,7 @@ const {
   });
 
   const mockSelectorStore = {
+    publicationState: {} as Record<string, any>,
     createSelector: (selectorFunc: (...args: any[]) => any) => {
       const readableSelector = Object.assign(() => constantReadable(undefined), {
         select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
@@ -185,8 +186,15 @@ const {
       const map = state.notesById;
       return {
         workspaceNotes: {
+          ...this.publicationState,
           retainedDrafts: state.retainedDrafts,
-          byWorkspaceId: { 'ws-1': { notes: { map, ids: Object.keys(map) } } },
+          byWorkspaceId: {
+            ...this.publicationState.byWorkspaceId,
+            'ws-1': {
+              ...this.publicationState.byWorkspaceId?.['ws-1'],
+              notes: { map, ids: Object.keys(map) },
+            },
+          },
         },
       };
     },
@@ -643,12 +651,21 @@ async function startPersistenceOwner(options: { versions?: boolean } = {}) {
   const { runSaga, stdChannel } = await import('redux-saga');
   const { notesWriteSaga } =
     await import('$store/renderer/slices/workspace-notes/sagas/notes-write-saga');
+  const { initialState, workspaceNotesReducer, ensureNotePublicationLifetime } =
+    await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+  mockSelectorStore.publicationState = initialState;
   const channel = stdChannel();
   let pending = false;
   setRoutePersistenceToSaga(true);
   mockHasPendingNoteContent.mockImplementation(() => pending);
   mockDispatch.mockImplementation((action: any) => {
-    if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+    if (action.type === ensureNotePublicationLifetime.type) {
+      // Real publication capture requires its allocation to reduce before the next select.
+      mockSelectorStore.publicationState = workspaceNotesReducer(
+        mockSelectorStore.state.workspaceNotes,
+        action,
+      );
+    } else if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
       const { noteId, update } = action.payload;
       replaceNotes([{ ...getNoteById(noteId), ...update }]);
     } else if (action.type === 'workspaceNotes/applyNoteUpdated') {
@@ -696,6 +713,7 @@ async function startPersistenceOwner(options: { versions?: boolean } = {}) {
 describe('NoteWithComments task conversion regression', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSelectorStore.publicationState = {};
     deleteGate.held = false;
     deleteGate.reserve.mockReset().mockImplementation(() => deleteGate.release);
     deleteGate.listeners.clear();

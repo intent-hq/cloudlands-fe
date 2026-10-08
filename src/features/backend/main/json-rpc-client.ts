@@ -1,3 +1,7 @@
+import {
+  observePhysicalSocketClose,
+  restorePhysicalSocketCloseObserver,
+} from './physical-socket-close';
 import { assertNoteUpdateFrame } from '$shared/note-update-frame';
 /**
  * Main-process JSON-RPC 2.0 client for the live intentd daemon.
@@ -201,6 +205,7 @@ export class JsonRpcClient extends EventEmitter {
   private protocolVersion: unknown;
   private socketIncarnation: object | null = null;
   private repositoryConnection: RepositoryConnection | null = null;
+  private readonly physicalSocketObservers = new Set<(incarnation: object) => void>();
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
@@ -493,6 +498,14 @@ export class JsonRpcClient extends EventEmitter {
   onRepositoryConnectionEvent(listener: (event: RepositoryConnectionEvent) => void): () => void {
     this.repositoryObservers.add(listener);
     return () => this.repositoryObservers.delete(listener);
+  }
+
+  /** Exact physical close only; survives logical retirement and disposal until the socket closes. */
+  onPhysicalSocketClosed(listener: (incarnation: object) => void): () => void {
+    this.physicalSocketObservers.add(listener);
+    return () => {
+      this.physicalSocketObservers.delete(listener);
+    };
   }
 
   private emitRepositoryEvent(event: RepositoryConnectionEvent): void {
@@ -964,6 +977,9 @@ export class JsonRpcClient extends EventEmitter {
     this.connectionGeneration++;
     const incarnation = Object.freeze({});
     this.socketIncarnation = incarnation;
+    observePhysicalSocketClose(socket, () => {
+      for (const listener of this.physicalSocketObservers) listener(incarnation);
+    });
     if (this.lifecycle) {
       const row = { incarnation, destroyRequested: false, closeObserved: false };
       this.lifecycle.closes.set(socket, row);
@@ -1371,6 +1387,7 @@ export class JsonRpcClient extends EventEmitter {
     // Drop any partially-decoded multi-byte sequence so a reconnect starts clean.
     this.decoder = new StringDecoder('utf8');
     socket.removeAllListeners();
+    restorePhysicalSocketCloseObserver(socket);
     const close = this.lifecycle?.closes.get(socket);
     if (close) {
       close.destroyRequested = true;

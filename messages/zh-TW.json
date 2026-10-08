@@ -7504,6 +7504,8 @@
   "notes_delete_changed_error": "此刪除操作已不是目前的操作。請檢查筆記狀態。",
   "notes_delete_requestFailed_error": "無法確認刪除。請檢查筆記狀態。",
   "notes_delete_checkFailed_error": "無法確認筆記狀態。請重試。",
+  "notes_editor_missingIdentity_label": "此編輯器已不再連結筆記。請重新開啟筆記以繼續。",
+  "notes_editor_anonymousDraft_label": "未儲存的編輯內容仍顯示於此處。請先匯出或捨棄這些內容，再開啟要求的筆記。",
   "notes_delete_recoveryCapacity_error": "復原儲存空間已滿，此編輯器為唯讀模式。請儲存或捨棄已復原的草稿，然後重試。",
   "notes_delete_workspaceCheckFailed_error": "無法驗證此工作區的筆記刪除狀態。請檢查狀態以重試。",
   "notes_delete_recovery_label": "已復原的草稿",
