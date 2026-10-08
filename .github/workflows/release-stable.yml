@@ -445,7 +445,7 @@ jobs:
       - name: Checkout repo at promoted tag
         id: checkout_tag
         if: steps.notes_base.outputs.skip_notes != 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         continue-on-error: true
         with:
           ref: refs/tags/v${{ inputs.version }}
