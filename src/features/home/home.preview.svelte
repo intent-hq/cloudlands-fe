@@ -15,6 +15,7 @@
       __homeAssistantPreview?: { removeSelectedThread: () => void };
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
+        updateWorkspace: (id: string, changes: Partial<Workspace>) => void;
       };
     }
   }
@@ -24,6 +25,8 @@
       | 'populated'
       | 'status-icons'
       | 'board'
+      | 'dashboard'
+      | 'dashboard-repository'
       | 'empty'
       | 'assistant'
       | 'assistant-streaming'
@@ -48,6 +51,8 @@
       populated: { props: { scenario: 'populated' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       board: { props: { scenario: 'board' } },
+      dashboard: { props: { scenario: 'dashboard' } },
+      'dashboard-repository': { props: { scenario: 'dashboard-repository' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
@@ -237,6 +242,8 @@
     replaceWorkspaceList,
     setWorkspaceHasLoaded,
     setWorkspaceError,
+    updateWorkspaceEntity,
+    bulkUpdateWorkspaceEntities,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
@@ -275,6 +282,8 @@
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),
     }),
+    updateWorkspace: (id, changes) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, changes)])),
   };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
@@ -428,6 +437,13 @@
       store.dispatch(openPanel('chief'));
     }
     if (scenario === 'board') store.dispatch(updateHomeWorkspaceView({ view: scenario }));
+    if (scenario === 'dashboard' || scenario === 'dashboard-repository')
+      store.dispatch(
+        updateHomeWorkspaceView({
+          view: 'dashboard',
+          groupBy: scenario === 'dashboard-repository' ? 'repository' : 'status',
+        }),
+      );
     if (scenario === 'status-icons') store.dispatch(updateHomeWorkspaceView({ groupBy: 'none' }));
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
