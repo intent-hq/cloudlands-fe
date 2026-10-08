@@ -7,11 +7,23 @@ test('Dashboard preserves keyboard focus through live updates and returns focus 
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(Preview);
+  const component = await mount(Preview, { props: { scenario: 'dashboard' } });
+  await component.getByRole('button', { name: 'List view', exact: true }).click();
   await component.getByRole('button', { name: 'Dashboard view', exact: true }).click();
   const dashboard = component.locator('[data-home-dashboard]');
   const card = dashboard.locator('[data-home-workspace="home-running"]');
   await card.focus();
+  await page.evaluate(() => {
+    window.__homeWorkspacePreview?.updateAgent('dashboard-search', {
+      lastAgentResponse: 'Checking repository ranking with the new weights.',
+    });
+    window.__homeWorkspacePreview?.updateTokens('home-running', 18_000);
+  });
+  await expect(card.locator('[data-home-card-agent="dashboard-search"]')).toContainText(
+    'Checking repository ranking',
+  );
+  await expect(card.locator('[data-home-card-tokens]')).toContainText('19.4K');
+  await expect(card).toBeFocused();
   await page.evaluate(() =>
     window.__homeWorkspacePreview?.updateWorkspace('home-running', {
       statusMessage: 'Search ranking is implemented; checking repository filters.',
@@ -74,6 +86,16 @@ test('Narrow dashboard keeps long cards inside its scroller and preview controls
   const component = await mount(Preview, { props: { scenario: 'dashboard' } });
   const dashboard = component.locator('[data-home-dashboard]');
   await expect(dashboard).toBeVisible();
+  const card = dashboard.locator('[data-home-workspace="home-running"]');
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview?.updateAgent('dashboard-search', {
+      lastAgentResponse:
+        'A long activity update that must remain inside the card while the coordinator and other agents continue to work on keyboard navigation and repository search.',
+    }),
+  );
+  await expect(card.locator('[data-home-card-agent="dashboard-search"]')).toContainText(
+    'A long activity update',
+  );
   expect(
     await dashboard.evaluate((element) => {
       const bounds = element.getBoundingClientRect();
@@ -86,7 +108,6 @@ test('Narrow dashboard keeps long cards inside its scroller and preview controls
       );
     }),
   ).toBe(true);
-  const card = dashboard.locator('[data-home-workspace="home-ready"]');
   await card.scrollIntoViewIfNeeded();
   await card.focus();
   await page.keyboard.press('Enter');
@@ -95,4 +116,34 @@ test('Narrow dashboard keeps long cards inside its scroller and preview controls
   await page.keyboard.press('Escape');
   await expect(card).toBeFocused();
   await expect(card).toBeInViewport();
+});
+
+test('Dashboard attention updates keep the card focused and unknown token totals stay absent', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'dashboard' } });
+  const card = component.locator('[data-home-workspace="home-review"]');
+  await card.focus();
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview?.updateAgent('dashboard-review', {
+      attentionRequestKind: 'blocker',
+      attentionRequestReason: 'The staging environment needs access before review can continue.',
+    }),
+  );
+  await expect(card.locator('[data-home-card-attention]')).toContainText(
+    'The staging environment needs access',
+  );
+  await expect(card).toBeFocused();
+  const unread = component.locator('[data-home-workspace="home-unread"]');
+  await expect(unread.locator('[data-home-card-tokens]')).toHaveCount(0);
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview?.updateWorkspace('home-unread', {
+      attention: undefined,
+      waiting: true,
+    }),
+  );
+  await expect(unread.locator('[data-home-card-unread]')).toHaveCount(0);
+  await expect(unread.locator('[data-home-card-waiting]')).toBeAttached();
 });
