@@ -1,0 +1,73 @@
+body {
+  margin: 0;
+  background: hsl(var(--background, 0 0% 100%));
+  color: hsl(var(--foreground, 0 0% 10%));
+  font-family: var(--font-ui, system-ui);
+  font-size: var(--text-body-size, 1rem);
+  line-height: var(--text-body-line-height, 1.5);
+}
+
+main {
+  max-width: var(--content-measure-wide, 60rem);
+  margin: auto;
+  padding: var(--space-7, 2rem);
+}
+
+h1 {
+  font-size: var(--text-display-size, 2rem);
+  line-height: var(--text-display-line-height, 1.2);
+}
+
+h2 {
+  font-size: var(--text-title-size, 1.25rem);
+}
+
+.eyebrow {
+  color: hsl(var(--muted-foreground, 0 0% 40%));
+}
+
+.card,
+pre {
+  padding: var(--space-5, 1.5rem);
+  border: 1px solid hsl(var(--border, 0 0% 85%));
+  border-radius: var(--radius-large, 1rem);
+}
+
+.card {
+  background: hsl(var(--card, 0 0% 100%));
+  color: hsl(var(--card-foreground, 0 0% 10%));
+  box-shadow: var(--elevation-raised, none);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 0.75rem);
+}
+
+.swatches span {
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  border-radius: var(--radius-medium, 0.5rem);
+}
+
+.primary {
+  background: hsl(var(--primary, 0 0% 10%));
+  color: hsl(var(--primary-foreground, 0 0% 100%));
+}
+
+.secondary {
+  background: hsl(var(--secondary, 0 0% 90%));
+  color: hsl(var(--secondary-foreground, 0 0% 10%));
+}
+
+.muted {
+  background: hsl(var(--muted, 0 0% 95%));
+  color: hsl(var(--muted-foreground, 0 0% 40%));
+}
+
+pre {
+  overflow: auto;
+  font-family: var(--font-code, monospace);
+  font-size: var(--text-code-size, 0.875rem);
+  background: hsl(var(--muted, 0 0% 95%));
+}

@@ -17,6 +17,8 @@
     "/test/*": ["./test/*"],
   },
   "entry": [
+    // Built as the standalone custom-view SDK; its public API is used outside this app.
+    "src/shared/custom-view-sdk/index.ts",
     // Electron main process (tsconfig.main.json; package.json "main" points at its build output)
     "src/main/index.ts",
     // Electron preload (tsconfig.preload.json). The compiled entry, src/preload/index.ts, is

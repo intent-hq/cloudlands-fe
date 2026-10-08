@@ -4,9 +4,6 @@ import { getItem, getItems } from '@themislib/themis/utils/collections/collectio
 export const selectCustomViewsState = store.createSelector((state) => state.customViews);
 export const selectCustomViewState = selectCustomViewsState;
 export const selectCustomViews = store.createSelector((state) => getItems(state.customViews.views));
-export const selectCustomViewsSelectedId = store.createSelector(
-  (state) => state.customViews.selectedId,
-);
 export const selectCustomViewById = store.createSelector((state, id: string) =>
   getItem(state.customViews.views, id),
 );

@@ -9,6 +9,7 @@
     "node": "^22.22.2 || ^24.15.0 || >=26"
   },
   "scripts": {
+    "build:custom-view-sdk": "tsc -p sdk/custom-view/tsconfig.json",
     "generate:ipc-channels": "tsx scripts/inline-ipc-channels.ts",
     "generate:build-config": "node scripts/generate-build-config.cjs",
     "generate:i18n": "node scripts/paraglide-inputs-hash.mjs",

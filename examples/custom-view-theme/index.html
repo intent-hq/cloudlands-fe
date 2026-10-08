@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Intent theme example</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Custom view SDK</p>
+      <h1>Your view, Intent’s theme</h1>
+      <p id="status" role="status">Open this page as an Intent custom view to receive its theme.</p>
+      <section class="card">
+        <h2>Live design tokens</h2>
+        <p>
+          Change the theme in Intent. This page’s colors, spacing, and type follow automatically.
+        </p>
+        <div class="swatches" aria-label="Theme colors">
+          <span class="primary">Primary</span>
+          <span class="secondary">Secondary</span>
+          <span class="muted">Muted</span>
+        </div>
+      </section>
+      <h2>JSON snapshot</h2>
+      <pre id="snapshot">Waiting for Intent…</pre>
+    </main>
+  </body>
+</html>

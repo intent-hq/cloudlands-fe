@@ -8,9 +8,22 @@
     customViewFrameStatus,
   } from '../custom-views-slice';
   import { m } from '$shared/paraglide/messages.js';
+  import { attachCustomViewThemeBridge } from '../custom-view-theme-bridge';
 
   let { viewId, url, title }: { viewId: string; url: string; title: string } = $props();
   const state$ = selectCustomViewsState();
+  function themeBridge(iframe: HTMLIFrameElement, frameUrl: string) {
+    let dispose = attachCustomViewThemeBridge(iframe, frameUrl);
+    return {
+      update(nextUrl: string) {
+        dispose();
+        dispose = attachCustomViewThemeBridge(iframe, nextUrl);
+      },
+      destroy() {
+        dispose();
+      },
+    };
+  }
   onMount(() => {
     appStore.dispatch(customViewFrameOpened(viewId));
     return () => {
@@ -28,6 +41,7 @@
   {@const revision = $state$.frame.revision}
   <iframe
     src={url}
+    use:themeBridge={url}
     {title}
     class="min-h-0 w-full flex-1 border-0 bg-background"
     sandbox="allow-scripts allow-forms allow-same-origin"

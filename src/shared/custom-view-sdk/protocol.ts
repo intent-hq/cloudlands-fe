@@ -1,8 +1,5 @@
 import { CUSTOM_VIEW_THEME_TOKENS, type CustomViewTokenName } from './tokens.js';
 
-export { CUSTOM_VIEW_THEME_TOKENS } from './tokens.js';
-export type { CustomViewTokenName } from './tokens.js';
-
 export interface CustomViewThemeSnapshot {
   readonly version: 1;
   readonly mode: 'light' | 'dark';
