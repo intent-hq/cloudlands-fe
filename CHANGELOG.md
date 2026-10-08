@@ -4,6 +4,29 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.212.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.5...v2.212.0) (2026-10-08)
+
+
+### 🚀 Features
+
+* **home:** streamline pull request previews ([#3306](https://github.com/intent-hq/cloudlands-fe/issues/3306)) ([b5c6fc5](https://github.com/intent-hq/cloudlands-fe/commit/b5c6fc5aa7d3477eafc1076f379260bc03d919d3))
+* make Home workspaces easier to open ([#3277](https://github.com/intent-hq/cloudlands-fe/issues/3277)) ([f48dcf4](https://github.com/intent-hq/cloudlands-fe/commit/f48dcf4dfcfc9e6a7f66b08dd84ac7883ad55771))
+
+
+### 🐛 Bug Fixes
+
+* align home preview panel corner radii ([#3305](https://github.com/intent-hq/cloudlands-fe/issues/3305)) ([29ea4fe](https://github.com/intent-hq/cloudlands-fe/commit/29ea4fec4bfd9887d6e38440a90f998f5c3eb131))
+* bump intentd sidecar to v0.10.31 ([#3303](https://github.com/intent-hq/cloudlands-fe/issues/3303)) ([401df6b](https://github.com/intent-hq/cloudlands-fe/commit/401df6b98e9e8ce54c5b20106c7c0e328336145b))
+* bump intentd sidecar to v0.10.32 ([#3307](https://github.com/intent-hq/cloudlands-fe/issues/3307)) ([07bfd1d](https://github.com/intent-hq/cloudlands-fe/commit/07bfd1d0bfe3b7ca1cbedd0ebd2bdd216a013136))
+* **home:** prevent title overlap and open preview chat links in workspace ([#3278](https://github.com/intent-hq/cloudlands-fe/issues/3278)) ([0fad552](https://github.com/intent-hq/cloudlands-fe/commit/0fad55246de9064f0eada2cd04e0c2bd8955877f))
+* **home:** Restore selected text contrast on pale tabs ([#3295](https://github.com/intent-hq/cloudlands-fe/issues/3295)) ([e321497](https://github.com/intent-hq/cloudlands-fe/commit/e321497da5858b2dadefdc85c3f7bc1c99d006df))
+* keep assistant content with its sending thread ([#3263](https://github.com/intent-hq/cloudlands-fe/issues/3263)) ([73a6217](https://github.com/intent-hq/cloudlands-fe/commit/73a6217a7bafda8b02748e8ba91a4cbb14afdc82))
+* keep assistant thread title editing in the header ([#3299](https://github.com/intent-hq/cloudlands-fe/issues/3299)) ([095d63f](https://github.com/intent-hq/cloudlands-fe/commit/095d63ff6ea2272eda495fa104754f69cf5faae3))
+* keep connection recovery below dialogs ([#3300](https://github.com/intent-hq/cloudlands-fe/issues/3300)) ([27d7215](https://github.com/intent-hq/cloudlands-fe/commit/27d7215c28f7282a8ad70e12ba48d62bc54f4f35))
+* make Assistant notes editable by default ([#3266](https://github.com/intent-hq/cloudlands-fe/issues/3266)) ([634613f](https://github.com/intent-hq/cloudlands-fe/commit/634613f9933b0d603c2f0d91af68ea27ed99792b))
+* preserve collapsed sidebar width when reopening workspaces ([#3276](https://github.com/intent-hq/cloudlands-fe/issues/3276)) ([a11c552](https://github.com/intent-hq/cloudlands-fe/commit/a11c552a1648e7267f1ce3e7b979dd9a8a7e6372))
+* preserve opaque submission IDs in chat display ([#3290](https://github.com/intent-hq/cloudlands-fe/issues/3290)) ([d2c6471](https://github.com/intent-hq/cloudlands-fe/commit/d2c6471f13878b34040e7f76f51898c5687e4dd9))
+
 ## [2.211.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.211.4...v2.211.5) (2026-10-07)
 
 

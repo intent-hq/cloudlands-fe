@@ -1,32 +1,17 @@
-import { goto } from '$app/navigation';
 import { tick } from 'svelte';
 import { dismissibleWorkspaceReasons } from '$shared/utils/workspace-attention-reminder';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
-import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
-import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import {
-  requestDismissWorkspaceAttention,
-  requestArchiveWorkspace,
-  requestUnarchiveWorkspace,
-  requestDeleteWorkspace,
-} from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
-import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { requestDismissWorkspaceAttention } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 import { store } from '$store/renderer/store';
-import { WorkspaceStatusEnum, type Workspace, type AttentionReminderReason } from '$shared/types';
+import type { Workspace, AttentionReminderReason } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import {
   getSidebarContextPosition,
   type SidebarContextPosition,
   type SidebarMenuEntry,
 } from '$lib/components/ui/sidebar-context-menu/types';
-import {
-  faBellSlash,
-  faThumbtack,
-  faBoxArchive,
-  faBoxOpen,
-  faTrash,
-  faArrowUpRightFromSquare,
-} from '@fortawesome/free-solid-svg-icons';
+import { faBellSlash } from '@fortawesome/free-solid-svg-icons';
+import { createHomeWorkspaceMenu } from './home-workspace-menu';
 
 interface HomeWorkspaceActionsOptions {
   root: () => HTMLElement | null;
@@ -35,6 +20,7 @@ interface HomeWorkspaceActionsOptions {
   expandPinned: () => void;
   consumerId: string;
   dismissalRequestId: () => string | undefined;
+  onOpen: (id: string) => void;
 }
 
 /** UI-local menus and focus; mutations and their outcomes remain Redux-owned. */
@@ -130,73 +116,20 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
     snapshot = captureReminderMenu(workspace),
   ): SidebarMenuEntry[] {
     const pinned = options.pinnedIds().includes(workspace.id);
-    const items: SidebarMenuEntry[] = [
-      {
-        id: 'open',
-        label: m.home_open_workspace(),
-        icon: faArrowUpRightFromSquare,
-        onClick: () => {
-          contextMenu = null;
-          store.dispatch(openWorkspaceTab(workspace.id));
-          void goto(`/workspace/${encodeURIComponent(workspace.id)}`);
-        },
-      },
-      {
-        id: 'pin',
-        label: pinned ? m.workspace_card_unpin_ariaLabel() : m.workspace_card_pin_ariaLabel(),
-        icon: faThumbtack,
-        onClick: () => {
-          contextMenu = null;
-          store.dispatch(togglePinWorkspace(workspace.id));
-          if (!pinned) options.expandPinned();
-          void tick().then(() =>
-            options
-              .root()
-              ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-              ?.closest<HTMLElement>('[role="option"], button')
-              ?.focus(),
-          );
-        },
-      },
-    ];
+    const items = createHomeWorkspaceMenu(workspace, {
+      pinned,
+      onOpen: options.onOpen,
+      onClose: () => (contextMenu = null),
+      expandPinned: options.expandPinned,
+      getHomeElement: options.root,
+    });
     if (snapshot.reasons.length && snapshot.principalContext)
-      items.push({
+      items.splice(2, 0, {
         id: 'dismiss-attention',
         label: m.workspace_card_dismissForNow_label(),
         icon: faBellSlash,
         onClick: () => dismissReminder(workspace, snapshot),
       });
-    if (!selectHidesOwnerWorkspaceActions.select(store.state, workspace.id)) {
-      const archived = workspace.status === WorkspaceStatusEnum.Archived;
-      items.push(
-        { type: 'separator' },
-        {
-          id: 'archive',
-          label: archived
-            ? m.ui_workspaceActions_unarchiveSpace_label()
-            : m.workspace_card_archive_label(),
-          icon: archived ? faBoxOpen : faBoxArchive,
-          onClick: () => {
-            contextMenu = null;
-            store.dispatch(
-              archived
-                ? requestUnarchiveWorkspace(workspace.id)
-                : requestArchiveWorkspace(workspace.id),
-            );
-          },
-        },
-        {
-          id: 'delete',
-          label: m.workspace_card_deleteSpace_label(),
-          icon: faTrash,
-          destructive: true,
-          onClick: () => {
-            contextMenu = null;
-            store.dispatch(requestDeleteWorkspace(workspace.id));
-          },
-        },
-      );
-    }
     return items;
   }
   return {

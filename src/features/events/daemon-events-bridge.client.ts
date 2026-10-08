@@ -3522,7 +3522,7 @@ function resolveHighlightId(highlightId: string): string {
 
 /**
  * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
- * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
+ * `{ route, workspaceId?, agentId?, highlightId?, durationMs? }`. Navigate the app UI to
  * the specified route and optionally pulse the highlight target with the given
  * duration. If highlightId is present, dispatch requestUiHighlight after
  * navigation settles.
@@ -3542,8 +3542,15 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       ? data.durationMs
       : undefined;
 
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
+
   import('$lib/utils/navigation.client')
-    .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
+    .then(({ navigateToRoute }) => navigateToRoute(route, options))
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -3583,7 +3590,7 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
 
 /**
  * `app:workspace-open` (§6.5 Chief-workspace workspace-open) — carries
- * `{ workspaceId, openInNewWindow? }`. Open the specified workspace in the
+ * `{ workspaceId, agentId?, openInNewWindow? }`. Open the specified workspace in the
  * current window (navigate to /workspace/:id) or in a new window if
  * openInNewWindow is true. Uses the IPC window.open-new channel when
  * openInNewWindow is set, falling back to in-window navigation on failure.
@@ -3598,6 +3605,12 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 
   const openInNewWindow = data.openInNewWindow === true;
   const route = `/workspace/${workspaceId}`;
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
 
   if (openInNewWindow) {
     // Try to open in new window via IPC, fall back to navigation if it fails
@@ -3615,7 +3628,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
             error: 'error' in result ? result.error : undefined,
           });
           const { navigateToRoute } = await import('$lib/utils/navigation.client');
-          return navigateToRoute(route, { assistantContent: true });
+          return navigateToRoute(route, options);
         }
       })
       .catch(async (error: unknown) => {
@@ -3624,14 +3637,14 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           error,
         });
         const { navigateToRoute } = await import('$lib/utils/navigation.client');
-        return navigateToRoute(route, { assistantContent: true });
+        return navigateToRoute(route, options);
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
     import('$lib/utils/navigation.client')
-      .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
+      .then(({ navigateToRoute }) => navigateToRoute(route, options))
       .catch((error: unknown) => {
         logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
       });

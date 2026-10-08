@@ -17,6 +17,9 @@
         setReadyStatus: (status: 'pr_ready' | 'in_progress') => void;
         pinReady: () => void;
       };
+      __homeWorkspacePreview?: {
+        navigation: () => { currentTabId: string | null; tabOrder: string[] };
+      };
     }
   }
 
@@ -324,6 +327,12 @@
   const dispose = startHomePreviewFixtures();
   const previousPinnedIds = store.state.sidebarNav.pinnedWorkspaceIds;
   const showCreateModal$ = selectShowCreateModal();
+  window.__homeWorkspacePreview = {
+    navigation: () => ({
+      currentTabId: store.state.tabState.currentTabId,
+      tabOrder: store.state.tabState.workspaceStacks.flat(),
+    }),
+  };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
   store.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
@@ -508,6 +517,7 @@
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
     delete window.__homePrReadyPreview;
+    delete window.__homeWorkspacePreview;
     dispose();
   });
 </script>

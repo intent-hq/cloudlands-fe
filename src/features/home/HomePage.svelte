@@ -4,10 +4,13 @@
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
   import './home.css';
+  import { goto } from '$app/navigation';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { selectAttentionDismissalResult } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -99,7 +102,16 @@
     expandPinned: () => updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
     consumerId: dismissalConsumerId,
     dismissalRequestId: () => $dismissalResult$?.requestId,
+    onOpen: openWorkspace,
   });
+  function openWorkspace(id: string) {
+    workspaceActions.contextMenu = null;
+    store.dispatch(openWorkspaceTab(id));
+    void goto(`/workspace/${encodeURIComponent(id)}`);
+  }
+  function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    openHomeWorkspaceFromEvent(event, id, openWorkspace);
+  }
   const workspaces$ = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
   const knownRepos$ = selectKnownRepos();
@@ -878,6 +890,7 @@
                             onmenu={workspaceActions.showMenu}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
+                            onopen={openWorkspace}
                             archived={filter === 'archived'}
                           />
                         {:else}
@@ -885,6 +898,7 @@
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
+                              onclick={(event) => openModifiedWorkspace(event, item.id)}
                               oncontextmenu={(event) => workspaceActions.showMenu(event, item)}
                             >
                               {#snippet leading()}
@@ -1002,6 +1016,16 @@
                             scroll: boolean,
                           )}
                             <ListView
+                              onkeydowncapture={(event) => {
+                                const option =
+                                  event.target instanceof HTMLElement
+                                    ? event.target.closest<HTMLElement>('[role="option"]')
+                                    : null;
+                                const id =
+                                  option?.querySelector<HTMLElement>('[data-home-workspace]')
+                                    ?.dataset.homeWorkspace;
+                                if (id) openModifiedWorkspace(event, id);
+                              }}
                               onkeydown={(event) => {
                                 const option =
                                   event.target instanceof HTMLElement
