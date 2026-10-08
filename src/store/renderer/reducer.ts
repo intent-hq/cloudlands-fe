@@ -1,3 +1,4 @@
+import { customViewsReducer } from '$features/custom-views/custom-views-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
@@ -125,6 +126,7 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  customViews: customViewsReducer,
   homeIntegrations: homeIntegrationsReducer,
   homeWorkspaces: homeWorkspacesReducer,
   repositoryContext: repositoryContextReducer,
