@@ -39,7 +39,7 @@ jobs:
       # killed mid-run (monorepo#3352). Heap caps are scoped per step below.
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -302,7 +302,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -397,7 +397,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:

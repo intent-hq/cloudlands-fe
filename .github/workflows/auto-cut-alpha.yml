@@ -161,7 +161,7 @@ jobs:
           fi
       - name: Checkout trusted release helpers
         if: steps.token.outputs.enabled == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         # Missing helper means no exemption; retain the original guard even
         # if checkout is unavailable. No package install/build is needed.
         continue-on-error: true

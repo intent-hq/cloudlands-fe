@@ -58,7 +58,7 @@ jobs:
           fi
 
       - name: Checkout reviewed cleanup command
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: intent-hq/intent
           ref: 3cd2e23e904051f8a0c047717fe7a8e843a5c4ea

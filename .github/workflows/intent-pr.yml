@@ -269,7 +269,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Fetch PR base commit
         run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
       - name: Scan changed files for conflict markers
@@ -358,7 +358,7 @@ jobs:
       electron_required: ${{ steps.electron.outputs.electron_required }}
       portable_fixtures_required: ${{ steps.portable-fixtures.outputs.portable_fixtures_required }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Fetch diff base commit
         # PR base on pull_request; the queue entry's base on merge_group
         # (same fallback as LINT_BASELINE_BASE_REF in test).
@@ -492,7 +492,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Setup pnpm
         id: pnpm_setup
         # Registry timeouts can exhaust the installer's fetch retries before
@@ -646,7 +646,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=16384'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -717,9 +717,9 @@ jobs:
       TRANSFER_SELECTION_FIXTURE_ROOT: ${{ github.workspace }}/.cache/transfer-selection-contract/docs/protocol/fixtures/transfer-selection
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Checkout shared transfer-selection fixtures
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: intent-hq/intent
           ref: main
@@ -753,7 +753,7 @@ jobs:
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned backend Keychain contract
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: intent-hq/intent
           ref: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
@@ -802,7 +802,7 @@ jobs:
           - { name: Los_Angeles, tz: America/Los_Angeles }
     steps:
       - name: Checkout exact candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -883,7 +883,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:

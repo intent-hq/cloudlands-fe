@@ -143,7 +143,7 @@ jobs:
       CI: 'true'
     # 9 minutes setup + 45 tests + 4 upload = 58; 2 reserved for postlude.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         timeout-minutes: 1
         with:
           persist-credentials: false
@@ -196,7 +196,7 @@ jobs:
 
     steps:
       - name: Checkout dispatched ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Validate isolated test package inputs
         if: ${{ inputs.isolated_test }}
@@ -281,7 +281,7 @@ jobs:
       # pinned to the org-owned intent-hq/intentd repo, never a fork.
       - name: Checkout intentd at intentd_ref
         if: ${{ inputs.intentd_ref != '' }}
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: intent-hq/intentd
           ref: ${{ inputs.intentd_ref }}
@@ -603,7 +603,7 @@ jobs:
 
     steps:
       - name: Checkout dispatched ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       # On Windows runners C:\WINDOWS\system32\bash.EXE (the WSL stub)
       # shadows Git Bash in PATH, and WSL bash can't execute the runner's
@@ -670,7 +670,7 @@ jobs:
       # already requires write access.
       - name: Checkout intentd at intentd_ref
         if: ${{ inputs.intentd_ref != '' }}
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: intent-hq/intentd
           ref: ${{ inputs.intentd_ref }}
@@ -922,7 +922,7 @@ jobs:
 
     steps:
       - name: Checkout dispatched ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -961,7 +961,7 @@ jobs:
       # fork), and dispatching this workflow already requires write access.
       - name: Checkout intentd at intentd_ref
         if: ${{ inputs.intentd_ref != '' }}
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: intent-hq/intentd
           ref: ${{ inputs.intentd_ref }}
@@ -1186,7 +1186,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
