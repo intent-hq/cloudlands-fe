@@ -38,7 +38,7 @@ describe('custom view theme protocol', () => {
       '--radius-small': '8px',
       '--elevation-overlay': '0 2px 4px rgb(0 0 0 / 0.5)',
       '--surface-shadow-3': 'inset 0 1px 0 rgb(255 255 255 / 0.1)',
-      '--spring-fast-ease': 'linear(0, 0.5, 1)',
+      '--spring-fast-ease': 'linear(\n  0,\n  0.5,\n  1\n)',
       '--motion-reduced': '0',
     };
     expect(parseCustomViewThemeUpdate(update(cssVariables))).toEqual({

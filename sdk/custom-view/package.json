@@ -1,5 +1,5 @@
 {
-  "name": "@intent/custom-view",
+  "name": "@intent/custom-view-sdk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
