@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * AgentPreviewToolLabel
    *
@@ -71,7 +72,6 @@
     class="type-body inline-flex w-full min-w-0 items-center font-normal {showIcon
       ? 'gap-1.5'
       : ''} {className}"
-    title={label}
   >
     {#if showIcon}
       <span
@@ -90,6 +90,7 @@
     {/if}
     <span
       class="min-w-0 flex-1 truncate text-inherit opacity-[inherit]"
+      use:truncatedTitle={label}
       data-testid="agent-preview-tool-text">{label}</span
     >
   </span>

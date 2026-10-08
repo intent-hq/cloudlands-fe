@@ -13,6 +13,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const showMessageBox = vi.fn();
+const isolatedTestBuild = vi.hoisted(() => vi.fn(() => false));
+vi.mock('../../../../main/isolated-test-profile', async (original) => ({
+  ...(await original<typeof import('../../../../main/isolated-test-profile')>()),
+  isIsolatedTestBuild: isolatedTestBuild,
+}));
 const appIsReady = vi.fn(() => true);
 const clipboardWriteText = vi.fn();
 const openExternal = vi.fn();
@@ -370,6 +375,7 @@ function signedOutDaemon(): void {
 }
 
 beforeEach(() => {
+  isolatedTestBuild.mockReturnValue(false);
   lifetimeCurrent = true;
   remoteIdentity.mockImplementation(async (candidate) => ({
     principal: {
@@ -404,6 +410,30 @@ beforeEach(() => {
 });
 
 describe('handleInviteDeepLink', () => {
+  it('refuses an isolated test invitation before capture, dial, consent or credential work', async () => {
+    isolatedTestBuild.mockReturnValue(true);
+    await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
+    expect(showMessageBox).toHaveBeenCalledWith({
+      type: 'info',
+      title: 'Invitations are unavailable in this test app',
+      message:
+        'This test build connects only to its private bundled daemon. Open invitations in your normal Intent app.',
+    });
+    for (const effect of [
+      captureIdentity,
+      openInviteConnection,
+      showInviteConsent,
+      localRequest,
+      prepareIdentity,
+      guestFindMatching,
+      guestGetDecryptedToken,
+      guestAdd,
+      openBackendWindow,
+      openExternal,
+    ])
+      expect(effect).not.toHaveBeenCalled();
+  });
+
   it('happy path: dial with pin → challenge → prove box → gist → prove → store GUEST session → delete gist → open window', async () => {
     await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
 
@@ -1133,6 +1163,22 @@ describe('handleInviteDeepLink — older local daemon recovery', () => {
 });
 
 describe('handleInviteDeepLink — consent prompt labels', () => {
+  it('uses the collaboration name for consent and identity proof without changing the address', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    challenge.mockResolvedValue({
+      ...CHALLENGE,
+      hostname: 'studio.local',
+      prettyHostname: 'Studio',
+      collaborationName: 'Team machine',
+    });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ hostLabel: 'Team machine' });
+    expect(localCalls('github.identityProof.create')[0][1]).toMatchObject({
+      hostLabel: 'Team machine',
+    });
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ host: '192.168.1.10' }));
+  });
+
   it('names the host by its pretty name when the challenge carries one, in the modal and the gist', async () => {
     showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
     challenge.mockResolvedValue({
@@ -3292,6 +3338,15 @@ describe('routeInviteLinkFromOs', () => {
 
 describe('handleInviteDeepLink — collaboration-only continuation', () => {
   const identity = { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
+  const githubProof = {
+    provider: 'github',
+    host: 'github.com',
+    externalUserId: null,
+    avatarUrl: null,
+    proofId: PROOF.gistId,
+    gistId: PROOF.gistId,
+    login: 'octocat',
+  };
   let allowed = true;
   let current = true;
   let prepared: import('../../../collaboration-auth/main/collaboration-auth-flow').PreparedCollaborationIdentity;
@@ -3301,11 +3356,7 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
     captureIdentity.mockReturnValue({ supported: true });
     localMethods.clear();
     onLocal('identity.getUser', () => ({ user: { id: '42', login: 'octocat' } }));
-    onLocal('sourceControl.identityProof.create', () => ({
-      ...identity,
-      proofId: PROOF.gistId,
-      login: 'octocat',
-    }));
+    onLocal('sourceControl.identityProof.create', () => githubProof);
     onLocal('sourceControl.identityProof.delete', () => ({ ok: true }));
     prepared = {
       attempt: { id: 'fixture', metadataRevision: 0, current: () => true },
@@ -3376,9 +3427,238 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
             method === 'identity.getUser' || method.startsWith('sourceControl.identityProof.'),
         ),
       ).toBe(true);
+      expect(localCalls('identity.getUser')).toHaveLength(2);
       expect(guestAdd).toHaveBeenCalledOnce();
+      expect(openBackendWindow).toHaveBeenCalledOnce();
     },
   );
+  it('joins a pinned host through real account consent and null-ID proof validation', async () => {
+    const { CollaborationAuthFlow } =
+      await import('../../../collaboration-auth/main/collaboration-auth-flow');
+    const preview = {
+      scope: 'host',
+      role: 'member',
+      pinIdentity: identity,
+      hostname: 'studio',
+      prettyHostname: 'Studio',
+    };
+    inspect.mockResolvedValue(preview);
+    challenge.mockResolvedValue({
+      ...preview,
+      nonce: CHALLENGE.nonce,
+      nonceExpiresAt: CHALLENGE.nonceExpiresAt,
+    });
+    prove.mockResolvedValue({
+      status: 'authorized',
+      scope: 'host',
+      hostRole: 'member',
+      identity,
+      token: TOKEN,
+      principalId: 'remote-member-42',
+      login: 'octocat',
+    });
+    onLocal('identity.authStatus', () => ({
+      provider: 'github',
+      host: 'github.com',
+      purpose: 'collaboration',
+      isConfigured: true,
+      requestedScopes: ['gist'],
+      grantedScopes: ['gist'],
+      deviceGrantSupported: true,
+    }));
+    onLocal('identity.select', () => ({ principal: { identity } }));
+    prepareIdentity.mockImplementation(async (request, { attempt }) => {
+      const outcome =
+        Promise.withResolvers<
+          import('../../../collaboration-auth/types').CollaborationOutcome<typeof prepared>
+        >();
+      const flow = new CollaborationAuthFlow('controlled-sign-in', request, {
+        local: prepared.local,
+        attempt,
+        show: () => {},
+        finish: outcome.resolve,
+        openBrowser: async () => {},
+        isLatest: () => true,
+      });
+      await flow.action({ type: 'policy', policy: { multiplayer: true, gitlab: true } });
+      expect(flow.snapshot()).toMatchObject({
+        phase: 'account',
+        user: { id: '42', login: 'octocat' },
+      });
+      expect(prove).not.toHaveBeenCalled();
+      await flow.action({ type: 'confirm' });
+      return outcome.promise;
+    });
+    await handleInviteDeepLink(`${LINK}&scope=host`);
+    expect(localCalls('identity.select')).toEqual([
+      ['identity.select', { provider: 'github', externalUserId: '42' }],
+    ]);
+    expect(localCalls('sourceControl.identityProof.create')).toEqual([
+      [
+        'sourceControl.identityProof.create',
+        {
+          provider: 'github',
+          purpose: 'collaboration',
+          expectedIdentity: identity,
+          nonce: CHALLENGE.nonce,
+          hostLabel: 'Studio',
+        },
+      ],
+    ]);
+    expect(localCalls('identity.getUser')).toHaveLength(4);
+    expect(prove).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      gistId: githubProof.proofId,
+      login: 'octocat',
+    });
+    expect(guestAdd).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        principalId: 'remote-member-42',
+        hostRole: 'member',
+        identity,
+        token: TOKEN,
+      }),
+    );
+    expect(guestAdd.mock.calls[0][0]).not.toHaveProperty('workspace');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+  });
+  it.each([
+    { provider: 'gitlab' },
+    { provider: 'unknown' },
+    { host: 'other.example' },
+    { host: '' },
+    { externalUserId: '99' },
+    { externalUserId: undefined },
+    { externalUserId: 42 },
+    { externalUserId: '' },
+    { proofId: '' },
+    { proofId: '   ' },
+    { proofId: 123 },
+    { login: '' },
+    { login: '   ' },
+    { login: 'another-person' },
+    { login: null },
+    { avatarUrl: 123 },
+    { gistId: 'other-proof' },
+  ])('rejects malformed or mismatched GitHub proof %j before host redemption', async (patch) => {
+    onLocal('sourceControl.identityProof.create', () => ({ ...githubProof, ...patch }));
+    await handleInviteDeepLink(LINK);
+    expect(prove).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showInviteNotice).toHaveBeenCalledOnce();
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(
+      typeof (patch.proofId ?? githubProof.proofId) === 'string' ? 1 : 0,
+    );
+  });
+  it.each([null, undefined])(
+    'rejects a missing proof response %j without redemption',
+    async (proof) => {
+      onLocal('sourceControl.identityProof.create', () => proof);
+      await handleInviteDeepLink(LINK);
+      expect(prove).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(0);
+      expect(showInviteNotice).toHaveBeenCalledOnce();
+    },
+  );
+  it('accepts a matching explicit GitHub ID without replacing the authoritative account check', async () => {
+    onLocal('sourceControl.identityProof.create', () => ({ ...githubProof, externalUserId: '42' }));
+    await handleInviteDeepLink(LINK);
+    expect(prove).toHaveBeenCalledOnce();
+    expect(localCalls('identity.getUser')).toHaveLength(2);
+    expect(guestAdd).toHaveBeenCalledOnce();
+  });
+  it.each(['42', null, '', '99', 42])(
+    'GitLab accepts only its matching stable author ID: %j',
+    async (externalUserId) => {
+      const gitlab = {
+        provider: 'gitlab' as const,
+        host: 'gitlab.example:8443',
+        externalUserId: '42',
+      };
+      prepared.identity = gitlab;
+      challenge.mockResolvedValue({ ...CURRENT_CHALLENGE, pinIdentity: gitlab });
+      onLocal('sourceControl.identityProof.create', () => ({
+        ...gitlab,
+        externalUserId,
+        avatarUrl: null,
+        proofId: 'snippet-1',
+        login: 'octocat',
+      }));
+      await handleInviteDeepLink(LINK);
+      expect(localCalls('sourceControl.identityProof.delete')).toEqual([
+        [
+          'sourceControl.identityProof.delete',
+          { provider: 'gitlab', host: gitlab.host, purpose: 'collaboration', proofId: 'snippet-1' },
+        ],
+      ]);
+      if (externalUserId === '42') {
+        expect(prove).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET, {
+          nonce: CHALLENGE.nonce,
+          provider: 'gitlab',
+          host: gitlab.host,
+          proofId: 'snippet-1',
+          login: 'octocat',
+        });
+        expect(guestAdd).toHaveBeenCalledOnce();
+      } else {
+        expect(prove).not.toHaveBeenCalled();
+        expect(guestAdd).not.toHaveBeenCalled();
+      }
+    },
+  );
+  it.each([{ id: '99', login: 'octocat' }, { id: '42', login: 'renamed' }, null])(
+    'fresh authoritative account %j after null-ID proof creation prevents redemption',
+    async (user) => {
+      onLocal('sourceControl.identityProof.create', () => {
+        onLocal('identity.getUser', () => ({ user }));
+        return githubProof;
+      });
+      await handleInviteDeepLink(LINK);
+      expect(localCalls('identity.getUser')).toHaveLength(2);
+      expect(prove).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+    },
+  );
+  it.each(['cancel', 'attempt'] as const)(
+    'a %s while creating a null-ID proof prevents redemption',
+    async (change) => {
+      const consent = fakeConsent('open');
+      showInviteConsent.mockReturnValue(consent.prompt);
+      onLocal('sourceControl.identityProof.create', async () => {
+        if (change === 'cancel') consent.cancelWaiting();
+        else lifetimeCurrent = false;
+        return githubProof;
+      });
+      await handleInviteDeepLink(LINK);
+      expect(prove).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+    },
+  );
+  it('retains the host credential identity check after a valid null-ID proof', async () => {
+    prove.mockResolvedValue({ ...CREDENTIAL, identity: { ...identity, externalUserId: '99' } });
+    await handleInviteDeepLink(LINK);
+    expect(prove).toHaveBeenCalledOnce();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+  });
+  it('preserves a daemon refusal after its credential or identity generation changes', async () => {
+    onLocal('sourceControl.identityProof.create', () => {
+      throw { data: { code: 'identity-mismatch' }, message: 'private-provider-details' };
+    });
+    await handleInviteDeepLink(LINK);
+    expect(prove).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).not.toContain('private-provider-details');
+    expect(JSON.stringify(showInviteNotice.mock.calls)).not.toContain('private-provider-details');
+    // A failed create owns its cleanup on the daemon; the client has no proof receipt.
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(0);
+    expect(showInviteNotice).toHaveBeenCalledOnce();
+  });
   it('cancel keeps the invitation and never creates proof or redeems it', async () => {
     prepareIdentity.mockResolvedValue({ kind: 'cancelled', request: prepared.invitation });
     await handleInviteDeepLink(LINK);
@@ -3407,7 +3687,7 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
       onLocal('sourceControl.identityProof.create', () => {
         if (change === 'flag') allowed = false;
         else current = false;
-        return { ...identity, proofId: PROOF.gistId, login: 'octocat' };
+        return githubProof;
       });
       await handleInviteDeepLink(LINK);
       expect(prove).not.toHaveBeenCalled();
@@ -3457,6 +3737,25 @@ describe('host-scoped invitations (controlled FE protocol fixtures)', () => {
     prove.mockResolvedValue(granted);
     showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
   });
+  it('uses the shared machine name in an instance invitation preview and proof', async () => {
+    inspect.mockResolvedValue({ ...preview, collaborationName: 'Design host' });
+    challenge.mockResolvedValue({
+      ...preview,
+      collaborationName: 'Design host',
+      nonce: CHALLENGE.nonce,
+      nonceExpiresAt: CHALLENGE.nonceExpiresAt,
+    });
+    await handleInviteDeepLink(`${LINK}&scope=host`);
+    expect(showInviteConsent).toHaveBeenCalledWith(
+      expect.objectContaining({ hostLabel: 'Design host' }),
+      expect.anything(),
+    );
+    expect(localCalls('github.identityProof.create')[0][1]).toMatchObject({
+      hostLabel: 'Design host',
+    });
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ hostRole: 'member' }));
+  });
+
   it('inspects before consent/proof, saves the remote principal and opens an empty host with no invented workspace', async () => {
     await handleInviteDeepLink(`${LINK}&scope=host`);
     expect(inspect.mock.invocationCallOrder[0]).toBeLessThan(challenge.mock.invocationCallOrder[0]);

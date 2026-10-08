@@ -47,7 +47,7 @@ export function getAttentionNotice(
   };
 }
 
-function timestampIdentity(value: string | Date): string | null {
+export function timestampIdentity(value: string | Date): string | null {
   const milliseconds = value instanceof Date ? value.getTime() : Date.parse(value);
   if (!Number.isFinite(milliseconds)) return null;
   if (value instanceof Date) return `${milliseconds}:`;

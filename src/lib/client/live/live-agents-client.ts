@@ -427,6 +427,7 @@ export class LiveAgentsClient implements AgentsClient {
       workspaceId: request.workspaceId,
       idempotencyKey: newIdempotencyKey(),
     };
+    if (request.placement !== undefined) params.placement = request.placement;
     if (request.model !== undefined) params.model = request.model;
     if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
     if (request.rememberSpecialist !== undefined)
@@ -519,6 +520,7 @@ export class LiveAgentsClient implements AgentsClient {
     message: string,
     options?: {
       workspaceId?: string;
+      messageId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -537,12 +539,15 @@ export class LiveAgentsClient implements AgentsClient {
         content: message,
         ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       };
+      if (options?.messageId !== undefined) params.messageId = options.messageId;
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
       if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
       if (options?.messageMetadata !== undefined) params.messageMetadata = options.messageMetadata;
       const result = await backendRequest<
-        { queuedMessage?: QueuedMessage; turnId?: unknown } | undefined
+        | { success?: boolean; error?: string; queuedMessage?: QueuedMessage; turnId?: unknown }
+        | undefined
       >('agent.queueMessage', params);
+      if (result?.success === false) return { success: false, error: result.error };
       const queuedMessage = result?.queuedMessage;
       const turnId =
         typeof result?.turnId === 'string'
@@ -555,6 +560,17 @@ export class LiveAgentsClient implements AgentsClient {
       if (turnId !== undefined) mutation.turnId = turnId;
       return mutation;
     } catch (error) {
+      // Correlated callers retain recoverable content in their catch path and
+      // reconcile before retrying. Only request/method/parameter validation or
+      // access refusal proves rejection; a generic server error can follow enqueue.
+      const rpcCode =
+        error && typeof error === 'object' ? (error as { rpcCode?: unknown }).rpcCode : undefined;
+      const rejected =
+        rpcCode === -32600 ||
+        rpcCode === -32601 ||
+        rpcCode === -32602 ||
+        isForbiddenErrorResponse(error);
+      if (options?.messageId !== undefined && !rejected) throw error;
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
@@ -625,6 +641,36 @@ export class LiveAgentsClient implements AgentsClient {
       // Same error shaping as `runMutation` (which this method bypassed to
       // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`
       // into an actionable message.
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
+  }): Promise<MutationResult> {
+    try {
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        messageIds: string[];
+        turnId?: string;
+      }>('agent.sendQueuedMessagesNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageIds: params.messageIds,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        messageIds: result.messageIds,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(!result.queued && !result.quarantined && result.turnId
+          ? { turnId: result.turnId }
+          : {}),
+      };
+    } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }

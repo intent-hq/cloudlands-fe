@@ -30,13 +30,14 @@
 
   interface Props {
     workspaceId?: string;
+    readonly?: boolean;
     /** Saved options from the resolved specialist view (wire `modelOptions`). */
     savedOptions?: SpecialistModelOption[];
     /** Persist the committed (model-bearing) rows. */
     onCommit: (options: SpecialistModelOption[]) => void;
   }
 
-  let { savedOptions, onCommit, workspaceId }: Props = $props();
+  let { savedOptions, onCommit, workspaceId, readonly = false }: Props = $props();
 
   // Local rows: saved options plus any draft rows (model === ''). Hints are
   // committed on blur (the input is not two-way bound), so typing never
@@ -174,64 +175,75 @@
   }
 </script>
 
-<SettingsFieldRow
-  id="specialist-model-options"
-  label={m.settings_aiBehavior_modelOptions_label()}
-  description={m.settings_aiBehavior_modelOptions_description()}
-  compact
->
-  <div class="flex min-w-0 flex-col gap-2">
-    {#each rows as row, index (row.key)}
-      <div class="flex min-w-0 flex-wrap items-center gap-2">
-        <div class="min-w-0 max-w-full">
-          <ModelPicker
-            {workspaceId}
-            selectedModel={pickerModelId(row) || undefined}
-            onModelChange={(model, pick) => handleModelChange(index, model, pick)}
-            showDefaultOption={false}
-            defaultModelLabel={m.settings_aiBehavior_modelOptions_selectModel_label()}
-            variant="default"
-            size="sm"
-            showReasoning
-            reasoningEffort={row.reasoningEffort ?? null}
-            onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
+{#if readonly}
+  {#each savedOptions ?? [] as option}
+    <p class="type-body text-muted-foreground break-words">
+      {option.provider ? `${option.provider}:` : ''}{option.model}{option.reasoningEffort
+        ? ` · ${option.reasoningEffort}`
+        : ''}
+    </p>
+    {#if option.hint}<p class="type-body text-muted-foreground break-words">{option.hint}</p>{/if}
+  {/each}
+{:else}
+  <SettingsFieldRow
+    id="specialist-model-options"
+    label={m.settings_aiBehavior_modelOptions_label()}
+    description={m.settings_aiBehavior_modelOptions_description()}
+    compact
+  >
+    <div class="flex min-w-0 flex-col gap-2">
+      {#each rows as row, index (row.key)}
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <div class="min-w-0 max-w-full">
+            <ModelPicker
+              {workspaceId}
+              selectedModel={pickerModelId(row) || undefined}
+              onModelChange={(model, pick) => handleModelChange(index, model, pick)}
+              showDefaultOption={false}
+              defaultModelLabel={m.settings_aiBehavior_modelOptions_selectModel_label()}
+              variant="default"
+              size="sm"
+              showReasoning
+              reasoningEffort={row.reasoningEffort ?? null}
+              onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
+            />
+          </div>
+          <Input
+            type="text"
+            value={row.hint}
+            onblur={(e) => handleHintBlur(index, e.currentTarget.value.trim())}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
+            class="min-w-0 flex-1 basis-32"
           />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            onclick={() => removeRow(index)}
+            aria-label={m.settings_aiBehavior_modelOptions_remove_ariaLabel()}
+            class="shrink-0"
+          >
+            <Fa icon={faXmark} class="size-3.5" />
+          </Button>
         </div>
-        <Input
-          type="text"
-          value={row.hint}
-          onblur={(e) => handleHintBlur(index, e.currentTarget.value.trim())}
-          onkeydown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.currentTarget.blur();
-            }
-          }}
-          placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
-          class="min-w-0 flex-1 basis-32"
-        />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          type="button"
-          onclick={() => removeRow(index)}
-          aria-label={m.settings_aiBehavior_modelOptions_remove_ariaLabel()}
-          class="shrink-0"
-        >
-          <Fa icon={faXmark} class="size-3.5" />
-        </Button>
-      </div>
-    {/each}
+      {/each}
 
-    <Button
-      variant="link"
-      size="sm"
-      type="button"
-      onclick={addRow}
-      class="w-fit justify-start px-0"
-    >
-      {m.settings_aiBehavior_modelOptions_add()}
-      {#snippet trailingIcon()}<Fa icon={faPlus} class="size-3" />{/snippet}
-    </Button>
-  </div>
-</SettingsFieldRow>
+      <Button
+        variant="link"
+        size="sm"
+        type="button"
+        onclick={addRow}
+        class="w-fit justify-start px-0"
+      >
+        {m.settings_aiBehavior_modelOptions_add()}
+        {#snippet trailingIcon()}<Fa icon={faPlus} class="size-3" />{/snippet}
+      </Button>
+    </div>
+  </SettingsFieldRow>
+{/if}

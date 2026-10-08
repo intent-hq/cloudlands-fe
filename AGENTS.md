@@ -2,6 +2,20 @@
 
 Quick routing guide for AI agents. Start here, then open the smallest relevant doc.
 
+**Assistant app guide:** When adding, changing, moving, renaming, or removing a
+user-facing feature, update the affected section of the canonical
+[`packages/intentd/crates/intent-services/resources/assistant-app-guide.md`](../intentd/crates/intent-services/resources/assistant-app-guide.md)
+in the same change, coordinating the companion intentd change (also from standalone
+frontend checkouts). Keep it concise; replace obsolete paths, labels, and prerequisites.
+Keep the guide and user-facing help focused on features ready for users. Do not promote
+unfinished, experimental, Labs-only, internal, or unreleased features as normal options;
+code or tool availability is not proof of readiness. When explicitly asked about such
+a feature, or assigned to develop or test it, discuss it honestly and label its status.
+Update the guide and its source pointers when readiness or UI behavior changes.
+Before opening a PR, record the affected guide section (and companion intentd PR
+for frontend changes), or explain why the change has no user-help impact. Coordinate
+companion releases; this checkpoint does not require simultaneous cross-repo merges.
+
 > **Merge permission**: never merge a PR or arm auto-merge without explicit permission
 > from a human — approved + green is not enough. See the monorepo root
 > [`AGENTS.md`](../../AGENTS.md) (resolves in a monorepo checkout) for the full rule.
@@ -356,8 +370,16 @@ that working-tree set is empty and `HEAD` is ahead of `origin/main`, it defaults
 merge-base), so the bare command is correct on a committed PR branch; `--base <ref>` still
 overrides. Only a change set that is empty either way — a clean checkout on or behind
 `origin/main`, or no `origin/main` ref at all — exits 2 instead of passing silently. Add
-`--dry-run` to inspect the
-selected commands without running them. The command runs scoped Prettier and ESLint,
+`--dry-run` to inspect commands without running them, or `--resolved-plan` to run
+prerequisites and Vitest discovery only: it prints every selected unit-test path per
+lane and the unique file count, including UI invariants and full-risk fallbacks.
+Normal execution resolves this same plan before any selected check runs.
+`--max-unit-files N` rejects the entire run when the unique count exceeds N; it never
+truncates coverage. Review the resolved plan, then raise or omit the limit to run all
+selected checks. Discovery failures also stop before checks; fix the reported config
+or source error and retry. `pnpm run test:unit --maxWorkers=1` explicitly runs the full
+unit suite. For a budgeted preview, combine `--resolved-plan` with `--max-unit-files`.
+The command runs scoped Prettier and ESLint,
 related Vitest tests, colocated component tests that import the changed file directly or
 through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
 module the host imports, or to a component two hops deep, does not select the spec), and

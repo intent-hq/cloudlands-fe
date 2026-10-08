@@ -1,3 +1,4 @@
+import { AgentPlacementRequestSchema } from '$shared/types/agent-node';
 import { AgentNodeFieldsSchema } from './types/agent-node';
 /**
  * Zod Schemas for Runtime Validation
@@ -7,6 +8,7 @@ import { AgentNodeFieldsSchema } from './types/agent-node';
  */
 
 import { z } from 'zod';
+import { CheckoutSelectionSchema } from './types/repository-checkout';
 import {
   AgentStatus,
   MESSAGE_ROLES,
@@ -176,6 +178,7 @@ export const WorkspaceSchema = z.object({
   cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
+  defaultAgentPlacement: AgentPlacementRequestSchema.optional(),
   /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until first computation completes. */
   diskUsage: z
     .object({
@@ -213,6 +216,7 @@ const EnvironmentConfigSchema = z.object({
 });
 
 export const CreateWorkspaceRequestSchema = z.object({
+  repositoryCheckout: CheckoutSelectionSchema.optional(),
   idempotencyKey: z.string().optional(),
   title: z.string().max(100).optional(),
   statusMessage: WorkspaceStatusMessageSchema.optional(),

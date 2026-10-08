@@ -4,7 +4,11 @@
  * Sets up all IPC handlers for the application
  */
 
-// CRITICAL: Import build-time config FIRST
+// The isolated package establishes private paths before any application dependency.
+import './isolated-test-bootstrap.js';
+import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
+
+// CRITICAL: Import build-time config before application initialization
 // These values are baked in at build time from .env (see scripts/generate-build-config.cjs)
 import { BUILD_CONFIG } from './build-config.generated.js';
 
@@ -33,7 +37,11 @@ import {
 } from './utils/resolve-dev-instance.js';
 app.setPath(
   'userData',
-  resolveUserDataBasePath(app.getPath('appData'), app.commandLine.getSwitchValue('user-data-dir')),
+  getIsolatedTestProfile()?.userData ??
+    resolveUserDataBasePath(
+      app.getPath('appData'),
+      app.commandLine.getSwitchValue('user-data-dir'),
+    ),
 );
 
 // EARLY: Support multiple dev instances by using unique userData paths.
@@ -328,6 +336,7 @@ import {
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
+import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import {
@@ -1020,6 +1029,12 @@ const bootFlow = app.whenReady().then(async () => {
       } catch {
         // Fall back to backend ids as labels
       }
+      let guests: Awaited<ReturnType<typeof listGuestSessions>> = [];
+      try {
+        guests = await listGuestSessions();
+      } catch {
+        // Guest storage failure must not hide paired windows from the menu.
+      }
       const entries = buildWindowMenuEntries(
         liveWindows.map((w) => ({
           windowId: w.id,
@@ -1033,6 +1048,7 @@ const bootFlow = app.whenReady().then(async () => {
           hudLabel: m.menu_window_hud_label(),
           localBackendLabel: m.menu_window_localBackend_label(),
         },
+        guests,
       );
 
       windowMenuItems.push({ type: 'separator' });
@@ -1410,6 +1426,9 @@ const bootFlow = app.whenReady().then(async () => {
   app.on('connections-changed', () => {
     void rebuildMenu();
   });
+  app.on('guest-sessions-changed', () => {
+    void rebuildMenu();
+  });
 
   // Rebuild menu when workspace state changes (enables/disables tab menu items)
   app.on('window-workspace-state-changed', () => {
@@ -1753,7 +1772,9 @@ const bootFlow = app.whenReady().then(async () => {
   // to ensure the association is set even if the installer didn't complete properly.
   // In dev mode, we pass extra args so macOS launches the Electron binary correctly.
   try {
-    if (isDev) {
+    if (isIsolatedTestBuild()) {
+      // Dedicated test packages do not claim the normal app's OS URL scheme.
+    } else if (isDev) {
       app.setAsDefaultProtocolClient('intent', process.execPath, [path.resolve(app.getAppPath())]);
       logger.info('Registered intent:// protocol handler for development mode', {
         execPath: process.execPath,

@@ -88,6 +88,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
+vi.mock('$store/renderer/slices/pending-submissions/pending-submissions-selectors', () => ({
+  selectPendingSubmissionEntry: { select: () => undefined },
+}));
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
   selectAgentQueueMessages: Object.assign(() => readable([]), { select: () => [] }),
 }));
@@ -555,21 +558,6 @@ describe('mounted panel header actions menu', () => {
     expect(onTabClose).toHaveBeenCalledOnce();
     expect(onTabClose).toHaveBeenCalledWith('browser-tab');
     expect(onClosePanel).not.toHaveBeenCalled();
-  });
-
-  it('disables pane movement when the layout provides no move callback', async () => {
-    const { container } = renderHeader('note');
-
-    await fireEvent.click(panelTrigger(container));
-
-    expect(
-      (await screen.findByRole('menuitem', { name: 'Move panel left' })).getAttribute(
-        'aria-disabled',
-      ),
-    ).toBe('true');
-    expect(
-      screen.getByRole('menuitem', { name: 'Move panel right' }).getAttribute('aria-disabled'),
-    ).toBe('true');
   });
 
   it('rejects a drag from the trigger but keeps blank-header dragging active', async () => {

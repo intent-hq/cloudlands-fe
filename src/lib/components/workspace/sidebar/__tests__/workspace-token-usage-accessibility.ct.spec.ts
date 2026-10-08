@@ -75,7 +75,10 @@ for (const scenario of [
   { name: 'reported-zero workspace', costOnly: 'all', costAmount: 0, costText: 'Cost $0.00' },
   { name: 'mixed matrix', costOnly: 'mixed', costAmount: 2.5, costText: 'Cost $2.50' },
 ] as const) {
-  test(`reaches cost-only scopes by keyboard in ${scenario.name}`, async ({ mount, page }) => {
+  test(`keeps keyboard navigation on token-bearing scopes in ${scenario.name}`, async ({
+    mount,
+    page,
+  }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
       props: {
@@ -93,38 +96,28 @@ for (const scenario of [
     await disclosure.focus();
     await page.keyboard.press('Enter');
     await expect(details).toBeVisible();
-    if (mixed) await expect(cost).toHaveCount(0);
-    await page.keyboard.press('Tab');
-    const agentGroup = details.getByRole('radiogroup', { name: 'By agent' });
-    const modelGroup = details.getByRole('radiogroup', { name: 'By model' });
-    await expect(agentGroup.getByRole('radio', { checked: true })).toBeFocused();
-    if (mixed) await page.keyboard.press('End');
-    const costAgent = agentGroup.getByRole('radio', { name: 'By agent, Agent cost: 0 tokens, 0%' });
-    const costModel = modelGroup.getByRole('radio', { name: 'By model, Cost Model: 0 tokens, 0%' });
-    await expect(costAgent).toBeFocused();
-    await expect(costAgent).toBeChecked();
-    await page.keyboard.press('Tab');
-    if (mixed) await page.keyboard.press('End');
-    await expect(costModel).toBeFocused();
-    await expect(costModel).toBeChecked();
-    await expect(costAgent).toBeChecked();
-    await expect(cost).toHaveText(scenario.costText);
-    await expect(details.locator('.composition-value .animated-number-value')).toHaveText([
-      '0',
-      '0',
-      '0',
-      '0',
-    ]);
+    if (mixed) {
+      for (const name of ['By agent', 'By model']) {
+        await page.keyboard.press('Tab');
+        const control = details.getByRole('radiogroup', { name }).getByRole('radio');
+        await expect(control).toHaveCount(1);
+        await expect(control).toBeFocused();
+        await page.keyboard.press('End');
+        await expect(control).toBeFocused();
+        await expect(control).toBeChecked();
+      }
+      await expect(cost).toHaveCount(0);
+    } else {
+      await expect(details.getByRole('radiogroup')).toHaveCount(0);
+      await expect(cost).toHaveText(scenario.costText);
+    }
+    await expect(details.locator('.token-summary .animated-number-value')).toHaveText(
+      mixed ? '100' : '0',
+    );
     await expect(details.locator('.message-composition-label .animated-number-value')).toHaveText(
       '0 human and 0 agent messages',
     );
-    await expect(details.locator('.composition-strip-segment')).toHaveCount(0);
-    await expect(details.locator('.breakdown-stack-item')).toHaveCount(mixed ? 2 : 0);
     await expect(disclosure).toHaveAccessibleDescription(`${mixed ? 100 : 0} tokens used`);
-    await page.keyboard.press('Shift+Tab');
-    await expect(costAgent).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(costModel).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(component.getByTestId('following-workspace-control')).toBeFocused();
     await expect(cost).toHaveCount(0);
@@ -712,7 +705,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
 });
 
 for (const messageOnly of [false, true]) {
-  test(`persists sequential mouse selections in both dimensions (message-only: ${messageOnly})`, async ({
+  test(`persists token selections with message-only entries present: ${messageOnly}`, async ({
     mount,
     page,
   }) => {
@@ -725,18 +718,18 @@ for (const messageOnly of [false, true]) {
     const agentGroup = details.getByRole('radiogroup', { name: 'By agent' });
     const modelGroup = details.getByRole('radiogroup', { name: 'By model' });
     const agent = agentGroup.getByRole('radio', {
-      name: messageOnly ? /Agent messages/ : /Agent beta/,
+      name: /Agent beta/,
     });
     const model = modelGroup.getByRole('radio', {
-      name: messageOnly ? /Model Message Only/ : /Model B:/,
+      name: /Model B:/,
     });
+    await expect(agentGroup.getByRole('radio')).toHaveCount(2);
+    await expect(modelGroup.getByRole('radio')).toHaveCount(2);
     await agent.click();
     await model.click();
-    await expect(details.locator('.preview-status')).toContainText(
-      messageOnly ? 'Model Message Only 0 processed' : 'Model B 50 processed',
-    );
+    await expect(details.locator('.preview-status')).toContainText('Model B 50 processed');
     await expect(details.locator('.message-composition-label .animated-number-value')).toHaveText(
-      messageOnly ? '9 human messages and 1 agent message' : '4 human and 3 agent messages',
+      '4 human and 3 agent messages',
     );
     for (const radio of [agent, model]) {
       await expect(radio).toHaveAttribute('aria-checked', 'true');
@@ -748,15 +741,13 @@ for (const messageOnly of [false, true]) {
     await model.blur();
     await expect(agent).toHaveAttribute('aria-checked', 'true');
     await expect(model).toHaveAttribute('aria-checked', 'true');
-    await expect(details.locator('.preview-status')).toContainText(
-      messageOnly ? 'Model Message Only 0 processed' : 'Model B 50 processed',
-    );
+    await expect(details.locator('.preview-status')).toContainText('Model B 50 processed');
     await expect(agentGroup.locator('.breakdown-stack-item')).toHaveCount(2);
     await expect(modelGroup.locator('.breakdown-stack-item')).toHaveCount(2);
   });
 }
 
-test('retains each selected dimension and reaches message-only scopes', async ({ mount, page }) => {
+test('retains each selected dimension and skips message-only scopes', async ({ mount, page }) => {
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
@@ -790,87 +781,22 @@ test('retains each selected dimension and reaches message-only scopes', async ({
   await expect(finalModel).toHaveAttribute('aria-checked', 'true');
   await expect(agentBeta).toHaveAttribute('aria-checked', 'true');
 
-  const messageAgent = agentGroup.getByRole('radio', { name: /Agent messages/ });
-  const messageModel = modelGroup.getByRole('radio', { name: /Model Message Only/ });
-  const expectIconsReachableWithoutBottomRow = async () => {
-    for (const group of [agentGroup, modelGroup]) {
-      const layout = await group.evaluate((element) => {
-        const options = element.querySelector('.message-only-options')!;
-        const control = options.querySelector('[role="radio"]')!;
-        const box = control.getBoundingClientRect();
-        const bar = element.querySelector('.breakdown-stack')!.getBoundingClientRect();
-        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-        return {
-          extraHeight: element.getBoundingClientRect().bottom - bar.bottom,
-          aboveBar: box.bottom <= bar.top,
-          pointerHit: hit !== null && control.contains(hit),
-          clipped: getComputedStyle(options).clipPath !== 'none',
-        };
-      });
-      expect(layout.extraHeight).toBeCloseTo(0, 2);
-      expect(layout.aboveBar).toBe(true);
-      expect(layout.pointerHit).toBe(true);
-      expect(layout.clipped).toBe(false);
-    }
-  };
-  for (const control of [messageAgent, messageModel]) {
-    await expect(control).toHaveAccessibleDescription('9 human messages and 1 agent message');
-    await expect(control.locator('svg')).toBeVisible();
-  }
-  await expectIconsReachableWithoutBottomRow();
-  await finalModel.focus();
-  const initialIconBoxes = await Promise.all([
-    messageAgent.boundingBox(),
-    messageModel.boundingBox(),
-  ]);
   const cost = details.getByTestId('token-usage-total-cost');
-  await expect(cost).toHaveText('Cost $0.56');
-  await messageAgent.hover();
-  await expect(cost).toHaveCount(0);
-  expect(await Promise.all([messageAgent.boundingBox(), messageModel.boundingBox()])).toEqual(
-    initialIconBoxes,
-  );
-  await expect(page.getByRole('tooltip')).toContainText('Agent messages');
-  await expect(messageAgent).toHaveAttribute('data-preview-active', 'true');
-  await expect(messageAgent).not.toBeChecked();
-  await messageAgent.click();
-  await messageModel.click();
-  await page.mouse.move(0, 0);
-  await messageModel.blur();
-  await expect(messageAgent).toBeChecked();
-  await expect(messageModel).toBeChecked();
-  await expect(cost).toHaveText('Cost $0.00');
-  expect(await Promise.all([messageAgent.boundingBox(), messageModel.boundingBox()])).toEqual(
-    initialIconBoxes,
-  );
-  await expect(messages).toHaveText('9 human messages and 1 agent message');
-  await agentBeta.focus();
-  await agentBeta.press('End');
-  await expect(messageAgent).toBeFocused();
-  await expect(messageAgent.locator('svg')).toBeVisible();
-  await expect(messageAgent).not.toHaveCSS('box-shadow', 'none');
-  expect(await messageAgent.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
-  await messageAgent.press('Space');
-  await finalModel.focus();
-  await finalModel.press('End');
-  await expect(messageModel).toBeFocused();
-  await expect(messageModel.locator('svg')).toBeVisible();
-  await expect(messageModel).not.toHaveCSS('box-shadow', 'none');
-  expect(await messageModel.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
-  await messageModel.press('Enter');
-  await expect(messageAgent).toBeChecked();
-  await expect(messageModel).toBeChecked();
-  await expect(messages).toHaveText('9 human messages and 1 agent message');
-  await messageAgent.press('Home');
-  await expect(agentGroup.getByRole('radio').first()).toBeFocused();
-  await agentGroup.getByRole('radio').first().press('ArrowLeft');
-  await expect(messageAgent).toBeFocused();
-  await messageAgent.press('ArrowRight');
-  await expect(agentGroup.getByRole('radio').first()).toBeFocused();
-  await messageModel.press('Home');
-  await expect(modelGroup.getByRole('radio').first()).toBeFocused();
-  await expectIconsReachableWithoutBottomRow();
-  // Return by pointer through an empty intersection, then restore both reported-cost scopes.
+  for (const group of [agentGroup, modelGroup]) {
+    const first = group.getByRole('radio').first();
+    const last = group.getByRole('radio').last();
+    await expect(group.getByRole('radio')).toHaveCount(4);
+    await first.focus();
+    await page.keyboard.press('End');
+    await expect(last).toBeFocused();
+    await expect(last).toBeChecked();
+    await page.keyboard.press('ArrowRight');
+    await expect(first).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(last).toBeFocused();
+    await page.keyboard.press('Home');
+    await expect(first).toBeFocused();
+  }
   await agentBeta.click();
   const modelBeta = modelGroup.getByRole('radio', { name: /Model Beta:/ });
   await modelBeta.click();
@@ -880,15 +806,11 @@ test('retains each selected dimension and reaches message-only scopes', async ({
   await expect(modelBeta).toBeChecked();
   await expect(cost).toHaveText('Cost $0.34');
   await expect(messages).toHaveText('2 human and 4 agent messages');
-  await messageAgent.dispatchEvent('pointerdown', { pointerType: 'touch' });
-  await messageModel.dispatchEvent('pointerdown', { pointerType: 'touch' });
-  await expect(messageAgent).toHaveAttribute('aria-checked', 'true');
-  await expect(messageModel).toHaveAttribute('aria-checked', 'true');
-  await expect(status).toContainText('By model Model Message Only 0 processed');
-  await expect(messages).toHaveText('9 human messages and 1 agent message');
-  await expect(details.locator('.composition-strip')).toHaveCount(0);
-  await expect(agentGroup.locator('.breakdown-stack-item')).toHaveCount(4);
-  await expect(modelGroup.locator('.breakdown-stack-item')).toHaveCount(4);
+  await finalModel.dispatchEvent('pointerdown', { pointerType: 'touch' });
+  await expect(agentBeta).toBeChecked();
+  await expect(finalModel).toBeChecked();
+  await expect(status).toContainText('By model Model Production Final 10 processed');
+  await expect(messages).toHaveText('0 human messages and 1 agent message');
 });
 
 for (const locale of ['en', 'de'] as const) {
@@ -931,7 +853,8 @@ for (const locale of ['en', 'de'] as const) {
     const before = (await target.boundingBox())!;
     const point = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
     await page.mouse.move(point.x, point.y);
-    await expect(details.locator('.token-summary .animated-number-value')).toHaveText('0');
+    await expect(target).toHaveAttribute('data-preview-active', 'true');
+    await expect(details.locator('.token-summary .animated-number-value')).toHaveText('1');
     await page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
@@ -973,7 +896,7 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
   const modelGroup = page.getByRole('radiogroup', { name: 'Nach Modell' });
   await expect(agentGroup).toBeVisible();
   await expect(modelGroup).toBeVisible();
-  await expect(agentGroup.getByRole('radio')).toHaveCount(5);
+  await expect(agentGroup.getByRole('radio')).toHaveCount(4);
   await expect(agentGroup.getByRole('radio').first()).toHaveAccessibleName(
     /Nach Agent, Agent alpha-01: 750 Token/,
   );
@@ -986,14 +909,9 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
   expect(localizedStatus?.match(/Nach Agent/g)).toHaveLength(1);
   await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('aria-checked', 'false');
   await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('data-preview-active', 'true');
-  const messages = agentGroup.getByRole('radio', { name: /Nach Agent, Agent messages: 0 Token/ });
-  await expect(messages).toHaveAccessibleDescription(
-    '9 menschliche Nachrichten und 1 Agentennachricht',
-  );
-  await messages.hover();
-  await expect(page.getByRole('tooltip')).toContainText('Agent messages');
-  await messages.click();
-  await expect(messages).toBeChecked();
+  await agentGroup.getByRole('radio').nth(1).press('Space');
+  await expect(agentGroup.getByRole('radio').nth(1)).toBeChecked();
+  await expect(modelGroup.getByRole('radio')).toHaveCount(4);
 });
 
 for (const localeCase of [
@@ -1158,6 +1076,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
       }),
     ),
   });
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   const initialGeometry = await geometry();
   await expect(animatedNumbers).toHaveCount(12);
   expect(
@@ -1746,8 +1665,8 @@ test('renders the full reference table as a wide overlay from the real workspace
             control.borderTopWidth === '0px' &&
             control.borderBottomWidth === '0px',
         ) &&
-        Math.abs(segmentWidth - (box.width - (segmentCount - 1))) <= 0.04 &&
-        gaps.every((gap) => Math.abs(gap - 1) <= 0.01) &&
+        Math.abs(segmentWidth - box.width) <= 0.04 &&
+        gaps.every((gap) => Math.abs(gap) <= 0.01) &&
         overflowX === 'hidden' &&
         borderRadius === '2px' &&
         firstRadius === '2px' &&

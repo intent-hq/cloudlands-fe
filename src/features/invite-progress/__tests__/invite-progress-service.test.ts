@@ -8,12 +8,19 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const preference = vi.hoisted(() => ({ enabled: false, persisted: false, dispatch: vi.fn() }));
+vi.mock('$lib/utils/safe-storage', () => ({
+  safeLocalStorage: { getJSON: () => preference.persisted },
+}));
 const loggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ userPreferences: { labsMultiplayerEnabled: true, labsGitLabEnabled: false } }),
+    state: () => ({
+      userPreferences: { labsMultiplayerEnabled: preference.enabled, labsGitLabEnabled: false },
+    }),
+    dispatch: preference.dispatch,
   });
 });
 vi.mock('$shared/logger', () => ({
@@ -61,6 +68,12 @@ describe('invite-progress-service', () => {
   let dispose: () => void;
 
   beforeEach(() => {
+    preference.enabled = false;
+    preference.persisted = false;
+    preference.dispatch.mockReset().mockImplementation(() => {
+      preference.enabled = true;
+      preference.persisted = true;
+    });
     invoke = (window as any).electronAPI.invoke;
     invoke.mockReset().mockResolvedValue({ ok: true });
     loggerMocks.warn.mockClear();
@@ -100,7 +113,7 @@ describe('invite-progress-service', () => {
     });
   });
 
-  it('publishes renderer policy before explicitly retrying the same invitation', async () => {
+  it('persists explicit enable and publishes policy before continuing the same invitation', async () => {
     invoke.mockResolvedValue({ ok: true });
     emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
     invoke.mockClear();
@@ -114,6 +127,7 @@ describe('invite-progress-service', () => {
       action: 'retry',
     });
     expect(onDismiss).not.toHaveBeenCalled();
+    expect(preference.dispatch).toHaveBeenCalledWith(expect.objectContaining({ payload: [true] }));
   });
 
   it.each(['cancel', 'replacement', 'policy-failure'] as const)(
@@ -137,7 +151,9 @@ describe('invite-progress-service', () => {
       expect(
         invoke.mock.calls.filter(
           ([channel, input]) =>
-            channel === INVITE_PROGRESS_CHANNELS.RESPONSE && (input as any).action === 'retry',
+            channel === INVITE_PROGRESS_CHANNELS.RESPONSE &&
+            (input as any).action === 'retry' &&
+            (input as any).requestId === SHOW_PAYLOAD.requestId,
         ),
       ).toEqual([]);
     },

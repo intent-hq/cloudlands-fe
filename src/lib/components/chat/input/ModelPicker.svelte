@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
   import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
@@ -32,6 +33,7 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { createAgentModelMutator } from './agent-model-mutator';
   import {
     selectAgentModelMutationPending,
@@ -74,6 +76,7 @@
     selectContextModelProviderIds,
     selectContextAvailableProviderIds,
     selectContextEnabledProviders,
+    selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
@@ -83,10 +86,13 @@
   } from '$store/renderer/slices/provider-models/provider-models-slice';
   import {
     selectProviderModelsCacheMap,
+    selectLearnedModelDisplayName,
+    selectLearnedModelNames,
     selectProviderModelsRequests,
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+  import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
   import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
@@ -335,7 +341,11 @@
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
+  const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
   $effect(() => {
+    // An open picker can outlive its workspace lifecycle subscription. Refresh
+    // its own context when settings or the backend invalidate the registry.
+    void $workspaceCatalogEpoch$;
     if (workspaceId) appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
   });
 
@@ -429,6 +439,7 @@
   // The saga owns the catalog and request generations. Read-through cache rows
   // render synchronously on remount while the owner revalidates in the background.
   const providerCatalogs$ = selectProviderModelsCacheMap(workspaceIdStore);
+  const learnedModelNames$ = selectLearnedModelNames();
   const providerRequests$ = selectProviderModelsRequests(workspaceIdStore);
   const catalogObserverId = crypto.randomUUID();
   const catalogProviderIds = $derived(
@@ -864,45 +875,57 @@
       localModel !== 'default',
   );
 
-  // Get the label for a model ID from available models list; undefined when
-  // the id resolves to no loaded model (callers pick the fallback).
-  // Catalog rows now carry bare ids for every provider, while a session id
-  // may be daemon-pinned bare or stored legacy-compound, so ids are compared
-  // via normalizeModelIdForMatch (like selectedCatalogOption), not exact
-  // string equality.
-  // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
-  // rows (the daemon collapses them to one base row + effortLevels), so on an
-  // exact-id miss the base model's label is rendered with the effort suffix
-  // appended — existing sessions with a stored compound id keep a sensible
-  // label instead of the raw id.
+  // Settings owns the default provider even when a bare model contains a colon.
+  // Other display callers may still carry a recognized legacy provider prefix.
+  // This identity is for labels/icons only; catalog/session gates stay authoritative.
+  const selectedModelDisplayProviderId = $derived.by(() => {
+    if (updateGlobalDefault) return normalizeProviderId(effectiveProviderId);
+    if (localPickedProviderId) return normalizeProviderId(localPickedProviderId);
+    if (explicitProviderId) return explicitProviderId;
+    const prefix = localModel ? splitLegacyCompoundId(localModel).providerId : undefined;
+    return normalizeProviderId(
+      prefix && hasResolvedProvider(prefix) ? prefix : effectiveProviderId,
+    );
+  });
+
+  // Live labels retain precedence; remembered names affect display only.
   function getModelLabel(
     modelId: string | undefined,
-    provider = selectedModelProviderId || effectiveProviderId,
+    provider = selectedModelDisplayProviderId,
   ): string | undefined {
     if (!modelId) return undefined;
+    provider = normalizeProviderId(provider);
+    const bareId = modelIdForDisplay(modelId, provider, normalizeProviderId);
     const lookup = (id: string): string | undefined => {
-      const target = normalizeModelIdForMatch(splitLegacyCompoundId(id).modelId, provider);
-      for (const [rowProviderId, models] of Object.entries(allProviderModels)) {
-        const found = models.find(
-          (m) => normalizeModelIdForMatch(m.value, rowProviderId) === target,
-        );
-        if (found) return found.label;
+      const target = modelIdForDisplay(id, provider, normalizeProviderId);
+      const find = (models: { value: string; label: string }[], catalogProvider: string) => {
+        // Catalog ownership is authoritative: a custom colon-bearing ID in
+        // another provider's catalog must never supply this provider's name.
+        if (normalizeProviderId(catalogProvider) !== provider) return undefined;
+        const exact = models.find((row) => row.value === id);
+        return (
+          exact ??
+          models.find(
+            (row) => modelIdForDisplay(row.value, provider, normalizeProviderId) === target,
+          )
+        )?.label;
+      };
+      for (const [rowProvider, models] of Object.entries(allProviderModels)) {
+        const label = find(models, rowProvider);
+        if (label) return label;
       }
-      return availableModels.find(
-        (m) => normalizeModelIdForMatch(m.value, availableModelsProviderId) === target,
-      )?.label;
+      return find(availableModels, availableModelsProviderId);
     };
-    const exact = lookup(modelId);
-    if (exact) return exact;
-    const slashIndex = modelId.indexOf('/');
-    if (slashIndex > 0 && slashIndex < modelId.length - 1) {
-      const baseLabel = lookup(modelId.slice(0, slashIndex));
-      if (baseLabel) {
-        const effort = modelId.slice(slashIndex + 1);
-        return `${baseLabel} (${effort.charAt(0).toUpperCase()}${effort.slice(1)})`;
-      }
-    }
-    return undefined;
+    // Subscribe to the shared Redux names, including discoveries made by another picker.
+    void $learnedModelNames$;
+    const learned = (id: string) =>
+      selectLearnedModelDisplayName.select(appStore.state, provider, id);
+    return (
+      resolveModelDisplayName(modelId, lookup) ??
+      (bareId !== modelId ? resolveModelDisplayName(bareId, lookup) : undefined) ??
+      learned(modelId) ??
+      resolveModelDisplayName(bareId, learned)
+    );
   }
 
   // The provider's `isDefault`-marked catalog row, if its catalog is loaded
@@ -985,6 +1008,15 @@
     defaultModelId ? mapDefaultPseudoSelection(defaultModelId) : undefined,
   );
 
+  const defaultModelDisplayProviderId = $derived.by(() => {
+    const owner = explicitProviderId || fallbackProviderId;
+    if (owner) return normalizeProviderId(owner);
+    const prefix = defaultModelId ? splitLegacyCompoundId(defaultModelId).providerId : undefined;
+    return normalizeProviderId(
+      prefix && hasResolvedProvider(prefix) ? prefix : $defaultProviderId$,
+    );
+  });
+
   function formatResolvedDefaultLabel(model: string): string {
     if (formatDefaultModelLabel) return formatDefaultModelLabel(model);
     return showDefaultOption ? m.chat_modelPicker_defaultModelPreview_label({ model }) : model;
@@ -995,7 +1027,7 @@
       return localModel
         ? (legacyDefaultMappedOption?.label ??
             getModelLabel(localModel) ??
-            parseCompoundModelId(localModel).modelId)
+            modelIdForDisplay(localModel, selectedModelDisplayProviderId, normalizeProviderId))
         : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
     }
 
@@ -1003,18 +1035,11 @@
     // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
     // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
+      const provider = defaultModelDisplayProviderId;
       const resolvedLabel =
-        defaultModelIdMappedOption?.label ??
-        getModelLabel(
-          defaultModelId,
-          normalizeProviderId(
-            splitLegacyCompoundId(defaultModelId).providerId ||
-              fallbackProviderId ||
-              effectiveProviderId,
-          ),
-        );
+        defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId, provider);
       if (resolvedLabel) return formatResolvedDefaultLabel(resolvedLabel);
-      return defaultModelLabel ?? parseCompoundModelId(defaultModelId).modelId;
+      return defaultModelLabel ?? modelIdForDisplay(defaultModelId, provider, normalizeProviderId);
     }
     if (catalogDefaultFallbackOption) {
       return formatResolvedDefaultLabel(catalogDefaultFallbackOption.label);
@@ -1025,11 +1050,11 @@
   const triggerProviderId = $derived.by(() => {
     if (localModel && hasExplicitModel) {
       // Provider identity belongs to the selection, including colliding bare IDs.
-      return selectedModelProviderId;
+      return selectedModelDisplayProviderId;
     }
     if (explicitProviderId) return explicitProviderId;
     // No explicit provider or model — show the displayed default model's provider.
-    if (defaultModelId) return parseCompoundModelId(defaultModelId).providerId;
+    if (defaultModelId) return defaultModelDisplayProviderId;
     if (catalogDefaultFallbackOption) {
       return parseCompoundModelId(catalogDefaultFallbackOption.value).providerId;
     }
@@ -1041,6 +1066,7 @@
     // A `<provider>:default` selection mapped to its D2 row renders that
     // row's label — resolved even while other providers are still loading.
     if (legacyDefaultMappedOption) return true;
+    if (getModelLabel(localModel)) return true;
     // The disabled-provider warning derives from settings alone and must not
     // wait behind the disabled provider's catalog, which may never load.
     if (isSelectedModelProviderDisabled) return true;
@@ -1157,11 +1183,20 @@
       .filter((error): error is ProviderLoadError => Boolean(error));
   });
 
+  // Read the workspace-scoped catalog, including degraded successful responses.
+  const activeProviderIssue = $derived.by<ProviderLoadError | null>(() => {
+    const providerId = activeBrowseProviderId || preferredBrowseProviderId;
+    const error = $providerRequests$[providerId]?.error;
+    if (error) return formatProviderLoadError(providerId, error);
+    const warning = $providerCatalogs$[providerId]?.warning;
+    if (warning) return formatProviderLoadError(providerId, warning);
+    if (loadError && providerId === effectiveProviderId)
+      return formatProviderLoadError(providerId, loadError);
+    return null;
+  });
   const nonBlockingProviderWarnings = $derived(
-    hasLoadedModelOptions
-      ? providerLoadWarnings.filter(
-          (warning) => (allProviderModels[warning.providerId]?.length ?? 0) > 0,
-        )
+    activeProviderIssue && (allProviderModels[activeProviderIssue.providerId]?.length ?? 0) > 0
+      ? [activeProviderIssue]
       : [],
   );
 
@@ -1263,6 +1298,7 @@
     return {
       providerId: 'multiple',
       providerName: m.chat_modelPicker_modelProviders_label(),
+      details: providerLoadWarnings.map((error) => error.details).join('\n\n'),
       message: providerLoadWarnings.map((error) => error.displayText).join('; '),
       displayText: providerLoadWarnings.map((error) => error.displayText).join('; '),
     };
@@ -1504,8 +1540,10 @@
     // Settings-derived: does not wait for catalog loads or availability probes.
     if (isSelectedModelProviderDisabled) return true;
     if (isAwaitingReHomedModel) return false;
-    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
+    // A cleared registry is unknown until its replacement arrives, even if
+    // the last successful models.list response is still cached.
     if (!$hasCheckedOnce$) return false;
+    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (isLoadingModels) return false;
     if (!allProvidersLoaded) return false;
     if (isSelectedModelProviderPending) return false;
@@ -1625,14 +1663,15 @@
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
+  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   const showDropdownFooter = $derived(
     showReasoningFooter ||
       (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
-      nonBlockingProviderWarnings.length > 0,
+      activeProviderIssue !== null ||
+      refreshingProviders.has(refreshProviderId),
   );
 
   const railProviderIds = $derived(providerTabIds);
-  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   let pointerInteraction = $state(false);
 
   function clearModelSearch(event: MouseEvent) {
@@ -1739,15 +1778,16 @@
     return null;
   });
 
-  // Native tooltip on the trigger: the warning reason while one is shown
-  // ("<model> is no longer available — <provider> is disabled"), else the label.
+  // Keep warnings, icon-only labels, and reasoning details available on hover.
   const triggerTitle = $derived(
     showModelWarning && warningMessage
       ? m.chat_modelPicker_warning_tooltip({
           title: warningMessage.title,
           description: warningMessage.description,
         })
-      : triggerAccessibleLabel,
+      : isCompact || showReasoningFooter
+        ? triggerAccessibleLabel
+        : undefined,
   );
 
   // Re-home announcement (see `disabledProviderSnapshot`).
@@ -1968,6 +2008,17 @@
     });
   });
 
+  let detailsError = $state<ProviderLoadError | null>(null);
+  let detailsOpen = $state(false);
+
+  function showProviderDetails(error: ProviderLoadError) {
+    // The footer is removed when its dropdown closes. Restore focus to the
+    // stable picker trigger before opening the dialog so dismissal returns there.
+    dropdownRef?.dismissAndFocusTrigger();
+    detailsError = error;
+    detailsOpen = true;
+  }
+
   /** Clear the fallback warning - call when user sends a message or explicitly selects a model */
   export function clearFallbackWarning() {
     clearFallbackInfo();
@@ -2157,6 +2208,32 @@
         {/each}
       </div>
     {/if}
+    {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
+      <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={refreshingProviders.has(refreshProviderId)}
+          aria-label={m.chat_modelPicker_retry_label()}
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          onclick={() => handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
+          {m.chat_modelPicker_retry_label()}
+        </Button>
+        {#if activeProviderIssue}
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+          >
+            {m.chat_modelPicker_errorDetails_label()}
+          </Button>
+        {/if}
+      </div>
+    {/if}
     {#if showReasoningFooter}
       <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
         <EffortPicker
@@ -2236,7 +2313,9 @@
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
-          <span class="truncate">{triggerLabel}</span>
+          <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}
+            >{triggerLabel}</span
+          >
           {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
@@ -2390,7 +2469,10 @@
               {option.label}
             </span>
             {#if option.description}
-              <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
+              <div
+                class="text-xs text-subtle truncate mt-0.5"
+                use:truncatedTitle={option.description}
+              >
                 {option.description}
               </div>
             {/if}
@@ -2403,7 +2485,8 @@
     {#snippet empty()}
       <ModelPickerEmptyState
         {isLoadingModels}
-        {blockingLoadError}
+        blockingLoadError={activeProviderIssue ?? blockingLoadError}
+        retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
         {hasNoAvailableProvider}
         hostManaged={$hostMember$}
         onOpenProviderSettings={openProviderSettings}
@@ -2420,6 +2503,18 @@
     class={resolvedNoticeClass}
   />
 {/if}
+
+<ContentDialog
+  bind:open={detailsOpen}
+  title={m.chat_modelPicker_errorDetails_title({ provider: detailsError?.providerName ?? '' })}
+  onCloseAutoFocus={(event) => {
+    event.preventDefault();
+    dropdownRef?.focusTrigger();
+  }}
+>
+  <pre
+    class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] type-caption font-mono text-foreground">{detailsError?.details}</pre>
+</ContentDialog>
 
 <style>
   :global(.model-picker-panel > div:has(> input[role='searchbox'])) {

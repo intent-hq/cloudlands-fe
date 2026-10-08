@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COLLABORATION_AUTH } from '../../../collaboration-auth/types';
@@ -82,6 +83,8 @@ const challenge = {
 const never = new Promise<never>(() => {});
 let dispose: (() => void) | undefined;
 let modal: any;
+let disposeStore: (() => void) | undefined;
+let stopPreferences: (() => void) | undefined;
 function windowFixture(id: number) {
   const webContents = Object.assign(new EventEmitter(), {
     id,
@@ -111,6 +114,11 @@ function connection() {
   };
 }
 async function load() {
+  const { store } = await import('$store/renderer/store');
+  disposeStore = store.init();
+  const { userPreferencesPersistenceSaga } =
+    await import('$store/renderer/slices/user-preferences/sagas/user-preferences-persistence-saga');
+  stopPreferences = store.runSaga(userPreferencesPersistenceSaga);
   const auth = await import('../../../collaboration-auth/main/collaboration-auth.ipc');
   auth.registerCollaborationAuthHandlers();
   const renderer = await import('../../../invite-progress/invite-progress-service');
@@ -128,6 +136,7 @@ async function load() {
   return { ...renderer, ...(await import('../invite-deep-link')) };
 }
 beforeEach(() => {
+  installLocalStorageMock();
   vi.resetModules();
   state.handlers.clear();
   state.listeners.clear();
@@ -166,12 +175,164 @@ afterEach(async () => {
   state.parent.webContents.emit('destroyed');
   await flush();
   dispose?.();
+  stopPreferences?.();
+  disposeStore?.();
 });
 
 describe('invitation lifetime across the actual main and renderer modules', () => {
-  it('replays admission after late renderer readiness with an unchanged policy, without auto-admitting', async () => {
+  it('continues an initially unpublished enabled invitation after original renderer readiness', async () => {
+    const flow = await load();
+    const { store } = await import('$store/renderer/store');
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    state.dial.mockReturnValue(never);
+    const joining = flow.handleInviteDeepLink(uri('enabled'));
+    await flush();
+    expect(state.dial).toHaveBeenCalledOnce();
+    expect(modal?.phase).toBe('connecting');
+    flow.cancelInviteProgress();
+    await joining;
+  });
+
+  it('direct enable persists true and joins the same invitation exactly once', async () => {
+    const flow = await load();
+    await policy(false);
+    const remote = connection();
+    state.dial.mockResolvedValue(remote);
+    const joining = flow.handleInviteDeepLink(uri('direct'));
+    await flush();
+    expect(modal?.phase).toBe('admission');
+    await Promise.all([flow.retryInviteProgress(), flow.retryInviteProgress()]);
+    expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBe('true');
+    await joining;
+    expect(state.dial).toHaveBeenCalledOnce();
+    expect(remote.prove).toHaveBeenCalledWith('direct', 'private-invite-secret', expect.anything());
+    expect(state.open).toHaveBeenCalledOnce();
+  });
+  it('accepts initially late hydrated enabled state without mutating the preference again', async () => {
+    const flow = await load();
+    state.dial.mockReturnValue(never);
+    const joining = flow.handleInviteDeepLink(uri('hydrated'));
+    await flush();
+    expect(modal?.phase).toBe('admission');
+    const { store } = await import('$store/renderer/store');
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    await policy(true);
+    await flush();
+    expect(state.dial).toHaveBeenCalledOnce();
+    flow.cancelInviteProgress();
+    await joining;
+  });
+
+  it.each(['cancel', 'replacement', 'reload', 'disable', 'publication-failure'] as const)(
+    'does not continue after %s during explicit policy acknowledgement',
+    async (reason) => {
+      const flow = await load();
+      await policy(false);
+      state.dial.mockReturnValue(never);
+      const joining = flow.handleInviteDeepLink(uri('pending'));
+      await flush();
+      const ack = Promise.withResolvers<{ ok: boolean }>();
+      state.api.invoke = async (channel: string, payload: unknown) => {
+        const result = await invoke(channel, payload);
+        return channel === COLLABORATION_AUTH.POLICY ? ack.promise : result;
+      };
+      const enabling = flow.retryInviteProgress();
+      await flush();
+      expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBe('true');
+      expect(state.dial).not.toHaveBeenCalled();
+      let replacement: Promise<void> | undefined;
+      if (reason === 'cancel') flow.cancelInviteProgress();
+      if (reason === 'replacement') {
+        const { store } = await import('$store/renderer/store');
+        const { setLabsMultiplayerEnabled } =
+          await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+        store.dispatch(setLabsMultiplayerEnabled(false));
+        await policy(false);
+        replacement = flow.handleInviteDeepLink(uri('new'));
+      }
+      if (reason === 'reload') state.parent.webContents.emit('did-navigate');
+      if (reason === 'disable') {
+        await policy(false);
+        await policy(true);
+      }
+      ack.resolve({ ok: reason !== 'publication-failure' });
+      await enabling;
+      await flush();
+      expect(state.dial).not.toHaveBeenCalled();
+      if (reason === 'publication-failure') {
+        expect(modal?.phase).toBe('admission');
+        flow.cancelInviteProgress();
+      }
+      state.parent.webContents.emit('destroyed');
+      await joining;
+      await replacement;
+      expect(state.add).not.toHaveBeenCalled();
+      expect(state.request).not.toHaveBeenCalled();
+    },
+  );
+
+  it('expires the same recovery while enable acknowledgement is pending', async () => {
+    const flow = await load();
+    await policy(false);
+    vi.useFakeTimers();
+    try {
+      const joining = flow.handleInviteDeepLink(uri('expiring'));
+      await flush();
+      const ack = Promise.withResolvers<{ ok: boolean }>();
+      state.api.invoke = async (channel: string, payload: unknown) => {
+        const result = await invoke(channel, payload);
+        return channel === COLLABORATION_AUTH.POLICY ? ack.promise : result;
+      };
+      const enabling = flow.retryInviteProgress();
+      await flush();
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await joining;
+      ack.resolve({ ok: true });
+      await enabling;
+      expect(modal).toBeNull();
+      expect(state.dial).not.toHaveBeenCalled();
+      expect(state.request).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps recovery actionable when canonical preference persistence fails', async () => {
+    const flow = await load();
+    await policy(false);
+    const joining = flow.handleInviteDeepLink(uri('write-failed'));
+    await flush();
+    const write = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('controlled quota failure');
+    });
+    try {
+      await flow.retryInviteProgress();
+      expect(state.dial).not.toHaveBeenCalled();
+      expect(modal?.phase).toBe('admission');
+    } finally {
+      write.mockRestore();
+    }
+    state.dial.mockReturnValue(never);
+    await flow.retryInviteProgress();
+    await flush();
+    expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBe('true');
+    expect(state.dial).toHaveBeenCalledOnce();
+    flow.cancelInviteProgress();
+    await joining;
+  });
+
+  it('continues after late renderer readiness acknowledges an unchanged enabled policy', async () => {
     const flow = await load();
     dispose?.();
+    const { store } = await import('$store/renderer/store');
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    state.dial.mockReturnValue(never);
     const joining = flow.handleInviteDeepLink(uri('original'));
     await policy(true);
     expect(state.dial).not.toHaveBeenCalled();
@@ -188,8 +349,9 @@ describe('invitation lifetime across the actual main and renderer modules', () =
       },
     });
     await policy(true); // same policy, now with the original renderer listeners installed
-    expect(modal.phase).toBe('admission');
-    expect(state.dial).not.toHaveBeenCalled();
+    await flush();
+    expect(modal?.phase).toBe('connecting');
+    expect(state.dial).toHaveBeenCalledOnce();
     flow.cancelInviteProgress();
     await joining;
     expect(state.request).not.toHaveBeenCalled();

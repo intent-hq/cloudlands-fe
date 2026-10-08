@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { CHAT_PAGE_SIZE } from '$shared/constants';
+  import { submitChatMessage } from '$features/agent/chat-submission';
+  import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
+  import {
+    selectQueueMutationBlocked,
+    selectAgentSubmissionDisplay,
+  } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+  import {
+    pendingSubmissionMessage,
+    processingSubmissionMessage,
+  } from './pending-submission-message';
   import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
@@ -60,13 +69,9 @@
     agentSessionEditAndRegenerateRequested,
     agentSessionRegenerateFromMessageRequested,
     agentSessionRetryFromStalledRequested,
-    agentSessionRetryLastMessageRequested,
-    agentSessionRetryWithModelRequested,
     agentSessionRetryWithProviderRequested,
     agentSessionStopChatRequested,
     clearHistorySegment,
-    seedHistoryAround,
-    setHistoryOldestReached,
     updateSession as updateAgentSessionFields,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -85,11 +90,6 @@
     selectCanAdministerHost,
     selectPrincipalSnapshot,
   } from '$store/renderer/slices/principal/principal-selectors';
-  import {
-    findQueuedMessageForEdit,
-    queuedMessagePermissions,
-  } from '$lib/utils/queued-message-permissions';
-  import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
@@ -123,21 +123,19 @@
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
 
   import {
-    sendMessage,
-    sendQueuedMessageNowRequested,
+    sendQueuedMessagesNowRequested,
+    clearQueuedMessagesRequested,
     initializeChatRequested,
     refreshChatTranscriptRequested,
     chatRebindStarted,
     chatRebindEnded,
     chatTrackedWorkspaceSet,
-    chatErrorCleared,
-    chatSendFailed,
-    chatQueuedRetryRecordUpdated,
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
-    scrollbackFetchStarted,
-    scrollbackSeekSettled,
+    previousUserMessageLoadConsumed,
+    previousUserMessageLoadReleased,
+    previousUserMessageLoadRequested,
     pendingProposalRecoveryPruned,
     pendingProposalRecoveryRequested,
     pendingQuestionRecoveryRequested,
@@ -147,8 +145,11 @@
     selectAwaitingSwitchBackSnapshot,
     selectChatError,
     selectChatAgentState,
+    selectInitialChatHistory,
+    selectInitialChatHistoryPending,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
+    selectChatLastAttemptedMessage,
     selectChatModelUnavailable,
     selectChatQuotaExceeded,
     selectChatReceivedFirstChunk,
@@ -161,14 +162,15 @@
     selectHistorySeekUnsupported,
     selectPendingProposalRecovery,
     selectPendingQuestionRecovery,
+    selectPreviousUserMessageLoad,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
     selectTranscriptSnapshotMeta,
   } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
-  import { appClient } from '$lib/client';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import { chatDraftClearRequested } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
   import {
     presenceTypingPulse,
     presenceTypingStopped,
@@ -210,6 +212,8 @@
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
   import { createAppMessageId } from '$shared/utils/app-message-id';
+  import { projectFailureTranscript } from './failure-transcript';
+  import TurnFailureNotice from './TurnFailureNotice.svelte';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
@@ -217,6 +221,10 @@
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import QuestionComposer from './questions/QuestionComposer.svelte';
+  import {
+    getChatAttentionFocusAction,
+    type ChatAttentionFocusRequest,
+  } from './chat-attention-focus';
   import {
     deriveMarkedQuestionRecoveryState,
     deriveWizardPendingQuestions,
@@ -227,10 +235,24 @@
   import { reconcileAppliedProposals } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import {
-    initialWizardCollapsed,
-    saveWizardCollapsed,
-    wizardDraftKey,
-  } from './questions/wizard-draft-storage';
+    questionWizardCollapsedChanged,
+    questionWizardConsumed,
+    questionWizardDraftChanged,
+    questionWizardReleaseRequested,
+    questionWizardResolved,
+  } from '$store/renderer/slices/question-ui/question-ui-slice';
+  import { selectQuestionUiConsumer } from '$store/renderer/slices/question-ui/question-ui-selectors';
+  import type { QuestionWizardDraft } from '$store/renderer/slices/question-ui/question-ui-types';
+  import {
+    chatPanelRetryAgentRequested,
+    chatPanelUiReleased,
+    userMessageIndexRequested,
+  } from '$store/renderer/slices/chat-panel-ui/chat-panel-ui-slice';
+  import {
+    selectRetryAgentUi,
+    selectUserMessageIndexUi,
+  } from '$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors';
+  import { wizardDraftKey } from './questions/wizard-draft-key';
   import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import {
     appendScrollSample,
@@ -269,7 +291,6 @@
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
-  import { loadPreviousUserMessage } from '$lib/utils/previous-user-message-page';
   import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
@@ -296,7 +317,6 @@
     getUserMessageNavigationItemsFromIndex,
     mergeUserMessageNavigationItems,
     type ChatNavigationState,
-    type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
@@ -454,6 +474,8 @@
     draftPrompt?: string | null;
     /** Focus the prompt once on mount after the input component is ready. */
     autoFocus?: boolean;
+    /** Explicit Home attention click; does not submit or replace draft content. */
+    attentionFocusRequest?: ChatAttentionFocusRequest;
     onClose?: () => void;
     onFocus?: () => void;
     onChatUpdate?: (update: {
@@ -480,6 +502,7 @@
     initialPrompt: initialPromptProp = null,
     draftPrompt = null,
     autoFocus = false,
+    attentionFocusRequest,
 
     onClose: _onClose, // Prefix with underscore to indicate intentionally unused
     onFocus,
@@ -515,6 +538,20 @@
   const agentSession$ = selectAgentSession(agentIdStore);
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
+  const submissionDisplay$ = selectAgentSubmissionDisplay(agentIdStore, workspaceIdStore);
+  const pendingConversationMessages = $derived(
+    [
+      ...$submissionDisplay$.conversation.map(pendingSubmissionMessage),
+      ...$submissionDisplay$.processing.map(processingSubmissionMessage),
+    ].filter(
+      (pending) =>
+        !$agentMessages$.some(
+          (confirmed) =>
+            confirmed.id === pending.id ||
+            (pending.appMessageId && confirmed.appMessageId === pending.appMessageId),
+        ),
+    ),
+  );
   // Scrollback history segment (older rows hydrated on demand) + paging state.
   const agentHistoryMessages$ = selectAgentHistoryMessages(agentIdStore);
   const historySegmentMeta$ = selectHistorySegmentMeta(agentIdStore);
@@ -540,6 +577,17 @@
   const chatFailureCorrelation$ = selectChatFailureCorrelation(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
+  const chatLastAttemptedMessage$ = selectChatLastAttemptedMessage(agentIdStore);
+  // Only the active send (or authoritative queue-processing batch) owns the
+  // status. A newer draft/submission must not steal a previous turn's spinner.
+  const pendingStatusMessageId = $derived(
+    pendingConversationMessages.find(
+      (message) => message.id === $chatLastAttemptedMessage$?.submission?.reference.id,
+    )?.id ??
+      pendingConversationMessages.findLast((message) =>
+        $submissionDisplay$.processing.some((row) => row.id === message.id),
+      )?.id,
+  );
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
   // Quota-exceeded recovery (#4455): the provider that ran out on the last
   // turn, plus the sibling providers we may offer instead.
@@ -562,6 +610,8 @@
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
+  const initialHistory$ = selectInitialChatHistory(agentIdStore);
+  const initialHistoryPending$ = selectInitialChatHistoryPending(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
   const transcriptSnapshotMeta$ = selectTranscriptSnapshotMeta(agentIdStore);
   // First-hydration latch: false until the initial hydration settles, then
@@ -577,7 +627,7 @@
   // paged history read — must not render as a complete conversation. Refresh
   // re-hydrations (latch already true) keep the messages visible.
   const isFirstHydrationLoading = $derived(
-    !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
+    !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading' && !$initialHistory$?.received,
   );
   const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
   const authoritativeConversationEvidence = $derived(
@@ -712,6 +762,13 @@
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
+  const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
+  const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
+  let wizardPersistenceRequest: {
+    messageId: string;
+    requestId: string;
+    storageKey: string;
+  } | null = null;
   // svelte-ignore state_referenced_locally -- this records the identity at instance creation.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
@@ -753,9 +810,11 @@
   // agent). Merged with the tail-derived items — tail wins by id (freshest,
   // incl. streaming) and provides instant content before the fetch resolves;
   // any fetch failure silently leaves the tail-only fallback in place.
-  let userMessageIndexItems = $state<UserMessageNavigationItem[] | null>(null);
-  let userMessageIndexUnsupported = false;
-  let userMessageIndexFetchInFlight = $state(false);
+  const userMessageIndexItems = $derived.by(() => {
+    const result = $userMessageIndexUi$?.result;
+    return result?.ok ? getUserMessageNavigationItemsFromIndex(result.items) : null;
+  });
+  const userMessageIndexFetchInFlight = $derived($userMessageIndexUi$?.status === 'pending');
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
@@ -885,9 +944,14 @@
 
   function prepareMessageSendTransition(
     text: string,
-    options: { enabled: boolean; followBottom: boolean; allowOverlap?: boolean },
+    options: {
+      enabled: boolean;
+      followBottom: boolean;
+      allowOverlap?: boolean;
+      userAppMessageId?: string;
+    },
   ): string {
-    const userAppMessageId = createAppMessageId();
+    const userAppMessageId = options.userAppMessageId ?? createAppMessageId();
     if (!options.enabled || (!options.allowOverlap && sendTransitions.hasPending())) {
       return userAppMessageId;
     }
@@ -1031,6 +1095,7 @@
     void $agentHistoryMessages$;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
     void $pendingQuestionRecovery$;
+    void $submissionDisplay$;
     return deriveMarkedQuestionRecoveryState(appStore.state, agentId);
   });
   const pendingQuestionRecoveryLoading = $derived(
@@ -1064,6 +1129,7 @@
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
     void $pendingQuestionRecovery$;
+    void $submissionDisplay$;
     void $queuedMessages$;
     return deriveWizardPendingQuestions(
       appStore.state,
@@ -1073,52 +1139,115 @@
     );
   });
 
-  // Collapsed (Hide) state is host-owned and persisted per question set
-  // alongside the answer draft. A newly pending set starts from its persisted
-  // value when one exists; otherwise it auto-collapses when the composer
-  // holds in-flight user input (text or attachments) so the input textbox is
-  // never replaced mid-typing — Hide semantics only, nothing is dismissed.
-  // Resolved in a $derived (not a post-render $effect) so the very first
-  // render of a newly pending set already sees the collapsed value — an
-  // effect would run after the DOM update, transiently unmounting the
-  // composer (losing editor focus/selection/IME composition) before
-  // collapsing. The initial resolution is latched per messageId in a
-  // non-reactive cache so it is decided once per set; user toggles override
-  // it reactively.
+  // Register each question set with the root-owned persistence saga. The
+  // reducer synchronously seeds the composer-input fallback; hydration may
+  // replace it with a valid persisted value unless the user already changed
+  // the draft/collapse state.
+  $effect(() => {
+    const pending = pendingQuestions;
+    if (!pending) {
+      if (wizardPersistenceRequest) {
+        appStore.dispatch(
+          questionWizardReleaseRequested(instanceId, wizardPersistenceRequest.requestId),
+        );
+        wizardPersistenceRequest = null;
+      }
+      return;
+    }
+    if (wizardPersistenceRequest?.messageId === pending.messageId) return;
+    if (wizardPersistenceRequest) {
+      appStore.dispatch(
+        questionWizardReleaseRequested(instanceId, wizardPersistenceRequest.requestId),
+      );
+    }
+    const requestId = crypto.randomUUID();
+    const storageKey = wizardDraftKey(agentId, pending.messageId);
+    wizardPersistenceRequest = { messageId: pending.messageId, requestId, storageKey };
+    appStore.dispatch(
+      questionWizardConsumed(
+        instanceId,
+        requestId,
+        storageKey,
+        pending.questions,
+        {
+          idx: 0,
+          answers: pending.questions.map(() => ({ sel: [], text: '', skipped: false })),
+        },
+        // A rejected answer can bring back the same question after the user
+        // starts another draft. Preserve that question's latched display state.
+        untrack(() => questionWizardCollapsed),
+      ),
+    );
+  });
+
+  // The fallback is latched synchronously so newly arriving questions never
+  // replace in-flight composer input while storage hydration is pending.
   let wizardCollapsedInitial: { messageId: string; collapsed: boolean } | null = null;
-  let questionWizardCollapsedOverride = $state<{ messageId: string; collapsed: boolean } | null>(
-    null,
-  );
   const questionWizardCollapsed = $derived.by(() => {
     const id = pendingQuestions?.messageId ?? null;
     if (id === null) return false;
-    if (questionWizardCollapsedOverride?.messageId === id) {
-      return questionWizardCollapsedOverride.collapsed;
-    }
     if (wizardCollapsedInitial?.messageId !== id) {
       wizardCollapsedInitial = {
         messageId: id,
-        collapsed: untrack(() =>
-          initialWizardCollapsed(
-            wizardDraftKey(agentId, id),
-            inputValue.trim() !== '' || contextItems.length > 0,
-          ),
-        ),
+        collapsed: untrack(() => inputValue.trim() !== '' || contextItems.length > 0),
       };
+    }
+    if ($questionUiConsumer$?.storageKey === wizardDraftKey(agentId, id)) {
+      return $questionUiConsumer$.collapsed;
     }
     return wizardCollapsedInitial.collapsed;
   });
+
+  // The consumer may still represent the immediately preceding question set
+  // while the registration effect switches keys. Never hand that draft to a
+  // new wizard: its answer count belongs to the old question shape.
+  const questionWizardDraft = $derived.by(() => {
+    const pending = pendingQuestions;
+    const consumer = $questionUiConsumer$;
+    return pending && consumer?.storageKey === wizardDraftKey(agentId, pending.messageId)
+      ? consumer.draft
+      : undefined;
+  });
+
+  function handleQuestionWizardCollapsed(collapsed: boolean): void {
+    const pending = pendingQuestions;
+    const consumer = selectQuestionUiConsumer.select(appStore.state, instanceId);
+    if (!pending || !consumer || consumer.storageKey !== wizardDraftKey(agentId, pending.messageId))
+      return;
+    appStore.dispatch(questionWizardCollapsedChanged(instanceId, consumer.requestId, collapsed));
+  }
+
+  function handleQuestionWizardDraftChanged(draft: QuestionWizardDraft): void {
+    const consumer = selectQuestionUiConsumer.select(appStore.state, instanceId);
+    if (!consumer) return;
+    appStore.dispatch(questionWizardDraftChanged(instanceId, consumer.requestId, draft));
+  }
+
+  function handleQuestionWizardResolved(): void {
+    const consumer = selectQuestionUiConsumer.select(appStore.state, instanceId);
+    if (!consumer) return;
+    appStore.dispatch(questionWizardResolved(instanceId, consumer.requestId));
+  }
 
   // Queue entries the user should see: user-authored ones only. Daemon-origin
   // entries (agent sends, event wakes, hook wakes, PR-monitor wakes,
   // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
   // the list, its count, and the up-arrow edit path all use this filtered
   // view (display-only; the daemon queue and drain order are untouched).
-  // Entries already drained into the transcript (row stamped with
-  // `queueInfo.queuedMessageId`) are omitted while the shrunk queue snapshot
-  // is still in flight, so an answer never renders twice.
+  // Legacy queues omit transcript-stamped drains. Correlated full snapshots
+  // remain authoritative: a restored retry may legitimately share history aliases.
+  const admittedPrincipal$ = selectPrincipalSnapshot();
   const visibleQueuedMessages = $derived(
-    omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+    $admittedPrincipal$?.capabilities.submissionCorrelation === 1
+      ? $queuedMessages$.filter(isUserQueuedMessage)
+      : omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+  );
+
+  const visibleQueueRows = $derived(
+    $submissionDisplay$.queue.filter(
+      (row) =>
+        !row.confirmedId || visibleQueuedMessages.some((message) => message.id === row.confirmedId),
+    ),
   );
 
   // Queue-surface attribution (multiplayer w2): on only once the workspace
@@ -1131,14 +1260,13 @@
   // The viewer's own rows carry no author identity (transcript and queue).
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
   const isHostOwner$ = selectCanAdministerHost();
-  const admittedPrincipal$ = selectPrincipalSnapshot();
   const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
     deriveQueuedMessagesVisibility({
-      queueLength: visibleQueuedMessages.length,
+      queueLength: visibleQueueRows.length,
       hasPendingQuestions: !!pendingQuestions,
       questionWizardCollapsed,
     }),
@@ -1175,21 +1303,23 @@
   // answeredQuestionsMessageId }` (wire contract). That structured tag — not
   // the text — resolves the pending set, so the wizard unmounts and the
   // composer restores; an untagged user message leaves the Q&A pending.
-  function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
-    if (!workspace || !isActive || !pendingQuestions) return;
+  function handleQuestionWizardComplete(answers: QuestionAnswer[]): boolean {
+    if (!workspace || !isActive || !pendingQuestions) return false;
     const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
-    appStore.dispatch(
-      sendMessage(agentId, {
+    if (
+      !submitChatMessage(appStore, agentId, {
         wsId: workspace.id,
         text,
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
         messageMetadata: buildAnswerMessageMetadata(pendingQuestions.messageId),
-      }),
-    );
+      })
+    )
+      return false;
     void performLocalSendCleanup({ followBottom: true });
+    return true;
   }
 
   const pendingProposalRefs = $derived(
@@ -2001,7 +2131,6 @@
   // draft (initial inputValue + setChatDraft on value change) stays alongside
   // it as the synchronous same-process remount cache.
   const draftManager = createChatDraftManager({
-    drafts: appClient.drafts,
     active: () => isActive,
     workspaceId: () => workspace?.id,
     agentId: () => agentId,
@@ -2457,6 +2586,25 @@
   const composedTranscript = $derived(
     composeTranscript($agentHistoryMessages$, $agentMessages$, $historySegmentMeta$.gapToTail),
   );
+  const failureTranscript = $derived(
+    projectFailureTranscript(composedTranscript, {
+      agentId,
+      session: $agentSession$ ?? undefined,
+      transientError: $chatError$,
+      // Recovery instructions must point to the queue controls rendered below.
+      // Hidden automatic entries remain in the daemon queue for execution.
+      queue: visibleQueuedMessages,
+    }),
+  );
+  // Keep current recovery after saved history, next to the existing queue controls.
+  const recoveryAtEnd = $derived(
+    failureTranscript.history.length > 0 &&
+      Boolean(
+        effectiveError ||
+        $chatModelUnavailable$ ||
+        failureTranscript.current.state === 'attempting',
+      ),
+  );
   let groupedMessages = $derived(composedTranscript.groups);
   // Index of the first tail group when the history→tail hole is open; the
   // gap affordance renders immediately before this group.
@@ -2466,13 +2614,14 @@
   // (falsely signalling "you've reached the beginning" while older rows
   // still exist above the resident window).
   const conversationStartLoaded = $derived(
-    isConversationStartLoaded({
-      exhausted: $historyExhausted$,
-      historyCount: $agentHistoryMessages$.length,
-      tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
-      totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
-    }),
+    !$initialHistoryPending$ &&
+      isConversationStartLoaded({
+        exhausted: $historyExhausted$,
+        historyCount: $agentHistoryMessages$.length,
+        tailCount: $agentMessages$.length,
+        tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
+        totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
+      }),
   );
   const previousUserMessageTargets = $derived(
     indexPreviousUserMessages(composedTranscript, conversationStartLoaded),
@@ -2486,6 +2635,7 @@
     if (!isActive || !agentId || !workspace?.id || !$transcriptSnapshotMeta$) return;
     const chat = selectChatAgentState.select(appStore.state, agentId);
     if (
+      chat.initialHistoryPending ||
       chat.scrollbackOlderBlocked ||
       chat.fetchingOlderHistory ||
       chat.fetchingGapFill ||
@@ -2514,7 +2664,7 @@
 
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
-    if (!isActive || !container || !workspace?.id || !agentId) return;
+    if (!isActive || !container || !workspace?.id || !agentId || $initialHistoryPending$) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
     if ($fetchingHistorySeek$ || $fetchingGapFill$ || seekLandingPending) return;
@@ -2800,7 +2950,8 @@
   // phantom spacer over an empty store. Zero it all and re-anchor to the
   // fresh tail. Keyed on the snapshot's OBJECT IDENTITY (every
   // chatTranscriptSnapshotApplied mints a fresh meta object) so only a NEW
-  // discarded snapshot fires; the first observation per agent only records
+  // daemon discard fires; local hydration replays retain the current walk.
+  // The first observation per agent only records
   // the baseline (a mount over an already-discarded snapshot has nothing to
   // reset). Identity — not seq — because the restart sequence clears the
   // snapshot first (phase→null resets seq), and effect batching can flush
@@ -2839,7 +2990,7 @@
         return;
       }
       if (meta === discardBaselineMeta) return;
-      const isNewDiscard = meta?.resumed === false;
+      const isNewDiscard = meta?.resumed === false && !meta.replayed;
       discardBaselineMeta = meta;
       if (!isNewDiscard) return;
       cancelPreviousMessageLoad?.();
@@ -2912,7 +3063,7 @@
   }
 
   function runSpacerReconcile(force: boolean) {
-    if (!isActive || isComponentDestroyed) return;
+    if (!isActive || isComponentDestroyed || $initialHistoryPending$) return;
     const container = scrollContainer;
     if (!container) return;
     // A seek in flight / landing owns the spacers — its settle handler sizes
@@ -3016,6 +3167,7 @@
     if (!isActive) return;
     void ($agentHistoryMessages$.length + $agentMessages$.length);
     void $transcriptSnapshotMeta$?.totalMessages;
+    if ($initialHistoryPending$) return;
     const exhausted = $historyExhausted$;
     const gapOpen = $historySegmentMeta$.gapToTail;
     void $fetchingOlderHistory$;
@@ -3376,13 +3528,18 @@
   // it after — this composes with the LazyTurn height ledger, which only
   // compensates height CHANGES of existing turns, never new siblings.
   let anchoredHistoryLength = -1;
+  let anchoredInitialReceived = 0;
   $effect.pre(() => {
     const historyLength = $agentHistoryMessages$.length;
+    const initialReceived = $initialHistory$?.received ?? 0;
     if (!isActive) {
+      anchoredInitialReceived = initialReceived;
       anchoredHistoryLength = historyLength;
       return;
     }
-    if (historyLength === anchoredHistoryLength) return;
+    if (historyLength === anchoredHistoryLength && initialReceived === anchoredInitialReceived)
+      return;
+    anchoredInitialReceived = initialReceived;
     const isFirstRun = anchoredHistoryLength === -1;
     anchoredHistoryLength = historyLength;
     const container = untrack(() => scrollContainer);
@@ -3391,11 +3548,26 @@
     // positions the viewport at the target; restoring the pre-landing
     // anchor would fight it.
     if (untrack(() => seekLandingPending || $fetchingHistorySeek$)) return;
-    const anchor = captureScrollAnchor(container);
+    const following = untrack(() => shouldFollowBottom && !showSearch);
+    const anchor = following ? null : captureScrollAnchor(container);
+    const navigationId = scrollNavigationId;
+    const isCurrent = () =>
+      isActive &&
+      !isComponentDestroyed &&
+      scrollContainer === container &&
+      navigationId === scrollNavigationId;
     tick().then(() => {
+      if (!isCurrent()) return;
+      if (following) {
+        // The first overflowing page has no native bottom anchor to carry
+        // its new extent. Settle in this flush, before the next frame, but
+        // never reclaim follow if input or navigation released it meanwhile.
+        if (shouldFollowBottom && !showSearch) followToBottom(container);
+        return;
+      }
       requestAnimationFrame(() => {
-        if (!isActive || isComponentDestroyed || !scrollContainer) return;
-        restoreScrollAnchor(scrollContainer, anchor);
+        if (!isCurrent() || !anchor) return;
+        restoreScrollAnchor(container, anchor);
       });
     });
   });
@@ -3415,7 +3587,12 @@
   let latchedDividerSessionAgentId: string | null = null;
   $effect(() => {
     if (!agentId || latchedDividerSessionAgentId === agentId) return;
-    if ($transcriptHydration$ !== 'settled') return;
+    if (
+      $transcriptHydration$ !== 'settled' ||
+      $initialHistoryPending$ ||
+      $awaitingSwitchBackSnapshot$
+    )
+      return;
     latchedDividerSessionAgentId = agentId;
     appStore.dispatch(
       startDividerSession(
@@ -3442,6 +3619,20 @@
   // One-shot guard: the divider entry-positioning happens once per panel mount
   // (first transcript availability), never again on later marker convergence.
   let hasAppliedNewMessagesEntryScroll = false;
+  $effect(() => {
+    if ($initialHistory$?.complete !== true) return;
+    const anchor = newMessagesDividerAnchorId;
+    if (
+      !anchor ||
+      hasAppliedNewMessagesEntryScroll ||
+      cachedScrollRestoreTop !== null ||
+      !shouldFollowBottom ||
+      showSearch
+    )
+      return;
+    hasAppliedNewMessagesEntryScroll = true;
+    void scrollToNewMessagesDivider(anchor);
+  });
   // One-shot guard: the cached scroll position is applied once on the first
   // transcript availability after remount, never again on later hydrations.
   let hasConsumedCachedScrollRestore = false;
@@ -3451,7 +3642,7 @@
   let cachedScrollRestoreAttempts = 0;
   let cachedScrollRestoreRetryFrame: number | null = null;
   $effect(() => {
-    if (isActive) {
+    if (isActive && !$initialHistoryPending$) {
       if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore)
         scheduleCachedScrollRestoreRetry();
       return;
@@ -3476,7 +3667,12 @@
   // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
   // above). Returns true when the cached position was consumed.
   function applyCachedScrollRestore(): boolean {
-    if (!isActive || cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore)
+    if (
+      !isActive ||
+      $initialHistoryPending$ ||
+      cachedScrollRestoreTop === null ||
+      hasConsumedCachedScrollRestore
+    )
       return false;
     // Not consumed until the container is bound, so a premature call cannot
     // silently drop the cached position.
@@ -3526,10 +3722,13 @@
   $effect(() => {
     const container = scrollContainer;
     if (!isActive || !container) return;
-    const cancel = () => cancelPendingCachedScrollRestore();
+    const cancel = () => {
+      if ($initialHistoryPending$) hasAppliedNewMessagesEntryScroll = true;
+      cancelPendingCachedScrollRestore();
+    };
     const onPointerDown = (event: PointerEvent) => {
       if (event.target === container && event.offsetX >= container.clientWidth) {
-        cancelPendingCachedScrollRestore();
+        cancel();
       }
     };
     container.addEventListener('wheel', cancel, { passive: true });
@@ -3610,6 +3809,15 @@
     return lazyModeTracker.mode;
   });
 
+  $effect(() => {
+    if (pendingConversationMessages.length === 0) return;
+    tick().then(() => {
+      if (isComponentDestroyed) return;
+      const started = startPendingSendTransitions();
+      if (!started && scrollContainer && shouldFollowBottom) followToBottom(scrollContainer);
+    });
+  });
+
   // Track previous message count and newest row to detect new messages and to
   // distinguish appended NEW messages from the background older-history
   // prepend (list grew, newest row unchanged), which must stay scroll-neutral.
@@ -3632,7 +3840,10 @@
         currentCount,
         currentNewestId,
       );
-    const shouldScroll = hasNewMessages && (isFirstMessage || shouldFollowBottom);
+    const shouldScroll =
+      hasNewMessages &&
+      (isFirstMessage || shouldFollowBottom) &&
+      !($initialHistoryPending$ && hasAppliedNewMessagesEntryScroll);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
@@ -4148,37 +4359,45 @@
     duration: number = 150,
     getContainer = beginScrollNavigation(),
   ) {
-    if (!getContainer() || !scrollContainer) return;
+    const getTargetContainer = () => {
+      const container = getContainer();
+      // Transcript replacement can remove the target while its viewport survives.
+      // Cancel before the next geometry read or animation write in that case.
+      return container?.contains(element) ? container : null;
+    };
+    const container = getTargetContainer();
+    if (!container) return;
 
     // Explicit navigation owns the viewport until the user returns to bottom.
     // Programmatic scroll events intentionally do not release followBottom.
     shouldFollowBottom = false;
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const elementRect = element.getBoundingClientRect();
-
-    let targetScrollTop: number;
-    if (block === 'center') {
-      targetScrollTop =
-        scrollContainer.scrollTop +
-        (elementRect.top - containerRect.top) -
-        containerRect.height / 2 +
-        elementRect.height / 2;
-    } else if (block === 'start') {
-      targetScrollTop = getMessageNavigationStartScrollTop({
-        currentScrollTop: scrollContainer.scrollTop,
-        targetTop: elementRect.top,
-        containerTop: containerRect.top,
-        headerBottom: getRenderedPanelHeaderBottom(),
-      });
-    } else {
-      targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
-    }
+    const targetScrollTop = (container: HTMLElement) => {
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      if (block === 'center') {
+        return (
+          container.scrollTop +
+          (elementRect.top - containerRect.top) -
+          containerRect.height / 2 +
+          elementRect.height / 2
+        );
+      }
+      if (block === 'start') {
+        return getMessageNavigationStartScrollTop({
+          currentScrollTop: container.scrollTop,
+          targetTop: elementRect.top,
+          containerTop: containerRect.top,
+          headerBottom: getRenderedPanelHeaderBottom(),
+        });
+      }
+      return container.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
+    };
 
     if (prefersReducedMotion()) {
-      scrollContainer.scrollTop = targetScrollTop;
+      container.scrollTop = targetScrollTop(container);
       return;
     }
-    animateScrollTo(getContainer, targetScrollTop, duration);
+    animateScrollTo(getTargetContainer, targetScrollTop, duration);
   }
 
   /**
@@ -4794,28 +5013,33 @@
   // require an anchored backward walk; a loaded prompt across a hole is unsafe.
   async function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!isActive || !scrollContainer || previousMessageLoadingId === currentMessageId) return;
-    let previousMessage = previousUserMessageTargets.get(currentMessageId);
+    let previousMessage: { id: string } | null | undefined =
+      previousUserMessageTargets.get(currentMessageId);
     const getContainer = beginScrollNavigation();
     const originAgentId = agentId;
     const originWorkspaceId = workspace.id;
     let epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
     let cancelled = false;
-    let ownsSeek = false;
-    let tokens = { nextToken: null as string | null, prevToken: null as string | null };
+    let requestId: string | null = null;
+    const ownsRequest = () =>
+      requestId === null ||
+      selectPreviousUserMessageLoad.select(appStore.state, originAgentId)?.requestId === requestId;
     const current = () =>
       !cancelled &&
       !!getContainer() &&
       agentId === originAgentId &&
       workspace.id === originWorkspaceId &&
       !!selectAgentSession.select(appStore.state, originAgentId) &&
-      selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch;
+      selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch &&
+      ownsRequest();
     const finish = () => {
       cancelled = true;
       if (cancelPreviousMessageLoad !== finish) return;
       cancelPreviousMessageLoad = null;
       previousMessageLoadingId = null;
+      if (requestId === null) return;
       if (
-        ownsSeek &&
+        ownsRequest() &&
         !!selectAgentSession.select(appStore.state, originAgentId) &&
         selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch
       ) {
@@ -4823,8 +5047,8 @@
         // owns positioning; don't run the far-flick seek's settle positioning.
         wasFetchingHistorySeek = false;
         seekLandingPending = false;
-        appStore.dispatch(scrollbackSeekSettled(originAgentId, tokens));
       }
+      appStore.dispatch(previousUserMessageLoadReleased(originAgentId, requestId));
     };
     cancelPreviousMessageLoad = finish;
     try {
@@ -4845,51 +5069,27 @@
         }
         if (!current()) return;
         cancelSeekDebounce();
-        ownsSeek = true;
         seekLandingPending = true;
-        appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
-        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
-        const historyIndex = $agentHistoryMessages$.findIndex(
-          (message) => message.id === currentMessageId,
-        );
-        const sourceOrdinal =
-          historyIndex >= 0
-            ? ($historySegmentMeta$.startOrdinalEstimate ?? 0) + historyIndex
-            : Math.max(
-                0,
-                ($transcriptSnapshotMeta$?.totalMessages ?? $agentMessages$.length) -
-                  $agentMessages$.length,
-              ) +
-              Math.max(
-                0,
-                $agentMessages$.findIndex((message) => message.id === currentMessageId),
-              );
-        const result = await loadPreviousUserMessage(
-          currentMessageId,
-          (token, anchor) =>
-            appClient.agents.getConversation(
-              originAgentId,
-              CHAT_PAGE_SIZE,
-              token,
-              anchor,
-              undefined,
-              originWorkspaceId,
-            ),
-          current,
-        );
-        if (!result || !current()) return;
-        previousMessage = result.target;
+        requestId = createAppMessageId();
+        // The saga reserves the shared seek slot synchronously in this dispatch.
         appStore.dispatch(
-          seedHistoryAround(
+          previousUserMessageLoadRequested(
+            originWorkspaceId,
             originAgentId,
-            result.page.messages,
-            result.page.nextToken === null
-              ? 0
-              : Math.max(0, sourceOrdinal - result.rowsBeforeAnchor),
+            requestId,
+            currentMessageId,
           ),
         );
-        appStore.dispatch(setHistoryOldestReached(originAgentId, result.page.nextToken === null));
-        tokens = { nextToken: result.page.nextToken, prevToken: result.page.prevToken };
+        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+        let load = selectPreviousUserMessageLoad.select(appStore.state, originAgentId);
+        while (current() && load?.status === 'loading') {
+          if (!(await waitForActiveFrame())) return;
+          load = selectPreviousUserMessageLoad.select(appStore.state, originAgentId);
+        }
+        if (!current() || !load || load.status === 'cancelled') return;
+        appStore.dispatch(previousUserMessageLoadConsumed(originAgentId, requestId));
+        if (load.status === 'error') throw new Error('Previous user message walk failed');
+        previousMessage = load.targetId ? { id: load.targetId } : null;
         await tick();
         if (!current()) return;
         const split = currentUnloadedSplit();
@@ -5064,6 +5264,13 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    if (wizardPersistenceRequest) {
+      appStore.dispatch(
+        questionWizardReleaseRequested(instanceId, wizardPersistenceRequest.requestId),
+      );
+      wizardPersistenceRequest = null;
+    }
+    if (workspace?.id) appStore.dispatch(chatPanelUiReleased(workspace.id, instanceId));
     transferPanelInterestLease(null);
     flushPendingDraftWrite();
     flushPendingSelectionWrites();
@@ -5134,72 +5341,35 @@
     });
   });
 
-  function queuePermissions(messageId: string) {
-    return queuedMessagePermissions(
-      $queuedMessages$.find((message) => message.id === messageId),
-      queuePrincipalId,
-      workspace?.ownerPrincipalId,
-      $isHostOwner$,
+  function queueMutationBlocked(messageId?: string) {
+    return (
+      !workspace ||
+      selectQueueMutationBlocked.select(appStore.state, agentId, workspace.id, messageId)
     );
   }
 
-  // Handle editing a queued message. The client seam folds transport errors
-  // into `{ success: false, error }`, so branching on `result.success` is safe.
-  async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
-    if (
-      !queuedMessagePermissions(
-        findQueuedMessageForEdit($queuedMessages$, messageId),
-        queuePrincipalId,
-        workspace?.ownerPrincipalId,
-        $isHostOwner$,
-      ).edit
-    )
-      return { success: false };
-    const originAgentId = agentId;
-    const originWorkspaceId = workspace?.id;
-    const result = await appClient.agents.editQueued(
-      originAgentId,
-      messageId,
-      content,
-      editing,
-      originWorkspaceId,
-    );
-    if (!result.success) {
-      logger.error('Failed to edit queued message', { messageId, error: result.error });
-    } else {
-      // #1011: sync the parked retry record with what the daemon actually
-      // persisted (save applies the edit; hold/cancel echo the original) —
-      // otherwise a post-drain "Try again" resends the pre-edit text. Prefer
-      // the authoritative echoed queuedMessage.content over the local arg so
-      // the record can't drift from the daemon's entry.
-      const persistedText = result.queuedMessage?.content ?? content;
-      appStore.dispatch(chatQueuedRetryRecordUpdated(originAgentId, messageId, persistedText));
-    }
-    return result;
-  }
-
-  // Handle removing a queued message — the saga removes it optimistically from
-  // Redux (immediate UI update) and restores it if the backend removal fails.
-  function handleRemoveQueuedMessage(messageId: string) {
-    if (!queuePermissions(messageId).remove) return;
-    appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
-  }
-
-  // Handle sending a queued message immediately (interrupts current stream).
-  // One atomic daemon call (`agent.sendQueuedMessageNow`, monorepo#1032): the
-  // saga needs only agentId/wsId/queuedMessageId — the daemon owns
-  // the entry's content/attachments and dequeues + delivers transactionally.
-  async function handleSendQueuedMessageNow(messageId: string) {
-    if (!workspace || !queuePermissions(messageId).sendNow)
+  async function handleSendAllQueuedMessages(messageIds: string[]) {
+    if (!workspace || queueMutationBlocked())
       throw new Error(m.agent_chatSend_sendNowRejected_error());
-    logger.info('Send queued message now triggered', { messageId, agentId });
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace.id;
     const outcome = await appStore.dispatch(
-      sendQueuedMessageNowRequested(agentId, workspace.id, messageId),
+      sendQueuedMessagesNowRequested(originAgentId, originWorkspaceId, [...messageIds]),
     );
-    if (outcome === 'delivered') {
+    if (
+      outcome === 'delivered' &&
+      agentId === originAgentId &&
+      workspace?.id === originWorkspaceId
+    ) {
       void performLocalSendCleanup({ clearInput: false, followBottom: true });
     }
     return outcome;
+  }
+
+  async function handleClearAllQueuedMessages(messageIds: string[]) {
+    if (!workspace || queueMutationBlocked())
+      throw new Error(m.agent_chatSend_sendNowRejected_error());
+    await appStore.dispatch(clearQueuedMessagesRequested(agentId, workspace.id, [...messageIds]));
   }
 
   // Build workspace context string for agent messages
@@ -5327,13 +5497,13 @@
     resetHistoryNavigation();
   }
 
-  async function performLocalSendCleanup(options: {
+  function performLocalSendCleanup(options: {
     clearInput?: boolean;
     followBottom?: boolean;
     historyText?: string | null;
   }) {
-    // Scroll + follow re-lock must run synchronously, before any await: a
-    // stalled or rejecting drafts.clear must never delay or skip them.
+    // Scroll + follow re-lock run synchronously: a stalled or rejecting
+    // drafts.clear must never delay or skip them.
     if (options.followBottom) {
       beginScrollNavigation();
       shouldFollowBottom = true;
@@ -5362,7 +5532,7 @@
       appStore.dispatch(presenceTypingStopped());
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
-        await appClient.drafts.clear(workspace.id, agentId);
+        appStore.dispatch(chatDraftClearRequested(workspace.id, agentId));
       }
     }
   }
@@ -5426,14 +5596,12 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const userAppMessageId = prepareMessageSendTransition(text, {
-      enabled: !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0,
-      followBottom: true,
-    });
+    const userAppMessageId = createAppMessageId();
+    const animateSend = !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0;
 
     // Dispatch all orchestration to the send-message saga
-    appStore.dispatch(
-      sendMessage(agentId, {
+    if (
+      !submitChatMessage(appStore, agentId, {
         wsId: workspace.id,
         text,
         userAppMessageId,
@@ -5445,8 +5613,15 @@
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
-      }),
-    );
+      })
+    )
+      return;
+
+    prepareMessageSendTransition(text, {
+      enabled: animateSend,
+      followBottom: true,
+      userAppMessageId,
+    });
 
     void performLocalSendCleanup({
       clearInput: true,
@@ -5461,7 +5636,7 @@
   }
 
   // Handle retrying the last failed message
-  async function handleRetry() {
+  function handleRetry() {
     if (!workspace || !agentId) return;
 
     // When agent status is "error" (spawn failure after retries exhausted),
@@ -5469,50 +5644,22 @@
     // Otherwise fall through to the regular retry-last-message path.
     const currentStatus = $agentSession$?.status;
     if (currentStatus === AgentStatus.Error) {
-      // Capture the current error message before clearing so we can restore it on failure
-      const priorError = $chatError$ || m.chat_chatPanel_agentFailedToStart_error();
-
-      // Clear the current error so the UI shows loading state
-      appStore.dispatch(chatErrorCleared(agentId));
-
-      const result = await appClient.agents.retry(agentId, workspace.id);
-
-      if (!result.ok) {
-        // Retry was rejected - surface the error or fall back to prior error
-        const errorToShow = result.error || priorError;
-        appStore.dispatch(chatSendFailed(agentId, errorToShow));
-        appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
-        return;
-      }
-
-      // ok:true — the daemon cleared the error and emits agent:status-changed
-      // (pending when a queued message is redriven, idle when the queue was
-      // empty). Converge the local session status from the RPC ack too, so the
-      // error banner clears even if the status event is missed (STAB-54).
-      // Only an explicit `redriven: false` means idle; `undefined` (older
-      // daemon omitting the field) keeps the pre-STAB-54 pending behaviour.
+      const pending = selectRetryAgentUi.select(appStore.state, workspace.id, instanceId);
+      if (pending?.status === 'pending') return;
       appStore.dispatch(
-        updateAgentSessionFields(agentId, {
-          status: result.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
-          stopReason: null,
-        }),
+        chatPanelRetryAgentRequested(workspace.id, instanceId, crypto.randomUUID(), agentId),
       );
-      if (result.redriven === false) {
-        // Nothing was queued to redrive — the error is cleared, but no new
-        // turn starts. Tell the user what to do next instead of a silent no-op.
-        notify.info(m.chat_chatPanel_nothingToRetry_toast());
-      }
       return;
     }
 
     // Normal retry path for non-error statuses
-    appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
+    void requestChatMessageRetry(agentId, workspace.id);
   }
 
   // Handle retrying with a specific model (when current model is unavailable)
   function handleRetryWithModel(model: string) {
     if (!workspace) return;
-    appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
+    void requestChatMessageRetry(agentId, workspace.id, model);
   }
 
   // Handle retrying the quota-failed turn on a different provider (#4455).
@@ -5658,7 +5805,7 @@
     // Gather DOM state only; validation and stop/send orchestration live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    if (!workspace) return;
+    if (!workspace || !isActive) return;
     flushPendingDraftWrite();
 
     logger.info('Force submit triggered', { agentId });
@@ -5668,14 +5815,10 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const userAppMessageId = prepareMessageSendTransition(text, {
-      enabled: imageBlocks.length === 0 && fileBlocks.length === 0,
-      followBottom: true,
-      allowOverlap: true,
-    });
+    const userAppMessageId = createAppMessageId();
 
-    appStore.dispatch(
-      sendMessage(agentId, {
+    if (
+      !submitChatMessage(appStore, agentId, {
         wsId: workspace.id,
         text,
         userAppMessageId,
@@ -5688,8 +5831,16 @@
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
-      }),
-    );
+      })
+    )
+      return;
+
+    prepareMessageSendTransition(text, {
+      enabled: imageBlocks.length === 0 && fileBlocks.length === 0,
+      followBottom: true,
+      userAppMessageId,
+      allowOverlap: true,
+    });
 
     void performLocalSendCleanup({
       clearInput: true,
@@ -5793,6 +5944,35 @@
     inputComponent?.focus?.();
   }
 
+  let questionWizard = $state<QuestionWizard>();
+  let handledAttentionFocus = $state(0);
+  $effect(() => {
+    const request = attentionFocusRequest;
+    const action = getChatAttentionFocusAction(request, {
+      active: isActive,
+      handledRequestId: handledAttentionFocus,
+      questionMessageId: pendingQuestions?.messageId ?? null,
+      collapsed: questionWizardCollapsed,
+      questionReady: !!questionWizard,
+      promptReady: !!inputComponent && !draftManager.gateVisible,
+    });
+    if (!request || !action) return;
+    if (action === 'expand-question' || action === 'collapse-question') {
+      const collapsed = action === 'collapse-question';
+      handleQuestionWizardCollapsed(collapsed);
+      return;
+    }
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled || !isActive || attentionFocusRequest?.requestId !== request.requestId) return;
+      const focused = action === 'focus-question' ? questionWizard?.focusQuestion() : focusPrompt();
+      if (focused) handledAttentionFocus = request.requestId;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   // Export functions for parent components
   export function focusPrompt(): boolean {
     if (!isActive) return false;
@@ -5863,27 +6043,19 @@
    * Other failures keep the cached index (or tail-only) silently.
    */
   export function refreshUserMessageIndex(): void {
-    if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
-      return;
-    const originAgentId = agentId;
-    const originWorkspaceId = workspace?.id;
-    userMessageIndexFetchInFlight = true;
-    void appClient.agents
-      .listUserMessages(originAgentId, undefined, originWorkspaceId)
-      .then((result) => {
-        if (!isActive || agentId !== originAgentId || workspace?.id !== originWorkspaceId) return;
-        if (result.ok) {
-          userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
-        } else if (result.unsupported) {
-          userMessageIndexUnsupported = true;
-        } else {
-          logger.debug('Failed to refresh user-message index', { error: result.error });
-        }
-      })
-      .finally(() => {
-        if (agentId === originAgentId && workspace?.id === originWorkspaceId)
-          userMessageIndexFetchInFlight = false;
-      });
+    const workspaceId = workspace?.id;
+    if (!isActive || !workspaceId || !agentId) return;
+    const current = selectUserMessageIndexUi.select(appStore.state, workspaceId, instanceId);
+    if (current?.status === 'pending' || current?.unsupported) return;
+    appStore.dispatch(
+      userMessageIndexRequested(
+        workspaceId,
+        instanceId,
+        crypto.randomUUID(),
+        agentId,
+        selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch,
+      ),
+    );
   }
 
   export function getMessages() {
@@ -6131,7 +6303,10 @@
         // observers from yanking the viewport to the bottom when a LazyTurn
         // placeholder expands between us computing and applying the match's
         // scroll target.
-        follow: shouldFollowBottom && !showSearch && $agentMessages$.length > 0,
+        follow:
+          shouldFollowBottom &&
+          !showSearch &&
+          ($agentMessages$.length > 0 || pendingConversationMessages.length > 0),
         threshold: 100,
         layoutNeutralBottomAnchor: true,
         onFollowChange: (f) => {
@@ -6206,7 +6381,7 @@
           </div>
         {/snippet}
 
-        {#if transcriptHydrationFailed && $agentMessages$.length === 0}
+        {#if transcriptHydrationFailed && $agentMessages$.length === 0 && pendingConversationMessages.length === 0}
           <div class="flex min-h-48 flex-col items-start justify-center gap-3 p-6 text-left">
             <p class="text-sm text-muted-foreground">{m.chat_shared_actionFailed_label()}</p>
             <Button variant="outline" onclick={handleRetryTranscriptHydration}>
@@ -6219,9 +6394,9 @@
                hold the indeterminate skeleton so the transcript reveals in one
                paint (snapshot applied, subscription closed, or bounded fallback). -->
           {@render transcriptSkeletonRows()}
-        {:else if isChiefWorkspace && !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
+        {:else if isChiefWorkspace && !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence && pendingConversationMessages.length === 0}
           <ChiefStarterPrompts onSelect={handleSelectSuggestedPrompt} compact={isCompactMode} />
-        {:else if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
+        {:else if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence && pendingConversationMessages.length === 0}
           <!-- Welcome page: settled hydration + zero messages + no durable conversation evidence. -->
           <div class="mt-16"></div>
           <RegularAgentWelcome
@@ -6229,7 +6404,7 @@
             onSpecialistChange={handleSpecialistChange}
             session={$agentSession$}
           />
-        {:else if onboardingContext && shouldShowSetupCardOnly( { isInitialWorkspaceAgent, hasOnboardingContext: true, hasOnboardingPrompt: Boolean(onboardingContext.prompt?.trim()), hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt), hydrationSettled: $transcriptHydration$ === 'settled' } )}
+        {:else if onboardingContext && shouldShowSetupCardOnly( { isInitialWorkspaceAgent, hasOnboardingContext: true, hasOnboardingPrompt: Boolean(onboardingContext.prompt?.trim()), hasMessages: $agentMessages$.length > 0 || pendingConversationMessages.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt), hydrationSettled: $transcriptHydration$ === 'settled' } )}
           <!-- Initial workspace agent with no prompt, hydration settled — show setup card only, no skeletons (a loading transcript falls through to the skeleton branch below) -->
           <div class="workspace-setup-card-alignment pt-16 pb-6">
             <WorkspaceSetupCard
@@ -6255,7 +6430,7 @@
               skipIsolation={onboardingContext.skipWorktree}
             />
           </div>
-        {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
+        {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0 || pendingConversationMessages.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
           <!-- Skeleton: initial newest-window hydration is unresolved (session
                not yet initialized or transcript still loading). -->
           {@render transcriptSkeletonRows()}
@@ -6312,7 +6487,8 @@
                   <!-- Render any streaming assistant messages -->
                   {#each streamingAssistantMessageIds as messageId, index (messageId)}
                     {@const isLastMessage = index === streamingAssistantMessageIds.length - 1}
-                    {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
+                    {@const isCurrentlyStreaming =
+                      isLastMessage && $agentSessionIsStreaming$ && !pendingStatusMessageId}
                     <div
                       data-message-id={messageId}
                       data-message-role="assistant"
@@ -6329,7 +6505,7 @@
                         backendSessionId={auggieSessionId}
                       />
                     </div>
-                    {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$))}
+                    {#if !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
                       <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
@@ -6339,6 +6515,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
@@ -6359,7 +6536,7 @@
                   {/each}
 
                   <!-- Show streaming status while waiting for first assistant message -->
-                  {#if streamingAssistantMessageIds.length === 0}
+                  {#if streamingAssistantMessageIds.length === 0 && !pendingStatusMessageId}
                     <div class="mb-4">
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
@@ -6369,6 +6546,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
@@ -6432,7 +6610,8 @@
                   <!-- Render any streaming assistant messages -->
                   {#each streamingAssistantMessageIds as messageId, index (messageId)}
                     {@const isLastMessage = index === streamingAssistantMessageIds.length - 1}
-                    {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
+                    {@const isCurrentlyStreaming =
+                      isLastMessage && $agentSessionIsStreaming$ && !pendingStatusMessageId}
                     <div
                       data-message-id={messageId}
                       data-message-role="assistant"
@@ -6449,7 +6628,7 @@
                         backendSessionId={auggieSessionId}
                       />
                     </div>
-                    {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
+                    {#if !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$)))}
                       <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
@@ -6459,6 +6638,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
@@ -6479,7 +6659,7 @@
                   {/each}
 
                   <!-- Show streaming status while waiting for first assistant message -->
-                  {#if streamingAssistantMessageIds.length === 0}
+                  {#if streamingAssistantMessageIds.length === 0 && !pendingStatusMessageId}
                     <div class="mb-4">
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
@@ -6489,6 +6669,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
@@ -6513,7 +6694,7 @@
 
           <!-- Fallback: Show streaming/processing status when no messages and no pending message -->
           <!-- This covers the window where the backend starts processing before the user message echo arrives -->
-          {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $chatError$ || $chatModelUnavailable$)}
+          {#if !pendingStatusMessageId && !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $chatError$ || $chatModelUnavailable$)}
             <div class="w-full">
               <div class="mb-4">
                 <StreamingStatus
@@ -6524,6 +6705,7 @@
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
+                  recoveryState={failureTranscript.current.state}
                   authGuidance={chatAuthGuidance}
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
@@ -6548,8 +6730,9 @@
           <!-- When pendingCondition is true, we show the optimistic user message + streaming status -->
           <!-- When pendingCondition is false and we have messages, we show the actual message list -->
           {#if messagesCondition && !pendingCondition}
-            <!-- Messages container (removed in:fly to test duplicate flash issue) -->
-            <div class="w-full">
+            <!-- Consume spare viewport space above the rows so older pages grow
+                 upward even before there is a scrollable extent to follow. -->
+            <div class="mt-auto w-full">
               <!-- Virtual scrollback spacer: estimated extent of the unloaded
                    rows above the resident window, so the scrollbar represents
                    the full conversation (see estimateVirtualSpacerHeight).
@@ -6610,7 +6793,7 @@
                    per-fetch: it stays up across the settle-chain gaps between
                    pages and hides after a short quiet window once the walk
                    stops (see syncOlderHistoryIndicator). -->
-              {#if olderHistoryIndicatorVisible}
+              {#if olderHistoryIndicatorVisible || ($initialHistoryPending$ && ($initialHistory$?.received ?? 0) > 0)}
                 <div
                   class="flex items-center justify-start gap-2 py-2 text-left text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"
@@ -6697,6 +6880,7 @@
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
                   {@const showPendingAssistantStatus =
+                    !pendingStatusMessageId &&
                     groupIndex === groupedMessages.length - 1 &&
                     turnIndex === turns.length - 1 &&
                     turn.assistantMessages.length === 0 &&
@@ -6916,7 +7100,7 @@
                     {/each}
 
                     <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                    {#if showPendingAssistantStatus}
+                    {#if showPendingAssistantStatus && !recoveryAtEnd}
                       <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
@@ -6926,6 +7110,7 @@
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
                           error={effectiveError}
+                          recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
@@ -6954,7 +7139,8 @@
                         message.id ===
                           turn.assistantMessages[turn.assistantMessages.length - 1]?.id}
                       {@const isLastMessage = isLastTurn && isLastAssistant}
-                      {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
+                      {@const isCurrentlyStreaming =
+                        isLastMessage && $agentSessionIsStreaming$ && !pendingStatusMessageId}
                       {@const compactPreviousMessageBoundary =
                         hasOperationalAssistantMessageBoundary(
                           turn.bodyMessages[bodyIndex - 1],
@@ -6966,104 +7152,118 @@
                       )}
                       {@const turnNumber = getMessageTurnNumber(message.id)}
                       {@const globalIndex = getMessageIndex(message.id)}
-                      <LazyTurn
-                        turnKey={message.id}
-                        {isActive}
-                        scrollRoot={scrollContainer}
-                        heightCache={lazyTurnHeightCache}
-                        hydrationController={messageHydrationPolicy}
-                        hydrated={hydratedMessageIds.has(message.id)}
-                        forceVisible={isMessageForceVisible(message.id)}
-                      >
-                        {#snippet children()}
-                          <div
-                            data-message-id={message.id}
-                            data-message-role={message.role}
-                            data-message-index={globalIndex}
-                            data-turn-number={turnNumber}
-                            class="message-nav-target"
-                            data-operational-message-seam={compactPreviousMessageBoundary
-                              ? 'true'
-                              : undefined}
-                          >
-                            <ChatMessage
-                              {agentId}
-                              messageId={message.id}
-                              ownsMessageIdentity={false}
-                              {workspace}
-                              ownPrincipalId={$presenceOwnPrincipalId$}
-                              isStreaming={isCurrentlyStreaming}
-                              isLastConversationMessage={isLastMessage}
-                              onEditSubmit={isRetiredSession || message.role !== 'assistant'
-                                ? undefined
-                                : (newText, model, blocks) =>
-                                    handleEditMessage(message.id, newText, model, blocks)}
-                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                              previousMessageLoading={previousMessageLoadingId === message.id}
-                              onRegenerate={isRetiredSession || message.role !== 'assistant'
-                                ? undefined
-                                : () => handleRegenerateFromMessage(message.id)}
-                              backendSessionId={auggieSessionId}
-                              suppressCoordinationStoppedIndicator={turn.userMessage
-                                ? isAutomatedMessage(turn.userMessage)
-                                : false}
-                            />
-                          </div>
-                          <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                          {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$))}
-                            <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
-                              <StreamingStatus
-                                isStreaming={$agentSessionIsStreaming$}
-                                isProcessing={$agentIsResponding$}
-                                processQueueHint={$agentSession$?.processQueueHint}
-                                lastChunkTime={$chatLastChunkTime$}
-                                receivedFirstChunk={$chatReceivedFirstChunk$}
-                                streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                                error={effectiveError}
-                                authGuidance={chatAuthGuidance}
-                                sessionCorrupted={effectiveSessionCorrupted}
-                                failedAt={effectiveFailedAt}
-                                modelUnavailable={$chatModelUnavailable$}
-                                {quotaExceeded}
-                                {quotaRetryProviders}
-                                {hasPendingPermission}
-                                onRetry={gatedRetry}
-                                onRetryWithModel={gatedRetryWithModel}
-                                onRetryWithProvider={gatedRetryWithProvider}
-                                onStop={handleStop}
-                                onStalledRetry={gatedStalledRetry}
-                                statusEvents={$chatStatusEvents$}
-                                streamingStartTime={$chatStreamingStartTime$}
-                              />
-                            </div>
-                          {/if}
-                          <!-- Show file changes after each assistant turn -->
-                          {#if message.role === 'assistant'}
+                      {#if !failureTranscript.collapsedMessageIds.has(message.id)}
+                        <LazyTurn
+                          turnKey={message.id}
+                          {isActive}
+                          scrollRoot={scrollContainer}
+                          heightCache={lazyTurnHeightCache}
+                          hydrationController={messageHydrationPolicy}
+                          hydrated={hydratedMessageIds.has(message.id)}
+                          forceVisible={isMessageForceVisible(message.id)}
+                        >
+                          {#snippet children()}
                             <div
-                              class="w-full"
-                              class:mb-1={!compactNextMessageBoundary &&
-                                !(isLastAssistant && compactOperationalTurnBoundary) &&
-                                !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
-                              data-after-assistant-message={message.id}
+                              data-message-id={message.id}
+                              data-message-role={message.role}
+                              data-message-index={globalIndex}
+                              data-turn-number={turnNumber}
+                              class="message-nav-target"
+                              data-operational-message-seam={compactPreviousMessageBoundary
+                                ? 'true'
+                                : undefined}
                             >
-                              <ChatFileChangesSummary
-                                workspaceId={workspace.id}
-                                {message}
-                                isStreaming={isCurrentlyStreaming}
-                                {agentId}
-                                {turnNumber}
-                              />
+                              {#if failureTranscript.runsByAnchor.has(message.id)}
+                                <TurnFailureNotice
+                                  records={failureTranscript.runsByAnchor.get(message.id)?.records}
+                                />
+                              {:else}
+                                <ChatMessage
+                                  {agentId}
+                                  messageId={message.id}
+                                  ownsMessageIdentity={false}
+                                  {workspace}
+                                  ownPrincipalId={$presenceOwnPrincipalId$}
+                                  isStreaming={isCurrentlyStreaming}
+                                  isLastConversationMessage={isLastMessage}
+                                  onEditSubmit={isRetiredSession || message.role !== 'assistant'
+                                    ? undefined
+                                    : (newText, model, blocks) =>
+                                        handleEditMessage(message.id, newText, model, blocks)}
+                                  onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                  previousMessageLoading={previousMessageLoadingId === message.id}
+                                  onRegenerate={isRetiredSession || message.role !== 'assistant'
+                                    ? undefined
+                                    : () => handleRegenerateFromMessage(message.id)}
+                                  backendSessionId={auggieSessionId}
+                                  suppressCoordinationStoppedIndicator={turn.userMessage
+                                    ? isAutomatedMessage(turn.userMessage)
+                                    : false}
+                                />
+                              {/if}
                             </div>
-                            <!-- Show auto-commit status after the last assistant message of each turn -->
-                            {#if isLastAssistant}
-                              <AutoCommitStatus
-                                status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
-                                workspaceId={workspace.id}
-                              />
+                            <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
+                            {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
+                              <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
+                                <StreamingStatus
+                                  isStreaming={$agentSessionIsStreaming$}
+                                  isProcessing={$agentIsResponding$}
+                                  processQueueHint={$agentSession$?.processQueueHint}
+                                  lastChunkTime={$chatLastChunkTime$}
+                                  receivedFirstChunk={$chatReceivedFirstChunk$}
+                                  streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                                  error={effectiveError}
+                                  recoveryState={failureTranscript.current.state}
+                                  authGuidance={chatAuthGuidance}
+                                  sessionCorrupted={effectiveSessionCorrupted}
+                                  failedAt={effectiveFailedAt}
+                                  modelUnavailable={$chatModelUnavailable$}
+                                  {quotaExceeded}
+                                  {quotaRetryProviders}
+                                  {hasPendingPermission}
+                                  onRetry={gatedRetry}
+                                  onRetryWithModel={gatedRetryWithModel}
+                                  onRetryWithProvider={gatedRetryWithProvider}
+                                  onStop={handleStop}
+                                  onStalledRetry={gatedStalledRetry}
+                                  statusEvents={$chatStatusEvents$}
+                                  streamingStartTime={$chatStreamingStartTime$}
+                                />
+                              </div>
                             {/if}
-                          {/if}
-                        {/snippet}
-                      </LazyTurn>
+                            <!-- Show file changes after each assistant turn -->
+                            {#if message.role === 'assistant'}
+                              <div
+                                class="w-full"
+                                class:mb-1={!compactNextMessageBoundary &&
+                                  !(isLastAssistant && compactOperationalTurnBoundary) &&
+                                  !(
+                                    isLastAssistant &&
+                                    (nextTurnHasUserMessage ||
+                                      nextIsChatCard ||
+                                      (isLastTurn && pendingConversationMessages.length > 0))
+                                  )}
+                                data-after-assistant-message={message.id}
+                              >
+                                <ChatFileChangesSummary
+                                  workspaceId={workspace.id}
+                                  {message}
+                                  isStreaming={isCurrentlyStreaming}
+                                  {agentId}
+                                  {turnNumber}
+                                />
+                              </div>
+                              <!-- Show auto-commit status after the last assistant message of each turn -->
+                              {#if isLastAssistant}
+                                <AutoCommitStatus
+                                  status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
+                                  workspaceId={workspace.id}
+                                />
+                              {/if}
+                            {/if}
+                          {/snippet}
+                        </LazyTurn>
+                      {/if}
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/each}
                   </div>
@@ -7092,9 +7292,9 @@
                   {/if}
                 {/each}
               {/each}
-              {#if showEndOfListStreamingStatus}
+              {#if (showEndOfListStreamingStatus || recoveryAtEnd) && !pendingStatusMessageId}
                 <div
-                  class="pt-1 {isCompactMode ? 'mb-2' : 'mb-16'}"
+                  class="pt-1 {isCompactMode || recoveryAtEnd ? 'mb-2' : 'mb-16'}"
                   data-testid="end-of-list-streaming-status"
                 >
                   <StreamingStatus
@@ -7105,6 +7305,7 @@
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}
                     error={effectiveError}
+                    recoveryState={failureTranscript.current.state}
                     authGuidance={chatAuthGuidance}
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
@@ -7125,6 +7326,7 @@
             </div>
           {/if}
         {/if}
+
         <!-- Aggregate File Changes Summary (show if more than one assistant message and it isn't redundant with the last turn's row, updates during streaming) -->
         {#if showAggregateFileChangesSummary && !deferTranscriptReveal}
           <div class="w-full">
@@ -7169,9 +7371,134 @@
           </div>
         {/if}
 
-        <!-- The utility stack owns short-chat surplus through its auto margin.
-             It collapses naturally when transcript or expanded disclosure content overflows. -->
-        <div class="mt-auto" data-testid="transcript-utility-stack">
+        {#if pendingConversationMessages.length > 0}
+          <!-- Use the same turn boundaries as confirmed messages. These rows
+               remain display-only until authoritative transcript evidence arrives. -->
+          <div class="w-full" class:mt-auto={$agentMessages$.length === 0}>
+            {#each pendingConversationMessages as message, index (message.appMessageId ?? message.id)}
+              {@const ownsStatus =
+                message.id === pendingStatusMessageId &&
+                shouldShowPendingAssistantStatus({
+                  isStreaming: $agentSessionIsStreaming$,
+                  isProcessing: $agentIsResponding$,
+                  error: effectiveError,
+                  modelUnavailable: $chatModelUnavailable$,
+                })}
+              {#if index > 0 || lastConversationTurn}
+                <ConversationTurnGap
+                  currentIsEventNotification={index === 0 &&
+                    isEventWakeMessage(lastConversationTurn?.userMessage ?? undefined)}
+                  currentHasAssistantMessages={index === 0 &&
+                    (lastConversationTurn?.assistantMessages.length ?? 0) > 0}
+                  nextIsEventNotification={false}
+                  nextHasUserMessage={true}
+                  subscriptionCardSeam={getSubscriptionCardSeam(
+                    index > 0
+                      ? pendingConversationMessages[index - 1].id !== pendingStatusMessageId
+                      : isChatCardMessage(lastConversationTurn?.userMessage) &&
+                          !hasVisibleTurnBody({
+                            assistantMessages: lastConversationTurn?.assistantMessages ?? [],
+                            hasVisibleNotice:
+                              (lastConversationTurn?.bodyMessages ?? []).some(
+                                (row) => row.role === 'system',
+                              ) ||
+                              (lastConversationTurn?.noticeMessages ?? []).some(
+                                isRenderedTurnNotice,
+                              ),
+                            hasPendingStatus:
+                              !pendingStatusMessageId &&
+                              shouldShowPendingAssistantStatus({
+                                isStreaming: $agentSessionIsStreaming$,
+                                isProcessing: $agentIsResponding$,
+                                error: effectiveError,
+                                modelUnavailable: $chatModelUnavailable$,
+                              }),
+                          }),
+                    true,
+                  )}
+                />
+              {/if}
+              <div>
+                <div
+                  class="w-full"
+                  class:mb-6={ownsStatus}
+                  data-message-id={message.id}
+                  data-message-role="user"
+                  data-send-app-message-id={message.appMessageId}
+                  class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
+                >
+                  <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+                </div>
+                {#if ownsStatus}
+                  <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
+                    <StreamingStatus
+                      isStreaming={$agentSessionIsStreaming$}
+                      isProcessing={$agentIsResponding$}
+                      processQueueHint={$agentSession$?.processQueueHint}
+                      lastChunkTime={$chatLastChunkTime$}
+                      receivedFirstChunk={$chatReceivedFirstChunk$}
+                      streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                      error={effectiveError}
+                      recoveryState={failureTranscript.current.state}
+                      authGuidance={chatAuthGuidance}
+                      sessionCorrupted={effectiveSessionCorrupted}
+                      failedAt={effectiveFailedAt}
+                      modelUnavailable={$chatModelUnavailable$}
+                      {quotaExceeded}
+                      {quotaRetryProviders}
+                      {hasPendingPermission}
+                      onRetry={gatedRetry}
+                      onRetryWithModel={gatedRetryWithModel}
+                      onRetryWithProvider={gatedRetryWithProvider}
+                      onStop={handleStop}
+                      onStalledRetry={gatedStalledRetry}
+                      statusEvents={$chatStatusEvents$}
+                      streamingStartTime={$chatStreamingStartTime$}
+                    />
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Rendered messages own the spare space above them. Keep the utility
+             stack bottom-aligned independently for empty/loading entry states. -->
+        <div
+          class:mt-auto={pendingConversationMessages.length === 0 &&
+            ($agentMessages$.length === 0 ||
+              deferTranscriptReveal ||
+              isFirstHydrationLoading ||
+              (!!pendingMessage && !transcriptStructure.hasUserMessage))}
+          data-testid="transcript-utility-stack"
+        >
+          {#key `${workspace?.id}::${agentId}`}
+            <!-- Keep private edit recovery alive after the final queue row disappears. -->
+            <div
+              hidden={!!pendingQuestions && !questionWizardCollapsed}
+              class:pb-2={queuedMessagesVisibility.showQueue}
+              style:--queued-messages-max-height="{Math.max(120, containerHeight / 2)}px"
+            >
+              <QueuedMessageList
+                bind:this={queuedMessageListRef}
+                disabled={isRetiredSession}
+                messages={visibleQueuedMessages}
+                displayRows={visibleQueueRows}
+                {agentId}
+                workspaceId={workspace?.id}
+                authors={queuedMessageAuthors}
+                ownPrincipalId={queuePrincipalId}
+                presentationPrincipalId={$presenceOwnPrincipalId$}
+                ownerPrincipalId={workspace?.ownerPrincipalId}
+                isHostOwner={$isHostOwner$}
+                onsendall={handleSendAllQueuedMessages}
+                onclearall={handleClearAllQueuedMessages}
+                onsenddelivered={() =>
+                  void performLocalSendCleanup({ clearInput: false, followBottom: true })}
+                ondone={() => inputComponent?.focus?.()}
+              />
+            </div>
+          {/key}
           <!-- {#key} forces a full remount when workspace or agent changes,
              preventing stale utility UI from leaking across switches.
              Hidden until transcript hydration settles; the workspace-task
@@ -7222,7 +7549,7 @@
     {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && isChiefWorkspace}
       <div
         class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
-        style="height: calc(100% + 10rem);"
+        style="height: calc(100% + 10rem); left: var(--chief-aurora-left, -1rem); right: var(--chief-aurora-right, -0.5rem); bottom: var(--chief-aurora-bottom, -1rem); border-bottom-left-radius: var(--chief-aurora-radius, 0); border-bottom-right-radius: var(--chief-aurora-radius, 0);"
         data-testid="composer-aurora-host"
         in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
         out:crispOut={{ tier: 'moderate' }}
@@ -7293,22 +7620,13 @@
                 {#if pendingQuestions}
                   {#key pendingQuestions.messageId}
                     <QuestionWizard
+                      bind:this={questionWizard}
                       questions={pendingQuestions.questions}
-                      draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
+                      draft={questionWizardDraft}
+                      onDraftChange={handleQuestionWizardDraftChanged}
+                      onResolved={handleQuestionWizardResolved}
                       collapsed={questionWizardCollapsed}
-                      onToggleCollapsed={(collapsed) => {
-                        // Can be invoked around the teardown frame after the
-                        // pending-questions source is already nulled.
-                        if (!pendingQuestions) return;
-                        questionWizardCollapsedOverride = {
-                          messageId: pendingQuestions.messageId,
-                          collapsed,
-                        };
-                        saveWizardCollapsed(
-                          wizardDraftKey(agentId, pendingQuestions.messageId),
-                          collapsed,
-                        );
-                      }}
+                      onToggleCollapsed={handleQuestionWizardCollapsed}
                       onComplete={handleQuestionWizardComplete}
                       onDismiss={handleQuestionWizardDismiss}
                     />
@@ -7355,28 +7673,7 @@
                   externalDropTarget
                   requiresModelSwitchConfirmation={!canChangeProvider}
                   providerId={inputProviderId}
-                >
-                  {#snippet queueRegion()}
-                    <div
-                      class:hidden={!queuedMessagesVisibility.showQueue &&
-                        visibleQueuedMessages.length > 0}
-                    >
-                      <QueuedMessageList
-                        bind:this={queuedMessageListRef}
-                        messages={visibleQueuedMessages}
-                        authors={queuedMessageAuthors}
-                        ownPrincipalId={queuePrincipalId}
-                        presentationPrincipalId={$presenceOwnPrincipalId$}
-                        ownerPrincipalId={workspace?.ownerPrincipalId}
-                        isHostOwner={$isHostOwner$}
-                        onedit={handleEditQueuedMessage}
-                        onremove={handleRemoveQueuedMessage}
-                        onsendnow={handleSendQueuedMessageNow}
-                        ondone={() => inputComponent?.focus?.()}
-                      />
-                    </div>
-                  {/snippet}
-                </SimpleRichInput>
+                />
               {/if}
             </QuestionComposer>
           {/if}

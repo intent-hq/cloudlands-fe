@@ -6,14 +6,9 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
-  import PersonalDevices from '$features/devices/PersonalDevices.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    LOCAL_CONNECTION_ID,
-    SELECTABLE_CONNECTION_ACCENTS,
-    type ConnectionRecord,
-  } from '$shared/types/connections';
+  import { SELECTABLE_CONNECTION_ACCENTS, type ConnectionRecord } from '$shared/types/connections';
   import {
     selectConnections,
     selectConnectionsLoaded,
@@ -26,7 +21,7 @@
   } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
 
-  let { localSettingsRequested = $bindable(0) }: { localSettingsRequested?: number } = $props();
+  let { initialEditedMachine }: { initialEditedMachine?: string } = $props();
 
   // Full ordered list (local first) drives the rows AND the empty state (the
   // always-present local row and the "no devices" box must not render
@@ -36,8 +31,8 @@
   const loaded$ = selectConnectionsLoaded();
 
   let connectModalOpen = $state(false);
-  let activeDeviceId = $state<string | null>(null);
-  let activePanel = $state<DevicePanelMode>(null);
+  let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
+  let activePanel = $state<DevicePanelMode>(untrack(() => (initialEditedMachine ? 'edit' : null)));
   let removeDialogOpen = $state(false);
   let removeTarget = $state<ConnectionRecord | null>(null);
   const consumerId = $props.id();
@@ -54,13 +49,6 @@
       if (activeDeviceId === removeTarget?.id) closePanel();
       removeTarget = null;
     });
-  });
-
-  $effect(() => {
-    if (localSettingsRequested > 0) {
-      openPanel(LOCAL_CONNECTION_ID, 'edit');
-      localSettingsRequested = 0;
-    }
   });
 
   const defaultAccent = $derived(
@@ -90,9 +78,8 @@
 </script>
 
 <div class="space-y-5">
-  <PersonalDevices />
   <div>
-    <h2 class="type-caption font-medium text-muted-foreground mb-3">
+    <h2 class="type-title mb-3 text-foreground">
       {m.settings_devices_title()}
     </h2>
     <p class="max-w-2xl type-body text-muted-foreground">
@@ -129,7 +116,9 @@
     {#snippet empty()}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
         <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 type-body text-muted-foreground">{m.settings_devices_empty_description()}</p>
+        <p class="mt-1 type-body text-muted-foreground">
+          {m.settings_devices_empty_description()}
+        </p>
       </div>
     {/snippet}
   </ListView>

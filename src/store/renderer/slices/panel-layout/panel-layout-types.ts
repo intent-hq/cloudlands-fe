@@ -32,6 +32,7 @@ export type PanelTabType =
   | 'agent'
   | 'terminal'
   | 'settings'
+  | 'workspace'
   | 'overview'
   | 'browser'
   | 'hook-script'

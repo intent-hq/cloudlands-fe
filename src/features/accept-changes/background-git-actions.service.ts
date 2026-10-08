@@ -7,7 +7,12 @@
  */
 
 import { prWorkflowRequested } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
 import { store as appStore } from '$store/renderer/store';
+
+import type { NativeSidebarReviewIntent } from '$store/renderer/slices/changes/changes-types';
+import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
+import { nativeReviewEditRequested } from '$store/renderer/slices/repository-context/repository-context-slice';
 
 interface CommitParams {
   workspaceId: string;
@@ -36,6 +41,36 @@ interface CreatePRResult {
 }
 
 class BackgroundGitActionsService {
+  /** Prepare only the captured staged commit. The root worker owns its session. */
+  prepareNativeReview(intent: NativeSidebarReviewIntent): void {
+    appStore.dispatch(
+      nativeReviewEditRequested(intent.owner, {
+        workspaceId: intent.owner.root.workspaceId,
+        action: 'commit',
+        review: {
+          root: intent.owner.root,
+          choice: { kind: 'saved' },
+          targetBranch: intent.targetBranch,
+          companion: { kind: 'create-pr' },
+        },
+      }),
+    );
+  }
+
+  /** The explicit user producer queues a prepared original owner, never a write. */
+  enqueueNativeReview(intent: NativeSidebarReviewIntent): boolean {
+    const view = selectNativeReviewForOwner.select(appStore.state, intent.owner);
+    if (view?.status !== 'ready' || !view.preview?.valid || view.observation) return false;
+    appStore.dispatch(
+      setPendingAutoAction(intent.owner.root.workspaceId, {
+        action: 'native-review',
+        workspaceId: intent.owner.root.workspaceId,
+        intent,
+      }),
+    );
+    return true;
+  }
+
   /**
    * Commit staged changes.
    * Extracted from SidebarChangesPanel handleCommit() lines 2166-2196.

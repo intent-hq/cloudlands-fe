@@ -67,6 +67,7 @@ import {
   chatSendStarted,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  olderHistoryPageRequested,
   retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
@@ -88,8 +89,10 @@ import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/wor
 import {
   selectAwaitingSwitchBackSnapshot,
   selectChatLiveStreamPhase,
+  selectChatAgentState,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
+  selectAgentHistoryMessages,
   selectAgentMessages,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -98,6 +101,7 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { chatSubscribeSaga, SWITCH_BACK_REVEAL_WAIT_MS } from './chat-subscribe-saga';
+import { chatScrollbackSaga } from './chat-scrollback-saga';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
@@ -125,6 +129,17 @@ import { reportStreamLifecycle } from '$lib/utils/stream-lifecycle-telemetry';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 import { groupIntoTurns } from '$lib/components/chat/conversation-turns';
+import {
+  pendingScopeActivated,
+  pendingSubmissionAccepted,
+  pendingScopeReleased,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { createAdmittedLegacyPrincipal } from '../../../../../test/fixtures/admitted-legacy-principal';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+import { selectPendingSubmissionEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+import type { Workspace } from '$shared/types';
 
 type FakeSubscription = {
   agentId: string;
@@ -225,7 +240,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   let stopSaga: (() => void) | undefined;
 
   beforeAll(() => {
-    appStore.init();
+    appStore.init(createAdmittedLegacyPrincipal());
     stopSaga = appStore.runSaga(chatSubscribeSaga);
   });
   afterAll(() => stopSaga?.());
@@ -237,6 +252,120 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
   });
+
+  it('reconciles trusted pending history once at completion and preserves a newer local send', () => {
+    const agentId = 'progressive-pending';
+    seedSession(agentId);
+    appStore.dispatch(setWorkspaceEntity({ id: WS, myRole: 'owner' } as Workspace));
+    const scope = {
+      agentId,
+      workspaceId: WS,
+      authority: 'host',
+      principalId: 'principal',
+      participation: selectWorkspaceParticipationContext.select(appStore.state, WS)!,
+      owner: 'desktop',
+    };
+    appStore.dispatch(pendingScopeActivated(scope, 1));
+    expect(selectPendingSubmissionEntry.select(appStore.state, scope)).toBeDefined();
+    const accept = (id: string) =>
+      appStore.dispatch(
+        pendingSubmissionAccepted(scope, {
+          id,
+          appMessageId: id,
+          content: id,
+          destination: 'conversation',
+          createdAt: Date.now(),
+        }),
+      );
+    accept('old-send');
+    const sub = openChat(agentId);
+    const newest = makeMessage('newest', 'Already answered', { seq: 2 });
+    const older = makeMessage('canonical-old-send', 'old-send', {
+      seq: 1,
+      role: 'user',
+      appMessageId: 'old-send',
+      author: { principalId: scope.principalId, login: null, displayName: null, avatarUrl: null },
+      metadata: { submissionIds: ['old-send'] },
+    });
+    sub.handler({
+      ...transcript([newest]),
+      fromSnapshot: true,
+      initialHistory: { target: 20, received: 1, complete: false },
+    });
+    accept('new-send');
+    appStore.dispatch(chatSendStarted(agentId));
+    appStore.dispatch(updateSession(agentId, { isProcessing: true, isStreaming: true }));
+    const entry = () => appStore.state.pendingSubmissions.byAgentId[agentId];
+    const version = entry().observationVersion;
+    sub.handler({
+      ...transcript([older, newest]),
+      fromHistory: true,
+      initialHistory: { target: 20, received: 2, complete: false },
+    });
+    expect(getItems(entry().submissions).map((row) => row.id)).toEqual(['old-send', 'new-send']);
+    expect(entry().observationVersion).toBe(version);
+    sub.handler({
+      ...transcript([older, newest]),
+      fromHistory: true,
+      nextToken: null,
+      initialHistory: { target: 20, received: 2, complete: true },
+    });
+    expect(getItems(entry().submissions).map((row) => row.id)).toEqual(['new-send']);
+    expect(entry().observationVersion).toBe(version + 1);
+    expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+      isProcessing: true,
+      isStreaming: true,
+    });
+    appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+    expect(entry().observationVersion).toBe(version + 1);
+    expect(getItems(entry().submissions).map((row) => row.id)).toEqual(['new-send']);
+    appStore.dispatch(pendingScopeReleased(scope));
+  });
+
+  it.each([false, true])(
+    'retains all progressive rows before completion (session delayed: %s)',
+    async (delayedSession) => {
+      const agentId = 'progressive';
+      if (!delayedSession) seedSession(agentId);
+      const sub = openChat(agentId);
+      sub.onPhase?.('connecting');
+      const newest = { ...makeMessage('newest', 'Latest reply'), seq: 2 };
+      const older = { ...makeMessage('older', 'Earlier prompt'), seq: 1 };
+      sub.handler({
+        ...transcript([newest]),
+        fromSnapshot: true,
+        initialHistory: { target: 20, received: 1, complete: false },
+      });
+      sub.handler({
+        ...transcript([older, newest]),
+        fromHistory: true,
+        initialHistory: { target: 20, received: 2, complete: false },
+      });
+      if (delayedSession) seedSession(agentId);
+      await vi.waitFor(() =>
+        expect(selectAgentMessages.select(appStore.state, agentId).map((row) => row.id)).toEqual([
+          'older',
+          'newest',
+        ]),
+      );
+      expect(selectChatAgentState.select(appStore.state, agentId).initialHistoryPending).toBe(true);
+      sub.handler({
+        ...transcript([older, newest]),
+        fromHistory: true,
+        nextToken: null,
+        initialHistory: { target: 20, received: 2, complete: true },
+      });
+      await vi.waitFor(() =>
+        expect(selectChatAgentState.select(appStore.state, agentId).initialHistoryPending).toBe(
+          false,
+        ),
+      );
+      expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+        nextToken: null,
+        totalMessages: 2,
+      });
+    },
+  );
 
   it('retains portable author objects and explicit null in admitted transcript hydration and replacement', async () => {
     const agentId = 'portable-hydration';
@@ -275,6 +404,147 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       rows[0].metadata,
     );
     expect(JSON.stringify(rows)).toBe(before);
+  });
+
+  it.each(['snapshot refresh', 'hydration replay', 'discard replay'] as const)(
+    '%s does not rewind successful older-page reads during loading',
+    async (trigger) => {
+      const agentId = `load-cursor-${trigger}`;
+      const page = (start: number) =>
+        Array.from({ length: 5 }, (_, i) =>
+          makeMessage(`m-${start + i}`, `Message ${start + i}`, {
+            timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, start + i)).toISOString(),
+          }),
+        );
+      const history = () => selectAgentHistoryMessages.select(appStore.state, agentId);
+      seedSession(agentId);
+      const stopScrollback = appStore.runSaga(chatScrollbackSaga);
+      try {
+        const sub = openChat(agentId);
+        const snapshot: ChatTranscript = {
+          ...transcript(page(15)),
+          fromSnapshot: true,
+          truncated: true,
+          totalMessages: 20,
+          nextToken: 'before-15',
+          ...(trigger === 'discard replay' ? { resumed: false } : {}),
+        };
+        sub.handler(snapshot);
+        expect(appClient.agents.getConversation).not.toHaveBeenCalled();
+        vi.mocked(appClient.agents.getConversation)
+          .mockResolvedValueOnce({
+            messages: page(10),
+            truncated: true,
+            totalMessages: 20,
+            nextToken: 'before-10',
+            prevToken: 'after-10',
+          })
+          .mockResolvedValueOnce({
+            messages: page(5),
+            truncated: true,
+            totalMessages: 20,
+            nextToken: 'before-5',
+            prevToken: 'after-5',
+          });
+        appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+        await vi.waitFor(() =>
+          expect(selectChatAgentState.select(appStore.state, agentId).fetchingOlderHistory).toBe(
+            false,
+          ),
+        );
+        expect(history()).toEqual(page(10));
+        if (trigger !== 'snapshot refresh') {
+          appStore.dispatch(transcriptHydrationStarted(agentId));
+          appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+        } else {
+          // A refreshed snapshot can change its newest rows while retaining
+          // the same oldest row/cursor (e.g. an in-flight turn update).
+          sub.handler({ ...snapshot, messages: page(15) });
+        }
+        const afterReplay = history();
+        appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+        await vi.waitFor(() =>
+          expect(selectChatAgentState.select(appStore.state, agentId).fetchingOlderHistory).toBe(
+            false,
+          ),
+        );
+        expect.soft(afterReplay).toEqual(page(10));
+        expect(history()).toEqual([...page(5), ...page(10)]);
+        expect([...history(), ...selectAgentMessages.select(appStore.state, agentId)]).toEqual([
+          ...page(5),
+          ...page(10),
+          ...page(15),
+        ]);
+        expect(vi.mocked(appClient.agents.getConversation).mock.calls).toEqual([
+          [agentId, 5, 'before-15', undefined, undefined, WS],
+          [agentId, 5, 'before-10', undefined, undefined, WS],
+        ]);
+        if (trigger === 'discard replay') {
+          const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
+          sub.handler({ ...snapshot });
+          expect(history()).toEqual([]);
+          expect(selectAgentMessages.select(appStore.state, agentId)).toEqual(page(15));
+          expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+            scrollbackOlderToken: 'before-15',
+            scrollbackDiscardEpoch: epoch + 1,
+            fetchingOlderHistory: false,
+          });
+        }
+      } finally {
+        stopScrollback();
+      }
+    },
+  );
+
+  it('replaying a discard snapshot preserves an in-flight page, but a fresh discard resets it', async () => {
+    const agentId = 'load-discard-in-flight';
+    seedSession(agentId);
+    const stopScrollback = appStore.runSaga(chatScrollbackSaga);
+    try {
+      const sub = openChat(agentId);
+      const snapshot: ChatTranscript = {
+        ...transcript([makeMessage('m-15', 'Newest window')]),
+        fromSnapshot: true,
+        truncated: true,
+        totalMessages: 20,
+        nextToken: 'before-15',
+        resumed: false,
+      };
+      sub.handler(snapshot);
+      const pending = deferred<Awaited<ReturnType<typeof appClient.agents.getConversation>>>();
+      vi.mocked(appClient.agents.getConversation).mockReturnValueOnce(pending.promise);
+      appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+      const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+      appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+      expect(appClient.agents.getConversation).toHaveBeenCalledTimes(1);
+      expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+        fetchingOlderHistory: true,
+        scrollbackDiscardEpoch: epoch,
+      });
+      // The same payload freshly delivered by the daemon is still an
+      // authoritative reset; local replay identity must not suppress it.
+      sub.handler({ ...snapshot });
+      expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+        fetchingOlderHistory: false,
+        scrollbackDiscardEpoch: epoch + 1,
+        scrollbackOlderToken: 'before-15',
+      });
+      pending.resolve({
+        messages: [makeMessage('stale', 'Discarded page')],
+        truncated: true,
+        totalMessages: 20,
+        nextToken: 'stale-token',
+        prevToken: null,
+      });
+      await pending.promise;
+      expect(selectChatAgentState.select(appStore.state, agentId).scrollbackOlderToken).toBe(
+        'before-15',
+      );
+    } finally {
+      stopScrollback();
+    }
   });
 
   it('initializeChatRequested opens exactly one standing subscription per agent', () => {
@@ -824,7 +1094,11 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
 
     // The read saga's shell upsert lands → the deferred snapshot replays.
-    seedSession(agentId);
+    seedSession(agentId, {
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    });
     await vi.waitFor(() => {
       expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
         totalMessages: 2,
@@ -835,6 +1109,13 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       'm-pre-1',
       'm-pre-2',
     ]);
+    // This replay is the snapshot's first application, so its idle verdict
+    // must still reconcile stale metadata in the newly hydrated session.
+    expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    });
   });
 
   it('waits for the post-reducer batch commit instead of a membership-only upsert', async () => {
@@ -1559,6 +1840,29 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   });
 
   describe('resume via sinceMessageId (§7.1)', () => {
+    it.each([false, true])(
+      'does not resume a partial initial window after close (previously settled: %s)',
+      (settled) => {
+        const agentA = 'partial-resume-a';
+        const agentB = 'partial-resume-b';
+        seedSession(agentA);
+        seedSession(agentB);
+        if (settled) appStore.dispatch(transcriptHydrationSettled(agentA));
+        const sub = openChat(agentA);
+        sub.handler({
+          ...transcript([makeMessage('newest', 'newest')]),
+          fromSnapshot: true,
+          initialHistory: { target: 20, received: 1, complete: false },
+        });
+        appStore.dispatch(markAgentAsViewed(agentB));
+        appStore.dispatch(markAgentAsViewed(agentA));
+        const reopened = [...fakeSubscriptions]
+          .reverse()
+          .find((value) => value.agentId === agentA)!;
+        expect(reopened.options).toEqual({ workspaceId: WS });
+      },
+    );
+
     it('opens the first subscription WITHOUT sinceMessageId (no hydrated transcript yet)', () => {
       const agentId = 'agent-sub-resume-first';
       seedSession(agentId, { messages: [makeMessage('m-existing', 'history')] });

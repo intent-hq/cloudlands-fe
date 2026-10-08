@@ -38,6 +38,7 @@ const expectedTiers = {
   'local-changes': 'wide',
   note: 'medium',
   overview: 'narrow',
+  workspace: 'wide',
   settings: 'narrow',
   terminal: 'medium',
 } satisfies Partial<Record<PanelTabType, PanelDefaultWidthTier>>;

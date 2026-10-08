@@ -1,8 +1,11 @@
-import { call, put, race, take } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
+import { isNoteContentStale } from '$shared/utils/note-content';
+import { replaceNoteCommentsAction } from '../../comments/comments-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   takeLatestByContext,
@@ -13,9 +16,15 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  commentEventReceived,
+  ensureNoteContentLoadedRequested,
+  loadNoteCommentsRequested,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  readNoteRequested,
+  refreshNoteFromEventRequested,
+  searchNotesRequested,
   selectNote,
   workspaceNotesHydrationRequested,
   type NoteEventType,
@@ -25,6 +34,14 @@ import { toRuntimeNote } from './note-payload-mappers';
 const logger = createLogger('NotesReadSaga');
 
 type ObservedAction = { type: string; payload?: unknown };
+const latestNoteReadSeq = new Map<string, number>();
+
+function clearWorkspaceNoteReadSeq(action: ReturnType<typeof workspaceUnmounted>) {
+  const [workspaceId] = action.payload;
+  for (const key of latestNoteReadSeq.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) latestNoteReadSeq.delete(key);
+  }
+}
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
   return (
@@ -71,28 +88,104 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
 }
 
 function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEventType) {
-  if (eventType === 'note:deleted') {
-    yield* put(applyNoteDeleted(workspaceId, noteId));
-    return;
-  }
   try {
-    // Targeted refetch (§5.2): one note changed, so fetch that note instead of
-    // re-listing the whole workspace with full bodies.
-    const found: Awaited<ReturnType<typeof appClient.notes.get>> = yield* call(
-      [appClient.notes, appClient.notes.get],
-      noteId,
-      workspaceId,
-    );
-    if (!found || String(found.workspaceId) !== workspaceId) return;
-    const note = toRuntimeNote(found);
-    const existing = yield* selectNoteById.effect(workspaceId, noteId);
-    if (eventType === 'note:created' && !existing) {
-      yield* put(applyNoteCreated(workspaceId, note));
-    } else {
-      yield* put(applyNoteUpdated(workspaceId, noteId, note));
-    }
+    const request = readNoteRequested(workspaceId, noteId, eventType);
+    yield* put(request);
+    yield* call(() => request.promise);
   } catch (error) {
     logger.error('Failed to apply note event', error);
+  }
+}
+
+function* readNoteWorker(action: ReturnType<typeof readNoteRequested>) {
+  const [workspaceId, noteId, eventType] = action.payload;
+  const key = `${workspaceId}:${noteId}`;
+  latestNoteReadSeq.set(key, Math.max(latestNoteReadSeq.get(key) ?? 0, action.seq));
+  try {
+    const { found, cleanup } = yield* race({
+      found: call([appClient.notes, appClient.notes.get], noteId, workspaceId),
+      cleanup: take((candidate: ObservedAction) => isWorkspaceCleanup(candidate, workspaceId)),
+    });
+    const note =
+      !cleanup && found && String(found.workspaceId) === workspaceId ? toRuntimeNote(found) : null;
+    if (note && latestNoteReadSeq.get(key) === action.seq) {
+      const existing = yield* selectNoteById.effect(workspaceId, noteId);
+      if (eventType === 'note:created' && !existing) {
+        yield* put(applyNoteCreated(workspaceId, note));
+      } else {
+        yield* put(applyNoteUpdated(workspaceId, noteId, note));
+      }
+    }
+    yield* put(action.success(note));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoadedRequested>) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    const cached = yield* selectNoteById.effect(workspaceId, noteId);
+    if (!cached) {
+      yield* put(action.success(false));
+      return;
+    }
+    if (!isNoteContentStale(cached)) {
+      yield* put(action.success(true));
+      return;
+    }
+    const request = readNoteRequested(workspaceId, noteId);
+    yield* put(request);
+    const note = yield* call(() => request.promise);
+    yield* put(action.success(note !== null && !isNoteContentStale(note)));
+  } catch (error) {
+    logger.error('Failed to load full note content', error);
+    yield* put(action.success(false));
+  }
+}
+
+function* searchNotesWorker(action: ReturnType<typeof searchNotesRequested>) {
+  const [query, preferWorkspaceId] = action.payload;
+  try {
+    const response: unknown = yield* call(backendRequest, 'search.notes', {
+      query,
+      limit: 10,
+      includeArchived: false,
+      ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
+    });
+    yield* put(action.success(response));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* loadNoteComments(workspaceId: string, noteId: string, apply = true) {
+  const comments: Awaited<ReturnType<typeof appClient.comments.list>> = yield* call(
+    [appClient.comments, appClient.comments.list],
+    noteId,
+    workspaceId,
+  );
+  if (apply) yield* put(replaceNoteCommentsAction(workspaceId, noteId, comments));
+  return comments;
+}
+
+function* loadNoteCommentsWorker(action: ReturnType<typeof loadNoteCommentsRequested>) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    const comments = yield* call(loadNoteComments, workspaceId, noteId, false);
+    yield* put(action.success(comments));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* applyCommentEventWorker(action: ReturnType<typeof commentEventReceived>) {
+  const [workspaceId, noteId] = action.payload;
+  if (!workspaceId || !noteId) return;
+  try {
+    yield* call(loadNoteComments, workspaceId, noteId);
+  } catch (error) {
+    logger.error('Failed to apply comment event', error);
   }
 }
 
@@ -105,28 +198,48 @@ function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceNotesHy
   });
 }
 
-function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
+function* applyNoteEventWorker(action: ReturnType<typeof refreshNoteFromEventRequested>) {
   const [workspaceId, noteId, eventType] = action.payload;
-  if (!workspaceId || !noteId) return;
+  if (!workspaceId || !noteId || eventType === 'note:deleted') return;
   yield* race({
     apply: call(applyNoteEvent, workspaceId, noteId, eventType),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
 }
 
+function* routeNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
+  const [workspaceId, noteId, eventType] = action.payload;
+  if (!workspaceId || !noteId) return;
+  if (eventType === 'note:deleted') {
+    latestNoteReadSeq.delete(`${workspaceId}:${noteId}`);
+    yield* put(applyNoteDeleted(workspaceId, noteId));
+  }
+  yield* put(refreshNoteFromEventRequested(workspaceId, noteId, eventType));
+}
+
 export function* notesReadSaga() {
+  yield* takeEvery(workspaceUnmounted, clearWorkspaceNoteReadSeq);
+  yield* takeEvery(readNoteRequested, readNoteWorker);
+  yield* takeEvery(ensureNoteContentLoadedRequested, ensureNoteContentWorker);
+  yield* takeEvery(searchNotesRequested, searchNotesWorker);
+  yield* takeEvery(loadNoteCommentsRequested, loadNoteCommentsWorker);
   yield* takeLatestByContext(
     workspaceNotesHydrationRequested,
     (action) => ({ context: action.payload[0], generation: action.payload[1] }),
     hydrateWorkspaceNotesWorker,
   );
-  // Per-note single-flight with trailing coalesce: events for different notes
-  // run concurrently (a global takeLeading would drop a second note's event
-  // while the first is fetching), while a burst of events for one note
-  // collapses to the in-flight fetch plus at most one trailing refetch.
+  yield* takeEvery(noteEventReceived, routeNoteEventWorker);
   yield* takeSingleFlightInContext(
-    noteEventReceived,
-    (action) => `${action.payload[0]}:${action.payload[1]}`,
+    refreshNoteFromEventRequested,
+    (action) => {
+      const context = `${action.payload[0]}:${action.payload[1]}`;
+      return action.payload[2] === 'note:deleted' ? { context, cancel: true } : context;
+    },
     applyNoteEventWorker,
+  );
+  yield* takeSingleFlightInContext(
+    commentEventReceived,
+    (action) => `${action.payload[0]}:${action.payload[1]}`,
+    applyCommentEventWorker,
   );
 }

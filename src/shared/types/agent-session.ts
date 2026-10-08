@@ -14,7 +14,7 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage, MessageAuthor } from './agent-message';
+import type { AgentMessage, MessageAuthor, SubmissionCorrelation } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentNodeFields } from './agent-node';
 import type { AgentMetadata } from '../types';
@@ -35,7 +35,9 @@ export interface QueuedMessageContextItem {
  * A message queued to be sent to an agent.
  * Stored in backend to survive workspace switches.
  */
-export interface QueuedMessage {
+export interface QueuedMessage extends SubmissionCorrelation {
+  /** Exact full-snapshot permission to predict same-principal append, not mutation authority. */
+  mergeEligible?: boolean;
   /** Unique identifier for this queued message */
   id: string;
   /**
@@ -62,6 +64,12 @@ export interface QueuedMessage {
     mimeType?: string;
     size?: number;
   }>;
+  /** Ordered original text/attachment units in a combined retry; authority belongs to this row. */
+  deliveryGroups?: Array<{
+    content: string;
+    imageBlocks?: QueuedMessage['imageBlocks'];
+    fileBlocks?: QueuedMessage['fileBlocks'];
+  }>;
   /** Position in queue (0 = next to be sent) */
   position: number;
   /**
@@ -71,6 +79,9 @@ export interface QueuedMessage {
   editing?: boolean;
   /** Original active edit identity when a held entry was absorbed into this survivor. */
   editingMessageId?: string;
+  /** Server hold marker; readiness resumes at holdUntil. */
+  holdKind?: string;
+  holdUntil?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished

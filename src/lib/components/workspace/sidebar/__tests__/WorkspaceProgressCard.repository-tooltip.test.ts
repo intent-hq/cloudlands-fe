@@ -76,6 +76,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectCanSetWorkspacePrimaryClient: mocks.selector(() => true),
   selectCanShareWorkspace: mocks.selector(() => false),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
@@ -406,7 +407,6 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     });
     expect(pathButton.hasAttribute('data-sidebar-repository-path-copy')).toBe(true);
     expect(pathButton.getAttribute('variant')).toBe('plain');
-    expect(pathButton.getAttribute('title')).toBe('/home/dev/worktrees/feature-pill');
     for (const className of ['underline', 'decoration-dotted', 'underline-offset-2']) {
       expect(pathButton.classList.contains(className), className).toBe(true);
     }

@@ -42,6 +42,7 @@
  */
 
 import net from 'node:net';
+import { assertNormalAppOperation } from '../../../main/isolated-test-profile';
 import tls from 'node:tls';
 import { createRequire } from 'node:module';
 import type { IncomingMessage } from 'node:http';
@@ -104,6 +105,8 @@ export interface InviteInspection {
   workspaceTitle?: string;
   hostname?: string;
   prettyHostname?: string;
+  /** Optional on older daemons; null means use the real friendly hostname. */
+  collaborationName?: string | null;
   /** Required account; null means unpinned. Older hosts omit this field. */
   pinIdentity?: PrincipalIdentity | null;
 }
@@ -586,6 +589,7 @@ export async function openInviteConnection(
   target: InviteTarget,
   options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn } = {},
 ): Promise<InviteConnection> {
+  assertNormalAppOperation();
   const hosts = [...new Set(target.hosts.map((h) => h.trim()).filter((h) => h !== ''))];
   const tcAddress = target.tcAddress?.trim() || null;
   if (hosts.length === 0 && tcAddress === null) {

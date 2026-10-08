@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import type { Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
@@ -37,7 +38,6 @@
   }}
   aria-label={m.chat_stickyMessageHeader_scrollToPrevious_title()}
   aria-describedby={descriptionId}
-  title={text}
 >
   <span class="flex min-w-0 items-center gap-2">
     {#if icon}
@@ -46,6 +46,7 @@
       </span>
     {/if}
     <span
+      use:truncatedTitle={text}
       data-testid="pinned-user-prompt-text"
       class="block min-w-0 truncate whitespace-nowrap {USER_MESSAGE_TEXT_CLASS}"
     >

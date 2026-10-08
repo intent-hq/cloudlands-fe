@@ -12,7 +12,6 @@
   import { untrack } from 'svelte';
   import { crispOut, springIn } from '$lib/motion';
   import ArrowsClockwiseIcon from 'phosphor-svelte/lib/ArrowsClockwiseIcon';
-  import ConfettiIcon from 'phosphor-svelte/lib/ConfettiIcon';
   import { readable } from 'svelte/store';
 
   import {
@@ -143,12 +142,12 @@
   {#if status === 'checking'}
     <div class="toast-row">
       <ToastGlyph variant="loading" />
-      <div class="title">{m.ui_updateToast_checking_label()}</div>
+      <div class="title" data-toast-title>{m.ui_updateToast_checking_label()}</div>
     </div>
   {:else if status === 'available'}
     <div class="toast-row">
       <ToastGlyph variant="update" />
-      <div class="title">
+      <div class="title" data-toast-title>
         {m.ui_updateToast_available_label({ version: updateInfo?.version || '' })}
       </div>
       <Button
@@ -160,14 +159,14 @@
         {m.ui_updateToast_download_label()}
       </Button>
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {previewState?.availableDescription ?? m.ui_updateToast_readyToDownload_description()}
     </div>
   {:else if status === 'downloading'}
     <div class="toast-downloading">
       <div class="toast-row">
         <ToastGlyph variant="update" />
-        <div class="title">
+        <div class="title" data-toast-title>
           {m.ui_updateToast_downloading_label({ version: updateInfo?.version || '' })}
         </div>
         <span class="toast-progress-label">{formatInteger(progressPercent)}%</span>
@@ -177,7 +176,7 @@
           ariaLabel={m.ui_updateToast_close_ariaLabel()}
         />
       </div>
-      <div class="description">
+      <div class="description" data-toast-description>
         {#if progress}{formatSpeed(progress.bytesPerSecond)}{/if}{#if remainingSeconds != null}
           · {m.ui_updateToast_remainingSeconds_label({
             seconds: formatInteger(remainingSeconds),
@@ -191,13 +190,13 @@
   {:else if status === 'downloaded'}
     <div class="toast-row">
       <div
-        class="icon-celebrate"
+        class="flex shrink-0"
         in:springIn={{ tier: 'slow', y: 30, scale: 1 }}
         out:crispOut={{ tier: 'slow' }}
       >
-        <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
+        <ToastGlyph variant="celebrate" />
       </div>
-      <div class="title">{m.ui_updateToast_updateReady_label()}</div>
+      <div class="title" data-toast-title>{m.ui_updateToast_updateReady_label()}</div>
       <Button variant="primary" size="compact" class="toast-action" onclick={handleInstall}>
         <ArrowsClockwiseIcon size={16} weight="regular" aria-hidden="true" />
         {m.ui_updateToast_install_label()}
@@ -208,30 +207,28 @@
         ariaLabel={m.ui_updateToast_close_ariaLabel()}
       />
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
     </div>
   {:else if status === 'not-available'}
     <div class="toast-row">
-      <div class="icon-celebrate">
-        <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
-      </div>
-      <div class="title">{m.ui_updateToast_upToDate_label()}</div>
+      <ToastGlyph variant="celebrate" />
+      <div class="title" data-toast-title>{m.ui_updateToast_upToDate_label()}</div>
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {m.ui_updateToast_runningVersion_description({ version: currentVersion ?? '' })}
     </div>
   {:else if status === 'error'}
     <div class="toast-row">
       <ToastGlyph variant="error" />
-      <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
+      <div class="title" data-toast-title>{m.ui_updateToast_checkFailed_label()}</div>
       <ToastCloseButton
         inline
         onclick={handleClose}
         ariaLabel={m.ui_updateToast_close_ariaLabel()}
       />
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {updateError || m.ui_updateToast_unknown_error()}
     </div>
   {/if}
@@ -256,23 +253,12 @@
     --toast-header-height: var(--toast-action-height, var(--control-height-compact));
   }
 
-  .toast-row > :global([data-toast-glyph]),
-  .icon-celebrate {
+  .toast-row :global([data-toast-glyph]) {
     margin-top: calc((var(--toast-header-height) - 1rem) / 2);
   }
 
   .toast-row :global(.toast-close-btn) {
     margin-top: calc((var(--toast-header-height) - 1.5rem) / 2);
-  }
-
-  .icon-celebrate {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1rem;
-    height: 1rem;
-    flex-shrink: 0;
-    color: hsl(var(--success));
   }
 
   .title {

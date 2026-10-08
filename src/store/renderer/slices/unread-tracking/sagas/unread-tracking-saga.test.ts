@@ -58,8 +58,6 @@ function state(
     tabState: { currentTabId: current.activeWorkspaceId },
     sidebarNav: {
       panelItem: current.chiefCardVisible ? 'chief' : null,
-      expandedItem: null,
-      hoveredItem: null,
     },
     unreadTracking: {
       currentlyViewedAgentId,
@@ -257,7 +255,7 @@ describe('unreadTrackingSaga', () => {
     await task.toPromise();
   });
 
-  it('marks and ends a Chief divider session when the sidebar panel closes', async () => {
+  it('marks and ends a Chief divider session when the Assistant destination closes', async () => {
     const channel = stdChannel();
     let current = snapshot({
       chiefCardVisible: true,

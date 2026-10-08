@@ -1,5 +1,14 @@
+import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
+import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
+import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
+import { providerAdapterPreparationSaga } from './slices/agent-availability/sagas/provider-adapter-preparation-saga';
+import { pendingRetentionSaga } from './slices/pending-submissions/sagas/pending-retention-saga';
+import { invitationAccountSearchSaga } from './slices/invitation-account-search/sagas/invitation-account-search-saga';
+import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
+import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
+import { repositoryCheckoutSaga } from './slices/repository-checkout/sagas/repository-checkout-saga';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
@@ -32,12 +41,15 @@ import { browserPersistenceSaga } from './slices/browser/sagas/browser-persisten
 import { browserClientsSaga } from './slices/browser-clients/sagas/browser-clients-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
+import { chatDraftsSaga } from './slices/chat-drafts/sagas/chat-drafts-saga';
+import { chatPanelUiSaga } from './slices/chat-panel-ui/sagas/chat-panel-ui-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
 import { principalSaga } from './slices/principal/sagas/principal-saga';
+import { presenceFollowSaga } from './slices/presence-follow/sagas/presence-follow-saga';
 import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
@@ -77,6 +89,7 @@ import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
+import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
@@ -128,13 +141,20 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
+  modelNameCacheSaga,
+  pendingRetentionSaga,
+  homeIntegrationsSaga,
+  homeWorkspacesSaga,
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,
   guestSessionsSaga,
   presenceSaga,
+  presenceFollowSaga,
   principalSaga,
   hostExecutionSaga,
+  repositoryContextSaga,
+  repositoryCheckoutSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -143,6 +163,8 @@ export const sagas = [
   chatSubscribeSaga,
   chatSendSaga,
   chatScrollbackSaga,
+  chatDraftsSaga,
+  chatPanelUiSaga,
   switchTimingSaga,
   permissionResponseSaga,
   agentStreamSaga,
@@ -174,7 +196,9 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceShareSaga,
+  invitationAccountSearchSaga,
   hostMembershipSaga,
+  hostUserPresenceSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,
@@ -188,6 +212,7 @@ export const sagas = [
   modelBootSaga,
   modelReloadSaga,
   providerAvailabilitySaga,
+  providerAdapterPreparationSaga,
   setupPromptSaga,
   backgroundHooksSaga,
   hostOwnerServicesSaga,
@@ -197,6 +222,7 @@ export const sagas = [
   specialistsSaga,
   workspaceCatalogSaga,
   proposalLifecycleSaga,
+  questionUiPersistenceSaga,
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
   githubRepoSearchSaga,

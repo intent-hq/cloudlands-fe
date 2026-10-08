@@ -1,3 +1,8 @@
+import {
+  observeSubmissionEvidence,
+  observeSubmissionLifecycle,
+  announceSubmissionDelivery,
+} from '$features/agent/submission-evidence';
 import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
@@ -55,8 +60,8 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      flows through the same dispatch with its exact daemon message and
  *      `resetFirstChunk: false` so the spinner shows the startup phase until
  *      the first chunk / stream:end / failed clears it.
- *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
- *      notes-read-service, which dispatches `applyNoteCreated`/
+ *   4. `note:*` (workspace-scoped, §7) → `noteEventReceived` in the registered
+ *      workspace-notes saga, which dispatches `applyNoteCreated`/
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
  *      panel while the workspace is open. The same events also trigger a
@@ -72,11 +77,11 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      or opening the note. The event payload is self-sufficient
  *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
  *      directly without a follow-up fetch.
- *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
- *      the comments-read-service, which refetches the affected note's comments
+ *   6. `comment:added` / `comment:resolved` (§6.5) → `commentEventReceived` in
+ *      the workspace-notes saga, which refetches the affected note's comments
  *      and reconciles the global comments slice per-comment (add / update /
  *      remove) so other notes' comments stay intact. Wired the same way
- *      `note:*` funnels through the notes-read-service.
+ *      `note:*` funnels through the same registered saga owner.
  *   7. `pr:linked` / `pr:updated` / `pr:unlinked` (§7.6) → `updateWorkspaceEntity`
  *      on the workspace slice with `{ prNumber, prUrl, prStatus, activePullRequest }`
  *      (or the cleared shape on unlink). This replaces the legacy main→renderer
@@ -148,6 +153,7 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  */
 import { isHostMembershipChange } from '$shared/types/principal';
 import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostMembershipListsChanged } from '$store/renderer/slices/host-membership/host-membership-slice';
 import {
   hostMembershipChanged,
   principalIdentityChanged,
@@ -232,8 +238,10 @@ import {
   navigateAwayIfViewing,
 } from '$features/workspace/navigate-away-if-viewing';
 import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { applyNoteFromEvent } from '$features/notes/notes-read-service';
-import { applyCommentFromEvent } from '$features/comments/comments-read-service';
+import {
+  commentEventReceived,
+  noteEventReceived,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   ensureAgentSession,
   notePendingQuestionMarkerProjection,
@@ -1665,6 +1673,7 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
   if (!isAgentReadWorkspaceCurrent(agentId, event.workspaceId)) return;
+  observeSubmissionEvidence(agentId, event.workspaceId, 'queue', queue as QueuedMessage[]);
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[], event.workspaceId));
   // Mark the snapshot so an in-flight hydrate fetch that started before this
   // event discards its (now stale) response instead of overwriting it.
@@ -1705,6 +1714,7 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
       new Set(rows.map((row) => row.id)).size !== rows.length
     )
       return;
+    observeSubmissionEvidence(agentId, event.workspaceId, 'processing', rows as QueuedMessage[]);
     appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
   } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
 }
@@ -2083,7 +2093,7 @@ function handleNoteEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyNoteFromEvent(workspaceId, noteId, type);
+  appStore.dispatch(noteEventReceived(workspaceId, noteId, type));
   debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
@@ -2139,7 +2149,7 @@ function handleCommentEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyCommentFromEvent(workspaceId, noteId, kind);
+  appStore.dispatch(commentEventReceived(workspaceId, noteId, kind));
 }
 
 /**
@@ -3506,7 +3516,7 @@ function resolveHighlightId(highlightId: string): string {
 
 /**
  * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
- * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
+ * `{ route, workspaceId?, agentId?, highlightId?, durationMs? }`. Navigate the app UI to
  * the specified route and optionally pulse the highlight target with the given
  * duration. If highlightId is present, dispatch requestUiHighlight after
  * navigation settles.
@@ -3526,8 +3536,15 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       ? data.durationMs
       : undefined;
 
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
+
   import('$lib/utils/navigation.client')
-    .then(({ navigateToRoute }) => navigateToRoute(route))
+    .then(({ navigateToRoute }) => navigateToRoute(route, options))
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -3567,7 +3584,7 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
 
 /**
  * `app:workspace-open` (§6.5 Chief-workspace workspace-open) — carries
- * `{ workspaceId, openInNewWindow? }`. Open the specified workspace in the
+ * `{ workspaceId, agentId?, openInNewWindow? }`. Open the specified workspace in the
  * current window (navigate to /workspace/:id) or in a new window if
  * openInNewWindow is true. Uses the IPC window.open-new channel when
  * openInNewWindow is set, falling back to in-window navigation on failure.
@@ -3582,6 +3599,12 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 
   const openInNewWindow = data.openInNewWindow === true;
   const route = `/workspace/${workspaceId}`;
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
 
   if (openInNewWindow) {
     // Try to open in new window via IPC, fall back to navigation if it fails
@@ -3599,7 +3622,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
             error: 'error' in result ? result.error : undefined,
           });
           const { navigateToRoute } = await import('$lib/utils/navigation.client');
-          return navigateToRoute(route);
+          return navigateToRoute(route, options);
         }
       })
       .catch(async (error: unknown) => {
@@ -3608,14 +3631,14 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           error,
         });
         const { navigateToRoute } = await import('$lib/utils/navigation.client');
-        return navigateToRoute(route);
+        return navigateToRoute(route, options);
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
     import('$lib/utils/navigation.client')
-      .then(({ navigateToRoute }) => navigateToRoute(route))
+      .then(({ navigateToRoute }) => navigateToRoute(route, options))
       .catch((error: unknown) => {
         logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
       });
@@ -3733,9 +3756,25 @@ export function routeDaemonEventsNotification(
     appStore.dispatch(hostExecutionInvalidated());
     return;
   }
+  if (type === 'host:invites-changed') {
+    const data = (event as { data?: unknown }).data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    const { inviteId, action } = data as { inviteId?: unknown; action?: unknown };
+    if (
+      typeof inviteId === 'string' &&
+      inviteId.trim().length > 0 &&
+      typeof action === 'string' &&
+      ['created', 'revoked', 'redeemed'].includes(action)
+    )
+      appStore.dispatch(hostMembershipListsChanged());
+    return;
+  }
   if (type === 'host:members-changed') {
     const data = (event as { data?: unknown }).data;
-    if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
+    if (isHostMembershipChange(data)) {
+      appStore.dispatch(hostMembershipChanged(data));
+      appStore.dispatch(hostMembershipListsChanged());
+    }
     return;
   }
 
@@ -4115,6 +4154,17 @@ export function routeDaemonEventsNotification(
   // message. `agent:failed` flows through both paths: it finalizes any
   // in-flight stream AND forwards the lifecycle to `eventReceived` so the
   // session status transitions to "failed".
+  const submissionAgentId = event.data?.agentId;
+  if (typeof submissionAgentId === 'string') {
+    if (type === 'agent:message' && event.data?.role === 'user')
+      announceSubmissionDelivery(submissionAgentId, workspaceId, [
+        event.data as import('$store/renderer/slices/pending-submissions/pending-submissions-types').SubmissionEvidence,
+      ]);
+    if (type === 'agent:idle' || type === 'agent:failed' || type === 'agent:stream:end')
+      observeSubmissionLifecycle(submissionAgentId, workspaceId, false);
+    if (type === 'agent:stream:start')
+      observeSubmissionLifecycle(submissionAgentId, workspaceId, true);
+  }
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
     return;
@@ -4411,6 +4461,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // gate narrows it like any other row.
   'presence:changed',
   'host:members-changed',
+  'host:invites-changed',
   'host:execution-context-changed',
 ] as const;
 

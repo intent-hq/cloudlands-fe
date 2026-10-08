@@ -80,12 +80,19 @@ vi.mock('../workspace-task-fallback', async (importOriginal) => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+  const [{ createAppStoreMockModule }, { initialState: chatDrafts }, { initialState: questionUi }] =
+    await Promise.all([
+      import('$store/renderer/utils/test-helpers/store-mock'),
+      import('$store/renderer/slices/chat-drafts/chat-drafts-slice'),
+      import('$store/renderer/slices/question-ui/question-ui-slice'),
+    ]);
   return createAppStoreMockModule({
     state: () => ({
       agentSubscriptionUI: { entries: {} },
       browser: { byWorkspaceId: {} },
+      chatDrafts,
+      chatPanelUi: { byWorkspaceId: {} },
+      questionUi,
     }),
     dispatch: testState.dispatch,
   });
@@ -146,6 +153,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatError: testState.selector(null),
   selectChatFailureCorrelation: testState.selector(undefined),
   selectChatLastChunkTime: testState.selector(null),
+  selectChatLastAttemptedMessage: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
   selectChatModelUnavailable: testState.selector(null),
   selectChatQuotaExceeded: testState.selector(null),
@@ -160,6 +168,8 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectPendingProposalRecovery: testState.selector(undefined),
   selectPendingQuestionRecovery: testState.selector(undefined),
   selectTranscriptHydration: testState.selectorFrom(() => testState.transcriptHydration),
+  selectInitialChatHistory: testState.selectorFrom(() => undefined),
+  selectInitialChatHistoryPending: testState.selectorFrom(() => false),
   selectTranscriptHydratedOnce: testState.selectorFrom(() => testState.transcriptHydratedOnce),
   selectTranscriptSnapshotMeta: testState.selector(undefined),
 }));

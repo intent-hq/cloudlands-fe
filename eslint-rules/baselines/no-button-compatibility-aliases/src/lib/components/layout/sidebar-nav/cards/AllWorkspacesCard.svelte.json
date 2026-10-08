@@ -1,4 +1,0 @@
-{
-  "owner": "design-system",
-  "reason": "Existing Button callers retain compatibility aliases until they are changed for product reasons"
-}

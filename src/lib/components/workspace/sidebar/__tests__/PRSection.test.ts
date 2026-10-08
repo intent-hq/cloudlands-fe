@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
+import { repositoryContextReducer } from '$store/renderer/slices/repository-context/repository-context-slice';
 import {
   gitReducer,
   gitReadRequested,
@@ -65,6 +66,7 @@ const mocks = vi.hoisted(() => {
 let reduxState = {
   git: gitReducer(undefined, { type: 'test/init' }),
   prWorkflow: prWorkflowReducer(undefined, { type: 'test/init' }),
+  repositoryContext: repositoryContextReducer(undefined, { type: 'test/init' }),
 };
 
 vi.mock('$store/renderer/store', async () => {
@@ -93,6 +95,8 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: mocks.selector(() => 'owner-context'),
+  selectWorkspaceListLoadedForBackend: mocks.selector(() => true),
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe(run: (v: unknown) => void) {
@@ -102,6 +106,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     }),
     { select: () => mocks.workspaceEntity },
   ),
+}));
+
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalActionContext: mocks.selector(() => 'owner-context'),
+  selectCanAdministerHost: mocks.selector(() => true),
+  selectHostRole: mocks.selector(() => 'owner'),
+}));
+
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectLabsMultiplayerEnabled: mocks.selector(() => false),
 }));
 
 vi.mock(
@@ -358,11 +372,13 @@ describe('PRSection', () => {
     reduxState = {
       git: gitReducer(undefined, { type: 'test/init' }),
       prWorkflow: prWorkflowReducer(undefined, { type: 'test/init' }),
+      repositoryContext: repositoryContextReducer(undefined, { type: 'test/init' }),
     };
     mocks.dispatch.mockImplementation((action) => {
       reduxState = {
         git: gitReducer(reduxState.git, action),
         prWorkflow: prWorkflowReducer(reduxState.prWorkflow, action),
+        repositoryContext: repositoryContextReducer(reduxState.repositoryContext, action),
       };
       (appStore as unknown as { emitState(): void }).emitState();
       return action;

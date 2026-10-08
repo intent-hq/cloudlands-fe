@@ -58,6 +58,8 @@ export interface OpenMessageOptions {
   messageId: string;
   /** Search query whose matched terms get highlighted inside the message. */
   query?: string;
+  /** The caller already opened a conversation viewer in another layout. */
+  contentAlreadyOpen?: boolean;
 }
 
 /** Detail payload of the 'chat:open-message' window event ChatPanel consumes. */
@@ -118,7 +120,11 @@ async function waitForMessage(agentId: string, messageId: string): Promise<boole
   let polls = 0;
   while (Date.now() < deadline) {
     if (isMessageInStore(agentId, messageId)) return true;
-    if (polls >= MIN_POLLS_BEFORE_SETTLED && hydrationStatus(agentId) === 'settled') {
+    if (
+      polls >= MIN_POLLS_BEFORE_SETTLED &&
+      hydrationStatus(agentId) === 'settled' &&
+      !selectChatAgentState.select(appStore.state, agentId).initialHistoryPending
+    ) {
       return false;
     }
     polls++;
@@ -141,8 +147,15 @@ export async function seekConversationToMessage(
   messageId: string,
   workspaceId?: string,
 ): Promise<boolean> {
+  // A timeout waiting for a row is not permission to race the initial transfer.
+  const deadline = Date.now() + HYDRATION_TIMEOUT_MS;
+  while (selectChatAgentState.select(appStore.state, agentId).initialHistoryPending) {
+    if (Date.now() >= deadline) return false;
+    await sleep(HYDRATION_POLL_INTERVAL_MS);
+  }
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (!session) return false;
+  if (isMessageInStore(agentId, messageId)) return true;
   workspaceId ??= session.workspaceId;
   const previous = selectChatAgentState.select(appStore.state, agentId);
   let tokens = { nextToken: previous.scrollbackOlderToken, prevToken: previous.scrollbackGapToken };
@@ -193,13 +206,18 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   });
 
   const isChiefMessage = workspaceId === CHIEF_WORKSPACE_ID;
+  if (isChiefMessage && !options.contentAlreadyOpen) {
+    appStore.dispatch(setChiefActiveAgentId(agentId));
+    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+    appStore.dispatch(openPanel('chief'));
+  }
+  const targetPathname = isChiefMessage ? '/' : `/workspace/${workspaceId}`;
 
   if (
-    !isChiefMessage &&
+    !options.contentAlreadyOpen &&
     typeof window !== 'undefined' &&
-    window.location.pathname !== `/workspace/${workspaceId}`
+    window.location.pathname !== targetPathname
   ) {
-    const targetPathname = `/workspace/${workspaceId}`;
     try {
       // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
       await navigateToRoute(targetPathname);
@@ -213,11 +231,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     }
   }
 
-  if (isChiefMessage) {
-    appStore.dispatch(setChiefActiveAgentId(agentId));
-    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
-    appStore.dispatch(openPanel('chief'));
-  } else {
+  if (!options.contentAlreadyOpen && !isChiefMessage) {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 

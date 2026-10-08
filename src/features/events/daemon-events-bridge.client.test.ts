@@ -2,6 +2,12 @@ import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
+import type { WorkspaceMember } from '$features/workspace-sharing/types';
+import { admitLegacyPrincipal, withHostPrincipal } from '../../test/fixtures/principal-state';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 import type { AgentMessage, AgentSession, Note } from '$shared/types';
 import { selectWorkspaceTokenUsageCrossFilterRows } from '$store/renderer/slices/token-usage/token-usage-selectors';
 
@@ -23,16 +29,12 @@ vi.mock('svelte', async (importOriginal) => ({
 const {
   onBackendNotificationSpy,
   backendRequestSpy,
-  applyNoteFromEventSpy,
-  applyCommentFromEventSpy,
   workspaceServiceListSpy,
   capturedHandlers,
   capturedReconnectHandlers,
 } = vi.hoisted(() => ({
   onBackendNotificationSpy: vi.fn(),
   backendRequestSpy: vi.fn(),
-  applyNoteFromEventSpy: vi.fn(),
-  applyCommentFromEventSpy: vi.fn(),
   workspaceServiceListSpy: vi.fn(() => Promise.resolve({ ok: true, data: [] })),
   capturedHandlers: [] as Array<(n: { method: string; params?: unknown }) => void>,
   // RESUB-1: capture reconnect listeners so a test can simulate a daemon
@@ -64,20 +66,6 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { list: workspaceServiceListSpy },
 }));
-// Mock the notes-read-service so the bridge's note:* routing is observable
-// without touching the real appClient.notes.list seam.
-vi.mock('$features/notes/notes-read-service', () => ({
-  applyNoteFromEvent: applyNoteFromEventSpy,
-  createNotesReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
-  __resetNotesReadServiceForTests: () => {},
-}));
-// Mock the comments-read-service so the bridge's comment:* routing is
-// observable without touching the real appClient.comments.list seam.
-vi.mock('$features/comments/comments-read-service', () => ({
-  applyCommentFromEvent: applyCommentFromEventSpy,
-  __resetCommentsReadServiceForTests: () => {},
-}));
-
 // The bridge routes `agent:created`/`agent:updated` through the shared
 // read-service so the transcript-preserving merge is exercised in one place.
 // Fake it here so the tests can assert the bridge hits the correct seam and
@@ -6929,7 +6917,6 @@ describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () 
   });
 
   beforeEach(async () => {
-    applyNoteFromEventSpy.mockClear();
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
@@ -6938,73 +6925,89 @@ describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () 
 
   afterEach(() => vi.clearAllMocks());
 
-  it('routes note:created/updated/deleted envelopes to applyNoteFromEvent with the workspaceId + noteId', async () => {
+  it('routes note:created/updated/deleted envelopes to canonical workspace-notes actions', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const { noteEventReceived } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-1',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:created',
-          actor: { type: 'system' },
-          data: { noteId: 'note-1', path: '/x', action: 'create' },
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-1',
+            workspaceId: WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:created',
+            actor: { type: 'system' },
+            data: { noteId: 'note-1', path: '/x', action: 'create' },
+          },
         },
-      },
-    });
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-2',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:updated',
-          actor: { type: 'system' },
-          data: { noteId: 'note-2', path: '/y', action: 'update' },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-2',
+            workspaceId: WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:updated',
+            actor: { type: 'system' },
+            data: { noteId: 'note-2', path: '/y', action: 'update' },
+          },
         },
-      },
-    });
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-3',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:deleted',
-          actor: { type: 'system' },
-          data: { noteId: 'note-3', path: '/z', action: 'delete' },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-3',
+            workspaceId: WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:deleted',
+            actor: { type: 'system' },
+            data: { noteId: 'note-3', path: '/z', action: 'delete' },
+          },
         },
-      },
-    });
+      });
 
-    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, 'note-1', 'note:created');
-    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, 'note-2', 'note:updated');
-    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, 'note-3', 'note:deleted');
+      expect(dispatchSpy).toHaveBeenCalledWith(noteEventReceived(WS, 'note-1', 'note:created'));
+      expect(dispatchSpy).toHaveBeenCalledWith(noteEventReceived(WS, 'note-2', 'note:updated'));
+      expect(dispatchSpy).toHaveBeenCalledWith(noteEventReceived(WS, 'note-3', 'note:deleted'));
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 
   it('drops note:* events without a workspaceId envelope', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-note-no-ws',
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'note:updated',
-          actor: { type: 'system' },
-          data: { noteId: 'note-x', path: '/x', action: 'update' },
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-note-no-ws',
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'note:updated',
+            actor: { type: 'system' },
+            data: { noteId: 'note-x', path: '/x', action: 'update' },
+          },
         },
-      },
-    });
+      });
 
-    expect(applyNoteFromEventSpy).not.toHaveBeenCalled();
+      expect(dispatchSpy.mock.calls.map(([action]) => action.type)).not.toContain(
+        'workspaceNotes/noteEventReceived',
+      );
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 });
 
@@ -8762,7 +8765,6 @@ describe('daemonEventsBridge (comment:added / comment:resolved → applyCommentF
   beforeAll(() => appStore.init());
 
   beforeEach(async () => {
-    applyCommentFromEventSpy.mockClear();
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
@@ -8771,60 +8773,80 @@ describe('daemonEventsBridge (comment:added / comment:resolved → applyCommentF
 
   afterEach(() => vi.clearAllMocks());
 
-  it('routes comment:added and comment:resolved envelopes to applyCommentFromEvent with (workspaceId, noteId, kind)', async () => {
+  it('routes comment:added and comment:resolved envelopes to canonical workspace-notes actions', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const { commentEventReceived } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-comment-1',
-          workspaceId: COMMENT_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'comment:added',
-          actor: { type: 'agent', id: AGENT },
-          data: { noteId: 'note-c1', commentId: 'c-1' },
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-comment-1',
+            workspaceId: COMMENT_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'comment:added',
+            actor: { type: 'agent', id: AGENT },
+            data: { noteId: 'note-c1', commentId: 'c-1' },
+          },
         },
-      },
-    });
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-comment-2',
-          workspaceId: COMMENT_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'comment:resolved',
-          actor: { type: 'user', id: 'u1' },
-          data: { noteId: 'note-c1', threadId: 't-1', resolved: true },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-comment-2',
+            workspaceId: COMMENT_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'comment:resolved',
+            actor: { type: 'user', id: 'u1' },
+            data: { noteId: 'note-c1', threadId: 't-1', resolved: true },
+          },
         },
-      },
-    });
+      });
 
-    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, 'note-c1', 'added');
-    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, 'note-c1', 'resolved');
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        commentEventReceived(COMMENT_WS, 'note-c1', 'added'),
+      );
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        commentEventReceived(COMMENT_WS, 'note-c1', 'resolved'),
+      );
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 
   it('drops comment:* events without a noteId', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-comment-no-note',
-          workspaceId: COMMENT_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'comment:added',
-          actor: { type: 'system' },
-          data: {},
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-comment-no-note',
+            workspaceId: COMMENT_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'comment:added',
+            actor: { type: 'system' },
+            data: {},
+          },
         },
-      },
-    });
+      });
 
-    expect(applyCommentFromEventSpy).not.toHaveBeenCalled();
+      expect(dispatchSpy.mock.calls.map(([action]) => action.type)).not.toContain(
+        'workspaceNotes/commentEventReceived',
+      );
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
   });
 });
 
@@ -9444,9 +9466,8 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
   // Regression (cloudlands-fe#2776 verifier): `workspace.invite.create` /
   // `.revoke` publish only `{ invites: true }` (PROTOCOL multiplayer
   // "Events"), so the stored row's `openInviteCount` cannot be kept current
-  // from the delta alone — the single archive/delete warning, which gates on
-  // that count, would miss a fresh invite (or warn about a revoked one) until
-  // an unrelated full list read. A roster / invite delta now re-reads the one
+  // from the delta alone. Legacy warning reads could miss a fresh invite
+  // (or warn about a revoked one) until an unrelated full list read. A roster / invite delta now re-reads the one
   // workspace's membership summary through the running lifecycle read saga
   // (`workspace.get`, single-flight + trailing coalesce), and the production
   // warning path is driven end-to-end with no manual row re-seed or list
@@ -9454,20 +9475,50 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
   describe('membership summary convergence → archive / delete warning gating', () => {
     let daemonRow: { memberCount: number; openInviteCount: number };
     let stopOperationsSaga: (() => void) | undefined;
+    let daemonMembers: WorkspaceMember[];
+    let daemonGuestCount: number;
+
+    const member = (
+      principalId: string,
+      hostRole: 'owner' | 'member' | 'guest',
+    ): WorkspaceMember => ({
+      principalId,
+      hostRole,
+      role: hostRole === 'owner' ? 'owner' : 'collaborator',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+      addedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const owner = member('p-owner', 'owner');
+    const instanceMember = member('p-instance', 'member');
+    const membersListRequests = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.members.list');
 
     const workspaceGetRequests = () =>
       backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
 
-    async function seedListedWorkspace(row: {
-      memberCount: number;
-      openInviteCount: number;
-    }): Promise<void> {
+    async function seedListedWorkspace(
+      row: { memberCount: number; openInviteCount: number },
+      members: WorkspaceMember[] = [owner],
+      guestCount = row.openInviteCount,
+    ): Promise<void> {
       daemonRow = { ...row };
+      daemonMembers = members;
+      daemonGuestCount = guestCount;
       await seedWorkspace();
       const { bulkUpdateWorkspaceEntities, updateWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
       appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS_UPD, row)]));
       backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method === 'workspace.members.list') {
+          expect(params).toEqual({ workspaceId: WS_UPD });
+          return Promise.resolve({
+            members: daemonMembers,
+            guestCount: daemonGuestCount,
+            guestLimit: 10,
+          });
+        }
         if (method !== 'workspace.get') return undefined;
         expect(params).toEqual({ workspaceId: WS_UPD });
         // PROTOCOL §5.1: every `workspace.get` row carries the summary
@@ -9484,6 +9535,19 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
         });
       });
       await primeBridge();
+      // The real warning preflight requires authority for this connection.
+      admitLegacyPrincipal();
+      const { principal } = withHostPrincipal(appStore.state);
+      appStore.dispatch(
+        principalReceived(
+          {
+            context: principal.context!,
+            invalidation: principal.invalidation,
+            presentationVersion: principal.presentationVersion,
+          },
+          principal.snapshot!,
+        ),
+      );
     }
 
     async function settleReads(): Promise<void> {
@@ -9501,6 +9565,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     afterEach(async () => {
       stopOperationsSaga?.();
       stopOperationsSaga = undefined;
+      appStore.dispatch(principalContextChanged(null));
       const { closeArchiveWarning, closeDeleteWarning } =
         await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
       appStore.dispatch(closeArchiveWarning());
@@ -9522,6 +9587,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
       // Another client minted an invite: the daemon now serves one open
       // invite, and the wire delta says only that invites changed.
       daemonRow.openInviteCount = 1;
+      daemonGuestCount = 1;
       handler(updatedNotification({ invites: true }));
       await settleReads();
 
@@ -9531,6 +9597,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
         guests: { collaboratorCount: 0, openInviteCount: 1 },
       });
 
+      expect(membersListRequests()).toEqual([['workspace.members.list', { workspaceId: WS_UPD }]]);
       appStore.dispatch(requestArchiveWorkspace(WS_UPD));
       await settleReads();
 
@@ -9551,6 +9618,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
       const handler = capturedHandlers[0]!;
 
       daemonRow.openInviteCount = 0;
+      daemonGuestCount = 0;
       handler(updatedNotification({ invites: true }));
       await settleReads();
 
@@ -9559,6 +9627,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
         guests: { collaboratorCount: 0, openInviteCount: 0 },
       });
 
+      expect(membersListRequests()).toEqual([['workspace.members.list', { workspaceId: WS_UPD }]]);
       appStore.dispatch(requestDeleteWorkspace(WS_UPD));
       await settleReads();
 
@@ -9568,19 +9637,30 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     });
 
     it('archive teardown frames converge the row so an unarchived workspace shows no stale guests', async () => {
-      await seedListedWorkspace({ memberCount: 3, openInviteCount: 2 });
+      await seedListedWorkspace(
+        { memberCount: 4, openInviteCount: 2 },
+        [owner, instanceMember, member('p-alice', 'guest'), member('p-bob', 'guest')],
+        4,
+      );
       const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
       const handler = capturedHandlers[0]!;
 
-      // intentd archive: one `members.remove` frame per collaborator (each
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 2, openInviteCount: 2 },
+      });
+
+      // intentd archive: one `members.remove` frame per workspace guest (each
       // carrying the post-change `memberCount`), one `{ invites: true }` for
       // the revoked invites, then the archive delta itself; unarchive does
-      // not restore guests.
-      daemonRow = { memberCount: 1, openInviteCount: 0 };
+      // not restore guests. Instance members retain access, even with a
+      // historical direct collaborator grant, and must not count as guests.
+      daemonRow = { memberCount: 2, openInviteCount: 0 };
+      daemonMembers = [owner, instanceMember];
+      daemonGuestCount = 0;
       handler(
-        updatedNotification({ members: true, removedPrincipalId: 'p-alice', memberCount: 2 }),
+        updatedNotification({ members: true, removedPrincipalId: 'p-alice', memberCount: 3 }),
       );
-      handler(updatedNotification({ members: true, removedPrincipalId: 'p-bob', memberCount: 1 }));
+      handler(updatedNotification({ members: true, removedPrincipalId: 'p-bob', memberCount: 2 }));
       handler(updatedNotification({ invites: true }));
       handler(
         updatedNotification({
@@ -9597,7 +9677,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
       expect(workspaceGetRequests().length).toBeLessThanOrEqual(2);
       const ws = await readWorkspace();
       expect(ws.status).toBe('Active');
-      expect(ws.memberCount).toBe(1);
+      expect(ws.memberCount).toBe(2);
       expect(ws.openInviteCount).toBe(0);
       await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
         guests: { collaboratorCount: 0, openInviteCount: 0 },
@@ -13499,7 +13579,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appUiNavigateNotification('/settings'));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings', { assistantContent: true });
     });
 
     it('navigates to route and dispatches highlight after navigation', async () => {
@@ -13512,7 +13592,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await flush();
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=connections#mcp-servers');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=connections#mcp-servers', {
+        assistantContent: true,
+      });
       // Check that requestUiHighlight was dispatched
       const state = appStore.state as {
         uiHighlight?: {
@@ -13567,7 +13649,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appUiNavigateNotification('/invalid'));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/invalid');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/invalid', { assistantContent: true });
       // Should not throw
     });
   });
@@ -13663,7 +13745,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appWorkspaceOpenNotification('ws-123', false));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-123');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-123', {
+        assistantContent: true,
+      });
       expect(invokeSpy).not.toHaveBeenCalled();
     });
 
@@ -13674,7 +13758,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appWorkspaceOpenNotification('ws-456'));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-456');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-456', {
+        assistantContent: true,
+      });
       expect(invokeSpy).not.toHaveBeenCalled();
     });
 
@@ -13704,7 +13790,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
         route: '/workspace/ws-fallback',
         requestId: 'evt-open-ws-fallback',
       });
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-fallback');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-fallback', {
+        assistantContent: true,
+      });
     });
 
     it('ignores blank workspace IDs', async () => {
@@ -13730,7 +13818,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
         route: '/workspace/ws-success-false',
         requestId: 'evt-open-ws-failure',
       });
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false', {
+        assistantContent: true,
+      });
     });
   });
 });

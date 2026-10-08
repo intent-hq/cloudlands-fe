@@ -59,6 +59,10 @@ export const workspaceCatalogRequested = createAction<[workspaceId: string]>(
 export const workspaceCatalogReadStarted = createAction<[workspaceId: string]>(
   'providerCatalog/workspaceCatalogReadStarted',
 );
+/** Read failure signal for operations waiting for a refreshed sidebar catalog. */
+export const workspaceCatalogReadFailed = createAction<[workspaceId: string]>(
+  'providerCatalog/workspaceCatalogReadFailed',
+);
 export const workspaceCatalogReceived = createAction<
   [workspaceId: string, snapshot: WorkspaceCatalogSnapshot, epoch: number]
 >('providerCatalog/workspaceCatalogReceived');

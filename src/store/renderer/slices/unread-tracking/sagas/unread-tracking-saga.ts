@@ -16,7 +16,7 @@ import {
   selectAgentSessionHasStreamingTailMessage,
 } from '../../agent-session/agent-session-selectors';
 import { replaceMessages } from '../../agent-session/agent-session-slice';
-import { sendMessage } from '../../chat-state/chat-state-slice';
+import { sendMessage, chatTranscriptSnapshotApplied } from '../../chat-state/chat-state-slice';
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -29,14 +29,9 @@ import {
 } from '../../panel-layout/panel-layout-slice';
 import { TAB_REMOVAL_ACTIONS } from '../../panel-layout/panel-layout-action-utils';
 import {
-  closeAll as closeAllSidebar,
-  closeHoverCards,
   closePanel as closeSidebarPanel,
   hydrateSidebarNav,
   openPanel as openSidebarPanel,
-  setExpandedItem,
-  setHoveredItem,
-  togglePanel as toggleSidebarPanel,
 } from '../../sidebar-nav/sidebar-nav-slice';
 import {
   selectCurrentlyViewedAgentId,
@@ -68,16 +63,7 @@ const TAB_BOUNDARY_ACTIONS = [
   reopenClosedPanelColumn,
   reopenClosedTab,
 ];
-const CHIEF_BOUNDARY_ACTIONS = [
-  setHoveredItem,
-  setExpandedItem,
-  closeHoverCards,
-  openSidebarPanel,
-  closeSidebarPanel,
-  toggleSidebarPanel,
-  closeAllSidebar,
-  hydrateSidebarNav,
-];
+const CHIEF_BOUNDARY_ACTIONS = [openSidebarPanel, closeSidebarPanel, hydrateSidebarNav];
 const TAB_REMOVAL_ACTION_TYPES = new Set(TAB_REMOVAL_ACTIONS.map((action) => action.type));
 
 type BoundarySnapshotTracker = {
@@ -267,7 +253,7 @@ function* handleViewCleared(): SagaGenerator<void> {
  * signal is owned by the switch-timing saga and is not watched here.)
  */
 function* handleTranscriptHydrated(
-  action: ReturnType<typeof replaceMessages>,
+  action: ReturnType<typeof replaceMessages> | ReturnType<typeof chatTranscriptSnapshotApplied>,
 ): SagaGenerator<void> {
   const [agentId] = action.payload;
   const viewedAgentId = yield* selectCurrentlyViewedAgentId.effect();
@@ -288,6 +274,6 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),
     takeEvery(clearCurrentlyViewedAgent, handleViewCleared),
-    takeEvery(replaceMessages, handleTranscriptHydrated),
+    takeEvery([replaceMessages, chatTranscriptSnapshotApplied], handleTranscriptHydrated),
   ]);
 }

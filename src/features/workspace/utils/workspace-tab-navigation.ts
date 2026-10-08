@@ -524,11 +524,15 @@ export function registerWorkspaceTabShortcuts({
       key: String(digit),
       global: true,
       description:
-        digit === 9
-          ? m.workspace_shortcuts_selectLastSpaceTab_description()
-          : m.workspace_shortcuts_selectSpaceTab_description({ digit }),
+        digit === 1
+          ? m.home_navigation_description()
+          : digit === 9
+            ? m.workspace_shortcuts_selectLastSpaceTab_description()
+            : m.workspace_shortcuts_selectSpaceTab_description({ digit }),
       action: withRoute((path) =>
-        selectWorkspaceTabByPosition(store, digit === 9 ? 'last' : digit - 1, path, navigate),
+        digit === 1
+          ? navigate('/')
+          : selectWorkspaceTabByPosition(store, digit === 9 ? 'last' : digit - 2, path, navigate),
       ),
     });
   }

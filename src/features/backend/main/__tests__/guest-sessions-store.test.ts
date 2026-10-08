@@ -917,6 +917,9 @@ describe('guest-sessions-store', () => {
     expect(await store.setHostname(rec.id, '')).toBe(false);
     expect(await store.setHostname('missing', 'x')).toBe(false);
     expect(await store.findById(rec.id)).toMatchObject({ hostname: 'studio' });
+    // FEFF is not Unicode White_Space: retain the daemon's accepted collaboration name.
+    expect(await store.setHostname(rec.id, '\uFEFFTeam\uFEFF')).toBe(true);
+    expect(await store.findById(rec.id)).toMatchObject({ hostname: '\uFEFFTeam\uFEFF' });
   });
 
   it('setTcAddress() persists conclusively, skips unchanged writes, and out-clocks the record', async () => {

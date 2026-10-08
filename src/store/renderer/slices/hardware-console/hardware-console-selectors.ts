@@ -6,6 +6,8 @@ import { selectActiveTab } from '../panel-layout/panel-layout-selectors';
 import { selectAgentProvider } from '../agent-session/agent-session-selectors';
 import { selectAgentModelEffortLevels, selectSelectedModel } from '../model/model-selectors';
 import type { EncoderEffortTarget } from './hardware-console-types';
+import { ACTION_KEY_IDS } from '$features/hardware-console/actions/action-mapping';
+import { selectHostRole } from '../principal/principal-selectors';
 
 import { store } from '../../store';
 import { buildHardwareLedSnapshot } from '$features/hardware-console/led/snapshot';
@@ -17,6 +19,35 @@ import {
   selectIsWorkspaceCollaborator,
   selectWorkspaceItems,
 } from '../workspace/workspace-selectors';
+
+/** Shared windows may cycle desktop windows without gaining host administration. */
+export const selectSharedWindowCycleActive = store.createSelector((state) => {
+  const role = selectHostRole.select(state);
+  return role === 'guest' || role === 'member';
+});
+
+/** Only the active owner's hydrated bindings may replace the desktop-local projection. */
+export const selectWindowCyclePreference = store.createSelector((state): string | null => {
+  const hardware = state.hardwareConsole;
+  if (
+    selectHostRole.select(state) !== 'owner' ||
+    !hardware?.isConsoleOwner ||
+    !hardware.enabledHydrationSucceeded ||
+    !hardware.actionMappingHydrationSucceeded
+  )
+    return null;
+  const cycleKeys = (model: 'creator-micro-2' | 'codex-micro') =>
+    ACTION_KEY_IDS.filter(
+      (_key, slot) => hardware.actionMappingByModel[model][slot] === 'cycle-open-windows',
+    );
+  return JSON.stringify({
+    enabled: hardware.enabled,
+    keysByModel: {
+      'creator-micro-2': cycleKeys('creator-micro-2'),
+      'codex-micro': cycleKeys('codex-micro'),
+    },
+  });
+});
 
 /** Whether the hardware-console integration is enabled (device panel toggle). */
 export const selectHardwareConsoleEnabled = store.createSelector<[], boolean>(

@@ -16,3 +16,20 @@ export const selectHostMembers = store.createSelector((state) =>
 export const selectHostInvites = store.createSelector((state) =>
   getItems(state.hostMembership.invites),
 );
+
+/** Only a mounted, admitted owner with authenticated client support may read the host roster. */
+export const selectHostUserPresenceSession = store.createSelector((state) => {
+  const { target, withheld } = state.hostMembership;
+  const context = selectHostMembershipContext.select(state);
+  return target &&
+    !withheld &&
+    context === target.context &&
+    selectCollaborationCapabilities.select(state).authenticatedDevices
+    ? JSON.stringify([target.session, context])
+    : null;
+});
+export const selectHostUserPresence = store.createSelector((state) => {
+  const session = selectHostUserPresenceSession.select(state);
+  const presence = state.hostMembership.presence;
+  return session && presence.session === session ? presence : null;
+});

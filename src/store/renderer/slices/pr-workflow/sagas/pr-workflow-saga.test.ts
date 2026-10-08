@@ -144,6 +144,32 @@ afterEach(() => {
 });
 
 describe('PR workflow production owner with mocked transport', () => {
+  it('leaves a prepared native review queued for its original explicit confirmation', async () => {
+    const intent = {
+      owner: {
+        root: { workspaceId: 'pr-alpha', kind: 'primary' as const },
+        attemptId: 'native-attempt',
+        admission: 'original-admission',
+        hostContext: 'original-host',
+      },
+      targetBranch: 'main',
+      commitMessage: 'Prepared commit',
+      prTitle: 'Prepared review',
+      prBody: 'Description',
+      contextKey: 'original-context',
+      destinationKey: 'original-destination',
+    };
+    const pending = { action: 'native-review' as const, workspaceId: 'pr-alpha', intent };
+    store.dispatch(setPendingAutoAction('pr-alpha', pending));
+    await Promise.resolve();
+
+    expect(selectAcceptChangesState.select(store.state, 'pr-alpha').pendingAutoAction).toEqual(
+      pending,
+    );
+    expect(backendRequest).not.toHaveBeenCalled();
+    expect(selectPRWorkflow.select(store.state, 'pr-alpha').operations).toEqual({});
+  });
+
   it('denies mutations until the current connection has an admitted principal', async () => {
     store.dispatch(principalContextChanged(null));
     const denied = prWorkflowRequested('pr-alpha', { kind: 'commit', commitMessage: 'Draft' });

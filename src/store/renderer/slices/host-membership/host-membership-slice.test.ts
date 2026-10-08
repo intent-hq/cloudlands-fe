@@ -55,3 +55,24 @@ describe('hostMembershipReducer', () => {
     expect(state).toMatchObject({ withheld: true, busy: false, loaded: false, error: 'refused' });
   });
 });
+
+it('rejects presence snapshots overtaken by a client event or a different presentation', async () => {
+  const { hostUserPresenceStarted, hostUserPresenceSettled, hostUserPresenceCleared } =
+    await import('./host-membership-slice');
+  const { refreshLiveClientsRequested } = await import('../browser-clients/browser-clients-slice');
+  let state = reduce(initialState, hostMembershipOpened(target));
+  state = reduce(state, hostUserPresenceStarted('session'));
+  const firstEpoch = state.presence.epoch;
+  state = reduce(state, refreshLiveClientsRequested());
+  expect(reduce(state, hostUserPresenceSettled('session', firstEpoch, []))).toBe(state);
+  state = reduce(state, hostUserPresenceSettled('session', state.presence.epoch, ['owner']));
+  expect(state.presence.status).toBe('ready');
+  state = reduce(state, hostUserPresenceStarted('next-session'));
+  expect(reduce(state, hostUserPresenceCleared('session'))).toBe(state);
+  expect(reduce(state, hostUserPresenceSettled('session', state.presence.epoch, ['owner']))).toBe(
+    state,
+  );
+  state = reduce(state, hostUserPresenceSettled('next-session', state.presence.epoch, null));
+  expect(state.presence.status).toBe('error');
+  expect(state.presence.onlinePrincipalIds).toEqual([]);
+});

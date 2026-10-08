@@ -108,22 +108,31 @@ function withoutOwnAuthor(
   return author.principalId === ownPrincipalId ? null : author;
 }
 
-/**
- * Display label: profile name plus a complete qualified identity when supplied.
- * All-null human profiles leave the caller its existing unknown-human label.
- */
+/** Chat identity text uses only the author's own served profile fields. */
 export function getMessageAuthorLabel(author: MessageAuthor): string | null {
   const safe = asMessageAuthor(author);
   if (!safe) return null;
-  const name = safe.displayName?.trim() ? safe.displayName : safe.login?.trim() ? safe.login : null;
-  if (!safe.identity) return name;
-  const { provider, host, externalUserId } = safe.identity;
-  // i18n-ignore (qualified account identifiers are data, not translated prose)
-  const handle = `${provider}@${host} · ${externalUserId}`;
-  return m.presence_person_forge_label({
-    name: name ?? m.chat_chatMessage_authorUnknown_label(),
-    handle,
-  });
+  const clean = (value: string | null) =>
+    value
+      ?.replace(/\p{Cc}/gu, ' ')
+      .replace(/\p{White_Space}+/gu, ' ')
+      .trim() || null;
+  const name = clean(safe.displayName);
+  const login = clean(safe.login);
+  const handle = login ? `@${login}` : null;
+  return name && handle ? m.presence_person_forge_label({ name, handle }) : (name ?? handle);
+}
+
+/** Readable forge context for chat avatar hover/focus, never account numbers. */
+export function getMessageAuthorTooltip(author: MessageAuthor): string {
+  const name = getMessageAuthorLabel(author) ?? m.chat_chatMessage_authorUnknown_label();
+  const identity = asMessageAuthor(author)?.identity;
+  if (!identity) return name;
+  const handle =
+    identity.provider === 'github'
+      ? m.workspace_share_pinProvider_github_label()
+      : m.workspace_share_pinProvider_gitlab_label({ host: identity.host });
+  return m.presence_person_forge_label({ name, handle });
 }
 
 /**

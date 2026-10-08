@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
    * GitLab connect form shared by onboarding and Settings → Connections:
-   * instance host input, then the daemon-owned device grant
+   * complete instance address, then the daemon-owned device grant
    * (`sourceControl.connect { provider: "gitlab", method: "device" }`) when the
    * host supports it, or a personal-access-token paste
-   * (`method: "pat"`) otherwise. Every dispatch carries the host the user
+   * (`method: "pat"`) otherwise. Every dispatch carries the full instance the user
    * entered; the token goes straight to the daemon and is never kept in state.
    */
   import { onMount } from 'svelte';
@@ -15,7 +15,7 @@
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { DEFAULT_GITLAB_HOST } from '$features/forge-auth/constants';
-  import { gitlabPersonalAccessTokenUrl, normalizeGitLabHost } from '$lib/utils/gitlab-host';
+  import { gitlabPersonalAccessTokenUrl, normalizeGitLabInstanceUrl } from '$lib/utils/gitlab-host';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -29,8 +29,11 @@
     selectGitLabAuthDeviceFlow,
     selectGitLabAuthDeviceGrantSupported,
     selectGitLabAuthError,
-    selectGitLabAuthHost,
+    selectGitLabAuthInstanceBaseUrl,
     selectGitLabAuthIsAuthenticating,
+    selectGitLabAuthIsCancelling,
+    selectGitLabAuthCancelOutcome,
+    selectGitLabInstanceSetupSupported,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
 
   interface Props {
@@ -44,28 +47,47 @@
 
   const uid = $props.id();
   const hostInputId = `${uid}-host`;
+  const hostHelpId = `${uid}-host-help`;
+  const hostErrorId = `${uid}-host-error`;
   const tokenInputId = `${uid}-token`;
 
-  const host$ = selectGitLabAuthHost();
+  const storedInstance$ = selectGitLabAuthInstanceBaseUrl();
   const isAuthenticating$ = selectGitLabAuthIsAuthenticating();
+  const isCancelling$ = selectGitLabAuthIsCancelling();
+  const cancelOutcome$ = selectGitLabAuthCancelOutcome();
   const deviceFlow$ = selectGitLabAuthDeviceFlow();
   const deviceGrantSupported$ = selectGitLabAuthDeviceGrantSupported();
   const error$ = selectGitLabAuthError();
+  const instanceSetupSupported$ = selectGitLabInstanceSetupSupported();
 
-  let hostDraft = $state(selectGitLabAuthHost.select(appStore.state));
+  let hostDraft = $state(selectGitLabAuthInstanceBaseUrl.select(appStore.state));
+  let instanceEdited = $state(false);
   let tokenDraft = $state('');
   let preferToken = $state(false);
 
-  const host = $derived(normalizeGitLabHost(hostDraft) || DEFAULT_GITLAB_HOST);
-  // Device-grant support is only known for the host the daemon last reported
+  const instanceBaseUrl = $derived(normalizeGitLabInstanceUrl(hostDraft));
+  // Device-grant support is only known for the full instance last reported
   // (`null` until `initializeGitLabAuth()` has hydrated it); an unreported host
   // is attempted with the device grant first and the saga falls back
   // (`device-grant-unsupported`) when the instance refuses it.
   const showTokenField = $derived(
-    preferToken || (host === $host$ && $deviceGrantSupported$ === false),
+    preferToken || (instanceBaseUrl === $storedInstance$ && $deviceGrantSupported$ === false),
   );
-  const tokenPageUrl = $derived(gitlabPersonalAccessTokenUrl(host));
-  const canSubmitToken = $derived(tokenDraft.trim().length > 0);
+  const tokenPageUrl = $derived(
+    instanceBaseUrl ? gitlabPersonalAccessTokenUrl(instanceBaseUrl) : null,
+  );
+  const canSubmitToken = $derived(
+    $instanceSetupSupported$ && instanceBaseUrl !== null && tokenDraft.trim().length > 0,
+  );
+
+  $effect(() => {
+    const instance = $storedInstance$;
+    if (!instanceEdited) hostDraft = instance;
+  });
+
+  $effect(() => {
+    if (!$instanceSetupSupported$) tokenDraft = '';
+  });
 
   onMount(() => {
     const handleFocus = () => {
@@ -82,22 +104,45 @@
   });
 
   function handleHostCommit() {
-    if (host === $host$ || $isAuthenticating$) return;
-    appStore.dispatch(initializeGitLabAuth(host));
+    if (
+      !$instanceSetupSupported$ ||
+      !instanceBaseUrl ||
+      instanceBaseUrl === $storedInstance$ ||
+      $isAuthenticating$ ||
+      $isCancelling$
+    )
+      return;
+    appStore.dispatch(initializeGitLabAuth(instanceBaseUrl));
+  }
+
+  function handleInstanceInput() {
+    instanceEdited = true;
+    // A token entered for the previous address must not follow an edited target.
+    tokenDraft = '';
   }
 
   function handleStartDevice() {
-    appStore.dispatch(startGitLabDeviceAuth(host));
+    if (!$instanceSetupSupported$ || !instanceBaseUrl || $isAuthenticating$ || $isCancelling$)
+      return;
+    appStore.dispatch(startGitLabDeviceAuth(instanceBaseUrl));
   }
 
   function handleConnectToken() {
     const token = tokenDraft.trim();
-    if (!token) return;
-    appStore.dispatch(connectGitLabWithToken(host, token));
+    if (
+      !$instanceSetupSupported$ ||
+      !token ||
+      !instanceBaseUrl ||
+      $isAuthenticating$ ||
+      $isCancelling$
+    )
+      return;
+    appStore.dispatch(connectGitLabWithToken(instanceBaseUrl, token));
     tokenDraft = '';
   }
 
   function handleUseToken() {
+    if (!$instanceSetupSupported$ || $isCancelling$) return;
     if ($isAuthenticating$) appStore.dispatch(cancelGitLabAuth());
     preferToken = true;
   }
@@ -106,12 +151,12 @@
     preferToken = false;
   }
 
-  function handleCancelDeviceFlow() {
-    appStore.dispatch(cancelGitLabAuth());
+  function handleCancelPending() {
+    if (!$isCancelling$) appStore.dispatch(cancelGitLabAuth());
   }
 
   function handleOpenTokenPage() {
-    void handleLink(tokenPageUrl, {});
+    if (tokenPageUrl) void handleLink(tokenPageUrl, {});
   }
 
   function handleHostKeydown(e: KeyboardEvent) {
@@ -134,7 +179,29 @@
 </script>
 
 <div class={compact ? 'space-y-2' : 'space-y-4'} data-testid="gitlab-connect-form">
-  {#if $isAuthenticating$ && $deviceFlow$}
+  {#if !$instanceSetupSupported$}
+    <p class="text-sm text-subtle" role="status" data-testid="gitlab-instance-update-required">
+      {m.lib_gitlabConnect_updateRequired_description()}
+    </p>
+  {/if}
+  {#snippet cancelPendingAction()}
+    <Button
+      variant="ghost"
+      size="sm"
+      type="button"
+      class="text-muted-foreground hover:text-foreground"
+      disabled={$isCancelling$}
+      onclick={handleCancelPending}
+    >
+      {$isCancelling$ ? m.lib_gitlabConnect_cancelling_label() : m.lib_gitlabConnect_cancel_label()}
+    </Button>
+  {/snippet}
+  {#if $isAuthenticating$ || $isCancelling$}
+    <p class="break-all type-caption text-subtle" data-testid="gitlab-connect-instance">
+      {$storedInstance$}
+    </p>
+  {/if}
+  {#if ($isAuthenticating$ || $isCancelling$) && $deviceFlow$}
     <div class="max-w-sm space-y-3" data-testid="gitlab-connect-device-flow">
       <GitHubDeviceCodeCard
         userCode={$deviceFlow$.userCode}
@@ -145,24 +212,24 @@
       <div class="flex flex-wrap items-center gap-2 text-subtle text-sm">
         <IntentMarkLoader size={16} class="shrink-0" />
         <span>{m.lib_gitlabConnect_waitingForAuthorization_label()}</span>
-        <Button variant="link" size="sm" type="button" class="px-0" onclick={handleUseToken}>
-          {m.lib_gitlabConnect_useToken_label()}
-        </Button>
         <Button
-          variant="ghost"
+          variant="link"
           size="sm"
           type="button"
-          class="text-muted-foreground hover:text-foreground"
-          onclick={handleCancelDeviceFlow}
+          class="px-0"
+          disabled={$isCancelling$ || !$instanceSetupSupported$}
+          onclick={handleUseToken}
         >
-          {m.lib_gitlabConnect_cancel_label()}
+          {m.lib_gitlabConnect_useToken_label()}
         </Button>
+        {@render cancelPendingAction()}
       </div>
     </div>
-  {:else if $isAuthenticating$}
-    <div class="flex items-center gap-2 text-subtle text-sm">
+  {:else if $isAuthenticating$ || $isCancelling$}
+    <div class="flex flex-wrap items-center gap-2 text-subtle text-sm">
       <IntentMarkLoader size={16} class="shrink-0" />
       <span>{m.lib_gitlabConnect_connecting_label()}</span>
+      {@render cancelPendingAction()}
     </div>
   {:else}
     <div class="max-w-sm space-y-1">
@@ -173,11 +240,20 @@
         autocomplete="url"
         spellcheck={false}
         bind:value={hostDraft}
+        disabled={!$instanceSetupSupported$}
+        aria-invalid={!instanceBaseUrl || undefined}
+        aria-describedby={instanceBaseUrl ? hostHelpId : `${hostHelpId} ${hostErrorId}`}
         placeholder={DEFAULT_GITLAB_HOST}
+        oninput={handleInstanceInput}
         onchange={handleHostCommit}
         onkeydown={handleHostKeydown}
       />
-      <p class="text-xs text-subtle">{m.lib_gitlabConnect_host_description()}</p>
+      <p id={hostHelpId} class="text-xs text-subtle">{m.lib_gitlabConnect_host_description()}</p>
+      {#if !instanceBaseUrl}
+        <p id={hostErrorId} class="text-xs text-danger" role="alert">
+          {m.lib_gitlabConnect_invalidInstance_error()}
+        </p>
+      {/if}
     </div>
     {#if showTokenField}
       <div class="max-w-sm space-y-1" data-testid="gitlab-connect-token">
@@ -187,20 +263,23 @@
           type="password"
           autocomplete="off"
           bind:value={tokenDraft}
+          disabled={!$instanceSetupSupported$}
           placeholder={/* i18n-ignore (credential format example) */ 'glpat-...'}
           onkeydown={handleTokenKeydown}
         />
         <p class="text-xs text-subtle">
           {m.lib_gitlabConnect_token_description()}
-          <Button
-            variant="link"
-            size="sm"
-            type="button"
-            class="h-auto px-0 text-xs"
-            onclick={handleOpenTokenPage}
-          >
-            {m.lib_gitlabConnect_createToken_label({ host })}
-          </Button>
+          {#if tokenPageUrl && instanceBaseUrl}
+            <Button
+              variant="link"
+              size="sm"
+              type="button"
+              class="h-auto px-0 text-xs"
+              onclick={handleOpenTokenPage}
+            >
+              {m.lib_gitlabConnect_createToken_label({ host: instanceBaseUrl })}
+            </Button>
+          {/if}
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -213,7 +292,7 @@
         >
           {m.lib_gitlabConnect_connect_label()}
         </Button>
-        {#if preferToken && $deviceGrantSupported$ !== false}
+        {#if preferToken && !(instanceBaseUrl === $storedInstance$ && $deviceGrantSupported$ === false)}
           <Button variant="ghost" size={secondarySize} type="button" onclick={handleUseDevice}>
             {m.lib_gitlabConnect_useDevice_label()}
           </Button>
@@ -226,10 +305,22 @@
       </div>
     {:else}
       <div class="flex flex-wrap items-center gap-2">
-        <Button variant="primary" size={primarySize} type="button" onclick={handleStartDevice}>
+        <Button
+          variant="primary"
+          size={primarySize}
+          type="button"
+          onclick={handleStartDevice}
+          disabled={!instanceBaseUrl || !$instanceSetupSupported$}
+        >
           {m.lib_gitlabConnect_connect_label()}
         </Button>
-        <Button variant="ghost" size={secondarySize} type="button" onclick={handleUseToken}>
+        <Button
+          variant="ghost"
+          size={secondarySize}
+          type="button"
+          disabled={!$instanceSetupSupported$}
+          onclick={handleUseToken}
+        >
           {m.lib_gitlabConnect_useToken_label()}
         </Button>
         {#if onCancel}
@@ -239,6 +330,28 @@
         {/if}
       </div>
     {/if}
+  {/if}
+
+  {#if $cancelOutcome$ === 'cancelled'}
+    <p class="text-sm text-subtle" role="status">{m.lib_gitlabConnect_cancelled_label()}</p>
+  {:else if $cancelOutcome$ === 'already-started' || $cancelOutcome$ === 'failed'}
+    <div class="space-y-1">
+      <p class="text-sm text-subtle" role="status">
+        {$cancelOutcome$ === 'already-started'
+          ? m.lib_gitlabConnect_alreadyStarted_description()
+          : m.lib_gitlabConnect_cancelFailed_description()}
+      </p>
+      <Button
+        variant="link"
+        size="sm"
+        type="button"
+        class="px-0"
+        disabled={$isCancelling$}
+        onclick={() => appStore.dispatch(checkGitLabAuthStatus())}
+      >
+        {m.lib_gitlabConnect_checkStatus_label()}
+      </Button>
+    </div>
   {/if}
 
   {#if $error$}

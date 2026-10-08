@@ -5,7 +5,6 @@
     activeWorkspaceId?: string;
     initialOpenWorkspaceIds?: string[];
     interactive?: boolean;
-    sidebarPanelOpen?: boolean;
     zoomFactor?: number;
     fullTitlebar?: boolean;
   }
@@ -23,8 +22,6 @@
       'zoom-125': { props: { activeWorkspaceId: ids[0], zoomFactor: 1.25 } },
       'middle-tab': { props: { activeWorkspaceId: ids[1] } },
       'open-close': { props: { initialOpenWorkspaceIds: ids.slice(0, 2), interactive: true } },
-      'sidebar-closed': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: false } },
-      'sidebar-open': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: true } },
     },
   });
 </script>
@@ -62,15 +59,14 @@
     activeWorkspaceId,
     initialOpenWorkspaceIds = ids,
     interactive = false,
-    sidebarPanelOpen = true,
     zoomFactor = 1,
     fullTitlebar = false,
   }: WorkspaceTabStripGeometryPreviewProps = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
   const reducedMotion = watchReducedMotion();
-  const leadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
-  const scrollerMarginLeftPx = $derived(getWorkspaceTabScrollerMarginLeftPx(sidebarPanelOpen));
+  const leadingInsetPx = getWorkspaceTabLeadingInsetPx();
+  const scrollerMarginLeftPx = getWorkspaceTabScrollerMarginLeftPx();
 
   for (const [index, id] of ids.entries()) {
     const workspace: Workspace = {

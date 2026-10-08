@@ -1,4 +1,12 @@
 {
+  "home_assistant": ["fr"],
+  "home_repository": ["de"],
+  "home_agents": ["fr"],
+  "home_integrations_priority_normal": ["es"],
+  "home_integrations_branches": ["fr"],
+  "home_integrations_team": ["de"],
+  "home_integrations_description": ["fr"],
+  "settings_devices_mobile_title": "*",
   "presence_person_roleStatus": "*",
   "settings_sidebar_guestSessions_label": ["fr"],
   "settings_guestSessions_title": ["fr"],
@@ -8,6 +16,7 @@
   "agentOverview_hierarchyGraph_reviewCorral_label": ["de"],
   "agentOverview_timeScrubber_live_label": ["de"],
   "agent_failureToast_agentWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "repository_prRemote_option_label": "*",
   "browser_viewport_dimensions_label": "*",
   "chat_agentCard_background_badge": ["ja", "ko", "de"],
   "chat_agentCard_menu_harnessVersion_label": ["zh-CN", "zh-TW", "de", "fr", "es"],
@@ -334,5 +343,7 @@
   "workspace_share_pinProvider_github_label": "*",
   "workspace_share_pinProvider_gitlab_label": "*",
   "workspace_share_member_identityRole_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
-  "presence_person_forge_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"]
+  "presence_person_forge_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
+  "home_integrations_code_tab": ["de", "fr"],
+  "home_integrations_discussion": ["fr"]
 }

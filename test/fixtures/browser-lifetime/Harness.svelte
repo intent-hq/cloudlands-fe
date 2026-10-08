@@ -8,6 +8,7 @@
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { browserIpcSaga } from '$store/renderer/slices/app-layout/sagas/browser-ipc-saga';
+  import { watchRightmostColumnRequests } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
   import { ownClientIdReceived } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
@@ -20,7 +21,7 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () => [store.runSaga(browserIpcSaga)],
+    startSagas: () => [store.runSaga(browserIpcSaga), store.runSaga(watchRightmostColumnRequests)],
   });
   onDestroy(dispose);
   const ownerAgentId =

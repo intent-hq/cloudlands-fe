@@ -2270,14 +2270,18 @@ agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
 // transcript — is dropped in the SAME dispatch the chat-state reducer resets
 // the walk cursors and fetching flags in (atomic walk reset; the scrollback
 // saga's clearHistorySegment chain still runs and is idempotent here).
-agentSessionReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
-  if (meta.resumed !== false) return state;
-  // Fresh (non-resumed) transcript: clear the FE-owned cap-pruned latch with
-  // the segment — both described the discarded transcript. Only touch the
-  // session when actually latched so an unlatched apply stays a state no-op.
-  const next =
-    getSession(state, agentId)?.tailCapPruned === true
-      ? updateSessionFields(state, agentId, { tailCapPruned: false })
-      : state;
-  return removeHistorySegment(next, agentId);
-});
+agentSessionReducer.with(
+  chatTranscriptSnapshotApplied,
+  (state, { payload: [agentId, meta, replayed] }) => {
+    // Local replay retains the walk cursor, so its history and cap latch must survive too.
+    if (replayed || meta.resumed !== false) return state;
+    // Fresh (non-resumed) transcript: clear the FE-owned cap-pruned latch with
+    // the segment — both described the discarded transcript. Only touch the
+    // session when actually latched so an unlatched apply stays a state no-op.
+    const next =
+      getSession(state, agentId)?.tailCapPruned === true
+        ? updateSessionFields(state, agentId, { tailCapPruned: false })
+        : state;
+    return removeHistorySegment(next, agentId);
+  },
+);

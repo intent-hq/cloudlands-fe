@@ -17,7 +17,7 @@ export interface InviteAttempt extends CollaborationAttempt {
   allowed(provider?: 'github' | 'gitlab'): boolean;
   /** Original window/attempt still exists, even before its policy is admitted. */
   alive(): boolean;
-  /** Explicit retry may admit an initially blocked attempt once, in its original window. */
+  /** Acknowledged renderer readiness may admit an initially blocked attempt once, in its original window. */
   admit(): boolean;
   release(): void;
   cancelled: Promise<void>;
@@ -28,6 +28,7 @@ export function captureInviteAttempt(): InviteAttempt {
   const contents = parent?.webContents;
   let policy = captureCollaborationPolicy(contents?.id ?? null);
   let admitted = policy();
+  let enabledObserved = admitted;
   let live = true;
   let cancel!: () => void;
   const cancelled = new Promise<void>((resolve) => {
@@ -45,7 +46,11 @@ export function captureInviteAttempt(): InviteAttempt {
   };
   if (contents)
     offPolicy = onCollaborationPolicyChanged(contents.id, () => {
-      if (admitted) release();
+      if (enabledObserved) release();
+      // Initial hydration may supply enabled policy for the first time. Once seen,
+      // any subsequent policy revision invalidates this attempt, even while its
+      // renderer acknowledgement is still in flight.
+      else enabledObserved = captureCollaborationPolicy(contents.id)();
     });
   contents?.once('destroyed', release);
   contents?.once('render-process-gone', release);

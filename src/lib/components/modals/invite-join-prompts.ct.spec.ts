@@ -1,46 +1,90 @@
 import { expect, test } from '../../../test/ct-test';
 import InviteJoinPromptsPreview from './invite-join-prompts.preview.svelte';
 
-test('Multiplayer recovery preserves the invitation while explicit enable search has keyboard focus', async ({
+for (const width of [420, 900]) {
+  test(`Multiplayer recovery enables once and remains keyboard cancellable at ${width}px`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 608 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    let enables = 0;
+    const component = await mount(InviteJoinPromptsPreview, {
+      props: {
+        progress: { requestId: 'controlled-recovery', phase: 'admission' },
+        onEnable: () => {
+          enables++;
+        },
+      },
+    });
+    const recovery = page.getByRole('alertdialog');
+    const enable = recovery.getByRole('button', { name: 'Enable Multiplayer', exact: true });
+    const cancel = recovery.getByRole('button', { name: 'Cancel', exact: true });
+    // Two footer actions plus the accessible close control.
+    await expect(recovery.getByRole('button')).toHaveCount(3);
+    await enable.focus();
+    await enable.press('Tab');
+    await expect(recovery.getByRole('button', { name: /dismiss|cancel/i }).first()).toBeFocused();
+    await enable.focus();
+    await enable.press('Enter');
+    await expect.poll(() => enables).toBe(1);
+    await cancel.focus();
+    await component.update({
+      props: {
+        progress: { requestId: 'controlled-recovery', phase: 'admission' },
+        busy: true,
+      },
+    });
+    await expect(enable).toBeDisabled();
+    await expect(cancel).toBeEnabled();
+    await expect(recovery).toHaveAttribute('aria-busy', 'true');
+    await cancel.focus();
+    await cancel.press('Tab');
+    await expect(
+      recovery.getByRole('button', { name: 'Cancel joining', exact: true }),
+    ).toBeFocused();
+    await cancel.focus();
+    const box = (await enable.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(box.y + box.height).toBeLessThanOrEqual(608);
+    await page.screenshot({ path: testInfo.outputPath(`multiplayer-recovery-${width}.png`) });
+    await cancel.press('Escape');
+    await expect(recovery).toHaveCount(0);
+    expect(enables).toBe(1);
+  });
+}
+
+test('failed recovery keeps both actions usable and restores keyboard focus on cancellation', async ({
   mount,
   page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 420, height: 608 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  let retries = 0;
+}) => {
+  await page.evaluate(() => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open controlled invitation';
+    document.body.append(opener);
+    opener.focus();
+  });
+  let enables = 0;
   await mount(InviteJoinPromptsPreview, {
     props: {
-      progress: { requestId: 'controlled-recovery', phase: 'admission' },
-      onRetry: () => {
-        retries++;
+      progress: { requestId: 'failed-recovery', phase: 'admission' },
+      failed: true,
+      onEnable: () => {
+        enables++;
       },
     },
   });
   const recovery = page.getByRole('alertdialog');
-  await expect(recovery).toContainText('Enable Multiplayer to join');
-  await expect(recovery).toContainText('five minutes');
-  await page.screenshot({ path: testInfo.outputPath('multiplayer-invite-recovery.png') });
-  await recovery.getByRole('button', { name: 'Find Multiplayer', exact: true }).click();
-  await expect(recovery).toHaveCount(0);
-  const palette = page.getByRole('dialog');
-  const input = palette.getByRole('textbox');
-  await expect(input).toHaveValue('Multiplayer');
-  await expect(input).toBeFocused();
-  await expect(
-    palette.getByRole('button', { name: /Enable experimental Multiplayer/i }),
-  ).toBeVisible();
-  await expect(
-    palette.getByRole('button', { name: /Disable experimental Multiplayer/i }),
-  ).toHaveCount(0);
-  expect(retries).toBe(0);
-  await input.press('Escape');
-  await input.press('Escape');
-  await expect(palette).toHaveCount(0);
-  await expect(recovery).toBeVisible();
-  await recovery.getByRole('button', { name: 'Retry invitation', exact: true }).click();
-  await expect.poll(() => retries).toBe(1);
+  await expect(recovery.getByRole('alert')).toBeVisible();
+  await expect(recovery.getByRole('button')).toHaveCount(3);
+  const enable = recovery.getByRole('button', { name: 'Enable Multiplayer', exact: true });
+  await enable.focus();
+  await enable.press('Enter');
+  await expect.poll(() => enables).toBe(1);
   await recovery.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(recovery).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open controlled invitation' })).toBeFocused();
 });
 
 test('host consent names host-wide access and keeps cancellation available during joining', async ({

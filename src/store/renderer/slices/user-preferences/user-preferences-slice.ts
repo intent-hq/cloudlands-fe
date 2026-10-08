@@ -130,6 +130,7 @@ export const initialState: UserPreferencesStoreState = {
   showArchived: false,
   groupByRepo: true,
   hasCompletedProviderSetup: false,
+  providerSetupHydratedBackendId: null,
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
@@ -303,6 +304,10 @@ const hasCompletedProviderSetupPreference = createBooleanPreference<UserPreferen
   setActionName: 'setHasCompletedProviderSetup',
   toggleActionName: 'toggleHasCompletedProviderSetup',
 });
+
+export const providerSetupHydrated = createAction<[backendId: string, completed: boolean]>(
+  'userPreferences/providerSetupHydrated',
+);
 
 export const setHasCompletedProviderSetup = hasCompletedProviderSetupPreference.setAction;
 
@@ -493,6 +498,14 @@ spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
 hasCompletedProviderSetupPreference.register(userPreferencesReducer);
+userPreferencesReducer.with(
+  providerSetupHydrated,
+  (state, { payload: [backendId, completed] }) => ({
+    ...state,
+    hasCompletedProviderSetup: completed,
+    providerSetupHydratedBackendId: backendId,
+  }),
+);
 showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);

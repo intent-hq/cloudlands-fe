@@ -1,6 +1,6 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  export const preview = definePreview<{ failure?: boolean }>({
+  export const preview = definePreview<{ failure?: boolean; command?: string }>({
     id: 'script-monitors',
     title: 'Script monitors',
     defaultState: 'conditions',
@@ -19,7 +19,10 @@
   import { m } from '$shared/paraglide/messages.js';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import MonitoredScriptsRow from './MonitoredScriptsRow.svelte';
-  let { failure = false }: { failure?: boolean } = $props();
+  let {
+    failure = false,
+    command = 'pnpm vitest run src/lib/components/chat/__tests__/MonitoredScriptsRow.test.ts\n  pnpm run check',
+  }: { failure?: boolean; command?: string } = $props();
   onMount(() => {
     store.dispatch(
       scriptMonitorsUpdated(monitorFixture.workspaceId, {
@@ -34,7 +37,10 @@
             lineCount: undefined,
           },
         ],
-        scripts: [scriptFixture, { ...scriptFixture, id: 'build', name: 'Build preview' }],
+        scripts: [
+          { ...scriptFixture, command },
+          { ...scriptFixture, id: 'build', name: 'Build preview' },
+        ],
         status: 'ready',
       }),
     );

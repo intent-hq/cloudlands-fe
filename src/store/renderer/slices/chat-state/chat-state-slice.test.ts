@@ -29,7 +29,10 @@ import {
   chatQueuedRetryRecordsCleared,
   chatLiveStreamPhaseChanged,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   scrollbackFetchStarted,
+  scrollbackOlderPageSettled,
+  scrollbackGapPageSettled,
   scrollbackSeekSettled,
   scrollbackContinuationReset,
   pendingQuestionRecoveryRequested,
@@ -38,6 +41,10 @@ import {
   pendingProposalRecoveryRequested,
   pendingProposalRecoverySettled,
   pendingProposalRecoveryPruned,
+  previousUserMessageLoadConsumed,
+  previousUserMessageLoadReleased,
+  previousUserMessageLoadRequested,
+  previousUserMessageLoadSettled,
   chatSwitchBackRevealTimedOut,
   messageBlockHydrationRequested,
   messageBlockHydrated,
@@ -62,6 +69,7 @@ import {
   selectTranscriptHydratedOnce,
   selectPendingQuestionRecovery,
   selectPendingProposalRecovery,
+  selectPreviousUserMessageLoad,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -119,6 +127,45 @@ function stateWithModelUnavailable() {
 }
 
 describe('chatStateReducer', () => {
+  it('opens the history gate atomically with final pagination and resets it on recovery', () => {
+    let state = chatStateReducer(
+      initialState,
+      chatLiveStreamPhaseChanged('progressive', 'connecting'),
+    );
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(true);
+    state = chatStateReducer(
+      state,
+      chatInitialHistoryProgressed('progressive', { target: 20, received: 1, complete: false }),
+    );
+    expect(state.byAgentId.progressive.transcriptHydratedOnce).not.toBe(true);
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(true);
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied('progressive', {
+        truncated: true,
+        totalMessages: 21,
+        nextToken: 'before-1',
+        initialHistory: { target: 20, received: 20, complete: true },
+      }),
+    );
+    expect(state.byAgentId.progressive).toMatchObject({
+      initialHistoryPending: false,
+      scrollbackOlderToken: 'before-1',
+    });
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged('progressive', 'resyncing'));
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(true);
+    expect(state.byAgentId.progressive.transcriptSnapshot).toBeUndefined();
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied('progressive', {
+        truncated: false,
+        totalMessages: 1,
+        nextToken: null,
+      }),
+    );
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(false);
+  });
+
   it('returns initial state', () => {
     expect(chatStateReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
@@ -1541,6 +1588,72 @@ describe('chatState selectors', () => {
     expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('older-1');
   });
 
+  it('exposes replay identity to snapshot consumers and clears it on fresh discard', () => {
+    const meta = { truncated: true, totalMessages: 20, resumed: false };
+    const replayed = chatStateReducer(
+      initialState,
+      chatTranscriptSnapshotApplied(AGENT, meta, true),
+    );
+    expect(replayed.byAgentId[AGENT].transcriptSnapshot).toMatchObject({
+      ...meta,
+      replayed: true,
+    });
+    const fresh = chatStateReducer(replayed, chatTranscriptSnapshotApplied(AGENT, meta));
+    expect(fresh.byAgentId[AGENT].transcriptSnapshot).not.toHaveProperty('replayed');
+    expect(fresh.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(1);
+  });
+
+  it('a local snapshot replay seeds the cursor when chat state was lost', () => {
+    const state = chatStateReducer(
+      initialState,
+      chatTranscriptSnapshotApplied(
+        AGENT,
+        { truncated: true, totalMessages: 20, nextToken: 'snapshot-tail', resumed: false },
+        true,
+      ),
+    );
+    expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('snapshot-tail');
+    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(0);
+  });
+
+  it.each(['older', 'gap', 'seek'] as const)(
+    'snapshot refresh preserves a %s walk even when its older cursor is null',
+    (direction) => {
+      let state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, direction));
+      if (direction === 'older') {
+        state = chatStateReducer(state, scrollbackOlderPageSettled(AGENT, null));
+      } else if (direction === 'gap') {
+        state = chatStateReducer(state, scrollbackGapPageSettled(AGENT, 'forward'));
+      } else {
+        state = chatStateReducer(
+          state,
+          scrollbackSeekSettled(AGENT, { nextToken: null, prevToken: 'forward' }),
+        );
+      }
+      // Closing a subscription drops its meta, but retains its history walk.
+      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
+      state = chatStateReducer(
+        state,
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: true,
+          totalMessages: 20,
+          nextToken: 'snapshot-tail',
+        }),
+      );
+      expect(state.byAgentId[AGENT].scrollbackOlderToken).toBeNull();
+      state = chatStateReducer(state, scrollbackContinuationReset(AGENT));
+      state = chatStateReducer(
+        state,
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: true,
+          totalMessages: 20,
+          nextToken: 'fresh-tail',
+        }),
+      );
+      expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('fresh-tail');
+    },
+  );
+
   describe('far-flick seek state (aroundIndex)', () => {
     it('initial state carries the seek flags off', () => {
       expect(emptyChatAgentState.fetchingHistorySeek).toBe(false);
@@ -1601,6 +1714,75 @@ describe('chatState selectors', () => {
       expect(agent.scrollbackOlderToken).toBeNull();
       expect(agent.scrollbackGapToken).toBeNull();
       expect(agent.historySeekUnsupported).toBe(true);
+    });
+  });
+
+  describe('previous user message load state', () => {
+    const select = (state: typeof initialState) =>
+      selectPreviousUserMessageLoad.select(asStoreState(state), AGENT);
+
+    it('correlates request, outcome, consume and release by requestId', () => {
+      let state = chatStateReducer(
+        initialState,
+        previousUserMessageLoadRequested('ws-1', AGENT, 'req-1', 'msg-10'),
+      );
+      expect(select(state)).toEqual({
+        requestId: 'req-1',
+        currentMessageId: 'msg-10',
+        status: 'loading',
+      });
+      state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'seek'));
+      state = chatStateReducer(
+        state,
+        previousUserMessageLoadSettled(AGENT, 'req-1', 'found', 'msg-8'),
+      );
+      expect(select(state)).toEqual({
+        requestId: 'req-1',
+        currentMessageId: 'msg-10',
+        status: 'found',
+        targetId: 'msg-8',
+        epoch: 1,
+      });
+      expect(chatStateReducer(state, previousUserMessageLoadSettled(AGENT, 'req-1', 'error'))).toBe(
+        state,
+      );
+      state = chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-1'));
+      expect(select(state)?.consumed).toBe(true);
+      expect(chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-1'))).toBe(state);
+      state = chatStateReducer(state, previousUserMessageLoadReleased(AGENT, 'req-1'));
+      expect(select(state)).toBeUndefined();
+      expect(selectChatAgentState.select(asStoreState(state), AGENT).fetchingHistorySeek).toBe(
+        true,
+      );
+    });
+
+    it('ignores stale settle, consume and release from a superseded request', () => {
+      let state = chatStateReducer(
+        initialState,
+        previousUserMessageLoadRequested('ws-1', AGENT, 'req-old', 'msg-10'),
+      );
+      state = chatStateReducer(
+        state,
+        previousUserMessageLoadRequested('ws-1', AGENT, 'req-new', 'msg-11'),
+      );
+      const current = state;
+      state = chatStateReducer(state, previousUserMessageLoadSettled(AGENT, 'req-old', 'start'));
+      state = chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-old'));
+      state = chatStateReducer(state, previousUserMessageLoadReleased(AGENT, 'req-old'));
+      expect(state).toBe(current);
+      expect(chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-new'))).toBe(
+        state,
+      );
+      state = chatStateReducer(
+        state,
+        previousUserMessageLoadSettled(AGENT, 'req-new', 'start', 'ignored'),
+      );
+      expect(select(state)).toEqual({
+        requestId: 'req-new',
+        currentMessageId: 'msg-11',
+        status: 'start',
+        epoch: 0,
+      });
     });
   });
 

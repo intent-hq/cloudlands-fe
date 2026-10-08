@@ -24,8 +24,11 @@
     selectNoteById,
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { createNote, deleteNote } from '$features/notes/notes-write-service';
-  import { ensureNoteContentLoaded } from '$features/notes/notes-read-service';
+  import {
+    createNotePersistRequested,
+    deleteNotePersistRequested,
+    ensureNoteContentLoadedRequested,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { isSpecNote } from '$shared/constants/notes';
   import { isNoteContentStale } from '$shared/utils/note-content';
   import { invoke } from '$lib/electron-bridge';
@@ -57,7 +60,7 @@
 
   const logger = createLogger('NoteTabType');
 
-  let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
+  let { tab, workspaceId, layoutId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
 
@@ -106,7 +109,7 @@
   $effect(() => {
     const noteId = tab.noteId;
     if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
-    void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
+    void appStore.dispatch(ensureNoteContentLoadedRequested(workspaceId, noteId)).then((loaded) => {
       if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
     });
   });
@@ -177,8 +180,9 @@
     if (isSpecNote(tab.noteId)) return !isInitialSpecWriteInProgress;
     return true;
   });
-  const showRenderedPreview = $derived(noteViewMode === 'preview' && !showSpecOnboarding);
-
+  const showRenderedPreview = $derived(
+    (noteViewMode === 'preview' || !$workspace) && !showSpecOnboarding,
+  );
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
@@ -222,8 +226,8 @@
     const noteTitle = $note?.title || m.layout_tabTypes_note_title();
     isNoteDeleting = true;
     try {
-      appStore.dispatch(closeTab(workspaceId, tab.id));
-      void deleteNote(workspaceId, noteIdToDelete);
+      appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id));
+      void appStore.dispatch(deleteNotePersistRequested(workspaceId, noteIdToDelete));
 
       // Show undo toast
       const { notify } = await import('$lib/components/patterns/notify');
@@ -237,14 +241,16 @@
                   label: m.ui_workspaceActions_undo_label(),
                   onClick: () => {
                     try {
-                      void createNote(savedNote.workspaceId, {
-                        title: savedNote.title,
-                        content: savedNote.content,
-                        contentType: savedNote.contentType,
-                        tags: savedNote.tags,
-                        parentId: savedNote.parentId,
-                        visibility: savedNote.visibility,
-                      });
+                      void appStore.dispatch(
+                        createNotePersistRequested(savedNote.workspaceId, {
+                          title: savedNote.title,
+                          content: savedNote.content,
+                          contentType: savedNote.contentType,
+                          tags: savedNote.tags,
+                          parentId: savedNote.parentId,
+                          visibility: savedNote.visibility,
+                        }),
+                      );
                       notify.dismiss(toastId);
                     } catch (err) {
                       logger.error('Failed to restore note', err);
@@ -290,7 +296,7 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions({
+    return headerContext.registerActions({
       display: noteDisplayActions,
       actions: noteActions,
       destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
@@ -300,7 +306,12 @@
 
 {#snippet noteDisplayActions()}
   {#if tab.noteId}
-    <NoteViewSettingsDropdown {workspaceId} noteId={tab.noteId} embedded />
+    <NoteViewSettingsDropdown
+      {workspaceId}
+      noteId={tab.noteId}
+      canEdit={!!$workspace && noteEditable}
+      embedded
+    />
   {/if}
 {/snippet}
 
@@ -330,59 +341,63 @@
   {/if}
 {/snippet}
 
-<NoteContentSurface state={noteContentState}>
-  {#if tab.noteId}
-    {#if noteContentLoadFailed}
-      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
-        <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
-        <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
-          {m.ui_errorToast_retry_label()}
-        </Button>
-      </div>
-    {:else if !$note}
-      <div class="flex flex-col h-full">
-        <div class="flex-1 p-4 space-y-4">
-          <Skeleton class="h-8 w-3/4" />
-          <Skeleton class="h-4 w-full" />
-          <Skeleton class="h-4 w-5/6" />
-          <Skeleton class="h-4 w-4/5" />
-          <Skeleton class="h-4 w-full" />
+<div class="flex h-full min-h-0 flex-col">
+  <div class="min-h-0 flex-1">
+    <NoteContentSurface state={noteContentState}>
+      {#if tab.noteId}
+        {#if noteContentLoadFailed}
+          <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
+            <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
+            <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
+              {m.ui_errorToast_retry_label()}
+            </Button>
+          </div>
+        {:else if !$note}
+          <div class="flex flex-col h-full">
+            <div class="flex-1 p-4 space-y-4">
+              <Skeleton class="h-8 w-3/4" />
+              <Skeleton class="h-4 w-full" />
+              <Skeleton class="h-4 w-5/6" />
+              <Skeleton class="h-4 w-4/5" />
+              <Skeleton class="h-4 w-full" />
+            </div>
+          </div>
+        {:else if showVersionHistory && $workspace}
+          <NoteVersionHistory
+            workspace={$workspace}
+            noteId={tab.noteId}
+            currentContent={$note?.content || ''}
+            onRestore={() => (showVersionHistory = false)}
+          />
+        {:else if showSpecOnboarding}
+          <!-- Show onboarding when coordinator is writing initial spec -->
+          <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
+        {:else if showRenderedPreview}
+          <RenderedNotePreview
+            content={$note.content || ''}
+            {workspaceId}
+            noteId={tab.noteId}
+            scrollKey={tab.id}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={handlePreviewScrollPositionSave}
+          />
+        {:else if $workspace}
+          <NoteWithComments
+            workspace={$workspace}
+            noteId={tab.noteId}
+            editable={noteEditable}
+            {isPanelFocused}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={(scrollTop: number) =>
+              appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
+          />
+        {/if}
+      {:else}
+        <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
+          <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
+          <p>{m.layout_noteTab_noNoteSelected_label()}</p>
         </div>
-      </div>
-    {:else if showVersionHistory && $workspace}
-      <NoteVersionHistory
-        workspace={$workspace}
-        noteId={tab.noteId}
-        currentContent={$note?.content || ''}
-        onRestore={() => (showVersionHistory = false)}
-      />
-    {:else if showSpecOnboarding}
-      <!-- Show onboarding when coordinator is writing initial spec -->
-      <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
-    {:else if showRenderedPreview}
-      <RenderedNotePreview
-        content={$note.content || ''}
-        {workspaceId}
-        noteId={tab.noteId}
-        scrollKey={tab.id}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={handlePreviewScrollPositionSave}
-      />
-    {:else if $workspace}
-      <NoteWithComments
-        workspace={$workspace}
-        noteId={tab.noteId}
-        editable={noteEditable}
-        {isPanelFocused}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={(scrollTop: number) =>
-          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
-      />
-    {/if}
-  {:else}
-    <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-      <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
-      <p>{m.layout_noteTab_noNoteSelected_label()}</p>
-    </div>
-  {/if}
-</NoteContentSurface>
+      {/if}
+    </NoteContentSurface>
+  </div>
+</div>

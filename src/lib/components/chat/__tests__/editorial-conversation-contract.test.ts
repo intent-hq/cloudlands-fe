@@ -34,7 +34,7 @@ function openingTagAfter(content: string, anchor: string) {
 }
 
 describe('editorial conversation presentation contract', () => {
-  it('assigns restored and streaming transcript identity to the outer row only', () => {
+  it('assigns restored, streaming and staged transcript identity to the outer row only', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
@@ -42,7 +42,7 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain('ownsMessageIdentity = true');
     expect(message).toContain('data-message-id={ownsMessageIdentity ? message?.id : undefined}');
     expect(message).toContain('data-message-role={ownsMessageIdentity ? role : undefined}');
-    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(4);
+    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(5);
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,120}ownsMessageIdentity/g)).toBeNull();
   });
 
@@ -352,7 +352,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');
-    expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
+    expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(3);
+    // Recovery keeps the existing queue controls close even in a tall panel.
+    expect(panel).toContain("isCompactMode || recoveryAtEnd ? 'mb-2' : 'mb-16'");
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable;"');
     expect(message).toContain('class="absolute right-1 z-10');
@@ -391,9 +393,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('AuroraSofteningLayer');
     expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).toContain('{#snippet queueRegion()}');
-    expect(panel).toContain('<QueuedMessageList');
-    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
     expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

@@ -10,6 +10,8 @@
  * each group.
  */
 
+import { formatGuestSessionLabel } from '../lib/utils/connection-label';
+import type { GuestSessionRecord } from '../shared/types/guest-sessions';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 
 /** A live app window, reduced to the fields the menu needs. */
@@ -47,8 +49,11 @@ function backendLabel(
   backendId: string,
   connections: WindowMenuConnectionRecord[],
   labels: WindowMenuLabels,
+  guests: Pick<GuestSessionRecord, 'id' | 'label' | 'hostname'>[],
 ): string {
   if (backendId === LOCAL_CONNECTION_ID) return labels.localBackendLabel;
+  const guest = guests.find((session) => session.id === backendId);
+  if (guest) return formatGuestSessionLabel(guest);
   const record = connections.find((c) => c.id === backendId);
   return record?.label || record?.hostname || backendId;
 }
@@ -58,12 +63,15 @@ export function buildWindowMenuEntries(
   windows: WindowMenuWindowDescriptor[],
   connections: WindowMenuConnectionRecord[],
   labels: WindowMenuLabels,
+  guests: Pick<GuestSessionRecord, 'id' | 'label' | 'hostname'>[] = [],
 ): WindowMenuEntry[] {
   const hasRemote = windows.some((w) => w.backendId !== LOCAL_CONNECTION_ID);
   const ordered = [...windows.filter((w) => !w.isHud), ...windows.filter((w) => w.isHud)];
   return ordered.map((w) => {
     const kind = w.isHud ? labels.hudLabel : labels.mainWindowLabel;
-    const label = hasRemote ? `${kind} [${backendLabel(w.backendId, connections, labels)}]` : kind;
+    const label = hasRemote
+      ? `${kind} [${backendLabel(w.backendId, connections, labels, guests)}]`
+      : kind;
     return { windowId: w.windowId, label, checked: w.isFocused };
   });
 }

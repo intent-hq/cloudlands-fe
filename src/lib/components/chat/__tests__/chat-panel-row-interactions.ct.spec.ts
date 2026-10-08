@@ -308,7 +308,7 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
 test('focus pins a row until blur, and manual expansion survives eviction', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const host = await mount(ChatPanelOperationalGeometryHost, {
     props: { liveMessages: messages(), detachedStatus: true },
@@ -326,13 +326,20 @@ test('focus pins a row until blur, and manual expansion survives eviction', asyn
   });
   await expect(group).toBeFocused();
   await expect(group).toHaveAttribute('aria-expanded', 'true');
-  await host.getByTestId('message-input').locator('.tiptap-editor').focus();
+  const editor = host.getByTestId('message-input').locator('.tiptap-editor');
+  await expect(editor).toBeEditable();
+  await editor.focus();
+  await expect(editor).toBeFocused();
   await expect(group).toHaveCount(0);
   await viewport.evaluate((n, top) => {
     n.scrollTop = top;
   }, position);
   await expect(group).toHaveAttribute('aria-expanded', 'true');
   await expect(host.getByText('Hidden tool marker-90-end.', { exact: true })).toBeVisible();
+  await testInfo.attach('expanded-row-after-eviction', {
+    body: await host.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 test('editing a prompt retains the editor without exempting its operational turn', async ({
@@ -823,6 +830,20 @@ test('watched reasoning search retains the body until the actual scrollport reve
   await viewport.click({ position: { x: 4, y: 4 } });
   await page.keyboard.press('ControlOrMeta+f');
   const input = host.getByRole('search', { name: 'Find in panel' }).getByRole('textbox');
+  await expect(input).toBeFocused();
+  const focusRetained = await input.evaluate(async (node) => {
+    const samples: boolean[] = [];
+    for (let frame = 0; frame < 60; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      samples.push(document.activeElement === node);
+    }
+    return samples;
+  });
+  await info.attach('watched-search-focus-after-navigation', {
+    body: JSON.stringify(focusRetained),
+    contentType: 'application/json',
+  });
+  expect(focusRetained).toEqual(Array(60).fill(true));
   for (const index of [50, 80]) {
     const query = `needle-watched-${index}.`;
     await input.fill(query);

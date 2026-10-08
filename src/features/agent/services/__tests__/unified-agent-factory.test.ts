@@ -118,6 +118,39 @@ describe('UnifiedAgentFactory', () => {
   });
 
   describe('createAgent', () => {
+    it('preserves explicit isolated placement through config normalization', async () => {
+      const placement = { target: 'local', checkout: 'isolated' } as const;
+      const result = await factory.createAgent(mockWorkspace, {
+        workspaceId: mockWorkspace.id as any,
+        name: 'Isolated agent',
+        placement,
+      });
+      expect(result.success).toBe(true);
+      expect(agentsApi.create).toHaveBeenCalledWith(expect.objectContaining({ placement }));
+    });
+
+    it('preserves isolated placement when concurrent UI consumers share a creation', async () => {
+      const response = Promise.withResolvers<unknown>();
+      agentsApi.create.mockReturnValueOnce(response.promise);
+      const placement = { target: 'local', checkout: 'isolated' } as const;
+      const config: UnifiedAgentConfig = {
+        workspaceId: mockWorkspace.id,
+        name: 'Isolated shared request',
+        placement,
+      };
+      const first = factory.createAgent(mockWorkspace, config, 'isolated-resource');
+      const second = factory.createAgent(mockWorkspace, config, 'isolated-resource');
+      expect(second).toBe(first);
+      await vi.waitFor(() => expect(agentsApi.create).toHaveBeenCalledTimes(1));
+      expect(agentsApi.create).toHaveBeenCalledWith(
+        expect.objectContaining({ workspacePath: '/test/workspace', placement }),
+      );
+      response.resolve({ id: 'agent-isolated-shared', workspaceId: mockWorkspace.id });
+      const [a, b] = await Promise.all([first, second]);
+      expect(a).toMatchObject({ success: true, agentId: 'agent-isolated-shared' });
+      expect(b).toBe(a);
+    });
+
     it.each(['implementor', null])(
       'forwards explicit specialist memory through the factory: %s',
       async (specialist) => {
@@ -138,6 +171,27 @@ describe('UnifiedAgentFactory', () => {
         );
       },
     );
+
+    it('preserves isolated placement together with explicit specialist memory', async () => {
+      const placement = { target: 'local', checkout: 'isolated' } as const;
+      const result = await factory.createAgent(mockWorkspace, {
+        workspaceId: mockWorkspace.id,
+        name: 'Remembered isolated agent',
+        nameExplicitlySet: false,
+        placement,
+        rememberSpecialist: true,
+        metadata: { specialist: 'implementor' },
+      });
+      expect(result.success).toBe(true);
+      expect(agentsApi.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          placement,
+          specialist: 'implementor',
+          rememberSpecialist: true,
+          nameExplicitlySet: false,
+        }),
+      );
+    });
 
     it('does not publish or send after creation acknowledges on a superseded connection', async () => {
       let resolve!: (value: unknown) => void;

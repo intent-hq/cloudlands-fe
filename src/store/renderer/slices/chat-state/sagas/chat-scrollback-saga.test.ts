@@ -39,6 +39,8 @@ import {
 import {
   chatStateReducer,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
+  chatLiveStreamPhaseChanged,
   historyGapFillRequested,
   historySeekRequested,
   initialState as chatStateInitialState,
@@ -46,8 +48,13 @@ import {
   pendingProposalRecoveryPruned,
   pendingProposalRecoveryRequested,
   pendingQuestionRecoveryRequested,
+  pendingQuestionRecoveryCleared,
+  previousUserMessageLoadConsumed,
+  previousUserMessageLoadReleased,
+  previousUserMessageLoadRequested,
   scrollbackSeekSettled,
 } from '../chat-state-slice';
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 import { chatScrollbackSaga } from './chat-scrollback-saga';
 
 const WS = 'ws-scrollback';
@@ -179,6 +186,102 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     vi.useRealTimers();
     vi.clearAllMocks();
   });
+
+  it.each(['older', 'gap', 'seek', 'previous', 'question', 'proposal'] as const)(
+    'gates %s history reads until progressive completion',
+    async (producer) => {
+      const run = harness();
+      try {
+        run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+        run.dispatch(
+          chatTranscriptSnapshotApplied(AGENT, {
+            truncated: true,
+            totalMessages: 11,
+            initialHistory: { target: 20, received: 1, complete: false },
+          }),
+        );
+        mocks.getConversation.mockResolvedValue(page([message('m-1', 1)], { totalMessages: 11 }));
+        const request = () =>
+          run.dispatch(
+            producer === 'older'
+              ? olderHistoryPageRequested(WS, AGENT)
+              : producer === 'gap'
+                ? historyGapFillRequested(WS, AGENT)
+                : producer === 'seek'
+                  ? historySeekRequested(WS, AGENT, 1)
+                  : producer === 'previous'
+                    ? previousUserMessageLoadRequested(WS, AGENT, 'nav', 'm-10')
+                    : producer === 'question'
+                      ? pendingQuestionRecoveryRequested(AGENT, 'm-1')
+                      : pendingProposalRecoveryRequested(AGENT, 'm-1'),
+          );
+        request();
+        run.dispatch(
+          chatInitialHistoryProgressed(AGENT, { target: 20, received: 2, complete: false }),
+        );
+        await settle();
+        expect(mocks.getConversation).not.toHaveBeenCalled();
+        run.dispatch(
+          chatTranscriptSnapshotApplied(AGENT, {
+            truncated: true,
+            totalMessages: 11,
+            nextToken: 'before-9',
+            initialHistory: { target: 20, received: 2, complete: true },
+          }),
+        );
+        if (producer === 'older') request();
+        await settle();
+        if (producer !== 'gap') expect(mocks.getConversation).toHaveBeenCalled();
+        if (producer === 'older')
+          expect(mocks.getConversation).toHaveBeenCalledWith(
+            AGENT,
+            5,
+            'before-9',
+            undefined,
+            undefined,
+            WS,
+          );
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['question', 'proposal'] as const)(
+    'cancels deferred %s recovery before history completes',
+    async (producer) => {
+      const run = harness();
+      try {
+        run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+        run.dispatch(
+          chatInitialHistoryProgressed(AGENT, { target: 20, received: 1, complete: false }),
+        );
+        mocks.getConversation.mockResolvedValue(page([]));
+        run.dispatch(
+          producer === 'question'
+            ? pendingQuestionRecoveryRequested(AGENT, 'm-1')
+            : pendingProposalRecoveryRequested(AGENT, 'm-1'),
+        );
+        await settle();
+        run.dispatch(
+          producer === 'question'
+            ? pendingQuestionRecoveryCleared(AGENT)
+            : pendingProposalRecoveryPruned(AGENT, []),
+        );
+        run.dispatch(
+          chatTranscriptSnapshotApplied(AGENT, {
+            nextToken: null,
+            initialHistory: { target: 20, received: 1, complete: true },
+          }),
+        );
+        await settle();
+        expect(mocks.getConversation).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+      }
+    },
+  );
 
   it('keeps an advancing cursor across an empty page and latches a repeated cursor', async () => {
     const run = harness();
@@ -1563,5 +1666,380 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     expect(run.chat()?.fetchingHistorySeek).toBe(false);
     run.task.cancel();
     await run.task.toPromise();
+  });
+});
+
+describe('chatScrollbackSaga (unloaded previous-user-message walk)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function userMessage(id: string, index: number): AgentMessage {
+    return { ...message(id, index), role: 'user' };
+  }
+
+  function seededTail() {
+    const run = harness();
+    run.dispatch(
+      bulkUpsertSessions([session({ messages: [message('a-10', 10), message('a-11', 11)] })]),
+    );
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 12,
+        nextToken: 'snapshot-older',
+      }),
+    );
+    return run;
+  }
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    'rejects an in-flight previous-user page across reconnect (predecessor: %s, discard: %s)',
+    async (hasPredecessor, discarded) => {
+      const run = seededTail();
+      const pending = deferred<ReturnType<typeof page>>();
+      mocks.getConversation
+        .mockReturnValueOnce(pending.promise)
+        .mockResolvedValueOnce(page([], { nextToken: null }));
+      try {
+        run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'reconnect', 'a-10'));
+        await settle();
+        expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+        run.dispatch(chatLiveStreamPhaseChanged(AGENT, 'connecting'));
+        // Completion before the old response must not make that response current again.
+        run.dispatch(
+          chatTranscriptSnapshotApplied(AGENT, {
+            truncated: true,
+            totalMessages: 30,
+            nextToken: 'fresh-older',
+            ...(discarded ? { resumed: false } : {}),
+            initialHistory: { target: 20, received: 20, complete: true },
+          }),
+        );
+        pending.resolve(
+          page([hasPredecessor ? userMessage('u-9', 9) : message('a-9', 9), message('a-10', 10)], {
+            nextToken: 'stale-older',
+            prevToken: 'stale-newer',
+          }),
+        );
+        await settle();
+        await settle();
+        expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+        expect(run.chat()?.previousUserMessageLoad?.status).toBe('cancelled');
+        expect(run.history()?.messages ?? []).toEqual([]);
+        run.dispatch(previousUserMessageLoadReleased(AGENT, 'reconnect'));
+        await settle();
+        expect(run.chat()?.fetchingHistorySeek).toBe(false);
+        expect(run.chat()?.scrollbackOlderToken).toBe(discarded ? 'fresh-older' : 'snapshot-older');
+        expect(run.chat()?.scrollbackGapToken).toBeNull();
+        // Snapshot reset seeds its cursor through the normal page-settled action.
+        expect(run.chat()?.scrollbackWalkStarted).toBe(true);
+      } finally {
+        run.task.cancel();
+        mocks.getConversation.mockReset();
+      }
+    },
+  );
+
+  it('cancels a continuation response while reconnect history is still pending', async () => {
+    const run = seededTail();
+    const pending = deferred<ReturnType<typeof page>>();
+    mocks.getConversation
+      .mockResolvedValueOnce(
+        page([message('a-9', 9), message('a-10', 10)], { nextToken: 'before-9' }),
+      )
+      .mockReturnValueOnce(pending.promise);
+    try {
+      run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'continuation', 'a-10'));
+      await settle();
+      expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+      run.dispatch(chatLiveStreamPhaseChanged(AGENT, 'connecting'));
+      pending.resolve(page([message('a-8', 8)], { nextToken: 'before-8' }));
+      await settle();
+      expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+      expect(run.chat()?.initialHistoryPending).toBe(true);
+      expect(run.chat()?.previousUserMessageLoad?.status).toBe('cancelled');
+      expect(run.chat()?.fetchingHistorySeek).toBe(false);
+      expect(run.chat()?.scrollbackOlderToken).toBe('snapshot-older');
+      expect(run.history()).toBeUndefined();
+    } finally {
+      run.task.cancel();
+      mocks.getConversation.mockReset();
+    }
+  });
+
+  it('releases a landed previous-user seek without stale cursors when reconnect starts before panel release', async () => {
+    const run = seededTail();
+    mocks.getConversation.mockResolvedValueOnce(
+      page([userMessage('u-9', 9), message('a-10', 10)], {
+        nextToken: 'stale-older',
+        prevToken: 'stale-newer',
+      }),
+    );
+    try {
+      run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'landed', 'a-10'));
+      await settle();
+      expect(run.chat()?.previousUserMessageLoad?.status).toBe('found');
+      run.dispatch(chatLiveStreamPhaseChanged(AGENT, 'connecting'));
+      run.dispatch(previousUserMessageLoadReleased(AGENT, 'landed'));
+      await settle();
+      expect(run.chat()?.fetchingHistorySeek).toBe(false);
+      expect(run.chat()?.scrollbackOlderToken).toBe('snapshot-older');
+      expect(run.chat()?.scrollbackGapToken).toBeNull();
+    } finally {
+      run.task.cancel();
+      mocks.getConversation.mockReset();
+    }
+  });
+
+  it('walks with the exact anchored wire, seeds the landing estimate, and holds the seek until release', async () => {
+    const run = seededTail();
+    mocks.getConversation.mockResolvedValueOnce(
+      page([userMessage('u-8', 8), message('a-9', 9), message('a-10', 10)], {
+        totalMessages: 12,
+        nextToken: 'before-8',
+        prevToken: 'after-10',
+      }),
+    );
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-1', 'a-10'));
+    expect(run.chat()?.fetchingHistorySeek).toBe(true);
+    await settle();
+
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, CHAT_PAGE_SIZE, undefined, 'a-10', undefined, WS],
+    ]);
+    expect(run.chat()?.previousUserMessageLoad).toEqual({
+      requestId: 'req-1',
+      currentMessageId: 'a-10',
+      status: 'found',
+      targetId: 'u-8',
+      epoch: run.chat()?.scrollbackDiscardEpoch,
+    });
+    // Clicked row ordinal 10 minus the two rows before the anchor.
+    expect(run.history()?.startOrdinalEstimate).toBe(8);
+    expect(run.history()?.oldestReached).toBe(false);
+    expect(run.chat()?.fetchingHistorySeek).toBe(true);
+    expect(run.chat()?.scrollbackOlderToken).toBe('snapshot-older');
+
+    run.dispatch(previousUserMessageLoadConsumed(AGENT, 'req-1'));
+    expect(run.chat()?.previousUserMessageLoad?.consumed).toBe(true);
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-1'));
+    await settle();
+
+    expect(run.chat()?.previousUserMessageLoad).toBeUndefined();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.scrollbackOlderToken).toBe('before-8');
+    expect(run.chat()?.scrollbackGapToken).toBe('after-10');
+    run.task.cancel();
+  });
+
+  it('follows backward cursors to a confirmed start and marks the oldest page', async () => {
+    const run = seededTail();
+    mocks.getConversation
+      .mockResolvedValueOnce(page([message('a-9', 9), message('a-10', 10)], { nextToken: 'b-9' }))
+      .mockResolvedValueOnce(page([message('a-7', 7), message('a-8', 8)], { nextToken: null }));
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-start', 'a-10'));
+    await settle();
+    await settle();
+
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, CHAT_PAGE_SIZE, undefined, 'a-10', undefined, WS],
+      [AGENT, CHAT_PAGE_SIZE, 'b-9', undefined, undefined, WS],
+    ]);
+    expect(run.chat()?.previousUserMessageLoad?.status).toBe('start');
+    expect(run.chat()?.previousUserMessageLoad?.targetId).toBeUndefined();
+    expect(run.history()?.startOrdinalEstimate).toBe(0);
+    expect(run.history()?.oldestReached).toBe(true);
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-start'));
+    await settle();
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    run.task.cancel();
+  });
+
+  it('waits for an in-flight serial page before reserving the shared seek slot', async () => {
+    const run = seededTail();
+    const older = deferred<ReturnType<typeof page>>();
+    mocks.getConversation.mockReturnValueOnce(older.promise);
+    run.dispatch(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(run.chat()?.fetchingOlderHistory).toBe(true);
+
+    mocks.getConversation.mockResolvedValueOnce(
+      page([userMessage('u-9', 9), message('a-10', 10)], { nextToken: 'b-9' }),
+    );
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-wait', 'a-10'));
+    await settle();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+
+    older.resolve(page([message('a-8', 8)], { nextToken: 'before-8' }));
+    await settle();
+    await settle();
+    expect(mocks.getConversation.mock.calls[1]).toEqual([
+      AGENT,
+      CHAT_PAGE_SIZE,
+      undefined,
+      'a-10',
+      undefined,
+      WS,
+    ]);
+    expect(run.chat()?.previousUserMessageLoad?.status).toBe('found');
+    expect(run.chat()?.fetchingHistorySeek).toBe(true);
+    // The held seek excludes further serial paging.
+    run.dispatch(olderHistoryPageRequested(WS, AGENT));
+    await settle();
+    expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-wait'));
+    await settle();
+    run.task.cancel();
+  });
+
+  it('drops a page resolving after a resumed:false discard and leaves post-discard state', async () => {
+    const run = seededTail();
+    const pending = deferred<ReturnType<typeof page>>();
+    mocks.getConversation.mockReturnValueOnce(pending.promise);
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-stale', 'a-10'));
+    await settle();
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 12,
+        nextToken: 'fresh-older',
+        resumed: false,
+      }),
+    );
+    await settle();
+
+    pending.resolve(page([userMessage('u-9', 9), message('a-10', 10)], { nextToken: 'stale' }));
+    await settle();
+    expect(run.chat()?.previousUserMessageLoad?.status).toBe('cancelled');
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    expect(run.history()).toBeUndefined();
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-stale'));
+    await settle();
+    expect(run.chat()?.previousUserMessageLoad).toBeUndefined();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.scrollbackOlderToken).toBe('fresh-older');
+    run.task.cancel();
+  });
+
+  it('does not settle landing cursors when a discard lands between outcome and release', async () => {
+    const run = seededTail();
+    mocks.getConversation.mockResolvedValueOnce(
+      page([userMessage('u-9', 9), message('a-10', 10)], {
+        nextToken: 'landing-older',
+        prevToken: 'landing-newer',
+      }),
+    );
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-held', 'a-10'));
+    await settle();
+    expect(run.chat()?.previousUserMessageLoad?.status).toBe('found');
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 12,
+        nextToken: 'fresh-older',
+        resumed: false,
+      }),
+    );
+    await settle();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.previousUserMessageLoad?.epoch).not.toBe(run.chat()?.scrollbackDiscardEpoch);
+    const settledBefore = run.dispatch.mock.calls.filter(
+      ([action]) => action.type === scrollbackSeekSettled.type,
+    ).length;
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-held'));
+    await settle();
+    expect(
+      run.dispatch.mock.calls.filter(([action]) => action.type === scrollbackSeekSettled.type),
+    ).toHaveLength(settledBefore);
+    expect(run.chat()?.scrollbackOlderToken).toBe('fresh-older');
+    run.task.cancel();
+  });
+
+  it('releases the seek without seeding when cancelled mid-walk, and a newer request proceeds', async () => {
+    const run = seededTail();
+    const first = deferred<ReturnType<typeof page>>();
+    mocks.getConversation.mockReturnValueOnce(first.promise);
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-old', 'a-10'));
+    await settle();
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-other'));
+    expect(run.chat()?.previousUserMessageLoad?.requestId).toBe('req-old');
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-old'));
+    await settle();
+    expect(run.chat()?.previousUserMessageLoad).toBeUndefined();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+
+    first.resolve(page([userMessage('u-9', 9), message('a-10', 10)], { nextToken: 'stale' }));
+    await settle();
+    expect(run.history()).toBeUndefined();
+
+    mocks.getConversation.mockResolvedValueOnce(
+      page([userMessage('u-7', 7), message('a-11', 11)], { nextToken: 'b-7' }),
+    );
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-new', 'a-11'));
+    await settle();
+    expect(mocks.getConversation.mock.calls[1]).toEqual([
+      AGENT,
+      CHAT_PAGE_SIZE,
+      undefined,
+      'a-11',
+      undefined,
+      WS,
+    ]);
+    expect(run.chat()?.previousUserMessageLoad).toMatchObject({
+      requestId: 'req-new',
+      status: 'found',
+      targetId: 'u-7',
+    });
+    run.task.cancel();
+  });
+
+  it('settles a wire failure as error and frees the slot on release', async () => {
+    const run = seededTail();
+    mocks.getConversation.mockRejectedValueOnce(new Error('offline'));
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-error', 'a-10'));
+    await settle();
+    expect(run.chat()?.previousUserMessageLoad?.status).toBe('error');
+    expect(run.history()).toBeUndefined();
+    run.dispatch(previousUserMessageLoadReleased(AGENT, 'req-error'));
+    await settle();
+    expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    expect(run.chat()?.scrollbackOlderToken).toBeNull();
+    run.task.cancel();
+  });
+
+  it('ends the hold without settling when the session is removed', async () => {
+    const run = seededTail();
+    mocks.getConversation.mockResolvedValueOnce(
+      page([userMessage('u-9', 9), message('a-10', 10)], { nextToken: 'b-9' }),
+    );
+    run.dispatch(previousUserMessageLoadRequested(WS, AGENT, 'req-gone', 'a-10'));
+    await settle();
+    const settledBefore = run.dispatch.mock.calls.filter(
+      ([action]) => action.type === scrollbackSeekSettled.type,
+    ).length;
+    run.dispatch(removeSession(AGENT));
+    await settle();
+    expect(
+      run.dispatch.mock.calls.filter(([action]) => action.type === scrollbackSeekSettled.type),
+    ).toHaveLength(settledBefore);
+    run.task.cancel();
   });
 });

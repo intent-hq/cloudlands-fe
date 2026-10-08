@@ -84,7 +84,11 @@ import {
   resolveIntrinsicPanelCanvasWidth,
   resolveUserPanelCanvasResize,
 } from './panel-layout-width-provenance';
-import { findEquivalentPanelTab, type EquivalentPanelTab } from './panel-tab-identity';
+import {
+  findEquivalentPanelTab,
+  panelTabBelongsToLayout,
+  type EquivalentPanelTab,
+} from './panel-tab-identity';
 import { rebaseRequestedUrlForNavigation } from './browser-tab-rehydration';
 import type { ContextLink } from '../../../../shared/types';
 
@@ -303,6 +307,7 @@ export const panelLayoutScopeUnmounted = createAction<[layoutId: string]>(
  * `preserveFocus` (agent-driven opens) activates the tab in the target panel
  * so its content paints, but keeps the current panel focus — the same
  * contract as `openTabInRightmostColumn`, for `position: same` opens.
+ * `preserveActiveTab` also keeps the user's current tab and skips reveal.
  */
 export const openTab = createAction(
   'panelLayout/openTab',
@@ -316,6 +321,7 @@ export const openTab = createAction(
     allowDuplicate?: boolean,
     preserveFocus?: boolean,
     insertAfterActiveTab?: boolean,
+    preserveActiveTab?: boolean,
   ) => ({
     wsId,
     tab,
@@ -326,6 +332,7 @@ export const openTab = createAction(
     ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
     ...(preserveFocus === true ? { preserveFocus: true } : {}),
     ...(insertAfterActiveTab === true ? { insertAfterActiveTab: true } : {}),
+    ...(preserveActiveTab === true ? { preserveActiveTab: true } : {}),
   }),
 );
 
@@ -388,6 +395,8 @@ export const openTabInAdjacentOrSplit = createAction(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
     options?: {
+      /** Automatic restore reconciliation, never a manual selection. */
+      origin?: 'layout-restore';
       animated?: boolean;
       force?: boolean;
       allowDuplicate?: boolean;
@@ -399,6 +408,7 @@ export const openTabInAdjacentOrSplit = createAction(
     wsId,
     tab,
     sourcePanelId,
+    ...(options?.origin === undefined ? {} : { origin: options.origin }),
     animated: options?.animated ?? false,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
@@ -2308,7 +2318,7 @@ panelLayoutReducer.with(loadLayoutHistory, (state, { payload }) => {
 // --- Open Tab ---
 panelLayoutReducer.with(openTab, (state, { payload }) => {
   const { wsId, tab, panelId, newTabId, timestamp } = payload;
-  if (tab.workspaceId && tab.workspaceId !== wsId) return state;
+  if (!panelTabBelongsToLayout(wsId, tab)) return state;
   let ws = getWorkspaceState(state, wsId);
 
   // Spec-note guard — bypass when force is true (user-initiated opens)
@@ -2319,6 +2329,26 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
   const existing = payload.allowDuplicate
     ? null
     : findEquivalentPanelTab(wsId, ws, tab, targetPanelId);
+  if (payload.preserveActiveTab) {
+    const destinationPanelId = existing?.panelId ?? targetPanelId;
+    const panel = destinationPanelId ? ws.panels[destinationPanelId] : undefined;
+    if (!panel || !destinationPanelId) return state;
+    const next = existing ? ws : saveToHistory(ws, timestamp);
+    return setWorkspaceState(state, wsId, {
+      ...next,
+      panels: {
+        ...next.panels,
+        [destinationPanelId]: {
+          ...panel,
+          tabs: existing
+            ? updateEquivalentTabData(panel, existing, tab)
+            : [...panel.tabs, { ...tab, id: newTabId }],
+          activeTabId: panel.activeTabId ?? existing?.tab.id ?? newTabId,
+          pristine: false,
+        },
+      },
+    });
+  }
   if (payload.preserveFocus) {
     if (existing) {
       return setWorkspaceState(

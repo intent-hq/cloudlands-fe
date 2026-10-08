@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Input } from '$lib/components/ui/input';
   /**
    * CommitsTimeline - Commits section of the sidebar changes panel
@@ -561,7 +562,7 @@
                 >
                   <span
                     class="flex-1 truncate text-ui text-subtle {canAmendCommit(index) ? '' : ''}"
-                    title={commit.message}
+                    use:truncatedTitle={commit.message}
                   >
                     {commit.message}
                   </span>
@@ -788,7 +789,7 @@
               class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
               onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
             >
-              <span class="text-ui text-subtle truncate flex-1" title={commit.message}>
+              <span class="text-ui text-subtle truncate flex-1" use:truncatedTitle={commit.message}>
                 {commit.message}
               </span>
             </Button>

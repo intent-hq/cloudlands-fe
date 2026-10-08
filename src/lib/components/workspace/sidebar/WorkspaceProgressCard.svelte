@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -92,7 +93,9 @@
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
-  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
+  import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
     presencePersonNameWithForge,
@@ -100,14 +103,14 @@
     type PresenceCircle,
     type PresenceCircleAction,
   } from '$features/presence/components/presence-person';
+  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
   import {
-    selectWorkspacePresenceFocusTargets,
-    selectWorkspacePresencePeople,
-    selectPresenceContext,
-  } from '$store/renderer/slices/presence/presence-selectors';
-  import { findSourcePanelId, navigateToNote } from '$lib/utils/workspace-navigation';
+    PRESENCE_FOLLOW_VISIBLE_LIMIT,
+    selectPresenceFollowTargets,
+  } from '$store/renderer/slices/presence-follow/presence-follow-selectors';
+  import { followPresencePersonRequested } from '$store/renderer/slices/presence-follow/presence-follow-slice';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -188,6 +191,7 @@
       ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
       : ($workspace?.repositoryPath?.split('/').pop() ?? 'Repository'),
   );
+  const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
 
   // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
@@ -435,8 +439,7 @@
   // neither does a guest window or a window whose identity has not settled
   // (`selectHidesOwnerWorkspaceActions`), whatever `myRole` the row carries.
   // On top of that the Multiplayer lab must be on: with it off (the default)
-  // even the owner gets no Share item — and no presence-avatar fallback either,
-  // since that fallback reuses this action.
+  // even the owner gets no Share item.
   const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const shareAction: MenuAction | null = $derived(
     $canShare$
@@ -459,70 +462,79 @@
   // Multiplayer presence row: everybody else on this shared workspace, the
   // offline members greyscale, so the row shows even while only this window
   // is online. An avatar takes the viewer to where that person looks right
-  // now (their agent chat, else their note); with no such focus it opens the
-  // owner's Share screen and stays inert for a non-owner.
+  // now (their agent chat, else their note); unknown destinations are inert.
   const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
-  const presenceFocusTargets$ = selectWorkspacePresenceFocusTargets(workspaceIdStore);
+  const presenceFocusTargets$ = selectPresenceFollowTargets(workspaceIdStore);
   const presencePersonAction = $derived.by(() => {
     const targets = $presenceFocusTargets$;
     const agents = $workspaceAgentSessions$;
     const allNotes = $notes;
     const wsId = $workspace?.id ? String($workspace.id) : undefined;
-    const share = shareAction?.onClick ?? null;
-    const context = selectPresenceContext.select(appStore.state);
     return (person: PresenceCircle): PresenceCircleAction => {
-      // The hover names the person's forge too: "Ada · @ada on GitHub · on Coordinator".
       const name = person.hostRole
         ? presencePersonLabel(person)
         : presencePersonNameWithForge(person);
-      const target = targets[person.principalId];
-      const guarded = (action: (event: MouseEvent) => void) => (event: MouseEvent) => {
-        if (!wsId || !context || context !== selectPresenceContext.select(appStore.state)) return;
-        if (
-          !selectWorkspacePresencePeople
-            .select(appStore.state, wsId)
-            .some((p) => p.principalId === person.principalId)
-        )
-          return;
-        const currentTarget = selectWorkspacePresenceFocusTargets.select(appStore.state, wsId)[
-          person.principalId
-        ];
-        if (JSON.stringify(currentTarget) !== JSON.stringify(target)) return;
-        action(event);
-      };
-      if (target?.kind === 'agent') {
-        const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
+      const entry = targets[person.principalId];
+      const target = entry?.target;
+      if (!entry || !target)
         return {
-          label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
-          onSelect: wsId
-            ? guarded((event) =>
-                appStore.dispatch(
-                  openAgentTabRequested(wsId, {
-                    agentId: target.agentId,
-                    sourcePanelId: findSourcePanelId(event.target),
-                    openInAdjacentPanel: isCmdClickModifier({ event }),
-                  }),
-                ),
-              )
-            : null,
+          label:
+            !person.hostRole && !person.online
+              ? m.workspace_progressCard_presenceOffline_tooltip({ name })
+              : name,
+          onSelect: null,
         };
-      }
-      if (target?.kind === 'note') {
-        const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
-        return {
-          label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
-          onSelect: wsId
-            ? guarded(() => void navigateToNote(target.noteId, { workspaceId: wsId }))
-            : null,
-        };
-      }
+      const sameWorkspace = target.workspaceId === wsId;
+      const agent = sameWorkspace
+        ? agents.find((s) => String(s.id) === target.agentId)?.name
+        : undefined;
+      const note = sameWorkspace
+        ? allNotes.find((n) => String(n.id) === target.noteId)?.title
+        : undefined;
+      const viewLabel = target.agentId
+        ? m.workspace_progressCard_presenceOnAgent_tooltip({
+            name,
+            agent: agent || m.layout_tabTypes_agent_title(),
+          })
+        : target.noteId
+          ? m.workspace_progressCard_presenceOnNote_tooltip({
+              name,
+              note: note || m.layout_tabTypes_note_title(),
+            })
+          : name;
       return {
-        label: person.hostRole
-          ? name
-          : person.online
-            ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
-            : m.workspace_progressCard_presenceOffline_tooltip({ name }),
-        onSelect: share ? guarded(share) : null,
+        label:
+          !sameWorkspace || (!target.agentId && !target.noteId)
+            ? m.workspace_progressCard_presenceAtWorkspace_tooltip({
+                name: viewLabel,
+                workspace: entry.workspaceTitle,
+              })
+            : viewLabel,
+        onSelect: wsId
+          ? (event) => {
+              const current = selectPresenceFollowTargets.select(appStore.state, wsId)[
+                person.principalId
+              ];
+              if (
+                !current ||
+                current.scope !== entry.scope ||
+                current.generation !== entry.generation ||
+                current.seq !== entry.seq
+              )
+                return;
+              appStore.dispatch(
+                followPresencePersonRequested(
+                  entry.scope,
+                  person.principalId,
+                  entry.generation,
+                  entry.seq,
+                  crypto.randomUUID(),
+                  findSourcePanelId(event.target),
+                  isCmdClickModifier({ event }),
+                ),
+              );
+            }
+          : null,
       };
     };
   });
@@ -552,41 +564,67 @@
   // eligible client could take over (or the pin is offline).
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
-  const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
+  const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
+  const principalActionContext$ = selectPrincipalActionContext();
+  const primaryAlreadySelected = $derived(
+    Boolean(
+      $drivingClient$.ownClientId && $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
+    ),
+  );
+  const canSetPrimaryClient = $derived(
+    Boolean(
+      workspaceId &&
+      $canSetPrimaryClient$ &&
+      !primaryAlreadySelected &&
+      $drivingClient$.eligibleClients.some(
+        (client) => client.clientId === $drivingClient$.ownClientId && client.connected,
+      ),
+    ),
+  );
 
-  // "Set Current Client as Primary": pin this workspace's browser to this
-  // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
-  // here (PROTOCOL §5.1 workspace.setBrowserClient). Offered only while
-  // another client drives (or the pin is offline); hidden when this app
-  // already drives or its own clientId is unknown. The menu action only opens
-  // the confirmation; the RPC is dispatched on confirm.
-  let confirmingSetPrimaryClient = $state(false);
+  // Recovery remains discoverable even when a stale claimed-tab host leaves
+  // driving unresolved. Only explicit confirmation can pin and re-home tabs.
+  let pendingPrimaryClient = $state<{
+    workspaceId: string;
+    clientId: string;
+    context: string | null;
+  } | null>(null);
 
-  const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
-    const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
-    return {
-      id: 'set-primary-client',
-      label: m.workspace_drivingClient_setPrimary_label(),
-      icon: faGlobe,
-      dividerBefore: true,
-      onClick: () => {
-        confirmingSetPrimaryClient = true;
-      },
-    };
+  const setPrimaryClientAction: MenuAction = $derived({
+    id: 'set-primary-client',
+    label: m.workspace_drivingClient_setPrimary_label(),
+    icon: faGlobe,
+    dividerBefore: true,
+    checked: primaryAlreadySelected,
+    disabled: !canSetPrimaryClient,
+    onClick: () => {
+      if (!workspaceId || !canSetPrimaryClient) return;
+      pendingPrimaryClient = {
+        workspaceId,
+        clientId: $drivingClient$.ownClientId,
+        context: $principalActionContext$,
+      };
+    },
   });
 
   function handleConfirmSetPrimaryClient() {
-    confirmingSetPrimaryClient = false;
-    const ownClientId = $drivingClient$.ownClientId;
-    if (!workspaceId || !ownClientId) return;
-    appStore.dispatch(setWorkspaceBrowserClientRequested(workspaceId, ownClientId));
+    const pending = pendingPrimaryClient;
+    pendingPrimaryClient = null;
+    if (
+      !pending ||
+      !canSetPrimaryClient ||
+      pending.workspaceId !== workspaceId ||
+      pending.clientId !== $drivingClient$.ownClientId ||
+      pending.context !== $principalActionContext$
+    )
+      return;
+    appStore.dispatch(setWorkspaceBrowserClientRequested(pending.workspaceId, pending.clientId));
   }
 
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
-    ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
+    setPrimaryClientAction,
     ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
@@ -1066,7 +1104,7 @@
               <div class="flex min-w-0 items-center gap-2">
                 <p
                   class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                  title={repositoryLabel}
+                  use:truncatedTitle={repositoryLabel}
                 >
                   {repositoryLabel}
                 </p>
@@ -1081,12 +1119,13 @@
                 <Button
                   variant="plain"
                   class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
-                  title={workspacePath}
                   aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
                   onclick={copyRepoPath}
                   data-sidebar-repository-path-copy
                 >
-                  <span class="block min-w-0 truncate">{workspacePath}</span>
+                  <span class="block min-w-0 truncate" use:truncatedTitle={workspacePath}
+                    >{workspacePath}</span
+                  >
                 </Button>
               {/if}
               {#if $workspace?.checkoutMode}
@@ -1131,7 +1170,7 @@
                 <div class="flex min-w-0 items-center gap-2">
                   <p
                     class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                    title={$workspace.branch}
+                    use:truncatedTitle={$workspace.branch}
                   >
                     {$workspace.branch}
                   </p>
@@ -1156,6 +1195,7 @@
         <div class="flex h-5 w-full min-w-0 items-center" data-sidebar-presence-row>
           <PresenceAvatarStack
             people={$presencePeople$}
+            maxVisible={PRESENCE_FOLLOW_VISIBLE_LIMIT}
             size={18}
             action={presencePersonAction}
             class="pl-0.5"
@@ -1280,20 +1320,25 @@
           {:else if $workspace && currentStatusMessage}
             <Button
               variant="plain"
-              truncateLabel={false}
-              labelClass="line-clamp-3"
+              wrapContent={false}
               class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
               onclick={startEditingStatusMessage}
-              title={currentStatusMessage}
               aria-label={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_ariaLabel()
                 : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+              aria-describedby={statusDescriptionId}
               disabled={!$workspace}
             >
-              {currentStatusMessage}
+              <span
+                id={statusDescriptionId}
+                class="min-w-0 line-clamp-3"
+                use:truncatedTitle={currentStatusMessage}
+              >
+                {currentStatusMessage}
+              </span>
             </Button>
           {/if}
           <span
@@ -1396,12 +1441,14 @@
   </div>
 </div>
 
-{#if drivingClientSwitch}
+{#if pendingPrimaryClient}
   <SetPrimaryClientConfirmDialog
-    open={confirmingSetPrimaryClient}
-    currentHost={drivingClientSwitch.hostName}
+    open
+    currentHost={$drivingClient$.driving
+      ? browserClientDisplayName($drivingClient$.driving)
+      : undefined}
     onConfirm={handleConfirmSetPrimaryClient}
-    onCancel={() => (confirmingSetPrimaryClient = false)}
+    onCancel={() => (pendingPrimaryClient = null)}
   />
 {/if}
 

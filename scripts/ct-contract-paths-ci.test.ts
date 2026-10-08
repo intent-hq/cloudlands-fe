@@ -547,6 +547,33 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
   });
 });
 
+describe('portable fixture relevance', () => {
+  const script = stepRunBlock(releaseFastPath, 'Evaluate portable fixture relevance');
+  it.each([
+    ['src/features/dev-console/TrafficInspector.test.ts', true],
+    ['src/features/backend/main/backend-connection.test.ts', true],
+    ['src/features/backend/main/__tests__/isolated-test-package.test.ts', true],
+    ['src/main/isolated-test-profile.test.ts', true],
+    ['src/test/fixtures/isolated-profile-home.ts', true],
+    ['.github/workflows/intent-pr.yml', true],
+    ['src/other.test.ts', false],
+  ])('classifies %s without requiring unrelated native suites', (file, required) => {
+    const { root, base } = checkoutWith(file);
+    const output = join(root, 'github-output');
+    const result = bash(script, { BASE_SHA: base, GITHUB_OUTPUT: output }, root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe(`portable_fixtures_required=${required}`);
+  });
+
+  it('requires native tests if the diff cannot be read', () => {
+    const { root } = checkoutWith('src/other.ts');
+    const output = join(root, 'github-output');
+    const result = bash(script, { BASE_SHA: 'missing-ref', GITHUB_OUTPUT: output }, root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe('portable_fixtures_required=true');
+  });
+});
+
 describe('authored browser tests require their complete PR suites', () => {
   it.each([
     ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
@@ -617,6 +644,13 @@ describe('authored browser tests require their complete PR suites', () => {
     ['playwright/app-stubs/navigation.ts', true],
     ['test/vite-harness-cache.mjs', true],
     ['test/fixtures/browser-lifetime/main.cjs', true],
+    ['test/fixtures/repository-checkout/playwright.config.ts', true],
+    ['test/fixtures/repository-checkout/main.ts', true],
+    ['src/features/backend/main/repository-checkout-feed.ts', true],
+    ['src/lib/client/live/repository-checkout-transport.ts', true],
+    ['src/shared/types/repository-checkout.ts', true],
+    ['.github/workflows/browser-tests.yml', true],
+    ['.github/workflows/intent-pr.yml', true],
     ['package.json', true],
     ['pnpm-lock.yaml', true],
     ['svelte.config.js', true],
@@ -624,6 +658,7 @@ describe('authored browser tests require their complete PR suites', () => {
     ['src/features/browser/view.svelte', false],
     ['playwright-ct.config.ts', false],
     ['test/fixtures/browser-lifetime-other/main.cjs', false],
+    ['test/fixtures/repository-checkout-other/main.ts', false],
   ])('classifies Electron setup path %s as required=%s', (file, required) => {
     const { root, base } = checkoutWith(file);
     const output = join(root, 'github-output');
@@ -785,7 +820,7 @@ describe('shared browser jobs and nightly routing', () => {
     const ct = jobLines('test-ct', browserWorkflow);
     expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
     expect(field(ct, 'fail-fast')).toBe('false');
-    expect(jobField(ct, 'timeout-minutes')).toBe('40');
+    expect(jobField(ct, 'timeout-minutes')).toBe('50');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
       '--max-old-space-size=8192',
     );
@@ -1126,6 +1161,8 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     RESULT_checks: 'success',
     RESULT_build_web: 'success',
     RESULT_test: 'success',
+    RESULT_test_portable_fixtures: 'skipped',
+    PORTABLE_FIXTURES_REQUIRED: 'false',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
     RESULT_test_playwright: ct,
@@ -1147,6 +1184,33 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
       { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ELECTRON_REQUIRED: 'false', ...env },
       tmpdir(),
     );
+
+  it.each(['pull_request', 'merge_group'])(
+    'requires native fixture success on relevant %s diffs',
+    (event) => {
+      for (const outcome of ['success', 'failure', 'cancelled', 'skipped', '']) {
+        const result = runGate({
+          ...results('success', event),
+          FAST_PATH: 'false',
+          CT_REQUIRED: 'true',
+          PORTABLE_FIXTURES_REQUIRED: 'true',
+          RESULT_test_portable_fixtures: outcome,
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(outcome === 'success' ? 0 : 1);
+      }
+    },
+  );
+
+  it('rejects missing native fixture classification even with a successful job', () => {
+    const result = runGate({
+      ...results('success'),
+      FAST_PATH: 'false',
+      CT_REQUIRED: 'true',
+      PORTABLE_FIXTURES_REQUIRED: '',
+      RESULT_test_portable_fixtures: 'success',
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+  });
 
   it('waits for the root matrix and runs even when a shard fails or is cancelled', () => {
     const start = gate.indexOf('    needs:');

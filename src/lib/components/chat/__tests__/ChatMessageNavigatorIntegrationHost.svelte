@@ -9,10 +9,12 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { previousUserMessageLoadSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
   import {
     addMessage,
     bulkUpsertSessions,
     prependHistoryMessages,
+    replaceMessages,
     seedHistoryAround,
     setHistoryOldestReached,
     setAgentStreaming,
@@ -32,7 +34,9 @@
   const workspaceId = 'message-navigator-integration';
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: (target) => [target.runSaga(previousUserMessageLoadSaga)],
+  });
   let {
     theme = 'light',
     messages: fixtureMessages,
@@ -42,6 +46,7 @@
     totalMessages = 1000,
     conversationPages = [],
     deferPages = false,
+    discardSnapshot = false,
     retired = false,
   }: {
     theme?: 'light' | 'dark';
@@ -54,6 +59,7 @@
       Awaited<ReturnType<typeof appClient.agents.getConversation>> | { error: string }
     )[];
     deferPages?: boolean;
+    discardSnapshot?: boolean;
     retired?: boolean;
   } = $props();
 
@@ -161,6 +167,11 @@
     } as never),
   );
   store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
+  if (discardSnapshot) {
+    store.dispatch(
+      chatTranscriptSnapshotApplied(agentId, { truncated: true, totalMessages, resumed: false }),
+    );
+  }
   if (historyMessages.length > 0) {
     store.dispatch(
       historyGap
@@ -172,7 +183,7 @@
     // real panel otherwise drops a detached segment on return to the live tail.
     if (historyGap) store.dispatch(scrollbackFetchStarted(agentId, 'gap'));
   }
-  if (!historyStartLoaded) {
+  if (!historyStartLoaded && !discardSnapshot) {
     store.dispatch(chatTranscriptSnapshotApplied(agentId, { truncated: true, totalMessages }));
   }
   store.dispatch(setAgents(workspaceId, [session]));
@@ -251,13 +262,19 @@
       return structuredClone(page);
     };
   }
-  function discardTranscript() {
+  function truncateNavigationTarget() {
+    const currentMessages = fixtureMessages ?? messages;
+    const targetIndex = currentMessages.findIndex((message) => message.id === 'user-23');
+    store.dispatch(replaceMessages(agentId, currentMessages.slice(0, targetIndex)));
+  }
+
+  function discardTranscript(replayed?: true) {
     store.dispatch(
-      chatTranscriptSnapshotApplied(agentId, {
-        truncated: true,
-        totalMessages: 1000,
-        resumed: false,
-      }),
+      chatTranscriptSnapshotApplied(
+        agentId,
+        { truncated: true, totalMessages, resumed: false },
+        replayed,
+      ),
     );
   }
   onDestroy(() => {
@@ -279,8 +296,16 @@
   <button class="sr-only" data-testid="release-page" onclick={() => pendingPages.shift()?.()}
     >Release page</button
   >
-  <button class="sr-only" data-testid="discard-transcript" onclick={discardTranscript}
+  <button
+    class="sr-only"
+    data-testid="truncate-navigation-target"
+    onclick={truncateNavigationTarget}>Truncate navigation target</button
+  >
+  <button class="sr-only" data-testid="discard-transcript" onclick={() => discardTranscript()}
     >Discard transcript</button
+  >
+  <button class="sr-only" data-testid="replay-discard" onclick={() => discardTranscript(true)}
+    >Replay discard snapshot</button
   >
   <button
     class="sr-only"

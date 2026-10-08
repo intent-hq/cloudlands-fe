@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
+  updateSpecialistDraft,
+  discardSpecialistDraft,
+  setSpecialistCreation,
   specialistsReducer,
   initialState,
   setBundledSpecialists,
@@ -107,6 +110,82 @@ describe('specialistsReducer', () => {
       // This test documents the expected behavior that the saga should preserve codingAgent
       expect(getItems(state.fileSpecialists)[0].id).toBe('file-1');
       expect(getItems(state.fileSpecialists)[0].name).toBe('Updated Name');
+    });
+  });
+});
+
+describe('specialist creation drafts', () => {
+  it('isolates contexts and keeps every field until explicit discard', () => {
+    let state = specialistsReducer(
+      initialState,
+      updateSpecialistDraft('workspace:A', {
+        name: 'A',
+        description: 'Description',
+        behaviorPrompt: '',
+        codingAgent: 'codex',
+        model: 'codex:gpt',
+        reasoningEffort: 'high',
+      }),
+    );
+    state = specialistsReducer(state, updateSpecialistDraft('user', { name: 'Global' }));
+    expect(state.creationByContext['workspace:A'].draft).toEqual({
+      name: 'A',
+      description: 'Description',
+      behaviorPrompt: '',
+      codingAgent: 'codex',
+      model: 'codex:gpt',
+      reasoningEffort: 'high',
+    });
+    state = specialistsReducer(state, discardSpecialistDraft('workspace:A'));
+    expect(state.creationByContext['workspace:A']).toBeUndefined();
+    expect(state.creationByContext.user.draft.name).toBe('Global');
+  });
+
+  it.each(['saving', 'refreshing'] as const)('blocks edits and discard while %s', (status) => {
+    const state = specialistsReducer(
+      initialState,
+      setSpecialistCreation('user', {
+        draft: { name: 'Saving', description: '' },
+        status,
+        specialistId: 'saving',
+      }),
+    );
+    expect(specialistsReducer(state, updateSpecialistDraft('user', { name: 'Lost' }))).toBe(state);
+    expect(specialistsReducer(state, discardSpecialistDraft('user'))).toBe(state);
+  });
+
+  it('locks a written draft for refresh-only recovery but permits explicit discard', () => {
+    const state = specialistsReducer(
+      initialState,
+      setSpecialistCreation('user', {
+        draft: { name: 'Saved', description: '' },
+        status: 'refresh-failed',
+        specialistId: 'saved',
+        error: 'Offline',
+      }),
+    );
+    expect(specialistsReducer(state, updateSpecialistDraft('user', { name: 'Another' }))).toBe(
+      state,
+    );
+    expect(
+      specialistsReducer(state, discardSpecialistDraft('user')).creationByContext.user,
+    ).toBeUndefined();
+  });
+
+  it('allows correction after a failed write and clears the old error', () => {
+    const state = specialistsReducer(
+      initialState,
+      setSpecialistCreation('user', {
+        draft: { name: 'Old', description: '' },
+        status: 'save-failed',
+        error: 'Offline',
+      }),
+    );
+    const next = specialistsReducer(state, updateSpecialistDraft('user', { name: 'Corrected' }));
+    expect(next.creationByContext.user).toEqual({
+      draft: { name: 'Corrected', description: '' },
+      status: 'editing',
+      error: undefined,
     });
   });
 });

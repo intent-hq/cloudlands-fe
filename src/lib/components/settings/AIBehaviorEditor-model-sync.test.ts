@@ -1,5 +1,6 @@
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { SpecialistDef } from '$lib/client/app-client';
 import { store } from '$store/renderer/store';
@@ -55,6 +56,7 @@ function publishWorkspace(def: SpecialistDef) {
 
 async function setup(def = initial, workspaceDef = def) {
   disposers.push(store.init());
+  admitLegacyPrincipal();
   const restore = preview.states.reasoning.setup?.();
   if (restore) disposers.push(restore);
   let saved = def;
@@ -230,14 +232,14 @@ it('keeps a project definition scoped instead of reading the same-id user defini
   };
   const harness = await setup(initial, project);
   const trigger = harness.root.container.querySelector('button[aria-haspopup="listbox"]')!;
-  // No workspace model catalog is loaded: the picker honestly renders the id.
-  expect(trigger.textContent).toContain('codex-preview-deep');
+  // The workspace catalog is cold, but shared learned names are already available.
+  expect(trigger.textContent).toContain('Deep');
   publishWorkspace({
     ...project,
     model: 'codex-preview-fast',
     resolvedModel: 'codex-preview-fast',
   });
-  await waitFor(() => expect(trigger.textContent).toContain('codex-preview-fast'));
+  await waitFor(() => expect(trigger.textContent).toContain('Fast'));
   expect(store.state.specialists.fileSpecialists.map['chief-of-staff'].model).toBe(
     'codex-preview-balanced',
   );
@@ -281,4 +283,100 @@ it('keeps imported specialist editing read-only', async () => {
   expect(harness.root.container.querySelector('button[aria-haspopup="listbox"]')).toBeNull();
   expect(screen.getByRole('textbox').hasAttribute('readonly')).toBe(true);
   expect(transport.request.mock.calls.some(([method]) => method === 'specialist.edit')).toBe(false);
+});
+
+it('restores the creation provider, model and effort after an acknowledged edit and remount', async () => {
+  const harness = await setup();
+  const workspaceId = WorkspaceId('workspace-a');
+  await harness.root.rerender({ activeView: { type: 'create-specialist' }, workspaceId });
+  await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Retained draft' } });
+  await fireEvent.input(screen.getByLabelText('Description'), {
+    target: { value: 'Retained description' },
+  });
+  await fireEvent.input(document.getElementById('create-specialist-prompt')!, {
+    target: { value: 'Retained prompt' },
+  });
+  let picker = harness.root.container.querySelector('button[aria-haspopup="listbox"]')!;
+  await fireEvent.click(picker);
+  await fireEvent.click(await screen.findByRole('tab', { name: 'Claude Code' }));
+  await fireEvent.click(await screen.findByRole('option', { name: /Balanced/ }));
+  await fireEvent.click(await screen.findByTestId('effort-picker-trigger'));
+  const listboxes = await screen.findAllByRole('listbox');
+  await fireEvent.pointerUp(
+    within(listboxes[listboxes.length - 1]).getByRole('option', { name: 'High' }),
+    { pointerType: 'mouse' },
+  );
+  await waitFor(() =>
+    expect(
+      store.state.specialists.creationByContext['workspace:workspace-a'].draft.reasoningEffort,
+    ).toBe('high'),
+  );
+  const draft = structuredClone(
+    store.state.specialists.creationByContext['workspace:workspace-a'].draft,
+  );
+  expect(draft).toMatchObject({
+    name: 'Retained draft',
+    description: 'Retained description',
+    behaviorPrompt: 'Retained prompt',
+    codingAgent: 'claude-code',
+    reasoningEffort: 'high',
+  });
+  expect(draft.model).toContain('claude-code-preview-balanced');
+
+  await harness.root.rerender({ activeView: { type: 'specialist', id: initial.id }, workspaceId });
+  picker = harness.root.container.querySelector('button[aria-haspopup="listbox"]')!;
+  await fireEvent.click(picker);
+  await fireEvent.click(await screen.findByRole('option', { name: /Fast/ }));
+  harness.acknowledge({
+    ...initial,
+    model: 'codex-preview-fast',
+    resolvedModel: 'codex-preview-fast',
+    reasoningEffort: undefined,
+  });
+  await waitFor(() =>
+    expect(store.state.specialists.fileSpecialists.map[initial.id].model).toBe(
+      'codex-preview-fast',
+    ),
+  );
+  await tick();
+  expect(picker.textContent).toContain('Fast');
+  expect(store.state.providerCatalog.byWorkspaceId?.['workspace-a'].specialists[0].model).toBe(
+    'codex-preview-balanced',
+  );
+  expect(store.state.specialists.creationByContext['workspace:workspace-a'].draft).toEqual(draft);
+
+  async function expectRestoredDraft(container: HTMLElement) {
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe(draft.name);
+    expect((screen.getByLabelText('Description') as HTMLInputElement).value).toBe(
+      draft.description,
+    );
+    expect((document.getElementById('create-specialist-prompt') as HTMLTextAreaElement).value).toBe(
+      draft.behaviorPrompt,
+    );
+    expect(store.state.specialists.creationByContext['workspace:workspace-a'].draft).toEqual(draft);
+    const trigger = container.querySelector('button[aria-haspopup="listbox"]')!;
+    expect(trigger.textContent).toContain('Balanced');
+    await fireEvent.click(trigger);
+    expect(screen.getByRole('tab', { name: 'Claude Code' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('option', { name: /Balanced/ }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(screen.getByTestId('effort-picker-trigger').textContent).toContain('High');
+    await fireEvent.click(trigger);
+  }
+
+  await harness.root.rerender({ activeView: { type: 'create-specialist' }, workspaceId });
+  await expectRestoredDraft(harness.root.container);
+  harness.root.unmount();
+  const remounted = render(AIBehaviorEditor, {
+    activeView: { type: 'create-specialist' },
+    workspaceId,
+  });
+  await tick();
+  await expectRestoredDraft(remounted.container);
+  await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  expect(store.state.specialists.creationByContext['workspace:workspace-a']).toBeUndefined();
+  await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe(''));
 });

@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, within, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import type { Writable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withHostPrincipal } from '../../../../test/fixtures/principal-state';
-import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage, QueuedMessage } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -11,6 +11,8 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '../chat-queue-edge-layout';
 import type { PinnedPromptTrackerOptions } from '../pinned-prompt';
 import { resetScaffold, scaffold } from './mocks/chat-panel-render-scaffold';
+
+const queueSnapshot = vi.hoisted(() => ({ store: null as Writable<QueuedMessage[]> | null }));
 
 const pinnedTracker = vi.hoisted(() => ({ options: null as PinnedPromptTrackerOptions | null }));
 
@@ -40,9 +42,20 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () =>
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
 );
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
-);
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () => {
+  const { writable } = await import('svelte/store');
+  const { agentQueueSelectors, scaffold } = await import('./mocks/chat-panel-render-scaffold');
+  return {
+    ...agentQueueSelectors(),
+    selectAgentQueueMessages: Object.assign(
+      () => {
+        queueSnapshot.store = writable(scaffold.queuedMessages as QueuedMessage[]);
+        return queueSnapshot.store;
+      },
+      { select: () => scaffold.queuedMessages },
+    ),
+  };
+});
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(),
 );
@@ -354,7 +367,6 @@ describe('chat content column contracts', () => {
           messageMetadata: { fromPrincipalId: 'other' },
         },
       ];
-      vi.mocked(appClient.agents.editQueued).mockClear().mockResolvedValue({ success: true });
       const container = await renderPanel({
         id: 'ws-1',
         title: 'Workspace',
@@ -385,13 +397,26 @@ describe('chat content column contracts', () => {
       if (role) {
         await fireEvent.dblClick(own.getByTestId('queued-message-content'));
         await waitFor(() =>
-          expect(appClient.agents.editQueued).toHaveBeenCalledWith(
-            'agent-1',
-            queuedMessage.id,
-            'Own queue input',
-            true,
-            'ws-1',
+          expect(scaffold.dispatch).toHaveBeenCalledWith(
+            expect.objectContaining({
+              type: 'agentQueue/mutationRequested',
+              payload: [
+                expect.objectContaining({
+                  workspaceId: 'ws-1',
+                  agentId: 'agent-1',
+                  messageId: queuedMessage.id,
+                  operation: { kind: 'edit', content: 'Own queue input', editing: true },
+                }),
+              ],
+            }),
           ),
+        );
+        await waitFor(() =>
+          expect(
+            scaffold.dispatch.mock.calls.some(
+              ([action]) => action.type === 'agentQueue/mutationConsumed',
+            ),
+          ).toBe(true),
         );
         await fireEvent.keyDown(own.getByRole('textbox'), { key: 'Escape' });
         await waitFor(() => expect(own.queryByRole('textbox')).toBeNull());
@@ -400,8 +425,15 @@ describe('chat content column contracts', () => {
         );
         expect(scaffold.dispatch).toHaveBeenCalledWith(
           expect.objectContaining({
-            type: 'agentQueue/removeRequested',
-            payload: ['agent-1', queuedMessage.id],
+            type: 'agentQueue/mutationRequested',
+            payload: [
+              expect.objectContaining({
+                workspaceId: 'ws-1',
+                agentId: 'agent-1',
+                messageId: queuedMessage.id,
+                operation: { kind: 'remove' },
+              }),
+            ],
           }),
         );
         await fireEvent.click(
@@ -409,23 +441,33 @@ describe('chat content column contracts', () => {
         );
         expect(scaffold.dispatch).toHaveBeenCalledWith(
           expect.objectContaining({
-            type: 'chatState/sendQueuedMessageNowRequested',
-            payload: ['agent-1', 'ws-1', queuedMessage.id],
+            type: 'agentQueue/mutationRequested',
+            payload: [
+              expect.objectContaining({
+                workspaceId: 'ws-1',
+                agentId: 'agent-1',
+                messageId: queuedMessage.id,
+                operation: { kind: 'sendNow' },
+              }),
+            ],
           }),
         );
       }
     },
   );
 
-  it('renders queued-message surfaces inside the composer lane', async () => {
+  it('renders queued messages before subscriptions and outside the composer', async () => {
     scaffold.queuedMessages = [queuedMessage];
     const container = await renderPanel();
 
     const queue = byTestId(container, 'queued-messages-container')!;
-    expect(byTestId(container, 'mock-queue-region')!.contains(queue)).toBe(true);
-    expect(byTestId(container, 'chat-composer-lane')!.contains(queue)).toBe(true);
-    expect(byTestId(container, 'queued-message-utility-area')).toBeNull();
-    expect(container.querySelector('.queued-message-utility-wide')).toBeNull();
+    const utilities = byTestId(container, 'transcript-utility-stack')!;
+    const subscriptions = byTestId(container, 'mock-transcript-utility')!;
+    expect(utilities.contains(queue)).toBe(true);
+    expect(
+      queue.compareDocumentPosition(subscriptions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(byTestId(container, 'chat-composer-shell')!.contains(queue)).toBe(false);
   });
 
   it('opens a blank Chief thread on the starter prompts instead of an empty state', async () => {

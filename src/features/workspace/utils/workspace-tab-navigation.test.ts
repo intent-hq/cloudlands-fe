@@ -1221,20 +1221,49 @@ describe('global workspace tab navigation', () => {
     },
   );
 
-  it('retains all nine indexed bindings after the tab range modifier is edited', () => {
+  it.each([
+    ['macOS', true, 'mod+1-9'],
+    ['Windows/Linux', false, 'mod+1-9'],
+    ['custom modifier', true, 'alt+1-9'],
+  ] as const)('maps Home and workspace digits with %s bindings', (_platform, isMac, pattern) => {
     const shortcuts: KeyboardShortcut[] = [];
+    const store = makeStore('ws-2');
+    let currentPath = '/workspace/ws-2';
+    const navigate = vi.fn((path: string) => {
+      currentPath = path;
+    });
     registerWorkspaceTabShortcuts({
-      isMac: true,
+      isMac,
       register: (shortcut) => shortcuts.push(shortcut),
-      store: makeStore(),
-      getCurrentPath: () => '/workspace/ws-1',
-      navigate: vi.fn(),
+      store,
+      getCurrentPath: () => currentPath,
+      navigate,
       openNewWorkspace: vi.fn(),
-      resolveBinding: (id) => (id === 'navigation.go-to-tab' ? 'alt+1-9' : ''),
+      resolveBinding: (id) => (id === 'navigation.go-to-tab' ? pattern : ''),
     });
 
-    expect(shortcuts.slice(-9).map((shortcut) => shortcut.binding?.())).toEqual(
-      Array.from({ length: 9 }, (_, index) => `alt+${index + 1}`),
+    const digits = shortcuts.slice(-9);
+    expect(digits.map((shortcut) => shortcut.binding?.())).toEqual(
+      Array.from({ length: 9 }, (_, index) => pattern.replace('1-9', String(index + 1))),
     );
+    digits[0].action();
+    expect(navigate).toHaveBeenLastCalledWith('/');
+    expect(store.state.tabState.currentTabId).toBe('ws-2');
+    expect(store.actions).toHaveLength(0);
+
+    digits[1].action();
+    expect(navigate).toHaveBeenLastCalledWith('/workspace/ws-1');
+    expect(store.state.tabState.currentTabId).toBe('ws-1');
+    digits[2].action();
+    expect(navigate).toHaveBeenLastCalledWith('/workspace/ws-2');
+    expect(store.state.tabState.currentTabId).toBe('ws-2');
+    digits[8].action();
+    expect(navigate).toHaveBeenLastCalledWith('/workspace/ws-3');
+    expect(store.state.tabState.currentTabId).toBe('ws-3');
+
+    navigate.mockClear();
+    digits[7].action();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(store.state.tabState.currentTabId).toBe('ws-3');
   });
 });

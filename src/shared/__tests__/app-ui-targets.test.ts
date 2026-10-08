@@ -49,7 +49,8 @@ describe('app UI targets registry', () => {
       'code-font': 'display',
       general: 'advanced',
       devices: 'devices',
-      'websocket-api': 'devices',
+      mobile: 'mobile',
+      'websocket-api': 'mobile',
       'guest-sessions': 'collaboration',
     } as const;
 
@@ -139,17 +140,34 @@ describe('app UI targets registry', () => {
     expect(isResolvableNavTarget('/settings#backgroundAgents.defaultModel')).toBe(true);
   });
 
-  it('resolves the legacy machines hash to the canonical Devices target', () => {
+  it('preserves the devices and machines links to Machines', () => {
+    expect(resolveHashToTarget('devices')).toMatchObject({ id: 'devices', tab: 'devices' });
     expect(resolveHashToTarget('machines')).toMatchObject({ id: 'devices', tab: 'devices' });
     expect(isResolvableNavTarget('/settings?tab=machines#machines')).toBe(true);
   });
 
-  it('resolves the remote-access alias to the websocket-api target on the Devices tab', () => {
+  it('resolves Mobile navigation and highlight targets', () => {
+    expect(resolveHashToTarget('mobile')).toMatchObject({
+      id: 'mobile',
+      tab: 'mobile',
+      route: '/settings?tab=mobile#mobile',
+    });
+    expect(isResolvableNavTarget('/settings?tab=mobile#mobile')).toBe(true);
+    expect(getHighlightIdFromRoute('/settings#mobile')).toBe('mobile');
+  });
+
+  it('resolves older remote-access links to the websocket-api target on Mobile', () => {
     const canonical = resolveHashToTarget('websocket-api');
-    expect(canonical).toMatchObject({ id: 'websocket-api', tab: 'devices' });
+    expect(canonical).toMatchObject({
+      id: 'websocket-api',
+      tab: 'mobile',
+      route: '/settings?tab=mobile#websocket-api',
+    });
     expect(resolveHashToTarget('remote-access')).toEqual(canonical);
+    expect(isResolvableNavTarget('/settings?tab=devices#websocket-api')).toBe(true);
     expect(isResolvableNavTarget('/settings?tab=advanced#websocket-api')).toBe(true);
     expect(isResolvableNavTarget('/settings#remote-access')).toBe(true);
+    expect(getHighlightIdFromRoute('/settings?tab=devices#remote-access')).toBe('websocket-api');
   });
 
   it('returns undefined for an unknown hash', () => {

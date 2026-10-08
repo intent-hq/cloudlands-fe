@@ -25,7 +25,6 @@
     dispatchCreateFileRequest,
     handleCommandPaletteCreateFile,
   } from './composables/create-file-command';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { commandPaletteActionConsumed } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCommandPaletteAction } from '$store/renderer/slices/app-layout/app-layout-selectors';
 
@@ -53,6 +52,7 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    setCollapsed,
     setPanelVisibility,
     type PanelVisibilityState,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
@@ -249,12 +249,9 @@
   // and explicitly click to proceed, so they can review agent setup.
 
   // Track previous showOnboarding state to detect onboarding→workspace transition
-  let prevShowOnboarding = $state(true);
+  let prevShowOnboarding = $state(untrack(() => showOnboarding));
 
-  // Expand the sidebar when transitioning from onboarding to workspace.
-  // The sidebar starts collapsed (width 0) during onboarding via initiallyCollapsed.
-  // ResizablePanel only reads initiallyCollapsed at init time, so we dispatch
-  // the toggle event to animate it open after workspace creation.
+  // Only a real onboarding exit changes the saved sidebar preference.
   $effect(() => {
     if (!active) return;
     // While the boot-route gate is holding, showOnboarding is suppressed but
@@ -263,11 +260,7 @@
     // next to the wizard when the gate resolves to stay on onboarding).
     if (bootGateHolding) return;
     if (prevShowOnboarding && !showOnboarding) {
-      // Onboarding just ended — expand sidebar with animation
-      dispatchWindowEvent('workspace:toggle-left-sidebar', {
-        collapsed: false,
-        restoreWidth: 350,
-      });
+      appStore.dispatch(setCollapsed(false));
     }
     prevShowOnboarding = showOnboarding;
   });

@@ -670,7 +670,7 @@ export const SHORTCUT_CATEGORIES: Record<
       {
         key: 'mod+o',
         get label() {
-          return m.ui_shortcuts_toggleSpaces_label();
+          return m.home_navigation_description();
         },
         contexts: ['global'],
       },

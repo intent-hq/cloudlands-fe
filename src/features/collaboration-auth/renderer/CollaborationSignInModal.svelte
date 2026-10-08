@@ -14,8 +14,6 @@
     selectLabsMultiplayerEnabled,
     selectLabsGitLabEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { store as appStore } from '$store/renderer/store';
-  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import type { CollaborationAction, CollaborationView } from '../types';
   import { collaborationErrorMessage } from './messages';
 
@@ -43,7 +41,8 @@
   const busy = $derived(view.phase === 'loading');
   const pinned = $derived(view.request.pinIdentity != null);
   const blocked = $derived(
-    view.error === 'upgrade-required' ||
+    (gitlab && !$gitlab$) ||
+      view.error === 'upgrade-required' ||
       view.error === 'local-connection-changed' ||
       view.error === 'request-changed' ||
       view.error === 'gitlab-disabled',
@@ -88,10 +87,18 @@
     preferToken = false;
     onAction({ type: 'connect', token: value });
   }
-  function enableGitlab() {
-    onAction({ type: 'cancel' });
-    appStore.dispatch(openPalette('GitLab')); // i18n-ignore (brand search)
-  }
+  $effect(() => {
+    // Only an idle, unpinned chooser can fall back. Main still owns account
+    // confirmation, pinned identity and cancellation of an in-flight flow.
+    if (
+      $multiplayer$ &&
+      !$gitlab$ &&
+      gitlab &&
+      !pinned &&
+      (view.phase === 'account' || view.error === 'gitlab-disabled')
+    )
+      choose('github');
+  });
 </script>
 
 {#if $multiplayer$}
@@ -109,7 +116,7 @@
           {m.collaborationAuth_destination_description({ host: view.request.hostLabel })}
         </p>
       {/if}
-      {#if !pinned && view.phase !== 'device' && view.error !== 'gitlab-disabled'}
+      {#if $gitlab$ && !pinned && view.phase !== 'device' && view.error !== 'gitlab-disabled'}
         <div class="grid grid-cols-2 gap-2">
           <!-- i18n-ignore (provider brand names) -->
           <Button
@@ -129,10 +136,6 @@
               onclick={() => choose('gitlab', gitlab ? view.target.host : 'gitlab.com')}
             >
               <Fa icon={faGitlab} />GitLab{#if gitlab}<Fa icon={faCheck} size="xs" />{/if}
-            </Button>
-          {:else}
-            <Button variant="outline" disabled={busy} onclick={enableGitlab}>
-              {m.collaborationAuth_enableGitlab_label()}
             </Button>
           {/if}
         </div>
@@ -301,11 +304,7 @@
         <Button variant="ghost" onclick={() => onAction({ type: 'cancel' })}
           >{m.workspace_modals_cancel_label()}</Button
         >
-        {#if view.error === 'gitlab-disabled'}
-          <Button variant="primary" onclick={enableGitlab}
-            >{m.collaborationAuth_enableGitlab_label()}</Button
-          >
-        {:else if !busy && !blocked && view.phase !== 'device'}
+        {#if !busy && !blocked && view.phase !== 'device'}
           {#if showToken}
             <Button variant="primary" disabled={!token.trim()} onclick={connectPat}
               >{m.collaborationAuth_tokenSignIn_label()}</Button

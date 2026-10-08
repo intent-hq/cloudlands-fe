@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { QueuedMessage } from '$shared/types';
-import { findQueuedMessageForEdit, queuedMessagePermissions } from './queued-message-permissions';
+import {
+  findQueuedMessageForEdit,
+  queuedMessagePermissions,
+  isQueuedMessageReadyForBatch,
+} from './queued-message-permissions';
 
 const human: QueuedMessage = {
   id: 'q',
@@ -41,6 +45,20 @@ describe('shared queue action authority', () => {
       });
     },
   );
+
+  it('does not grant host-owner send permission for script-monitor wakes', () => {
+    expect(
+      queuedMessagePermissions(
+        {
+          ...human,
+          messageMetadata: { type: 'script_monitor_wake', monitorId: 'monitor-1' },
+        },
+        'admin',
+        'owner',
+        true,
+      ),
+    ).toEqual({ edit: false, remove: true, sendNow: false });
+  });
 
   it('never treats an unknown or portable author as the viewer', () => {
     for (const message of [
@@ -86,5 +104,23 @@ describe('active queue edit aliases', () => {
       ),
     ).toBeUndefined();
     expect(findQueuedMessageForEdit([{ ...human, id: 'unrelated' }], 'newer')).toBeUndefined();
+  });
+});
+
+describe('explicit batch readiness', () => {
+  const now = Date.parse('2026-10-02T21:00:00Z');
+  it.each([
+    [{ editing: true }, false],
+    [{ holdKind: 'debounce', holdUntil: '2026-10-02T21:01:00Z' }, false],
+    [{ holdKind: 'debounce', holdUntil: '2026-10-02T21:00:00Z' }, true],
+    [{ holdKind: 'debounce', holdUntil: 'invalid' }, true],
+    [{ holdUntil: '2026-10-02T21:01:00Z' }, true],
+    [{ messageMetadata: { humanAuthor: null } }, false],
+    [{ messageMetadata: { humanAuthor: {}, fromPrincipalId: '' } }, false],
+    [{ messageMetadata: { humanAuthor: {}, fromPrincipalId: ' ' } }, true],
+    [{ messageMetadata: { type: 'script_monitor_wake', monitorId: '' } }, false],
+    [{ messageMetadata: { type: 'script_monitor_wake' } }, true],
+  ] as const)('matches daemon readiness for %j', (fields, ready) => {
+    expect(isQueuedMessageReadyForBatch({ ...human, ...fields }, now)).toBe(ready);
   });
 });

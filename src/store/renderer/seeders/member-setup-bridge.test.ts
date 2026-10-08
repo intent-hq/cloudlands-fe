@@ -161,6 +161,31 @@ describe('admitted member setup bridge', () => {
     expect(mocks.request).toHaveBeenCalledExactlyOnceWith('host.checkGit');
   });
 
+  it.each([{}, { tools: {} }, { tools: { git: {} } }])(
+    'does not report missing Git for a malformed projection %j',
+    async (response) => {
+      mocks.request.mockResolvedValue(response);
+      expect(await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_GIT)).toEqual({
+        success: true,
+        data: { available: 'unknown' },
+      });
+    },
+  );
+
+  it('discards a Git result after the principal changes on the same connection', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.request.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const pending = mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_GIT);
+    mocks.state.principal.snapshot.principal.id = 'different-member';
+    resolve({ tools: { git: { available: true } } });
+    expect(await pending).toEqual({ success: true, data: { available: 'unknown' } });
+  });
+
   it('uses the host visibility verdict for an enabled specialist provider', () => {
     const context = mocks.state.principal.context;
     mocks.state.hostExecution = {

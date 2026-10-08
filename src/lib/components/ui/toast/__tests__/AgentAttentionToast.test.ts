@@ -1,10 +1,22 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import AgentAttentionToast from '../AgentAttentionToast.svelte';
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
 
 describe('AgentAttentionToast', () => {
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -20,7 +32,9 @@ describe('AgentAttentionToast', () => {
       onClose: vi.fn(),
     });
     const time = screen.getByText('18s');
-    expect(time.getAttribute('title')).toMatch(/2026/);
+    expect(time.hasAttribute('title')).toBe(false);
+    await fireEvent.focus(time);
+    expect(screen.getByRole('tooltip', { hidden: true }).textContent).toMatch(/2026/);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(screen.getByText('2m')).toBeTruthy();
   });

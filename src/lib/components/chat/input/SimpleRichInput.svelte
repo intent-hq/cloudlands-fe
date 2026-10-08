@@ -3,7 +3,7 @@
   import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
-  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -166,8 +166,6 @@
     actionBarEndClassName?: string;
     /** Optional local portal target for composer tooltips. */
     tooltipPortalTarget?: Element | string;
-    /** Daemon-backed queue rendered inside the composer's recessed queue region. */
-    queueRegion?: Snippet;
     /**
      * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
      * target): the container's own drag handlers and drop overlay are disabled
@@ -241,7 +239,6 @@
     contentInsetClassName = undefined,
     actionBarEndClassName = 'pr-1.5!',
     tooltipPortalTarget,
-    queueRegion,
     externalDropTarget = false,
     onsubmit,
     onforcesubmit,
@@ -385,23 +382,30 @@
     cancelActiveTranscription();
   }
 
+  async function restoreComposerFocus() {
+    await tick();
+    if (!containerRef) return;
+    const active = containerRef.ownerDocument.activeElement;
+    if (active && active !== containerRef.ownerDocument.body && !containerRef.contains(active))
+      return;
+    await focus();
+  }
+
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
     previousDisabled = disabled;
 
     if (justEnabled) {
-      void tick().then(() => focus());
+      void restoreComposerFocus();
     }
   });
 
-  // Mirror of the justEnabled effect for the transient editor lock: the
-  // composer takes focus again as soon as the lock releases.
   $effect(() => {
     const justUnlocked = previousInputLocked && !inputLocked;
     previousInputLocked = inputLocked;
 
     if (justUnlocked) {
-      void tick().then(() => focus());
+      void restoreComposerFocus();
     }
   });
 
@@ -1461,7 +1465,7 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',
@@ -1508,16 +1512,6 @@
     aria-label={m.chat_richInput_resize_ariaLabel()}
     tabindex={-1}
   ></Button>
-
-  {#if queueRegion}
-    <div
-      class="min-h-0 shrink overflow-y-auto overscroll-contain has-[>_*]:mb-2"
-      style:max-height="{(containerHeight ?? maxAutoHeight) / 2}px"
-      data-chat-input-queue-region
-    >
-      {@render queueRegion()}
-    </div>
-  {/if}
 
   <!-- Non-image context items and selections - shown above editor when present -->
   {#if nonImageItems.length > 0}

@@ -7,6 +7,7 @@
  * explicit `github-pr` itemType, or PR-only mention metadata (`sourceBranch`).
  */
 import type { ContextLink } from '$shared/types';
+import { parseGitLabResourceLink } from '$shared/utils/gitlab-resource-link';
 
 /** Wire cap on `contextLinks` entries (PROTOCOL §5.1). */
 export const MAX_CONTEXT_LINKS = 20;
@@ -45,7 +46,10 @@ function detectKind(mention: ContextLinkMention): ContextLink['kind'] {
  * Returns `undefined` when nothing qualifies so the param is omitted on the
  * wire (older daemons ignore the field entirely).
  */
-export function buildContextLinks(mentions: ContextLinkMention[]): ContextLink[] | undefined {
+export function buildContextLinks(
+  mentions: ContextLinkMention[],
+  checkout?: { url: string; instanceBaseUrl: string; projectPath: string },
+): ContextLink[] | undefined {
   // Dedupe on owner/repo#number alone — the same object mentioned via both an
   // issue-style and a /pull/ URL is one link; a 'pr' detection wins over 'issue'.
   const byKey = new Map<string, ContextLink>();
@@ -70,5 +74,21 @@ export function buildContextLinks(mentions: ContextLinkMention[]): ContextLink[]
     if (byKey.size >= MAX_CONTEXT_LINKS) continue;
     byKey.set(key, { kind, url: mention.url, owner, repo, number });
   }
-  return byKey.size > 0 ? [...byKey.values()] : undefined;
+  const links = [...byKey.values()];
+  if (checkout) {
+    const target = parseGitLabResourceLink(checkout.url, [
+      { provider: 'gitlab', instanceBaseUrl: checkout.instanceBaseUrl },
+    ]);
+    if (target?.repository.projectPath === checkout.projectPath) {
+      const boundary = checkout.projectPath.lastIndexOf('/');
+      links.unshift({
+        kind: target.kind === 'merge-request' ? 'pr' : 'issue',
+        url: checkout.url,
+        owner: checkout.projectPath.slice(0, boundary),
+        repo: checkout.projectPath.slice(boundary + 1),
+        number: target.number,
+      });
+    }
+  }
+  return links.length ? links.slice(0, MAX_CONTEXT_LINKS) : undefined;
 }

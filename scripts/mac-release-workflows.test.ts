@@ -238,7 +238,12 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       const run = step(name, 'build-macos', 'Build and package macOS app');
       const result = shell(
         dir,
-        render(run.run!, { 'matrix.arch': row.arch, 'inputs.sign': 'true' }),
+        render(run.run!, {
+          'matrix.arch': row.arch,
+          'inputs.sign': 'true',
+          'inputs.isolated_test': 'false',
+          'steps.intentd_sha.outputs.sha': 'a'.repeat(40),
+        }),
         { CSC_LINK: 'test-certificate' },
       );
       expect(result.status, result.stderr).toBe(0);
@@ -251,7 +256,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       ]);
       expect(readFileSync(join(dir, 'cert'), 'utf8')).toBe('test-certificate');
       expect(run.env?.REQUIRE_SHARED_KEYCHAIN_GROUP).toBe(
-        name === 'release-alpha' ? '1' : "${{ inputs.sign && '1' || '' }}",
+        name === 'release-alpha' ? '1' : "${{ inputs.sign && !inputs.isolated_test && '1' || '' }}",
       );
     }
   });
@@ -426,7 +431,12 @@ it.each(['x64', 'arm64'])(
     );
     const code = render(
       step('manual-signed-build', 'build-macos', 'Build and package macOS app').run!,
-      { 'matrix.arch': arch, 'inputs.sign': 'false' },
+      {
+        'matrix.arch': arch,
+        'inputs.sign': 'false',
+        'inputs.isolated_test': 'false',
+        'steps.intentd_sha.outputs.sha': 'a'.repeat(40),
+      },
     );
     expect(shell(dir, code, { CSC_LINK: 'secret', CSC_KEY_PASSWORD: 'secret' }).status).toBe(0);
     expect(readFileSync(join(dir, 'unsigned-args'), 'utf8').trim().split('\n')).toEqual([
@@ -538,10 +548,16 @@ describe('manual Mac architecture selection', () => {
     }
     // Job-level conditions are evaluated before matrix expansion in Actions.
     for (const enabled of [true, false]) {
-      for (const name of ['select-macos', 'build-macos']) {
-        expect(JSON.parse(render(jobs[name].if!, { 'inputs.build_macos': String(enabled) }))).toBe(
-          enabled,
-        );
+      for (const isolated of [true, false]) {
+        for (const name of ['select-macos', 'build-macos']) {
+          expect(
+            JSON.parse(
+              render(jobs[name].if!, {
+                'inputs.build_macos || inputs.isolated_test': String(enabled || isolated),
+              }),
+            ),
+          ).toBe(enabled || isolated);
+        }
       }
     }
   });

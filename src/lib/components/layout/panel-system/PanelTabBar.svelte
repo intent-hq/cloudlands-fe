@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { observeOverflow } from '$lib/actions/observe-overflow';
+
+  let selectorTitleOverflow = $state(false);
+  let tabTitleOverflow = $state<Record<string, boolean>>({});
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -200,6 +204,10 @@
 
   let paneStackMenuOpen = $state(false);
   let panelActionsMenuOpen = $state({ tabBar: false, compact: false });
+  const pendingPaneMoves: Record<'tabBar' | 'compact', (() => void) | null> = {
+    tabBar: null,
+    compact: null,
+  };
 
   $effect(() => {
     void activeTabId;
@@ -242,7 +250,11 @@
         return m.chat_shared_spec_label();
       }
       // Look up the note from the store
-      const note = selectNoteById.select(appStore.state, workspaceId, tab.noteId);
+      const note = selectNoteById.select(
+        appStore.state,
+        tab.workspaceId ?? workspaceId,
+        tab.noteId,
+      );
       if (note) {
         return note.title || m.layout_panelLayout_untitled_fallback();
       }
@@ -1247,6 +1259,15 @@
 {#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}
   <DropdownMenu
     bind:open={panelActionsMenuOpen[location]}
+    onOpenChangeComplete={async (open) => {
+      if (open) return;
+      const move = pendingPaneMoves[location];
+      pendingPaneMoves[location] = null;
+      if (!move) return;
+      // Remove the portalled menu before a move can unmount its owner.
+      await tick();
+      move();
+    }}
     align="end"
     side="bottom"
     contentClass="panel-header-menu panel-actions-menu-content bg-background"
@@ -1293,34 +1314,38 @@
           {@render contentActions.actions?.()}
           {@render contentActions.destructive?.()}
         </Menu.Group>
-        <Menu.Separator />
+        {#if paneMoveDirections.some((direction) => direction.enabled)}
+          <Menu.Separator />
+        {/if}
       {/if}
-      <Menu.Group data-panel-actions-section="move">
-        <Menu.Label>{m.layout_panelTabBar_movePanel_label()}</Menu.Label>
-        <div class="panel-move-pad">
-          {#each paneMoveDirections as direction (direction.direction)}
-            <Menu.Item
-              class="panel-move-direction panel-move-{direction.direction}"
-              aria-label={direction.label}
-              disabled={!direction.enabled}
-              onclick={() => {
-                direction.move();
-                close();
-              }}
-            >
-              <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
-                <g transform="rotate(-90 8 8)" stroke="currentColor" stroke-width="1.33">
-                  <path d="M3 8H12" stroke-linecap="square" />
-                  <path
-                    d="M8.518 3 12.634 7.116C13.122 7.604 13.122 8.396 12.634 8.884L8.518 13"
-                    stroke-linejoin="round"
-                  />
-                </g>
-              </svg>
-            </Menu.Item>
-          {/each}
-        </div>
-      </Menu.Group>
+      {#if paneMoveDirections.some((direction) => direction.enabled)}
+        <Menu.Group data-panel-actions-section="move">
+          <Menu.Label>{m.layout_panelTabBar_movePanel_label()}</Menu.Label>
+          <div class="panel-move-pad">
+            {#each paneMoveDirections as direction (direction.direction)}
+              <Menu.Item
+                class="panel-move-direction panel-move-{direction.direction}"
+                aria-label={direction.label}
+                disabled={!direction.enabled}
+                onSelect={() => {
+                  pendingPaneMoves[location] = direction.move;
+                  close();
+                }}
+              >
+                <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
+                  <g transform="rotate(-90 8 8)" stroke="currentColor" stroke-width="1.33">
+                    <path d="M3 8H12" stroke-linecap="square" />
+                    <path
+                      d="M8.518 3 12.634 7.116C13.122 7.604 13.122 8.396 12.634 8.884L8.518 13"
+                      stroke-linejoin="round"
+                    />
+                  </g>
+                </svg>
+              </Menu.Item>
+            {/each}
+          </div>
+        </Menu.Group>
+      {/if}
       {#if ($isWorkspaceHostLocal$ && canOpenExternalEditors) || activeTab?.type === 'browser'}
         {#if activeTab}
           {@const externalTarget = getPanelExternalOpenTarget(
@@ -1448,9 +1473,12 @@
     <Menu.Root bind:open={paneStackMenuOpen}>
       <Menu.Trigger>
         {#snippet child({ props })}
-          {@const selectorLabel = m.layout_panelTabBar_paneSelector_ariaLabel({
-            count: tabs.length,
-          })}
+          {@const selectorLabel = activeTab
+            ? m.layout_panelTabBar_paneSelectorNamed_ariaLabel({
+                title: getTabTitle(activeTab),
+                count: tabs.length,
+              })
+            : m.layout_panelTabBar_paneSelector_ariaLabel({ count: tabs.length })}
           {@const activePath = activeTab ? getTabPath(activeTab) : null}
           {@const commitHash =
             activeTab?.type === 'diff'
@@ -1463,7 +1491,8 @@
               .join(' · ')}
             side="bottom"
             delayDuration={300}
-            disabled={paneStackMenuOpen}
+            disabled={paneStackMenuOpen ||
+              (!!activeTab && !activePath && !commitHash && !selectorTitleOverflow)}
           >
             <Button
               {...props}
@@ -1494,6 +1523,7 @@
                 </span>
                 <span
                   class="panel-selector-title min-w-0 flex-1 truncate text-left"
+                  use:observeOverflow={(overflow) => (selectorTitleOverflow = overflow)}
                   data-panel-header-title
                 >
                   {getTabTitle(activeTab)}
@@ -1613,6 +1643,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
         <Tooltip
           content={shortcutKey && isFocused ? `${tabTitle} (${shortcutKey})` : tabTitle}
+          disabled={!(shortcutKey && isFocused) && !tabTitleOverflow[tab.id]}
           side="bottom"
           delayDuration={500}
         >
@@ -1696,7 +1727,11 @@
                   ondblclick={(e) => e.stopPropagation()}
                 />
               {:else}
-                <span class="tab-title font-medium truncate max-w-24">{tabTitle}</span>
+                <span
+                  class="tab-title font-medium truncate max-w-24"
+                  use:observeOverflow={(overflow) => (tabTitleOverflow[tab.id] = overflow)}
+                  >{tabTitle}</span
+                >
               {/if}
 
               {#if isBackgroundAgent(tab)}
@@ -1813,7 +1848,7 @@
   {:else}
     <div
       class={cn(
-        'panel-header group/header relative flex items-center bg-background pr-2.5',
+        'panel-header group/header relative flex items-center pr-2.5',
         isFocused && 'focused',
       )}
       style:height="var(--panel-header-height)"

@@ -1,3 +1,4 @@
+import { beginSubmissionRead, submissionHistoryEvidence } from './submission-evidence';
 import { CHAT_PAGE_SIZE } from '$shared/constants';
 import { claimAgentReadOwnership } from './agent-read-ownership';
 /**
@@ -44,6 +45,7 @@ import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
 import { readAgentSession } from './agent-read-service';
+import { selectInitialChatHistoryPending } from '$store/renderer/slices/chat-state/chat-state-selectors';
 
 const logger = createLogger('ChatReadService');
 let connectionGeneration = 0;
@@ -78,7 +80,11 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent, so hydrating would re-upsert the deleted
   // session. Skip entirely.
-  if (isAgentDeletionPending(agentId)) return;
+  if (
+    isAgentDeletionPending(agentId) ||
+    selectInitialChatHistoryPending.select(appStore.state, agentId)
+  )
+    return;
   if (!lifecycleInstalled) {
     lifecycleInstalled = true;
     onBackendReconnected(() => {
@@ -144,6 +150,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
     throw error;
   }
 
+  const submissionRead = beginSubmissionRead(agentId, workspaceId, 'history');
   // Actually perform the work
   (async () => {
     try {
@@ -158,7 +165,11 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       // Re-check after the fetch: a deletion may have become pending while
       // `agent.get` was in flight; hydrating now would resurrect the
       // soft-hidden session (and paging the transcript would be wasted work).
-      if (isAgentDeletionPending(agentId)) return;
+      if (
+        isAgentDeletionPending(agentId) ||
+        selectInitialChatHistoryPending.select(appStore.state, agentId)
+      )
+        return;
 
       // On-demand reads take the same newest window as the live subscription.
       // Older history is fetched only by the visible panel's scrollback driver.
@@ -171,11 +182,19 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
         workspaceId ?? session.workspaceId,
       );
       if (connection !== connectionGeneration || !ownership.isCurrent()) return;
+      if (!submissionRead.isCurrent()) {
+        void loadChatTranscript(agentId, workspaceId);
+        return;
+      }
       const allMessages = page.messages;
 
       // Final re-check before any side effects: the deletion may have become
       // pending during transcript paging above.
-      if (isAgentDeletionPending(agentId)) return;
+      if (
+        isAgentDeletionPending(agentId) ||
+        selectInitialChatHistoryPending.select(appStore.state, agentId)
+      )
+        return;
 
       // NOTE: no in-flight assistant merge here — the standing
       // `chat.subscribe` subscription (chat-subscribe saga) is the sole
@@ -216,6 +235,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       // because the daemon snapshot actually reports a turn is in-flight;
       // any orphan/stale healing belongs in the daemon, not the renderer.
       const sessionWithMessages = { ...session, messages: mergedMessages };
+      submissionRead.complete(submissionHistoryEvidence(allMessages));
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
@@ -226,7 +246,11 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       // Wrap cleanup in try/finally to ensure inFlight.delete and resolveRun
       // run even if the dispatch throws
       try {
-        if (connection === connectionGeneration && ownership.isCurrent())
+        if (
+          connection === connectionGeneration &&
+          ownership.isCurrent() &&
+          !selectInitialChatHistoryPending.select(appStore.state, agentId)
+        )
           appStore.dispatch(transcriptHydrationSettled(agentId));
       } finally {
         inFlight.delete(key);
