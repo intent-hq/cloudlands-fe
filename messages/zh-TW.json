@@ -2763,6 +2763,8 @@
   "chat_questionWizard_skip_label": "跳過",
   "chat_questionWizard_send_label": "傳送",
   "chat_questionWizard_next_label": "繼續",
+  "chat_questionWizard_imagesAttached_label_one": "[已附加 1 張圖片]",
+  "chat_questionWizard_imagesAttached_label_many": "[已附加 {count} 張圖片]",
   "chat_questionWizard_dismiss_label": "關閉",
   "chat_questionWizard_dismiss_tooltip": "不回答並永久關閉",
   "chat_questionWizard_hide_tooltip": "隱藏，直到再次展開",
