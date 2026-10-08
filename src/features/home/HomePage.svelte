@@ -1155,7 +1155,9 @@
                 >
                 <Tabs.Content value="custom" class="mt-0 min-h-0 flex-1 overflow-hidden">
                   {#if renderedTab === 'custom' && selectedCustomViewId}
-                    <div class="home-panel flex h-full min-h-0 min-w-0 flex-col bg-background">
+                    <div
+                      class="home-panel flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+                    >
                       <CustomViewPanel
                         viewId={selectedCustomViewId}
                         header={homeHeader}

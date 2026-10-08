@@ -57,6 +57,7 @@
         }}><GitHubIcon size={16} /></Button
       >
     {/if}
+    {@render actions?.()}
     {#if canCreate}
       <div class="home-create">
         <Button variant="primary" size="sm" onclick={onCreate}>
@@ -64,6 +65,5 @@
         </Button>
       </div>
     {/if}
-    {@render actions?.()}
   </div>
 </header>
