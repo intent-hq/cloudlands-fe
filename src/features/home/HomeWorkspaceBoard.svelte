@@ -10,11 +10,13 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
   import { scrollFade } from '$lib/actions/scroll-fade';
+  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
 
   let {
     workspaces,
     selectedId,
     onselect,
+    onopen,
     archived = false,
     showRepository = true,
     groups,
@@ -22,6 +24,7 @@
     workspaces: Workspace[];
     selectedId: string | null;
     onselect: (id: string) => void;
+    onopen: (id: string) => void;
     archived?: boolean;
     showRepository?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
@@ -80,7 +83,11 @@
               aria-pressed={selectedId === workspace.id}
               wrapContent={false}
               class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-4 text-left shadow-xs"
-              onclick={() => onselect(workspace.id)}
+              onclick={(event) => {
+                if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
+                  onselect(workspace.id);
+              }}
+              onkeydown={(event) => openHomeWorkspaceFromEvent(event, workspace.id, onopen)}
               aria-label={workspace.title}
             >
               <span class="flex items-start justify-between gap-3">

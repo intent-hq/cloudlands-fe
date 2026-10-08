@@ -100,11 +100,16 @@ for (const outcome of ['rejected', 'uncertain'] as const) {
     await expect(editor).toBeVisible();
     await editor.fill('Keep this newer draft');
     await component.update({ props: { ...props, settleSubmission: outcome } });
-    await expect(component.getByRole('button', { name: /try again/i })).toBeVisible();
+    await expect(component.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
     if (outcome === 'rejected') {
+      await expect(editor).toHaveText('Keep this newer draft');
       await expect(
         component.getByRole('checkbox', { name: /Start with the smallest change/ }),
       ).toBeVisible();
+      await page.screenshot({
+        animations: 'disabled',
+        path: info.outputPath('rejected-question-restored.png'),
+      });
       await component.getByRole('button', { name: 'Hide', exact: true }).click();
       await expect(component.getByRole('checkbox')).toHaveCount(0);
     } else await expect(component.getByRole('checkbox')).toHaveCount(0);

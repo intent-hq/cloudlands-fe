@@ -7,6 +7,7 @@ import {
   type MockBackendMethodHandler,
 } from '../../test/ct-mock-electron-bridge';
 import { homeIntegrationsSaga } from './home-integrations-saga';
+import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
 
 interface HomeIntegrationWireCall {
   method: string;
@@ -28,6 +29,11 @@ declare global {
 export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStore, 'runSaga'>) {
   const previous = window.electronAPI;
   const calls: HomeIntegrationWireCall[] = [];
+  const drafts = new Map<string, NonNullable<Awaited<ReturnType<DraftsClient['get']>>>>();
+  const draftKey = (raw: unknown) => {
+    const { workspaceId, agentId } = raw as { workspaceId: string; agentId: string };
+    return JSON.stringify([workspaceId, agentId]);
+  };
   let releaseSearch = () => {};
   let pageFailed = false;
   let filePageFailed = false;
@@ -86,6 +92,23 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
   };
   const handlers: Record<string, MockBackendMethodHandler> = {
     'agent.getQueue': () => ({ success: true, queue: [] }),
+    'drafts.get': (raw) => drafts.get(draftKey(raw)) ?? null,
+    'drafts.set': (raw) => {
+      const { text, attachments } = raw as { text: string; attachments?: DraftAttachment[] };
+      const updatedAt = '2026-09-29T12:00:00.000Z';
+      if (text || attachments?.length)
+        drafts.set(draftKey(raw), {
+          text,
+          ...(attachments?.length ? { attachments } : {}),
+          updatedAt,
+        });
+      else drafts.delete(draftKey(raw));
+      return { ok: true, updatedAt };
+    },
+    'drafts.clear': (raw) => {
+      drafts.delete(draftKey(raw));
+      return { ok: true };
+    },
     'github.authStatus': () => ({
       isConfigured: true,
       oauthUrl: '',

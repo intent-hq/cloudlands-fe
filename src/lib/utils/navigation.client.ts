@@ -41,7 +41,7 @@ export function isHudWindowRenderer(): boolean {
  */
 export async function navigateToRoute(
   route: string,
-  options: { assistantContent?: boolean } = {},
+  options: { assistantContent?: boolean; assistantAgentId?: string } = {},
 ): Promise<void> {
   if (isHudWindowRenderer()) {
     logger.debug('Ignoring navigation in HUD window', { route });
@@ -49,7 +49,14 @@ export async function navigateToRoute(
   }
   if (options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route)) {
     const { showAssistantContent } = await import('$features/home/assistant-panels');
-    if (await showAssistantContent(route, true)) {
+    if (
+      await showAssistantContent(route, {
+        preserveFocus: true,
+        background: options.assistantContent === true,
+        agentId: options.assistantAgentId,
+      })
+    ) {
+      if (options.assistantContent) return;
       const { openPanel } = await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
       const { store } = await import('$store/renderer/store');
       store.dispatch(openPanel('chief'));
