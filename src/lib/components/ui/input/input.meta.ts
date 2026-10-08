@@ -14,6 +14,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/features/accept-changes/components/NativeSidebarReview.svelte',
     'src/features/accept-changes/components/RepositorySelectionEditor.svelte',
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
+    'src/features/custom-views/components/CustomViewForm.svelte',
     'src/features/dev-console/TrafficInspector.svelte',
     'src/features/home/HomeSearch.svelte',
     'src/features/home/assistant-panels.preview.svelte',
