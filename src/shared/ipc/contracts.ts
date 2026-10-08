@@ -16,6 +16,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import type { AgentId, WorkspaceId, MessageId } from '../types/branded-ids';
 import type { AgentSession } from '../types';
+import type { CustomViewInput, CustomViewsResponse } from '../types/custom-views';
 
 /**
  * Base response type for all IPC calls
@@ -276,6 +277,11 @@ export namespace TerminalIpc {
  * Enables type-safe invoke calls with full IntelliSense support
  */
 export interface IpcContractMap {
+  'custom-views:list': [undefined, CustomViewsResponse];
+  'custom-views:save': [CustomViewInput, CustomViewsResponse];
+  'custom-views:remove': [{ id: string }, CustomViewsResponse];
+  'custom-views:start': [{ id: string }, CustomViewsResponse];
+  'custom-views:stop': [{ id: string }, CustomViewsResponse];
   'agent:create': [AgentIpc.CreateRequest, AgentIpc.CreateResponse];
   'agent:get': [AgentIpc.GetRequest, AgentIpc.GetResponse];
   'agent:send-message': [AgentIpc.SendMessageRequest, AgentIpc.SendMessageResponse];

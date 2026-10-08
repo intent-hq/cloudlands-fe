@@ -9,6 +9,13 @@
  */
 
 export const IPC_CHANNELS = {
+  CUSTOM_VIEWS: {
+    LIST: 'custom-views:list',
+    SAVE: 'custom-views:save',
+    REMOVE: 'custom-views:remove',
+    START: 'custom-views:start',
+    STOP: 'custom-views:stop',
+  },
   DEV_CONSOLE: {
     OPEN: 'dev-console:open',
     CONNECT: 'dev-console:connect',

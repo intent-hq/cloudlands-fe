@@ -11,6 +11,7 @@
 
 import { z } from 'zod';
 import type { IpcContractMap } from './contracts';
+import { customViewIdSchema, customViewInputSchema } from '../custom-views-schema';
 
 // ============================================================================
 // UUID and ID Schemas
@@ -179,6 +180,11 @@ export const PrMonitorFlushRequestSchema = z.object({
 
 // Use Record<string, any> to avoid type conflicts with branded types
 const schemas: Record<string, z.ZodSchema<any>> = {
+  'custom-views:list': z.undefined(),
+  'custom-views:save': customViewInputSchema,
+  'custom-views:remove': customViewIdSchema,
+  'custom-views:start': customViewIdSchema,
+  'custom-views:stop': customViewIdSchema,
   'agent:create': AgentCreateRequestSchema,
   'agent:get': AgentGetRequestSchema,
   'agent:send-message': AgentSendMessageRequestSchema,

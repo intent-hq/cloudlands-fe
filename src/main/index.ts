@@ -310,6 +310,10 @@ import { setupGrokIPC } from '../features/grok/main/grok.ipc';
 import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupAntigravityIPC } from '../features/antigravity/main/antigravity.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
+import {
+  setupCustomViewsIPC,
+  disposeCustomViews,
+} from '../features/custom-views/main/custom-views.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 
@@ -503,6 +507,13 @@ async function performGracefulShutdown() {
     // interval here means no timer survives any of the quit paths (before-quit,
     // SIGTERM, SIGINT) that funnel through this function.
     stopMemoryMonitor();
+
+    // Stop desktop-local view servers before other teardown consumes the quit deadline.
+    try {
+      await disposeCustomViews();
+    } catch (error) {
+      logger.error('Error stopping custom view servers:', error as Error);
+    }
 
     // Ask renderers to clear hardware-console lighting FIRST, while the
     // windows (which own the WebHID connection) are still alive. Bounded
@@ -1534,6 +1545,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupGrokIPC(); // Needed for grok:get-models
   setupUnslothIPC(); // Needed for unsloth:get-models
   setupAntigravityIPC(); // Needed for antigravity:get-models
+  setupCustomViewsIPC();
   // Feature codes for gating experimental features; registers handlers after an
   // async service init, so it is not awaited on the startup critical path.
   setupFeatureCodesIPC().catch((error: unknown) =>
