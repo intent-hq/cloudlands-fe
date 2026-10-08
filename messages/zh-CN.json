@@ -7041,6 +7041,7 @@
   "home_workspace_view": "工作区视图",
   "home_list_view": "列表视图",
   "home_board_view": "看板视图",
+  "home_dashboard_view_label": "仪表盘视图",
   "home_board_waiting": "等待中",
   "home_board_idle": "空闲",
   "home_board_complete": "已完成",

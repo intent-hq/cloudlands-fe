@@ -7041,6 +7041,7 @@
   "home_workspace_view": "Workspace view",
   "home_list_view": "List view",
   "home_board_view": "Board view",
+  "home_dashboard_view_label": "Dashboard view",
   "home_board_waiting": "Waiting",
   "home_board_idle": "Idle",
   "home_board_complete": "Complete",

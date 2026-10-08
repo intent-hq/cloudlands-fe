@@ -7041,6 +7041,7 @@
   "home_workspace_view": "ワークスペースの表示",
   "home_list_view": "リスト表示",
   "home_board_view": "ボード表示",
+  "home_dashboard_view_label": "ダッシュボード表示",
   "home_board_waiting": "待機中",
   "home_board_idle": "待機",
   "home_board_complete": "完了",

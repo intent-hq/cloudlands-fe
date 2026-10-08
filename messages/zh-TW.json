@@ -7041,6 +7041,7 @@
   "home_workspace_view": "工作區檢視",
   "home_list_view": "清單檢視",
   "home_board_view": "看板檢視",
+  "home_dashboard_view_label": "儀表板檢視",
   "home_board_waiting": "等待中",
   "home_board_idle": "閒置",
   "home_board_complete": "已完成",

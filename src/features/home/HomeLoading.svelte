@@ -3,6 +3,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { onDestroy } from 'svelte';
   import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
+  import type { HomeConfiguration } from './home-workspaces-persistence';
 
   const motion = watchReducedMotion();
   onDestroy(motion.cleanup);
@@ -16,7 +17,7 @@
   }: {
     detail?: boolean;
     count?: number;
-    view?: 'list' | 'board';
+    view?: HomeConfiguration['view'];
     grouped?: boolean;
     rows?: 'workspace' | 'integration' | 'compact';
   } = $props();
@@ -41,6 +42,28 @@
           <Skeleton class="h-3 w-5/6" />
         </div>
       {/each}
+    {:else if view === 'dashboard'}
+      {#if grouped}<div class="flex h-10 items-center px-3"><Skeleton class="h-3 w-20" /></div>{/if}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] gap-4 px-1">
+        {#each Array.from({ length: count }, (_, index) => index) as index (index)}
+          <div class="min-w-0 space-y-4 rounded-xl border border-border p-4">
+            <div class="flex items-center gap-3">
+              <Skeleton class="size-4 shrink-0 rounded-sm" />
+              <Skeleton class="h-4 min-w-0 flex-1" />
+              <Skeleton class="size-3 shrink-0 rounded-full" />
+            </div>
+            <div class="space-y-2">
+              <Skeleton class="h-3 w-full" />
+              <Skeleton class="h-3 w-4/5" />
+            </div>
+            <Skeleton class="h-1.5 w-full" />
+            <div class="flex items-center justify-between gap-3">
+              <Skeleton class="h-3 w-1/3" />
+              <Skeleton class="h-3 w-12" />
+            </div>
+          </div>
+        {/each}
+      </div>
     {:else if view === 'board'}
       <div class="grid grid-cols-[repeat(3,minmax(15rem,1fr))] gap-4 px-1">
         {#each [0, 1, 2] as column (column)}
