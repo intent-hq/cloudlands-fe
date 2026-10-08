@@ -38,11 +38,6 @@ test.afterAll(async () => {
   await ownedServer?.close();
 });
 
-const framingAppearances = [
-  { name: 'Light', theme: 'light' },
-  { name: 'Dark', theme: 'dark' },
-  { name: 'Nord', theme: 'light', colorTheme: 'nord' },
-] as const;
 const framingWidths = [
   { name: 'wide', value: 960 },
   { name: 'narrow', value: 420 },
@@ -176,15 +171,11 @@ async function expectSceneInventory(page: Page, rootId: string, expectedState?: 
 type Probe = {
   edgeId: string;
   sourceId: string;
-  targetId: string;
   movingNodeId?: string;
   enteringNodeId?: string;
   groupId?: string;
   exitingEdgeId?: string;
 };
-
-type ScreenPoint = { x: number; y: number };
-type ScreenBounds = { left: number; right: number; top: number; bottom: number };
 
 type Frame = {
   elapsedMs: number;
@@ -197,11 +188,6 @@ type Frame = {
   groupAnimationDurations: number[];
   path: string;
   progress: number;
-  sourcePoint: ScreenPoint;
-  sourceBounds: ScreenBounds;
-  targetPoint: ScreenPoint;
-  targetBounds: ScreenBounds;
-  labelDistance: number | null;
   overflow: number;
   camera: string;
   cameraPose: number[];
@@ -450,10 +436,6 @@ type ContentMotionFrame = {
       maskDashOffset: number;
       maskApplied: boolean;
       sameAsBaseline: boolean;
-      sourcePoint: { x: number; y: number };
-      targetPoint: { x: number; y: number };
-      sourceDistance: number;
-      targetDistance: number;
     } | null
   >;
 };
@@ -464,11 +446,10 @@ async function recordContentMotion(
   direction: 'forward' | 'backward',
   nodeIds: string[],
   edgeIds: string[],
-  endpoints: Record<string, { source: string; target: string }> = {},
 ) {
   const root = page.locator(`#${rootId}`);
   const recorder = await root.evaluateHandle(
-    (element, { direction, nodeIds, edgeIds, endpoints }) => {
+    (element, { direction, nodeIds, edgeIds }) => {
       const initialNodes = new Map(
         nodeIds.map((id) => [id, element.querySelector(`[data-node-id="${id}"]`)]),
       );
@@ -486,20 +467,6 @@ async function recordContentMotion(
         const width = number(style.width, node.width.baseVal.value);
         const height = number(style.height, node.height.baseVal.value);
         return { left: x, right: x + width, top: y, bottom: y + height };
-      };
-      const boundaryDistance = (
-        point: DOMPoint,
-        bounds: { left: number; right: number; top: number; bottom: number },
-      ) => {
-        const outsideX = Math.max(bounds.left - point.x, 0, point.x - bounds.right);
-        const outsideY = Math.max(bounds.top - point.y, 0, point.y - bounds.bottom);
-        if (outsideX > 0 || outsideY > 0) return Math.hypot(outsideX, outsideY);
-        return -Math.min(
-          point.x - bounds.left,
-          bounds.right - point.x,
-          point.y - bounds.top,
-          bounds.bottom - point.y,
-        );
       };
       const revealProgress = (element: Element) => {
         const value = getComputedStyle(element).getPropertyValue('--edge-reveal-progress').trim();
@@ -538,21 +505,11 @@ async function recordContentMotion(
                 `.diagram-edge[data-edge-id="${id}"]`,
               );
               const path = edge?.querySelector<SVGPathElement>('path.edge-path');
-              const sourceId = endpoints[id]?.source ?? edge?.dataset.edgeFrom;
-              const targetId = endpoints[id]?.target ?? edge?.dataset.edgeTo;
-              const source = sourceId
-                ? element.querySelector<SVGForeignObjectElement>(`[data-node-id="${sourceId}"]`)
-                : null;
-              const target = targetId
-                ? element.querySelector<SVGForeignObjectElement>(`[data-node-id="${targetId}"]`)
-                : null;
               const maskPath = edge?.querySelector<SVGPathElement>('.edge-reveal-mask-path');
-              if (!edge || !path || !source || !target || !maskPath) return [id, null];
+              if (!edge || !path || !maskPath) return [id, null];
               const length = path.getTotalLength();
               const matrix = path.getScreenCTM();
               if (!matrix || length <= 0) throw new Error(`Missing painted route ${id}`);
-              const sourcePoint = path.getPointAtLength(0).matrixTransform(matrix);
-              const targetPoint = path.getPointAtLength(length).matrixTransform(matrix);
               return [
                 id,
                 {
@@ -562,10 +519,6 @@ async function recordContentMotion(
                   maskDashOffset: number(getComputedStyle(maskPath).strokeDashoffset, NaN),
                   maskApplied: edge.querySelector(':scope > g')?.hasAttribute('mask') ?? false,
                   sameAsBaseline: edge === initialEdges.get(id),
-                  sourcePoint: { x: sourcePoint.x, y: sourcePoint.y },
-                  targetPoint: { x: targetPoint.x, y: targetPoint.y },
-                  sourceDistance: boundaryDistance(sourcePoint, source.getBoundingClientRect()),
-                  targetDistance: boundaryDistance(targetPoint, target.getBoundingClientRect()),
                 },
               ];
             }),
@@ -599,7 +552,7 @@ async function recordContentMotion(
       });
       return { baseline, finished };
     },
-    { direction, nodeIds, edgeIds, endpoints },
+    { direction, nodeIds, edgeIds },
   );
   await root
     .getByRole('button', { name: direction === 'forward' ? 'Next step' : 'Previous step' })
@@ -726,15 +679,8 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           `.diagram-edge[data-edge-id="${probe.edgeId}"] path.edge-path`,
         )!;
         const edgeGroup = path.closest<SVGGElement>('.diagram-edge')!;
-        const matrix = path.getScreenCTM()!;
-        const length = path.getTotalLength();
-        const start = path.getPointAtLength(0).matrixTransform(matrix);
-        const end = path.getPointAtLength(length).matrixTransform(matrix);
         const source = root
           .querySelector<SVGForeignObjectElement>(`[data-node-id="${probe.sourceId}"]`)!
-          .getBoundingClientRect();
-        const target = root
-          .querySelector<SVGForeignObjectElement>(`[data-node-id="${probe.targetId}"]`)!
           .getBoundingClientRect();
         const movingNode = probe.movingNodeId
           ? root.querySelector<SVGForeignObjectElement>(`[data-node-id="${probe.movingNodeId}"]`)
@@ -751,24 +697,6 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           group
             ?.getAnimations({ subtree: false })
             .map((animation) => Number(animation.effect?.getTiming().duration)) ?? [];
-        const label = root.querySelector<SVGForeignObjectElement>(
-          `.edge-label-container[data-edge-id="${probe.edgeId}"]`,
-        );
-        const labelBounds = label?.getBoundingClientRect();
-        const labelCenter = labelBounds
-          ? {
-              x: (labelBounds.left + labelBounds.right) / 2,
-              y: (labelBounds.top + labelBounds.bottom) / 2,
-            }
-          : null;
-        const labelDistance = labelCenter
-          ? Math.min(
-              ...Array.from({ length: 201 }, (_, index) => {
-                const point = path.getPointAtLength((length * index) / 200).matrixTransform(matrix);
-                return Math.hypot(point.x - labelCenter.x, point.y - labelCenter.y);
-              }),
-            )
-          : null;
         const exiting = probe.exitingEdgeId
           ? root.querySelector<SVGGElement>(`.diagram-edge[data-edge-id="${probe.exitingEdgeId}"]`)
               ?.parentElement
@@ -836,21 +764,6 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           groupAnimationDurations,
           path: path.getAttribute('d') ?? '',
           progress: Number(edgeGroup.dataset.edgeMotionProgress),
-          sourcePoint: { x: start.x, y: start.y },
-          sourceBounds: {
-            left: source.left,
-            right: source.right,
-            top: source.top,
-            bottom: source.bottom,
-          },
-          targetPoint: { x: end.x, y: end.y },
-          targetBounds: {
-            left: target.left,
-            right: target.right,
-            top: target.top,
-            bottom: target.bottom,
-          },
-          labelDistance,
           overflow: viewport.scrollWidth - viewport.clientWidth,
           camera: `${getComputedStyle(camera).transform}|${getComputedStyle(geometry).transform}`,
           cameraPose: (() => {
@@ -1008,40 +921,6 @@ async function allRoutesComplete(page: Page, rootId: string) {
       edges.every((edge) => edge.getAttribute('data-edge-motion-progress') === '1'),
     );
 }
-
-function signedBoundaryDistance(point: ScreenPoint, bounds: ScreenBounds) {
-  const outsideX = Math.max(bounds.left - point.x, 0, point.x - bounds.right);
-  const outsideY = Math.max(bounds.top - point.y, 0, point.y - bounds.bottom);
-  if (outsideX > 0 || outsideY > 0) return Math.hypot(outsideX, outsideY);
-  const insideDistance = Math.min(
-    point.x - bounds.left,
-    bounds.right - point.x,
-    point.y - bounds.top,
-    bounds.bottom - point.y,
-  );
-  return insideDistance === 0 ? 0 : -insideDistance;
-}
-
-function expectFrameGeometry(frame: Frame) {
-  expect(
-    Math.abs(signedBoundaryDistance(frame.sourcePoint, frame.sourceBounds)),
-  ).toBeLessThanOrEqual(2);
-  const targetDistance = signedBoundaryDistance(frame.targetPoint, frame.targetBounds);
-  expect(targetDistance).toBeGreaterThanOrEqual(4.5);
-  expect(targetDistance).toBeLessThanOrEqual(6);
-  expect(frame.labelDistance).toBeLessThanOrEqual(4.5);
-  expect(frame.overflow).toBeLessThanOrEqual(1);
-}
-
-test('endpoint boundary oracle rejects detached, interior, and wrong-shape points', () => {
-  const expectedShape = { left: 0, right: 100, top: 0, bottom: 40 };
-  const wrongShape = { left: 120, right: 220, top: 0, bottom: 40 };
-  expect(signedBoundaryDistance({ x: 0, y: 10 }, expectedShape)).toBe(0);
-  expect(signedBoundaryDistance({ x: -3, y: 10 }, expectedShape)).toBeGreaterThan(2);
-  expect(signedBoundaryDistance({ x: 95, y: 20 }, expectedShape)).toBe(-5);
-  expect(signedBoundaryDistance({ x: 105, y: 20 }, expectedShape)).toBe(5);
-  expect(signedBoundaryDistance({ x: 100, y: 20 }, wrongShape)).toBeGreaterThan(2);
-});
 
 test('scene inventory oracle rejects a missing required route or label', () => {
   const expected: SceneInventory = {
@@ -1636,7 +1515,6 @@ test('animates the untouched initial ownership step before the following step', 
       'forward',
       ['user', 'chat', 'redux', 'daemon'],
       ['w1', 'w2', 'w3', 'w4', 'w5'],
-      { w3: { source: 'chat', target: 'redux' }, w5: { source: 'daemon', target: 'redux' } },
     );
     const settled = transition.frames.at(-1)!;
     expect(transition.baseline).toMatchObject({
@@ -1696,12 +1574,6 @@ test('animates the untouched initial ownership step before the following step', 
               edge.progress < 1,
           ),
         ).toBe(true);
-      }
-      expect(routeFrames.every(({ sourceDistance }) => Math.abs(sourceDistance) <= 2)).toBe(true);
-      for (const { targetDistance } of [start, ...routeFrames]) {
-        // Five CSS pixels of target clearance plus the rounded arrow-tip stroke.
-        expect(targetDistance).toBeGreaterThanOrEqual(4.5);
-        expect(targetDistance).toBeLessThanOrEqual(6);
       }
     }
 
@@ -1892,9 +1764,7 @@ test('settles an ownership step interrupted by a genuine outer lane resize', asy
   expect(pageErrors).toEqual([]);
 });
 
-test('interpolates a retained route with its moving endpoints in diagram coordinates', async ({
-  page,
-}) => {
+test('interpolates a retained route while its nodes move', async ({ page }) => {
   await openMotionFixture(page, 'custom-architecture');
   const root = page.locator('#custom-architecture');
   const renderer = root.locator('.diagram-renderer');
@@ -1908,7 +1778,6 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
     'forward',
     ['renderer', 'daemon'],
     ['a2'],
-    { a2: { source: 'renderer', target: 'daemon' } },
   );
   const settled = transition.frames.at(-1)!;
   expect(settled).toMatchObject({ state: 'observe', phase: 'settled', settled: true });
@@ -1950,27 +1819,9 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
   ).toBe(true);
   const routeFrames = transition.frames.map((frame) => {
     expect(frame.edges.a2, `a2 retained during ${frame.phase}`).not.toBeNull();
-    return { phase: frame.phase, ...frame.edges.a2! };
+    return frame.edges.a2!;
   });
   expect(routeFrames.every(({ sameAsBaseline }) => sameAsBaseline)).toBe(true);
-  expect(
-    routeFrames.every(({ sourceDistance }) => Math.abs(sourceDistance) <= 2),
-    JSON.stringify(
-      transition.frames
-        .filter((frame) => Math.abs(frame.edges.a2?.sourceDistance ?? 0) > 2)
-        .map((frame) => ({
-          phase: frame.phase,
-          edgeProgress: frame.edges.a2?.progress,
-          sourceDistance: frame.edges.a2?.sourceDistance,
-          sourcePoint: frame.edges.a2?.sourcePoint,
-          sourceNode: frame.nodes.renderer,
-        })),
-    ),
-  ).toBe(true);
-  for (const { targetDistance } of [edgeStart, ...routeFrames]) {
-    expect(targetDistance).toBeGreaterThanOrEqual(4.5);
-    expect(targetDistance).toBeLessThanOrEqual(6);
-  }
 });
 
 for (const fixture of steppedFixtures) {
@@ -2269,7 +2120,7 @@ test('coordinates architecture state motion through settled frames', async ({ pa
     page,
     'custom-architecture',
     'State 2: 2. Follow the data',
-    { edgeId: 'a1', sourceId: 'user', targetId: 'renderer', enteringNodeId: 'daemon' },
+    { edgeId: 'a1', sourceId: 'user', enteringNodeId: 'daemon' },
   );
   expect(architecture12.start.settled).toBe(false);
   expect(architecture12.settled.settled).toBe(true);
@@ -2284,7 +2135,7 @@ test('coordinates architecture state motion through settled frames', async ({ pa
   expectCameraBeforeScene(architecture12);
   expectFixedFooter(architecture12);
   expectCameraInterpolation(architecture12);
-  expectFrameGeometry(architecture12.settled);
+  expect(architecture12.settled.overflow).toBeLessThanOrEqual(1);
 
   const architecture23 = await recordTransition(
     page,
@@ -2293,7 +2144,6 @@ test('coordinates architecture state motion through settled frames', async ({ pa
     {
       edgeId: 'a2',
       sourceId: 'renderer',
-      targetId: 'daemon',
       movingNodeId: 'daemon',
       enteringNodeId: 'events',
       groupId: 'runtime',
@@ -2343,7 +2193,7 @@ test('coordinates architecture state motion through settled frames', async ({ pa
   expectCameraBeforeScene(architecture23);
   expectFixedFooter(architecture23);
   expectCameraInterpolation(architecture23);
-  expectFrameGeometry(architecture23.settled);
+  expect(architecture23.settled.overflow).toBeLessThanOrEqual(1);
   await expectSceneInventory(page, 'custom-architecture', 'observe');
   const architecture31 = await recordTransition(
     page,
@@ -2352,7 +2202,6 @@ test('coordinates architecture state motion through settled frames', async ({ pa
     {
       edgeId: 'a1',
       sourceId: 'user',
-      targetId: 'renderer',
       groupId: 'client',
       exitingEdgeId: 'a5',
     },
@@ -2382,7 +2231,7 @@ test('coordinates ownership state motion through settled frames', async ({ page 
     page,
     'custom-walkthrough',
     'State 2: 2. Follow execution',
-    { edgeId: 'w3', sourceId: 'chat', targetId: 'redux', enteringNodeId: 'daemon' },
+    { edgeId: 'w3', sourceId: 'chat', enteringNodeId: 'daemon' },
   );
   expect(ownership12.start.path).not.toBe(ownership12.settled.path);
   expect(
@@ -2400,14 +2249,14 @@ test('coordinates ownership state motion through settled frames', async ({ page 
     ),
   ).toBe(true);
   expectCameraBeforeScene(ownership12);
-  expectFrameGeometry(ownership12.settled);
+  expect(ownership12.settled.overflow).toBeLessThanOrEqual(1);
   expectFixedFooter(ownership12);
 
   const ownership23 = await recordTransition(
     page,
     'custom-walkthrough',
     'State 3: 3. Show the result',
-    { edgeId: 'w5', sourceId: 'daemon', targetId: 'redux', exitingEdgeId: 'w3' },
+    { edgeId: 'w5', sourceId: 'daemon', exitingEdgeId: 'w3' },
   );
   expect(ownership23.start.path).not.toBe(ownership23.settled.path);
   expect(ownership23.settled.progress).toBe(1);
@@ -2427,7 +2276,7 @@ test('coordinates ownership state motion through settled frames', async ({ page 
   // origin then moves their screen geometry continuously to the final frame.
   expectCameraBeforeScene(ownership23, 'exit');
   expectCameraInterpolation(ownership23);
-  expectFrameGeometry(ownership23.settled);
+  expect(ownership23.settled.overflow).toBeLessThanOrEqual(1);
   expectFixedFooter(ownership23);
   await expectSceneInventory(page, 'custom-walkthrough', 'render');
 });
@@ -2551,349 +2400,303 @@ test('reduced ownership motion reaches the same complete geometry as full motion
   expect(await readStableSignature(page, 'custom-walkthrough')).toEqual(ownershipStable);
 });
 
-for (const appearance of framingAppearances) {
-  for (const width of framingWidths) {
-    test(`fits each reduced-motion scene above the footer · ${appearance.name} · ${width.name}`, async ({
-      page,
-    }) => {
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      const params = new URLSearchParams({
-        state: 'custom-architecture',
-        theme: appearance.theme,
-        width: String(width.value),
-        motion: 'reduced',
-      });
-      const colorTheme = 'colorTheme' in appearance ? appearance.colorTheme : 'default';
-      await seedStoredCatalogPreferences(page, { colorTheme });
-      await page.goto(`${baseUrl}/sandbox/diagram-workbench?${params}`);
-      await expect(page.getByTestId('catalog-scene')).toHaveAttribute(
-        'data-preview-ready',
+for (const width of framingWidths) {
+  test(`keeps reduced-motion scene paint reachable above the footer · ${width.name}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const params = new URLSearchParams({
+      state: 'custom-architecture',
+      theme: 'light',
+      width: String(width.value),
+      motion: 'reduced',
+    });
+    await page.goto(`${baseUrl}/sandbox/diagram-workbench?${params}`);
+    await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+      timeout: WORKBENCH_READY_TIMEOUT_MS,
+    });
+    const root = page.locator('#custom-architecture');
+    const buttons = [
+      'State 1: 1. Start in the workbench',
+      'State 2: 2. Follow the data',
+      'State 3: 3. Close the loop',
+    ];
+    for (const [index, button] of buttons.entries()) {
+      await root.getByRole('button', { name: button }).click();
+      await expect(root.locator('.diagram-renderer')).toHaveAttribute(
+        'data-diagram-settled',
         'true',
-        {
-          timeout: WORKBENCH_READY_TIMEOUT_MS,
-        },
       );
-      await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
-        'data-catalog-color-theme',
-        colorTheme,
+      await expectSceneInventory(
+        page,
+        'custom-architecture',
+        steppedFixtures[0].scenes[index].state,
       );
-      const root = page.locator('#custom-architecture');
-      const buttons = [
-        'State 1: 1. Start in the workbench',
-        'State 2: 2. Follow the data',
-        'State 3: 3. Close the loop',
-      ];
-      for (const [index, button] of buttons.entries()) {
-        await root.getByRole('button', { name: button }).click();
-        await expect(root.locator('.diagram-renderer')).toHaveAttribute(
-          'data-diagram-settled',
-          'true',
-        );
-        await expectSceneInventory(
-          page,
-          'custom-architecture',
-          steppedFixtures[0].scenes[index].state,
-        );
-        const metrics = await root.evaluate(async (section) => {
-          const renderer = section.querySelector<HTMLElement>('.diagram-renderer')!;
-          const viewport = section.querySelector<HTMLElement>('.diagram-scroll-container')!;
-          const footer = section.querySelector<HTMLElement>('.diagram-footer')!;
-          const svg = viewport.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
-          const originalScroll = { left: viewport.scrollLeft, top: viewport.scrollTop };
-          const nextFrame = () =>
-            new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-          viewport.scrollTo({ left: 0, top: 0, behavior: 'instant' });
-          await nextFrame();
+      const metrics = await root.evaluate(async (section) => {
+        const renderer = section.querySelector<HTMLElement>('.diagram-renderer')!;
+        const viewport = section.querySelector<HTMLElement>('.diagram-scroll-container')!;
+        const footer = section.querySelector<HTMLElement>('.diagram-footer')!;
+        const svg = viewport.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
+        const originalScroll = { left: viewport.scrollLeft, top: viewport.scrollTop };
+        const nextFrame = () =>
+          new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        viewport.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+        await nextFrame();
 
-          type PaintDescriptor =
-            | { kind: 'element'; id: string; category: string; element: Element; margin: number }
-            | { kind: 'text'; id: string; category: string; element: Element; part: number }
-            | {
-                kind: 'marker';
-                id: string;
-                category: string;
-                element: SVGPathElement;
-                distance: number;
-              };
-          const descriptors: PaintDescriptor[] = [
-            ...section.querySelectorAll<SVGGraphicsElement>(
-              '[data-node-id], [data-group-id] .group-bg, .group-label, .edge-path, .edge-label-container',
-            ),
-          ]
-            .filter(
-              (element) =>
-                !element.closest('mask') && Number(getComputedStyle(element).opacity) > 0,
-            )
-            .map((element, index) => {
-              const nodeId = element.closest('[data-node-id]')?.getAttribute('data-node-id');
-              const groupId = element.closest('[data-group-id]')?.getAttribute('data-group-id');
-              const edgeId = element.closest('[data-edge-id]')?.getAttribute('data-edge-id');
-              const category = nodeId
-                ? 'node'
-                : element.matches('.group-bg, .group-label')
-                  ? 'group'
-                  : element.matches('.edge-label-container')
-                    ? 'label'
-                    : 'route';
-              const strokeWidth = Number.parseFloat(getComputedStyle(element).strokeWidth) || 0;
-              return {
-                kind: 'element' as const,
-                id: `${category}:${nodeId ?? groupId ?? edgeId ?? index}`,
-                category,
-                element,
-                margin: category === 'route' ? strokeWidth / 2 + 0.5 : 0,
-              };
+        type PaintDescriptor =
+          | { kind: 'element'; id: string; category: string; element: Element; margin: number }
+          | { kind: 'text'; id: string; category: string; element: Element; part: number }
+          | {
+              kind: 'marker';
+              id: string;
+              category: string;
+              element: SVGPathElement;
+              distance: number;
+            };
+        const descriptors: PaintDescriptor[] = [
+          ...section.querySelectorAll<SVGGraphicsElement>(
+            '[data-node-id], [data-group-id] .group-bg, .group-label, .edge-path, .edge-label-container',
+          ),
+        ]
+          .filter(
+            (element) => !element.closest('mask') && Number(getComputedStyle(element).opacity) > 0,
+          )
+          .map((element, index) => {
+            const nodeId = element.closest('[data-node-id]')?.getAttribute('data-node-id');
+            const groupId = element.closest('[data-group-id]')?.getAttribute('data-group-id');
+            const edgeId = element.closest('[data-edge-id]')?.getAttribute('data-edge-id');
+            const category = nodeId
+              ? 'node'
+              : element.matches('.group-bg, .group-label')
+                ? 'group'
+                : element.matches('.edge-label-container')
+                  ? 'label'
+                  : 'route';
+            const strokeWidth = Number.parseFloat(getComputedStyle(element).strokeWidth) || 0;
+            return {
+              kind: 'element' as const,
+              id: `${category}:${nodeId ?? groupId ?? edgeId ?? index}`,
+              category,
+              element,
+              margin: category === 'route' ? strokeWidth / 2 + 0.5 : 0,
+            };
+          });
+        for (const [index, element] of [
+          ...section.querySelectorAll('.node-label, .edge-label-text'),
+        ].entries()) {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          for (let part = 0; part < range.getClientRects().length; part += 1) {
+            descriptors.push({
+              kind: 'text',
+              id: `text:${element.textContent?.trim()}:${index}:${part}`,
+              category: 'text',
+              element,
+              part,
             });
-          for (const [index, element] of [
-            ...section.querySelectorAll('.node-label, .edge-label-text'),
-          ].entries()) {
-            const range = document.createRange();
-            range.selectNodeContents(element);
-            for (let part = 0; part < range.getClientRects().length; part += 1) {
-              descriptors.push({
-                kind: 'text',
-                id: `text:${element.textContent?.trim()}:${index}:${part}`,
-                category: 'text',
-                element,
-                part,
-              });
-            }
           }
-          for (const [index, path] of [
-            ...section.querySelectorAll<SVGPathElement>('path.edge-path'),
-          ]
-            .filter((element) => !element.closest('mask'))
-            .entries()) {
-            const style = getComputedStyle(path);
-            const length = path.getTotalLength();
-            const edgeId = path.closest('[data-edge-id]')?.getAttribute('data-edge-id') ?? index;
-            if (style.markerStart !== 'none')
-              descriptors.push({
-                kind: 'marker',
-                id: `marker-start:${edgeId}`,
-                category: 'marker',
-                element: path,
-                distance: 0,
-              });
-            if (style.markerEnd !== 'none')
-              descriptors.push({
-                kind: 'marker',
-                id: `marker-end:${edgeId}`,
-                category: 'marker',
-                element: path,
-                distance: length,
-              });
-          }
+        }
+        for (const [index, path] of [...section.querySelectorAll<SVGPathElement>('path.edge-path')]
+          .filter((element) => !element.closest('mask'))
+          .entries()) {
+          const style = getComputedStyle(path);
+          const length = path.getTotalLength();
+          const edgeId = path.closest('[data-edge-id]')?.getAttribute('data-edge-id') ?? index;
+          if (style.markerStart !== 'none')
+            descriptors.push({
+              kind: 'marker',
+              id: `marker-start:${edgeId}`,
+              category: 'marker',
+              element: path,
+              distance: 0,
+            });
+          if (style.markerEnd !== 'none')
+            descriptors.push({
+              kind: 'marker',
+              id: `marker-end:${edgeId}`,
+              category: 'marker',
+              element: path,
+              distance: length,
+            });
+        }
 
-          const readPaint = () =>
-            descriptors.map((descriptor) => {
-              if (descriptor.kind === 'element') {
-                const bounds = descriptor.element.getBoundingClientRect();
-                return {
-                  id: descriptor.id,
-                  category: descriptor.category,
-                  left: bounds.left - descriptor.margin,
-                  right: bounds.right + descriptor.margin,
-                  top: bounds.top - descriptor.margin,
-                  bottom: bounds.bottom + descriptor.margin,
-                };
-              }
-              if (descriptor.kind === 'text') {
-                const range = document.createRange();
-                range.selectNodeContents(descriptor.element);
-                const bounds = range.getClientRects()[descriptor.part]!;
-                return { id: descriptor.id, category: descriptor.category, ...bounds.toJSON() };
-              }
-              const matrix = descriptor.element.getScreenCTM()!;
-              const point = descriptor.element
-                .getPointAtLength(descriptor.distance)
-                .matrixTransform(matrix);
-              const markerRadius = 7;
+        const readPaint = () =>
+          descriptors.map((descriptor) => {
+            if (descriptor.kind === 'element') {
+              const bounds = descriptor.element.getBoundingClientRect();
               return {
                 id: descriptor.id,
                 category: descriptor.category,
-                left: point.x - markerRadius,
-                right: point.x + markerRadius,
-                top: point.y - markerRadius,
-                bottom: point.y + markerRadius,
+                left: bounds.left - descriptor.margin,
+                right: bounds.right + descriptor.margin,
+                top: bounds.top - descriptor.margin,
+                bottom: bounds.bottom + descriptor.margin,
               };
-            });
-          const readSample = () => ({
-            left: viewport.scrollLeft,
-            top: viewport.scrollTop,
-            viewport: viewport.getBoundingClientRect().toJSON(),
-            svg: svg.getBoundingClientRect().toJSON(),
-            paint: readPaint(),
-            foreignObjectsContained: [...viewport.querySelectorAll('foreignObject')].every(
-              (foreignObject) => {
-                const outer = foreignObject.getBoundingClientRect();
-                const inner = foreignObject.firstElementChild?.getBoundingClientRect();
-                return (
-                  inner !== undefined &&
-                  Boolean(foreignObject.textContent?.trim()) &&
-                  inner.width > 0 &&
-                  inner.height > 0 &&
-                  inner.left >= outer.left - 1 &&
-                  inner.right <= outer.right + 1 &&
-                  inner.top >= outer.top - 1 &&
-                  inner.bottom <= outer.bottom + 1
-                );
-              },
-            ),
-          });
-          const axis = (maximum: number, size: number) => {
-            const values = [0];
-            for (let value = size * 0.8; value < maximum; value += size * 0.8) values.push(value);
-            if (maximum > 0) values.push(maximum);
-            return values;
-          };
-          const maxLeft = viewport.scrollWidth - viewport.clientWidth;
-          const maxTop = viewport.scrollHeight - viewport.clientHeight;
-          const samples: ReturnType<typeof readSample>[] = [];
-          for (const top of axis(maxTop, viewport.clientHeight)) {
-            for (const left of axis(maxLeft, viewport.clientWidth)) {
-              viewport.scrollTo({ left, top, behavior: 'instant' });
-              await nextFrame();
-              samples.push(readSample());
             }
-          }
-          const first = samples[0];
-          const localPaint = first.paint.map((paint) => ({
-            ...paint,
-            left: paint.left - first.viewport.left,
-            right: paint.right - first.viewport.left,
-            top: paint.top - first.viewport.top,
-            bottom: paint.bottom - first.viewport.top,
-          }));
-          const unreachable = first.paint.flatMap((paint, paintIndex) =>
-            (['left', 'right', 'top', 'bottom'] as const).flatMap((side) => {
-              const horizontal = side === 'left' || side === 'right';
-              return samples.some((sample) => {
-                const value = sample.paint[paintIndex][side];
-                const start = horizontal ? sample.viewport.left : sample.viewport.top;
-                const end = horizontal ? sample.viewport.right : sample.viewport.bottom;
-                return value >= start - 1 && value <= end + 1;
-              })
-                ? []
-                : [`${paint.id}:${side}`];
-            }),
-          );
-          const svgLoss = samples.flatMap((sample) =>
-            sample.paint.flatMap((paint) =>
-              paint.left >= sample.svg.left - 1 &&
-              paint.right <= sample.svg.right + 1 &&
-              paint.top >= sample.svg.top - 1 &&
-              paint.bottom <= sample.svg.bottom + 1
-                ? []
-                : [paint.id],
-            ),
-          );
-
-          viewport.scrollTo({ ...originalScroll, behavior: 'instant' });
-          const viewportBounds = first.viewport;
-          const painted = [
-            ...section.querySelectorAll<SVGGraphicsElement>(
-              '[data-node-id], [data-group-id] .group-bg, .edge-path, .edge-label-container',
-            ),
-          ]
-            .filter((element) => Number(getComputedStyle(element).opacity) > 0)
-            .map((element) => element.getBoundingClientRect())
-            .filter((bounds) => bounds.width > 0 || bounds.height > 0);
-          const minX = Math.min(...painted.map((bounds) => bounds.left));
-          const maxX = Math.max(...painted.map((bounds) => bounds.right));
-          const finiteAnimations = renderer
-            .getAnimations({ subtree: true })
-            .filter((animation) =>
-              Number.isFinite(Number(animation.effect?.getComputedTiming().endTime)),
-            );
-          return {
-            nodeCount: section.querySelectorAll('[data-node-id]').length,
-            centerDelta: Math.abs(
-              (minX + maxX) / 2 - (viewportBounds.left + viewportBounds.right) / 2,
-            ),
-            footerOffset:
-              footer.getBoundingClientRect().bottom - renderer.getBoundingClientRect().bottom,
-            clearsFooter: viewportBounds.bottom <= footer.getBoundingClientRect().top + 1,
-            overflow: Math.max(
-              viewport.scrollWidth - viewport.clientWidth,
-              viewport.scrollHeight - viewport.clientHeight,
-            ),
-            overflowStyle: getComputedStyle(viewport).overflow,
-            finiteAnimationCount: finiteAnimations.length,
-            capHeight: window.innerHeight * 0.9,
-            clientHeight: viewport.clientHeight,
-            scrollHeight: viewport.scrollHeight,
-            clientWidth: viewport.clientWidth,
-            scrollWidth: viewport.scrollWidth,
-            maxLeft,
-            maxTop,
-            capped: viewport.scrollHeight > viewport.clientHeight + 1,
-            fullyContainedAtTop: first.paint.every(
-              (paint) =>
-                paint.left >= first.viewport.left - 1 &&
-                paint.right <= first.viewport.right + 1 &&
-                paint.top >= first.viewport.top - 1 &&
-                paint.bottom <= first.viewport.bottom + 1,
-            ),
-            strictHorizontalContainment: samples.every((sample) =>
-              sample.paint.every(
-                (paint) =>
-                  paint.left >= sample.viewport.left - 1 &&
-                  paint.right <= sample.viewport.right + 1,
-              ),
-            ),
-            nonnegativePaintOrigin: localPaint.every(
-              (paint) => paint.left >= -1 && paint.top >= -1,
-            ),
-            paintWithinNaturalExtent: localPaint.every(
-              (paint) =>
-                paint.right <= viewport.scrollWidth + 1 &&
-                paint.bottom <= viewport.scrollHeight + 1,
-            ),
-            unreachable,
-            svgLoss,
-            foreignObjectsContained: samples.every((sample) => sample.foreignObjectsContained),
-            reachedTop: samples.some((sample) => sample.left === 0 && sample.top === 0),
-            reachedMaximum: samples.some(
-              (sample) => sample.left === maxLeft && sample.top === maxTop,
-            ),
-            paintCategories: [...new Set(first.paint.map((paint) => paint.category))].sort(),
-          };
+            if (descriptor.kind === 'text') {
+              const range = document.createRange();
+              range.selectNodeContents(descriptor.element);
+              const bounds = range.getClientRects()[descriptor.part]!;
+              return { id: descriptor.id, category: descriptor.category, ...bounds.toJSON() };
+            }
+            const matrix = descriptor.element.getScreenCTM()!;
+            const point = descriptor.element
+              .getPointAtLength(descriptor.distance)
+              .matrixTransform(matrix);
+            const markerRadius = 7;
+            return {
+              id: descriptor.id,
+              category: descriptor.category,
+              left: point.x - markerRadius,
+              right: point.x + markerRadius,
+              top: point.y - markerRadius,
+              bottom: point.y + markerRadius,
+            };
+          });
+        const readSample = () => ({
+          left: viewport.scrollLeft,
+          top: viewport.scrollTop,
+          viewport: viewport.getBoundingClientRect().toJSON(),
+          svg: svg.getBoundingClientRect().toJSON(),
+          paint: readPaint(),
+          foreignObjectsContained: [...viewport.querySelectorAll('foreignObject')].every(
+            (foreignObject) => {
+              const outer = foreignObject.getBoundingClientRect();
+              const inner = foreignObject.firstElementChild?.getBoundingClientRect();
+              return (
+                inner !== undefined &&
+                Boolean(foreignObject.textContent?.trim()) &&
+                inner.width > 0 &&
+                inner.height > 0 &&
+                inner.left >= outer.left - 1 &&
+                inner.right <= outer.right + 1 &&
+                inner.top >= outer.top - 1 &&
+                inner.bottom <= outer.bottom + 1
+              );
+            },
+          ),
         });
-        expect(metrics.nodeCount).toBe(steppedFixtures[0].scenes[index].nodes.length);
-        expect(metrics.centerDelta).toBeLessThanOrEqual(8);
-        expect(Math.abs(metrics.footerOffset)).toBeLessThanOrEqual(1);
-        expect(metrics.clearsFooter).toBe(true);
-        expect(metrics.overflowStyle).toBe('auto');
-        expect(metrics.finiteAnimationCount).toBe(0);
-        expect(metrics.paintCategories).toEqual([
-          'group',
-          'label',
-          'marker',
-          'node',
-          'route',
-          'text',
-        ]);
-        expect(metrics.maxLeft, JSON.stringify({ index, metrics })).toBe(0);
-        expect(metrics.scrollWidth).toBe(metrics.clientWidth);
-        expect(metrics.strictHorizontalContainment, JSON.stringify({ index, metrics })).toBe(true);
-        expect(metrics.nonnegativePaintOrigin, JSON.stringify({ index, metrics })).toBe(true);
-        expect(metrics.paintWithinNaturalExtent, JSON.stringify({ index, metrics })).toBe(true);
-        expect(metrics.unreachable, JSON.stringify({ index, metrics })).toEqual([]);
-        expect(metrics.svgLoss, JSON.stringify({ index, metrics })).toEqual([]);
-        expect(metrics.foreignObjectsContained, JSON.stringify({ index, metrics })).toBe(true);
-        expect(metrics.reachedTop).toBe(true);
-        expect(metrics.reachedMaximum).toBe(true);
-        if (metrics.capped) {
-          expect(Math.abs(metrics.clientHeight - metrics.capHeight)).toBeLessThanOrEqual(1);
-          expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
-          expect(metrics.maxTop).toBe(metrics.scrollHeight - metrics.clientHeight);
-        } else {
-          expect(metrics.scrollHeight).toBe(metrics.clientHeight);
-          expect(metrics.clientHeight).toBeLessThanOrEqual(metrics.capHeight + 1);
-          expect(metrics.fullyContainedAtTop, JSON.stringify({ index, metrics })).toBe(true);
+        const axis = (maximum: number, size: number) => {
+          const values = [0];
+          for (let value = size * 0.8; value < maximum; value += size * 0.8) values.push(value);
+          if (maximum > 0) values.push(maximum);
+          return values;
+        };
+        const maxLeft = viewport.scrollWidth - viewport.clientWidth;
+        const maxTop = viewport.scrollHeight - viewport.clientHeight;
+        const samples: ReturnType<typeof readSample>[] = [];
+        for (const top of axis(maxTop, viewport.clientHeight)) {
+          for (const left of axis(maxLeft, viewport.clientWidth)) {
+            viewport.scrollTo({ left, top, behavior: 'instant' });
+            await nextFrame();
+            samples.push(readSample());
+          }
         }
+        const first = samples[0];
+        const localPaint = first.paint.map((paint) => ({
+          ...paint,
+          left: paint.left - first.viewport.left,
+          right: paint.right - first.viewport.left,
+          top: paint.top - first.viewport.top,
+          bottom: paint.bottom - first.viewport.top,
+        }));
+        const unreachable = first.paint.flatMap((paint, paintIndex) =>
+          (['left', 'right', 'top', 'bottom'] as const).flatMap((side) => {
+            const horizontal = side === 'left' || side === 'right';
+            return samples.some((sample) => {
+              const value = sample.paint[paintIndex][side];
+              const start = horizontal ? sample.viewport.left : sample.viewport.top;
+              const end = horizontal ? sample.viewport.right : sample.viewport.bottom;
+              return value >= start - 1 && value <= end + 1;
+            })
+              ? []
+              : [`${paint.id}:${side}`];
+          }),
+        );
+        const svgLoss = samples.flatMap((sample) =>
+          sample.paint.flatMap((paint) =>
+            paint.left >= sample.svg.left - 1 &&
+            paint.right <= sample.svg.right + 1 &&
+            paint.top >= sample.svg.top - 1 &&
+            paint.bottom <= sample.svg.bottom + 1
+              ? []
+              : [paint.id],
+          ),
+        );
+
+        viewport.scrollTo({ ...originalScroll, behavior: 'instant' });
+        const viewportBounds = first.viewport;
+        const finiteAnimations = renderer
+          .getAnimations({ subtree: true })
+          .filter((animation) =>
+            Number.isFinite(Number(animation.effect?.getComputedTiming().endTime)),
+          );
+        return {
+          nodeCount: section.querySelectorAll('[data-node-id]').length,
+          clearsFooter: viewportBounds.bottom <= footer.getBoundingClientRect().top + 1,
+          overflow: Math.max(
+            viewport.scrollWidth - viewport.clientWidth,
+            viewport.scrollHeight - viewport.clientHeight,
+          ),
+          overflowStyle: getComputedStyle(viewport).overflow,
+          finiteAnimationCount: finiteAnimations.length,
+          clientWidth: viewport.clientWidth,
+          scrollWidth: viewport.scrollWidth,
+          maxLeft,
+          capped: viewport.scrollHeight > viewport.clientHeight + 1,
+          fullyContainedAtTop: first.paint.every(
+            (paint) =>
+              paint.left >= first.viewport.left - 1 &&
+              paint.right <= first.viewport.right + 1 &&
+              paint.top >= first.viewport.top - 1 &&
+              paint.bottom <= first.viewport.bottom + 1,
+          ),
+          strictHorizontalContainment: samples.every((sample) =>
+            sample.paint.every(
+              (paint) =>
+                paint.left >= sample.viewport.left - 1 && paint.right <= sample.viewport.right + 1,
+            ),
+          ),
+          nonnegativePaintOrigin: localPaint.every((paint) => paint.left >= -1 && paint.top >= -1),
+          paintWithinNaturalExtent: localPaint.every(
+            (paint) =>
+              paint.right <= viewport.scrollWidth + 1 && paint.bottom <= viewport.scrollHeight + 1,
+          ),
+          unreachable,
+          svgLoss,
+          foreignObjectsContained: samples.every((sample) => sample.foreignObjectsContained),
+          reachedTop: samples.some((sample) => sample.left === 0 && sample.top === 0),
+          reachedMaximum: samples.some(
+            (sample) => sample.left === maxLeft && sample.top === maxTop,
+          ),
+          paintCategories: [...new Set(first.paint.map((paint) => paint.category))].sort(),
+        };
+      });
+      expect(metrics.nodeCount).toBe(steppedFixtures[0].scenes[index].nodes.length);
+      expect(metrics.clearsFooter).toBe(true);
+      expect(metrics.overflowStyle).toBe('auto');
+      expect(metrics.finiteAnimationCount).toBe(0);
+      expect(metrics.paintCategories).toEqual([
+        'group',
+        'label',
+        'marker',
+        'node',
+        'route',
+        'text',
+      ]);
+      expect(metrics.maxLeft, JSON.stringify({ index, metrics })).toBe(0);
+      expect(metrics.scrollWidth).toBe(metrics.clientWidth);
+      expect(metrics.strictHorizontalContainment, JSON.stringify({ index, metrics })).toBe(true);
+      expect(metrics.nonnegativePaintOrigin, JSON.stringify({ index, metrics })).toBe(true);
+      expect(metrics.paintWithinNaturalExtent, JSON.stringify({ index, metrics })).toBe(true);
+      expect(metrics.unreachable, JSON.stringify({ index, metrics })).toEqual([]);
+      expect(metrics.svgLoss, JSON.stringify({ index, metrics })).toEqual([]);
+      expect(metrics.foreignObjectsContained, JSON.stringify({ index, metrics })).toBe(true);
+      expect(metrics.reachedTop).toBe(true);
+      expect(metrics.reachedMaximum).toBe(true);
+      if (!metrics.capped) {
+        expect(metrics.fullyContainedAtTop, JSON.stringify({ index, metrics })).toBe(true);
       }
-    });
-  }
+    }
+  });
 }

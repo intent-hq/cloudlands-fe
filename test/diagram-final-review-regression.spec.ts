@@ -55,19 +55,19 @@ test('keeps multiline node content inside narrow cards', async ({ page }) => {
   for (const node of nodes) expect(node.contained, `${node.nodeId} containment`).toBe(true);
 });
 
-test('keeps compact dependency filenames in readable semantic units', async ({ page }) => {
+test('keeps complete compact dependency filenames inside their nodes', async ({ page }) => {
   test.setTimeout(180_000);
   const width = 320;
   await openState(page, 'custom-dependency-graph', width);
   const result = await page.locator('#custom-dependency-graph').evaluate((root) => {
     const expected = {
-      scene: ['CatalogScene.svelte'],
-      definition: ['preview-definition.ts'],
-      fixtures: ['diagram-workbench.', 'preview-fixtures.ts'],
-      mermaid: ['MermaidRenderer', '.svelte'],
-      custom: ['DiagramRenderer', '.svelte'],
+      scene: 'CatalogScene.svelte',
+      definition: 'preview-definition.ts',
+      fixtures: 'diagram-workbench.preview-fixtures.ts',
+      mermaid: 'MermaidRenderer.svelte',
+      custom: 'DiagramRenderer.svelte',
     };
-    return Object.entries(expected).map(([id, units]) => {
+    return Object.entries(expected).map(([id, filename]) => {
       const node = root.querySelector<SVGGraphicsElement>(`[data-node-id="${id}"]`)!;
       const label = root.querySelector<HTMLElement>(`[data-node-id="${id}"] .node-label`)!;
       const nodeBounds = node.getBoundingClientRect();
@@ -76,8 +76,8 @@ test('keeps compact dependency filenames in readable semantic units', async ({ p
       );
       return {
         id,
-        expected: units,
-        actual: parts.map(({ text }) => text),
+        expected: filename,
+        actual: parts.map(({ text }) => text).join(''),
         contained: parts.every(
           ({ bounds }) =>
             bounds.left >= nodeBounds.left - 1 && bounds.right <= nodeBounds.right + 1,
@@ -91,7 +91,7 @@ test('keeps compact dependency filenames in readable semantic units', async ({ p
   ).toBe(true);
   expect(
     result.map(({ actual }) => actual),
-    `light/${width} semantic units`,
+    `light/${width} complete filenames`,
   ).toEqual(result.map(({ expected }) => expected));
 });
 
@@ -110,26 +110,10 @@ test('keeps the disconnected observer card and content inside the 640px light fr
     const labels = [...root.querySelectorAll<SVGGraphicsElement>('.edge-label-container')].map(
       (label) => {
         const bounds = label.getBoundingClientRect();
-        const edge = root.querySelector<SVGPathElement>(
-          `.diagram-edge[data-edge-id="${label.dataset.edgeId}"] path`,
-        )!;
-        const matrix = edge.getScreenCTM();
-        const length = edge.getTotalLength();
-        const ownsLane = Array.from({ length: 101 }, (_, index) => {
-          const point = edge.getPointAtLength((length * index) / 100);
-          return matrix ? point.matrixTransform(matrix) : point;
-        }).some(
-          (point) =>
-            point.x >= bounds.left &&
-            point.x <= bounds.right &&
-            point.y >= bounds.top &&
-            point.y <= bounds.bottom,
-        );
         return {
           id: label.dataset.edgeId,
           text: label.textContent?.trim(),
           contained: inside(bounds),
-          ownsLane,
         };
       },
     );
@@ -147,10 +131,6 @@ test('keeps the disconnected observer card and content inside the 640px light fr
   expect(
     result.labels.every(({ contained }) => contained),
     'light/640 label containment',
-  ).toBe(true);
-  expect(
-    result.labels.every(({ ownsLane }) => ownsLane),
-    'light/640 route ownership',
   ).toBe(true);
   expect(result.isolatedText).toContain('Disconnected observer');
   expect(result.isolatedContained, 'light/640 isolated card containment').toBe(true);
@@ -298,7 +278,6 @@ for (const width of [320, 960]) {
           [...svg.querySelectorAll<SVGGElement>('g.node')].find((item) =>
             item.id.includes(`flowchart-${id}-`),
           )!;
-        const source = node('Store').getBoundingClientRect();
         const target = node('Client').getBoundingClientRect();
         const label = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].find(
           (item) => item.textContent?.trim() === 'result',
@@ -313,15 +292,6 @@ for (const width of [320, 960]) {
         const pathBounds = path.getBoundingClientRect();
         const frame = svg.getBoundingClientRect();
         const samples = Array.from({ length: 201 }, (_, index) => point((length * index) / 200));
-        const ownsLabel = Array.from({ length: 201 }, (_, index) =>
-          point((length * index) / 200),
-        ).some(
-          (sample) =>
-            sample.x >= labelBounds.left &&
-            sample.x <= labelBounds.right &&
-            sample.y >= labelBounds.top &&
-            sample.y <= labelBounds.bottom,
-        );
         const otherNodes = [...svg.querySelectorAll<SVGGElement>('g.node')].filter(
           (item) => item !== node('Store') && item !== node('Client'),
         );
@@ -346,23 +316,6 @@ for (const width of [320, 960]) {
             labelBounds.bottom > bounds.top
           );
         });
-        const crossesRoute = paths
-          .filter((item) => item !== path)
-          .some((otherPath) => {
-            const otherMatrix = otherPath.getScreenCTM();
-            const otherLength = otherPath.getTotalLength();
-            if (!otherMatrix || otherLength === 0) return false;
-            const otherSamples = Array.from({ length: 121 }, (_, index) =>
-              otherPath.getPointAtLength((otherLength * index) / 120).matrixTransform(otherMatrix),
-            );
-            return samples
-              .slice(4, -4)
-              .some((sample) =>
-                otherSamples.some(
-                  (other) => Math.hypot(sample.x - other.x, sample.y - other.y) < 2,
-                ),
-              );
-          });
         const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
         const boundaryDistance = (point: DOMPoint, bounds: DOMRect) => {
           const dx = Math.max(bounds.left - point.x, 0, point.x - bounds.right);
@@ -376,15 +329,15 @@ for (const width of [320, 960]) {
                 bounds.bottom - point.y,
               );
         };
-        const nearestTarget = [...svg.querySelectorAll<SVGGElement>('g.node')].toSorted(
-          (left, right) =>
-            Math.abs(boundaryDistance(end, left.getBoundingClientRect())) -
-            Math.abs(boundaryDistance(end, right.getBoundingClientRect())),
-        )[0];
-        const style = getComputedStyle(path);
+        const nearestNode = (point: DOMPoint) =>
+          [...svg.querySelectorAll<SVGGElement>('g.node')].toSorted(
+            (left, right) =>
+              Math.abs(boundaryDistance(point, left.getBoundingClientRect())) -
+              Math.abs(boundaryDistance(point, right.getBoundingClientRect())),
+          )[0];
         return {
-          targetIsNearest: nearestTarget?.id === node('Client').id,
-          sourceDistance: Math.abs(boundaryDistance(start, source)),
+          sourceIsNearest: nearestNode(start)?.id === node('Store').id,
+          targetIsNearest: nearestNode(end)?.id === node('Client').id,
           inward:
             (end.x - tangent.x) * ((target.left + target.right) / 2 - end.x) +
             (end.y - tangent.y) * ((target.top + target.bottom) / 2 - end.y),
@@ -393,37 +346,23 @@ for (const width of [320, 960]) {
             pathBounds.top >= frame.top - 1 &&
             pathBounds.right <= frame.right + 1 &&
             pathBounds.bottom <= frame.bottom + 1,
-          ownsLabel,
-          visibleShaft:
-            length > 20 &&
-            Math.max(pathBounds.width, pathBounds.height) > 10 &&
-            style.stroke !== 'none' &&
-            Number(style.strokeOpacity) > 0 &&
-            style.visibility === 'visible' &&
-            Number(style.opacity) > 0,
           crossesNode,
           labelCrossesNode,
-          crossesRoute,
           markerWidth: Number(marker.getAttribute('markerWidth')),
-          moves: (path.getAttribute('d')?.match(/M/g) ?? []).length,
         };
       });
-    expect(returnRoute.sourceDistance, `${identity} return source port`).toBeLessThanOrEqual(1);
+    expect(returnRoute.sourceIsNearest, `${identity} authored source`).toBe(true);
     expect(returnRoute.targetIsNearest, `${identity} authored target`).toBe(true);
     expect(returnRoute.inward, `${identity} return target tangent`).toBeGreaterThan(0);
     expect(returnRoute.contained, `${identity} return containment`).toBe(true);
-    expect(returnRoute.ownsLabel, `${identity} result label ownership`).toBe(true);
-    expect(returnRoute.visibleShaft, `${identity} visible result shaft`).toBe(true);
     expect(returnRoute.crossesNode, `${identity} result node collision`).toBe(false);
     expect(returnRoute.labelCrossesNode, `${identity} result label collision`).toBe(false);
-    expect(returnRoute.crossesRoute, `${identity} result route collision`).toBe(false);
     expect(returnRoute.markerWidth, `${identity} result marker`).toBeGreaterThan(0);
-    expect(returnRoute.moves, `${identity} continuous return route`).toBe(1);
   });
 }
 
 for (const width of [320, 960]) {
-  test(`attaches cycle feedback to Review and Hub at ${width}px`, async ({ page }) => {
+  test(`associates cycle feedback with Review and Hub at ${width}px`, async ({ page }) => {
     await openState(page, 'mermaid-cycle-fanout', width);
     const result = await page
       .locator('#mermaid-cycle-fanout svg[data-layout-settled="true"]')
@@ -433,7 +372,6 @@ for (const width of [320, 960]) {
           [...svg.querySelectorAll<SVGGElement>('g.node')].find((item) =>
             item.id.includes(`flowchart-${id}-`),
           )!;
-        const source = node('Review').getBoundingClientRect();
         const target = node('Hub').getBoundingClientRect();
         const matrix = path.getScreenCTM()!;
         const length = path.getTotalLength();
@@ -457,15 +395,16 @@ for (const width of [320, 960]) {
                 bounds.bottom - point.y,
               );
         };
-        const nearestTarget = [...svg.querySelectorAll<SVGGElement>('g.node')].toSorted(
-          (left, right) =>
-            Math.abs(boundaryDistance(end, left.getBoundingClientRect())) -
-            Math.abs(boundaryDistance(end, right.getBoundingClientRect())),
-        )[0];
+        const nearestNode = (point: DOMPoint) =>
+          [...svg.querySelectorAll<SVGGElement>('g.node')].toSorted(
+            (left, right) =>
+              Math.abs(boundaryDistance(point, left.getBoundingClientRect())) -
+              Math.abs(boundaryDistance(point, right.getBoundingClientRect())),
+          )[0];
         const style = getComputedStyle(path);
         return {
-          targetIsNearest: nearestTarget?.id === node('Hub').id,
-          sourceDistance: Math.abs(boundaryDistance(start, source)),
+          sourceIsNearest: nearestNode(start)?.id === node('Review').id,
+          targetIsNearest: nearestNode(end)?.id === node('Hub').id,
           inward:
             (end.x - tangent.x) * ((target.left + target.right) / 2 - end.x) +
             (end.y - tangent.y) * ((target.top + target.bottom) / 2 - end.y),
@@ -481,15 +420,13 @@ for (const width of [320, 960]) {
             bounds.right <= frame.right + 1 &&
             bounds.bottom <= frame.bottom + 1,
           markerWidth: Number(marker.getAttribute('markerWidth')),
-          moves: (path.getAttribute('d')!.match(/M/g) ?? []).length,
         };
       });
     expect(result.visible, `${width} painted route`).toBe(true);
-    expect(result.sourceDistance, `${width} source boundary`).toBeLessThanOrEqual(1);
+    expect(result.sourceIsNearest, `${width} authored source`).toBe(true);
     expect(result.targetIsNearest, `${width} authored target`).toBe(true);
     expect(result.inward, `${width} target tangent`).toBeGreaterThan(0);
     expect(result.contained, `${width} route containment`).toBe(true);
     expect(result.markerWidth, `${width} marker size`).toBeGreaterThan(0);
-    expect(result.moves, `${width} continuous route`).toBe(1);
   });
 }

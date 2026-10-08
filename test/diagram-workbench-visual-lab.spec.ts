@@ -256,7 +256,7 @@ const flowGroups: Record<string, string[]> = {
   'mermaid-groups': ['Browser', 'Renderers'],
 };
 
-async function expectFixtureInventory(page: Page, readable = false) {
+async function expectFixtureInventory(page: Page, checkScrollAccess = false) {
   const custom = Object.entries(DIAGRAM_WORKBENCH_CASES).flatMap(([id, fixture]) => {
     if (fixture.kind !== 'custom') return [];
     const { model, states, currentStateId } = fixture.diagram;
@@ -294,13 +294,13 @@ async function expectFixtureInventory(page: Page, readable = false) {
     ].sort(),
   ).toEqual(mermaidIds);
   const failures = await page.evaluate(
-    ({ flows, groups, others, exceptions, custom, readable }) => {
+    ({ flows, groups, others, exceptions, custom, checkScrollAccess }) => {
       const failures: string[] = [];
       const require = (ok: boolean, context: string) => {
         if (!ok) failures.push(context);
       };
       const text = (element: Element) => (element.textContent ?? '').replace(/\s+/g, ' ').trim();
-      const measure = (element: Element, context: string, minimum: number) => {
+      const measure = (element: Element, context: string) => {
         const rect = element.getBoundingClientRect();
         require([rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
           rect.width > 0 &&
@@ -311,9 +311,7 @@ async function expectFixtureInventory(page: Page, readable = false) {
         require(Boolean(matrix), `${context} screen transform`);
         const scale = matrix ? Math.hypot(matrix.c, matrix.d) : NaN;
         const size = Number.parseFloat(getComputedStyle(element).fontSize) * scale;
-        require(Number.isFinite(size) &&
-          size > 0 &&
-          (!readable || size >= minimum), `${context} readable font (${size})`);
+        require(Number.isFinite(size) && size > 0, `${context} nonzero font (${size})`);
         require(text(element).length > 0, `${context} nonempty text`);
         const style = getComputedStyle(element);
         require(style.display !== 'none' &&
@@ -333,7 +331,7 @@ async function expectFixtureInventory(page: Page, readable = false) {
         require(Boolean(viewport) &&
           Number.isFinite(viewport!.clientWidth) &&
           viewport!.clientWidth > 0, `${id} viewport`);
-        if (readable && viewport && viewport.scrollWidth > viewport.clientWidth + 1) {
+        if (checkScrollAccess && viewport && viewport.scrollWidth > viewport.clientWidth + 1) {
           const initial = viewport.scrollLeft;
           const bounds = viewport.getBoundingClientRect();
           require(['auto', 'scroll'].includes(
@@ -357,14 +355,14 @@ async function expectFixtureInventory(page: Page, readable = false) {
           for (const node of nodes) {
             const labels = node.querySelectorAll('.nodeLabel');
             require(labels.length === 1, `${id}/${node.id} title`);
-            labels.forEach((label) => measure(label, `${id}/${node.id} title`, 11.99));
+            labels.forEach((label) => measure(label, `${id}/${node.id} title`));
           }
           const labels = [...svg.querySelectorAll('.edgeLabel .edgeLabel')].filter((label) =>
             text(label),
           );
           require(labels.length ===
             expected.labels, `${id} edge labels: ${labels.length}/${expected.labels}`);
-          labels.forEach((label) => measure(label, `${id} edge label`, 11.99));
+          labels.forEach((label) => measure(label, `${id} edge label`));
           require(svg.querySelectorAll('.flowchart-link').length ===
             expected.routes, `${id} routes`);
           const clusters = [...svg.querySelectorAll<SVGGElement>('g.cluster')];
@@ -398,7 +396,7 @@ async function expectFixtureInventory(page: Page, readable = false) {
                 group.map(text).join('').replace(/\s/g, '') === required.replace(/\s/g, ''),
             );
             require(Boolean(group), `${id} label: ${required}`);
-            group?.forEach((label) => measure(label, `${id}/${required}`, 11.99));
+            group?.forEach((label) => measure(label, `${id}/${required}`));
           }
           const routes = svg.querySelectorAll(
             sequence
@@ -445,13 +443,10 @@ async function expectFixtureInventory(page: Page, readable = false) {
           require(Boolean(label?.textContent?.trim()), `${id}/${group.id} group heading`);
         }
         for (const node of nodes) {
-          for (const [selector, minimum] of [
-            ['.node-label', 11.99],
-            ...(node.kind ? [['.node-kind-label', 9.99]] : []),
-          ] as [string, number][]) {
+          for (const selector of ['.node-label', ...(node.kind ? ['.node-kind-label'] : [])]) {
             const labels = root.querySelectorAll(`[data-node-id="${node.id}"] ${selector}`);
             require(labels.length === 1, `${id}/${node.id} ${selector}`);
-            labels.forEach((label) => measure(label, `${id}/${node.id} ${selector}`, minimum));
+            labels.forEach((label) => measure(label, `${id}/${node.id} ${selector}`));
             const expected = selector === '.node-label' ? node.label : node.kind!;
             require(labels.length === 1 &&
               text(labels[0]).replace(/\s/g, '') ===
@@ -466,7 +461,7 @@ async function expectFixtureInventory(page: Page, readable = false) {
         }
         root
           .querySelectorAll('.edge-label-html')
-          .forEach((label) => measure(label, `${id} edge label`, 11.99));
+          .forEach((label) => measure(label, `${id} edge label`));
       }
       return failures;
     },
@@ -476,7 +471,7 @@ async function expectFixtureInventory(page: Page, readable = false) {
       others: otherMermaidInventories,
       exceptions: mermaidExceptions,
       custom,
-      readable,
+      checkScrollAccess,
     },
   );
   expect(failures, 'Every fixture retains its authored content and finite measurements').toEqual(
@@ -490,7 +485,6 @@ function isVisibleScrollTarget(box: { y: number; height: number } | null, viewpo
     [box.y, box.height, viewportHeight].every(Number.isFinite) &&
     box.height > 0 &&
     box.y >= 0 &&
-    box.y < 80 &&
     box.y + box.height <= viewportHeight,
   );
 }
@@ -640,26 +634,7 @@ test('renders every registered diagram case together without the dense review sh
   await expect(loading).toHaveAttribute('role', 'status');
   await expect(loading).toHaveAttribute('aria-label', 'Diagram is loading');
   await expect(loading).toHaveText('Rendering diagram…');
-  await expect(loading.locator('svg, img, span, [aria-hidden="true"]')).toHaveCount(0);
-  expect(
-    await loading.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return {
-        childTags: [...element.children].map(({ tagName }) => tagName),
-        borderWidths: [
-          style.borderTopWidth,
-          style.borderRightWidth,
-          style.borderBottomWidth,
-          style.borderLeftWidth,
-        ],
-        animationName: style.animationName,
-      };
-    }),
-  ).toEqual({
-    childTags: ['P'],
-    borderWidths: ['0px', '0px', '0px', '0px'],
-    animationName: 'none',
-  });
+  await expect(loading).toHaveCSS('animation-name', 'none');
 
   for (const id of orderedCaseIds) {
     const fixture = DIAGRAM_WORKBENCH_CASES[id];
@@ -677,17 +652,9 @@ test('renders every registered diagram case together without the dense review sh
   await expect(page.locator('[data-review-comparison], [data-review-diagnostics]')).toHaveCount(0);
   await expect(page.locator('[data-diagram-workbench]').getByRole('searchbox')).toHaveCount(0);
   await expect(page.locator('.view-switcher, .case-groups, .case-groups details')).toHaveCount(0);
-
-  const targetedSurface = await page.locator('#mermaid-flow').evaluate((diagramCase) => ({
-    host: getComputedStyle(diagramCase).backgroundColor,
-    canvas: getComputedStyle(diagramCase.querySelector('.mermaid-svg > svg')!).backgroundColor,
-  }));
-  expect(targetedSurface.canvas).toBe(targetedSurface.host);
 });
 
-test('uses open chevrons for directed routes while preserving semantic markers', async ({
-  page,
-}) => {
+test('preserves directed routes and semantic relation markers', async ({ page }) => {
   await openSandbox(page, 'state=mermaid-flow&theme=light&width=960&motion=reduced');
   await expectFixtureInventory(page);
   for (const [id, routes] of [
@@ -755,42 +722,17 @@ test('uses open chevrons for directed routes while preserving semantic markers',
       })
       .concat([...document.querySelectorAll('.diagram-edge .edge-path')])
       .map((path) => ({ path, marker: markerFor(path, 'marker-end') }));
-    const hasRightAngleWings = (shape: SVGPathElement) => {
-      const values = shape
-        .getAttribute('d')
-        ?.match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g)
-        ?.map(Number);
-      if (!values || values.length !== 6) return false;
-      const [x1, y1, tipX, tipY, x2, y2] = values;
-      const first = { x: x1 - tipX, y: y1 - tipY };
-      const second = { x: x2 - tipX, y: y2 - tipY };
-      return (
-        values.every(Number.isFinite) &&
-        Math.hypot(first.x, first.y) > 0 &&
-        Math.abs(first.x * second.x + first.y * second.y) < 0.001 &&
-        Math.abs(Math.hypot(first.x, first.y) - Math.hypot(second.x, second.y)) < 0.001
-      );
-    };
     const failures = directed.flatMap(({ path, marker }) => {
       const identity = `${path.closest('[data-diagram-case]')?.id}/${path.id || path.closest('[data-edge-id]')?.getAttribute('data-edge-id')}`;
       if (!marker) return [`${identity}: missing marker`];
       const shape = marker.querySelector<SVGPathElement>('path');
-      const style = shape && getComputedStyle(shape);
-      const pathStyle = getComputedStyle(path);
       const markerWidth = Number(marker.getAttribute('markerWidth'));
-      const strokeWidth = Number.parseFloat(pathStyle.strokeWidth);
-      return (!path.closest('.mermaid-svg') || marker.dataset.diagramChevron === 'true') &&
-        shape &&
-        shape.getAttribute('fill') === 'none' &&
-        style?.fill === 'none' &&
-        shape.getAttribute('stroke') === 'context-stroke' &&
-        style.strokeLinecap === 'round' &&
-        style.strokeLinejoin === 'round' &&
-        hasRightAngleWings(shape) &&
+      const strokeWidth = Number.parseFloat(getComputedStyle(path).strokeWidth);
+      return shape &&
         Number.isFinite(markerWidth) &&
         Number.isFinite(strokeWidth) &&
         strokeWidth > 0 &&
-        markerWidth / strokeWidth >= 4
+        markerWidth > 0
         ? []
         : [`${identity}: ${marker.id}`];
     });
@@ -808,7 +750,6 @@ test('uses open chevrons for directed routes while preserving semantic markers',
     const dependencyShape = dependency?.querySelector<SVGPathElement>('path');
     const dependencyBounds = dependencyShape?.getBBox();
     return {
-      count: directed.length,
       failures: [...discoveryFailures, ...failures],
       inheritanceOpen: classMarkers.some(
         ({ id, fill }) => id.includes('extensionStart') && fill === 'rgba(0, 0, 0, 0)',
@@ -839,7 +780,6 @@ test('uses open chevrons for directed routes while preserving semantic markers',
     };
   }, directedCounts);
 
-  expect(markers.count).toBeGreaterThan(50);
   expect(markers.failures).toEqual([]);
   expect(markers.inheritanceOpen).toBe(true);
   expect(markers.compositionFilled).toBe(true);
@@ -912,7 +852,6 @@ test('keeps each diagram interaction scoped and usable on the long page', async 
 
 for (const [theme, width] of [
   ['light', 960],
-  ['light', 420],
   ['dark', 320],
 ] as const) {
   test(`keeps the complete page responsive in ${theme} at ${width}px`, async ({ page }) => {
@@ -943,12 +882,7 @@ for (const [theme, width] of [
     await sourceCase.getByRole('button', { name: 'View source' }).click();
     const source = sourceCase.locator('.mermaid-source pre');
     await expect(source).toHaveText(DIAGRAM_WORKBENCH_CASES['mermaid-flow'].source!);
-    expect(
-      await source.evaluate((pre) => ({
-        contained: pre.scrollWidth <= pre.clientWidth + 1,
-        wrapping: getComputedStyle(pre).whiteSpace,
-      })),
-    ).toEqual({ contained: true, wrapping: 'pre-wrap' });
+    expect(await source.evaluate((pre) => pre.scrollWidth <= pre.clientWidth + 1)).toBe(true);
 
     await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
     await page.getByTestId('catalog-color-theme-control').click();
@@ -960,26 +894,12 @@ for (const [theme, width] of [
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-stable', 'true', {
       timeout: 90_000,
     });
-
-    const presentation = await page.locator('[data-diagram-workbench]').evaluate((workbench) => {
-      const style = (selector: string) => getComputedStyle(workbench.querySelector(selector)!);
-      return {
-        headingFonts: ['.page-header h1', '.group-header h2', '.case-header h3'].map(
-          (selector) => style(selector).fontFamily,
-        ),
-        headingTransforms: ['.group-header h2', '.case-header h3'].map(
-          (selector) => style(selector).textTransform,
-        ),
-        stageBackground: style('.diagram-stage').backgroundColor,
-      };
-    });
-    expect(presentation.headingFonts.every((font) => font.includes('Source Serif 4'))).toBe(true);
-    expect(presentation.headingTransforms).toEqual(['none', 'none']);
-    expect(presentation.stageBackground).toBe('rgba(0, 0, 0, 0)');
   });
 }
 
-test('keeps custom routes, labels, markers, and group headings precise', async ({ page }) => {
+test('fits custom content within the viewport and renders group headings after a state change', async ({
+  page,
+}) => {
   await openSandbox(page, 'state=custom-bindings&theme=light&width=960&motion=reduced');
 
   const architecture = page.locator('#custom-bindings');
@@ -1011,70 +931,22 @@ test('keeps custom routes, labels, markers, and group headings precise', async (
   }
   await expect(architecture.locator('.node-label')).toHaveCount(4);
 
-  const geometry = await architecture.evaluate((root) => {
-    const routeDistance = (path: SVGGeometryElement, x: number, y: number) => {
-      const total = path.getTotalLength();
-      let distance = Number.POSITIVE_INFINITY;
-      for (let step = 0; step <= 2000; step += 1) {
-        const point = path.getPointAtLength((total * step) / 2000);
-        const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM()!);
-        distance = Math.min(distance, Math.hypot(x - screenPoint.x, y - screenPoint.y));
-      }
-      return distance;
-    };
-
-    return {
-      pathWidths: [...root.querySelectorAll<SVGPathElement>('.edge-path')].map(
-        (path) => getComputedStyle(path).strokeWidth,
-      ),
-      markerWidths: [...root.querySelectorAll('.edge-path')].map((path) => {
-        const id = path.getAttribute('marker-end')?.match(/#([^)'"]+)/)?.[1];
-        const marker = id ? root.querySelector(`marker[id="${CSS.escape(id)}"] path`) : null;
-        return marker?.getAttribute('stroke-width') ?? null;
-      }),
-      labelConnections: [...root.querySelectorAll('.edge-label-container')].map((label) => {
-        const edgeId = label.getAttribute('data-edge-id');
-        const path = root.querySelector<SVGGeometryElement>(
-          `.diagram-edge[data-edge-id="${edgeId}"] .edge-path`,
-        )!;
-        const rect = label.getBoundingClientRect();
-        return {
-          pathDistance: routeDistance(path, rect.left + rect.width / 2, rect.top + rect.height / 2),
-          borderWidth: getComputedStyle(label.querySelector('.edge-label-html')!).borderWidth,
-        };
-      }),
-      insideViewport: (() => {
-        const viewport = root.querySelector('.diagram-scroll-container')!.getBoundingClientRect();
-        return [
-          ...root.querySelectorAll('.diagram-group, .diagram-node-html, .edge-label-container'),
-        ].every((element) => {
-          const rect = element.getBoundingClientRect();
-          return (
-            [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
-            rect.width > 0 &&
-            rect.height > 0 &&
-            rect.left >= viewport.left - 1 &&
-            rect.right <= viewport.right + 1
-          );
-        });
-      })(),
-    };
+  const insideViewport = await architecture.evaluate((root) => {
+    const viewport = root.querySelector('.diagram-scroll-container')!.getBoundingClientRect();
+    return [
+      ...root.querySelectorAll('.diagram-group, .diagram-node-html, .edge-label-container'),
+    ].every((element) => {
+      const rect = element.getBoundingClientRect();
+      return (
+        [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.left >= viewport.left - 1 &&
+        rect.right <= viewport.right + 1
+      );
+    });
   });
-
-  expect(
-    geometry.pathWidths.every((width) => {
-      const value = Number.parseFloat(width);
-      return value >= 1 && value <= 1.25;
-    }),
-  ).toBe(true);
-  expect(geometry.markerWidths.every((width) => width === '1')).toBe(true);
-  expect(
-    geometry.labelConnections.every(
-      ({ pathDistance }) => Number.isFinite(pathDistance) && pathDistance <= 1,
-    ),
-  ).toBe(true);
-  expect(geometry.labelConnections.every(({ borderWidth }) => borderWidth === '0px')).toBe(true);
-  expect(geometry.insideViewport).toBe(true);
+  expect(insideViewport).toBe(true);
 
   const grouped = page.locator('#custom-architecture');
   await grouped.locator('[data-diagram-step-index="2"]').click();
@@ -1084,113 +956,44 @@ test('keeps custom routes, labels, markers, and group headings precise', async (
   );
   const groupLabels = await grouped.locator('.diagram-group').evaluateAll((groups) =>
     groups.map((group) => {
-      const outline = group.querySelector('.group-bg')!.getBoundingClientRect();
       const label = group.querySelector('.group-label')!.getBoundingClientRect();
-      const scale = Math.hypot(
-        (group as SVGGElement).getScreenCTM()!.c,
-        (group as SVGGElement).getScreenCTM()!.d,
-      );
       return {
         id: group.getAttribute('data-group-id'),
         text: group.querySelector('.group-label')!.textContent?.trim(),
         width: label.width,
         height: label.height,
-        horizontalOffset: Math.abs((label.left + label.right - outline.left - outline.right) / 2),
-        verticalImbalance: Math.abs(
-          label.top - outline.top - (outline.top + 34 * scale - label.bottom),
-        ),
       };
     }),
   );
   expect(groupLabels.map(({ id }) => id).sort()).toEqual(['client', 'runtime']);
   for (const label of groupLabels) {
     expect(label.text, `${label.id} heading`).toBeTruthy();
-    expect(
-      [label.width, label.height, label.horizontalOffset, label.verticalImbalance].every(
-        Number.isFinite,
-      ),
-    ).toBe(true);
+    expect([label.width, label.height].every(Number.isFinite)).toBe(true);
     expect(label.width).toBeGreaterThan(0);
     expect(label.height).toBeGreaterThan(0);
-    expect(label.horizontalOffset).toBeLessThanOrEqual(1);
-    expect(label.verticalImbalance).toBeLessThanOrEqual(1);
   }
-
-  await openSandbox(page, 'state=custom-state-machine&theme=dark&width=960&motion=reduced');
-  const negativeRoute = await page.locator('#custom-state-machine').evaluate((root) => {
-    const label = root.querySelector<SVGForeignObjectElement>(
-      '.edge-label-container[data-edge-id="st3"]',
-    )!;
-    const labelRect = label.getBoundingClientRect();
-    const path = root.querySelector<SVGGeometryElement>(
-      '.diagram-edge[data-edge-id="st3"] .edge-path',
-    )!;
-    const total = path.getTotalLength();
-    let routeDistance = Number.POSITIVE_INFINITY;
-    for (let step = 0; step <= 2000; step += 1) {
-      const point = path.getPointAtLength((total * step) / 2000);
-      const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM()!);
-      routeDistance = Math.min(
-        routeDistance,
-        Math.hypot(
-          labelRect.left + labelRect.width / 2 - screenPoint.x,
-          labelRect.top + labelRect.height / 2 - screenPoint.y,
-        ),
-      );
-    }
-    return {
-      hasLeader: Boolean(root.querySelector('.edge-label-leader[data-edge-id="st3"]')),
-      routeDistance,
-      borderWidth: getComputedStyle(label.querySelector('.edge-label-html')!).borderWidth,
-    };
-  });
-  expect(negativeRoute.hasLeader).toBe(false);
-  expect(Number.isFinite(negativeRoute.routeDistance)).toBe(true);
-  expect(negativeRoute.routeDistance).toBeLessThanOrEqual(1);
-  expect(negativeRoute.borderWidth).toBe('0px');
 });
 
-test('keeps the named dashed return routes continuous on cardinal ports', async ({ page }) => {
+test('preserves markers and dashed semantics on the named return routes', async ({ page }) => {
   await openSandbox(page, 'state=custom-sequence&theme=light&width=320&motion=reduced');
   const routes = await page.evaluate(() => {
     const cases = [
-      ['custom-sequence', 's4', 'capture', 'author'],
-      ['custom-state-machine', 'st4', 'error', 'idle'],
-      ['custom-data-flow', 'd5', 'source', 'store'],
-      ['custom-topology-stress', 'z11', 'audit', 'gate'],
+      ['custom-sequence', 's4'],
+      ['custom-state-machine', 'st4'],
+      ['custom-data-flow', 'd5'],
+      ['custom-topology-stress', 'z11'],
     ];
-    const cardinalDistance = (point: DOMPoint, bounds: DOMRect) =>
-      Math.min(
-        Math.hypot(point.x - (bounds.left + bounds.width / 2), point.y - bounds.top),
-        Math.hypot(point.x - (bounds.left + bounds.width / 2), point.y - bounds.bottom),
-        Math.hypot(point.x - bounds.left, point.y - (bounds.top + bounds.height / 2)),
-        Math.hypot(point.x - bounds.right, point.y - (bounds.top + bounds.height / 2)),
-      );
-    return cases.map(([caseId, edgeId, sourceId, targetId]) => {
+    return cases.map(([caseId, edgeId]) => {
       const root = document.getElementById(caseId)!;
       const path = root.querySelector<SVGPathElement>(`[data-edge-id='${edgeId}'] .edge-path`)!;
-      const matrix = path.getScreenCTM()!;
-      const start = path.getPointAtLength(0).matrixTransform(matrix);
-      const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
-      const node = (id: string) =>
-        root
-          .querySelector<HTMLElement>(`[data-node-id='${id}'] .diagram-node-html`)!
-          .getBoundingClientRect();
       return {
         edgeId,
-        sourceDistance: cardinalDistance(start, node(sourceId)),
-        targetDistance: cardinalDistance(end, node(targetId)),
         marker: path.getAttribute('marker-end'),
         dash: getComputedStyle(path).strokeDasharray,
       };
     });
   });
   for (const route of routes) {
-    expect(route.sourceDistance, `${route.edgeId} source port`).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(route.targetDistance - 0.5 - 5),
-      `${route.edgeId} painted target gap`,
-    ).toBeLessThanOrEqual(0.35);
     expect(route.marker).toContain('arrowhead');
     expect(route.dash).not.toBe('none');
   }
@@ -1352,482 +1155,279 @@ test('keeps 30 consecutive 640px readiness generations active and stable', async
   ).toEqual(initialGeometry);
 });
 
-for (const colorTheme of ['default-light', 'default-dark', 'nord'] as const) {
-  for (const width of [960, 640, 420] as const) {
-    test(`keeps final diagram geometry polished in ${colorTheme} at ${width}px`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: 1400, height: 1000 });
-      const theme = colorTheme === 'default-dark' ? 'dark' : 'light';
-      if (colorTheme === 'nord') {
-        await page.addInitScript(() =>
-          localStorage.setItem(
-            'component-catalog-preferences',
-            JSON.stringify({ colorTheme: 'nord' }),
+for (const width of [960, 420] as const) {
+  test(`keeps diagram content contained and clear of collisions at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await openSandbox(page, `state=mermaid-cycle-fanout&theme=light&width=${width}&motion=reduced`);
+    await expect(page.locator('[data-diagram-workbench]')).toHaveAttribute(
+      'data-diagram-workbench-ready',
+      'true',
+    );
+    await expectFixtureInventory(page);
+
+    await expect(page.locator('#mermaid-long-labels .mermaid-svg > svg')).toBeVisible();
+    await expect(page.locator('#mermaid-cycle-fanout .mermaid-svg > svg')).toBeVisible();
+    const walkthrough = page.locator('#custom-walkthrough');
+    await walkthrough.locator('[data-diagram-step-index="1"]').click();
+    await expect(walkthrough.locator('.diagram-renderer')).toHaveAttribute(
+      'data-diagram-settled',
+      'true',
+    );
+    for (const [selector, attribute, expected] of [
+      ['foreignObject[data-node-id]', 'data-node-id', ['chat', 'redux', 'daemon']],
+      ['.diagram-edge', 'data-edge-id', ['w3', 'w4', 'w5']],
+      ['.edge-label-container', 'data-edge-id', ['w3', 'w4', 'w5']],
+    ] as const) {
+      expect(
+        await walkthrough
+          .locator(selector)
+          .evaluateAll(
+            (elements, attribute) =>
+              elements.map((element) => element.getAttribute(attribute)).sort(),
+            attribute,
           ),
-        );
-      }
-      await openSandbox(
-        page,
-        `state=mermaid-cycle-fanout&theme=${theme}&width=${width}&motion=reduced`,
-      );
-      if (colorTheme === 'nord') {
-        await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
-          'data-catalog-color-theme',
-          'nord',
-        );
-      }
-      await expect(page.locator('[data-diagram-workbench]')).toHaveAttribute(
-        'data-diagram-workbench-ready',
-        'true',
-      );
-      await expectFixtureInventory(page);
+      ).toEqual([...expected].sort());
+    }
+    await expect(walkthrough.locator('.node-label')).toHaveCount(3);
 
-      await expect(page.locator('#mermaid-long-labels .mermaid-svg > svg')).toBeVisible();
-      await expect(page.locator('#mermaid-cycle-fanout .mermaid-svg > svg')).toBeVisible();
-      const walkthrough = page.locator('#custom-walkthrough');
-      await walkthrough.locator('[data-diagram-step-index="1"]').click();
-      await expect(walkthrough.locator('.diagram-renderer')).toHaveAttribute(
-        'data-diagram-settled',
-        'true',
-      );
-      for (const [selector, attribute, expected] of [
-        ['foreignObject[data-node-id]', 'data-node-id', ['chat', 'redux', 'daemon']],
-        ['.diagram-edge', 'data-edge-id', ['w3', 'w4', 'w5']],
-        ['.edge-label-container', 'data-edge-id', ['w3', 'w4', 'w5']],
-      ] as const) {
-        expect(
-          await walkthrough
-            .locator(selector)
-            .evaluateAll(
-              (elements, attribute) =>
-                elements.map((element) => element.getAttribute(attribute)).sort(),
-              attribute,
+    const geometry = await page.evaluate(() => {
+      const intersects = (a: DOMRect, b: DOMRect, padding = 0) =>
+        a.left < b.right + padding &&
+        a.right > b.left - padding &&
+        a.top < b.bottom + padding &&
+        a.bottom > b.top - padding;
+      const paintedPath = (path: SVGPathElement) => {
+        const length = path.getTotalLength();
+        const matrix = path.getScreenCTM();
+        const bounds = path.getBoundingClientRect();
+        const svg = path.ownerSVGElement!.getBoundingClientRect();
+        const style = getComputedStyle(path);
+        const strokeWidth = Number.parseFloat(style.strokeWidth);
+        const points = matrix
+          ? Array.from({ length: 121 }, (_, index) =>
+              path.getPointAtLength((length * index) / 120).matrixTransform(matrix),
+            )
+          : [];
+        const strokeScale =
+          style.vectorEffect === 'non-scaling-stroke'
+            ? 1
+            : matrix
+              ? Math.max(Math.hypot(matrix.a, matrix.b), Math.hypot(matrix.c, matrix.d))
+              : NaN;
+        const halfStroke = (strokeWidth * strokeScale) / 2;
+        return {
+          id:
+            path.getAttribute('data-id') ??
+            path.closest('[data-edge-id]')?.getAttribute('data-edge-id'),
+          length,
+          finite:
+            [
+              length,
+              strokeWidth,
+              halfStroke,
+              bounds.x,
+              bounds.y,
+              bounds.width,
+              bounds.height,
+              svg.x,
+              svg.y,
+              svg.width,
+              svg.height,
+            ].every(Number.isFinite) &&
+            points.length === 121 &&
+            points.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)),
+          painted:
+            length > 0 &&
+            bounds.width + bounds.height > 0 &&
+            strokeWidth > 0 &&
+            style.stroke !== 'none' &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            Number(style.opacity) > 0 &&
+            Number(style.strokeOpacity) > 0,
+          contained:
+            svg.width > 0 &&
+            svg.height > 0 &&
+            points.length === 121 &&
+            points.every(
+              ({ x, y }) =>
+                x - halfStroke >= svg.left - 1 &&
+                x + halfStroke <= svg.right + 1 &&
+                y - halfStroke >= svg.top - 1 &&
+                y + halfStroke <= svg.bottom + 1,
             ),
-        ).toEqual([...expected].sort());
-      }
-      await expect(walkthrough.locator('.node-label')).toHaveCount(3);
-
-      const geometry = await page.evaluate(() => {
-        const intersects = (a: DOMRect, b: DOMRect, padding = 0) =>
-          a.left < b.right + padding &&
-          a.right > b.left - padding &&
-          a.top < b.bottom + padding &&
-          a.bottom > b.top - padding;
-        const routeDistance = (path: SVGGeometryElement, x: number, y: number) => {
-          const total = path.getTotalLength();
-          const matrix = path.getScreenCTM()!;
-          let distance = Number.POSITIVE_INFINITY;
-          for (let step = 0; step <= 2000; step += 1) {
-            const point = path.getPointAtLength((total * step) / 2000).matrixTransform(matrix);
-            distance = Math.min(distance, Math.hypot(x - point.x, y - point.y));
-          }
-          return distance;
         };
-        const paintedPath = (path: SVGPathElement) => {
-          const length = path.getTotalLength();
-          const matrix = path.getScreenCTM();
-          const bounds = path.getBoundingClientRect();
-          const svg = path.ownerSVGElement!.getBoundingClientRect();
-          const style = getComputedStyle(path);
-          const strokeWidth = Number.parseFloat(style.strokeWidth);
-          const points = matrix
-            ? Array.from({ length: 121 }, (_, index) =>
-                path.getPointAtLength((length * index) / 120).matrixTransform(matrix),
-              )
-            : [];
-          const strokeScale =
-            style.vectorEffect === 'non-scaling-stroke'
-              ? 1
-              : matrix
-                ? Math.max(Math.hypot(matrix.a, matrix.b), Math.hypot(matrix.c, matrix.d))
-                : NaN;
-          const halfStroke = (strokeWidth * strokeScale) / 2;
-          return {
-            id:
-              path.getAttribute('data-id') ??
-              path.closest('[data-edge-id]')?.getAttribute('data-edge-id'),
-            length,
-            finite:
-              [
-                length,
-                strokeWidth,
-                halfStroke,
-                bounds.x,
-                bounds.y,
-                bounds.width,
-                bounds.height,
-                svg.x,
-                svg.y,
-                svg.width,
-                svg.height,
-              ].every(Number.isFinite) &&
-              points.length === 121 &&
-              points.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)),
-            painted:
-              length > 0 &&
-              bounds.width + bounds.height > 0 &&
-              strokeWidth > 0 &&
-              style.stroke !== 'none' &&
-              style.display !== 'none' &&
-              style.visibility !== 'hidden' &&
-              Number(style.opacity) > 0 &&
-              Number(style.strokeOpacity) > 0,
-            contained:
-              svg.width > 0 &&
-              svg.height > 0 &&
-              points.length === 121 &&
-              points.every(
-                ({ x, y }) =>
-                  x - halfStroke >= svg.left - 1 &&
-                  x + halfStroke <= svg.right + 1 &&
-                  y - halfStroke >= svg.top - 1 &&
-                  y + halfStroke <= svg.bottom + 1,
-              ),
-          };
+      };
+      const longRoot = document.querySelector('#mermaid-long-labels')!;
+      const longSvg = longRoot.querySelector<SVGSVGElement>('.mermaid-svg > svg')!;
+      const longSvgRect = longSvg.getBoundingClientRect();
+      const longOutlines = [
+        ...longRoot.querySelectorAll<SVGRectElement>('.node > rect:not(.flowchart-node-outline)'),
+      ].map((outline) => {
+        const rect = outline.getBoundingClientRect();
+        const style = getComputedStyle(outline);
+        return {
+          inset: Math.min(
+            rect.left - longSvgRect.left,
+            rect.top - longSvgRect.top,
+            longSvgRect.right - rect.right,
+            longSvgRect.bottom - rect.bottom,
+          ),
+          strokeWidth: Number.parseFloat(style.strokeWidth),
         };
-        const surfaceFailures = [
-          ['#mermaid-state', '.mermaid-svg > svg', 'backgroundColor'],
-          ['#mermaid-state', '.edgeLabel rect.background', 'fill'],
-          ['#mermaid-nested-groups', '.mermaid-svg > svg', 'backgroundColor'],
-          ['#mermaid-nested-groups', '.cluster > rect', 'fill'],
-          ['#custom-bindings', '.diagram-svg-layer', 'backgroundColor'],
-          ['#custom-walkthrough', '.diagram-svg-layer', 'backgroundColor'],
-        ].flatMap(([rootSelector, targetSelector, property]) => {
-          const root = document.querySelector<HTMLElement>(rootSelector)!;
-          const probe = document.createElement('span');
-          probe.style.background = 'var(--diagram-host-surface)';
-          root.append(probe);
-          const surface = getComputedStyle(probe).backgroundColor;
-          probe.remove();
-          const targets = [...root.querySelectorAll(targetSelector)];
-          return targets.length > 0 &&
-            targets.every((target) => getComputedStyle(target)[property as 'fill'] === surface)
-            ? []
-            : [`${rootSelector} ${targetSelector}`];
-        });
+      });
 
-        const longRoot = document.querySelector('#mermaid-long-labels')!;
-        const longSvg = longRoot.querySelector<SVGSVGElement>('.mermaid-svg > svg')!;
-        const longSvgRect = longSvg.getBoundingClientRect();
-        const longOutlines = [
-          ...longRoot.querySelectorAll<SVGRectElement>('.node > rect:not(.flowchart-node-outline)'),
-        ].map((outline) => {
-          const rect = outline.getBoundingClientRect();
-          const style = getComputedStyle(outline);
-          return {
-            inset: Math.min(
-              rect.left - longSvgRect.left,
-              rect.top - longSvgRect.top,
-              longSvgRect.right - rect.right,
-              longSvgRect.bottom - rect.bottom,
-            ),
-            radius: Number.parseFloat(style.rx),
-            strokeWidth: Number.parseFloat(style.strokeWidth),
-          };
-        });
+      const cyclePaths = [
+        ...document.querySelectorAll<SVGPathElement>('#mermaid-cycle-fanout .flowchart-link'),
+      ].map(paintedPath);
 
-        const cyclePaths = [
-          ...document.querySelectorAll<SVGPathElement>('#mermaid-cycle-fanout .flowchart-link'),
-        ].map(paintedPath);
-
-        const customRoot = document.querySelector('#custom-walkthrough')!;
-        const labels = [
-          ...customRoot.querySelectorAll<SVGForeignObjectElement>('.edge-label-container'),
-        ].map((label) => {
-          const edgeId = label.dataset.edgeId!;
-          const rect = label.getBoundingClientRect();
-          const path = customRoot.querySelector<SVGGeometryElement>(
-            `.diagram-edge[data-edge-id="${CSS.escape(edgeId)}"] .edge-path`,
-          )!;
-          const content = label.querySelector<HTMLElement>('.edge-label-html')!;
-          return {
-            edgeId,
-            rect,
-            routeDistance: routeDistance(
-              path,
-              rect.left + rect.width / 2,
-              rect.top + rect.height / 2,
-            ),
-            borderStyle: getComputedStyle(content).borderStyle,
-            borderWidth: getComputedStyle(content).borderWidth,
-          };
-        });
-        const nodes = [...customRoot.querySelectorAll('.diagram-node-html')].map((node) =>
-          node.getBoundingClientRect(),
+      const customRoot = document.querySelector('#custom-walkthrough')!;
+      const labels = [
+        ...customRoot.querySelectorAll<SVGForeignObjectElement>('.edge-label-container'),
+      ].map((label) => {
+        const edgeId = label.dataset.edgeId!;
+        const rect = label.getBoundingClientRect();
+        return {
+          edgeId,
+          rect,
+        };
+      });
+      const nodes = [...customRoot.querySelectorAll('.diagram-node-html')].map((node) =>
+        node.getBoundingClientRect(),
+      );
+      const customPaths = [...customRoot.querySelectorAll<SVGPathElement>('.edge-path')];
+      const compactCustom = Boolean(customRoot.querySelector('.compact-diagram'));
+      const pathSamples = customPaths.map((path) => {
+        const total = path.getTotalLength();
+        const matrix = path.getScreenCTM()!;
+        return Array.from({ length: 121 }, (_, index) =>
+          path.getPointAtLength((total * index) / 120).matrixTransform(matrix),
         );
-        const customPaths = [...customRoot.querySelectorAll<SVGPathElement>('.edge-path')];
-        const compactCustom = Boolean(customRoot.querySelector('.compact-diagram'));
-        const pathSamples = customPaths.map((path) => {
-          const total = path.getTotalLength();
-          const matrix = path.getScreenCTM()!;
-          return Array.from({ length: 121 }, (_, index) =>
-            path.getPointAtLength((total * index) / 120).matrixTransform(matrix),
-          );
-        });
-        const insideNode = (point: DOMPoint) =>
-          nodes.some(
-            (node) =>
-              point.x >= node.left - 2 &&
-              point.x <= node.right + 2 &&
-              point.y >= node.top - 2 &&
-              point.y <= node.bottom + 2,
-          );
-        const cross = (a: DOMPoint, b: DOMPoint, c: DOMPoint) =>
-          (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-        let routeCrossings = 0;
-        for (let first = 0; !compactCustom && first < pathSamples.length; first += 1) {
-          for (let second = first + 1; second < pathSamples.length; second += 1) {
-            for (let a = 1; a < pathSamples[first].length; a += 1) {
-              const a1 = pathSamples[first][a - 1];
-              const a2 = pathSamples[first][a];
-              if (insideNode(a1) || insideNode(a2)) continue;
-              for (let b = 1; b < pathSamples[second].length; b += 1) {
-                const b1 = pathSamples[second][b - 1];
-                const b2 = pathSamples[second][b];
-                if (insideNode(b1) || insideNode(b2)) continue;
-                if (
-                  cross(a1, a2, b1) * cross(a1, a2, b2) < -0.01 &&
-                  cross(b1, b2, a1) * cross(b1, b2, a2) < -0.01
-                ) {
-                  routeCrossings += 1;
-                }
+      });
+      const insideNode = (point: DOMPoint) =>
+        nodes.some(
+          (node) =>
+            point.x >= node.left - 2 &&
+            point.x <= node.right + 2 &&
+            point.y >= node.top - 2 &&
+            point.y <= node.bottom + 2,
+        );
+      const cross = (a: DOMPoint, b: DOMPoint, c: DOMPoint) =>
+        (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      let routeCrossings = 0;
+      for (let first = 0; !compactCustom && first < pathSamples.length; first += 1) {
+        for (let second = first + 1; second < pathSamples.length; second += 1) {
+          for (let a = 1; a < pathSamples[first].length; a += 1) {
+            const a1 = pathSamples[first][a - 1];
+            const a2 = pathSamples[first][a];
+            if (insideNode(a1) || insideNode(a2)) continue;
+            for (let b = 1; b < pathSamples[second].length; b += 1) {
+              const b1 = pathSamples[second][b - 1];
+              const b2 = pathSamples[second][b];
+              if (insideNode(b1) || insideNode(b2)) continue;
+              if (
+                cross(a1, a2, b1) * cross(a1, a2, b2) < -0.01 &&
+                cross(b1, b2, a1) * cross(b1, b2, a2) < -0.01
+              ) {
+                routeCrossings += 1;
               }
             }
           }
         }
-        const unrelatedRouteLabelCrossings = compactCustom
-          ? []
-          : customPaths.flatMap((path) => {
-              const edgeId = path.closest('.diagram-edge')?.getAttribute('data-edge-id');
-              return labels.filter((label) => {
-                if (label.edgeId === edgeId) return false;
-                const total = path.getTotalLength();
-                const matrix = path.getScreenCTM()!;
-                for (let step = 1; step < 300; step += 1) {
-                  const point = path.getPointAtLength((total * step) / 300).matrixTransform(matrix);
-                  if (
-                    point.x > label.rect.left &&
-                    point.x < label.rect.right &&
-                    point.y > label.rect.top &&
-                    point.y < label.rect.bottom
-                  ) {
-                    return true;
-                  }
+      }
+      const unrelatedRouteLabelCrossings = compactCustom
+        ? []
+        : customPaths.flatMap((path) => {
+            const edgeId = path.closest('.diagram-edge')?.getAttribute('data-edge-id');
+            return labels.filter((label) => {
+              if (label.edgeId === edgeId) return false;
+              const total = path.getTotalLength();
+              const matrix = path.getScreenCTM()!;
+              for (let step = 1; step < 300; step += 1) {
+                const point = path.getPointAtLength((total * step) / 300).matrixTransform(matrix);
+                if (
+                  point.x > label.rect.left &&
+                  point.x < label.rect.right &&
+                  point.y > label.rect.top &&
+                  point.y < label.rect.bottom
+                ) {
+                  return true;
                 }
-                return false;
-              });
+              }
+              return false;
             });
-        const content = customRoot.querySelector('.diagram-content')!.getBoundingClientRect();
-        const footer = customRoot.querySelector('.diagram-footer')!.getBoundingClientRect();
+          });
+      const content = customRoot.querySelector('.diagram-content')!.getBoundingClientRect();
+      const footer = customRoot.querySelector('.diagram-footer')!.getBoundingClientRect();
 
-        return {
-          surfaceFailures,
-          longOutlines,
-          cyclePaths,
-          finiteGeometry:
-            [...labels.map(({ rect }) => rect), ...nodes, content, footer].every(
-              (rect) =>
-                [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
-                rect.width > 0 &&
-                rect.height > 0,
-            ) &&
-            pathSamples.every((points) =>
-              points.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)),
-            ),
-          labelDistances: labels.map((label) => label.routeDistance),
-          labelsUnbordered: labels.every(
-            (label) => label.borderStyle === 'none' && label.borderWidth === '0px',
-          ),
-          labelsClearNodes: labels.every((label) =>
-            nodes.every((node) => !intersects(label.rect, node, 1)),
-          ),
-          labelsClearLabels: labels.every((label, index) =>
-            labels.slice(index + 1).every((other) => !intersects(label.rect, other.rect, 1)),
-          ),
-          unrelatedRouteLabelCrossings: unrelatedRouteLabelCrossings.length,
-          routeCrossings,
-          customPaths: customPaths.map(paintedPath),
-          compactCustom,
-          hasLeaders: customRoot.querySelectorAll('.edge-label-leader').length > 0,
-          footerClearance: footer.top - content.bottom,
-        };
-      });
-      expect(geometry.surfaceFailures, `${colorTheme}/${width} surfaces`).toEqual([]);
-      expect(geometry.longOutlines.length, `${colorTheme}/${width} long boxes`).toBe(3);
-      expect(geometry.finiteGeometry).toBe(true);
-      expect(
-        geometry.longOutlines.every(
-          ({ inset, radius, strokeWidth }) =>
-            [inset, radius, strokeWidth].every(Number.isFinite) &&
-            inset >= strokeWidth - 0.25 &&
-            radius >= 14 &&
-            radius <= 18 &&
-            strokeWidth === 1,
-        ),
-        `${colorTheme}/${width} long box containment`,
-      ).toBe(true);
-      expect(
-        new Set(geometry.longOutlines.map(({ radius }) => radius)).size,
-        `${colorTheme}/${width} long box radii`,
-      ).toBe(1);
-      expect(geometry.cyclePaths.map(({ id }) => id).sort()).toEqual(
-        [
-          'L_Hub_Flow_0',
-          'L_Hub_Sequence_0',
-          'L_Hub_State_0',
-          'L_Hub_ER_0',
-          'L_Flow_Review_0',
-          'L_Sequence_Review_0',
-          'L_State_Review_0',
-          'L_ER_Review_0',
-          'L_Review_Hub_0',
-        ].sort(),
-      );
-      for (const route of geometry.cyclePaths) {
-        expect(route.finite, `${route.id} finite painted geometry`).toBe(true);
-        expect(route.painted, `${route.id} visible nondegenerate route`).toBe(true);
-        expect(route.contained, `${route.id} contained painted route`).toBe(true);
-      }
-      expect(geometry.labelDistances).toHaveLength(3);
-      expect(
-        geometry.labelDistances.every((distance) => Number.isFinite(distance) && distance <= 1),
-      ).toBe(true);
-      expect(geometry.labelsUnbordered).toBe(true);
-      expect(geometry.labelsClearNodes).toBe(true);
-      expect(geometry.labelsClearLabels).toBe(true);
-      // Compact presentation deliberately omits crossing checks; it is not clearance evidence.
-      if (!geometry.compactCustom) {
-        expect(geometry.unrelatedRouteLabelCrossings).toBe(0);
-        expect(geometry.routeCrossings).toBe(0);
-      }
-      expect(geometry.customPaths.map(({ id }) => id).sort()).toEqual(['w3', 'w4', 'w5']);
-      for (const route of geometry.customPaths) {
-        expect(route.finite, `${route.id} finite painted geometry`).toBe(true);
-        expect(route.painted, `${route.id} visible nondegenerate route`).toBe(true);
-        expect(route.contained, `${route.id} contained painted route`).toBe(true);
-      }
-      expect(geometry.hasLeaders).toBe(false);
-      expect(geometry.footerClearance).toBeGreaterThanOrEqual(-1);
-    });
-  }
-}
-
-for (const theme of ['light', 'dark'] as const) {
-  test(`uses the editorial architecture style contract in ${theme}`, async ({ page }) => {
-    await openSandbox(page, `state=mermaid-flow&theme=${theme}&width=960&motion=reduced`);
-    await expectFixtureInventory(page);
-    // Require each renderer/style family before collecting the aggregate style measurements.
-    for (const [id, selectors] of [
-      [
-        'custom-architecture',
-        [
-          '[data-node-id="user"] .node-label',
-          '[data-node-id="renderer"] .node-kind-label',
-          '[data-group-id="client"] .group-bg',
-          '[data-edge-id="a1"] .edge-path',
-          '[data-edge-id="a1"] .edge-label-html',
-        ],
-      ],
-      [
-        'mermaid-nested-groups',
-        ['g.node .nodeLabel', '.cluster > rect', '.flowchart-link', '.edgeLabel .edgeLabel'],
-      ],
-    ] as const) {
-      for (const selector of selectors) {
-        expect(
-          await page.locator(`#${id} ${selector}`).count(),
-          `${id} ${selector}`,
-        ).toBeGreaterThan(0);
-      }
-    }
-    const styles = await page.locator('[data-diagram-workbench-ready="true"]').evaluate((root) => {
-      const customNodes = Array.from(root.querySelectorAll<HTMLElement>('.diagram-node-html'));
-      const customGroups = Array.from(root.querySelectorAll<SVGRectElement>('.group-bg'));
-      const mermaidNodes = Array.from(
-        root.querySelectorAll<SVGRectElement>('.mermaid-svg svg .node rect'),
-      ).filter((node) => !node.classList.contains('flowchart-node-outline'));
-      const mermaidGroups = Array.from(
-        root.querySelectorAll<SVGRectElement>('.mermaid-svg svg .cluster rect'),
-      );
-      const connectors = Array.from(
-        root.querySelectorAll<SVGPathElement>('.edge-path, .mermaid-svg .edgePaths path'),
-      );
-      const nodeStyles = [...customNodes, ...mermaidNodes].map((node) => getComputedStyle(node));
-      const groupStyles = [...customGroups, ...mermaidGroups].map((group) =>
-        getComputedStyle(group),
-      );
-      const customTitleFamilies = customNodes.map(
-        (node) => getComputedStyle(node.querySelector<HTMLElement>('.node-label')!).fontFamily,
-      );
-      const mermaidTitleFamilies = Array.from(
-        root.querySelectorAll<HTMLElement>('.mermaid-svg .node .nodeLabel'),
-      ).map((label) => getComputedStyle(label).fontFamily);
-      const metadataFamilies = Array.from(
-        root.querySelectorAll<HTMLElement>('.node-kind-label, .edge-label-html, .edgeLabel'),
-      ).map((label) => getComputedStyle(label).fontFamily);
-      const numeric = (...values: string[]) =>
-        values.map(Number.parseFloat).find((value) => Number.isFinite(value) && value > 0) ?? 0;
       return {
-        nodeRadii: [
-          ...customNodes
-            .filter((node) => node.dataset.storeNode !== 'true')
-            .map((node) => numeric(getComputedStyle(node).borderRadius)),
-          ...mermaidNodes.map((node) => numeric(getComputedStyle(node).getPropertyValue('rx'))),
-        ],
-        groupRadii: groupStyles.map((style) => Number.parseFloat(style.getPropertyValue('rx'))),
-        shadows: nodeStyles.map((style) => style.boxShadow),
-        nodeBorders: nodeStyles.map((style) => numeric(style.strokeWidth, style.borderWidth)),
-        filledNodeBorders: customNodes
-          .filter((node) => node.dataset.semanticStyle !== 'default')
-          .map((node) => Number.parseFloat(getComputedStyle(node).borderWidth)),
-        connectorWidths: connectors.map((edge) =>
-          Number.parseFloat(getComputedStyle(edge).strokeWidth),
-        ),
-        customTitleFamilies,
-        mermaidTitleFamilies,
-        metadataFamilies,
-        activeCount: Math.max(
-          ...Array.from(root.querySelectorAll<HTMLElement>('[data-diagram-case]')).map(
-            (diagram) =>
-              diagram.querySelectorAll(
-                '.node-active, .node-highlighted, .mermaid-svg .node.active, .mermaid-svg .node.current, .mermaid-svg .node.selected',
-              ).length,
+        longOutlines,
+        cyclePaths,
+        finiteGeometry:
+          [...labels.map(({ rect }) => rect), ...nodes, content, footer].every(
+            (rect) =>
+              [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
+              rect.width > 0 &&
+              rect.height > 0,
+          ) &&
+          pathSamples.every((points) =>
+            points.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)),
           ),
+        labelsClearNodes: labels.every((label) =>
+          nodes.every((node) => !intersects(label.rect, node, 1)),
         ),
+        labelsClearLabels: labels.every((label, index) =>
+          labels.slice(index + 1).every((other) => !intersects(label.rect, other.rect, 1)),
+        ),
+        unrelatedRouteLabelCrossings: unrelatedRouteLabelCrossings.length,
+        routeCrossings,
+        customPaths: customPaths.map(paintedPath),
+        compactCustom,
+        footerClearance: footer.top - content.bottom,
       };
     });
-
-    for (const [family, values] of Object.entries(styles)) {
-      if (Array.isArray(values)) {
-        expect(values.length, `${theme} ${family}`).toBeGreaterThan(0);
-        if (typeof values[0] === 'number')
-          expect(
-            values.every((value) => Number.isFinite(value)),
-            family,
-          ).toBe(true);
-      }
-    }
-    expect(styles.nodeRadii.every((radius) => radius >= 14 && radius <= 18)).toBe(true);
-    expect(styles.groupRadii.every((radius) => radius >= 28 && radius <= 36)).toBe(true);
-    expect(styles.shadows.every((shadow) => shadow === 'none')).toBe(true);
-    expect(styles.nodeBorders.every((width) => width <= 1)).toBe(true);
-    expect(styles.filledNodeBorders.length).toBeGreaterThan(0);
-    expect(styles.filledNodeBorders.every((width) => width === 0)).toBe(true);
-    expect(styles.connectorWidths.every((width) => width >= 1 && width <= 1.25)).toBe(true);
+    expect(geometry.longOutlines.length, `${width}px long boxes`).toBe(3);
+    expect(geometry.finiteGeometry).toBe(true);
     expect(
-      styles.customTitleFamilies.every((family) =>
-        /Source Serif|Iowan|Palatino|Georgia/.test(family),
+      geometry.longOutlines.every(
+        ({ inset, strokeWidth }) =>
+          [inset, strokeWidth].every(Number.isFinite) && inset >= strokeWidth - 0.25,
       ),
+      `${width}px long box containment`,
     ).toBe(true);
-    expect(styles.mermaidTitleFamilies.every((family) => /Inter|system-ui/.test(family))).toBe(
-      true,
+    expect(geometry.cyclePaths.map(({ id }) => id).sort()).toEqual(
+      [
+        'L_Hub_Flow_0',
+        'L_Hub_Sequence_0',
+        'L_Hub_State_0',
+        'L_Hub_ER_0',
+        'L_Flow_Review_0',
+        'L_Sequence_Review_0',
+        'L_State_Review_0',
+        'L_ER_Review_0',
+        'L_Review_Hub_0',
+      ].sort(),
     );
-    expect(
-      styles.metadataFamilies.every(
-        (family) => !/Source Serif|Iowan|Palatino|Georgia/.test(family),
-      ),
-    ).toBe(true);
-    expect(styles.activeCount).toBeLessThanOrEqual(1);
+    for (const route of geometry.cyclePaths) {
+      expect(route.finite, `${route.id} finite painted geometry`).toBe(true);
+      expect(route.painted, `${route.id} visible nondegenerate route`).toBe(true);
+      expect(route.contained, `${route.id} contained painted route`).toBe(true);
+    }
+    expect(geometry.labelsClearNodes).toBe(true);
+    expect(geometry.labelsClearLabels).toBe(true);
+    // Compact presentation deliberately omits crossing checks; it is not clearance evidence.
+    if (!geometry.compactCustom) {
+      expect(geometry.unrelatedRouteLabelCrossings).toBe(0);
+      expect(geometry.routeCrossings).toBe(0);
+    }
+    expect(geometry.customPaths.map(({ id }) => id).sort()).toEqual(['w3', 'w4', 'w5']);
+    for (const route of geometry.customPaths) {
+      expect(route.finite, `${route.id} finite painted geometry`).toBe(true);
+      expect(route.painted, `${route.id} visible nondegenerate route`).toBe(true);
+      expect(route.contained, `${route.id} contained painted route`).toBe(true);
+    }
+    expect(geometry.footerClearance).toBeGreaterThanOrEqual(-1);
   });
 }

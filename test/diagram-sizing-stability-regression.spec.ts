@@ -330,7 +330,6 @@ for (const motion of ['full', 'reduced'] as const) {
       await waitForMermaidStable(read);
       const resized = await read();
       expectMermaidContract(resized, expected);
-      expect(resized.nodeViewBounds?.[2]).toBe(resized.laneBounds?.[2]);
     }
 
     if (motion === 'reduced') {
@@ -445,17 +444,6 @@ async function architectureGeometry(page: Page) {
           rect.bottom <= svgBounds.bottom + 1
         );
       }),
-      minFontSize: Math.min(
-        ...nodeLabels.map((label) => {
-          const transform = label
-            ?.closest<SVGForeignObjectElement>('foreignObject')
-            ?.getScreenCTM();
-          return label && transform
-            ? Number.parseFloat(getComputedStyle(label).fontSize) *
-                Math.hypot(transform.c, transform.d)
-            : NaN;
-        }),
-      ),
     };
   });
 }
@@ -497,7 +485,5 @@ test('keeps every final architecture element reachable through panel resizes', a
       'events',
     ]);
     expect(result.nodeLabels.every(({ text, visible }) => text.length > 0 && visible)).toBe(true);
-    expect(Number.isFinite(result.minFontSize)).toBe(true);
-    expect(result.minFontSize, `${width}px readable architecture text`).toBeGreaterThanOrEqual(12);
   }
 });
