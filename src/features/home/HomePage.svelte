@@ -142,15 +142,11 @@
   );
   const selectedCustomViewId = $derived(customViewsAvailable ? $customViews$.selectedId : null);
   const customViewItems$ = selectCustomViews();
-  let openedCustomViewId = $state<string | null>(null);
-  const openedCustomView = $derived(
-    customViewsAvailable
-      ? $customViewItems$.find((view) => view.id === (selectedCustomViewId ?? openedCustomViewId))
+  const selectedCustomView = $derived(
+    selectedCustomViewId
+      ? $customViewItems$.find((view) => view.id === selectedCustomViewId)
       : undefined,
   );
-  $effect(() => {
-    if (selectedCustomViewId) openedCustomViewId = selectedCustomViewId;
-  });
   $effect(() => {
     if (!preview && !$collaborator$ && !$knownReposLoaded$) store.dispatch(loadKnownRepos());
   });
@@ -788,12 +784,13 @@
                   (value === 'workspaces' ||
                     value === 'prs' ||
                     value === 'linear' ||
-                    (value === 'custom' && openedCustomView))
+                    (value === 'custom' && selectedCustomView))
                 ) {
                   const order = ['workspaces', 'prs', 'linear', 'custom'];
                   mainDirection = order.indexOf(value) > order.indexOf(activeHomeTab) ? 1 : -1;
                   tabFocus = { value };
-                  if (value === 'custom' && openedCustomView) chooseCustomView(openedCustomView.id);
+                  if (value === 'custom' && selectedCustomView)
+                    chooseCustomView(selectedCustomView.id);
                   else if (value === 'workspaces' || value === 'prs' || value === 'linear') {
                     store.dispatch(selectCustomView(null));
                     updateView({ tab: value });
@@ -806,7 +803,7 @@
               {#snippet children()}
                 {#snippet homeHeader(customActions?: Snippet)}
                   <HomeHeader
-                    customViewName={openedCustomView?.name}
+                    customViewName={selectedCustomView?.name}
                     repositoryGithubUrl={selectedRepositoryGithubUrl}
                     canCreate={!$collaborator$}
                     onCreate={createWorkspace}
