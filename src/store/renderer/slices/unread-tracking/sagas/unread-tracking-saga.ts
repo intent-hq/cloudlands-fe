@@ -16,7 +16,7 @@ import {
   selectAgentSessionHasStreamingTailMessage,
 } from '../../agent-session/agent-session-selectors';
 import { replaceMessages } from '../../agent-session/agent-session-slice';
-import { sendMessage } from '../../chat-state/chat-state-slice';
+import { sendMessage, chatTranscriptSnapshotApplied } from '../../chat-state/chat-state-slice';
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -253,7 +253,7 @@ function* handleViewCleared(): SagaGenerator<void> {
  * signal is owned by the switch-timing saga and is not watched here.)
  */
 function* handleTranscriptHydrated(
-  action: ReturnType<typeof replaceMessages>,
+  action: ReturnType<typeof replaceMessages> | ReturnType<typeof chatTranscriptSnapshotApplied>,
 ): SagaGenerator<void> {
   const [agentId] = action.payload;
   const viewedAgentId = yield* selectCurrentlyViewedAgentId.effect();
@@ -274,6 +274,6 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),
     takeEvery(clearCurrentlyViewedAgent, handleViewCleared),
-    takeEvery(replaceMessages, handleTranscriptHydrated),
+    takeEvery([replaceMessages, chatTranscriptSnapshotApplied], handleTranscriptHydrated),
   ]);
 }

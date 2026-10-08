@@ -1053,7 +1053,16 @@ export interface AgentsClient {
  * synthetic in-flight message / activity flags and the delta stream's
  * terminal `streamingComplete` frames.
  */
+export interface InitialChatHistory {
+  target: number;
+  received: number;
+  complete: boolean;
+}
+
 export interface ChatTranscript {
+  initialHistory?: InitialChatHistory;
+  /** Cumulative historical rows; never a live-message or replacement-snapshot signal. */
+  fromHistory?: true;
   /** Exclusive older-page continuation from the authoritative snapshot. */
   nextToken?: string | null;
   messages: AgentMessage[];

@@ -133,6 +133,7 @@ import {
   chatSendStarted,
   chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   retainedChatTranscriptsSet,
@@ -142,6 +143,7 @@ import {
 import {
   selectAwaitingSwitchBackSnapshot,
   selectTranscriptHydration,
+  selectInitialChatHistoryPending,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   bulkUpsertSessions,
@@ -473,7 +475,10 @@ function* applyTranscript(
       // Re-observing that same evidence would invalidate the read and schedule
       // another refresh forever. New subscription deliveries still invalidate,
       // even when the client emits the same object; deferred first applies do too.
-      if (!restoration || entry.lastObservedTranscript !== transcript) {
+      if (
+        (!transcript.fromHistory || transcript.initialHistory?.complete === true) &&
+        (!restoration || entry.lastObservedTranscript !== transcript)
+      ) {
         observeSubmissionEvidence(
           agentId,
           session.workspaceId,
@@ -628,10 +633,13 @@ function* handleSubscriptionEvent(
     // healthy subscription never emits. Defer the WHOLE application until
     // the session shell upserts (replayed by the lifecycle loop), so meta is
     // only ever recorded after the messages actually landed.
-    if (event.transcript.fromSnapshot === true) {
+    if (event.transcript.fromSnapshot === true || event.transcript.initialHistory !== undefined) {
       const preSession = yield* selectAgentSession.effect(event.agentId);
       if (!preSession) {
-        entry.pendingSnapshot = event.transcript;
+        entry.pendingSnapshot = event.transcript.fromSnapshot
+          ? event.transcript
+          : { ...entry.pendingSnapshot, ...event.transcript, fromSnapshot: true };
+        entry.lastTranscript = entry.pendingSnapshot;
         setReplayableChatSnapshot(event.agentId, true);
         reportSnapshotGuard(event.transcript, 'snapshot-held-pre-session', 'buffered');
         return;
@@ -644,8 +652,16 @@ function* handleSubscriptionEvent(
     // immediately instead of stranding a wait window (monorepo#2864).
     setReplayableChatSnapshot(
       event.agentId,
-      entry.pendingSnapshot !== undefined || event.transcript.fromSnapshot === true,
+      entry.pendingSnapshot !== undefined ||
+        event.transcript.fromSnapshot === true ||
+        event.transcript.fromHistory === true,
     );
+    if (
+      event.transcript.initialHistory?.complete === false &&
+      event.transcript.fromSnapshot !== true
+    ) {
+      yield* put(chatInitialHistoryProgressed(event.agentId, event.transcript.initialHistory));
+    }
     // §7.1 `resumed: false` snapshot: the retained transcript MUST be
     // discarded (see applyTranscript). Snapshot emits only — the settled
     // re-apply of the same transcript must not wipe the background
@@ -670,7 +686,10 @@ function* handleSubscriptionEvent(
     // subsequent agent:stream:chunk dispatches carry the full block prefix,
     // then record the snapshot metadata for the chat-read saga (it settles
     // hydration on it and anchors the background older-history fetch).
-    if (event.transcript.fromSnapshot === true) {
+    if (
+      event.transcript.fromSnapshot === true ||
+      (event.transcript.fromHistory === true && event.transcript.initialHistory?.complete)
+    ) {
       const session = yield* selectAgentSession.effect(event.agentId);
       const wsId = entry.wsId ?? session?.workspaceId;
       const inFlight = event.transcript.messages.find(
@@ -686,6 +705,9 @@ function* handleSubscriptionEvent(
         chatTranscriptSnapshotApplied(
           event.agentId,
           {
+            ...(event.transcript.initialHistory
+              ? { initialHistory: event.transcript.initialHistory }
+              : {}),
             truncated: event.transcript.truncated,
             ...(event.transcript.nextToken !== undefined
               ? { nextToken: event.transcript.nextToken }
@@ -760,7 +782,8 @@ function newestPersistedMessageId(messages: AgentMessage[]): string | undefined 
  */
 function* resolveResumeAnchor(agentId: string): SagaGenerator<string | undefined> {
   const hydration = yield* selectTranscriptHydration.effect(agentId);
-  if (hydration !== 'settled') return undefined;
+  if (hydration !== 'settled' || (yield* selectInitialChatHistoryPending.effect(agentId)))
+    return undefined;
   const messages = yield* selectAgentMessages.effect(agentId);
   const captured = resumeAnchors.get(agentId);
   if (captured === '') return undefined;
@@ -912,7 +935,8 @@ function* closeSubscription(
     // below — afterwards a partial row can no longer be told apart.
     if (!clearResumeAnchor) {
       const messages = (yield* selectAgentSession.effect(agentId))?.messages ?? [];
-      resumeAnchors.set(agentId, newestPersistedMessageId(messages) ?? '');
+      const incomplete = yield* selectInitialChatHistoryPending.effect(agentId);
+      resumeAnchors.set(agentId, incomplete ? '' : (newestPersistedMessageId(messages) ?? ''));
     }
   } catch (error) {
     logger.error('Failed to capture chat resume anchor', error);
@@ -1421,7 +1445,10 @@ function* emitOrCycleSnapshot(
     replayPendingSnapshot(coordinator, agentId);
     return;
   }
-  if (entry?.lastTranscript?.fromSnapshot === true) {
+  // Incomplete history has its own progress watchdog. Replaying it cannot settle
+  // hydration, and cycling here would abort a healthy transfer after a fast burst.
+  if (entry?.lastTranscript?.initialHistory?.complete === false) return;
+  if (entry?.lastTranscript?.fromSnapshot === true || entry?.lastTranscript?.fromHistory === true) {
     coordinator.events.put({
       kind: 'transcript',
       agentId,

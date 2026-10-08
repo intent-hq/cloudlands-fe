@@ -123,6 +123,8 @@ export function chatStateSelectors() {
     selectHistorySeekUnsupported: false,
     selectPendingProposalRecovery: undefined,
     selectPendingQuestionRecovery: undefined,
+    selectInitialChatHistory: undefined,
+    selectInitialChatHistoryPending: false,
     selectTranscriptHydration: 'settled',
     selectTranscriptHydratedOnce: true,
     selectTranscriptSnapshotMeta: undefined,
