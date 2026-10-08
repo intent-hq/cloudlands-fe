@@ -5733,10 +5733,12 @@
             ? { systemPrompt: behaviorPrompt }
             : {}),
       },
+      // Roll the provider back only when this change owns it: a guarded
+      // provider rollback must never overwrite a newer, successful selection.
       specialistRollback: {
         metadata: session.metadata,
         model: session.model,
-        provider: session.provider,
+        ...(newProvider ? { provider: session.provider } : {}),
       },
     });
     // The mutation saga owns rollback and the user-visible error; retain

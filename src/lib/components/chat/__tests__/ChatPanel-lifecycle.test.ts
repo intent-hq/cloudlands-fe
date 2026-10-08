@@ -5476,7 +5476,7 @@ describe.each(['workspace-a', 'workspace-b'])(
                   model,
                   ...(selected ? { systemPrompt: `Prompt ${workspaceId}` } : {}),
                 },
-          specialistRollback: { metadata, model: 'session-model', provider: 'codex' },
+          specialistRollback: { metadata, model: 'session-model' },
         },
       ]);
     });
