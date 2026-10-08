@@ -61,6 +61,12 @@ describe('renderer Content Security Policy', () => {
     expect(cspDirective(appHtml, 'font-src')).toBe("font-src 'self' data:");
   });
 
+  it('limits custom view frames to loopback in development and production', () => {
+    for (const html of [appHtml, hardenProductionScriptCsp(appHtml)]) {
+      expect(cspDirective(html, 'frame-src')).toBe("frame-src 'self' http://127.0.0.1:*");
+    }
+  });
+
   it('keeps font-src in the production-hardened CSP while still dropping unsafe-eval', () => {
     const hardened = hardenProductionScriptCsp(appHtml);
     expect(cspDirective(hardened, 'font-src')).toBe("font-src 'self' data:");

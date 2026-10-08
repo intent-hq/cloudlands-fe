@@ -72,6 +72,7 @@ describe('platform-capabilities', () => {
         'shellIntegration',
         'externalEditors',
         'browserPanel',
+        'customViews',
         'autoUpdate',
         'deeplinks',
         'nativeNotifications',

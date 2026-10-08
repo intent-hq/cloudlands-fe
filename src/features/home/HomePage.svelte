@@ -87,6 +87,11 @@
   import { setWorkspaceInitializerLastSelectedRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
+  import CustomViewsSidebar from '$features/custom-views/components/CustomViewsSidebar.svelte';
+  import CustomViewPanel from '$features/custom-views/components/CustomViewPanel.svelte';
+  import { selectCustomViewState } from '$features/custom-views/custom-views-selectors';
+  import { selectCustomView } from '$features/custom-views/custom-views-slice';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
 
   let {
     preview = false,
@@ -130,6 +135,11 @@
   const knownReposLoaded$ = selectKnownReposLoaded();
   const collaborator$ = selectIsCollaboratorOnlyClient();
   const panelItem$ = selectPanelItem();
+  const customViews$ = selectCustomViewState();
+  const customViewsAvailable = $derived(
+    !$collaborator$ && (preview || hasCapability('customViews')),
+  );
+  const selectedCustomViewId = $derived(customViewsAvailable ? $customViews$.selectedId : null);
   $effect(() => {
     if (!preview && !$collaborator$ && !$knownReposLoaded$) store.dispatch(loadKnownRepos());
   });
@@ -152,8 +162,13 @@
     if (destination === 'assistant') assistantActivated = true;
   });
   function chooseDestination(value: string) {
+    store.dispatch(selectCustomView(null));
     if (value === 'assistant' && !$collaborator$) store.dispatch(openPanel('chief'));
     else if (value === 'workspaces') store.dispatch(closePanel());
+  }
+  function chooseCustomView(id: string) {
+    store.dispatch(closePanel());
+    store.dispatch(selectCustomView(id));
   }
   const view$ = selectHomeWorkspaceView();
   const workspaceError$ = selectHomeWorkspaceError();
@@ -406,7 +421,7 @@
   const homePanes = new Map<HTMLElement, typeof tab>();
   let tabFocus = $state<{ value: typeof tab } | null>(null);
   function syncPaneOwnership(pane: HTMLElement, value: typeof tab) {
-    pane.inert = destination !== 'workspaces' || value !== tab;
+    pane.inert = destination !== 'workspaces' || selectedCustomViewId !== null || value !== tab;
     if (!pane.inert) pane.removeAttribute('aria-hidden');
     else pane.setAttribute('aria-hidden', 'true');
   }
@@ -417,7 +432,7 @@
   }
   // Sync outside paused keyed effects, including same-pane reversal.
   $effect.pre(() => {
-    const activeTab = destination === 'workspaces' ? tab : null;
+    const activeTab = destination === 'workspaces' && !selectedCustomViewId ? tab : null;
     untrack(() => {
       for (const [pane, value] of homePanes) syncPaneOwnership(pane, value);
       if (tabFocus?.value !== activeTab) tabFocus = null;
@@ -453,10 +468,12 @@
     });
   });
   function chooseFilter(next: HomeFilter) {
+    store.dispatch(selectCustomView(null));
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
   }
   function chooseRepo(key: string | null) {
+    store.dispatch(selectCustomView(null));
     store.dispatch(closePanel());
     updateView({
       repoKey: key,
@@ -561,7 +578,7 @@
         <Tooltip.Tooltip content={repo.label} class="flex w-full">
           <Button
             variant="ghost"
-            active={repoKey === repo.key && destination === 'workspaces'}
+            active={repoKey === repo.key && destination === 'workspaces' && !selectedCustomViewId}
             class="w-full justify-start px-2"
             aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
               ? m.fileTracking_startNew_noRepository_label()
@@ -607,7 +624,7 @@
           >
             <Button
               variant="ghost"
-              active={repoKey === null && destination === 'workspaces'}
+              active={repoKey === null && destination === 'workspaces' && !selectedCustomViewId}
               class="mb-1 h-9 w-full justify-start px-2 py-2"
               onclick={() => chooseRepo(null)}
               ><span class="flex-1 text-left">{m.home_all_repositories()}</span
@@ -620,7 +637,9 @@
                 <div class="group/org relative flex items-center">
                   <Button
                     variant="ghost"
-                    active={repoKey === expansionKey && destination === 'workspaces'}
+                    active={repoKey === expansionKey &&
+                      destination === 'workspaces' &&
+                      !selectedCustomViewId}
                     class="h-9 w-full justify-start gap-2 pl-9 pr-2 text-muted-foreground"
                     onclick={() => chooseRepo(expansionKey)}
                   >
@@ -691,6 +710,13 @@
               >
                 {m.home_no_repositories()}
               </p>{/if}
+            {#if customViewsAvailable}
+              <CustomViewsSidebar
+                activeId={destination === 'workspaces' ? selectedCustomViewId : null}
+                onselect={chooseCustomView}
+                {preview}
+              />
+            {/if}
           </Tabs.Content>
           {#if !$collaborator$}
             <Tabs.Content
@@ -721,7 +747,15 @@
           </HomeAssistantPanels>
         </div>
       {/if}
-      {#if destination === 'workspaces'}
+      {#if destination === 'workspaces' && selectedCustomViewId}
+        <div
+          class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
+          data-home-destination="custom"
+        >
+          <CustomViewPanel viewId={selectedCustomViewId} {preview} />
+        </div>
+      {/if}
+      {#if destination === 'workspaces' && !selectedCustomViewId}
         {#key tab}
           {@const renderedTab = untrack(() => tab)}
           <div

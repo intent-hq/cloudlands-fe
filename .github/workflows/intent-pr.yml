@@ -441,7 +441,7 @@ jobs:
             echo "electron_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if grep -z -E '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout)/|vite-harness-cache\.)|src/(features/backend/main/repository-checkout[^/]*\.ts$|lib/client/live/repository-checkout-transport\.ts$|shared/types/repository-checkout\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
+          if grep -z -E '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout|custom-views)/|vite-harness-cache\.)|src/(features/custom-views/main/|shared/(custom-views-schema\.ts$|types/custom-views\.ts$)|features/backend/main/repository-checkout[^/]*\.ts$|lib/client/live/repository-checkout-transport\.ts$|shared/types/repository-checkout\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
             echo "electron_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "electron_required=false" | tee -a "$GITHUB_OUTPUT"

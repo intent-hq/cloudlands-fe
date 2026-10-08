@@ -121,6 +121,7 @@ function buildWindowOptions(opts: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
       webviewTag: true,
     },
     ...getWindowTitleBarOptions(),

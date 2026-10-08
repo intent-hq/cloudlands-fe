@@ -37,6 +37,9 @@
       | 'linear'
       | 'integration-error'
       | 'disconnected'
+      | 'custom-view'
+      | 'custom-view-error'
+      | 'custom-view-form'
       | 'assistant-long';
     height?: number;
   }
@@ -61,6 +64,9 @@
       linear: { props: { scenario: 'linear' } },
       'integration-error': { props: { scenario: 'integration-error' } },
       disconnected: { props: { scenario: 'disconnected' } },
+      'custom-view': { props: { scenario: 'custom-view' } },
+      'custom-view-error': { props: { scenario: 'custom-view-error' } },
+      'custom-view-form': { props: { scenario: 'custom-view-form' } },
       'assistant-long': { props: { scenario: 'assistant-long' } },
     },
   });
@@ -248,6 +254,12 @@
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { resetHomeWorkspaceView, updateHomeWorkspaceView } from './home-workspaces-slice';
+  import {
+    closeCustomViewEditor,
+    customViewsReceived,
+    editCustomView,
+    selectCustomView,
+  } from '$features/custom-views/custom-views-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import {
@@ -292,6 +304,34 @@
     admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
     store.dispatch(closePanel());
     store.dispatch(resetHomeWorkspaceView());
+    store.dispatch(closeCustomViewEditor());
+    store.dispatch(selectCustomView(null));
+    const customView = {
+      id: '3910986a-c690-409d-bd54-9a98aa6297d3',
+      name: 'Project dashboard',
+      directory: '/Users/sam/projects/dashboard',
+      command: 'npm run dev -- --host 127.0.0.1',
+      port: 4317,
+      icon: 'chart' as const,
+    };
+    const customScenario = scenario.startsWith('custom-view');
+    store.dispatch(
+      customViewsReceived({
+        views: customScenario ? [customView] : [],
+        runtimes: customScenario
+          ? [
+              {
+                id: customView.id,
+                status: scenario === 'custom-view-error' ? 'error' : 'stopped',
+                ...(scenario === 'custom-view-error' ? { errorCode: 'port-in-use' as const } : {}),
+                logs: scenario === 'custom-view-error' ? 'Port 4317 is already in use.' : '',
+              },
+            ]
+          : [],
+      }),
+    );
+    if (customScenario) store.dispatch(selectCustomView(customView.id));
+    if (scenario === 'custom-view-form') store.dispatch(editCustomView(customView.id));
     store.dispatch(
       hydrateSidebarNav({
         pinnedWorkspaceIds: scenario === 'status-icons' ? ['home-complete'] : previousPinnedIds,

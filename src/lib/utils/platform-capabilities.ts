@@ -26,6 +26,8 @@ export interface PlatformCapabilities {
   externalEditors: boolean;
   /** Embedded browser panel backed by <webview> + CDP (`browser:*` IPC). */
   browserPanel: boolean;
+  /** Local server processes and iframe views on the homepage. */
+  customViews: boolean;
   /** Auto-update flow (`auto-update:*` IPC). */
   autoUpdate: boolean;
   /** OS-level deeplink handling (intent:// protocol registration). */
@@ -102,6 +104,7 @@ export function capabilitiesForPlatform(platform: Platform): PlatformCapabilitie
     shellIntegration: electron,
     externalEditors: electron,
     browserPanel: electron,
+    customViews: electron,
     autoUpdate: electron,
     deeplinks: electron,
     nativeNotifications: electron,
