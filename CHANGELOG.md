@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.214.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.213.4...v2.214.0) (2026-10-09)
+
+
+### 🚀 Features
+
+* support pasted images in question answers ([#3315](https://github.com/intent-hq/cloudlands-fe/issues/3315)) ([1bfccde](https://github.com/intent-hq/cloudlands-fe/commit/1bfccde3cf6ad3f1e982dc45c7eec4c6db696b45))
+
 ## [2.213.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.213.3...v2.213.4) (2026-10-09)
 
 
