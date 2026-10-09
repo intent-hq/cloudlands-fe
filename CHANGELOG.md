@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.213.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.213.0...v2.213.1) (2026-10-09)
+
+
+### 🐛 Bug Fixes
+
+* add confirmed script deletion and prevent panel teardown crashes ([#3320](https://github.com/intent-hq/cloudlands-fe/issues/3320)) ([c2da583](https://github.com/intent-hq/cloudlands-fe/commit/c2da5836b9c5080dfc98dece149048d438faf468))
+* bump intentd sidecar to v0.10.35 ([#3323](https://github.com/intent-hq/cloudlands-fe/issues/3323)) ([a00e9ff](https://github.com/intent-hq/cloudlands-fe/commit/a00e9ffa40f1f908963f91c2bc32d95ace2fa103))
+
 ## [2.213.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.212.1...v2.213.0) (2026-10-08)
 
 
