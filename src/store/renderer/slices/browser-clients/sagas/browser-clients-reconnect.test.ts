@@ -241,6 +241,18 @@ function deferred<T>() {
 }
 
 describe('connection lifetime races', () => {
+  it('defers browser admission until a workspace is mounted', async () => {
+    const run = start();
+    run.dispatch(connectionStatusChanged('connecting'));
+    run.dispatch(connectionStatusChanged('connected'));
+    await settle();
+    expect(transport.request).not.toHaveBeenCalled();
+    run.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    expect(run.confirmed()).toBe(true);
+    expect(run.view().eligibleClients).toHaveLength(1);
+  });
+
   it('restarts canceled startup hydration on plain connected after a delayed status snapshot', async () => {
     const oldHello = deferred<{ clientId: string }>();
     const oldResolution = deferred<{ browserClient: WorkspaceBrowserClient }>();

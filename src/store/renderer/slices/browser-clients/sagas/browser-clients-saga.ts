@@ -383,7 +383,7 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     if (action.payload[0] === 'connected') {
       // First connect has no reconnect marker. A delayed startup status may
       // have canceled admission; metadata for an admitted connection is a no-op.
-      if (!(yield* selectOwnClientIdConfirmed.effect())) {
+      if (connection.mounted.size > 0 && !(yield* selectOwnClientIdConfirmed.effect())) {
         yield* put(hydrateBrowserClientsRequested());
         for (const wsId of connection.mounted)
           yield* put(fetchWorkspaceBrowserClientRequested(wsId));
