@@ -29,11 +29,15 @@ import type {
 } from './types';
 import { createLogger } from '$lib/utils/client-logger';
 import { appClient } from '$lib/client';
-import type { MutationResult } from '$lib/client';
+import type { MutationResult, ScriptCreateInput, ScriptCreateResult } from '$lib/client';
 import { detectScriptCandidates, type PackageManager } from './detect-scripts';
 import { isLiveScriptStatus } from './utils/script-status';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
+import { withScriptDefinitionEdits } from './with-script-definition-edits';
+import { runMutation } from '$lib/client/live/live-support';
+import { store } from '$store/renderer/store';
+import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
 
 const logger = createLogger('ScriptsClient');
 
@@ -73,6 +77,29 @@ function toCommandResponse(result: MutationResult): CommandResponse<void> {
   return result.success ? { success: true } : { success: false, error: result.error };
 }
 
+/** Raw ID upsert stays private to this module's reserved update/detection callbacks. */
+async function upsertDefinition(
+  workspaceId: string,
+  scriptId: string,
+  input: ScriptCreateInput,
+): Promise<ScriptCreateResult> {
+  try {
+    const script = await backendRequest<WorkspaceScript>('script.create', {
+      workspaceId,
+      scriptId,
+      ...input,
+    });
+    return { success: true, script };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Called only while an edit or workspace reservation is owned. */
+function removeDefinition(workspaceId: string, scriptId: string): Promise<MutationResult> {
+  return runMutation('script.remove', { workspaceId, scriptId });
+}
+
 /**
  * Scripts client — all renderer script operations.
  */
@@ -106,49 +133,89 @@ export const scriptsClient = {
    * Update an existing script definition. The daemon has no dedicated update
    * RPC; `script.create` with the existing `scriptId` replaces the definition
    * (§5.8 upsert), so the current definition is read from `script.list` and
-   * merged with the partial updates before the upsert.
+   * merged with the partial updates before the upsert. The reservation starts
+   * before that read and owns the complete mutation; callers must not reserve again.
    */
   async update(
     workspaceId: string,
     scriptId: string,
     updates: UpdateScriptInput,
   ): Promise<CommandResponse<WorkspaceScript>> {
-    const scripts = await appClient.scripts.list(workspaceId, { archive: 'all' });
-    const existing = scripts.find((script) => script.id === scriptId);
-    if (!existing) {
-      return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
-    }
-    // The §5.8 scriptId upsert tears down the script's live PTY group
-    // daemon-side — never issue it against a running script. Refuse and let
-    // the caller surface it so the user can stop the script first.
-    if (existing.runtime?.status === 'running') {
-      logger.info('Refusing script.create upsert for running script', {
-        name: existing.name,
-        scriptId,
+    return withScriptDefinitionEdits(workspaceId, [scriptId], async () => {
+      const scripts = await appClient.scripts.list(workspaceId, { archive: 'all' });
+      const existing = scripts.find((script) => script.id === scriptId);
+      if (!existing) {
+        return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
+      }
+      // The §5.8 scriptId upsert tears down the script's live PTY group
+      // daemon-side — never issue it against a running script. Refuse and let
+      // the caller surface it so the user can stop the script first.
+      if (existing.runtime?.status === 'running') {
+        logger.info('Refusing script.create upsert for running script', {
+          name: existing.name,
+          scriptId,
+        });
+        return {
+          success: false,
+          error: m.scripts_client_updateRunning_error({ name: existing.name }),
+        };
+      }
+      const result = await upsertDefinition(workspaceId, scriptId, {
+        name: updates.name ?? existing.name,
+        command: updates.command ?? existing.command,
+        mode: updates.mode ?? existing.mode,
+        cwd: updates.cwd ?? existing.cwd,
+        env: updates.env ?? existing.env,
+        category: updates.category ?? existing.category,
+        autoStart: updates.autoStart ?? existing.autoStart,
       });
-      return {
-        success: false,
-        error: m.scripts_client_updateRunning_error({ name: existing.name }),
-      };
-    }
-    const result = await appClient.scripts.create(workspaceId, {
-      scriptId,
-      name: updates.name ?? existing.name,
-      command: updates.command ?? existing.command,
-      mode: updates.mode ?? existing.mode,
-      cwd: updates.cwd ?? existing.cwd,
-      env: updates.env ?? existing.env,
-      category: updates.category ?? existing.category,
-      autoStart: updates.autoStart ?? existing.autoStart,
+      return result.success
+        ? { success: true, data: result.script }
+        : { success: false, error: result.error };
     });
-    return result.success
-      ? { success: true, data: result.script }
-      : { success: false, error: result.error };
   },
 
   /** Remove a script definition (`script.remove`, §5.8). */
   async remove(workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
-    return toCommandResponse(await appClient.scripts.remove(workspaceId, scriptId));
+    return withScriptDefinitionEdits(workspaceId, [scriptId], async () => {
+      const result = await removeDefinition(workspaceId, scriptId);
+      if (result.success) store.dispatch(removeScript(workspaceId, scriptId));
+      return toCommandResponse(result);
+    });
+  },
+
+  /** Restore detection's snapshot as one reserved remove-and-recreate operation. */
+  async restoreSnapshot(
+    workspaceId: string,
+    snapshot: WorkspaceScript[],
+  ): Promise<CommandResponse<void>> {
+    return withScriptDefinitionEdits(workspaceId, 'workspace', async () => {
+      try {
+        const current = await appClient.scripts.list(workspaceId);
+        for (const script of current) {
+          const result = await removeDefinition(workspaceId, script.id);
+          if (!result.success) return toCommandResponse(result);
+          store.dispatch(removeScript(workspaceId, script.id));
+        }
+        for (const script of snapshot) {
+          const result = await scriptsClient.create(workspaceId, {
+            name: script.name,
+            command: script.command,
+            mode: script.mode,
+            purpose: script.purpose ?? 'saved',
+            category: script.category,
+            source: script.source || 'user',
+            cwd: script.cwd,
+            env: script.env,
+            autoStart: script.autoStart,
+          });
+          if (!result.success) return { success: false, error: result.error };
+        }
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   },
 
   /** Start a script by ID (`script.start`, §5.8). */
@@ -179,6 +246,7 @@ export const scriptsClient = {
 
   /**
    * Auto-detect scripts from repo manifests and upsert them into the daemon.
+   * Reserve all retained definitions before scanning, through the final removal.
    *
    * Reads `package.json` / `Makefile` / `Cargo.toml` / `pyproject.toml` through
    * the daemon's `file.read` seam (`detect-scripts.ts`), diffs the candidates
@@ -211,125 +279,128 @@ export const scriptsClient = {
     packageManager?: PackageManager;
     error?: string;
   }> {
-    try {
-      const { candidates, packageManager } = await detectScriptCandidates(
-        appClient.files,
-        workspaceId,
-      );
-      const existing = await appClient.scripts.list(workspaceId, { archive: 'all' });
+    return withScriptDefinitionEdits(workspaceId, 'workspace', async () => {
+      try {
+        const { candidates, packageManager } = await detectScriptCandidates(
+          appClient.files,
+          workspaceId,
+        );
+        const existing = await appClient.scripts.list(workspaceId, { archive: 'all' });
 
-      const existingUserNames = new Set<string>();
-      const existingAutoByName = new Map<string, ScriptWithState>();
-      for (const s of existing) {
-        if (s.source === 'auto-detected') {
-          existingAutoByName.set(s.name, s);
-        } else {
-          existingUserNames.add(s.name);
-        }
-      }
-
-      const detectedNames = new Set<string>();
-      const skippedRunning: string[] = [];
-      let added = 0;
-
-      for (const candidate of candidates) {
-        detectedNames.add(candidate.name);
-        if (existingUserNames.has(candidate.name)) continue;
-
-        const existingAuto = existingAutoByName.get(candidate.name);
-        if (!existingAuto) {
-          const createResult = await appClient.scripts.create(workspaceId, {
-            name: candidate.name,
-            command: candidate.command,
-            mode: candidate.mode,
-            purpose: 'saved',
-            category: candidate.category,
-          });
-          if (createResult.success) {
-            added += 1;
+        const existingUserNames = new Set<string>();
+        const existingAutoByName = new Map<string, ScriptWithState>();
+        for (const s of existing) {
+          if (s.source === 'auto-detected') {
+            existingAutoByName.set(s.name, s);
           } else {
-            logger.warn('script.create failed for detected candidate', {
-              name: candidate.name,
-              error: createResult.error,
-            });
-          }
-        } else if (
-          existingAuto.command !== candidate.command ||
-          existingAuto.category !== candidate.category ||
-          existingAuto.mode !== candidate.mode
-        ) {
-          // The §5.8 scriptId upsert tears down the script's live PTY group
-          // daemon-side — never issue it against a live script (running,
-          // restarting, or any future transitional status). Skip and let the
-          // caller surface it so the user can stop + re-detect.
-          if (isLiveScriptStatus(existingAuto.runtime?.status)) {
-            skippedRunning.push(candidate.name);
-            logger.info('Skipping script.create upsert for live script', {
-              name: candidate.name,
-              scriptId: existingAuto.id,
-            });
-            continue;
-          }
-          const upsertResult = await appClient.scripts.create(workspaceId, {
-            scriptId: existingAuto.id,
-            name: candidate.name,
-            command: candidate.command,
-            mode: candidate.mode,
-            category: candidate.category,
-            ...(existingAuto.cwd !== undefined ? { cwd: existingAuto.cwd } : {}),
-            ...(existingAuto.env !== undefined ? { env: existingAuto.env } : {}),
-            ...(existingAuto.autoStart !== undefined ? { autoStart: existingAuto.autoStart } : {}),
-          });
-          if (!upsertResult.success) {
-            logger.warn('script.create upsert failed for detected candidate', {
-              name: candidate.name,
-              scriptId: existingAuto.id,
-              error: upsertResult.error,
-            });
+            existingUserNames.add(s.name);
           }
         }
-      }
 
-      let removed = 0;
-      for (const [name, s] of existingAutoByName) {
-        if (!detectedNames.has(name)) {
-          // Removing a running script kills its live PTY group daemon-side —
-          // never issue script.remove against a running row. Skip and let the
-          // caller surface it so the user can stop + re-detect.
-          if (s.runtime?.status === 'running') {
-            skippedRunning.push(name);
-            logger.info('Skipping script.remove for running stale script', {
-              name,
-              scriptId: s.id,
+        const detectedNames = new Set<string>();
+        const skippedRunning: string[] = [];
+        let added = 0;
+
+        for (const candidate of candidates) {
+          detectedNames.add(candidate.name);
+          if (existingUserNames.has(candidate.name)) continue;
+
+          const existingAuto = existingAutoByName.get(candidate.name);
+          if (!existingAuto) {
+            const createResult = await appClient.scripts.create(workspaceId, {
+              name: candidate.name,
+              command: candidate.command,
+              mode: candidate.mode,
+              purpose: 'saved',
+              category: candidate.category,
             });
-            continue;
-          }
-          const removeResult = await appClient.scripts.remove(workspaceId, s.id);
-          if (removeResult.success) {
-            removed += 1;
-          } else {
-            logger.warn('script.remove failed for stale auto-detected script', {
-              name,
-              scriptId: s.id,
-              error: removeResult.error,
+            if (createResult.success) {
+              added += 1;
+            } else {
+              logger.warn('script.create failed for detected candidate', {
+                name: candidate.name,
+                error: createResult.error,
+              });
+            }
+          } else if (
+            existingAuto.command !== candidate.command ||
+            existingAuto.category !== candidate.category ||
+            existingAuto.mode !== candidate.mode
+          ) {
+            // The §5.8 scriptId upsert tears down the script's live PTY group
+            // daemon-side — never issue it against a live script (running,
+            // restarting, or any future transitional status). Skip and let the
+            // caller surface it so the user can stop + re-detect.
+            if (isLiveScriptStatus(existingAuto.runtime?.status)) {
+              skippedRunning.push(candidate.name);
+              logger.info('Skipping script.create upsert for live script', {
+                name: candidate.name,
+                scriptId: existingAuto.id,
+              });
+              continue;
+            }
+            const upsertResult = await upsertDefinition(workspaceId, existingAuto.id, {
+              name: candidate.name,
+              command: candidate.command,
+              mode: candidate.mode,
+              category: candidate.category,
+              ...(existingAuto.cwd !== undefined ? { cwd: existingAuto.cwd } : {}),
+              ...(existingAuto.env !== undefined ? { env: existingAuto.env } : {}),
+              ...(existingAuto.autoStart !== undefined
+                ? { autoStart: existingAuto.autoStart }
+                : {}),
             });
+            if (!upsertResult.success) {
+              logger.warn('script.create upsert failed for detected candidate', {
+                name: candidate.name,
+                scriptId: existingAuto.id,
+                error: upsertResult.error,
+              });
+            }
           }
         }
-      }
 
-      return {
-        success: true,
-        detected: candidates.length,
-        added,
-        removed,
-        ...(skippedRunning.length > 0 ? { skippedRunning } : {}),
-        packageManager,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('Script detection failed', { error: message });
-      return { success: false, error: message };
-    }
+        let removed = 0;
+        for (const [name, s] of existingAutoByName) {
+          if (!detectedNames.has(name)) {
+            // Removing a running script kills its live PTY group daemon-side —
+            // never issue script.remove against a running row. Skip and let the
+            // caller surface it so the user can stop + re-detect.
+            if (s.runtime?.status === 'running') {
+              skippedRunning.push(name);
+              logger.info('Skipping script.remove for running stale script', {
+                name,
+                scriptId: s.id,
+              });
+              continue;
+            }
+            const removeResult = await removeDefinition(workspaceId, s.id);
+            if (removeResult.success) {
+              removed += 1;
+            } else {
+              logger.warn('script.remove failed for stale auto-detected script', {
+                name,
+                scriptId: s.id,
+                error: removeResult.error,
+              });
+            }
+          }
+        }
+
+        return {
+          success: true,
+          detected: candidates.length,
+          added,
+          removed,
+          ...(skippedRunning.length > 0 ? { skippedRunning } : {}),
+          packageManager,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('Script detection failed', { error: message });
+        return { success: false, error: message };
+      }
+    });
   },
 
   /**

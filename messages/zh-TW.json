@@ -7510,5 +7510,20 @@
   "chat_failureRecovery_queued_description": "有一則訊息正在佇列中。請使用下方控制項進行管理。",
   "chat_failureRecovery_action_description": "回覆在完成前停止了。",
   "chat_failureRecovery_details_label": "詳細資料",
-  "chat_failureRecovery_copyDetails_label": "複製詳細資料"
+  "chat_failureRecovery_copyDetails_label": "複製詳細資料",
+  "chat_questionWizard_imagesAttached_label_one": "[已附加 1 張圖片]",
+  "chat_questionWizard_imagesAttached_label_many": "[已附加 {count} 張圖片]",
+  "scripts_delete_label": "刪除指令碼",
+  "scripts_delete_title": "刪除「{name}」？",
+  "scripts_delete_description": "這將永久刪除已儲存的指令碼。此操作無法復原。",
+  "scripts_delete_disabled_description": "請停止指令碼並等待待處理的變更完成後再刪除。",
+  "scripts_pendingChange_error": "指令碼有待處理的變更。請等待完成後再試。",
+  "scripts_delete_changed_error": "確認期間指令碼已變更。請檢查目前狀態後重試。",
+  "home_integrations_checks_failed_or_cancelled": "失敗或已取消",
+  "home_integrations_checks_cancelled": "已取消",
+  "home_integrations_checks_overall_failed": "部分檢查失敗或已取消",
+  "home_integrations_checks_overall_pending": "檢查待完成",
+  "home_integrations_checks_overall_passed": "所有已回報的檢查均已通過",
+  "home_integrations_checks_overall_neutral": "部分檢查已略過或為中性",
+  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低於支援的最低版本 {minimumVersion}。請在守護程序主機上更新 CLI。"
 }

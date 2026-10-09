@@ -45,6 +45,10 @@ const mockState = vi.hoisted(() => {
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
     defaultNote,
     note: store<typeof defaultNote | undefined>(defaultNote),
+    noteContentView: store<unknown>(undefined),
+    noteWorkspaceRoot: store<unknown>(undefined),
+    notePresenceView: store<unknown>(undefined),
+    principalConnectionContext: store('test-connection'),
   };
 });
 
@@ -96,7 +100,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockState.note, { select: () => mockState.note.get() }),
+  selectNoteContentView: () => mockState.noteContentView,
+  selectNoteWorkspaceRoot: () => mockState.noteWorkspaceRoot,
+  selectNotePresenceView: () => mockState.notePresenceView,
   selectWorkspaceNotesState: () => mockState.notesState,
+}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalConnectionContext: () => mockState.principalConnectionContext,
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectIsInitialSpecWriteInProgress: () => mockState.initialSpecWriteInProgress,
@@ -151,6 +161,9 @@ describe('NoteTabType note view modes', () => {
     mockState.scrollPositions.set({});
     mockState.notesState.set({ loading: false, initialized: true });
     mockState.note.set({ ...mockState.defaultNote });
+    mockState.noteContentView.set(undefined);
+    mockState.noteWorkspaceRoot.set(undefined);
+    mockState.notePresenceView.set(undefined);
     mockState.initialSpecWriteInProgress.set(false);
   });
 

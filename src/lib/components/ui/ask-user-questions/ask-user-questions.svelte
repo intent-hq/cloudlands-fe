@@ -42,6 +42,8 @@
     backLabel = DEFAULT_BACK_LABEL,
     headerActions,
     footerActions,
+    onOtherPaste,
+    otherAttachments,
     centered = false,
     showCounter = true,
     alwaysShowSkip = false,
@@ -86,6 +88,7 @@
   const currentAnswer = $derived(currentAnswers[questionId]);
   const selectedIds = $derived(currentAnswer?.selectedIds ?? []);
   const otherText = $derived(currentAnswer?.otherText ?? '');
+  const hasOtherAnswer = $derived(otherText.trim().length > 0 || currentAnswer?.hasAttachments);
   const options = $derived(question?.options ?? []);
   const isMulti = $derived(Boolean(question?.multiSelect));
   const isFreeText = $derived(Boolean(question?.freeText));
@@ -107,16 +110,17 @@
   });
   const canSubmit = $derived(
     !disabled &&
-      (isFreeText
-        ? otherText.trim().length > 0
-        : selectedIds.length > 0 || otherText.trim().length > 0),
+      (isFreeText ? otherText.trim().length > 0 : selectedIds.length > 0 || hasOtherAnswer),
   );
-  const optionsLocked = $derived(disabled || (exclusiveOther && !isMulti && otherText.length > 0));
+  const optionsLocked = $derived(
+    disabled ||
+      (exclusiveOther && !isMulti && (otherText.length > 0 || currentAnswer?.hasAttachments)),
+  );
   const showSkip = $derived(
     (alwaysShowSkip || questions.length > 1) && question?.skippable !== false,
   );
   const showSubmit = $derived(
-    isMulti || isFreeText || (showOtherSubmit && allowOther && otherText.trim().length > 0),
+    isMulti || isFreeText || (showOtherSubmit && allowOther && hasOtherAnswer),
   );
   const showBackAction = $derived(showBack && safeIndex > 0);
   const showFooter = $derived(
@@ -267,6 +271,7 @@
         questionId,
         selectedIds: [id],
         otherText: previous[questionId]?.otherText || undefined,
+        hasAttachments: previous[questionId]?.hasAttachments,
         skipped: false,
       },
     }));
@@ -286,6 +291,7 @@
           questionId,
           selectedIds: [...nextSelected],
           otherText: existing?.otherText,
+          hasAttachments: existing?.hasAttachments,
           skipped: false,
         },
       };
@@ -304,6 +310,7 @@
             ? []
             : (previous[questionId]?.selectedIds ?? []),
         otherText: text,
+        hasAttachments: previous[questionId]?.hasAttachments,
         skipped: false,
       },
     }));
@@ -312,7 +319,7 @@
   function submitOther() {
     if (!question || disabled) return;
     const text = (latestAnswers[questionId]?.otherText ?? '').trim();
-    if (!text) return;
+    if (!text && (isFreeText || !latestAnswers[questionId]?.hasAttachments)) return;
     if (isFreeText && question.freeTextValidate) {
       const validationMessage = question.freeTextValidate(text);
       if (validationMessage) {
@@ -327,6 +334,7 @@
         questionId,
         selectedIds: previous[questionId]?.selectedIds ?? [],
         otherText: text,
+        hasAttachments: previous[questionId]?.hasAttachments,
         skipped: false,
       },
     }));
@@ -341,6 +349,7 @@
         questionId,
         selectedIds: clearOnSkip ? [] : (previous[questionId]?.selectedIds ?? []),
         otherText: clearOnSkip ? undefined : previous[questionId]?.otherText,
+        hasAttachments: clearOnSkip ? undefined : previous[questionId]?.hasAttachments,
         skipped: true,
       },
     }));
@@ -844,7 +853,9 @@
                       use:registerRow={otherIndex}
                       data-proximity-index={otherIndex}
                       data-chip-position={question.chipPosition ?? 'right'}
-                      data-state={otherText.length > 0 ? 'checked' : 'unchecked'}
+                      data-state={otherText.length > 0 || currentAnswer?.hasAttachments
+                        ? 'checked'
+                        : 'unchecked'}
                       class={cn(
                         'relative z-10 flex cursor-text rounded-(--radius-small)',
                         question.otherAutoGrowMaxLines ? 'items-start' : 'items-center',
@@ -875,6 +886,9 @@
                           question.otherPlaceholder ??
                           DEFAULT_OTHER_ARIA_LABEL}
                         {disabled}
+                        onpaste={(event) => {
+                          if (!disabled) onOtherPaste?.(event, questionId);
+                        }}
                         oninput={(event) => updateOther(event.currentTarget.value)}
                         onkeydown={(event) => {
                           if (
@@ -909,6 +923,9 @@
                     </div>
                   {/if}
                 </div>
+              {/if}
+              {#if allowOther}
+                {@render otherAttachments?.(questionId)}
               {/if}
               {#if showFooter}
                 <div class={cn('pt-1', compact ? 'pb-1.5' : 'pb-2')}>

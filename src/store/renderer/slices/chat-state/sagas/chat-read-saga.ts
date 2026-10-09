@@ -79,6 +79,7 @@ import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-ag
 import {
   chatReset,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   messageBlockHydrated,
@@ -192,17 +193,23 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     // missing the live turn. The channel is opened BEFORE the state read so
     // a dispatch landing between the two cannot be missed.
     const isSnapshotForAgent = (action: { type: string; payload?: unknown }) =>
-      action.type === chatTranscriptSnapshotApplied.type &&
+      (action.type === chatTranscriptSnapshotApplied.type ||
+        action.type === chatInitialHistoryProgressed.type) &&
       Array.isArray(action.payload) &&
       action.payload[0] === agentId;
     const snapshotChannel = yield* actionChannel(isSnapshotForAgent);
     try {
       let meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+      const initialHistoryInProgress = meta?.initialHistory?.complete === false;
       const visible: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
       // Re-settle instantly only when the already-applied snapshot is still
       // reflected in the store (refresh with live meta); otherwise wait for
       // a fresh application.
-      if (!(meta && (meta.totalMessages === 0 || visible.length > 0))) {
+      if (!(
+        meta &&
+        meta.initialHistory?.complete !== false &&
+        (meta.totalMessages === 0 || visible.length > 0)
+      )) {
         meta = undefined;
         // Fast path (intent-hq/monorepo#2864 defense-in-depth): the standing
         // subscription already holds a replayable snapshot (deferred
@@ -226,7 +233,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
         const deadWait =
           !(yield* call(hasStandingChatSubscription, agentId)) &&
           !(yield* call(hasChatSubscriptionAcquisitionInFlight, agentId));
-        if (replayable || deadWait) {
+        if ((replayable || deadWait) && !initialHistoryInProgress) {
           yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
         }
         for (let attempt = 1; attempt <= SNAPSHOT_WAIT_ATTEMPTS && !meta; attempt += 1) {
@@ -236,6 +243,12 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
           });
           if (applied) {
             meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+            if (meta?.initialHistory?.complete === false) meta = undefined;
+            // Valid progress resets the inactivity window; only explicit completion settles hydration.
+            if (!meta) {
+              attempt = 0;
+              continue;
+            }
           }
           // Escalate on ANY non-final iteration that ends without valid meta
           // (window timed out, or an application raced a session reset and
@@ -349,9 +362,9 @@ function* refreshChatWorker(
  * accumulator was seeded. No-op unless hydration sits in `error`.
  */
 function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapshotApplied>) {
-  const [agentId] = action.payload;
+  const [agentId, meta] = action.payload;
   const hydration = yield* selectTranscriptHydration.effect(agentId);
-  if (hydration !== 'error') return;
+  if (hydration !== 'error' || meta.initialHistory?.complete === false) return;
   yield* put(transcriptHydrationSettled(agentId));
 }
 

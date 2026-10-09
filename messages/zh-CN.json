@@ -7510,5 +7510,20 @@
   "chat_failureRecovery_queued_description": "有一条消息正在排队。请使用下方控件进行管理。",
   "chat_failureRecovery_action_description": "回复在完成前停止了。",
   "chat_failureRecovery_details_label": "详情",
-  "chat_failureRecovery_copyDetails_label": "复制详情"
+  "chat_failureRecovery_copyDetails_label": "复制详情",
+  "chat_questionWizard_imagesAttached_label_one": "[已附加 1 张图片]",
+  "chat_questionWizard_imagesAttached_label_many": "[已附加 {count} 张图片]",
+  "scripts_delete_label": "删除脚本",
+  "scripts_delete_title": "删除“{name}”？",
+  "scripts_delete_description": "这将永久删除已保存的脚本。此操作无法撤销。",
+  "scripts_delete_disabled_description": "请停止脚本并等待待处理的更改完成后再删除。",
+  "scripts_pendingChange_error": "脚本有待处理的更改。请等待完成后重试。",
+  "scripts_delete_changed_error": "确认期间脚本已更改。请检查当前状态后重试。",
+  "home_integrations_checks_failed_or_cancelled": "失败或已取消",
+  "home_integrations_checks_cancelled": "已取消",
+  "home_integrations_checks_overall_failed": "部分检查失败或已取消",
+  "home_integrations_checks_overall_pending": "检查待完成",
+  "home_integrations_checks_overall_passed": "所有已报告的检查均已通过",
+  "home_integrations_checks_overall_neutral": "部分检查已跳过或为中性",
+  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低于支持的最低版本 {minimumVersion}。请在守护进程主机上更新 CLI。"
 }

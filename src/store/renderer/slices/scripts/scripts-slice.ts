@@ -92,16 +92,24 @@ export const setScriptListState =
 /** Refresh scripts for a workspace (triggers saga) */
 export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
 
-export const startScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/startScriptRequested',
-);
+export const startScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage?: string]
+>('scripts/startScriptRequested');
 
 export const stopScriptRequested = createAction<
   [wsId: string, scriptId: string, failureMessage?: string]
 >('scripts/stopScriptRequested');
 
-export const restartScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/restartScriptRequested',
+export const restartScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage?: string]
+>('scripts/restartScriptRequested');
+
+export const deleteScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage: string]
+>('scripts/deleteScriptRequested');
+
+export const editScriptRequested = createAction<[wsId: string, scriptId: string]>(
+  'scripts/editScriptRequested',
 );
 
 export const scriptOperationSucceeded = createAction<
@@ -111,6 +119,9 @@ export const scriptOperationSucceeded = createAction<
 export const scriptOperationFailed = createAction<
   [wsId: string, scriptId: string, action: ScriptQuickAction, error: string]
 >('scripts/scriptOperationFailed');
+
+export const scriptDetectionRequested = createAction<[wsId: string]>('scripts/detectionRequested');
+export const scriptDetectionFinished = createAction<[wsId: string]>('scripts/detectionFinished');
 
 export const clearScriptOperations = createAction<[wsId: string]>('scripts/clearScriptOperations');
 
@@ -266,13 +277,31 @@ function requestOperation(
   action: ScriptQuickAction,
 ): ScriptsState {
   const ws = getWorkspaceState(state, wsId);
-  if (ws.operations[scriptId]?.pending) return state;
+  if (ws.detectionOperation?.pending || ws.operations[scriptId]?.pending) return state;
   return setWorkspaceState(state, wsId, {
     ...ws,
     operations: { ...ws.operations, [scriptId]: { action, pending: true } },
   });
 }
 
+scriptsReducer.with(scriptDetectionRequested, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.detectionOperation?.pending || Object.values(ws.operations).some((op) => op.pending))
+    return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    detectionOperation: { action: 'edit', pending: true },
+  });
+});
+scriptsReducer.with(scriptDetectionFinished, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const { detectionOperation: _detection, ...rest } = ws;
+  return setWorkspaceState(state, wsId, rest);
+});
+
+scriptsReducer.with(editScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'edit'),
+);
 scriptsReducer.with(startScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'start'),
 );
@@ -281,6 +310,9 @@ scriptsReducer.with(stopScriptRequested, (state, { payload: [wsId, scriptId] }) 
 );
 scriptsReducer.with(restartScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'restart'),
+);
+scriptsReducer.with(deleteScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'delete'),
 );
 scriptsReducer.with(scriptOperationSucceeded, (state, { payload: [wsId, scriptId, action] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -302,7 +334,15 @@ scriptsReducer.with(
 scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (Object.keys(ws.operations).length === 0) return state;
-  return setWorkspaceState(state, wsId, { ...ws, operations: {} });
+  // Definition writes and daemon deletions cannot be cancelled by unmount.
+  // Their owners release the reservation only after the wire request settles.
+  const operations = Object.fromEntries(
+    Object.entries(ws.operations).filter(
+      ([, operation]) =>
+        (operation.action === 'edit' || operation.action === 'delete') && operation.pending,
+    ),
+  );
+  return setWorkspaceState(state, wsId, { ...ws, operations });
 });
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
   const ws = getWorkspaceState(state, wsId);

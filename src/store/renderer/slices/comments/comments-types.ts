@@ -17,6 +17,16 @@ export interface CommentThread {
   lastActivity: string;
 }
 
+interface CommentLoadState {
+  consumerId: string;
+  requestId: string;
+  workspaceId: string;
+  noteId: string;
+  authority: string | null;
+  status: 'loading' | 'ready' | 'error';
+  error?: string;
+}
+
 export type CommentsV2State = {
   /** All comments keyed by id */
   commentsById: Collection<CommentV2, 'id'>;
@@ -30,4 +40,5 @@ export type CommentsV2State = {
   hoveredCommentId: string | null;
   /** Set of expanded thread ids (Record<string, true>) */
   expandedThreadIds: Record<string, true>;
+  loadsByConsumer: Collection<CommentLoadState, 'consumerId'>;
 };

@@ -7510,5 +7510,20 @@
   "chat_failureRecovery_queued_description": "A message is queued. Use its controls below to manage it.",
   "chat_failureRecovery_action_description": "The response stopped before it finished.",
   "chat_failureRecovery_details_label": "Details",
-  "chat_failureRecovery_copyDetails_label": "Copy details"
+  "chat_failureRecovery_copyDetails_label": "Copy details",
+  "chat_questionWizard_imagesAttached_label_one": "[1 image attached]",
+  "chat_questionWizard_imagesAttached_label_many": "[{count} images attached]",
+  "scripts_delete_label": "Delete script",
+  "scripts_delete_title": "Delete “{name}”?",
+  "scripts_delete_description": "This permanently deletes the saved script. This cannot be undone.",
+  "scripts_delete_disabled_description": "Stop the script and wait for pending changes before deleting.",
+  "scripts_pendingChange_error": "The script has a pending change. Wait for it to finish and try again.",
+  "scripts_delete_changed_error": "The script changed while confirmation was open. Check its current state and try again.",
+  "home_integrations_checks_failed_or_cancelled": "Failed or cancelled",
+  "home_integrations_checks_cancelled": "Cancelled",
+  "home_integrations_checks_overall_failed": "Some checks failed or were cancelled",
+  "home_integrations_checks_overall_pending": "Checks pending",
+  "home_integrations_checks_overall_passed": "All reported checks passed",
+  "home_integrations_checks_overall_neutral": "Some checks skipped or neutral",
+  "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host."
 }

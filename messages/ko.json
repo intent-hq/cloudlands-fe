@@ -7510,5 +7510,20 @@
   "chat_failureRecovery_queued_description": "메시지가 대기 중입니다. 아래 컨트롤로 관리하세요.",
   "chat_failureRecovery_action_description": "응답이 완료되기 전에 중지되었습니다.",
   "chat_failureRecovery_details_label": "세부 정보",
-  "chat_failureRecovery_copyDetails_label": "세부 정보 복사"
+  "chat_failureRecovery_copyDetails_label": "세부 정보 복사",
+  "chat_questionWizard_imagesAttached_label_one": "[이미지 1개 첨부]",
+  "chat_questionWizard_imagesAttached_label_many": "[이미지 {count}개 첨부]",
+  "scripts_delete_label": "스크립트 삭제",
+  "scripts_delete_title": "“{name}”을(를) 삭제할까요?",
+  "scripts_delete_description": "저장된 스크립트가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+  "scripts_delete_disabled_description": "스크립트를 중지하고 대기 중인 변경이 완료된 후 삭제하세요.",
+  "scripts_pendingChange_error": "스크립트 변경이 진행 중입니다. 완료될 때까지 기다린 후 다시 시도하세요.",
+  "scripts_delete_changed_error": "확인 중에 스크립트가 변경되었습니다. 현재 상태를 확인한 후 다시 시도하세요.",
+  "home_integrations_checks_failed_or_cancelled": "실패 또는 취소됨",
+  "home_integrations_checks_cancelled": "취소됨",
+  "home_integrations_checks_overall_failed": "일부 검사가 실패하거나 취소되었습니다",
+  "home_integrations_checks_overall_pending": "검사 대기 중",
+  "home_integrations_checks_overall_passed": "보고된 모든 검사가 통과했습니다",
+  "home_integrations_checks_overall_neutral": "일부 검사가 건너뛰어졌거나 중립입니다",
+  "providers_cliVersionWarning_message": "{provider} CLI 버전 {version}은 지원되는 최소 버전 {minimumVersion}보다 낮습니다. 데몬 호스트에서 CLI를 업데이트하세요."
 }
