@@ -441,6 +441,31 @@ describe('FileTabType Redux integration', () => {
     },
   );
 
+  it.each(['data.pb', 'extensionless', 'data.unknown'])(
+    'offers Download for UTF-8 binary control bytes in %s',
+    async (name) => {
+      const path = `.intent/artifacts/${name}`;
+      vi.mocked(backendRequest).mockResolvedValue('\b\u0001');
+      vi.mocked(invoke).mockResolvedValue({ success: true });
+      const stop = startFileReads();
+      try {
+        renderFileTab({ ...fileTab, filePath: path });
+        expect(await screen.findByText(m.editor_fileViewer_binary_label())).toBeTruthy();
+        expect(screen.queryByTestId('code-editor')).toBeNull();
+        await fireEvent.click(
+          screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+        );
+        expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+          workspaceId: 'ws-1',
+          path,
+          fileName: name,
+        });
+      } finally {
+        await stop();
+      }
+    },
+  );
+
   it('keeps a binary download pending, allows cancellation and reports a retry failure', async () => {
     const path = '.intent/artifacts/report.xlsx';
     mockReduxState.files[path] = {

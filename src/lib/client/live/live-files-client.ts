@@ -10,6 +10,7 @@
  * directory listing is not a `FileContentEntry` collection). File-event
  * subscription is owned by daemon-events-saga's scoped `file:*` lease.
  */
+import { detectBinaryContent } from '$shared/binary-file-extensions';
 import type { FileGitStatus, FileNode } from '$shared/types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 import type { FilesClient, MutationResult } from '../app-client';
@@ -105,10 +106,12 @@ export class LiveFilesClient implements FilesClient {
             ? (result as { content: string }).content
             : null;
       if (content === null) return null;
-      // NUL bytes can pass UTF-8 decoding but must never enter the text editor.
-      return content.includes('\0')
-        ? toFileContentEntry(path, '', true)
-        : toFileContentEntry(path, content);
+      // Binary control bytes can survive UTF-8 decoding. Reuse the byte detector
+      // with a bounded sample, and keep detecting NUL anywhere in the content.
+      const isBinary =
+        content.includes('\0') ||
+        detectBinaryContent(new TextEncoder().encode(content.slice(0, 8192)));
+      return isBinary ? toFileContentEntry(path, '', true) : toFileContentEntry(path, content);
     } catch (error) {
       // file.read uses Rust read_to_string. Its decoding failure proves that
       // the file exists but cannot be read as text. Cache only a binary marker;

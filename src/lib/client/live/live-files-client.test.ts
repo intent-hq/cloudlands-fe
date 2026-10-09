@@ -199,6 +199,18 @@ describe('LiveFilesClient.read', () => {
     });
   });
 
+  it.each(['data.pb', 'extensionless', 'data.unknown'])(
+    'recognizes UTF-8 binary control bytes in %s',
+    async (path) => {
+      mockedRequest.mockResolvedValueOnce('\b\u0001');
+      expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
+        isBinary: true,
+        originalContent: '',
+        localContent: '',
+      });
+    },
+  );
+
   it('does not offer null-containing bytes to the text editor', async () => {
     mockedRequest.mockResolvedValueOnce('PK\0\0');
     expect(await new LiveFilesClient().read('ws-1', 'data.bin')).toMatchObject({
@@ -208,7 +220,7 @@ describe('LiveFilesClient.read', () => {
     });
   });
 
-  it.each(['', 'name,value\nhello,123', 'Hello café'])(
+  it.each(['', 'name,value\nhello,123', 'Hello café', '你好 🌍\t\r\n', '\t\r\n'])(
     'preserves ordinary UTF-8 text: %s',
     async (content) => {
       mockedRequest.mockResolvedValueOnce(content);
