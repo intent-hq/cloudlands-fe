@@ -235,6 +235,30 @@ function* saveFileContentActionWorker(action: ReturnType<typeof saveFileContentR
 
 function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   const [workspaceId, path, options] = action.payload;
+  const cannotRestore = (content: string | null) =>
+    content === null || (options.content !== undefined && options.content !== content);
+  // Like a queued save, a queued deletion outlives cache cleanup. Retain any
+  // observation that invalidates its Undo snapshot until the transport settles.
+  let unsafeSnapshot = selectAllFileContentEntries
+    .select(appStore.state, workspaceId)
+    .some(
+      (entry) =>
+        entry.isBinary &&
+        (entry.path === path || entry.absolutePath === options.absolutePath) &&
+        cannotRestore(entry.originalContent),
+    );
+  const reads = yield* fork(function* () {
+    while (true) {
+      const { payload } = yield* take(loadFileContentSucceeded);
+      if (
+        payload[0] === workspaceId &&
+        payload[4] &&
+        (payload[1] === path || payload[2] === options.absolutePath) &&
+        cannotRestore(payload[3])
+      )
+        unsafeSnapshot = true;
+    }
+  });
   try {
     const { content, relativePath } = yield* call(
       serializeFileMutation<{ content: string; relativePath: string }>,
@@ -244,11 +268,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         const binaryEntry = [path, options.absolutePath, relativePath]
           .map((alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias))
           .find((entry) => entry?.isBinary);
-        if (
-          binaryEntry &&
-          (binaryEntry.originalContent === null ||
-            (options.content !== undefined && options.content !== binaryEntry.originalContent))
-        )
+        if (unsafeSnapshot || (binaryEntry && cannotRestore(binaryEntry.originalContent)))
           throw new Error(m.fileExplorer_tree_undoUnavailable_error());
         // Delete only when Undo has real contents. null is unavailable, never
         // a zero-byte file; an omitted panel draft means read the disk first.
@@ -257,7 +277,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
             ? await appClient.files.read(workspaceId, relativePath)
             : null;
         const savedContent = options.content === undefined ? entry?.localContent : options.content;
-        if (savedContent == null || entry?.truncated)
+        if (unsafeSnapshot || savedContent == null || entry?.truncated)
           throw new Error(m.fileExplorer_tree_undoUnavailable_error());
         const result = await appClient.files.delete(workspaceId, relativePath);
         if (!result.success)
@@ -287,6 +307,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   } finally {
+    yield* cancel(reads);
     if (yield* cancelled())
       yield* put(action.failure(new Error(m.ui_reversibleActions_cancelled_message())));
   }

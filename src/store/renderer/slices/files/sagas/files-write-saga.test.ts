@@ -136,6 +136,40 @@ describe('filesWriteSaga', () => {
   });
 
   it.each(
+    ['retained', 'pruned', 'unmounted'].flatMap((cleanup) =>
+      [null, '\b\u0001'].map((content) => ({ cleanup, content })),
+    ),
+  )(
+    'refuses queued panel deletion after binary reread and $cleanup cleanup ($content)',
+    async ({ cleanup, content }) => {
+      const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
+      const h = startWrites();
+      const lease = reserveGitMutation('ws-1');
+      try {
+        await lease.ready;
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', 'old text'));
+        const request = deleteFileRequested('ws-1', 'a.ts', {
+          absolutePath: '/repo/a.ts',
+          content: 'old text',
+        });
+        const outcome = request.promise.catch((error) => error);
+        h.dispatch(request);
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', content, true));
+        if (cleanup === 'pruned') h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
+        if (cleanup === 'unmounted') h.dispatch(workspaceUnmounted('ws-1'));
+        await lease.release();
+        await settle();
+        expect(remove).not.toHaveBeenCalled();
+        expect(await outcome).toBeInstanceOf(Error);
+      } finally {
+        await lease.release();
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(
     ['panel', 'explorer'].flatMap((origin) =>
       [
         { kind: 'binary controls', content: '\b\u0001' },
