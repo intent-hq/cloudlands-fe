@@ -11,6 +11,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend-transport-types';
+import * as backendTransport from './backend-transport';
+import { LiveFilesClient } from './live-files-client';
 import {
   BrowserWebSocketTransport,
   type BrowserWebSocketLike,
@@ -985,5 +987,40 @@ describe('observational node capabilities', () => {
       server: { capabilities: { agentNodes: 0, localNodeIsolation: 0, agentPlatformRouting: 0 } },
     });
     h.transport.dispose();
+  });
+});
+
+describe('binary file reads through browser transport normalization', () => {
+  it.each([
+    ['stream did not contain valid UTF-8', 'binary'],
+    ['No such file or directory (os error 2)', 'missing'],
+    ['Permission denied (os error 13)', 'error'],
+    [undefined, 'error'],
+    [{ detail: { message: 'stream did not contain valid UTF-8' } }, 'error'],
+  ])('classifies the actual daemon error data %j as %s', async (data, expected) => {
+    const { transport, socket } = createHarness();
+    const request = vi
+      .spyOn(backendTransport, 'backendRequest')
+      .mockImplementation((method, params) => transport.request(method, params));
+    try {
+      const pending = new LiveFilesClient()
+        .read('ws-1', '.intent/artifacts/report.xlsx')
+        .catch((error) => error);
+      await connect(socket());
+      expect(socket().lastFrame()).toMatchObject({ method: 'file.read' });
+      socket().receive({
+        jsonrpc: '2.0',
+        id: socket().lastFrame().id,
+        error: { code: -32603, message: 'Internal error', data },
+      });
+      const result = await pending;
+      if (expected === 'binary')
+        expect(result).toMatchObject({ isBinary: true, originalContent: null });
+      else if (expected === 'missing') expect(result).toBeNull();
+      else expect(result).toBeInstanceOf(BackendError);
+    } finally {
+      transport.dispose();
+      request.mockRestore();
+    }
   });
 });

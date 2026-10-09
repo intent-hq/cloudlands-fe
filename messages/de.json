@@ -4468,6 +4468,7 @@
   "fileTracking_codeChanges_unknown_fallback": "unbekannt",
   "fileExplorer_tree_file_fallback": "Datei",
   "fileExplorer_tree_deleteFailed_error": "Datei konnte nicht gelöscht werden",
+  "fileExplorer_tree_undoUnavailable_error": "Diese Datei kann hier nicht gelöscht werden, da Rückgängig ihren Inhalt nicht wiederherstellen kann.",
   "editor_fileViewer_unknown_fallback": "Unbekannt",
   "fileTracking_startNew_previousWorkspace_fallback": "vorheriger Arbeitsbereich",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "der vorherige Arbeitsbereich",

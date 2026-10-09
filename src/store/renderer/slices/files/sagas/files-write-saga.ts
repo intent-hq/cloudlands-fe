@@ -1,6 +1,9 @@
 import {
   call,
   cancelled,
+  cancel,
+  fork,
+  spawn,
   delay,
   put,
   race,
@@ -28,8 +31,9 @@ import { refreshDirectoryRequested } from '../../file-explorer/file-explorer-sli
 import { closeTab, closeTabsByType } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { openWorkspaceFile } from '../../workspace-navigation/workspace-navigation-slice';
-import { selectFileContentEntry } from '../files-selectors';
+import { selectAllFileContentEntries, selectFileContentEntry } from '../files-selectors';
 import {
+  loadFileContentSucceeded,
   deleteFileRequested,
   deleteFileWithUndoRequested,
   restoreFileContentRequested,
@@ -46,6 +50,7 @@ function* serializeFileMutation<T>(
   workspaceId: string,
   path: string,
   run: (relativePath: string) => Promise<T>,
+  observeRead?: (action: ReturnType<typeof loadFileContentSucceeded>) => void,
 ): SagaGenerator<T> {
   // Tabs/cache entries retain their caller-facing paths. Only the transport and
   // queue identity use the workspace-relative resource, for every mutation kind.
@@ -53,7 +58,30 @@ function* serializeFileMutation<T>(
     ? yield* selectEffectiveFileExplorerWorkspacePath.effect(workspaceId)
     : '';
   const relativePath = stripWorkspacePrefix(path, workspacePath);
-  return yield* call(() => queueFileMutation(workspaceId, relativePath, () => run(relativePath)));
+  const execute = () => queueFileMutation(workspaceId, relativePath, () => run(relativePath));
+  if (!observeRead) return yield* call(execute);
+
+  // The transport queue outlives UI cancellation. Its task owns the observer,
+  // including after unmount/reopen, and releases it only when I/O settles.
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const completion = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  yield* spawn(function* () {
+    const reads = yield* fork(function* () {
+      while (true) observeRead(yield* take(loadFileContentSucceeded));
+    });
+    try {
+      resolve(yield* call(execute));
+    } catch (error) {
+      reject(error);
+    } finally {
+      yield* cancel(reads);
+    }
+  });
+  return yield* call(() => completion);
 }
 
 type SaveRequest = {
@@ -96,13 +124,39 @@ function isSaveFor(
 }
 
 function* saveFileContentWorker(request: SaveRequest) {
-  const { workspaceId, path, content } = request;
+  const { workspaceId, path, absolutePath, content } = request;
+  // The queue survives unmount, which clears the cache. Remember an observed
+  // binary read until this write settles so teardown cannot admit a stale save.
+  let becameBinary = selectAllFileContentEntries
+    .select(appStore.state, workspaceId)
+    .some(
+      (entry) => entry.isBinary && (entry.path === path || entry.absolutePath === absolutePath),
+    );
   try {
     const result = yield* call(
       serializeFileMutation<MutationResult>,
       workspaceId,
       path,
-      (relativePath: string) => appClient.files.write(workspaceId, relativePath, content),
+      (relativePath: string) => {
+        // Recheck at execution, after any queued mutation and intervening read.
+        // A queued text save must not overwrite a file now known to be binary.
+        if (
+          becameBinary ||
+          [path, absolutePath, relativePath].some(
+            (alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias)?.isBinary,
+          )
+        )
+          throw new Error(m.editor_fileViewer_binary_label());
+        return appClient.files.write(workspaceId, relativePath, content);
+      },
+      ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
+        if (
+          payload[0] === workspaceId &&
+          payload[4] &&
+          (payload[1] === path || payload[2] === absolutePath)
+        )
+          becameBinary = true;
+      },
     );
     if (result.success) {
       yield* put(saveFileContentSucceeded(workspaceId, path, content));
@@ -169,7 +223,7 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
   if (action.payload[3]?.autoSave === false) return;
   const [workspaceId, path] = action.payload;
   const entry = yield* selectFileContentEntry.effect(workspaceId, path);
-  if (!entry?.absolutePath) return;
+  if (!entry?.absolutePath || entry.isBinary) return;
   const absolutePath = entry.absolutePath;
   const { elapsed } = yield* race({
     elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
@@ -181,6 +235,7 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
   const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
   if (
     !latestEntry?.absolutePath ||
+    latestEntry.isBinary ||
     latestEntry.localContent === null ||
     latestEntry.localContent === latestEntry.originalContent
   )
@@ -200,21 +255,58 @@ function* saveFileContentActionWorker(action: ReturnType<typeof saveFileContentR
 
 function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   const [workspaceId, path, options] = action.payload;
+  const cannotRestore = (content: string | null) =>
+    content === null || (options.content !== undefined && options.content !== content);
+  // Like a queued save, a queued deletion outlives cache cleanup. Retain any
+  // observation that invalidates its Undo snapshot until the transport settles.
+  let unsafeSnapshot = selectAllFileContentEntries
+    .select(appStore.state, workspaceId)
+    .some(
+      (entry) =>
+        entry.isBinary &&
+        (entry.path === path || entry.absolutePath === options.absolutePath) &&
+        cannotRestore(entry.originalContent),
+    );
+  let requestCancelled = false;
+  const assertActive = () => {
+    if (requestCancelled) throw new Error(m.ui_reversibleActions_cancelled_message());
+  };
   try {
     const { content, relativePath } = yield* call(
       serializeFileMutation<{ content: string; relativePath: string }>,
       workspaceId,
       path,
       async (relativePath: string) => {
-        // Preserve tree deletion's best-effort disk snapshot and editor deletion's draft snapshot.
-        const savedContent =
-          options.content ??
-          (await appClient.files.read(workspaceId, relativePath).catch(() => null))?.localContent ??
-          '';
+        assertActive();
+        const binaryEntry = [path, options.absolutePath, relativePath]
+          .map((alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias))
+          .find((entry) => entry?.isBinary);
+        if (unsafeSnapshot || (binaryEntry && cannotRestore(binaryEntry.originalContent)))
+          throw new Error(m.fileExplorer_tree_undoUnavailable_error());
+        // Delete only when Undo has real contents. null is unavailable, never
+        // a zero-byte file; an omitted panel draft means read the disk first.
+        const entry =
+          options.content === undefined
+            ? await appClient.files.read(workspaceId, relativePath)
+            : null;
+        assertActive();
+        const savedContent = options.content === undefined ? entry?.localContent : options.content;
+        if (unsafeSnapshot || savedContent == null || entry?.truncated)
+          throw new Error(m.fileExplorer_tree_undoUnavailable_error());
         const result = await appClient.files.delete(workspaceId, relativePath);
         if (!result.success)
           throw new Error(result.error ?? m.fileExplorer_tree_deleteFailed_error());
         return { content: savedContent, relativePath };
+      },
+      ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
+        if (
+          payload[0] === workspaceId &&
+          payload[4] &&
+          (payload[1] === path || payload[2] === options.absolutePath) &&
+          // A concurrent binary observation invalidates a pending tree snapshot.
+          (options.content === undefined || cannotRestore(payload[3]))
+        )
+          unsafeSnapshot = true;
       },
     );
     // Clear both tree and panel aliases before closing tabs: an absolute-path
@@ -239,8 +331,10 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   } finally {
-    if (yield* cancelled())
+    if (yield* cancelled()) {
+      requestCancelled = true;
       yield* put(action.failure(new Error(m.ui_reversibleActions_cancelled_message())));
+    }
   }
 }
 
