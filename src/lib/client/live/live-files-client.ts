@@ -14,10 +14,11 @@ import type { FileGitStatus, FileNode } from '$shared/types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 import type { FilesClient, MutationResult } from '../app-client';
 import { backendRequest } from './backend-transport';
-import { newIdempotencyKey, runMutation } from './live-support';
+import { BackendError } from './backend-transport-types';
+import { mutationErrorMessage, newIdempotencyKey, runMutation } from './live-support';
 
 /** Map raw daemon file content into a `FileContentEntry`. */
-function toFileContentEntry(path: string, content: string): FileContentEntry {
+function toFileContentEntry(path: string, content: string, isBinary = false): FileContentEntry {
   return {
     path,
     absolutePath: null,
@@ -27,7 +28,7 @@ function toFileContentEntry(path: string, content: string): FileContentEntry {
     loading: false,
     saving: false,
     error: null,
-    isBinary: false,
+    isBinary,
     truncated: false,
   };
 }
@@ -104,10 +105,24 @@ export class LiveFilesClient implements FilesClient {
             ? (result as { content: string }).content
             : null;
       if (content === null) return null;
-      return toFileContentEntry(path, content);
+      // NUL bytes can pass UTF-8 decoding but must never enter the text editor.
+      return content.includes('\0')
+        ? toFileContentEntry(path, '', true)
+        : toFileContentEntry(path, content);
     } catch (error) {
-      if (options?.gitRootId) throw error;
-      return null;
+      // file.read uses Rust read_to_string. Its decoding failure proves that
+      // the file exists but cannot be read as text. Cache only a binary marker;
+      // downloads must fetch the original bytes through the workspace route.
+      if (error instanceof BackendError && error.rpcCode === -32603) {
+        const message = mutationErrorMessage(error);
+        if (message.endsWith('stream did not contain valid UTF-8')) {
+          return toFileContentEntry(path, '', true);
+        }
+        // File I/O currently has no structured not-found discriminator. Keep
+        // suffix recovery for ENOENT (and Windows PATH_NOT_FOUND) only.
+        if (!options?.gitRootId && /\(os error [23]\)$/.test(message)) return null;
+      }
+      throw error;
     }
   }
 

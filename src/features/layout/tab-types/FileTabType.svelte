@@ -545,10 +545,10 @@
 
 {#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->
-  {#if !isOutsideWorkspace && !isReadOnly}
+  {#if !isOutsideWorkspace && !isReadOnly && !isFileBinary}
     <Menu.CommandItem icon={faFloppyDisk} label={saveStatusLabel} disabled />
   {/if}
-  {#if tab.filePath && !isOutsideWorkspace}
+  {#if tab.filePath && !isOutsideWorkspace && !isFileBinary}
     <ViewSettingsDropdown
       embedded
       showFold={false}
@@ -668,9 +668,24 @@
           </ul>
         {/if}
       </div>
+    {:else if isFileBinary}
+      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3 p-4">
+        <p>{m.editor_fileViewer_binary_label()}</p>
+        <p class="text-xs break-all">{tab.filePath}</p>
+        {#if !isReadOnly && workspaceFilePath}
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={handleDownloadFile}
+            disabled={!downloadReady || downloading}
+          >
+            {m.layout_fileTab_downloadFile_label()}
+          </Button>
+        {/if}
+      </div>
     {:else if fileContent !== null}
       {@const isSvgFile = tab.filePath?.toLowerCase().endsWith('.svg')}
-      {#if isFileBinary || isSvgFile}
+      {#if isSvgFile}
         <FileViewer
           filePath={tab.filePath || ''}
           {fileContent}
