@@ -1,5 +1,5 @@
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
-import { runSaga, stdChannel } from 'redux-saga';
+import { runSaga, stdChannel, type SagaMonitor } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
@@ -40,13 +40,15 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
-function startWrites() {
+function startWrites(sagaMonitor?: SagaMonitor) {
   const channel = stdChannel();
   const actions: Parameters<typeof filesReducer>[1][] = [];
   let files = filesReducer(undefined, { type: 'test/init' });
@@ -67,7 +69,7 @@ function startWrites() {
     () => ({ files, workspace, fileExplorer }) as never,
   );
   const task = runSaga(
-    { channel, getState: () => ({ files, workspace, fileExplorer }), dispatch },
+    { channel, getState: () => ({ files, workspace, fileExplorer }), dispatch, sagaMonitor },
     filesWriteSaga,
   );
   return {
@@ -238,6 +240,47 @@ describe('filesWriteSaga', () => {
       } finally {
         read.resolve(null);
         await lease?.release();
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(
+    ['success', 'failure', 'rejection'].flatMap((outcome) =>
+      [false, true].map((unmount) => ({ outcome, unmount })),
+    ),
+  )(
+    'releases the binary observer after transport $outcome (unmount=$unmount)',
+    async ({ outcome, unmount }) => {
+      const pendingReads = new Set<number>();
+      const h = startWrites({
+        effectTriggered: ({ effectId, effect }) => {
+          if (effect.type === 'TAKE' && effect.payload.pattern === loadFileContentSucceeded)
+            pendingReads.add(effectId);
+        },
+        effectResolved: (effectId) => {
+          pendingReads.delete(effectId);
+        },
+        effectCancelled: (effectId) => {
+          pendingReads.delete(effectId);
+        },
+      });
+      const transport = deferred<{ success: boolean; error?: string }>();
+      vi.spyOn(appClient.files, 'write').mockReturnValue(transport.promise);
+      try {
+        h.dispatch(saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', 'text'));
+        expect(pendingReads.size).toBe(1);
+        if (unmount) h.dispatch(workspaceUnmounted('ws-1'));
+        expect(pendingReads.size).toBe(1);
+        if (outcome === 'rejection') transport.reject(new Error('transport disconnected'));
+        else
+          transport.resolve(
+            outcome === 'success' ? { success: true } : { success: false, error: 'disk full' },
+          );
+        await vi.waitFor(() => expect(pendingReads.size).toBe(0));
+      } finally {
+        transport.resolve({ success: true });
         h.task.cancel();
         await h.task.toPromise();
       }
