@@ -304,6 +304,21 @@ export const panelLayoutScopeUnmounted = createAction<[layoutId: string]>(
 
 // --- Tab Operations ---
 /**
+ * Insert a newly opened agent browser immediately behind the current tab.
+ * Main owns URL/owner dedupe; a redelivered id is a no-op, even if hidden.
+ * Populated panels do not navigate or reveal; an empty panel displays its
+ * first tab with autofocus suppressed. Neither truncates layout history.
+ */
+export const openTabBehindActive = createAction(
+  'panelLayout/openTabBehindActive',
+  (wsId: string, tab: Omit<PanelTab, 'id'>, newTabId?: string) => ({
+    wsId,
+    tab,
+    newTabId: newTabId ?? generateTabId(),
+  }),
+);
+
+/**
  * `preserveFocus` (agent-driven opens) activates the tab in the target panel
  * so its content paints, but keeps the current panel focus — the same
  * contract as `openTabInRightmostColumn`, for `position: same` opens.
@@ -2316,6 +2331,43 @@ panelLayoutReducer.with(loadLayoutHistory, (state, { payload }) => {
   });
 });
 // --- Open Tab ---
+panelLayoutReducer.with(openTabBehindActive, (state, { payload }) => {
+  const { wsId, tab, newTabId } = payload;
+  if (!panelTabBelongsToLayout(wsId, tab)) return state;
+  const ws = getWorkspaceState(state, wsId);
+  if (getItem(ws.hiddenTabs, newTabId)) return state;
+  if (Object.values(ws.panels).some((panel) => panel.tabs.some((entry) => entry.id === newTabId)))
+    return state;
+
+  const panelId = ws.focusedPanelId ?? getPanelOrder(ws.root)[0];
+  const panel = panelId ? ws.panels[panelId] : undefined;
+  if (!panel || !panelId) return state;
+  const activeIndex = panel.tabs.findIndex((entry) => entry.id === panel.activeTabId);
+  const insertIndex = activeIndex < 0 ? panel.tabs.length : activeIndex;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    // The first tab in an empty panel becomes active; use the existing
+    // focus-preserving marker so BrowserTabType suppresses URL-bar autofocus.
+    pendingPanelReveal:
+      panel.activeTabId === null
+        ? createPanelRevealRequest(panelId, newTabId, newTabId, true)
+        : ws.pendingPanelReveal,
+    panels: {
+      ...ws.panels,
+      [panelId]: {
+        ...panel,
+        tabs: [
+          ...panel.tabs.slice(0, insertIndex),
+          { ...tab, id: newTabId },
+          ...panel.tabs.slice(insertIndex),
+        ],
+        // An empty panel has no current content to preserve.
+        activeTabId: panel.activeTabId ?? newTabId,
+        pristine: false,
+      },
+    },
+  });
+});
 panelLayoutReducer.with(openTab, (state, { payload }) => {
   const { wsId, tab, panelId, newTabId, timestamp } = payload;
   if (!panelTabBelongsToLayout(wsId, tab)) return state;

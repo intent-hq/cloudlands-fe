@@ -25,6 +25,7 @@ import {
   selectHiddenTabs,
   selectPanelLayoutWorkspaces,
   selectPanels,
+  selectPendingPanelReveal,
 } from '../../panel-layout/panel-layout-selectors';
 import {
   hydrateWorkspaceLayout,
@@ -36,6 +37,7 @@ import {
   closeTab,
   openHiddenTab,
   openTab,
+  openTabBehindActive,
   openTabInRightmostColumnRequested,
   restoreHiddenTab,
   setActiveTab,
@@ -269,8 +271,8 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       // (monorepo#3045). Adoption never hides a visible tab.
       if (hiddenOpen) return;
       // An agent visible replace activates the adopted tab in whichever
-      // panel holds it without moving focus — the same preserveFocus contract
-      // as every other agent-driven visible open (monorepo#3045). setActiveTab
+      // panel holds it without moving focus. This explicit replacement keeps
+      // its activation behavior; only new agent tabs open behind. setActiveTab
       // only searches the focused panel and records focus history, so it is
       // reserved for user replaces.
       if (ownerAgentId) {
@@ -281,27 +283,6 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
-    if (hiddenOpen) {
-      yield* put(
-        openHiddenTab(
-          workspaceId,
-          browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
-          newTabId,
-        ),
-      );
-      return;
-    }
-    const openAction = openTabInRightmostColumnRequested(
-      workspaceId,
-      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
-      {
-        newTabId,
-        allowDuplicate,
-        agentDriven: ownerAgentId !== undefined ? true : undefined,
-      },
-    );
-    yield* put(openAction);
-    return;
   }
   // A hidden (default) agent open creates the tab straight into hiddenTabs:
   // no panel mount, no focus or active-tab change (monorepo#3045). The
@@ -318,22 +299,34 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     );
     return;
   }
-  if (position === 'adjacent') {
+  // New visible agent tabs enter the current panel's back stack without
+  // replacing current content or requesting keyboard focus/scroll reveal.
+  // Inactive owned tabs still mount through the panel's keep-alive cache.
+  if (ownerAgentId !== undefined) {
+    const openAction = openTabBehindActive(
+      workspaceId,
+      browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
+      newTabId,
+    );
+    yield* put(openAction);
+    const reveal = yield* selectPendingPanelReveal.effect(workspaceId);
+    if (reveal?.requestId === openAction.payload.newTabId) {
+      yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
+    }
+    return;
+  }
+  if (position === 'adjacent' || position === 'replace') {
     const openAction = openTabInRightmostColumnRequested(
       workspaceId,
       browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
       {
         newTabId,
         allowDuplicate,
-        agentDriven: ownerAgentId !== undefined ? true : undefined,
       },
     );
     yield* put(openAction);
     return;
   }
-  // An agent-driven visible open activates the tab in the focused panel
-  // without moving focus — the same preserveFocus contract as the adjacent
-  // branch (monorepo#3045).
   const openAction = openTab(
     workspaceId,
     browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
@@ -342,12 +335,8 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     undefined,
     undefined,
     allowDuplicate,
-    ownerAgentId !== undefined ? true : undefined,
   );
   yield* put(openAction);
-  if (ownerAgentId !== undefined) {
-    yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, openAction.payload.newTabId);
-  }
 }
 
 function* closeBrowser(data: BrowserCloseTabPayload | null): SagaGenerator<void> {
