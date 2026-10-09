@@ -50,7 +50,7 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectLiveClientsLoaded, selectOwnClientId } from '../browser-clients-selectors';
+import { selectLiveClientsLoaded, selectOwnClientIdConfirmed } from '../browser-clients-selectors';
 import {
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
@@ -331,8 +331,8 @@ function* closeRemoteBrowserTab(
 function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaGenerator<void> {
   const [wsId] = action.payload;
   if (!wsId) return;
-  const ownClientId = yield* selectOwnClientId.effect();
-  if (ownClientId === null) yield* put(hydrateBrowserClientsRequested(wsId));
+  const ownClientIdConfirmed = yield* selectOwnClientIdConfirmed.effect();
+  if (!ownClientIdConfirmed) yield* put(hydrateBrowserClientsRequested(wsId));
   else yield* put(refreshLiveClientsRequested(wsId));
   yield* put(fetchWorkspaceBrowserClientRequested(wsId));
 }

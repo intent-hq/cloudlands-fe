@@ -72,6 +72,7 @@ function start(mounted: string[] = []) {
   tasks.push(runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga));
   return {
     dispatch,
+    confirmed: () => state.browserClients.ownClientIdConfirmed,
     view: () => selectWorkspaceDrivingClient.select(state as unknown as StoreState, 'ws-1'),
   };
 }
@@ -118,6 +119,33 @@ afterEach(async () => {
 });
 
 describe('browser recovery across a backend reconnect', () => {
+  it('retries a failed current hello on remount while retaining hosted identity', async () => {
+    const run = start();
+    run.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    const normal = transport.request.getMockImplementation()!;
+    let failHello = true;
+    transport.request.mockImplementation((method, params) => {
+      if (method === 'client.hello' && failHello) {
+        failHello = false;
+        return Promise.reject(new Error('temporary hello failure'));
+      }
+      return normal(method, params);
+    });
+    reconnect();
+    await settle();
+    expect(run.view().ownClientId).toBe(desktop.clientId);
+    expect(run.confirmed()).toBe(false);
+    run.dispatch(workspaceUnmounted('ws-1'));
+    run.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    expect(
+      transport.request.mock.calls.filter(([method]) => method === 'client.hello'),
+    ).toHaveLength(3);
+    expect(run.confirmed()).toBe(true);
+    expect(run.view().ownClientId).toBe(desktop.clientId);
+  });
+
   it('hydrates exact identity and workspace routing from the same backend', async () => {
     const run = start();
     run.dispatch(workspaceMounted('ws-1'));

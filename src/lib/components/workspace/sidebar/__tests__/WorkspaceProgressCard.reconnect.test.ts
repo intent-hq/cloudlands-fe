@@ -31,7 +31,10 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { principalSaga } from '$store/renderer/slices/principal/sagas/principal-saga';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { browserClientsSaga } from '$store/renderer/slices/browser-clients/sagas/browser-clients-saga';
@@ -157,6 +160,38 @@ async function reconnect(reverse = false) {
 }
 
 describe('actual browser lifecycle to primary menu', () => {
+  it('recovers on remount after the current browser hello fails once', async () => {
+    const view = await mount();
+    const normal = wire.request.getMockImplementation()!;
+    let failBrowserHello = true;
+    wire.request.mockImplementation((method, params) => {
+      if (method === 'client.hello' && failBrowserHello) {
+        failBrowserHello = false;
+        return Promise.reject(new Error('temporary browser hello failure'));
+      }
+      return normal(method, params);
+    });
+    resolution = { source: 'default', resolved: null };
+    await reconnect();
+    expect(store.state.browserClients.ownClientId).toBe(own);
+    expect(store.state.browserClients.ownClientIdConfirmed).toBe(false);
+    expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
+    expect(writes()).toEqual([]);
+    view.unmount();
+    store.dispatch(workspaceUnmounted('ws-1'));
+    await mount();
+    await waitFor(() =>
+      expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
+    );
+    await fireEvent.click(primary());
+    await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
+    await waitFor(() =>
+      expect(writes()).toEqual([
+        ['workspace.setBrowserClient', { workspaceId: 'ws-1', clientId: own }],
+      ]),
+    );
+  });
+
   it.each([false, true])(
     'recovers a missed pin event across repeated reconnects (reverse callbacks: %s)',
     async (reverse) => {
