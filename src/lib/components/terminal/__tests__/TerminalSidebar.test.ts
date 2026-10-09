@@ -1,5 +1,29 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { appClient } from '$lib/client';
+
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const { appClient } = await import('$lib/client');
+  return {
+    backendRequest: vi.fn(
+      async (method: string, params: { workspaceId: string; scriptId?: string }) => {
+        if (method === 'script.remove') {
+          const result = await mockWireRemove(params.workspaceId, params.scriptId);
+          if (!result.success) throw new Error(result.error);
+          return { ok: true };
+        }
+        const { workspaceId, ...definition } = params;
+        const result = await appClient.scripts.create(workspaceId, definition as never);
+        if (!result.success) throw new Error(result.error);
+        return result.script;
+      },
+    ),
+  };
+});
+
+vi.mock('$lib/client', () => ({
+  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+}));
 
 const {
   mockDetect,
@@ -8,6 +32,8 @@ const {
   mockScriptCreate,
   mockScriptUpdate,
   mockScriptRemove,
+  mockScriptRestoreSnapshot,
+  mockWireRemove,
   backgroundAgentOptions,
   scriptEntries,
   terminalEntries,
@@ -28,6 +54,8 @@ const {
     mockScriptCreate: vi.fn(),
     mockScriptUpdate: vi.fn(),
     mockScriptRemove: vi.fn(),
+    mockScriptRestoreSnapshot: vi.fn(),
+    mockWireRemove: vi.fn(),
     backgroundAgentOptions: {
       value: null as { onResult: (result: string) => Promise<void> } | null,
     },
@@ -63,6 +91,7 @@ vi.mock('$features/scripts/scripts.client', () => ({
     create: mockScriptCreate,
     update: mockScriptUpdate,
     remove: mockScriptRemove,
+    restoreSnapshot: mockScriptRestoreSnapshot,
     start: vi.fn(),
     stop: vi.fn(),
     restart: vi.fn(),
@@ -369,11 +398,11 @@ describe('TerminalSidebar detection flow', () => {
       await backgroundAgentOptions.value!.onResult(
         JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
       );
+      mockScriptRestoreSnapshot.mockResolvedValueOnce({ success: true });
       await notify.success.mock.calls[0][1].action.onClick();
-      expect(mockScriptCreate).toHaveBeenLastCalledWith(
-        'ws-1',
-        expect.objectContaining({ name: 'test', purpose: purpose ?? 'saved' }),
-      );
+      expect(mockScriptRestoreSnapshot).toHaveBeenCalledWith('ws-1', [
+        expect.objectContaining({ name: 'test', purpose }),
+      ]);
     },
   );
 
@@ -529,14 +558,11 @@ describe('TerminalSidebar workspace prop changes', () => {
       true,
     );
 
+    mockScriptRemove.mockResolvedValueOnce({ success: true });
     await fireEvent.contextMenu(screen.getByRole('button', { name: /^Script B(?:\s|$)/ }));
     await fireEvent.click(screen.getByText('Delete'));
 
     await waitFor(() => expect(mockScriptRemove).toHaveBeenCalledWith('ws-b', 'script-b'));
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'scripts/removeScript',
-      payload: ['ws-b', 'script-b'],
-    });
   });
 });
 
@@ -793,8 +819,16 @@ describe('TerminalSidebar resize handle', () => {
 
 describe('sidebar inline rename deletion races', () => {
   const scriptId = 'sidebar-rename';
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const actual = await vi.importActual<typeof import('$features/scripts/scripts.client')>(
+      '$features/scripts/scripts.client',
+    );
+    mockScriptUpdate.mockReset().mockImplementation(actual.scriptsClient.update);
+    mockScriptRemove.mockReset().mockImplementation(actual.scriptsClient.remove);
+    mockScriptRestoreSnapshot.mockReset().mockImplementation(actual.scriptsClient.restoreSnapshot);
+    mockWireRemove.mockReset().mockResolvedValue({ success: true });
+    vi.mocked(appClient.scripts.list).mockImplementation(async () => scriptEntries.value);
     scriptEntries.value = [
       {
         id: scriptId,
@@ -819,14 +853,19 @@ describe('sidebar inline rename deletion races', () => {
     const { selectCanDeleteScript } =
       await import('$store/renderer/slices/scripts/scripts-selectors');
     let finish!: (result: { success: boolean }) => void;
-    mockScriptUpdate.mockReturnValueOnce(
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
       new Promise((resolve) => {
         finish = resolve;
       }),
     );
     render(TerminalSidebar, { workspaceId: 'ws-1' });
     await rename();
-    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', scriptId, { name: 'New name' });
+    await waitFor(() =>
+      expect(appClient.scripts.create).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({ scriptId, name: 'New name' }),
+      ),
+    );
     expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(false);
     finish({ success: true });
     await waitFor(() =>
@@ -838,12 +877,55 @@ describe('sidebar inline rename deletion races', () => {
     const { store } = await import('$store/renderer/store');
     const { deleteScriptRequested, scriptOperationSucceeded } =
       await import('$store/renderer/slices/scripts/scripts-slice');
-    mockScriptUpdate.mockResolvedValueOnce({ success: true });
     store.dispatch(deleteScriptRequested('ws-1', scriptId, 'Delete failed'));
     render(TerminalSidebar, { workspaceId: 'ws-1' });
     await rename();
-    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(appClient.scripts.list).not.toHaveBeenCalled();
+    expect(appClient.scripts.create).not.toHaveBeenCalled();
     expect(notify.warning).toHaveBeenCalled();
     store.dispatch(scriptOperationSucceeded('ws-1', scriptId, 'delete'));
+  });
+  it('keeps the sidebar row when context deletion races a pending rename', async () => {
+    let finish!: (result: { success: boolean }) => void;
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^Rename target/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete', exact: true }));
+    finish({ success: true });
+    await waitFor(() => expect(notify.warning).toHaveBeenCalled());
+    expect(mockWireRemove).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/removeScript' }),
+    );
+  });
+  it('rejects detection Undo during a rename without removing or recreating rows', async () => {
+    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new' } });
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
+    );
+    const undo = notify.success.mock.calls[0][1].action.onClick;
+    notify.success.mockClear();
+    mockScriptCreate.mockClear();
+    let finish!: (result: { success: boolean }) => void;
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await rename();
+    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    await undo();
+    expect(mockWireRemove).not.toHaveBeenCalled();
+    expect(mockScriptCreate).not.toHaveBeenCalled();
+    expect(notify.warning).toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
+    finish({ success: true });
   });
 });

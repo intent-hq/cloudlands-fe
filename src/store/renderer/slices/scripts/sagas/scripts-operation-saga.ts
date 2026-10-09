@@ -32,6 +32,7 @@ import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 import { m } from '$shared/paraglide/messages.js';
 import { notify } from '$lib/components/patterns/notify';
 import { scriptsClient } from '$features/scripts/scripts.client';
+import { runMutation } from '$lib/client/live/live-support';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import {
@@ -39,7 +40,11 @@ import {
   isScriptReadCurrent,
   type ScriptReadContext,
 } from '../utils/script-read-context';
-import { selectScriptById, selectWorkspaceScriptOperations } from '../scripts-selectors';
+import {
+  selectScriptById,
+  selectWorkspaceScriptOperations,
+  selectScriptDetectionOperation,
+} from '../scripts-selectors';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
 import {
   backendReconnected,
@@ -120,9 +125,15 @@ function* waitForReadInvalidation(context: ScriptReadContext): SagaGenerator<tru
   return true;
 }
 
+/** Internal transport for the delete reservation already acquired by the reducer. */
+function removeReservedScript(workspaceId: string, scriptId: string) {
+  return runMutation('script.remove', { workspaceId, scriptId });
+}
+
 function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void> {
   const [workspaceId, scriptId, failureMessage] = action.payload;
   const operation = operationFor(action);
+  if ((yield* selectScriptDetectionOperation.effect(workspaceId))?.pending) return;
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
   const pendingOperation = (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId];
   // Definition edits share the reducer reservation but run in their caller.
@@ -143,15 +154,23 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     operation === 'stop' && before?.runtime.status === 'exited'
       ? yield* beginScriptRead(workspaceId)
       : undefined;
+  let cleanedUp = false;
   try {
     if (operation === 'delete' && (!before || isLiveScriptStatus(before.runtime?.status))) return;
-    const method = operation === 'delete' ? 'remove' : operation;
+    const method = operation === 'delete' ? removeReservedScript : scriptsClient[operation];
+    const request = method(workspaceId, scriptId);
     const outcome = yield* race({
-      result: call([scriptsClient, scriptsClient[method]], workspaceId, scriptId),
+      result: call(() => request),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
-    if (outcome.cleanup || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
+    if (outcome.cleanup) {
+      cleanedUp = true;
+      // The daemon cannot cancel removal. Keep ownership until it settles so a
+      // definition save cannot recreate the row while deletion is still running.
+      if (operation === 'delete') yield* call(() => request);
       return;
+    }
+    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     if (!outcome.result?.success) {
       const message = outcome.result?.error || failureMessage || 'Script operation failed';
       yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
@@ -185,7 +204,8 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     if (operation === 'delete') yield* put(removeScript(workspaceId, scriptId));
     else yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
-    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
+    if (cleanedUp || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
+      return;
     const message = errorMessage(error);
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
     if (failureMessage) yield* call([notify, notify.error], message || failureMessage);

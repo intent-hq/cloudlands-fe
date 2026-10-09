@@ -120,6 +120,9 @@ export const scriptOperationFailed = createAction<
   [wsId: string, scriptId: string, action: ScriptQuickAction, error: string]
 >('scripts/scriptOperationFailed');
 
+export const scriptDetectionRequested = createAction<[wsId: string]>('scripts/detectionRequested');
+export const scriptDetectionFinished = createAction<[wsId: string]>('scripts/detectionFinished');
+
 export const clearScriptOperations = createAction<[wsId: string]>('scripts/clearScriptOperations');
 
 /** Set initialized state */
@@ -274,12 +277,27 @@ function requestOperation(
   action: ScriptQuickAction,
 ): ScriptsState {
   const ws = getWorkspaceState(state, wsId);
-  if (ws.operations[scriptId]?.pending) return state;
+  if (ws.detectionOperation?.pending || ws.operations[scriptId]?.pending) return state;
   return setWorkspaceState(state, wsId, {
     ...ws,
     operations: { ...ws.operations, [scriptId]: { action, pending: true } },
   });
 }
+
+scriptsReducer.with(scriptDetectionRequested, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.detectionOperation?.pending || Object.values(ws.operations).some((op) => op.pending))
+    return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    detectionOperation: { action: 'edit', pending: true },
+  });
+});
+scriptsReducer.with(scriptDetectionFinished, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const { detectionOperation: _detection, ...rest } = ws;
+  return setWorkspaceState(state, wsId, rest);
+});
 
 scriptsReducer.with(editScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'edit'),
@@ -316,11 +334,12 @@ scriptsReducer.with(
 scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (Object.keys(ws.operations).length === 0) return state;
-  // Definition upserts are promises owned by the edit caller, not cancellable
-  // saga tasks. Keep their reservation through unmount until the write settles.
+  // Definition writes and daemon deletions cannot be cancelled by unmount.
+  // Their owners release the reservation only after the wire request settles.
   const operations = Object.fromEntries(
     Object.entries(ws.operations).filter(
-      ([, operation]) => operation.action === 'edit' && operation.pending,
+      ([, operation]) =>
+        (operation.action === 'edit' || operation.action === 'delete') && operation.pending,
     ),
   );
   return setWorkspaceState(state, wsId, { ...ws, operations });

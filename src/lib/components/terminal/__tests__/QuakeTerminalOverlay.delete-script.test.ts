@@ -124,16 +124,27 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
-    restart: vi.fn(),
-    remove: vi.fn().mockResolvedValue({ success: true }),
-    update: vi.fn(),
-  },
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const { appClient } = await import('$lib/client');
+  return {
+    backendRequest: vi.fn(async (_method: string, params: { workspaceId: string }) => {
+      const { workspaceId, ...definition } = params;
+      const result = await appClient.scripts.create(workspaceId, definition as never);
+      if (!result.success) throw new Error(result.error);
+      return result.script;
+    }),
+  };
+});
+
+vi.mock('$lib/client', () => ({
+  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
 }));
+vi.mock('$features/scripts/scripts.client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/scripts/scripts.client')>();
+  return {
+    scriptsClient: { ...actual.scriptsClient, stop: vi.fn(), remove: vi.fn() },
+  };
+});
 vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn().mockResolvedValue(true) }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -167,6 +178,8 @@ import {
   openTerminalOverlay,
   selectScript,
 } from '$store/renderer/slices/terminals/terminals-slice';
+import { appClient } from '$lib/client';
+
 import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
@@ -433,11 +446,12 @@ describe('script definition and authority races', () => {
     (appStore as any).__reset();
     seedWorkspace(WS_A, ['script-1'], 'script-1');
     appStore.dispatch(openTerminalOverlay(WS_A));
+    vi.mocked(appClient.scripts.list).mockResolvedValue([makeScript('script-1', WS_A)]);
   });
 
   it.each(['name', 'command'])('blocks deletion throughout a deferred %s save', async (field) => {
     let finish!: (result: { success: boolean }) => void;
-    vi.mocked(scriptsClient.update).mockReturnValue(
+    vi.mocked(appClient.scripts.create).mockReturnValue(
       new Promise((resolve) => {
         finish = resolve;
       }),
@@ -458,7 +472,7 @@ describe('script definition and authority races', () => {
         ctrlKey: true,
       });
     }
-    expect(scriptsClient.update).toHaveBeenCalled();
+    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
     expect(
       (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -470,6 +484,33 @@ describe('script definition and authority races', () => {
     );
   });
 
+  it.each([false, true])(
+    'releases the delete button after a direct save fails (throw: %s)',
+    async (throws) => {
+      let finish!: () => void;
+      vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          finish = () =>
+            throws ? reject(new Error('offline')) : resolve({ success: false, error: 'offline' });
+        }),
+      );
+      render(QuakeTerminalOverlay, { workspaceId: WS_A });
+      const saved = scriptsClient.update(WS_A, 'script-1', { name: 'Renamed' });
+      const result = saved.catch((error: Error) => ({ success: false, error: error.message }));
+      await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+      expect(
+        (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      finish();
+      expect(await result).toEqual({ success: false, error: 'offline' });
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+        ).toBe(false),
+      );
+    },
+  );
+
   it('rejects a save started while confirmation is open', async () => {
     let accept!: (value: boolean) => void;
     let finish!: (result: { success: boolean }) => void;
@@ -478,7 +519,7 @@ describe('script definition and authority races', () => {
         accept = resolve;
       }),
     );
-    vi.mocked(scriptsClient.update).mockReturnValue(
+    vi.mocked(appClient.scripts.create).mockReturnValue(
       new Promise((resolve) => {
         finish = resolve;
       }),

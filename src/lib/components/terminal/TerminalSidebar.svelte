@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { withScriptDefinitionEdits } from '$features/scripts/with-script-definition-edits';
-  import { selectAllWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -16,7 +14,6 @@
     stopScriptRequested,
     startScriptRequested,
     restartScriptRequested,
-    removeScript,
     upsertScript,
   } from '$store/renderer/slices/scripts/scripts-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -166,11 +163,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               });
               continue;
             }
-            const removed = await withScriptDefinitionEdits(workspaceId, [scriptId], () =>
-              scriptsClient.remove(workspaceId, scriptId),
-            );
+            const removed = await scriptsClient.remove(workspaceId, scriptId);
             if (removed.success) {
-              appStore.dispatch(removeScript(workspaceId, scriptId));
               removedCount++;
             }
           }
@@ -197,9 +191,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
             if (entry.category && validCategories.has(entry.category))
               updates.category = entry.category;
-            const updateResult = await withScriptDefinitionEdits(workspaceId, [entry.id], () =>
-              scriptsClient.update(workspaceId, entry.id, updates),
-            );
+            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
             if (updateResult.success) updatedCount++;
           }
         }
@@ -247,23 +239,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               action: {
                 label: m.terminal_sidebar_undo_label(),
                 onClick: async () => {
-                  for (const s of selectScriptEntries.select(appStore.state, workspaceId)) {
-                    await scriptsClient.remove(workspaceId, s.id);
-                  }
-                  for (const s of snapshot) {
-                    await scriptsClient.create(workspaceId, {
-                      name: s.name,
-                      command: s.command,
-                      mode: s.mode,
-                      purpose: s.purpose ?? 'saved',
-                      category: s.category,
-                      source: s.source || 'user',
-                      cwd: s.cwd,
-                      env: s.env,
-                      autoStart: s.autoStart,
-                    });
-                  }
+                  const result = await scriptsClient.restoreSnapshot(workspaceId, snapshot);
                   appStore.dispatch(refreshScripts(workspaceId));
+                  if (!result.success) {
+                    if (result.error) notify.warning(result.error);
+                    return;
+                  }
                   notify.success(m.terminal_sidebar_scriptsRestored_success());
                 },
               },
@@ -404,13 +385,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     detectFlow = 'local';
     try {
       logger.info('Running local script detection', { source: options.source ?? 'primary' });
-      const result = await withScriptDefinitionEdits(
-        workspaceId,
-        selectAllWorkspaceScriptEntries
-          .select(appStore.state, workspaceId)
-          .map((script) => script.id),
-        () => scriptsClient.detect(workspaceId),
-      );
+      const result = await scriptsClient.detect(workspaceId);
       if (!result.success) {
         // i18n-ignore (internal error, caught and surfaced via extracted toast)
         throw new Error(result.error || 'Local script detection failed');
@@ -628,8 +603,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleDelete(scriptId: string) {
-    await scriptsClient.remove(workspaceId, scriptId);
-    appStore.dispatch(removeScript(workspaceId, scriptId));
+    const result = await scriptsClient.remove(workspaceId, scriptId);
+    if (!result.success) {
+      if (result.error) notify.warning(result.error);
+      return;
+    }
     if (selectedScriptId === scriptId) {
       onSelectScript?.(null);
     }
@@ -773,8 +751,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       // Delete all selected scripts
       const idsToDelete = Array.from(selectedScriptIds);
       for (const id of idsToDelete) {
-        await scriptsClient.remove(workspaceId, id);
-        appStore.dispatch(removeScript(workspaceId, id));
+        const result = await scriptsClient.remove(workspaceId, id);
+        if (!result.success) {
+          if (result.error) notify.warning(result.error);
+          continue;
+        }
         if (selectedScriptId === id) {
           onSelectScript?.(null);
         }
@@ -827,9 +808,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       const mutationWorkspaceId = workspaceId;
       const mutationScriptId = editingScriptId;
       const name = editingScriptName.trim();
-      void withScriptDefinitionEdits(mutationWorkspaceId, [mutationScriptId], () =>
-        scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name }),
-      )
+      void scriptsClient
+        .update(mutationWorkspaceId, mutationScriptId, { name })
         .then((result) => {
           if (!result.success && result.error) notify.warning(result.error);
         })
