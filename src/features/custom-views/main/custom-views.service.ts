@@ -52,6 +52,7 @@ export class CustomViewsService {
   private loaded = false;
   private readonly runtimes = new Map<string, CustomViewRuntime>();
   private readonly processes = new Map<string, OwnedProcess>();
+  private readonly shutdown = new AbortController();
   private chain: Promise<unknown> = Promise.resolve();
   private disposed = false;
   private disposal?: Promise<void>;
@@ -130,7 +131,23 @@ export class CustomViewsService {
   }
 
   list(): Promise<CustomViewsResponse> {
-    return this.request(async () => {});
+    return this.request(async () => {
+      await Promise.all(
+        this.views.map(async (view) => {
+          const runtime = this.runtime(view.id);
+          if (!runtime.external || runtime.status !== 'running') return;
+          const ready = await (this.options.probe ?? probeCustomView)(
+            `http://127.0.0.1:${view.port}/`,
+            this.shutdown.signal,
+          );
+          if (!ready && !this.disposed) {
+            runtime.status = 'error';
+            runtime.errorCode = 'server-exited';
+            delete runtime.url;
+          }
+        }),
+      );
+    });
   }
 
   save(input: unknown): Promise<CustomViewsResponse> {
@@ -174,10 +191,17 @@ export class CustomViewsService {
       const runtime: CustomViewRuntime = { id: view.id, status: 'starting', logs: '' };
       this.runtimes.set(view.id, runtime);
       try {
-        await this.checkDirectory(view.directory);
         if (!(await (this.options.portAvailable ?? isCustomViewPortAvailable)(view.port))) {
-          throw new ViewError('port-in-use', 'The selected port is already in use.');
+          const url = `http://127.0.0.1:${view.port}/`;
+          const ready = await (this.options.probe ?? probeCustomView)(url, this.shutdown.signal);
+          if (this.disposed) throw new ViewError('start-failed', 'Custom views are shutting down.');
+          if (!ready) throw new ViewError('port-in-use', 'The selected port is not serving HTTP.');
+          runtime.external = true;
+          runtime.status = 'running';
+          runtime.url = url;
+          return;
         }
+        await this.checkDirectory(view.directory);
         if (this.disposed) throw new ViewError('start-failed', 'Custom views are shutting down.');
         const child = (this.options.spawn ?? spawnCustomView)(view);
         const owned: OwnedProcess = { child, abort: new AbortController() };
@@ -301,6 +325,7 @@ export class CustomViewsService {
 
   dispose(): Promise<void> {
     this.disposed = true;
+    this.shutdown.abort();
     this.disposal ??= this.enqueue(async () => {
       const results = await Promise.allSettled(
         [...this.processes.keys()].map((id) => this.stopOwned(id)),

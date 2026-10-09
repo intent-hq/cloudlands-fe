@@ -179,6 +179,10 @@ test.describe('custom homepage views in Electron', () => {
       ),
     );
     let app: ElectronApplication | undefined;
+    const externalServer = createServer((_request, response) => {
+      response.setHeader('Content-Type', 'text/html');
+      response.end('<!doctype html><h1>Persistent external view</h1>');
+    });
     const launch = () =>
       electron.launch({
         args: [
@@ -438,8 +442,85 @@ test.describe('custom homepage views in Electron', () => {
           return response.success ? response.data.runtimes[0].status : response.error.code;
         })
         .toBe('running');
+      await new Promise<void>((done) => externalServer.listen(0, '127.0.0.1', done));
+      const externalAddress = externalServer.address();
+      if (!externalAddress || typeof externalAddress === 'string')
+        throw new Error('Missing external server port');
+      const externalUrl = `http://127.0.0.1:${externalAddress.port}/`;
+      await writeFile(
+        join(directory, 'should-not-run.cjs'),
+        "require('node:fs').writeFileSync('unexpected-spawn', 'started');",
+      );
+      const externalInput = {
+        name: 'Persistent server',
+        directory,
+        command: 'node should-not-run.cjs',
+        port: externalAddress.port,
+        icon: 'globe',
+      };
+      const externalSaved = await invoke(customViewsChannels.save, externalInput);
+      if (!externalSaved.success) throw new Error(externalSaved.error.message);
+      const externalId = externalSaved.data.views.find(
+        (view) => view.port === externalAddress.port,
+      )!.id;
+      const attached = await invoke(customViewsChannels.start, { id: externalId });
+      expect(attached).toMatchObject({
+        success: true,
+        data: {
+          runtimes: expect.arrayContaining([
+            expect.objectContaining({
+              id: externalId,
+              status: 'running',
+              external: true,
+              url: externalUrl,
+            }),
+          ]),
+        },
+      });
+      await page.evaluate((src) => {
+        const frame = document.createElement('iframe');
+        frame.title = 'Persistent server';
+        frame.sandbox.add('allow-scripts', 'allow-forms', 'allow-same-origin');
+        frame.src = src;
+        document.getElementById('view')!.append(frame);
+      }, externalUrl);
+      await expect(
+        page.frameLocator('iframe[title="Persistent server"]').getByRole('heading', {
+          name: 'Persistent external view',
+        }),
+      ).toBeVisible();
+      await testInfo.attach('custom-view-external-server-in-electron', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+      expect((await invoke(customViewsChannels.stop, { id: externalId })).success).toBe(true);
+      expect((await fetch(externalUrl)).ok).toBe(true);
+      await invoke(customViewsChannels.start, { id: externalId });
+      expect(
+        (
+          await invoke(customViewsChannels.save, {
+            ...externalInput,
+            id: externalId,
+            name: 'Edited persistent server',
+          })
+        ).success,
+      ).toBe(true);
+      expect((await fetch(externalUrl)).ok).toBe(true);
+      await invoke(customViewsChannels.start, { id: externalId });
+      expect((await invoke(customViewsChannels.remove, { id: externalId })).success).toBe(true);
+      expect((await fetch(externalUrl)).ok).toBe(true);
+      const externalForQuit = await invoke(customViewsChannels.save, externalInput);
+      if (!externalForQuit.success) throw new Error(externalForQuit.error.message);
+      const externalQuitId = externalForQuit.data.views.find(
+        (view) => view.port === externalAddress.port,
+      )!.id;
+      await invoke(customViewsChannels.start, { id: externalQuitId });
       await app.close();
       app = undefined;
+      expect((await fetch(externalUrl)).ok).toBe(true);
+      await expect(readFile(join(directory, 'unexpected-spawn'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
       await expect
         .poll(() =>
           fetch(runningUrl).then(
@@ -450,6 +531,8 @@ test.describe('custom homepage views in Electron', () => {
         .toBe(false);
     } finally {
       await app?.close();
+      externalServer.closeAllConnections();
+      await new Promise<void>((done) => externalServer.close(() => done()));
       await new Promise<void>((done) => renderer.close(() => done()));
       await rm(directory, { recursive: true, force: true });
     }

@@ -40,7 +40,7 @@ describe('custom view native process boundary', () => {
     expect(env).toEqual({ PATH: '/custom/bin', PORT: '45123', HOST: '127.0.0.1' });
   });
 
-  it('rejects occupied HTTP ports and probes without following redirects', async () => {
+  it('detects occupied HTTP ports and probes without following redirects', async () => {
     const server = createHttpServer((_request, response) => {
       response.writeHead(302, { Location: 'https://example.com/' });
       response.end();

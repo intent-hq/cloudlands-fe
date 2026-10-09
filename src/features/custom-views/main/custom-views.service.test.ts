@@ -35,7 +35,7 @@ describe('desktop custom view lifecycle', () => {
   });
   const stop = vi.fn(async () => {});
   const portAvailable = vi.fn(async () => true);
-  const probe = vi.fn(async () => false);
+  const probe = vi.fn<(url: string, signal: AbortSignal) => Promise<boolean>>(async () => false);
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -132,13 +132,110 @@ describe('desktop custom view lifecycle', () => {
     expect(JSON.parse(await fs.readFile(file, 'utf8'))[0].name).toBe('Dashboard');
   });
 
-  it('rejects occupied ports before spawning or exposing an iframe URL', async () => {
+  it('rejects occupied ports without HTTP before spawning or exposing an iframe URL', async () => {
     const view = await save();
     portAvailable.mockResolvedValue(false);
     const runtime = snapshot(await service.start({ id: view.id })).runtimes[0];
     expect(runtime).toMatchObject({ status: 'error', errorCode: 'port-in-use' });
     expect(runtime.url).toBeUndefined();
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('reuses HTTP on an occupied port even if the saved directory has disappeared', async () => {
+    input.directory = path.join(directory, 'server');
+    await fs.mkdir(input.directory);
+    const view = await save();
+    await fs.rmdir(input.directory);
+    portAvailable.mockResolvedValue(false);
+    probe.mockResolvedValue(true);
+    const responses = await Promise.all([
+      service.start({ id: view.id }),
+      service.start({ id: view.id }),
+    ]);
+    for (const response of responses) {
+      expect(snapshot(response).runtimes[0]).toMatchObject({
+        status: 'running',
+        external: true,
+        url: 'http://127.0.0.1:39123/',
+        logs: '',
+      });
+    }
+    expect(spawn).not.toHaveBeenCalled();
+    await service.stop({ id: view.id });
+    portAvailable.mockResolvedValue(true);
+    expect(snapshot(await service.start({ id: view.id })).runtimes[0]).toMatchObject({
+      status: 'error',
+      errorCode: 'directory-unavailable',
+    });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('disconnects, edits, removes and quits external views without stopping their servers', async () => {
+    const view = await save();
+    portAvailable.mockResolvedValue(false);
+    probe.mockResolvedValue(true);
+    await service.start({ id: view.id });
+    const disconnected = snapshot(await service.stop({ id: view.id })).runtimes[0];
+    expect(disconnected).toMatchObject({ status: 'stopped', external: true });
+    expect(disconnected.url).toBeUndefined();
+    probe.mockClear();
+    await service.list();
+    expect(probe).not.toHaveBeenCalled();
+    await service.start({ id: view.id });
+    await service.save({ ...view, name: 'Renamed' });
+    expect(snapshot(await service.list()).runtimes[0].status).toBe('stopped');
+    await service.start({ id: view.id });
+    await service.remove({ id: view.id });
+    expect(snapshot(await service.list()).views).toEqual([]);
+    const next = await save();
+    await service.start({ id: next.id });
+    await service.dispose();
+    expect(stop).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('detects a lost external server and uses the command only on a later start with a free port', async () => {
+    const view = await save();
+    portAvailable.mockResolvedValue(false);
+    probe.mockResolvedValue(true);
+    await service.start({ id: view.id });
+    probe.mockResolvedValue(false);
+    const lost = snapshot(await service.list()).runtimes[0];
+    expect(lost).toMatchObject({ status: 'error', external: true, errorCode: 'server-exited' });
+    expect(lost.url).toBeUndefined();
+    expect(spawn).not.toHaveBeenCalled();
+    portAvailable.mockResolvedValue(true);
+    const started = snapshot(await service.start({ id: view.id })).runtimes[0];
+    expect(started.status).toBe('starting');
+    expect(started.external).toBeUndefined();
+    expect(spawn).toHaveBeenCalledOnce();
+    await service.stop({ id: view.id });
+    expect(stop).toHaveBeenCalledWith(children[0]);
+  });
+
+  it('quit aborts an external probe and prevents a late attachment', async () => {
+    const view = await save();
+    portAvailable.mockResolvedValue(false);
+    let finishProbe!: (ready: boolean) => void;
+    probe.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishProbe = resolve;
+        }),
+    );
+    const starting = service.start({ id: view.id });
+    await vi.waitFor(() => expect(finishProbe).toBeTypeOf('function'), { interval: 5 });
+    const signal = probe.mock.calls[0][1];
+    const quitting = service.dispose();
+    expect(signal.aborted).toBe(true);
+    finishProbe(true);
+    const runtime = snapshot(await starting).runtimes[0];
+    expect(runtime.status).toBe('error');
+    expect(runtime.url).toBeUndefined();
+    expect(runtime.external).toBeUndefined();
+    await quitting;
+    expect(spawn).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
   });
 
   it('deduplicates concurrent starts and exposes the URL only after HTTP readiness', async () => {

@@ -28,6 +28,7 @@ export type CustomViewErrorCode =
 export interface CustomViewRuntime {
   id: string;
   status: 'stopped' | 'starting' | 'running' | 'error';
+  external?: boolean;
   url?: string;
   errorCode?: CustomViewErrorCode;
   logs: string;
