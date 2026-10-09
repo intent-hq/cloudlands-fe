@@ -92,17 +92,21 @@ export const setScriptListState =
 /** Refresh scripts for a workspace (triggers saga) */
 export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
 
-export const startScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/startScriptRequested',
-);
+export const startScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage?: string]
+>('scripts/startScriptRequested');
 
 export const stopScriptRequested = createAction<
   [wsId: string, scriptId: string, failureMessage?: string]
 >('scripts/stopScriptRequested');
 
-export const restartScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/restartScriptRequested',
-);
+export const restartScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage?: string]
+>('scripts/restartScriptRequested');
+
+export const deleteScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage: string]
+>('scripts/deleteScriptRequested');
 
 export const scriptOperationSucceeded = createAction<
   [wsId: string, scriptId: string, action: ScriptQuickAction]
@@ -281,6 +285,9 @@ scriptsReducer.with(stopScriptRequested, (state, { payload: [wsId, scriptId] }) 
 );
 scriptsReducer.with(restartScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'restart'),
+);
+scriptsReducer.with(deleteScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'delete'),
 );
 scriptsReducer.with(scriptOperationSucceeded, (state, { payload: [wsId, scriptId, action] }) => {
   const ws = getWorkspaceState(state, wsId);

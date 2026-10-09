@@ -114,3 +114,15 @@ export const selectAllWorkspaceScriptEntries = store.createSelector(
 export const selectScriptReadJournal = store.createSelector(
   (state, wsId: string, requestId: string) => getWs(state, wsId).pendingReads?.[requestId],
 );
+
+/** Deletion is available only for a known, stopped definition without an in-flight mutation. */
+export const selectCanDeleteScript = store.createSelector(
+  (state, wsId: string, scriptId: string): boolean => {
+    const script = selectScriptById.select(state, wsId, scriptId);
+    return (
+      !!script &&
+      !isLiveScriptStatus(script.runtime?.status) &&
+      !getWs(state, wsId).operations[scriptId]?.pending
+    );
+  },
+);

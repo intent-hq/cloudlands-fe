@@ -12,6 +12,8 @@
   import {
     refreshScripts,
     stopScriptRequested,
+    startScriptRequested,
+    restartScriptRequested,
     removeScript,
     upsertScript,
   } from '$store/renderer/slices/scripts/scripts-slice';
@@ -582,8 +584,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     return actions;
   }
 
-  async function handleStart(scriptId: string) {
-    await scriptsClient.start(workspaceId, scriptId);
+  function handleStart(scriptId: string) {
+    appStore.dispatch(
+      startScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_startScriptFailed_error(),
+      ),
+    );
     onSelectScript?.(scriptId);
     pendingScrollScriptId = scriptId;
   }
@@ -594,8 +602,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     );
   }
 
-  async function handleRestart(scriptId: string) {
-    await scriptsClient.restart(workspaceId, scriptId);
+  function handleRestart(scriptId: string) {
+    appStore.dispatch(
+      restartScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_restartScriptFailed_error(),
+      ),
+    );
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

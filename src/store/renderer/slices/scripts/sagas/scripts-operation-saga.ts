@@ -31,6 +31,7 @@ import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { notify } from '$lib/components/patterns/notify';
 import { scriptsClient } from '$features/scripts/scripts.client';
+import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import {
   beginScriptRead,
@@ -46,6 +47,8 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearScriptOperations,
+  deleteScriptRequested,
+  removeScript,
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
@@ -57,7 +60,10 @@ import {
 import type { ScriptQuickAction } from '../scripts-types';
 
 type ScriptOperationRequest = ReturnType<
-  typeof startScriptRequested | typeof stopScriptRequested | typeof restartScriptRequested
+  | typeof startScriptRequested
+  | typeof stopScriptRequested
+  | typeof restartScriptRequested
+  | typeof deleteScriptRequested
 >;
 
 function operationContext(action: ScriptOperationRequest): string {
@@ -76,6 +82,7 @@ function errorMessage(error: unknown): string {
 }
 
 function operationFor(action: ScriptOperationRequest): ScriptQuickAction {
+  if (action.type === deleteScriptRequested.type) return 'delete';
   if (action.type === stopScriptRequested.type) return 'stop';
   return action.type === restartScriptRequested.type ? 'restart' : 'start';
 }
@@ -126,8 +133,10 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       ? yield* beginScriptRead(workspaceId)
       : undefined;
   try {
+    if (operation === 'delete' && (!before || isLiveScriptStatus(before.runtime?.status))) return;
+    const method = operation === 'delete' ? 'remove' : operation;
     const outcome = yield* race({
-      result: call([scriptsClient, scriptsClient[operation]], workspaceId, scriptId),
+      result: call([scriptsClient, scriptsClient[method]], workspaceId, scriptId),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
     if (outcome.cleanup || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
@@ -162,7 +171,8 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       }
     }
     if (stoppedRead && !(yield* isScriptReadCurrent(stoppedRead))) return;
-    yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
+    if (operation === 'delete') yield* put(removeScript(workspaceId, scriptId));
+    else yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
     if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     const message = errorMessage(error);
@@ -190,7 +200,7 @@ export function* scriptsOperationSaga(): SagaGenerator<void> {
   yield* all([
     call(scriptsOutputSaga),
     takeLeadingInContext(
-      [startScriptRequested, stopScriptRequested, restartScriptRequested],
+      [startScriptRequested, stopScriptRequested, restartScriptRequested, deleteScriptRequested],
       operationContext,
       runScriptOperation,
     ),

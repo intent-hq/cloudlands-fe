@@ -251,6 +251,26 @@ describe('TerminalSidebar detection flow', () => {
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
   });
 
+  it.each([
+    ['idle', 'Start', 'scripts/startScriptRequested'],
+    ['running', 'Restart', 'scripts/restartScriptRequested'],
+  ])('tracks %s lifecycle requests so deletion sees pending work', async (status, label, type) => {
+    scriptEntries.value = [
+      {
+        id: 'check',
+        name: 'Check',
+        command: 'true',
+        mode: 'command',
+        runtime: { status, restartCount: 0 },
+      },
+    ];
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type, payload: ['ws-1', 'check', expect.any(String)] }),
+    );
+  });
+
   it('routes mixed finished/live Stop all through shared operations without changing selection', async () => {
     scriptEntries.value = ['exited', 'running'].map((status) => ({
       id: status,

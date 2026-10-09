@@ -121,6 +121,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
       select: () => scriptEntries.value,
     }),
     selectWorkspaceScriptsInitialized: () => readable(() => true),
+    selectCanDeleteScript: () => readable(() => false),
   };
 });
 
