@@ -5,6 +5,7 @@ import { hydrateHardwareConsoleKeyPins } from '$store/renderer/slices/hardware-c
 import { selectHardwareConsoleKeySlots } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
 import { UNASSIGNED_KEY_PIN } from '$features/hardware-console/assignment/key-assignment';
 import { createMockWorkspace } from '../../test/factories/workspace.factory';
+import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import {
   type SidebarMenuEntry,
@@ -20,8 +21,8 @@ const occupant = createMockWorkspace({
 const item = (entries: SidebarMenuEntry[], id: string) =>
   entries.find((entry) => 'id' in entry && entry.id === id) as SidebarMenuItem | undefined;
 const close = vi.fn();
-function menu(connected = true) {
-  return createHomeWorkspaceMenu(workspace, {
+function menu(connected = true, target = workspace) {
+  return createHomeWorkspaceMenu(target, {
     pinned: false,
     microConnected: connected,
     onOpen: vi.fn(),
@@ -67,6 +68,16 @@ describe('Home workspace Micro menu', () => {
     expect(store.state.hardwareConsole.keyPins[5]).toBe(UNASSIGNED_KEY_PIN);
     expect(store.state.hardwareConsole.excludedWorkspaceIds).toContain(workspace.id);
     expect(selectHardwareConsoleKeySlots.select(store.state)).not.toContain(workspace.id);
+  });
+
+  it('keeps Home list and board actions but omits assignment for archived workspaces', () => {
+    const archived = { ...workspace, status: WorkspaceStatus.Archived };
+    store.dispatch(replaceWorkspaceList([archived, occupant]));
+    const entries = menu(true, archived);
+    expect(item(entries, 'assign-micro-key')).toBeUndefined();
+    expect(item(entries, 'unassign-micro-key')).toBeUndefined();
+    expect(item(entries, 'open')).toBeDefined();
+    expect(item(entries, 'pin')).toBeDefined();
   });
 
   it('hides assignment when disconnected without changing saved assignments or other actions', () => {

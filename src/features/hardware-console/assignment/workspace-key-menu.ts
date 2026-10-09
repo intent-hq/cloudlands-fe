@@ -9,7 +9,10 @@ import {
   selectHardwareConsoleKeySlots,
 } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
+import {
+  AGENT_KEY_COUNT,
+  isKeyAssignableWorkspace,
+} from '$features/hardware-console/assignment/key-assignment';
 import { faKeyboard } from '@fortawesome/free-solid-svg-icons';
 import type {
   SidebarMenuEntry,
@@ -18,11 +21,17 @@ import type {
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
 
+function canAssignWorkspace(workspaceId: string): boolean {
+  const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
+  return workspace !== undefined && isKeyAssignableWorkspace(workspace);
+}
+
 /** Snapshot the existing six-slot commands; callers subscribe to connection state at init. */
 export function createMicroKeyAssignmentItems(
   workspaceId: string,
   closeMenu: () => void,
 ): SidebarMenuEntry[] {
+  if (!canAssignWorkspace(workspaceId)) return [];
   const pinnedSlot = selectWorkspacePinnedKeySlot.select(appStore.state, workspaceId);
   const resolvedSlot = selectWorkspaceResolvedKeySlot.select(appStore.state, workspaceId);
   const occupiedSlots = selectHardwareConsoleKeySlots.select(appStore.state);
@@ -46,7 +55,10 @@ export function createMicroKeyAssignmentItems(
       checked: pinnedSlot === target,
       closeOnSelect: true,
       onClick: () => {
-        appStore.dispatch(pinWorkspaceToKey(target, workspaceId));
+        // The workspace may have been archived or removed while the menu was open.
+        if (canAssignWorkspace(workspaceId)) {
+          appStore.dispatch(pinWorkspaceToKey(target, workspaceId));
+        }
         closeMenu();
       },
     });
@@ -57,7 +69,12 @@ export function createMicroKeyAssignmentItems(
       id: 'unassign-micro-key',
       label: m.workspace_card_unassignMicroKey_label(),
       onClick: () => {
-        appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
+        if (
+          canAssignWorkspace(workspaceId) &&
+          selectWorkspaceResolvedKeySlot.select(appStore.state, workspaceId) === resolvedSlot
+        ) {
+          appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
+        }
         closeMenu();
       },
     });
@@ -72,6 +89,7 @@ export function createWorkspaceMicroKeyMenu(
 ): SidebarMenuEntry[] {
   if (!connected) return [];
   const commands = createMicroKeyAssignmentItems(workspaceId, onClose);
+  if (commands.length === 0) return [];
   const assignments = commands.filter(
     (entry): entry is SidebarMenuItem => 'id' in entry && entry.id !== 'unassign-micro-key',
   );

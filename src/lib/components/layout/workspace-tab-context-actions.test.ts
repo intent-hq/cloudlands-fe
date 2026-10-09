@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockWorkspace } from '../../../test/factories/workspace.factory';
+import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
 import { store } from '$store/renderer/store';
@@ -101,6 +102,18 @@ describe('workspace tab hardware assignment', () => {
     assigned.item('unassign-micro-key')!.onClick();
     expect(store.state.hardwareConsole.keyPins[5]).toBe(UNASSIGNED_KEY_PIN);
     expect(store.state.hardwareConsole.excludedWorkspaceIds).toContain('target');
+  });
+
+  it('keeps tab close actions but omits assignment for archived workspaces', () => {
+    store.dispatch(
+      replaceWorkspaceList([
+        createMockWorkspace({ id: WorkspaceId('target'), status: WorkspaceStatus.Archived }),
+      ]),
+    );
+    const { item } = hardwareMenu();
+    expect(item('assign-micro-key')).toBeUndefined();
+    expect(item('unassign-micro-key')).toBeUndefined();
+    expect(item('close')).toBeDefined();
   });
 
   it('keeps close actions while disconnected and preserves saved assignments', () => {
