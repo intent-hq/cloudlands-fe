@@ -4460,6 +4460,7 @@
   "fileTracking_codeChanges_unknown_fallback": "inconnu",
   "fileExplorer_tree_file_fallback": "fichier",
   "fileExplorer_tree_deleteFailed_error": "Impossible de supprimer le fichier",
+  "fileExplorer_tree_undoUnavailable_error": "Ce fichier ne peut pas être supprimé ici, car Annuler ne peut pas restaurer son contenu.",
   "editor_fileViewer_unknown_fallback": "Inconnu",
   "fileTracking_startNew_previousWorkspace_fallback": "espace de travail précédent",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "l'espace de travail précédent",

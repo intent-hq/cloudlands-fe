@@ -93,7 +93,7 @@ export const loadFileContentSucceeded = createAction<
     wsId: string,
     path: string,
     absolutePath: string,
-    content: string,
+    content: string | null,
     isBinary?: boolean,
     truncated?: boolean,
   ]
@@ -153,7 +153,7 @@ filesReducer.with(loadFileContentRequested, (state, { payload: [wsId, path, abso
     absolutePath,
     loading: true,
     error: null,
-    isBinary: false,
+    isBinary: entry.isBinary,
     truncated: false,
     notFoundCandidates: null,
   })),
@@ -164,7 +164,7 @@ filesReducer.with(
     upsertFileEntry(state, wsId, path, (entry) => {
       const hasPendingEdits =
         entry.localContent !== null && entry.localContent !== entry.originalContent;
-      const nextLocal = hasPendingEdits ? entry.localContent : content;
+      const nextLocal = !isBinary && hasPendingEdits ? entry.localContent : content;
       return {
         ...entry,
         absolutePath,
@@ -194,7 +194,7 @@ filesReducer.with(
 );
 filesReducer.with(updateFileContent, (state, { payload: [wsId, path, content] }) =>
   upsertFileEntry(state, wsId, path, (entry) => {
-    if (entry.localContent === content) return entry;
+    if (entry.isBinary || entry.localContent === content) return entry;
     return { ...entry, localContent: content };
   }),
 );
@@ -208,6 +208,8 @@ filesReducer.with(saveFileContentRequested, (state, { payload: [wsId, path, abso
 );
 filesReducer.with(saveFileContentSucceeded, (state, { payload: [wsId, path, content] }) =>
   upsertFileEntry(state, wsId, path, (entry) => {
+    // A write already in flight cannot replace a newer binary read in the cache.
+    if (entry.isBinary) return { ...entry, saving: false };
     const hasPendingEdits =
       entry.localContent !== null && entry.localContent !== entry.originalContent;
     const nextLocal = hasPendingEdits ? entry.localContent : content;

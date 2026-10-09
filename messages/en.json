@@ -4460,6 +4460,7 @@
   "fileTracking_codeChanges_unknown_fallback": "unknown",
   "fileExplorer_tree_file_fallback": "file",
   "fileExplorer_tree_deleteFailed_error": "Failed to delete file",
+  "fileExplorer_tree_undoUnavailable_error": "This file cannot be deleted here because Undo cannot restore its contents.",
   "editor_fileViewer_unknown_fallback": "Unknown",
   "fileTracking_startNew_previousWorkspace_fallback": "previous workspace",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "the previous workspace",

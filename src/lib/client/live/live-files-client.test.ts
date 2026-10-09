@@ -10,6 +10,8 @@ vi.mock('./backend-transport', () => ({
 
 import { backendRequest } from './backend-transport';
 import { LiveFilesClient } from './live-files-client';
+import { BackendError } from './backend-transport-types';
+import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -138,5 +140,174 @@ describe('LiveFilesClient.explorerTree (fake transport)', () => {
     await expect(client.explorerTree('ws-1')).rejects.toThrow(
       'Invalid file.tree response: expected an array',
     );
+  });
+});
+
+describe('LiveFilesClient.read', () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it.each([
+    '.intent/artifacts/report.xlsx',
+    '.intent/artifacts/report.xslx',
+    'data.unknown',
+    'extensionless',
+  ])('identifies an existing non-UTF-8 file without relying on its extension: %s', async (path) => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'INTERNAL_ERROR',
+        rpcCode: -32603,
+        message: 'Internal error',
+        data: { code: 'INTERNAL_ERROR', detail: 'stream did not contain valid UTF-8' },
+      }),
+    );
+    expect(await new LiveFilesClient().read('remote-workspace', path)).toMatchObject({
+      isBinary: true,
+      originalContent: null,
+      localContent: null,
+      error: null,
+    });
+    expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('file.read', {
+      workspaceId: 'remote-workspace',
+      path,
+    });
+  });
+
+  it('recognizes the daemon UTF-8 error after the Electron IPC normalization', async () => {
+    const rpcError = new JsonRpcError({
+      code: -32603,
+      message: 'Internal error',
+      data: 'stream did not contain valid UTF-8',
+    });
+    mockedRequest.mockRejectedValueOnce(new BackendError(rpcError.toErrorPayload()));
+    expect(await new LiveFilesClient().read('ws-1', 'report.xlsx')).toMatchObject({
+      isBinary: true,
+      originalContent: null,
+    });
+  });
+
+  it('recognizes the raw daemon data string when transport normalization is absent', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'INTERNAL_ERROR',
+        rpcCode: -32603,
+        message: 'Internal error',
+        data: 'stream did not contain valid UTF-8',
+      }),
+    );
+    expect(await new LiveFilesClient().read('ws-1', 'data.unknown')).toMatchObject({
+      isBinary: true,
+    });
+  });
+
+  it.each(['data.pb', 'extensionless', 'data.unknown'])(
+    'recognizes UTF-8 binary control bytes in %s',
+    async (path) => {
+      mockedRequest.mockResolvedValueOnce('\b\u0001');
+      expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
+        isBinary: true,
+        originalContent: '\b\u0001',
+        localContent: '\b\u0001',
+      });
+    },
+  );
+
+  it('does not offer null-containing bytes to the text editor', async () => {
+    mockedRequest.mockResolvedValueOnce('PK\0\0');
+    expect(await new LiveFilesClient().read('ws-1', 'data.bin')).toMatchObject({
+      isBinary: true,
+      originalContent: 'PK\0\0',
+      localContent: 'PK\0\0',
+    });
+  });
+
+  it.each(
+    ['data.pb', 'data.unknown', 'extensionless'].flatMap((path) =>
+      [
+        { kind: 'sparse', content: '\n\u0005Hello' },
+        { kind: 'sample boundary', content: 'a'.repeat(8191) + '\u0005Hello' },
+        { kind: 'beyond sample', content: 'a'.repeat(8192) + '\u0005Hello' },
+      ].map((sample) => ({ path, ...sample })),
+    ),
+  )('recognizes $kind binary controls in $path', async ({ path, content }) => {
+    mockedRequest.mockResolvedValueOnce(content);
+    expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
+      isBinary: true,
+      originalContent: content,
+      localContent: content,
+    });
+  });
+
+  it.each([
+    '',
+    'name,value\nhello,123',
+    'Hello café',
+    '你好 🌍\t\r\n',
+    '\t\r\n',
+    'page one\fpage two\vnext line',
+    '\u001b[32mgreen text\u001b[0m',
+  ])('preserves ordinary UTF-8 text: %s', async (content) => {
+    mockedRequest.mockResolvedValueOnce(content);
+    expect(await new LiveFilesClient().read('ws-1', 'data.unknown')).toMatchObject({
+      isBinary: false,
+      originalContent: content,
+      localContent: content,
+    });
+  });
+
+  it.each([
+    'internal error: No such file or directory (os error 2)',
+    'internal error: The system cannot find the file specified. (os error 2)',
+    'internal error: The system cannot find the path specified. (os error 3)',
+  ])('preserves missing-file recovery for %s', async (message) => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'INTERNAL_ERROR',
+        rpcCode: -32603,
+        message: 'Internal error',
+        data: { detail: message },
+      }),
+    );
+    expect(await new LiveFilesClient().read('ws-1', 'missing.xlsx')).toBeNull();
+  });
+
+  it.each([
+    new BackendError({
+      code: 'INTERNAL_ERROR',
+      rpcCode: -32603,
+      message: 'internal error: Permission denied (os error 13)',
+    }),
+    new BackendError({
+      code: 'INTERNAL_ERROR',
+      rpcCode: -32603,
+      message: 'internal error: Access denied: path outside workspace',
+    }),
+    new BackendError({
+      code: 'INTERNAL_ERROR',
+      rpcCode: -32603,
+      message: 'internal error: Is a directory (os error 21)',
+    }),
+    new BackendError({ code: 'INTERNAL_ERROR', rpcCode: -32603, message: 'Internal error' }),
+    new BackendError({
+      code: 'INTERNAL_ERROR',
+      rpcCode: -32603,
+      message: 'Internal error',
+      data: { detail: 'Permission denied (os error 13)' },
+    }),
+    new BackendError({
+      code: 'INTERNAL_ERROR',
+      rpcCode: -32603,
+      message: 'Internal error',
+      data: { detail: { message: 'stream did not contain valid UTF-8' } },
+    }),
+    new BackendError({
+      code: 'TRANSPORT_ERROR',
+      message: 'Internal error',
+      data: { detail: 'stream did not contain valid UTF-8' },
+    }),
+    new Error('Connection closed'),
+    new Error('stream did not contain valid UTF-8'),
+  ])('preserves read errors instead of claiming a file is missing or binary: %s', async (error) => {
+    mockedRequest.mockRejectedValueOnce(error);
+    await expect(new LiveFilesClient().read('ws-1', 'report.xlsx')).rejects.toBe(error);
   });
 });

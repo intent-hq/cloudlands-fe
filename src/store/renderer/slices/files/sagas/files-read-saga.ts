@@ -2,6 +2,7 @@ import { buffers, channel, type Channel } from 'redux-saga';
 import { call, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { mutationErrorMessage } from '$lib/client/live/live-support';
 import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -22,7 +23,7 @@ export const MAX_CONCURRENT_FILE_READS = 4;
 
 type ReadAction = ReturnType<typeof loadFileContentRequested>;
 type ReadResult =
-  | { kind: 'success'; content: string; isBinary?: boolean; truncated?: boolean }
+  | { kind: 'success'; content: string | null; isBinary?: boolean; truncated?: boolean }
   | { kind: 'failure'; message: string; candidates?: string[] }
   | { kind: 'retarget'; path: string };
 
@@ -59,13 +60,13 @@ function* loadFileContentWorker(
     }
     return {
       kind: 'success',
-      content: entry.originalContent ?? entry.localContent ?? '',
+      content: entry.originalContent ?? entry.localContent,
       isBinary: entry.isBinary,
       truncated: entry.truncated,
     };
   } catch (error) {
     logger.error('Failed to load file content', error);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = mutationErrorMessage(error);
     return { kind: 'failure', message };
   }
 }

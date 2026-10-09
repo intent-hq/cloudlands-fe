@@ -4460,6 +4460,7 @@
   "fileTracking_codeChanges_unknown_fallback": "未知",
   "fileExplorer_tree_file_fallback": "文件",
   "fileExplorer_tree_deleteFailed_error": "删除文件失败",
+  "fileExplorer_tree_undoUnavailable_error": "无法在此删除此文件，因为撤销操作无法恢复其内容。",
   "editor_fileViewer_unknown_fallback": "未知",
   "fileTracking_startNew_previousWorkspace_fallback": "上一个工作区",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "上一个工作区",

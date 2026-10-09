@@ -13,6 +13,7 @@ import { notify } from '$lib/components/patterns/notify';
 
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import type { FileNode } from '$shared/types';
 
 vi.mock('$features/file/components/PdfViewer.svelte', async () => ({
@@ -175,13 +176,32 @@ const {
       flushMockSelectors();
     }
     if (action.type === 'files/loadFileContentSucceeded') {
-      const [, path, , content] = action.payload as [string, string, string, string];
+      const [, path, , content, isBinary] = action.payload as [
+        string,
+        string,
+        string,
+        string,
+        boolean,
+      ];
       mockReduxState.files[path] = {
         localContent: content,
         originalContent: content,
         loading: false,
         saving: false,
         error: null,
+        isBinary,
+        lastUpdated: 1,
+      };
+      flushMockSelectors();
+    }
+    if (action.type === 'files/loadFileContentFailed') {
+      const [, path, , error] = action.payload as [string, string, string, string];
+      mockReduxState.files[path] = {
+        localContent: null,
+        originalContent: null,
+        loading: false,
+        saving: false,
+        error,
         isBinary: false,
         lastUpdated: 1,
       };
@@ -368,6 +388,209 @@ describe('FileTabType Redux integration', () => {
   }
 
   const fileNode = (name: string): FileNode => ({ name, path: name, type: 'file' });
+
+  function startFileReads() {
+    const channel = stdChannel();
+    const dispatch = dispatchMock.getMockImplementation()!;
+    dispatchMock.mockImplementation((action) => {
+      const result = dispatch(action);
+      channel.put(action);
+      return result;
+    });
+    const task = runSaga({ channel, dispatch: dispatchMock }, filesReadSaga);
+    return async () => {
+      cleanup();
+      task.cancel();
+      await task.toPromise();
+      dispatchMock.mockImplementation(dispatch);
+    };
+  }
+
+  it.each(['report.xlsx', 'report.xslx', 'data.unknown', 'archive.zip', 'extensionless'])(
+    'offers original-byte download for %s through the live client and read saga',
+    async (name) => {
+      const path = `.intent/artifacts/${name}`;
+      vi.mocked(backendRequest).mockRejectedValue(
+        new BackendError({
+          code: 'INTERNAL_ERROR',
+          rpcCode: -32603,
+          message: 'Internal error',
+          data: { code: 'INTERNAL_ERROR', detail: 'stream did not contain valid UTF-8' },
+        }),
+      );
+      vi.mocked(invoke).mockResolvedValue({ success: true });
+      const stop = startFileReads();
+      try {
+        renderFileTab({ ...fileTab, filePath: `/repo/${path}` });
+        expect(await screen.findByText(m.editor_fileViewer_binary_label())).toBeTruthy();
+        expect(screen.queryByTestId('code-editor')).toBeNull();
+        expect(screen.queryByText(m.files_read_notFound_error())).toBeNull();
+        expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
+        await fireEvent.click(
+          screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+        );
+        expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+          workspaceId: 'ws-1',
+          path,
+          fileName: name,
+        });
+        expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+      } finally {
+        await stop();
+      }
+    },
+  );
+
+  it.each(['data.pb', 'extensionless', 'data.unknown'])(
+    'offers Download for UTF-8 binary control bytes in %s',
+    async (name) => {
+      const path = `.intent/artifacts/${name}`;
+      vi.mocked(backendRequest).mockResolvedValue('\b\u0001');
+      vi.mocked(invoke).mockResolvedValue({ success: true });
+      const stop = startFileReads();
+      try {
+        renderFileTab({ ...fileTab, filePath: path });
+        expect(await screen.findByText(m.editor_fileViewer_binary_label())).toBeTruthy();
+        expect(screen.queryByTestId('code-editor')).toBeNull();
+        await fireEvent.click(
+          screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+        );
+        expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+          workspaceId: 'ws-1',
+          path,
+          fileName: name,
+        });
+      } finally {
+        await stop();
+      }
+    },
+  );
+
+  it.each(
+    ['data.pb', 'data.unknown', 'extensionless'].flatMap((name) =>
+      [
+        { kind: 'sparse', content: '\n\u0005Hello' },
+        { kind: 'beyond sample', content: 'a'.repeat(8192) + '\u0005Hello' },
+      ].map((sample) => ({ name, ...sample })),
+    ),
+  )('offers original Download for $kind binary controls in $name', async ({ name, content }) => {
+    const path = `.intent/artifacts/${name}`;
+    vi.mocked(backendRequest).mockResolvedValue(content);
+    vi.mocked(invoke).mockResolvedValue({ success: true });
+    const stop = startFileReads();
+    try {
+      renderFileTab({ ...fileTab, filePath: path });
+      expect(await screen.findByText(m.editor_fileViewer_binary_label())).toBeTruthy();
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+      );
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+        workspaceId: 'ws-1',
+        path,
+        fileName: name,
+      });
+      expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    } finally {
+      await stop();
+    }
+  });
+
+  it('keeps a binary download pending, allows cancellation and reports a retry failure', async () => {
+    const path = '.intent/artifacts/report.xlsx';
+    mockReduxState.files[path] = {
+      localContent: '',
+      originalContent: '',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: true,
+      lastUpdated: 1,
+    };
+    let finish!: (value: unknown) => void;
+    vi.mocked(invoke).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderFileTab({ ...fileTab, filePath: path });
+    const button = await screen.findByRole('button', {
+      name: m.layout_fileTab_downloadFile_label(),
+    });
+    await fireEvent.click(button);
+    await waitFor(() => expect(button.hasAttribute('disabled')).toBe(true));
+    expect(invoke).toHaveBeenCalledTimes(1);
+    finish({ success: false, canceled: true });
+    await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
+    expect(notify.error).not.toHaveBeenCalled();
+    vi.mocked(invoke).mockRejectedValueOnce(new Error('disconnected'));
+    await fireEvent.click(button);
+    await waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(m.layout_fileTab_downloadFailed_error()),
+    );
+    expect(button.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('keeps a registered-root binary read-only without a primary-workspace download', async () => {
+    vi.mocked(backendRequest).mockRejectedValue(
+      new BackendError({
+        code: 'INTERNAL_ERROR',
+        rpcCode: -32603,
+        message: 'Internal error',
+        data: { code: 'INTERNAL_ERROR', detail: 'stream did not contain valid UTF-8' },
+      }),
+    );
+    const stop = startFileReads();
+    try {
+      renderFileTab({
+        ...fileTab,
+        filePath: '/external/report.xlsx',
+        data: { gitRootId: 'root-external', gitRootPath: '/external' },
+      });
+      expect(await screen.findByText(m.editor_fileViewer_binary_label())).toBeTruthy();
+      expect(
+        screen.queryByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+      ).toBeNull();
+      expect(invoke).not.toHaveBeenCalled();
+      expect(backendRequest).toHaveBeenCalledWith('file.read', {
+        workspaceId: 'ws-1',
+        path: 'report.xlsx',
+        gitRootId: 'root-external',
+      });
+    } finally {
+      await stop();
+    }
+  });
+
+  it.each([
+    ['No such file or directory (os error 2)', m.files_read_notFound_error()],
+    ['Permission denied (os error 13)', 'Internal error: Permission denied (os error 13)'],
+    ['Connection closed', 'Internal error: Connection closed'],
+  ])('preserves the file-read error panel: %s', async (message, expected) => {
+    vi.spyOn(appClient.files, 'explorerTree').mockResolvedValue(null);
+    vi.spyOn(appClient.files, 'listDirectory').mockResolvedValue([]);
+    vi.mocked(backendRequest).mockRejectedValue(
+      new BackendError({
+        code: 'INTERNAL_ERROR',
+        rpcCode: -32603,
+        message: 'Internal error',
+        data: { detail: message },
+      }),
+    );
+    const stop = startFileReads();
+    try {
+      renderFileTab({ ...fileTab, filePath: '.intent/artifacts/report.xlsx' });
+      expect(await screen.findByText(expected)).toBeTruthy();
+      expect(screen.queryByText(m.editor_fileViewer_binary_label())).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+      ).toBeNull();
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      await stop();
+    }
+  });
 
   it('reads an untracked file from an external registered root', async () => {
     renderFileTab({
@@ -584,6 +807,43 @@ describe('FileTabType Redux integration', () => {
       content: 'unsaved draft',
     });
   });
+
+  it.each(['valid', 'invalid'] as const)(
+    'preserves the %s binary snapshot in panel delete intent',
+    async (kind) => {
+      const content = kind === 'valid' ? '\b\u0001' : null;
+      if (kind === 'valid') vi.mocked(backendRequest).mockResolvedValue(content);
+      else
+        vi.mocked(backendRequest).mockRejectedValue(
+          new BackendError({
+            code: 'INTERNAL_ERROR',
+            rpcCode: -32603,
+            message: 'Internal error',
+            data: { detail: 'stream did not contain valid UTF-8' },
+          }),
+        );
+      const stop = startFileReads();
+      try {
+        renderFileTab();
+        await screen.findByText(m.editor_fileViewer_binary_label());
+        await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
+        await fireEvent.click(
+          screen.getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
+        );
+        expect(actionMocks.deleteFileWithUndoRequested).toHaveBeenCalledWith(
+          'ws-1',
+          'src/main.ts',
+          {
+            absolutePath: '/repo/src/main.ts',
+            tabId: 'tab-1',
+            content,
+          },
+        );
+      } finally {
+        await stop();
+      }
+    },
+  );
 
   it('flushes the old workspace and root when switching an edited tab to another workspace', async () => {
     const view = renderFileTab();
@@ -1666,6 +1926,40 @@ describe('FileTabType Redux integration', () => {
       },
     ]);
   });
+
+  it.each(['\b\u0001', null])(
+    'does not flush a draft after a binary reread (%s)',
+    async (content) => {
+      vi.mocked(backendRequest).mockResolvedValue('ordinary text');
+      const stop = startFileReads();
+      try {
+        const view = renderFileTab();
+        const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+        await waitFor(() => expect(editor.value).toBe('ordinary text'));
+        await fireEvent.input(editor, { target: { value: 'unsaved draft' } });
+        if (content === null)
+          vi.mocked(backendRequest).mockRejectedValue(
+            new BackendError({
+              code: 'INTERNAL_ERROR',
+              rpcCode: -32603,
+              message: 'Internal error',
+              data: { detail: 'stream did not contain valid UTF-8' },
+            }),
+          );
+        else vi.mocked(backendRequest).mockResolvedValue(content);
+        dispatchMock(
+          actionMocks.loadFileContentRequested('ws-1', 'src/main.ts', '/repo/src/main.ts'),
+        );
+        await screen.findByText(m.editor_fileViewer_binary_label());
+        expect(screen.queryByTestId('code-editor')).toBeNull();
+        await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+        view.unmount();
+        expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+      } finally {
+        await stop();
+      }
+    },
+  );
 
   it('does not issue a save when a clean tab unmounts', async () => {
     const { unmount } = renderFileTab();

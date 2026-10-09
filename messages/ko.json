@@ -4460,6 +4460,7 @@
   "fileTracking_codeChanges_unknown_fallback": "알 수 없음",
   "fileExplorer_tree_file_fallback": "파일",
   "fileExplorer_tree_deleteFailed_error": "파일을 삭제하지 못했습니다",
+  "fileExplorer_tree_undoUnavailable_error": "실행 취소로 내용을 복원할 수 없어 여기서는 이 파일을 삭제할 수 없습니다.",
   "editor_fileViewer_unknown_fallback": "알 수 없음",
   "fileTracking_startNew_previousWorkspace_fallback": "이전 작업 공간",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "이전 작업 공간",

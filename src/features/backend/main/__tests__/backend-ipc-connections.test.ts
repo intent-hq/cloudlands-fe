@@ -3104,6 +3104,222 @@ describe('connections:* IPC handlers', () => {
 // Keychain-sync settings IPC (T4)
 // ---------------------------------------------------------------------------
 
+describe('remote Tailcat settings IPC', () => {
+  const settings = (enabled: boolean) => ({
+    settings: [
+      { path: 'server.tunnel.enabled', type: 'boolean', value: enabled },
+      { path: 'server.bindAddress', type: 'string', value: '10.0.0.5' },
+      { path: 'server.tunnel.only', type: 'boolean', value: false },
+    ],
+    revision: 1,
+  });
+
+  async function connectedHandlers() {
+    const loaded = await loadModule();
+    loaded.mod.registerBackendHandlers();
+    await loaded.mod.openBackendWindow(REMOTE.id);
+    const client = loaded.mod.getBackendClientForId(REMOTE.id);
+    await vi.waitFor(() => expect(client.request).toHaveBeenCalledWith('server.pairingInfo'));
+    client.emit('status', 'connected');
+    await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith(REMOTE.id, null));
+    vi.mocked(client.request).mockClear();
+    store.setTcAddress.mockClear();
+    store.setHosts.mockClear();
+    return {
+      ...loaded,
+      client,
+      get: findHandler('connections:get-tunnel')!,
+      set: findHandler('connections:set-tunnel')!,
+    };
+  }
+
+  it.each([true, false])(
+    'reads the selected remote setting (%s), never the local client',
+    async (enabled) => {
+      const { mod, client, get } = await connectedHandlers();
+      const local = mod.getLocalBackendClient();
+      vi.mocked(local.request).mockClear();
+      vi.mocked(client.request).mockResolvedValue(settings(enabled));
+
+      await expect(get({}, { id: REMOTE.id })).resolves.toEqual({ supported: true, enabled });
+      expect(client.request).toHaveBeenCalledExactlyOnceWith('settings.list', undefined);
+      expect(
+        vi.mocked(local.request).mock.calls.filter(([method]) => method.startsWith('settings.')),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([true, false])(
+    'writes only tunnel.enabled=%s and refreshes the saved address',
+    async (enabled) => {
+      const { client, set } = await connectedHandlers();
+      store.getDetectHosts.mockResolvedValue(false);
+      vi.mocked(client.request).mockImplementation(async (method) => {
+        if (method === 'settings.list') return settings(!enabled);
+        if (method === 'settings.update') {
+          return { applied: [{ path: 'server.tunnel.enabled', value: enabled }], revision: 2 };
+        }
+        if (method === 'server.pairingInfo') {
+          return {
+            token: 'must-stay-in-main',
+            certFingerprint: REMOTE.fingerprint,
+            localIps: ['10.0.0.99'],
+            ...(enabled ? { tcAddress: TC_ADDRESS } : {}),
+          };
+        }
+        throw new Error(`Unexpected request: ${method}`);
+      });
+
+      await expect(set({}, { id: REMOTE.id, enabled })).resolves.toEqual({
+        supported: true,
+        enabled,
+      });
+      expect(client.request).toHaveBeenCalledWith('settings.update', {
+        changes: [{ path: 'server.tunnel.enabled', value: enabled }],
+      });
+      expect(store.setTcAddress).toHaveBeenCalledWith(REMOTE.id, enabled ? TC_ADDRESS : null);
+      expect(store.setHosts).not.toHaveBeenCalled();
+      expect(store.updateMetadata).not.toHaveBeenCalled();
+      expect(store.replaceSecret).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports unsupported without writing when the setting is absent', async () => {
+    const { client, get, set } = await connectedHandlers();
+    vi.mocked(client.request).mockResolvedValue({ settings: [], revision: 1 });
+    await expect(get({}, { id: REMOTE.id })).resolves.toEqual({ supported: false, enabled: false });
+    await expect(set({}, { id: REMOTE.id, enabled: true })).resolves.toEqual({
+      supported: false,
+      enabled: false,
+    });
+    expect(vi.mocked(client.request).mock.calls.map(([method]) => method)).toEqual([
+      'settings.list',
+      'settings.list',
+    ]);
+  });
+
+  it.each([null, {}, { settings: [{ path: 'server.tunnel.enabled', value: 'true' }] }])(
+    'rejects malformed settings instead of showing a disabled tunnel',
+    async (response) => {
+      const { client, get } = await connectedHandlers();
+      vi.mocked(client.request).mockResolvedValue(response);
+      await expect(get({}, { id: REMOTE.id })).rejects.toThrow(/Invalid Tailcat/);
+    },
+  );
+
+  it.each([{}, { applied: [{ path: 'server.tunnel.enabled', value: false }], revision: 2 }])(
+    'rejects an unverified update result',
+    async (response) => {
+      const { client, set } = await connectedHandlers();
+      vi.mocked(client.request)
+        .mockResolvedValueOnce(settings(false))
+        .mockResolvedValueOnce(response);
+      await expect(set({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(/Tailcat/);
+      expect(store.setTcAddress).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])('checks a no-op update against the saved value (%s)', async (enabled) => {
+    const { client, set } = await connectedHandlers();
+    vi.mocked(client.request)
+      .mockResolvedValueOnce(settings(enabled))
+      .mockResolvedValueOnce({ applied: [], revision: 1 })
+      .mockResolvedValueOnce(settings(enabled))
+      .mockResolvedValue({ localIps: ['10.0.0.5'] });
+    const operation = set({}, { id: REMOTE.id, enabled: true });
+    if (enabled) await expect(operation).resolves.toEqual({ supported: true, enabled: true });
+    else await expect(operation).rejects.toThrow(/did not apply/);
+    expect(
+      vi.mocked(client.request).mock.calls.filter(([method]) => method === 'settings.list'),
+    ).toHaveLength(2);
+  });
+
+  it.each(['settings.list', 'settings.update'])('surfaces %s errors', async (failedMethod) => {
+    const { client, set } = await connectedHandlers();
+    vi.mocked(client.request).mockImplementation(async (method) => {
+      if (method === failedMethod) throw new Error('Daemon refused the operation');
+      return settings(false);
+    });
+    await expect(set({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(
+      'Daemon refused the operation',
+    );
+    expect(store.setTcAddress).not.toHaveBeenCalled();
+  });
+
+  it('keeps a verified save successful when the address refresh fails', async () => {
+    const { client, set } = await connectedHandlers();
+    vi.mocked(client.request)
+      .mockResolvedValueOnce(settings(false))
+      .mockResolvedValueOnce({
+        applied: [{ path: 'server.tunnel.enabled', value: true }],
+        revision: 2,
+      })
+      .mockRejectedValueOnce(new Error('server.pairingInfo unavailable'));
+    await expect(set({}, { id: REMOTE.id, enabled: true })).resolves.toEqual({
+      supported: true,
+      enabled: true,
+    });
+    expect(store.setTcAddress).not.toHaveBeenCalled();
+  });
+
+  it.each(['local', 'missing', 'guest-1', REMOTE.id])(
+    'rejects unavailable target %s without creating a client',
+    async (id) => {
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      for (const channel of ['connections:get-tunnel', 'connections:set-tunnel']) {
+        await expect(findHandler(channel)!({}, { id, enabled: true })).rejects.toThrow();
+      }
+      expect(lifecycle.events).not.toContainEqual(expect.objectContaining({ type: 'construct' }));
+      expect(rpc.calls).toEqual([]);
+    },
+  );
+
+  it.each(['disconnected', 'connecting'])('rejects a pooled client that is %s', async (status) => {
+    const { client, get, set } = await connectedHandlers();
+    client.emit('status', status);
+    await expect(get({}, { id: REMOTE.id })).rejects.toThrow(/not connected/);
+    await expect(set({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(/not connected/);
+    expect(client.request).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reply from a removed client before writing settings', async () => {
+    const { mod, client, set } = await connectedHandlers();
+    let resolve!: (value: unknown) => void;
+    vi.mocked(client.request).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const operation = set({}, { id: REMOTE.id, enabled: true });
+    const rejected = expect(operation).rejects.toThrow(/not connected/);
+    await vi.waitFor(() => expect(client.request).toHaveBeenCalledWith('settings.list', undefined));
+    mod.disconnectBackendClient(REMOTE.id);
+    resolve(settings(false));
+    await rejected;
+    expect(client.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates the IPC payload and retains standard app-window authorization', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    await expect(findHandler('connections:get-tunnel')!({}, { id: '' })).rejects.toThrow(
+      /Validation failed/,
+    );
+    await expect(
+      findHandler('connections:set-tunnel')!({}, { id: REMOTE.id, enabled: 'true' }),
+    ).rejects.toThrow(/Validation failed/);
+    const { createAuthorizedIpcHandler } = await import('../../../../main/ipc-authorization');
+    for (const channel of ['connections:get-tunnel', 'connections:set-tunnel']) {
+      const handler = createAuthorizedIpcHandler(channel, findHandler(channel)!);
+      await expect(handler({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(
+        /Unauthorized IPC/,
+      );
+    }
+    expect(rpc.calls).toEqual([]);
+  });
+});
+
 describe('keychain-sync settings IPC (T4)', () => {
   const onMac = process.platform === 'darwin';
 

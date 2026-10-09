@@ -4460,6 +4460,7 @@
   "fileTracking_codeChanges_unknown_fallback": "不明",
   "fileExplorer_tree_file_fallback": "ファイル",
   "fileExplorer_tree_deleteFailed_error": "ファイルを削除できませんでした",
+  "fileExplorer_tree_undoUnavailable_error": "「元に戻す」で内容を復元できないため、このファイルはここでは削除できません。",
   "editor_fileViewer_unknown_fallback": "不明",
   "fileTracking_startNew_previousWorkspace_fallback": "前のワークスペース",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "前のワークスペース",

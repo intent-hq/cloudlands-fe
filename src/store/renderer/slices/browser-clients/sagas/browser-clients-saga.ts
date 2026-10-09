@@ -32,6 +32,8 @@
  */
 import { eventChannel, buffers } from 'redux-saga';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
+import { invalidateOwnClientId } from '$lib/client/live/live-clients-client';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -48,13 +50,13 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectLiveClientsLoaded, selectOwnClientId } from '../browser-clients-selectors';
+import { selectLiveClientsLoaded, selectOwnClientIdConfirmed } from '../browser-clients-selectors';
 import {
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   hydrateBrowserClientsRequested,
   liveClientsReceived,
-  liveClientListsInvalidated,
+  browserConnectionInvalidated,
   navigateBrowserTabRequested,
   ownClientIdReceived,
   refreshLiveClientsRequested,
@@ -64,6 +66,12 @@ import {
 
 const logger = createLogger('BrowserClientsSaga');
 const LIVE_CLIENTS_CONTEXT = 'live-clients';
+type BrowserConnection = {
+  epoch: number;
+  nextRead: number;
+  reads: Map<string, number>;
+  mounted: Set<string>;
+};
 
 /**
  * Saga-local, per-workspace pin-write epoch, bumped when a pin write starts
@@ -98,14 +106,14 @@ function browserClientReadContext(action: BrowserClientReadAction) {
  * load) can also change what the daemon resolves for a workspace — a pinned
  * client going offline, or the default falling through to another client —
  * so the mounted workspaces' `workspace.getBrowserClient` is requested too.
- * Only the mounted workspaces (the lifecycle slice's session set, not every
+ * Only workspaces with an observed mount lifetime (not every
  * workspace the global `browser:tab-*` / `workspace:updated` events touched)
  * are requested, and each request joins that workspace's single-flight
  * resolution lane, so a presence burst cannot start overlapping resolution
  * calls: one read is in flight and at most one trailing read follows it.
  */
 function* readLiveClients(
-  connection: { epoch: number; nextRead: number; reads: Map<string, number> },
+  connection: BrowserConnection,
   action:
     | ReturnType<typeof refreshLiveClientsRequested>
     | ReturnType<typeof workspaceUnmounted>
@@ -115,12 +123,14 @@ function* readLiveClients(
   if (action.type !== refreshLiveClientsRequested.type) return;
   const epoch = connection.epoch;
   try {
-    const mounted = action.payload[0]
-      ? [action.payload[0]]
-      : yield* selectMountedWorkspaceIds.effect();
+    const mounted = action.payload[0] ? [action.payload[0]] : [...connection.mounted];
     if (mounted.length === 0) {
-      const clients = yield* call([appClient.clients, appClient.clients.list]);
-      if (epoch === connection.epoch) yield* put(liveClientsReceived(clients));
+      const read = yield* race({
+        clients: call([appClient.clients, appClient.clients.list]),
+        invalidated: take(browserConnectionInvalidated),
+      });
+      if (read.clients !== undefined && epoch === connection.epoch)
+        yield* put(liveClientsReceived(read.clients));
     }
     // Own every target before awaiting another workspace. Cleanup/remount must
     // invalidate queued targets as well as requests already in flight.
@@ -146,10 +156,15 @@ function* readLiveClients(
   }
 }
 
-function* readOwnClientId(): SagaGenerator<void> {
+function* readOwnClientId(connection: { epoch: number }): SagaGenerator<void> {
+  const epoch = connection.epoch;
   try {
-    const clientId = yield* call([appClient.clients, appClient.clients.ownClientId]);
-    yield* put(ownClientIdReceived(clientId));
+    const result = yield* race({
+      clientId: call([appClient.clients, appClient.clients.ownClientId]),
+      invalidated: take(browserConnectionInvalidated),
+    });
+    if (result.clientId !== undefined && epoch === connection.epoch)
+      yield* put(ownClientIdReceived(result.clientId));
   } catch (error) {
     logger.warn('own clientId probe failed', {
       error: error instanceof Error ? error.message : error,
@@ -157,8 +172,13 @@ function* readOwnClientId(): SagaGenerator<void> {
   }
 }
 
-function* hydrate(action: ReturnType<typeof hydrateBrowserClientsRequested>): SagaGenerator<void> {
-  yield* call(readOwnClientId);
+function* hydrate(
+  connection: { epoch: number },
+  action: ReturnType<typeof hydrateBrowserClientsRequested>,
+): SagaGenerator<void> {
+  const epoch = connection.epoch;
+  yield* call(readOwnClientId, connection);
+  if (epoch !== connection.epoch) return;
   yield* put(
     action.payload[0]
       ? refreshLiveClientsRequested(action.payload[0])
@@ -184,8 +204,14 @@ function* untilWorkspaceCleanup<T>(
   wsId: string,
   request: SagaGenerator<T>,
 ): SagaGenerator<{ result: T; cleanup?: undefined } | { result?: undefined; cleanup: true }> {
-  const outcome = yield* race({ result: request, cleanup: take(matchesWorkspaceCleanup(wsId)) });
-  return outcome.cleanup ? { cleanup: true } : { result: outcome.result as T };
+  const outcome = yield* race({
+    result: request,
+    cleanup: take(matchesWorkspaceCleanup(wsId)),
+    invalidated: take(browserConnectionInvalidated),
+  });
+  return outcome.cleanup || outcome.invalidated
+    ? { cleanup: true }
+    : { result: outcome.result as T };
 }
 
 /**
@@ -203,7 +229,14 @@ function* readWorkspaceBrowserClient(
   const [wsId] = action.payload;
   try {
     const epoch = epochs[wsId] ?? 0;
-    const result = yield* call([appClient.workspaces, appClient.workspaces.getBrowserClient], wsId);
+    // The lane owns workspace teardown; racing it here would release a queued
+    // trailing read before the lane processes its cancellation action.
+    const read = yield* race({
+      result: call([appClient.workspaces, appClient.workspaces.getBrowserClient], wsId),
+      invalidated: take(browserConnectionInvalidated),
+    });
+    if (read.result === undefined) return;
+    const result = read.result;
     if ((epochs[wsId] ?? 0) !== epoch) {
       yield* put(fetchWorkspaceBrowserClientRequested(wsId));
       return;
@@ -298,17 +331,18 @@ function* closeRemoteBrowserTab(
 function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaGenerator<void> {
   const [wsId] = action.payload;
   if (!wsId) return;
-  const ownClientId = yield* selectOwnClientId.effect();
-  if (ownClientId === null) yield* put(hydrateBrowserClientsRequested(wsId));
+  const ownClientIdConfirmed = yield* selectOwnClientIdConfirmed.effect();
+  if (!ownClientIdConfirmed) yield* put(hydrateBrowserClientsRequested(wsId));
   else yield* put(refreshLiveClientsRequested(wsId));
   yield* put(fetchWorkspaceBrowserClientRequested(wsId));
 }
 
-function* watchClientConnection(connection: { epoch: number }) {
+function* watchClientConnection(connection: BrowserConnection) {
   const channel = eventChannel<true>(
     (emit) =>
       onBackendReconnected(() => {
         connection.epoch++;
+        invalidateOwnClientId();
         emit(true);
       }),
     buffers.sliding(1),
@@ -316,8 +350,9 @@ function* watchClientConnection(connection: { epoch: number }) {
   try {
     while (true) {
       yield* take(channel);
-      yield* put(liveClientListsInvalidated());
-      yield* put(refreshLiveClientsRequested());
+      yield* put(browserConnectionInvalidated());
+      yield* put(hydrateBrowserClientsRequested());
+      for (const wsId of connection.mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
     }
   } finally {
     channel.close();
@@ -326,19 +361,46 @@ function* watchClientConnection(connection: { epoch: number }) {
 
 export function* browserClientsSaga(): SagaGenerator<void> {
   const pinWriteEpochs: PinWriteEpochs = {};
-  const connection = { epoch: 0, nextRead: 0, reads: new Map<string, number>() };
+  // Warm phases are cleared on reconnect even while a workspace stays mounted.
+  // Keep the mount lifetime independently; never infer it from cached tab rows.
+  const connection: BrowserConnection = {
+    epoch: 0,
+    nextRead: 0,
+    reads: new Map(),
+    mounted: new Set(yield* selectMountedWorkspaceIds.effect()),
+  };
+  yield* takeEvery(workspaceMounted, function* (action) {
+    connection.mounted.add(action.payload[0]);
+  });
   yield* takeEvery(
     [workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
     function* (action) {
       connection.reads.delete(action.payload[0]);
+      connection.mounted.delete(action.payload[0]);
     },
   );
+  yield* takeEvery(connectionStatusChanged, function* (action) {
+    if (action.payload[0] === 'connected') {
+      // First connect has no reconnect marker. A delayed startup status may
+      // have canceled admission; metadata for an admitted connection is a no-op.
+      if (connection.mounted.size > 0 && !(yield* selectOwnClientIdConfirmed.effect())) {
+        yield* put(hydrateBrowserClientsRequested());
+        for (const wsId of connection.mounted)
+          yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+      }
+      return;
+    }
+    connection.epoch++;
+    invalidateOwnClientId();
+    yield* put(browserConnectionInvalidated());
+  });
   yield* fork(watchClientConnection, connection);
   yield* takeEvery(workspaceMounted, onWorkspaceMounted);
   yield* takeSingleFlightInContext(
     hydrateBrowserClientsRequested,
     (action) => action.payload[0] ?? LIVE_CLIENTS_CONTEXT,
     hydrate,
+    connection,
   );
   yield* takeSingleFlightInContext(
     [refreshLiveClientsRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],

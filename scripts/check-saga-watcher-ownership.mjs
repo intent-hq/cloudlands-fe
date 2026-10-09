@@ -38,7 +38,8 @@ const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
     pattern: /daemon-health-slice\.ts#connectionStatusChanged$/,
-    rationale: 'browser registry synchronization and desktop consent cleanup are independent',
+    rationale:
+      'browser-client mirror invalidation, hosted-tab registry synchronization and desktop consent cleanup are independent',
   },
   {
     pattern: /workspace-lifecycle-slice\.ts#backendReconnected$/,
