@@ -808,6 +808,43 @@ describe('FileTabType Redux integration', () => {
     });
   });
 
+  it.each(['valid', 'invalid'] as const)(
+    'preserves the %s binary snapshot in panel delete intent',
+    async (kind) => {
+      const content = kind === 'valid' ? '\b\u0001' : null;
+      if (kind === 'valid') vi.mocked(backendRequest).mockResolvedValue(content);
+      else
+        vi.mocked(backendRequest).mockRejectedValue(
+          new BackendError({
+            code: 'INTERNAL_ERROR',
+            rpcCode: -32603,
+            message: 'Internal error',
+            data: { detail: 'stream did not contain valid UTF-8' },
+          }),
+        );
+      const stop = startFileReads();
+      try {
+        renderFileTab();
+        await screen.findByText(m.editor_fileViewer_binary_label());
+        await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
+        await fireEvent.click(
+          screen.getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
+        );
+        expect(actionMocks.deleteFileWithUndoRequested).toHaveBeenCalledWith(
+          'ws-1',
+          'src/main.ts',
+          {
+            absolutePath: '/repo/src/main.ts',
+            tabId: 'tab-1',
+            content,
+          },
+        );
+      } finally {
+        await stop();
+      }
+    },
+  );
+
   it('flushes the old workspace and root when switching an edited tab to another workspace', async () => {
     const view = renderFileTab();
     await fireEvent.input(await screen.findByTestId('code-editor'), {
@@ -1889,6 +1926,40 @@ describe('FileTabType Redux integration', () => {
       },
     ]);
   });
+
+  it.each(['\b\u0001', null])(
+    'does not flush a draft after a binary reread (%s)',
+    async (content) => {
+      vi.mocked(backendRequest).mockResolvedValue('ordinary text');
+      const stop = startFileReads();
+      try {
+        const view = renderFileTab();
+        const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+        await waitFor(() => expect(editor.value).toBe('ordinary text'));
+        await fireEvent.input(editor, { target: { value: 'unsaved draft' } });
+        if (content === null)
+          vi.mocked(backendRequest).mockRejectedValue(
+            new BackendError({
+              code: 'INTERNAL_ERROR',
+              rpcCode: -32603,
+              message: 'Internal error',
+              data: { detail: 'stream did not contain valid UTF-8' },
+            }),
+          );
+        else vi.mocked(backendRequest).mockResolvedValue(content);
+        dispatchMock(
+          actionMocks.loadFileContentRequested('ws-1', 'src/main.ts', '/repo/src/main.ts'),
+        );
+        await screen.findByText(m.editor_fileViewer_binary_label());
+        expect(screen.queryByTestId('code-editor')).toBeNull();
+        await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+        view.unmount();
+        expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+      } finally {
+        await stop();
+      }
+    },
+  );
 
   it('does not issue a save when a clean tab unmounts', async () => {
     const { unmount } = renderFileTab();

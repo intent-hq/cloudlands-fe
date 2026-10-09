@@ -162,8 +162,8 @@ describe('LiveFilesClient.read', () => {
     );
     expect(await new LiveFilesClient().read('remote-workspace', path)).toMatchObject({
       isBinary: true,
-      originalContent: '',
-      localContent: '',
+      originalContent: null,
+      localContent: null,
       error: null,
     });
     expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('file.read', {
@@ -181,7 +181,7 @@ describe('LiveFilesClient.read', () => {
     mockedRequest.mockRejectedValueOnce(new BackendError(rpcError.toErrorPayload()));
     expect(await new LiveFilesClient().read('ws-1', 'report.xlsx')).toMatchObject({
       isBinary: true,
-      originalContent: '',
+      originalContent: null,
     });
   });
 
@@ -205,8 +205,8 @@ describe('LiveFilesClient.read', () => {
       mockedRequest.mockResolvedValueOnce('\b\u0001');
       expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
         isBinary: true,
-        originalContent: '',
-        localContent: '',
+        originalContent: '\b\u0001',
+        localContent: '\b\u0001',
       });
     },
   );
@@ -215,8 +215,8 @@ describe('LiveFilesClient.read', () => {
     mockedRequest.mockResolvedValueOnce('PK\0\0');
     expect(await new LiveFilesClient().read('ws-1', 'data.bin')).toMatchObject({
       isBinary: true,
-      originalContent: '',
-      localContent: '',
+      originalContent: 'PK\0\0',
+      localContent: 'PK\0\0',
     });
   });
 
@@ -232,8 +232,8 @@ describe('LiveFilesClient.read', () => {
     mockedRequest.mockResolvedValueOnce(content);
     expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
       isBinary: true,
-      originalContent: '',
-      localContent: '',
+      originalContent: content,
+      localContent: content,
     });
   });
 

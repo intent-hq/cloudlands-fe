@@ -336,6 +336,7 @@
     const rootPath = repoPath;
     return () => {
       if (!wsId || !filePath) return;
+      if (selectFileIsBinary.select(appStore.state, wsId, filePath)) return;
       const content = selectFileContent.select(appStore.state, wsId, filePath);
       const dirty = selectFileIsDirty.select(appStore.state, wsId, filePath);
       const absolutePath = isAbsolutePath(filePath)
@@ -388,13 +389,20 @@
   }
 
   function setFileContentFromEditor(content: string) {
-    if (isReadOnly || !tab.filePath || !workspaceId || !fileAbsolutePath) return;
+    if (isReadOnly || isFileBinary || !tab.filePath || !workspaceId || !fileAbsolutePath) return;
     // Optimistic local update + debounced file.write through the seam.
     appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content));
   }
 
   function saveFileContent() {
-    if (isReadOnly || !tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving)
+    if (
+      isReadOnly ||
+      isFileBinary ||
+      !tab.filePath ||
+      !fileAbsolutePath ||
+      fileContent === null ||
+      fileSaving
+    )
       return;
     appStore.dispatch(
       saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent),
@@ -522,7 +530,7 @@
       deleteFileWithUndoRequested(workspaceId, tab.filePath, {
         absolutePath,
         tabId: tab.id,
-        content: selectFileContent.select(appStore.state, workspaceId, tab.filePath) ?? '',
+        content: selectFileContent.select(appStore.state, workspaceId, tab.filePath),
       }),
     );
   }

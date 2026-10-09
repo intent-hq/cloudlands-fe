@@ -1,6 +1,8 @@
 import {
   call,
   cancelled,
+  cancel,
+  fork,
   delay,
   put,
   race,
@@ -28,8 +30,9 @@ import { refreshDirectoryRequested } from '../../file-explorer/file-explorer-sli
 import { closeTab, closeTabsByType } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { openWorkspaceFile } from '../../workspace-navigation/workspace-navigation-slice';
-import { selectFileContentEntry } from '../files-selectors';
+import { selectAllFileContentEntries, selectFileContentEntry } from '../files-selectors';
 import {
+  loadFileContentSucceeded,
   deleteFileRequested,
   deleteFileWithUndoRequested,
   restoreFileContentRequested,
@@ -96,13 +99,42 @@ function isSaveFor(
 }
 
 function* saveFileContentWorker(request: SaveRequest) {
-  const { workspaceId, path, content } = request;
+  const { workspaceId, path, absolutePath, content } = request;
+  // The queue survives unmount, which clears the cache. Remember an observed
+  // binary read until this write settles so teardown cannot admit a stale save.
+  let becameBinary = selectAllFileContentEntries
+    .select(appStore.state, workspaceId)
+    .some(
+      (entry) => entry.isBinary && (entry.path === path || entry.absolutePath === absolutePath),
+    );
+  const reads = yield* fork(function* () {
+    while (true) {
+      const { payload } = yield* take(loadFileContentSucceeded);
+      if (
+        payload[0] === workspaceId &&
+        payload[4] &&
+        (payload[1] === path || payload[2] === absolutePath)
+      )
+        becameBinary = true;
+    }
+  });
   try {
     const result = yield* call(
       serializeFileMutation<MutationResult>,
       workspaceId,
       path,
-      (relativePath: string) => appClient.files.write(workspaceId, relativePath, content),
+      (relativePath: string) => {
+        // Recheck at execution, after any queued mutation and intervening read.
+        // A queued text save must not overwrite a file now known to be binary.
+        if (
+          becameBinary ||
+          [path, absolutePath, relativePath].some(
+            (alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias)?.isBinary,
+          )
+        )
+          throw new Error(m.editor_fileViewer_binary_label());
+        return appClient.files.write(workspaceId, relativePath, content);
+      },
     );
     if (result.success) {
       yield* put(saveFileContentSucceeded(workspaceId, path, content));
@@ -119,6 +151,8 @@ function* saveFileContentWorker(request: SaveRequest) {
     logger.error('Failed to save file content', error);
     const message = error instanceof Error ? error.message : String(error);
     yield* put(saveFileContentFailed(workspaceId, path, message));
+  } finally {
+    yield* cancel(reads);
   }
 }
 
@@ -169,7 +203,7 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
   if (action.payload[3]?.autoSave === false) return;
   const [workspaceId, path] = action.payload;
   const entry = yield* selectFileContentEntry.effect(workspaceId, path);
-  if (!entry?.absolutePath) return;
+  if (!entry?.absolutePath || entry.isBinary) return;
   const absolutePath = entry.absolutePath;
   const { elapsed } = yield* race({
     elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
@@ -181,6 +215,7 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
   const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
   if (
     !latestEntry?.absolutePath ||
+    latestEntry.isBinary ||
     latestEntry.localContent === null ||
     latestEntry.localContent === latestEntry.originalContent
   )
@@ -206,11 +241,24 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
       workspaceId,
       path,
       async (relativePath: string) => {
-        // Preserve tree deletion's best-effort disk snapshot and editor deletion's draft snapshot.
-        const savedContent =
-          options.content ??
-          (await appClient.files.read(workspaceId, relativePath).catch(() => null))?.localContent ??
-          '';
+        const binaryEntry = [path, options.absolutePath, relativePath]
+          .map((alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias))
+          .find((entry) => entry?.isBinary);
+        if (
+          binaryEntry &&
+          (binaryEntry.originalContent === null ||
+            (options.content !== undefined && options.content !== binaryEntry.originalContent))
+        )
+          throw new Error(m.fileExplorer_tree_undoUnavailable_error());
+        // Delete only when Undo has real contents. null is unavailable, never
+        // a zero-byte file; an omitted panel draft means read the disk first.
+        const entry =
+          options.content === undefined
+            ? await appClient.files.read(workspaceId, relativePath)
+            : null;
+        const savedContent = options.content === undefined ? entry?.localContent : options.content;
+        if (savedContent == null || entry?.truncated)
+          throw new Error(m.fileExplorer_tree_undoUnavailable_error());
         const result = await appClient.files.delete(workspaceId, relativePath);
         if (!result.success)
           throw new Error(result.error ?? m.fileExplorer_tree_deleteFailed_error());

@@ -31,7 +31,11 @@ function hasBinaryControls(content: string): boolean {
 }
 
 /** Map raw daemon file content into a `FileContentEntry`. */
-function toFileContentEntry(path: string, content: string, isBinary = false): FileContentEntry {
+function toFileContentEntry(
+  path: string,
+  content: string | null,
+  isBinary = false,
+): FileContentEntry {
   return {
     path,
     absolutePath: null,
@@ -123,7 +127,7 @@ export class LiveFilesClient implements FilesClient {
       const isBinary =
         hasBinaryControls(content) ||
         detectBinaryContent(new TextEncoder().encode(content.slice(0, 8192)));
-      return isBinary ? toFileContentEntry(path, '', true) : toFileContentEntry(path, content);
+      return toFileContentEntry(path, content, isBinary);
     } catch (error) {
       // file.read uses Rust read_to_string. Its decoding failure proves that
       // the file exists but cannot be read as text. Cache only a binary marker;
@@ -131,7 +135,7 @@ export class LiveFilesClient implements FilesClient {
       if (error instanceof BackendError && error.rpcCode === -32603) {
         const message = mutationErrorMessage(error);
         if (message.endsWith('stream did not contain valid UTF-8')) {
-          return toFileContentEntry(path, '', true);
+          return toFileContentEntry(path, null, true);
         }
         // File I/O currently has no structured not-found discriminator. Keep
         // suffix recovery for ENOENT (and Windows PATH_NOT_FOUND) only.

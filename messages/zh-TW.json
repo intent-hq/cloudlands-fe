@@ -4468,6 +4468,7 @@
   "fileTracking_codeChanges_unknown_fallback": "未知",
   "fileExplorer_tree_file_fallback": "檔案",
   "fileExplorer_tree_deleteFailed_error": "刪除檔案失敗",
+  "fileExplorer_tree_undoUnavailable_error": "無法在此刪除此檔案，因為復原操作無法還原其內容。",
   "editor_fileViewer_unknown_fallback": "未知",
   "fileTracking_startNew_previousWorkspace_fallback": "上一個工作區",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "上一個工作區",

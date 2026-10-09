@@ -1015,7 +1015,7 @@ describe('binary file reads through browser transport normalization', () => {
       });
       const result = await pending;
       if (expected === 'binary')
-        expect(result).toMatchObject({ isBinary: true, originalContent: '' });
+        expect(result).toMatchObject({ isBinary: true, originalContent: null });
       else if (expected === 'missing') expect(result).toBeNull();
       else expect(result).toBeInstanceOf(BackendError);
     } finally {

@@ -23,7 +23,7 @@ export const MAX_CONCURRENT_FILE_READS = 4;
 
 type ReadAction = ReturnType<typeof loadFileContentRequested>;
 type ReadResult =
-  | { kind: 'success'; content: string; isBinary?: boolean; truncated?: boolean }
+  | { kind: 'success'; content: string | null; isBinary?: boolean; truncated?: boolean }
   | { kind: 'failure'; message: string; candidates?: string[] }
   | { kind: 'retarget'; path: string };
 
@@ -60,7 +60,7 @@ function* loadFileContentWorker(
     }
     return {
       kind: 'success',
-      content: entry.originalContent ?? entry.localContent ?? '',
+      content: entry.originalContent ?? entry.localContent,
       isBinary: entry.isBinary,
       truncated: entry.truncated,
     };
