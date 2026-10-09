@@ -37,6 +37,11 @@ const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'c
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
+    pattern: /daemon-health-slice\.ts#connectionStatusChanged$/,
+    rationale:
+      'browser-client mirror invalidation and hosted-tab registry synchronization are independent',
+  },
+  {
     pattern: /workspace-lifecycle-slice\.ts#backendReconnected$/,
     rationale:
       'accept-changes status and Home integration data independently refresh after backend reconnect',
