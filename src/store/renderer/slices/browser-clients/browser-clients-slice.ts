@@ -84,6 +84,10 @@ export const ownClientIdReceived = createAction<[clientId: string]>(
   'browserClients/ownClientIdReceived',
 );
 
+export const browserConnectionInvalidated = createAction(
+  'browserClients/browserConnectionInvalidated',
+);
+
 export const liveClientListsInvalidated = createAction('browserClients/liveClientListsInvalidated');
 
 export const authenticatedClientsCleared = createAction<[context: string]>(
@@ -153,6 +157,25 @@ browserClientsReducer.with(
 browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
   state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
 );
+browserClientsReducer.with(browserConnectionInvalidated, (state) => ({
+  ...state,
+  ownClientId: null,
+  liveClients: createLiveClientCollection(),
+  liveClientsLoaded: false,
+  authenticatedContext: null,
+  authenticatedClients: createAuthenticatedClientCollection(),
+  byWorkspaceId: Object.fromEntries(
+    Object.entries(state.byWorkspaceId).map(([id, entry]) => [
+      id,
+      {
+        ...entry,
+        browserClient: null,
+        liveClients: createLiveClientCollection(),
+        liveClientsLoaded: false,
+      },
+    ]),
+  ),
+}));
 browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
   ...state,
   liveClients: createLiveClientCollection(),

@@ -36,8 +36,12 @@ import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
 import {
   browserClientsReducer,
   hydrateBrowserClientsRequested,
+  fetchWorkspaceBrowserClientRequested,
+  refreshLiveClientsRequested,
+  setWorkspaceBrowserClientRequested,
   initialState,
 } from '../browser-clients-slice';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { browserClientsSaga } from './browser-clients-saga';
 
 const desktop: LiveClient = {
@@ -146,8 +150,8 @@ describe('browser recovery across a backend reconnect', () => {
     run.dispatch(workspaceMounted('ws-1'));
     await settle();
 
-    // A replaced/re-authenticated connection can have a different canonical ID.
-    // It must come from hello; matching names or ID suffixes is not authority.
+    // Conditional contract: if main reports a different canonical ID, use it exactly.
+    // This fixture does not establish that ordinary reconnect changes identity.
     currentClient = { ...desktop, clientId: 'member:device:desktop-after-reconnect' };
     reconnect();
     await settle();
@@ -191,5 +195,92 @@ describe('browser recovery across a backend reconnect', () => {
       expect.objectContaining({ clientId: desktop.clientId, connected: true }),
     );
     expect(run.view().pinnedClientId).toBeNull();
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('connection lifetime races', () => {
+  it.each(['resolve', 'reject'] as const)(
+    'ignores old hello %s after current hydration succeeds',
+    async (outcome) => {
+      const old = deferred<{ clientId: string }>();
+      const normal = transport.request.getMockImplementation()!;
+      let first = true;
+      transport.request.mockImplementation((method: string, ...args: unknown[]) => {
+        if (method === 'client.hello' && first) {
+          first = false;
+          return old.promise;
+        }
+        return normal(method, ...args);
+      });
+      const run = start();
+      run.dispatch(workspaceMounted('ws-1'));
+      await settle();
+      reconnect();
+      await settle();
+      expect(run.view().ownClientId).toBe(desktop.clientId);
+      if (outcome === 'resolve') old.resolve({ clientId: 'obsolete-caller' });
+      else old.reject(new Error('old connection closed'));
+      await settle();
+      run.dispatch(hydrateBrowserClientsRequested('ws-1'));
+      await settle();
+      expect(run.view().ownClientId).toBe(desktop.clientId);
+      expect(
+        transport.request.mock.calls.filter(([method]) => method === 'client.hello'),
+      ).toHaveLength(2);
+    },
+  );
+
+  it.each(['client.list', 'workspace.getBrowserClient', 'workspace.setBrowserClient'])(
+    'discards an old %s reply after reconnect',
+    async (method) => {
+      const run = start();
+      run.dispatch(workspaceMounted('ws-1'));
+      await settle();
+      const old = deferred<unknown>();
+      const normal = transport.request.getMockImplementation()!;
+      let first = true;
+      transport.request.mockImplementation((name: string, ...args: unknown[]) => {
+        if (name === method && first) {
+          first = false;
+          return old.promise;
+        }
+        return normal(name, ...args);
+      });
+      if (method === 'client.list') run.dispatch(refreshLiveClientsRequested('ws-1'));
+      else if (method === 'workspace.getBrowserClient')
+        run.dispatch(fetchWorkspaceBrowserClientRequested('ws-1'));
+      else run.dispatch(setWorkspaceBrowserClientRequested('ws-1', 'old-pin'));
+      await settle();
+      reconnect();
+      await settle();
+      old.resolve(
+        method === 'client.list'
+          ? { clients: [] }
+          : { browserClient: { source: 'workspace', clientId: 'old-pin', resolved: null } },
+      );
+      await settle();
+      expect(run.view().pinnedClientId).toBeNull();
+      expect(run.view().eligibleClients).toHaveLength(1);
+    },
+  );
+
+  it('invalidates eligibility immediately on disconnect', async () => {
+    const run = start();
+    run.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    run.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    expect(run.view().ownClientId).toBe('');
+    expect(run.view().eligibleClients).toEqual([]);
   });
 });
