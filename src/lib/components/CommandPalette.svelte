@@ -26,7 +26,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
-  import { createNoteQuery, type NoteQueryUpdate } from '$lib/utils/palette-note-search';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
@@ -83,10 +82,13 @@
   import {
     recordPaletteFileMru,
     recordPaletteMruItem,
+    paletteNoteSearchReleased,
+    paletteNoteSearchRequested,
   } from '$store/renderer/slices/palette/palette-slice';
   import {
     selectPaletteFileMru,
     selectPaletteMruEntries,
+    selectPaletteNoteSearch,
   } from '$store/renderer/slices/palette/palette-selectors';
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
@@ -491,19 +493,10 @@
   });
 
   // Global indexed note results complement local fuzzy title/tag discovery.
-  let noteResults = $state<NoteQueryUpdate>({
-    items: [],
-    loading: false,
-    capability: 'unknown',
-    fallback: true,
-  });
-  const noteQuery = createNoteQuery((update) => {
-    untrack(() => {
-      noteResults = update;
-    });
-  });
+  const noteSearchConsumerId = crypto.randomUUID();
+  const noteResults = selectPaletteNoteSearch(noteSearchConsumerId);
   const indexedNotes = $derived(
-    noteResults.items
+    $noteResults.items
       .filter((item) => !item.isArchived)
       .map((item) => ({
         ...item,
@@ -518,18 +511,21 @@
   );
   $effect(() => {
     if (!isOpen) {
-      noteQuery.close();
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
       return;
     }
     const term = parsedQuery.searchTerm;
     if (isGoToLineMode || !term || (activeFilter && activeFilter !== 'note')) {
-      noteQuery.clear();
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
       return;
     }
-    noteQuery.query(term, workspaceId, []);
-    // Cleanup also invalidates in-flight responses on unmount.
-    return () => noteQuery.cancel();
+    appStore.dispatch(
+      paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), term, workspaceId),
+    );
+    return () =>
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
   });
+  onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
   function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
@@ -1065,7 +1061,7 @@
             {/if}
           </div>
         </div>
-      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || noteResults.loading}
+      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || $noteResults.loading}
         <div
           bind:this={resultsRef}
           class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2"
@@ -1144,7 +1140,7 @@
             {/if}
           {/each}
 
-          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || noteResults.loading}
+          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || $noteResults.loading}
             {#each [0, 1, 2] as i}
               <div class="w-full px-3 h-11 flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
@@ -1153,7 +1149,7 @@
             {/each}
           {/if}
         </div>
-      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !noteResults.loading}
+      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !$noteResults.loading}
         <EmptyState class="min-h-0 flex-1 overflow-y-auto py-10" contentClass="break-words">
           {#snippet icon()}<Fa icon={faSearch} class="size-5" />{/snippet}
           {#snippet title()}

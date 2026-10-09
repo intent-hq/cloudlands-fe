@@ -49,7 +49,7 @@
     isCollapsed?: boolean;
     replyValue?: string;
     onReplyValueChange?: (value: string) => void;
-    onReply?: (content: string) => void;
+    onReply?: (content: string) => boolean | void | Promise<boolean | void>;
     onAccept?: () => void;
     onReject?: () => void;
     onResolve?: () => void;
@@ -196,18 +196,16 @@
   async function submitReply() {
     const text = replyValue?.trim();
     if (!text) return;
-    try {
-      const html = replyEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, {
-        preserveAnchors: false,
-        workspaceId: workspace?.id,
-      });
-      const out = (md || text).trim();
-      if (out) onReply?.(out);
-    } finally {
-      onReplyValueChange?.('');
-      replyEditor?.clear?.();
-    }
+    const html = replyEditor?.getHTML?.() ?? '';
+    const md = processHTMLToMarkdown(html, {
+      preserveAnchors: false,
+      workspaceId: workspace?.id,
+    });
+    const out = (md || text).trim();
+    const accepted = out ? await onReply?.(out) : false;
+    if (accepted === false) return;
+    onReplyValueChange?.('');
+    replyEditor?.clear?.();
   }
 </script>
 

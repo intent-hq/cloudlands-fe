@@ -90,8 +90,7 @@
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
-  import { bindRemoteCursors } from './note-with-comments/remote-cursors-binding';
-  import { joinNotePresence } from '$features/notes/note-presence/note-presence-service';
+  import { bindRemoteCursorsToOwnedPresence } from './note-with-comments/remote-cursors-binding';
   import { pruneTaskAgentAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -1078,9 +1077,8 @@
 
   // Handle reply to comment
   async function handleReplyToComment(commentId: string, content: string) {
-    if (commentManager) {
-      await commentManager.replyToComment(commentId, content);
-    }
+    if (!commentManager) return false;
+    return (await commentManager.replyToComment(commentId, content)) !== null;
   }
 
   // Handle restore version
@@ -1867,17 +1865,14 @@
       return;
     }
     if (boundEditor.isDestroyed) return;
-    const session = joinNotePresence(wsId, noteId);
-    const unbind = bindRemoteCursors({
+    const unbind = bindRemoteCursorsToOwnedPresence({
       editor: boundEditor,
-      session,
+      workspaceId: wsId,
+      noteId,
       getBaseText: () => lastKnownContent,
       getBaseRev: () => lastKnownRev,
     });
-    return () => {
-      unbind();
-      session.release();
-    };
+    return unbind;
   });
 
   // // Watch for editable prop changes and update editor
