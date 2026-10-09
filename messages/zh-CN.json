@@ -7497,5 +7497,6 @@
   "chat_failureRecovery_queued_label": "已排队",
   "chat_failureRecovery_action_label": "需要处理",
   "chat_failureRecovery_queued_description": "有一条消息正在排队。请使用下方控件进行管理。",
-  "chat_failureRecovery_action_description": "回复在完成前停止了。"
+  "chat_failureRecovery_action_description": "回复在完成前停止了。",
+  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低于支持的最低版本 {minimumVersion}。请在守护进程主机上更新 CLI。"
 }

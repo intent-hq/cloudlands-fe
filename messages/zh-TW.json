@@ -7497,5 +7497,6 @@
   "chat_failureRecovery_queued_label": "已排入佇列",
   "chat_failureRecovery_action_label": "需要處理",
   "chat_failureRecovery_queued_description": "有一則訊息正在佇列中。請使用下方控制項進行管理。",
-  "chat_failureRecovery_action_description": "回覆在完成前停止了。"
+  "chat_failureRecovery_action_description": "回覆在完成前停止了。",
+  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低於支援的最低版本 {minimumVersion}。請在守護程序主機上更新 CLI。"
 }

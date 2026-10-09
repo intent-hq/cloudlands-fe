@@ -7497,5 +7497,6 @@
   "chat_failureRecovery_queued_label": "In der Warteschlange",
   "chat_failureRecovery_action_label": "Aktion erforderlich",
   "chat_failureRecovery_queued_description": "Eine Nachricht wartet. Verwalten Sie sie über die Steuerelemente unten.",
-  "chat_failureRecovery_action_description": "Die Antwort wurde vorzeitig beendet."
+  "chat_failureRecovery_action_description": "Die Antwort wurde vorzeitig beendet.",
+  "providers_cliVersionWarning_message": "Die CLI-Version {version} von {provider} liegt unter der unterstützten Mindestversion {minimumVersion}. Aktualisieren Sie die CLI auf dem Daemon-Host."
 }
