@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.214.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.214.0...v2.214.1) (2026-10-09)
+
+
+### 🐛 Bug Fixes
+
+* **home:** Remember selected tab across workspace navigation ([#3314](https://github.com/intent-hq/cloudlands-fe/issues/3314)) ([09ef968](https://github.com/intent-hq/cloudlands-fe/commit/09ef968bd517d826c6b4aeb2785acfd0136570bf))
+* **settings:** order connection details as address, port, token ([#3321](https://github.com/intent-hq/cloudlands-fe/issues/3321)) ([862fe14](https://github.com/intent-hq/cloudlands-fe/commit/862fe1422fdc8e9319f5e53938cdcd503fef84a9))
+
 ## [2.214.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.213.4...v2.214.0) (2026-10-09)
 
 
