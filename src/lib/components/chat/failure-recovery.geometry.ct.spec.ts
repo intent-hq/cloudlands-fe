@@ -1,14 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
-import { expect, test } from '../../../test/ct-test';
+import { test } from '../../../test/ct-test';
 import Preview from './failure-recovery.preview.svelte';
 
 // Capture the queued-message height at rest, not during its entrance tween.
+test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
 test.beforeEach(async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
-    true,
-  );
   // The real panel measures its responsive inset and queue height after mount.
   // Extend this scene's capture readiness without changing snapshot tolerances.
   await page.evaluate(() => {

@@ -3,6 +3,7 @@
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetScaffold } from './mocks/chat-panel-render-scaffold';
 import {
   chatInterestLeaseCount,
   clearAllChatInterestLeases,
@@ -115,48 +116,19 @@ vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.sve
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAllTabs: vi.fn(() => testState.panelTabs.readable),
 }));
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(),
   selectAgentSession: testState.selector(null),
-  selectAgentIsResponding: testState.selector(false),
-  selectAgentIsRunning: testState.selector(false),
   selectAgentSessionIsStreaming: testState.selectorFrom(() => testState.agentSessionIsStreaming),
-  selectAgentSessionStreamingContent: testState.selector(''),
-  selectAgentMessages: testState.selector([]),
-  selectAgentHistoryMessages: testState.selector([]),
-  selectHistorySegmentMeta: testState.selector({
-    gapToTail: false,
-    oldestReached: false,
-    historyCount: 0,
-    tailCount: 0,
-  }),
-  selectAgentTailCapPruned: testState.selector(false),
 }));
-vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
-  selectAwaitingSwitchBackSnapshot: testState.selector(false),
-  selectChatError: testState.selector(null),
-  selectChatFailureCorrelation: testState.selector(undefined),
-  selectChatLastChunkTime: testState.selector(null),
-  selectChatLastAttemptedMessage: testState.selector(null),
-  selectChatLiveStreamPhase: testState.selector(null),
-  selectChatModelUnavailable: testState.selector(null),
-  selectChatQuotaExceeded: testState.selector(null),
-  selectChatReceivedFirstChunk: testState.selector(false),
-  selectChatStatusEvents: testState.selector([]),
-  selectChatStreamingStartTime: testState.selector(null),
-  selectFetchingGapFill: testState.selector(false),
-  selectFetchingHistorySeek: testState.selector(false),
-  selectFetchingOlderHistory: testState.selector(false),
-  selectHistoryExhausted: testState.selector(false),
-  selectHistorySeekUnsupported: testState.selector(false),
-  selectPendingProposalRecovery: testState.selector(undefined),
-  selectPendingQuestionRecovery: testState.selector(undefined),
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
   selectTranscriptHydration: testState.selector({ isHydrating: false }),
   selectTranscriptHydratedOnce: testState.selector(false),
-  selectTranscriptSnapshotMeta: testState.selector(undefined),
 }));
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
-  selectAgentQueueMessages: testState.selector([]),
-}));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
+);
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: testState.selector(null),
 }));
@@ -179,10 +151,9 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
   selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
 }));
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
-  selectComposerContextItems: testState.selector([]),
-  selectChatDraft: { select: vi.fn(() => '') },
-}));
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(),
+);
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
   selectTasksForAgent: testState.selector([]),
 }));
@@ -198,14 +169,9 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectEffectiveBehaviorPrompt: testState.selector(''),
   selectEffectiveModel: testState.selector(''),
 }));
-vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
-  selectEffectiveDefaultProviderId: testState.selector(''),
-  selectProviderCatalogLoaded: testState.selector(false),
-  selectProviderCatalogEntries: testState.selector([] as unknown[]),
-  selectProviderAuthFailureGuidance: { select: () => null },
-  selectProviderDisplayName: { select: (_state: unknown, id: string) => id },
-  selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
-}));
+vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(),
+);
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
@@ -298,6 +264,7 @@ function updatePanelActions() {
 
 describe('ChatPanel multi-panel context ownership', () => {
   beforeEach(() => {
+    resetScaffold();
     clearAllChatInterestLeases();
     vi.clearAllMocks();
     testState.agentSessionIsStreaming = false;

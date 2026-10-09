@@ -1,3 +1,4 @@
+import type { InitialChatHistory } from '$lib/client/app-client';
 import { pendingSubmissionSettled } from '../pending-submissions/pending-submissions-slice';
 import { sameSubmissionScope } from '../pending-submissions/pending-submissions-model';
 import {
@@ -831,6 +832,10 @@ export const transcriptHydrationFailed = createAction<[agentId: string]>(
  * `take` this action for the arrival signal. `replayed` marks a local hydration
  * replay, which must not repeat the original snapshot's scrollback discard.
  */
+export const chatInitialHistoryProgressed = createAction<
+  [agentId: string, progress: InitialChatHistory]
+>('chatState/initialHistoryProgressed');
+
 export const chatTranscriptSnapshotApplied = createAction<
   [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq' | 'replayed'>, replayed?: true]
 >('chatState/transcriptSnapshotApplied');
@@ -1026,6 +1031,11 @@ export const scrollbackSeekSettled = createAction<
     unsupported?: boolean,
   ]
 >('chatState/scrollbackSeekSettled');
+
+/** Release an interrupted seek without overwriting a reconnect's cursors. */
+export const scrollbackSeekReleased = createAction<[agentId: string]>(
+  'chatState/scrollbackSeekReleased',
+);
 
 /** Latch daemon capability without settling another request's active window. */
 export const historySeekUnsupportedDetected = createAction<[agentId: string]>(
@@ -1392,12 +1402,20 @@ chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }
 chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { agentId, transcriptHydration: 'error' }),
 );
+chatStateReducer.with(chatInitialHistoryProgressed, (state, { payload: [agentId, progress] }) =>
+  updateAgent(state, agentId, {
+    initialHistory: progress,
+    initialHistoryPending: !progress.complete,
+  }),
+);
 chatStateReducer.with(
   chatTranscriptSnapshotApplied,
   (state, { payload: [agentId, meta, replayed] }) => {
     const agent = getAgent(state, agentId);
     return updateAgent(state, agentId, {
       agentId,
+      initialHistory: meta.initialHistory,
+      initialHistoryPending: meta.initialHistory?.complete === false,
       transcriptSnapshot: {
         ...meta,
         ...(replayed ? { replayed } : {}),
@@ -1488,11 +1506,23 @@ chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, p
     return updateAgent(state, agentId, {
       agentId,
       liveStreamPhase: null,
+      initialHistory: undefined,
+      initialHistoryPending: false,
       transcriptSnapshot: undefined,
       awaitingSwitchBackSnapshot: false,
     });
   }
-  return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
+  return updateAgent(state, agentId, {
+    agentId,
+    liveStreamPhase: phase,
+    ...(phase === 'connecting' || phase === 'resyncing'
+      ? {
+          initialHistoryPending: true,
+          initialHistory: undefined,
+          transcriptSnapshot: undefined,
+        }
+      : {}),
+  });
 });
 // Switch-back transcript reveal gate: armed SYNCHRONOUSLY with the view
 // switch (same dispatch that triggers the subscribe saga's subscription
@@ -1577,6 +1607,9 @@ chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens
     scrollbackGapToken: tokens.prevToken,
     ...(unsupported ? { historySeekUnsupported: true } : {}),
   }),
+);
+chatStateReducer.with(scrollbackSeekReleased, (state, { payload: [agentId] }) =>
+  updateAgent(state, agentId, { fetchingHistorySeek: false }),
 );
 chatStateReducer.with(historySeekUnsupportedDetected, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { historySeekUnsupported: true }),

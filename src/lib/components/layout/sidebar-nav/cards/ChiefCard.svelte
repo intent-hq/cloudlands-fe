@@ -15,10 +15,7 @@
   import { createAssistantThreadRename } from '$lib/components/chat/assistant-thread-rename.svelte';
   import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
-  import {
-    closePanel,
-    setChiefActiveAgentId,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
     selectCurrentChiefThread,
@@ -208,7 +205,6 @@
     if (!isWorkspaceRegistered) return;
     chiefMountCount = Math.max(0, chiefMountCount - 1);
     if (chiefMountCount === 0) {
-      appStore.dispatch(closePanel());
       appStore.dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
     }
   });
@@ -298,7 +294,11 @@
   >
     <div class="flex min-w-0 flex-1 items-center gap-1.5">
       {#if activeThread && !$hidesAgentLifecycleActions$}
-        <h2 class="min-w-0 truncate type-body font-medium" title={activeThread.title}>
+        <h2
+          class="min-w-0 truncate type-body font-medium"
+          class:flex-1={rename.agentId === activeThread.agentId}
+          title={activeThread.title}
+        >
           <AssistantThreadTitle thread={activeThread} {rename} class="type-body font-medium" />
         </h2>
       {/if}

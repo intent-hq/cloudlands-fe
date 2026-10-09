@@ -1,3 +1,4 @@
+import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../test/ct-test';
 import Preview from './assistant-panels.preview.svelte';
 import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
@@ -10,6 +11,17 @@ import {
   ASSISTANT_NATIVE_DIAGRAM,
 } from './assistant-note-diagrams-fixtures';
 
+async function selectRenderedPreview(panel: Locator, page: Page) {
+  await expect(
+    panel.locator('.tiptap[contenteditable="true"]').filter({ visible: true }),
+  ).toBeVisible();
+  await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  await page.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
+  await page.getByRole('menuitemradio', { name: 'Rendered preview', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+}
+
 test('Assistant note diagrams render, expose source, export and follow note links', async ({
   mount,
   page,
@@ -19,6 +31,8 @@ test('Assistant note diagrams render, expose source, export and follow note link
   const draft = component.getByRole('textbox', { name: 'Message the Assistant' });
   await draft.fill('Keep this diagram discussion');
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+  const panel = component.locator('[data-assistant-content-panel]');
+  await selectRenderedPreview(panel, page);
   const note = component.locator('[data-testid="rendered-note-preview"]:visible');
   const mermaid = note.locator('[data-markdown-diagram="mermaid"]');
   const native = note.locator('[data-markdown-diagram="diagram"]');
@@ -61,6 +75,7 @@ test('Assistant note diagrams render, expose source, export and follow note link
     contentType: 'image/png',
   });
   await native.getByRole('button', { name: /Architecture notes α/ }).click();
+  await selectRenderedPreview(panel, page);
   await expect(note).toContainText('Second plan');
   await expect(note.locator('[data-markdown-diagram]')).toHaveCount(0);
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
@@ -74,6 +89,7 @@ test('Assistant diagram errors keep source and surrounding content', async ({
 }, testInfo) => {
   const component = await mount(Preview, { props: { noteContent: ASSISTANT_DIAGRAM_ERROR_NOTE } });
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+  await selectRenderedPreview(component.locator('[data-assistant-content-panel]'), page);
   const note = component.getByTestId('rendered-note-preview');
   await expect(note.getByRole('alert')).toHaveCount(3);
   await expect(note).toContainText('End of the error note.');
@@ -86,11 +102,15 @@ test('Assistant diagram errors keep source and surrounding content', async ({
   });
 });
 
-test('Assistant notes keep fenced examples, code and task proposals literal', async ({ mount }) => {
+test('Assistant notes keep fenced examples, code and task proposals literal', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(Preview, {
     props: { noteContent: ASSISTANT_DIAGRAM_EXAMPLE_NOTE },
   });
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+  await selectRenderedPreview(component.locator('[data-assistant-content-panel]'), page);
   const note = component.getByTestId('rendered-note-preview');
   await expect(note.locator('pre code.language-markdown')).toContainText('Example --> Code');
   await expect(note.locator('pre code.language-javascript')).toContainText('const diagram');
@@ -195,6 +215,7 @@ for (const language of ['diagram', 'ws-block:diagram', 'ws-block']) {
     const content = `## Native diagram\n\n  \`\`\`${language}\n${JSON.stringify(ASSISTANT_NATIVE_DIAGRAM)}\n  \`\`\`\n\nAfter the diagram.`;
     const component = await mount(Preview, { props: { noteContent: content } });
     await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+    await selectRenderedPreview(component.locator('[data-assistant-content-panel]'), page);
     const note = component.getByTestId('rendered-note-preview');
     await expect(note.locator('[data-diagram-settled]')).toHaveAttribute(
       'data-diagram-settled',

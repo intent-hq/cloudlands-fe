@@ -41,6 +41,7 @@ import {
 } from '$shared/types';
 import type {
   ChatClient,
+  InitialChatHistory,
   ChatLiveStreamPhase,
   ChatSubscribeOptions,
   ChatTranscript,
@@ -55,6 +56,8 @@ import {
 
 /** Shape of a `chat.subscribe` seq-0 snapshot per PROTOCOL §7.1. */
 interface ChatSnapshotPayload {
+  historyDelivery?: 'progressive';
+  initialHistory?: InitialChatHistory;
   agentId?: string;
   messages?: unknown[];
   truncated?: boolean;
@@ -113,7 +116,7 @@ const MAX_RETRY_DELAY_MS = 30_000;
  * and replayed when the subscribe reply resolves — the same buffering
  * delta-subscription.ts uses.
  */
-const MAX_BUFFERED_PUSHES = 32;
+const MAX_BUFFERED_PUSHES = 256;
 
 const SNAPSHOT_MESSAGE_ROLES = new Set<string>(MESSAGE_ROLES);
 
@@ -133,6 +136,24 @@ const STRICT_SNAPSHOT_BLOCK_TYPES = new Set([
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseInitialHistory(raw: unknown): InitialChatHistory | null {
+  if (!isRecord(raw)) return null;
+  const { target, received, complete } = raw;
+  if (
+    typeof target !== 'number' ||
+    !Number.isSafeInteger(target) ||
+    target < 1 ||
+    target > 200 ||
+    typeof received !== 'number' ||
+    !Number.isSafeInteger(received) ||
+    received < 0 ||
+    received > target ||
+    typeof complete !== 'boolean'
+  )
+    return null;
+  return { target, received, complete };
 }
 
 /**
@@ -248,10 +269,11 @@ interface ChatDeltaPayload {
 /** Parsed `subscription.push` envelope for the chat channel (snapshot OR delta). */
 interface ChatPush {
   subscriptionId: string;
-  kind: 'snapshot' | 'delta';
+  kind: 'snapshot' | 'delta' | 'history';
   seq: number;
   snapshot?: unknown;
   delta?: ChatDeltaPayload;
+  history?: unknown;
 }
 
 /**
@@ -265,10 +287,11 @@ function parseChatPush(method: string, params: unknown): ChatPush | null {
   const p = params as Record<string, unknown>;
   const subscriptionId = typeof p.subscriptionId === 'string' ? p.subscriptionId : null;
   const seq = typeof p.seq === 'number' ? p.seq : null;
-  if (!subscriptionId || seq === null) return null;
+  if (!subscriptionId || seq === null || !Number.isSafeInteger(seq) || seq < 0) return null;
   if (p.kind === 'snapshot') {
     return { subscriptionId, kind: 'snapshot', seq, snapshot: p.snapshot };
   }
+  if (p.kind === 'history') return { subscriptionId, kind: 'history', seq, history: p.history };
   if (p.kind === 'delta') {
     const raw = (p.delta && typeof p.delta === 'object' ? p.delta : {}) as Record<string, unknown>;
     return {
@@ -468,6 +491,8 @@ export class ChatTranscriptReconciler {
   private seeded = false;
   private snapshotFingerprint = 0;
   private incremental = false;
+  private initialHistory?: InitialChatHistory;
+  private initialMessageIds = new Set<string>();
 
   constructor(private readonly expectedAgentId?: string) {}
 
@@ -482,6 +507,8 @@ export class ChatTranscriptReconciler {
     this.seeded = false;
     this.snapshotFingerprint = 0;
     this.incremental = false;
+    this.initialHistory = undefined;
+    this.initialMessageIds.clear();
   }
 
   /**
@@ -497,14 +524,34 @@ export class ChatTranscriptReconciler {
    * compares payload fingerprints: a divergent re-emit carries rows
    * persisted while the stream was down and must rebuild too, or they stay
    * hidden until the next gap resnapshot (intent-hq/monorepo#2716).
+   * Progressive initial snapshots are replayable after history advances:
+   * an identical seq-0 must retain the received rows and sequence. A changed
+   * snapshot or an atomic recovery snapshot still rebuilds the transcript.
    */
-  applySnapshot(seq: number, raw: unknown): boolean {
+  applySnapshot(seq: number, raw: unknown): boolean | 'invalid' {
+    const payload = isRecord(raw) ? raw : {};
+    const progress =
+      payload.historyDelivery === 'progressive'
+        ? parseInitialHistory(payload.initialHistory)
+        : undefined;
+    const snap = extractSnapshot(raw, this.expectedAgentId);
+    const initialIds = new Set(snap.messages.map((message) => message.id));
+    if (
+      progress === null ||
+      (progress &&
+        (progress.received !== initialIds.size || (!progress.complete && snap.messages.length > 1)))
+    )
+      return 'invalid';
     const fingerprint = fingerprintSnapshot(raw);
-    if (this.seeded && seq + 1 === this.expectedSeq && fingerprint === this.snapshotFingerprint) {
+    if (
+      this.seeded &&
+      fingerprint === this.snapshotFingerprint &&
+      (seq + 1 === this.expectedSeq ||
+        (seq === 0 && progress !== undefined && seq < this.expectedSeq))
+    ) {
       return false;
     }
     this.snapshotFingerprint = fingerprint;
-    const snap = extractSnapshot(raw, this.expectedAgentId);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
     this.nextToken = snap.nextToken;
@@ -522,6 +569,9 @@ export class ChatTranscriptReconciler {
     // never the request — arms the append reducer, so a daemon that ignored
     // the param (older, or full mode) keeps the full-text reduction.
     this.incremental = p.deltaEncoding === 'incremental';
+    this.initialHistory = progress;
+    this.initialMessageIds = initialIds;
+    if (this.initialHistory?.complete === false) this.nextToken = undefined;
     this.expectedSeq = seq + 1;
     this.seeded = true;
     return true;
@@ -567,9 +617,55 @@ export class ChatTranscriptReconciler {
     return 'applied';
   }
 
+  /** Historical rows share push ordering but never alter live activity or overwrite live rows. */
+  applyHistory(seq: number, raw: unknown): 'applied' | 'stale' | 'gap' {
+    if (!this.seeded || seq > this.expectedSeq) return 'gap';
+    if (seq < this.expectedSeq) return 'stale';
+    if (!this.initialHistory || this.initialHistory.complete || !isRecord(raw)) return 'gap';
+    const progress = parseInitialHistory(raw);
+    if (!progress || progress.target !== this.initialHistory.target) return 'gap';
+    const { received, complete } = progress;
+    const message =
+      raw.message === undefined
+        ? undefined
+        : normalizeSnapshotMessage(raw.message, this.expectedAgentId);
+    if ((!complete && !message) || (complete && raw.message !== undefined)) return 'gap';
+    const newInitialRow = message && !this.initialMessageIds.has(message.id);
+    if (received !== this.initialHistory.received + (newInitialRow ? 1 : 0)) return 'gap';
+    if (
+      complete &&
+      ((raw.nextToken !== null &&
+        (typeof raw.nextToken !== 'string' || raw.nextToken.length === 0)) ||
+        typeof raw.truncated !== 'boolean' ||
+        typeof raw.totalMessages !== 'number' ||
+        !Number.isSafeInteger(raw.totalMessages) ||
+        raw.totalMessages < received ||
+        (received < progress.target && raw.nextToken !== null))
+    )
+      return 'gap';
+    // Validate the entire frame before committing any progress, cursor or message changes.
+    if (message) {
+      this.initialMessageIds.add(message.id);
+      if (!this.messages.some((row) => row.id === message.id)) {
+        this.messages = [message, ...this.messages].sort(
+          (a, b) => (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER),
+        );
+      }
+    }
+    this.initialHistory = progress;
+    if (complete) {
+      this.nextToken = raw.nextToken as string | null;
+      this.truncated = raw.truncated as boolean;
+      this.totalMessages = raw.totalMessages as number;
+    }
+    this.expectedSeq = seq + 1;
+    return 'applied';
+  }
+
   /** Current transcript state. */
   transcript(): ChatTranscript {
     return {
+      ...(this.initialHistory ? { initialHistory: this.initialHistory } : {}),
       messages: this.messages,
       truncated: this.truncated,
       ...(this.nextToken !== undefined ? { nextToken: this.nextToken } : {}),
@@ -764,10 +860,13 @@ export class LiveChatClient implements ChatClient {
     // replayed once the registration resolves to their id.
     let buffered: ChatPush[] = [];
 
-    const emit = (diagnostic: StreamLifecycleDiagnostic): void => {
+    const emit = (diagnostic: StreamLifecycleDiagnostic, fromHistory = false): void => {
       if (disposed) return;
       try {
-        handler(reconciler.transcript());
+        handler({
+          ...reconciler.transcript(),
+          ...(fromHistory ? { fromHistory: true as const } : {}),
+        });
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'delivered' });
       } catch (error) {
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'threw' });
@@ -796,6 +895,17 @@ export class LiveChatClient implements ChatClient {
       } catch (error) {
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'threw' });
         throw error;
+      }
+    };
+
+    const watchInitialHistory = (): void => {
+      clearSnapshotTimer();
+      if (reconciler.transcript().initialHistory?.complete === false) {
+        snapshotTimer = setTimeout(() => {
+          snapshotTimer = undefined;
+          resetCachedTranscript = true;
+          scheduleRetry();
+        }, SNAPSHOT_TIMEOUT_MS);
       }
     };
 
@@ -834,7 +944,13 @@ export class LiveChatClient implements ChatClient {
         // internal re-registration must take the full newest page.
         const resumed = extractResumedFlag(push.snapshot);
         resumeAnchor = undefined;
-        if (reconciler.applySnapshot(push.seq, push.snapshot)) {
+        const applied = reconciler.applySnapshot(push.seq, push.snapshot);
+        if (applied === 'invalid') {
+          resetCachedTranscript = sawSnapshot;
+          resnapshot();
+          return;
+        }
+        if (applied) {
           const resetCache = resetCachedTranscript && resumed === undefined;
           resetCachedTranscript = false;
           const reconcilerResult = sawSnapshot ? 'reset' : 'applied';
@@ -847,16 +963,37 @@ export class LiveChatClient implements ChatClient {
             callbackResult: 'not-invoked',
           });
         }
-        if (markerRefreshPending) {
+        watchInitialHistory();
+        if (markerRefreshPending && reconciler.transcript().initialHistory?.complete !== false) {
           markerRefreshPending = false;
           resnapshot();
         }
       } else if (!awaitingResnapshot) {
-        const outcome = reconciler.applyDelta(
-          push.seq,
-          push.delta ?? { added: [], updated: [], removedIds: [] },
-        );
-        if (outcome === 'applied') emit({ ...diagnostic, reconcilerResult: 'applied' });
+        const outcome =
+          push.kind === 'history'
+            ? reconciler.applyHistory(push.seq, push.history)
+            : reconciler.applyDelta(
+                push.seq,
+                push.delta ?? { added: [], updated: [], removedIds: [] },
+              );
+        if (outcome === 'applied') {
+          if (push.kind === 'history') {
+            // Progress during watchdog backoff makes that retry obsolete.
+            // Keep resetCachedTranscript for any subsequent recovery snapshot.
+            resetBackoff();
+            setPhase('live');
+            watchInitialHistory();
+          }
+          emit({ ...diagnostic, reconcilerResult: 'applied' }, push.kind === 'history');
+          if (
+            push.kind === 'history' &&
+            reconciler.transcript().initialHistory?.complete &&
+            markerRefreshPending
+          ) {
+            markerRefreshPending = false;
+            resnapshot();
+          }
+        }
         // Sequence gap (or a delta before any snapshot): self-heal via a
         // fresh registration whose seq-0 snapshot rebuilds the transcript.
         // Stale duplicates are ignored silently.
@@ -908,6 +1045,7 @@ export class LiveChatClient implements ChatClient {
         ...context,
         deltaEncoding: 'incremental',
         projection: 'slim',
+        historyDelivery: 'progressive',
         ...(resumeAnchor === undefined ? {} : { sinceMessageId: resumeAnchor }),
       })
         .then((result) => {

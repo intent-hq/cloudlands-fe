@@ -9,6 +9,10 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
+  import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+  import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import { scriptMonitorsUpdated } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import {
     bulkUpsertSessions,
     replaceMessages,
@@ -21,6 +25,10 @@
     transcriptHydrationSettled,
     scrollbackSeekSettled,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT exercises the production subscription owner.
+  import { chatSubscribeSaga } from '$store/renderer/slices/chat-state/sagas/chat-subscribe-saga';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT exercises production hydration completion.
+  import { chatReadSaga } from '$store/renderer/slices/chat-state/sagas/chat-read-saga';
   // eslint-disable-next-line themis/forbidden-component-import -- CT runs the real paging owner against the scripted wire.
   import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -28,6 +36,9 @@
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
   let {
+    progressive,
+    received = 1,
+    complete = false,
     height = 900,
     active = true,
     agent = 'primary',
@@ -39,6 +50,9 @@
     releasedPages = 0,
     expanded = false,
   }: {
+    progressive?: number;
+    received?: number;
+    complete?: boolean;
     height?: number;
     active?: boolean;
     agent?: string;
@@ -64,8 +78,11 @@
   const forwardGap = fixture.startsWith('gap-');
   // One missing row lets a five-row inclusive fallback overlap the tail
   // and close the gap with exactly one successful retry.
-  const total = forwardGap ? 11 : fixture === 'seek' ? 1000 : fixture === 'exhausted' ? 8 : 100;
-  const initialCount = untrack(() => retained) ? 40 : 5;
+  const progressiveTotal = untrack(() => progressive);
+  const total =
+    progressiveTotal ??
+    (forwardGap ? 11 : fixture === 'seek' ? 1000 : fixture === 'exhausted' ? 8 : 100);
+  const initialCount = progressiveTotal !== undefined ? 0 : untrack(() => retained) ? 40 : 5;
   const timestamp = '2026-09-01T00:00:00.000Z';
   const workspace = {
     id: WorkspaceId('viewport-fill'),
@@ -97,7 +114,7 @@
   const message = (index: number, large = false): AgentMessage =>
     ({
       id: `m-${index}`,
-      ...(fixture === 'seek' ? { seq: index } : {}),
+      ...(fixture === 'seek' || progressiveTotal !== undefined ? { seq: index } : {}),
       role: index % 2 ? 'assistant' : 'user',
       timestamp: new Date(Date.parse(timestamp) + index * 1000).toISOString(),
       contentBlocks: [
@@ -109,8 +126,16 @@
         },
       ],
     }) as AgentMessage;
+  let subscribed = $state(false);
   // eslint-disable-next-line intent/no-component-async-data-fetch -- CT serves scripted wire responses; the production saga owns every request.
   installMockElectronBridge({
+    'agent.get': (input) =>
+      store.state.agentSessions.byAgentId[(input as { agentId: string }).agentId],
+    'chat.subscribe': () => {
+      subscribed = true;
+      return { subscriptionId: 'progressive-initial' };
+    },
+    'chat.unsubscribe': () => ({}),
     'agent.getQueue': () => ({ success: true, queue: [] }),
     'agent.getConversation': async (input) => {
       const params = input as {
@@ -186,12 +211,42 @@
       };
     },
   });
+  let notify: ((value: unknown) => void) | undefined;
+  if (progressiveTotal !== undefined) {
+    const api = window.electronAPI!;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Test fixture captures the notification transport, not domain data.
+    const originalOn = api.on.bind(api);
+    api.on = (channel, handler) => {
+      if (channel === 'backend:notification') notify = handler;
+      return originalOn(channel, handler);
+    };
+  }
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () => [...startChatFixtureSagas(store), store.runSaga(chatScrollbackSaga)],
+    startSagas: () => [
+      ...startChatFixtureSagas(store),
+      store.runSaga(chatScrollbackSaga),
+      ...(progressiveTotal !== undefined
+        ? [store.runSaga(chatSubscribeSaga), store.runSaga(chatReadSaga)]
+        : []),
+    ],
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));
+  store.dispatch(backgroundHooksUpdated(workspace.id, []));
+  store.dispatch(prMonitorsUpdated(workspace.id, []));
+  store.dispatch(
+    scriptMonitorsUpdated(workspace.id, { monitors: [], scripts: [], status: 'ready' }),
+  );
   for (const id of ['primary', 'secondary']) {
+    store.dispatch(
+      setSubscriptionSnapshot(workspace.id, id, {
+        subscriptions: [],
+        eventSubscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
     store.dispatch(
       bulkUpsertSessions([
         {
@@ -207,6 +262,7 @@
         } as AgentSession,
       ]),
     );
+    if (progressiveTotal !== undefined) continue;
     store.dispatch(
       chatTranscriptSnapshotApplied(id, {
         truncated: true,
@@ -228,6 +284,59 @@
     }
     store.dispatch(transcriptHydrationSettled(id));
   }
+  let sent = -1;
+  let sequence = 0;
+  let finished = false;
+  $effect(() => {
+    if (progressiveTotal === undefined || !subscribed) return;
+    const count = Math.min(received, progressiveTotal, 20);
+    const finish = complete;
+    untrack(() => {
+      const push = (kind: string, payload: object) =>
+        notify?.({
+          method: 'subscription.push',
+          params: {
+            subscriptionId: 'progressive-initial',
+            kind,
+            seq: sequence++,
+            [kind]: payload,
+          },
+        });
+      if (sent === -1) {
+        if (total === 0 && !finish) return;
+        sent = count > 0 ? 1 : 0;
+        push('snapshot', {
+          agentId: 'primary',
+          messages: sent ? [message(total - 1)] : [],
+          totalMessages: total,
+          historyDelivery: 'progressive',
+          initialHistory: { target: 20, received: sent, complete: total === 0 },
+          ...(total === 0 ? { nextToken: null, truncated: false } : {}),
+        });
+      }
+      if (total === 0) finished = true;
+      while (sent < count) {
+        sent++;
+        push('history', {
+          message: message(total - sent),
+          target: 20,
+          received: sent,
+          complete: false,
+        });
+      }
+      if (finish && !finished) {
+        finished = true;
+        push('history', {
+          target: 20,
+          received: sent,
+          complete: true,
+          totalMessages: total,
+          truncated: total > sent,
+          nextToken: total > sent ? `before-${total - sent}` : null,
+        });
+      }
+    });
+  });
   $effect(() => {
     if (!compact) return;
     untrack(() =>

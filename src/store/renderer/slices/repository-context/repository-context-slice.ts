@@ -220,9 +220,9 @@ repositoryContextReducer.with(repositoryContextFailed, (state, { payload: [reque
 });
 
 // Editing operations are separate from read rows: a read retirement is not a write outcome.
-export const repositorySelectionEditRequested = createAction<[owner: RepositorySelectionEdit]>(
-  'repositoryContext/selectionEditRequested',
-);
+export const repositorySelectionEditRequested = createAction<
+  [owner: RepositorySelectionEdit, command?: SelectionCommand]
+>('repositoryContext/selectionEditRequested');
 export const repositorySelectionConfirmRequested = createAction<
   [owner: RepositorySelectionEdit, command: SelectionCommand]
 >('repositoryContext/selectionConfirmRequested');

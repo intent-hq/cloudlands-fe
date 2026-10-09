@@ -60,7 +60,11 @@
   });
 </script>
 
-<div class="flex h-full min-h-0 min-w-0 flex-col" data-home-workspace-chat>
+<div
+  class="flex h-full min-h-0 min-w-0 flex-col"
+  data-home-workspace-chat
+  data-workspace-link-target={workspace.id}
+>
   {#if preview}
     <EmptyState density="compact">
       {#snippet title()}{m.agentOverview_hierarchyGraph_noAgents_title()}{/snippet}

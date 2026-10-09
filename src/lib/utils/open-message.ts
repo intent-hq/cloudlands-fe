@@ -120,7 +120,11 @@ async function waitForMessage(agentId: string, messageId: string): Promise<boole
   let polls = 0;
   while (Date.now() < deadline) {
     if (isMessageInStore(agentId, messageId)) return true;
-    if (polls >= MIN_POLLS_BEFORE_SETTLED && hydrationStatus(agentId) === 'settled') {
+    if (
+      polls >= MIN_POLLS_BEFORE_SETTLED &&
+      hydrationStatus(agentId) === 'settled' &&
+      !selectChatAgentState.select(appStore.state, agentId).initialHistoryPending
+    ) {
       return false;
     }
     polls++;
@@ -143,8 +147,15 @@ export async function seekConversationToMessage(
   messageId: string,
   workspaceId?: string,
 ): Promise<boolean> {
+  // A timeout waiting for a row is not permission to race the initial transfer.
+  const deadline = Date.now() + HYDRATION_TIMEOUT_MS;
+  while (selectChatAgentState.select(appStore.state, agentId).initialHistoryPending) {
+    if (Date.now() >= deadline) return false;
+    await sleep(HYDRATION_POLL_INTERVAL_MS);
+  }
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (!session) return false;
+  if (isMessageInStore(agentId, messageId)) return true;
   workspaceId ??= session.workspaceId;
   const previous = selectChatAgentState.select(appStore.state, agentId);
   let tokens = { nextToken: previous.scrollbackOlderToken, prevToken: previous.scrollbackGapToken };

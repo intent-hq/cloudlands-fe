@@ -1,7 +1,8 @@
 /* Match workspace panel shells: surface and elevation provide separation. */
 .home-panel {
+  --panel-shell-radius: calc(var(--radius-large) * 1.5);
   border: 0;
-  border-radius: calc(var(--radius-large) * 1.5);
+  border-radius: var(--panel-shell-radius);
   box-shadow: var(--elevation-raised);
 }
 
@@ -11,7 +12,7 @@
   gap: 0.25rem;
   padding: 0.25rem;
   border-radius: 1rem;
-  background: hsl(var(--muted) / 0.55);
+  background: hsl(var(--sidebar));
 }
 
 .home-choice-group [data-slot='button'] {
@@ -29,6 +30,7 @@
 
 .workspace-list {
   container-type: inline-size;
+  --selected: var(--sidebar);
 }
 
 .home-list-row [data-slot='list-row-title'] {
@@ -107,7 +109,7 @@
   container: home-panel / inline-size;
 }
 .home-control-fill {
-  background: hsl(var(--muted) / 0.55);
+  background: hsl(var(--sidebar));
 }
 
 .home-layout {

@@ -12,7 +12,8 @@
   import {
     refreshScripts,
     stopScriptRequested,
-    removeScript,
+    startScriptRequested,
+    restartScriptRequested,
     upsertScript,
   } from '$store/renderer/slices/scripts/scripts-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -162,9 +163,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               });
               continue;
             }
-            await scriptsClient.remove(workspaceId, scriptId);
-            appStore.dispatch(removeScript(workspaceId, scriptId));
-            removedCount++;
+            const removed = await scriptsClient.remove(workspaceId, scriptId);
+            if (removed.success) {
+              removedCount++;
+            }
           }
         }
       }
@@ -237,23 +239,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               action: {
                 label: m.terminal_sidebar_undo_label(),
                 onClick: async () => {
-                  for (const s of selectScriptEntries.select(appStore.state, workspaceId)) {
-                    await scriptsClient.remove(workspaceId, s.id);
-                  }
-                  for (const s of snapshot) {
-                    await scriptsClient.create(workspaceId, {
-                      name: s.name,
-                      command: s.command,
-                      mode: s.mode,
-                      purpose: s.purpose ?? 'saved',
-                      category: s.category,
-                      source: s.source || 'user',
-                      cwd: s.cwd,
-                      env: s.env,
-                      autoStart: s.autoStart,
-                    });
-                  }
+                  const result = await scriptsClient.restoreSnapshot(workspaceId, snapshot);
                   appStore.dispatch(refreshScripts(workspaceId));
+                  if (!result.success) {
+                    if (result.error) notify.warning(result.error);
+                    return;
+                  }
                   notify.success(m.terminal_sidebar_scriptsRestored_success());
                 },
               },
@@ -582,8 +573,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     return actions;
   }
 
-  async function handleStart(scriptId: string) {
-    await scriptsClient.start(workspaceId, scriptId);
+  function handleStart(scriptId: string) {
+    appStore.dispatch(
+      startScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_startScriptFailed_error(),
+      ),
+    );
     onSelectScript?.(scriptId);
     pendingScrollScriptId = scriptId;
   }
@@ -594,14 +591,23 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     );
   }
 
-  async function handleRestart(scriptId: string) {
-    await scriptsClient.restart(workspaceId, scriptId);
+  function handleRestart(scriptId: string) {
+    appStore.dispatch(
+      restartScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_restartScriptFailed_error(),
+      ),
+    );
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleDelete(scriptId: string) {
-    await scriptsClient.remove(workspaceId, scriptId);
-    appStore.dispatch(removeScript(workspaceId, scriptId));
+    const result = await scriptsClient.remove(workspaceId, scriptId);
+    if (!result.success) {
+      if (result.error) notify.warning(result.error);
+      return;
+    }
     if (selectedScriptId === scriptId) {
       onSelectScript?.(null);
     }
@@ -745,8 +751,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       // Delete all selected scripts
       const idsToDelete = Array.from(selectedScriptIds);
       for (const id of idsToDelete) {
-        await scriptsClient.remove(workspaceId, id);
-        appStore.dispatch(removeScript(workspaceId, id));
+        const result = await scriptsClient.remove(workspaceId, id);
+        if (!result.success) {
+          if (result.error) notify.warning(result.error);
+          continue;
+        }
         if (selectedScriptId === id) {
           onSelectScript?.(null);
         }
@@ -796,13 +805,16 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
+      const mutationWorkspaceId = workspaceId;
+      const mutationScriptId = editingScriptId;
+      const name = editingScriptName.trim();
       void scriptsClient
-        .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
+        .update(mutationWorkspaceId, mutationScriptId, { name })
         .then((result) => {
           if (!result.success && result.error) notify.warning(result.error);
         })
         .catch((error) => logger.error('Script update failed', error))
-        .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
+        .finally(() => appStore.dispatch(refreshScripts(mutationWorkspaceId)));
     }
     editingScriptId = null;
     editingScriptName = '';

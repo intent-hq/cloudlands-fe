@@ -1,5 +1,9 @@
 import { emptyHomeIntegrations } from './home-integrations-slice';
-import type { HomeIntegrationItem, HomeIntegrationsState } from './home-integrations-types';
+import type {
+  HomeIntegrationItem,
+  HomeIntegrationsState,
+  HomePullCheck,
+} from './home-integrations-types';
 
 const pull: HomeIntegrationItem = {
   id: 'acme/studio#142',
@@ -135,6 +139,83 @@ const linear: HomeIntegrationsState = {
   selectedId: issue.id,
   detail: issue,
 };
+const mixedChecks: HomePullCheck[] = [
+  { name: 'CI Gate', state: 'pending', url: null },
+  ...Array.from({ length: 3 }, (_, index): HomePullCheck => ({
+    name: `Component tests / Browser interactions (shard ${index + 1}/3)`,
+    state: 'pending',
+    url: null,
+  })),
+  { name: 'Lint', state: 'failure', url: 'https://github.com/acme/studio/actions/runs/1' },
+  { name: 'Integration tests', state: 'cancelled', url: null },
+  ...['Typecheck', 'Build', 'Architecture', 'Translations', 'Formatting'].map(
+    (name): HomePullCheck => ({ name, state: 'success', url: null }),
+  ),
+  ...['macOS build', 'Windows build', 'Release preview'].map((name): HomePullCheck => ({
+    name,
+    state: 'neutral',
+    url: null,
+  })),
+];
+const longFiles: HomeIntegrationsState['files'] = [
+  {
+    filename: 'src/features/home/HomePullCode.svelte',
+    status: 'modified',
+    additions: 240,
+    deletions: 1,
+    patch: `@@ -1 +1,240 @@\n-const selected = null;\n${Array.from(
+      { length: 240 },
+      (_, index) =>
+        `+const file${index + 1} = ${index === 0 ? JSON.stringify('A long line that stays readable with horizontal scrolling. '.repeat(8)) : index + 1};`,
+    ).join('\n')}`,
+    url: 'https://github.com/acme/studio/blob/fixture-head/src/features/home/HomePullCode.svelte',
+  },
+  {
+    filename: 'src/features/home/renamed file.ts',
+    previousFilename: 'src/features/home/previous file.ts',
+    status: 'renamed',
+    additions: 1,
+    deletions: 1,
+    patch: '@@ -1 +1 @@\n-export const title = "Previous";\n+export const title = "Renamed";',
+  },
+  {
+    filename: 'src/features/home/new-file.ts',
+    status: 'added',
+    additions: 1,
+    deletions: 0,
+    patch: '@@ -0,0 +1 @@\n+export const ready = true;',
+  },
+  {
+    filename: 'src/features/home/removed-file.ts',
+    status: 'removed',
+    additions: 0,
+    deletions: 1,
+    patch: '@@ -1 +0,0 @@\n-export const obsolete = true;',
+  },
+  {
+    filename: 'README.md',
+    status: 'modified',
+    additions: 1,
+    deletions: 0,
+    patch: '@@ -1 +1,2 @@\n # Workspace\n+Keep your context.',
+  },
+  {
+    filename:
+      'src/features/workspace/very/deeply/nested/directories/with/descriptive/names/a-very-long-filename-that-must-stay-operable-in-a-narrow-panel.ts',
+    status: 'modified',
+    additions: 1,
+    deletions: 1,
+    patch: '@@ -1 +1 @@\n-export const open = false;\n+export const open = true;',
+  },
+  prs.files[1]!,
+  ...Array.from({ length: 12 }, (_, index) => ({
+    filename: `src/features/home/fixtures/example-${index + 1}.ts`,
+    status: 'modified',
+    additions: 1,
+    deletions: 1,
+    patch: '@@ -1 +1 @@\n-export const open = false;\n+export const open = true;',
+  })),
+];
 /** Deterministic, opt-in browser fixtures; production never imports this module. */
 export const homeIntegrationsFixtures: Record<string, HomeIntegrationsState> = {
   prs,
@@ -157,4 +238,39 @@ export const homeIntegrationsFixtures: Record<string, HomeIntegrationsState> = {
     ...prs,
     error: 'The next page could not be loaded. Your current results are preserved.',
   },
+  'checks-mixed': { ...prs, reviewData: { ...prs.reviewData!, checks: mixedChecks } },
+  'checks-passed': {
+    ...prs,
+    reviewData: {
+      ...prs.reviewData!,
+      checks: mixedChecks.filter((check) => check.state === 'success'),
+    },
+  },
+  'checks-neutral': {
+    ...prs,
+    reviewData: {
+      ...prs.reviewData!,
+      checks: mixedChecks.filter((check) => check.state === 'neutral'),
+    },
+  },
+  'checks-cancelled': {
+    ...prs,
+    reviewData: {
+      ...prs.reviewData!,
+      checks: mixedChecks.filter((check) => check.state === 'cancelled'),
+    },
+  },
+  'checks-empty': { ...prs, reviewData: { ...prs.reviewData!, checks: [] } },
+  'checks-loading': { ...prs, reviewData: null, checksLoading: true },
+  'checks-error': {
+    ...prs,
+    checksError: 'Checks could not be refreshed. Your last results are preserved.',
+  },
+  'files-long': {
+    ...prs,
+    detail: { ...pull, changedFiles: longFiles.length },
+    reviewData: { ...prs.reviewData!, changedFiles: longFiles.length },
+    files: longFiles,
+  },
+  'files-empty': { ...prs, detail: { ...pull, changedFiles: 0 }, files: [] },
 };

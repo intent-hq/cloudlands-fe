@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { ListRow, ListView } from '$lib/components/patterns/collection';
-  import AssistantThreadTitle from '$lib/components/chat/AssistantThreadTitle.svelte';
-  import { createAssistantThreadRename } from '$lib/components/chat/assistant-thread-rename.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -12,8 +10,6 @@
     selectChiefThreads,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import {
     backgroundHooksSubscribeRequested,
     backgroundHooksUnsubscribeRequested,
@@ -30,10 +26,6 @@
 
   const threads$ = selectChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
-  const hidesActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
-  const renameConsumerId = crypto.randomUUID();
-  const renameOutcome$ = selectAgentMutationUi(CHIEF_WORKSPACE_ID, renameConsumerId);
-  const rename = createAssistantThreadRename(renameConsumerId, renameOutcome$, hidesActions$);
   let selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
 
   onMount(() => {
@@ -69,11 +61,7 @@
   {#snippet row({ item: thread })}
     <ListRow class="min-h-9 px-2 py-2" role="group" aria-label={thread.title}>
       {#snippet title()}
-        {#if !$hidesActions$}
-          <AssistantThreadTitle {thread} {rename} class="h-5! type-caption font-normal" />
-        {:else}
-          <span title={thread.title}>{thread.title}</span>
-        {/if}
+        <span title={thread.title}>{thread.title}</span>
       {/snippet}
       {#snippet trailing()}
         <HomeAssistantThreadActivity agentId={thread.agentId} />
@@ -93,7 +81,3 @@
     </p>
   {/snippet}
 </ListView>
-
-{#if rename.error}
-  <p role="alert" class="type-caption shrink-0 px-2 py-2 text-danger">{rename.error}</p>
-{/if}

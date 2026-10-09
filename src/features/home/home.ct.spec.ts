@@ -2,6 +2,62 @@ import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
 import IntegrationPreview from './home-integrations.preview.svelte';
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`Home destination labels remain readable after keyboard selection in ${theme} mode`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: theme });
+    await page.evaluate((value) => {
+      document.documentElement.classList.remove('light', 'dark');
+      document.documentElement.classList.add(value);
+    }, theme);
+    const component = await mount(Preview);
+    const tabs = component.locator('.home-sidebar-tabs');
+    const selectedContrast = () =>
+      tabs.evaluate((element) => {
+        const selected = element.querySelector('[role="tab"][aria-selected="true"]')!;
+        const indicator = element.querySelector('[data-tabs-indicator]');
+        if (!indicator) return 0;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d')!;
+        const rgba = (color: string) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          return Array.from(context.getImageData(0, 0, 1, 1).data);
+        };
+        const luminance = (color: number[]) => {
+          const linear = color.slice(0, 3).map((channel) => {
+            const value = channel / 255;
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+          });
+          return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722;
+        };
+        const foreground = rgba(getComputedStyle(selected).color);
+        const background = rgba(getComputedStyle(indicator).backgroundColor);
+        if (foreground[3] !== 255 || background[3] !== 255) return 0;
+        const fg = luminance(foreground);
+        const bg = luminance(background);
+        return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+      });
+
+    await tabs.getByRole('tab', { name: 'Workspaces', exact: true }).focus();
+    await page.keyboard.press('ArrowRight');
+    const assistant = tabs.getByRole('tab', { name: 'Assistant', exact: true });
+    await expect(assistant).toBeFocused();
+    await expect(assistant).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(selectedContrast).toBeGreaterThanOrEqual(4.5);
+
+    await page.keyboard.press('ArrowLeft');
+    const workspaces = tabs.getByRole('tab', { name: 'Workspaces', exact: true });
+    await expect(workspaces).toBeFocused();
+    await expect(workspaces).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(selectedContrast).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
 test('Home loading stays calm with reduced motion', async ({ mount, page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(IntegrationPreview, { props: { scenario: 'loading' } });
@@ -26,11 +82,16 @@ test('Home handles rapid tab and filter changes with motion enabled', async ({
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(Preview);
+  let currentTab = 'Workspaces';
   for (const name of ['Pull requests', 'Linear issues', 'Workspaces']) {
     await component
       .locator('.home-tabs')
+      .filter({
+        has: page.getByRole('tab', { name: new RegExp(`^${currentTab}`), selected: true }),
+      })
       .getByRole('tab', { name: new RegExp(`^${name}`) })
       .click();
+    currentTab = name;
   }
   await component
     .getByRole('group', { name: 'Status', exact: true })
@@ -309,6 +370,27 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
     'Review open pull requests',
   );
   await expect(draft).toHaveText('Keep this draft while I check workspaces');
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.calls))
+    .toContainEqual({
+      method: 'drafts.set',
+      params: {
+        workspaceId: '__chief__',
+        agentId: 'home-assistant-1',
+        text: 'Keep this draft while I check workspaces',
+      },
+    });
+  const draftCalls = await page.evaluate(() =>
+    window.__homeIntegrationBrowser!.calls.filter(({ method }) => method.startsWith('drafts.')),
+  );
+  expect(draftCalls).toContainEqual({
+    method: 'drafts.get',
+    params: { workspaceId: '__chief__', agentId: 'home-assistant-1' },
+  });
+  await testInfo.attach('home-sidebar-draft-wire', {
+    body: JSON.stringify(draftCalls, null, 2),
+    contentType: 'application/json',
+  });
   await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
   await expect(threads.getByRole('option')).toHaveCount(2);
   await expect(threads.getByRole('option', { selected: true })).toHaveText('Plan the next release');

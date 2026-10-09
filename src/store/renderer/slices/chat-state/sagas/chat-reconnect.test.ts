@@ -125,6 +125,7 @@ async function open(): Promise<void> {
     workspaceId: WS,
     deltaEncoding: 'incremental',
     projection: 'slim',
+    historyDelivery: 'progressive',
   });
 }
 async function reconnect(): Promise<void> {
@@ -140,6 +141,66 @@ describe('chat reconnect recovery through the live client and store', () => {
     wire.notifications.clear();
     wire.reconnects.clear();
     vi.clearAllMocks();
+  });
+
+  it('does not restart a progressive burst when session hydration catches up', async () => {
+    await open();
+    snapshot('sub-1', [message('m-11', 11)], {
+      historyDelivery: 'progressive',
+      totalMessages: 12,
+      initialHistory: { target: 20, received: 1, complete: false },
+    });
+    for (let received = 2; received <= 12; received++) {
+      for (const handler of wire.notifications)
+        handler({
+          method: 'subscription.push',
+          params: {
+            subscriptionId: 'sub-1',
+            kind: 'history',
+            seq: received - 1,
+            history: {
+              target: 20,
+              received,
+              complete: false,
+              message: message(`m-${12 - received}`, 12 - received),
+            },
+          },
+        });
+    }
+    vi.mocked(appClient.agents.get).mockResolvedValue(
+      selectAgentSession.select(store.state, AGENT),
+    );
+    stops.push(store.runSaga(chatReadSaga));
+    store.dispatch(refreshChatTranscriptRequested(WS, AGENT));
+    await flush();
+    expect(wire.request.mock.calls.filter(([method]) => method === 'chat.subscribe')).toHaveLength(
+      1,
+    );
+    expect(selectChatAgentState.select(store.state, AGENT)).toMatchObject({
+      initialHistoryPending: true,
+      initialHistory: { received: 12, complete: false },
+      transcriptHydration: 'loading',
+    });
+    for (const handler of wire.notifications)
+      handler({
+        method: 'subscription.push',
+        params: {
+          subscriptionId: 'sub-1',
+          kind: 'history',
+          seq: 12,
+          history: {
+            target: 20,
+            received: 12,
+            complete: true,
+            nextToken: null,
+            truncated: false,
+            totalMessages: 12,
+          },
+        },
+      });
+    await flush();
+    expect(selectChatAgentState.select(store.state, AGENT).transcriptHydration).toBe('settled');
+    expect(rows()).toHaveLength(12);
   });
 
   it('removes an evicted pre-sleep partial from the tail and retrieves its canonical row through scrollback', async () => {
@@ -169,11 +230,23 @@ describe('chat reconnect recovery through the live client and store', () => {
     expect(wire.request.mock.calls.filter(([method]) => method === 'chat.subscribe')).toEqual([
       [
         'chat.subscribe',
-        { agentId: AGENT, workspaceId: WS, deltaEncoding: 'incremental', projection: 'slim' },
+        {
+          agentId: AGENT,
+          workspaceId: WS,
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
       ],
       [
         'chat.subscribe',
-        { agentId: AGENT, workspaceId: WS, deltaEncoding: 'incremental', projection: 'slim' },
+        {
+          agentId: AGENT,
+          workspaceId: WS,
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
       ],
     ]);
 
