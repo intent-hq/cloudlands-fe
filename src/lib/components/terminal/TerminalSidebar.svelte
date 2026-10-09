@@ -824,13 +824,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
-      void scriptsClient
-        .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
+      const mutationWorkspaceId = workspaceId;
+      const mutationScriptId = editingScriptId;
+      const name = editingScriptName.trim();
+      void withScriptDefinitionEdits(mutationWorkspaceId, [mutationScriptId], () =>
+        scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name }),
+      )
         .then((result) => {
           if (!result.success && result.error) notify.warning(result.error);
         })
         .catch((error) => logger.error('Script update failed', error))
-        .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
+        .finally(() => appStore.dispatch(refreshScripts(mutationWorkspaceId)));
     }
     editingScriptId = null;
     editingScriptName = '';

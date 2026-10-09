@@ -58,31 +58,42 @@ test('delete errors remain visible and preserve selected content', async ({
   await page.screenshot({ path: testInfo.outputPath('deletion-error.png') });
 });
 
-test('a deferred rename disables deletion in both surfaces until the write settles', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(Preview, { props: { deferEdits: true } });
-  await page.getByTitle('Click to rename script', { exact: true }).click();
-  const input = page.locator('[data-edit-script-header-name]');
-  await input.fill('Renamed check');
-  await input.press('Tab');
-  await expect(page.getByRole('button', { name: 'Delete script', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Script panel actions' }).click();
-  await expect(page.getByRole('menuitem', { name: /Delete script/ })).toHaveAttribute(
-    'aria-disabled',
-    'true',
-  );
-  await component.update({ props: { deferEdits: false } });
-  await expect(page.getByRole('menuitem', { name: /Delete script/ })).not.toHaveAttribute(
-    'aria-disabled',
-    'true',
-  );
-  await page.getByRole('menuitem', { name: 'Delete script', exact: true }).click();
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Delete script', exact: true })
-    .click();
-  await expect(page.getByText('Delete requests: 1')).toBeVisible();
-  await expect(page.getByText('Selected script: none')).toBeVisible();
-});
+for (const source of ['header', 'sidebar'] as const) {
+  test(`a deferred ${source} rename disables deletion in both surfaces until the write settles`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(Preview, { props: { deferEdits: true } });
+    const input =
+      source === 'header'
+        ? page.locator('[data-edit-script-header-name]')
+        : page.locator('[data-edit-script="preview-check"]');
+    if (source === 'header')
+      await page.getByTitle('Click to rename script', { exact: true }).click();
+    else
+      await page
+        .locator('[data-script-id="preview-check"]')
+        .getByRole('button', { name: /^Project check/ })
+        .dblclick();
+    await input.fill('Renamed check');
+    await input.press('Tab');
+    await expect(page.getByRole('button', { name: 'Delete script', exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: 'Script panel actions' }).click();
+    await expect(page.getByRole('menuitem', { name: /Delete script/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await component.update({ props: { deferEdits: false } });
+    await expect(page.getByRole('menuitem', { name: /Delete script/ })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await page.getByRole('menuitem', { name: 'Delete script', exact: true }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Delete script', exact: true })
+      .click();
+    await expect(page.getByText('Delete requests: 1')).toBeVisible();
+    await expect(page.getByText('Selected script: none')).toBeVisible();
+  });
+}

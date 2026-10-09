@@ -790,3 +790,60 @@ describe('TerminalSidebar resize handle', () => {
     expect(handle?.getAttribute('data-resizing')).toBe('false');
   });
 });
+
+describe('sidebar inline rename deletion races', () => {
+  const scriptId = 'sidebar-rename';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scriptEntries.value = [
+      {
+        id: scriptId,
+        name: 'Rename target',
+        command: 'true',
+        mode: 'command',
+        source: 'user',
+        runtime: { status: 'idle', restartCount: 0 },
+      },
+    ];
+  });
+
+  async function rename() {
+    await fireEvent.dblClick(screen.getByRole('button', { name: /^Rename target/ }));
+    const input = document.querySelector(`[data-edit-script="${scriptId}"]`)!;
+    await fireEvent.input(input, { target: { value: 'New name' } });
+    await fireEvent.blur(input);
+  }
+
+  it('blocks shared deletion eligibility throughout a deferred inline rename', async () => {
+    const { store } = await import('$store/renderer/store');
+    const { selectCanDeleteScript } =
+      await import('$store/renderer/slices/scripts/scripts-selectors');
+    let finish!: (result: { success: boolean }) => void;
+    mockScriptUpdate.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', scriptId, { name: 'New name' });
+    expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(false);
+    finish({ success: true });
+    await waitFor(() =>
+      expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(true),
+    );
+  });
+
+  it('refuses inline rename while deletion is pending', async () => {
+    const { store } = await import('$store/renderer/store');
+    const { deleteScriptRequested, scriptOperationSucceeded } =
+      await import('$store/renderer/slices/scripts/scripts-slice');
+    mockScriptUpdate.mockResolvedValueOnce({ success: true });
+    store.dispatch(deleteScriptRequested('ws-1', scriptId, 'Delete failed'));
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(notify.warning).toHaveBeenCalled();
+    store.dispatch(scriptOperationSucceeded('ws-1', scriptId, 'delete'));
+  });
+});
