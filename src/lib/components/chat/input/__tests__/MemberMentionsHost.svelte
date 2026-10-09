@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+  import { startWorkspaceNotesSagaFixture } from '../../../../../test/fixtures/workspace-notes-saga-fixture';
   import {
     principalContextChanged,
     principalReceived,
@@ -125,6 +126,7 @@
       'search.fileNames': response('search.fileNames', { files: [] }),
       'note.list': response('note.list', { notes: [] }),
     });
+    const fixtureBridge = window.electronAPI;
     const previousPrincipal = store.state.principal;
     const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
     const fixtureDispatch = store.dispatch;
@@ -153,7 +155,9 @@
     const fixturePrincipal = store.state.principal;
     // Start only after self admission so the generic helper principal never hydrates members.
     const cancel = store.runSaga(presenceSaga);
+    const stopNotes = startWorkspaceNotesSagaFixture(store);
     return () => {
+      for (const stop of stopNotes) stop();
       cancel();
       store.dispatch(presenceReset());
       if (store.dispatch === fixtureDispatch && store.state.principal === fixturePrincipal) {
@@ -167,7 +171,7 @@
             ),
           );
       }
-      window.electronAPI = previousBridge;
+      if (window.electronAPI === fixtureBridge) window.electronAPI = previousBridge;
     };
   });
 
