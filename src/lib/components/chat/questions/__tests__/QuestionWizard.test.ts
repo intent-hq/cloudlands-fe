@@ -8,7 +8,7 @@
  * drive restoration; edits and successful resolution are reported to the host.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
 import type { Question } from '$shared/types/question-resource';
 import { REDUCE_MOTION_ATTRIBUTE } from '$lib/utils/reduced-motion';
@@ -62,6 +62,7 @@ const APPROVAL: Question = {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
 
@@ -78,6 +79,183 @@ function currentOtherInput(): HTMLTextAreaElement {
   const inputs = screen.getAllByPlaceholderText('Or type your own answer…');
   return inputs.at(-1) as HTMLTextAreaElement;
 }
+
+async function pasteImages(files: File[]) {
+  return fireEvent.paste(currentOtherInput(), {
+    clipboardData: {
+      items: files.map((file) => ({ kind: 'file', type: file.type, getAsFile: () => file })),
+    },
+  });
+}
+
+function deferImageRead() {
+  let complete: (() => void) | undefined;
+  const read = vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (
+    this: FileReader,
+  ) {
+    complete = () => {
+      Object.defineProperty(this, 'result', { value: 'data:image/png;base64,Zmlyc3Q=' });
+      this.dispatchEvent(new ProgressEvent('load'));
+    };
+  });
+  return {
+    read,
+    finish: () =>
+      act(async () => {
+        if (!complete) throw new Error('No image read is pending');
+        complete();
+      }),
+  };
+}
+
+describe('QuestionWizard image answers', () => {
+  it.each([SINGLE, MULTI])(
+    'accepts image-only answers for $header without inserting text',
+    async (question) => {
+      const { onComplete } = setup([question]);
+      expect(await pasteImages([new File(['first'], 'first.png', { type: 'image/png' })])).toBe(
+        false,
+      );
+      await screen.findByRole('button', { name: 'Remove first.png' });
+      expect(currentOtherInput().value).toBe('');
+      await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+      expect(onComplete).toHaveBeenCalledWith([
+        {
+          question,
+          selectedLabels: [],
+          freeText: '',
+          skipped: false,
+          imageBlocks: [{ type: 'image', data: 'Zmlyc3Q=', mimeType: 'image/png' }],
+        },
+      ]);
+    },
+  );
+
+  it('keeps images across navigation and collapse, and removes them independently', async () => {
+    const { onComplete, rerender } = setup([SINGLE, LAST]);
+    await pasteImages([
+      new File(['first'], 'first.png', { type: 'image/png' }),
+      new File(['second'], 'second.jpg', { type: 'image/jpeg' }),
+    ]);
+    await screen.findByRole('button', { name: 'Remove second.jpg' });
+    await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    await rerender({ collapsed: true });
+    await rerender({ collapsed: false });
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove first.png' }));
+    await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(onComplete.mock.calls[0][0][0].imageBlocks).toEqual([
+      { type: 'image', data: 'c2Vjb25k', mimeType: 'image/jpeg' },
+    ]);
+  });
+
+  it('removing the last image restores single-select choices and prevents empty submission', async () => {
+    const { onComplete } = setup([SINGLE]);
+    await pasteImages([new File(['first'], 'first.png', { type: 'image/png' })]);
+    const remove = await screen.findByRole('button', { name: 'Remove first.png' });
+    expect(screen.getByRole('radio', { name: /OS keychain/ }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    await fireEvent.click(remove);
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    expect(onComplete).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByText('OS keychain'));
+    expect(onComplete.mock.calls[0][0][0]).toMatchObject({ selectedLabels: ['OS keychain'] });
+    expect(onComplete.mock.calls[0][0][0].imageBlocks).toBeUndefined();
+  });
+
+  it('Skip clears images so Back cannot restore or submit them', async () => {
+    const { onComplete } = setup([SINGLE, LAST]);
+    await pasteImages([new File(['first'], 'first.png', { type: 'image/png' })]);
+    await screen.findByRole('button', { name: 'Remove first.png' });
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    expect(screen.queryByRole('button', { name: 'Remove first.png' })).toBeNull();
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    expect(screen.getByRole('heading', { name: SINGLE.question })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(onComplete.mock.calls[0][0][0].imageBlocks).toBeUndefined();
+  });
+
+  it('reports only text and selections to the persisted draft owner', async () => {
+    const onDraftChange = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], onDraftChange } });
+    await pasteImages([new File(['first'], 'first.png', { type: 'image/png' })]);
+    await screen.findByRole('button', { name: 'Remove first.png' });
+    expect(onDraftChange).toHaveBeenLastCalledWith({
+      idx: 0,
+      answers: [{ sel: [], text: '', skipped: false }],
+    });
+  });
+
+  it.each([
+    { workspaceId: 'ordinary-workspace', limitMiB: 30 },
+    { workspaceId: '__chief__', limitMiB: 10 },
+  ])('matches the composer image cap for $workspaceId', async ({ workspaceId, limitMiB }) => {
+    const onComplete = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], workspaceId, onComplete } });
+    expect(await fireEvent.paste(currentOtherInput(), { clipboardData: { items: [] } })).toBe(true);
+    const oversized = new File(['image'], 'large.png', { type: 'image/png' });
+    Object.defineProperty(oversized, 'size', { value: limitMiB * 1024 * 1024 + 1 });
+    await pasteImages([oversized]);
+    await waitFor(() => expect(currentOtherInput().disabled).toBe(false));
+    expect(screen.queryByRole('button', { name: 'Remove large.png' })).toBeNull();
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    expect(onComplete).not.toHaveBeenCalled();
+    const atLimit = new File(['first'], 'limit.png', { type: 'image/png' });
+    Object.defineProperty(atLimit, 'size', { value: limitMiB * 1024 * 1024 });
+    await pasteImages([atLimit]);
+    await screen.findByRole('button', { name: 'Remove limit.png' });
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    expect(onComplete.mock.calls[0][0][0].imageBlocks).toEqual([
+      { type: 'image', data: 'Zmlyc3Q=', mimeType: 'image/png' },
+    ]);
+  });
+
+  it('blocks overlapping pastes and submission until the pending read finishes', async () => {
+    const { read, finish } = deferImageRead();
+    const { onComplete } = setup([SINGLE]);
+    await pasteImages([new File(['first'], 'first.png', { type: 'image/png' })]);
+    expect(currentOtherInput().disabled).toBe(true);
+    await pasteImages([new File(['second'], 'second.png', { type: 'image/png' })]);
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(onComplete).not.toHaveBeenCalled();
+    await finish();
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onComplete.mock.calls[0][0][0].imageBlocks).toEqual([
+      { type: 'image', data: 'Zmlyc3Q=', mimeType: 'image/png' },
+    ]);
+  });
+
+  it.each(['unmount', 'dismiss'])('ignores image reads completed after %s', async (action) => {
+    const { finish } = deferImageRead();
+    const onDraftChange = vi.fn();
+    const onComplete = vi.fn();
+    const onResolved = vi.fn();
+    const view = render(QuestionWizard, {
+      props: { questions: [SINGLE], onDraftChange, onComplete, onResolved, onDismiss: vi.fn() },
+    });
+    await pasteImages([new File(['first'], 'first.png', { type: 'image/png' })]);
+    if (action === 'unmount') {
+      view.unmount();
+      setup([LAST]);
+    } else {
+      await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+      await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(1));
+    }
+    onDraftChange.mockClear();
+    await finish();
+    expect(onDraftChange).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Remove first.png' })).toBeNull();
+  });
+});
 
 describe('QuestionWizard', () => {
   it('names the RadioGroup with the current question', () => {

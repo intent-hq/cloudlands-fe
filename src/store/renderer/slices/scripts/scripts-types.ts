@@ -38,7 +38,7 @@ type ScriptRetainedOutput = {
   text?: string;
 };
 
-export type ScriptQuickAction = 'start' | 'stop' | 'restart';
+export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete' | 'edit';
 
 export type ScriptOperationState = {
   action: ScriptQuickAction;
@@ -59,6 +59,8 @@ export type ScriptsWorkspaceState = {
   retainedOutputs?: Record<string, ScriptRetainedOutput>;
   /** Transient Shell controls state keyed by script ID. */
   operations: Record<string, ScriptOperationState>;
+  /** Detection owns every definition, including rows not yet loaded into the cache. */
+  detectionOperation?: ScriptOperationState;
   /** Whether the workspace scripts have been initialized */
   initialized: boolean;
   /** Whether scripts are currently loading */

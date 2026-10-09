@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { resetScaffold } from './mocks/chat-panel-render-scaffold';
 import {
   transientUiReducer,
   initialState as initialTransientUi,
@@ -196,7 +197,8 @@ vi.mock('$lib/client', () => ({
     agents: { retry: vi.fn(), listUserMessages: mocks.listUserMessages },
   },
 }));
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(),
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
   selectAgentSessionsById: mocks.selector({}),
@@ -205,21 +207,10 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   }),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
   selectAgentHistoryMessages: Object.assign(() => mocks.agentHistoryMessages, { select: () => [] }),
-  selectHistorySegmentMeta: mocks.selector({
-    gapToTail: false,
-    oldestReached: false,
-    historyCount: 0,
-    tailCount: 0,
-  }),
-  selectAgentTailCapPruned: mocks.selector(false),
-  selectAgentSessionStreamingContent: mocks.selector(''),
-  selectAgentIsResponding: mocks.selector(false),
-  selectAgentIsRunning: mocks.selector(false),
 }));
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
-  selectAgentQueueMessages: mocks.selector([]),
-  selectQueuedMessageMutations: mocks.selector([]),
-}));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
+);
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
   selectTasksForAgent: mocks.selector([]),
 }));
@@ -227,7 +218,8 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
   selectWorkspaceTasks: mocks.selector([]),
   selectWorkspaceTasksInitialized: mocks.selector(false),
 }));
-vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
   selectChatAgentState: mocks.selector({
     scrollbackOlderBlocked: false,
     scrollbackGapBlocked: false,
@@ -241,25 +233,14 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
     select: () => undefined,
   }),
   selectChatIsStalled: mocks.selector(false),
-  selectChatLastChunkTime: mocks.selector(null),
-  selectChatLastAttemptedMessage: mocks.selector(null),
-  selectChatLiveStreamPhase: mocks.selector(null),
-  selectChatModelUnavailable: mocks.selector(null),
   selectChatQuotaExceeded: Object.assign(() => mocks.chatQuotaExceeded, { select: () => null }),
-  selectChatReceivedFirstChunk: mocks.selector(false),
-  selectChatStatusEvents: mocks.selector([]),
-  selectChatStreamingStartTime: mocks.selector(null),
-  selectFetchingGapFill: mocks.selector(false),
   selectFetchingHistorySeek: Object.assign(() => mocks.fetchingHistorySeek, {
     select: () => false,
   }),
   selectFetchingOlderHistory: Object.assign(() => mocks.fetchingOlderHistory, {
     select: () => false,
   }),
-  selectHistoryExhausted: mocks.selector(false),
-  selectHistorySeekUnsupported: mocks.selector(false),
   selectPendingProposalRecovery: () => mocks.pendingProposalRecovery,
-  selectPendingQuestionRecovery: mocks.selector(undefined),
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
   }),
@@ -286,7 +267,8 @@ vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', () => ({
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
 }));
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
   selectDividerSession: Object.assign(
     () => ({
       subscribe(run: (value: unknown) => void) {
@@ -731,6 +713,7 @@ async function settleSearchHighlight() {
 }
 
 beforeEach(() => {
+  resetScaffold();
   frames = [];
   nextFrameId = 1;
   vi.useFakeTimers();

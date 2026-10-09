@@ -364,7 +364,7 @@ describe('background reads through the real store, sagas, clients and event brid
     ]);
   });
 
-  it('settles concurrent note content demand while the latest seq owns the store update', async () => {
+  it('settles concurrent note content demand through one shared transport read', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();
     backend.onRequest('note.get', () => pending.promise);
     const first = ensureNoteContentLoaded(WS, 'task-note');
@@ -372,14 +372,13 @@ describe('background reads through the real store, sagas, clients and event brid
     await settle();
     expect(reads('note.get')).toEqual([
       { method: 'note.get', params: { workspaceId: WS, noteId: 'task-note' } },
-      { method: 'note.get', params: { workspaceId: WS, noteId: 'task-note' } },
     ]);
     pending.resolve({ note: note() });
     await settle();
     expect(await first).toBe(true);
     expect(await second).toBe(true);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(reads('note.get')).toHaveLength(2);
+    expect(reads('note.get')).toHaveLength(1);
   });
 
   it('preserves one trailing event read when a genuine note event arrives during content demand', async () => {
@@ -397,7 +396,7 @@ describe('background reads through the real store, sagas, clients and event brid
     expect(await loaded).toBe(true);
     // Event reads are trailing-coalesced, and their newer async-action seq keeps
     // the earlier content-demand response from overwriting the refreshed note.
-    expect(reads('note.get')).toHaveLength(3);
+    expect(reads('note.get')).toHaveLength(2);
     expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
       'newer',
     );
