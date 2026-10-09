@@ -112,8 +112,9 @@
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
 
   interface Props {
-    tabs: PanelTab[];
-    activeTabId: string | null;
+    /** A removed panel can lose its data before tooltip descendants finish teardown. */
+    tabs?: PanelTab[];
+    activeTabId?: string | null;
     attentionTabIds?: string[];
     panelId: string;
     workspaceId: string;
@@ -161,8 +162,8 @@
   }
 
   let {
-    tabs,
-    activeTabId,
+    tabs = [],
+    activeTabId = null,
     attentionTabIds = [],
     panelId,
     workspaceId,
