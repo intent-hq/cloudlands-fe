@@ -154,15 +154,23 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     operation === 'stop' && before?.runtime.status === 'exited'
       ? yield* beginScriptRead(workspaceId)
       : undefined;
+  let cleanedUp = false;
   try {
     if (operation === 'delete' && (!before || isLiveScriptStatus(before.runtime?.status))) return;
     const method = operation === 'delete' ? removeReservedScript : scriptsClient[operation];
+    const request = method(workspaceId, scriptId);
     const outcome = yield* race({
-      result: call(method, workspaceId, scriptId),
+      result: call(() => request),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
-    if (outcome.cleanup || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
+    if (outcome.cleanup) {
+      cleanedUp = true;
+      // The daemon cannot cancel removal. Keep ownership until it settles so a
+      // definition save cannot recreate the row while deletion is still running.
+      if (operation === 'delete') yield* call(() => request);
       return;
+    }
+    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     if (!outcome.result?.success) {
       const message = outcome.result?.error || failureMessage || 'Script operation failed';
       yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
@@ -196,7 +204,8 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     if (operation === 'delete') yield* put(removeScript(workspaceId, scriptId));
     else yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
-    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
+    if (cleanedUp || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
+      return;
     const message = errorMessage(error);
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
     if (failureMessage) yield* call([notify, notify.error], message || failureMessage);

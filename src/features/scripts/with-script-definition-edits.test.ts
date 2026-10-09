@@ -11,6 +11,10 @@ import {
   deleteScriptRequested,
   setScriptsData,
 } from '$store/renderer/slices/scripts/scripts-slice';
+import {
+  workspaceUnmounted,
+  workspaceDeleted,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { selectCanDeleteScript } from '$store/renderer/slices/scripts/scripts-selectors';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
 import { scriptsClient } from './scripts.client';
@@ -306,6 +310,38 @@ describe('public definition writes and deletion', () => {
       expect(store.state.scripts.byWorkspaceId[WS].scripts.check).toBeUndefined(),
     );
   });
+
+  it.each([
+    ['unmount success', workspaceUnmounted(WS), true],
+    ['unmount failure', workspaceUnmounted(WS), false],
+    ['workspace deletion success', workspaceDeleted(WS, []), true],
+    ['workspace deletion failure', workspaceDeleted(WS, []), false],
+  ] as const)(
+    'holds lifecycle deletion through cleanup until settlement: %s',
+    async (_name, cleanup, success) => {
+      const pending = deferred<{ success: boolean; error?: string }>();
+      removeRequest.mockReturnValueOnce(pending.promise);
+      store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
+      store.dispatch(cleanup);
+      expect((await save()).success).toBe(false);
+      expect((await scriptsClient.detect(WS)).success).toBe(false);
+      expect((await scriptsClient.remove(WS, 'check')).success).toBe(false);
+      store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
+      store.dispatch(startScriptRequested(WS, 'check'));
+      expect(removeRequest).toHaveBeenCalledOnce();
+      expect(appClient.scripts.list).not.toHaveBeenCalled();
+      expect(appClient.scripts.create).not.toHaveBeenCalled();
+      pending.resolve({ success, error: success ? undefined : 'offline' });
+      await vi.waitFor(() =>
+        expect(store.state.scripts.byWorkspaceId[WS].operations.check?.pending).not.toBe(true),
+      );
+      // Cleanup invalidates the old request's UI completion even after it settles.
+      expect(store.state.scripts.byWorkspaceId[WS].scripts.check).toBeDefined();
+      if (!success) {
+        expect((await save()).success).toBe(true);
+      }
+    },
+  );
 
   it('retains an in-flight save across cleanup and releases it on failure for retry', async () => {
     const pending = deferred<{ success: boolean; error: string }>();

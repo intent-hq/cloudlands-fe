@@ -334,11 +334,12 @@ scriptsReducer.with(
 scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (Object.keys(ws.operations).length === 0) return state;
-  // Definition upserts are promises owned by the edit caller, not cancellable
-  // saga tasks. Keep their reservation through unmount until the write settles.
+  // Definition writes and daemon deletions cannot be cancelled by unmount.
+  // Their owners release the reservation only after the wire request settles.
   const operations = Object.fromEntries(
     Object.entries(ws.operations).filter(
-      ([, operation]) => operation.action === 'edit' && operation.pending,
+      ([, operation]) =>
+        (operation.action === 'edit' || operation.action === 'delete') && operation.pending,
     ),
   );
   return setWorkspaceState(state, wsId, { ...ws, operations });
