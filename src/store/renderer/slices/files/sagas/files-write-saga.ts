@@ -254,7 +254,9 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         payload[0] === workspaceId &&
         payload[4] &&
         (payload[1] === path || payload[2] === options.absolutePath) &&
-        cannotRestore(payload[3])
+        // A tree snapshot may still be reading old contents. Any concurrent
+        // binary observation invalidates it, even when that binary is UTF-8.
+        (options.content === undefined || cannotRestore(payload[3]))
       )
         unsafeSnapshot = true;
     }

@@ -169,6 +169,34 @@ describe('filesWriteSaga', () => {
     },
   );
 
+  it.each(['retained', 'pruned', 'unmounted'])(
+    'refuses a stale tree snapshot after binary observation and %s cleanup',
+    async (cleanup) => {
+      const read = deferred<Awaited<ReturnType<typeof appClient.files.read>>>();
+      vi.spyOn(appClient.files, 'read').mockReturnValue(read.promise);
+      const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
+      const h = startWrites();
+      try {
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', 'old text'));
+        const request = deleteFileRequested('ws-1', 'a.ts', { absolutePath: '/repo/a.ts' });
+        const outcome = request.promise.catch((error) => error);
+        h.dispatch(request);
+        expect(appClient.files.read).toHaveBeenCalledWith('ws-1', 'a.ts');
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', '\b\u0001', true));
+        if (cleanup === 'pruned') h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
+        if (cleanup === 'unmounted') h.dispatch(workspaceUnmounted('ws-1'));
+        read.resolve({ originalContent: 'old text', localContent: 'old text' });
+        await settle();
+        expect(remove).not.toHaveBeenCalled();
+        expect(await outcome).toBeInstanceOf(Error);
+      } finally {
+        read.resolve(null);
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
   it.each(
     ['panel', 'explorer'].flatMap((origin) =>
       [
