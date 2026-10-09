@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScriptWithState } from './types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 
@@ -43,6 +43,14 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { scriptsClient } from './scripts.client';
+import { store } from '$store/renderer/store';
+import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
+
+beforeEach(() => {
+  store.dispose();
+  store.init();
+});
+afterEach(() => store.dispose());
 
 function fileEntry(path: string, content: string): FileContentEntry {
   return {
@@ -203,6 +211,9 @@ describe('scriptsClient.create purpose forwarding', () => {
 });
 
 describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
+  beforeEach(() =>
+    store.dispatch(setScriptsData('ws-1', [liveScript(), liveScript({ id: 'script-auto-dev' })])),
+  );
   afterEach(() => vi.clearAllMocks());
 
   it('merges partial updates into the existing definition and upserts via script.create with the existing scriptId', async () => {

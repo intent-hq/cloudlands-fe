@@ -24,7 +24,12 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ dispatch, state: mockState });
 });
 
-import { withScriptDefinitionEdits } from '$features/scripts/with-script-definition-edits';
+import { scriptsClient } from '$features/scripts/scripts.client';
+import { appClient } from '$lib/client';
+
+vi.mock('$lib/client', () => ({
+  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+}));
 import { scriptsReducer } from '$store/renderer/slices/scripts/scripts-slice';
 import { confirm } from '$lib/components/patterns/confirm';
 import { store } from '$store/renderer/store';
@@ -125,36 +130,41 @@ describe('script panel deletion', () => {
     );
   });
 
-  it('disables the panel menu during a deferred definition save', async () => {
-    dispatch.mockImplementation((action) => {
-      mockState.scripts = scriptsReducer(mockState.scripts as never, action);
-      (store as any).emitState();
-    });
-    let finish!: (value: { success: boolean }) => void;
-    const pending = withScriptDefinitionEdits(
-      'workspace-1',
-      ['check'],
-      () =>
-        new Promise<{ success: boolean }>((resolve) => {
+  it.each([true, false])(
+    'disables the panel menu during a direct save (success: %s)',
+    async (success) => {
+      dispatch.mockImplementation((action) => {
+        mockState.scripts = scriptsReducer(mockState.scripts as never, action);
+        (store as any).emitState();
+      });
+      let finish!: (value: { success: boolean }) => void;
+      vi.mocked(appClient.scripts.list).mockResolvedValue([
+        mockState.scripts.byWorkspaceId['workspace-1'].scripts.check,
+      ]);
+      vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+        new Promise((resolve) => {
           finish = resolve;
         }),
-    );
-    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
-    await openMenu();
-    expect(
-      screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
-    ).toBe('true');
-    finish({ success: true });
-    await pending;
-    await waitFor(() =>
+      );
+      const pending = scriptsClient.update('workspace-1', 'check', { name: 'Renamed' });
+      render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+      await openMenu();
       expect(
         screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
-      ).not.toBe('true'),
-    );
-    dispatch.mockReset();
-  });
+      ).toBe('true');
+      await waitFor(() => expect(finish).toBeTypeOf('function'));
+      finish({ success });
+      await pending;
+      await waitFor(() =>
+        expect(
+          screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
+        ).not.toBe('true'),
+      );
+      dispatch.mockReset();
+    },
+  );
 
-  it('rejects a definition save started after panel confirmation opens', async () => {
+  it('rejects deletion when a direct save starts after panel confirmation opens', async () => {
     dispatch.mockImplementation((action) => {
       mockState.scripts = scriptsReducer(mockState.scripts as never, action);
       (store as any).emitState();
@@ -169,19 +179,21 @@ describe('script panel deletion', () => {
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
     let finish!: (value: { success: boolean }) => void;
-    const pending = withScriptDefinitionEdits(
-      'workspace-1',
-      ['check'],
-      () =>
-        new Promise<{ success: boolean }>((resolve) => {
-          finish = resolve;
-        }),
+    vi.mocked(appClient.scripts.list).mockResolvedValue([
+      mockState.scripts.byWorkspaceId['workspace-1'].scripts.check,
+    ]);
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
     );
+    const pending = scriptsClient.update('workspace-1', 'check', { name: 'Renamed' });
     accept(true);
     await Promise.resolve();
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'scripts/deleteScriptRequested' }),
     );
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
     finish({ success: true });
     await pending;
     dispatch.mockReset();

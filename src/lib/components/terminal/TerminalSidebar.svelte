@@ -1,6 +1,5 @@
 <script lang="ts">
   import { withScriptDefinitionEdits } from '$features/scripts/with-script-definition-edits';
-  import { selectAllWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -197,9 +196,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
             if (entry.category && validCategories.has(entry.category))
               updates.category = entry.category;
-            const updateResult = await withScriptDefinitionEdits(workspaceId, [entry.id], () =>
-              scriptsClient.update(workspaceId, entry.id, updates),
-            );
+            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
             if (updateResult.success) updatedCount++;
           }
         }
@@ -404,13 +401,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     detectFlow = 'local';
     try {
       logger.info('Running local script detection', { source: options.source ?? 'primary' });
-      const result = await withScriptDefinitionEdits(
-        workspaceId,
-        selectAllWorkspaceScriptEntries
-          .select(appStore.state, workspaceId)
-          .map((script) => script.id),
-        () => scriptsClient.detect(workspaceId),
-      );
+      const result = await scriptsClient.detect(workspaceId);
       if (!result.success) {
         // i18n-ignore (internal error, caught and surfaced via extracted toast)
         throw new Error(result.error || 'Local script detection failed');
@@ -827,9 +818,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       const mutationWorkspaceId = workspaceId;
       const mutationScriptId = editingScriptId;
       const name = editingScriptName.trim();
-      void withScriptDefinitionEdits(mutationWorkspaceId, [mutationScriptId], () =>
-        scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name }),
-      )
+      void scriptsClient
+        .update(mutationWorkspaceId, mutationScriptId, { name })
         .then((result) => {
           if (!result.success && result.error) notify.warning(result.error);
         })

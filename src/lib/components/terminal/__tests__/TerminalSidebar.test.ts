@@ -1,5 +1,10 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { appClient } from '$lib/client';
+
+vi.mock('$lib/client', () => ({
+  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+}));
 
 const {
   mockDetect,
@@ -793,8 +798,13 @@ describe('TerminalSidebar resize handle', () => {
 
 describe('sidebar inline rename deletion races', () => {
   const scriptId = 'sidebar-rename';
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const actual = await vi.importActual<typeof import('$features/scripts/scripts.client')>(
+      '$features/scripts/scripts.client',
+    );
+    mockScriptUpdate.mockReset().mockImplementation(actual.scriptsClient.update);
+    vi.mocked(appClient.scripts.list).mockImplementation(async () => scriptEntries.value);
     scriptEntries.value = [
       {
         id: scriptId,
@@ -819,14 +829,19 @@ describe('sidebar inline rename deletion races', () => {
     const { selectCanDeleteScript } =
       await import('$store/renderer/slices/scripts/scripts-selectors');
     let finish!: (result: { success: boolean }) => void;
-    mockScriptUpdate.mockReturnValueOnce(
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
       new Promise((resolve) => {
         finish = resolve;
       }),
     );
     render(TerminalSidebar, { workspaceId: 'ws-1' });
     await rename();
-    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', scriptId, { name: 'New name' });
+    await waitFor(() =>
+      expect(appClient.scripts.create).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({ scriptId, name: 'New name' }),
+      ),
+    );
     expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(false);
     finish({ success: true });
     await waitFor(() =>
@@ -838,11 +853,11 @@ describe('sidebar inline rename deletion races', () => {
     const { store } = await import('$store/renderer/store');
     const { deleteScriptRequested, scriptOperationSucceeded } =
       await import('$store/renderer/slices/scripts/scripts-slice');
-    mockScriptUpdate.mockResolvedValueOnce({ success: true });
     store.dispatch(deleteScriptRequested('ws-1', scriptId, 'Delete failed'));
     render(TerminalSidebar, { workspaceId: 'ws-1' });
     await rename();
-    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(appClient.scripts.list).not.toHaveBeenCalled();
+    expect(appClient.scripts.create).not.toHaveBeenCalled();
     expect(notify.warning).toHaveBeenCalled();
     store.dispatch(scriptOperationSucceeded('ws-1', scriptId, 'delete'));
   });
