@@ -7491,5 +7491,7 @@
   "chat_failureRecovery_queued_label": "待機中",
   "chat_failureRecovery_action_label": "対応が必要です",
   "chat_failureRecovery_queued_description": "メッセージが待機中です。下の操作で管理できます。",
-  "chat_failureRecovery_action_description": "応答が完了前に停止しました。"
+  "chat_failureRecovery_action_description": "応答が完了前に停止しました。",
+  "browser_activity_browsing_label": "{host} を閲覧中",
+  "browser_activity_unavailable_tooltip": "このブラウザータブは利用できなくなりました"
 }

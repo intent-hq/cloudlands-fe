@@ -7491,5 +7491,7 @@
   "chat_failureRecovery_queued_label": "已排入佇列",
   "chat_failureRecovery_action_label": "需要處理",
   "chat_failureRecovery_queued_description": "有一則訊息正在佇列中。請使用下方控制項進行管理。",
-  "chat_failureRecovery_action_description": "回覆在完成前停止了。"
+  "chat_failureRecovery_action_description": "回覆在完成前停止了。",
+  "browser_activity_browsing_label": "正在瀏覽 {host}",
+  "browser_activity_unavailable_tooltip": "此瀏覽器分頁已無法使用"
 }

@@ -7491,5 +7491,7 @@
   "chat_failureRecovery_queued_label": "대기 중",
   "chat_failureRecovery_action_label": "조치 필요",
   "chat_failureRecovery_queued_description": "메시지가 대기 중입니다. 아래 컨트롤로 관리하세요.",
-  "chat_failureRecovery_action_description": "응답이 완료되기 전에 중지되었습니다."
+  "chat_failureRecovery_action_description": "응답이 완료되기 전에 중지되었습니다.",
+  "browser_activity_browsing_label": "{host} 탐색 중",
+  "browser_activity_unavailable_tooltip": "이 브라우저 탭은 더 이상 사용할 수 없습니다"
 }

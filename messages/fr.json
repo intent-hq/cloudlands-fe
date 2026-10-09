@@ -7491,5 +7491,7 @@
   "chat_failureRecovery_queued_label": "En attente",
   "chat_failureRecovery_action_label": "Action requise",
   "chat_failureRecovery_queued_description": "Un message est en attente. Utilisez ses commandes ci-dessous pour le gérer.",
-  "chat_failureRecovery_action_description": "La réponse a été interrompue avant la fin."
+  "chat_failureRecovery_action_description": "La réponse a été interrompue avant la fin.",
+  "browser_activity_browsing_label": "Navigation sur {host}",
+  "browser_activity_unavailable_tooltip": "Cet onglet du navigateur n’est plus disponible"
 }

@@ -7491,5 +7491,7 @@
   "chat_failureRecovery_queued_label": "En cola",
   "chat_failureRecovery_action_label": "Requiere atención",
   "chat_failureRecovery_queued_description": "Hay un mensaje en cola. Usa sus controles de abajo para gestionarlo.",
-  "chat_failureRecovery_action_description": "La respuesta se detuvo antes de terminar."
+  "chat_failureRecovery_action_description": "La respuesta se detuvo antes de terminar.",
+  "browser_activity_browsing_label": "Navegando por {host}",
+  "browser_activity_unavailable_tooltip": "Esta pestaña del navegador ya no está disponible"
 }
