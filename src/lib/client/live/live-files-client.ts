@@ -18,6 +18,18 @@ import { backendRequest } from './backend-transport';
 import { BackendError } from './backend-transport-types';
 import { mutationErrorMessage, newIdempotencyKey, runMutation } from './live-support';
 
+/** Non-text controls identify binary payloads even when printable bytes dominate. */
+function hasBinaryControls(content: string): boolean {
+  for (let index = 0; index < content.length; index++) {
+    const code = content.charCodeAt(index);
+    // Preserve text whitespace (TAB/LF/VT/FF/CR) and ESC used in terminal logs.
+    if (code <= 8 || (code >= 14 && code <= 26) || (code >= 28 && code <= 31) || code === 127) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Map raw daemon file content into a `FileContentEntry`. */
 function toFileContentEntry(path: string, content: string, isBinary = false): FileContentEntry {
   return {
@@ -106,10 +118,10 @@ export class LiveFilesClient implements FilesClient {
             ? (result as { content: string }).content
             : null;
       if (content === null) return null;
-      // Binary control bytes can survive UTF-8 decoding. Reuse the byte detector
-      // with a bounded sample, and keep detecting NUL anywhere in the content.
+      // Binary controls survive UTF-8 decoding, including in mostly printable
+      // payloads or past the shared detector's sample. Keep its other heuristics.
       const isBinary =
-        content.includes('\0') ||
+        hasBinaryControls(content) ||
         detectBinaryContent(new TextEncoder().encode(content.slice(0, 8192)));
       return isBinary ? toFileContentEntry(path, '', true) : toFileContentEntry(path, content);
     } catch (error) {

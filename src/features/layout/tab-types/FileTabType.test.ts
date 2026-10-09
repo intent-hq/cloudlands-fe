@@ -466,6 +466,36 @@ describe('FileTabType Redux integration', () => {
     },
   );
 
+  it.each(
+    ['data.pb', 'data.unknown', 'extensionless'].flatMap((name) =>
+      [
+        { kind: 'sparse', content: '\n\u0005Hello' },
+        { kind: 'beyond sample', content: 'a'.repeat(8192) + '\u0005Hello' },
+      ].map((sample) => ({ name, ...sample })),
+    ),
+  )('offers original Download for $kind binary controls in $name', async ({ name, content }) => {
+    const path = `.intent/artifacts/${name}`;
+    vi.mocked(backendRequest).mockResolvedValue(content);
+    vi.mocked(invoke).mockResolvedValue({ success: true });
+    const stop = startFileReads();
+    try {
+      renderFileTab({ ...fileTab, filePath: path });
+      expect(await screen.findByText(m.editor_fileViewer_binary_label())).toBeTruthy();
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+      );
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+        workspaceId: 'ws-1',
+        path,
+        fileName: name,
+      });
+      expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    } finally {
+      await stop();
+    }
+  });
+
   it('keeps a binary download pending, allows cancellation and reports a retry failure', async () => {
     const path = '.intent/artifacts/report.xlsx';
     mockReduxState.files[path] = {

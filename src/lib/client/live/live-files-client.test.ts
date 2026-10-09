@@ -220,17 +220,39 @@ describe('LiveFilesClient.read', () => {
     });
   });
 
-  it.each(['', 'name,value\nhello,123', 'Hello café', '你好 🌍\t\r\n', '\t\r\n'])(
-    'preserves ordinary UTF-8 text: %s',
-    async (content) => {
-      mockedRequest.mockResolvedValueOnce(content);
-      expect(await new LiveFilesClient().read('ws-1', 'data.unknown')).toMatchObject({
-        isBinary: false,
-        originalContent: content,
-        localContent: content,
-      });
-    },
-  );
+  it.each(
+    ['data.pb', 'data.unknown', 'extensionless'].flatMap((path) =>
+      [
+        { kind: 'sparse', content: '\n\u0005Hello' },
+        { kind: 'sample boundary', content: 'a'.repeat(8191) + '\u0005Hello' },
+        { kind: 'beyond sample', content: 'a'.repeat(8192) + '\u0005Hello' },
+      ].map((sample) => ({ path, ...sample })),
+    ),
+  )('recognizes $kind binary controls in $path', async ({ path, content }) => {
+    mockedRequest.mockResolvedValueOnce(content);
+    expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
+      isBinary: true,
+      originalContent: '',
+      localContent: '',
+    });
+  });
+
+  it.each([
+    '',
+    'name,value\nhello,123',
+    'Hello café',
+    '你好 🌍\t\r\n',
+    '\t\r\n',
+    'page one\fpage two\vnext line',
+    '\u001b[32mgreen text\u001b[0m',
+  ])('preserves ordinary UTF-8 text: %s', async (content) => {
+    mockedRequest.mockResolvedValueOnce(content);
+    expect(await new LiveFilesClient().read('ws-1', 'data.unknown')).toMatchObject({
+      isBinary: false,
+      originalContent: content,
+      localContent: content,
+    });
+  });
 
   it.each([
     'internal error: No such file or directory (os error 2)',
