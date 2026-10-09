@@ -22,6 +22,10 @@ export const selectOwnClientId = store.createSelector(
   (state): string | null => state?.browserClients?.ownClientId ?? null,
 );
 
+export const selectOwnClientIdConfirmed = store.createSelector(
+  (state): boolean => state?.browserClients?.ownClientIdConfirmed === true,
+);
+
 /** Every connected logical client (`client.list` order). */
 export const selectLiveClients = store.createSelector((state): LiveClient[] =>
   getItems(state.browserClients.liveClients),
