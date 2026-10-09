@@ -2763,6 +2763,8 @@
   "chat_questionWizard_skip_label": "スキップ",
   "chat_questionWizard_send_label": "送信",
   "chat_questionWizard_next_label": "続ける",
+  "chat_questionWizard_imagesAttached_label_one": "[画像1枚を添付]",
+  "chat_questionWizard_imagesAttached_label_many": "[画像{count}枚を添付]",
   "chat_questionWizard_dismiss_label": "閉じる",
   "chat_questionWizard_dismiss_tooltip": "回答せずに完全に閉じる",
   "chat_questionWizard_hide_tooltip": "再度展開するまで非表示にする",

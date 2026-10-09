@@ -2763,6 +2763,8 @@
   "chat_questionWizard_skip_label": "Omitir",
   "chat_questionWizard_send_label": "Enviar",
   "chat_questionWizard_next_label": "Continuar",
+  "chat_questionWizard_imagesAttached_label_one": "[1 imagen adjunta]",
+  "chat_questionWizard_imagesAttached_label_many": "[{count} imágenes adjuntas]",
   "chat_questionWizard_dismiss_label": "Descartar",
   "chat_questionWizard_dismiss_tooltip": "Descartar permanentemente sin responder",
   "chat_questionWizard_hide_tooltip": "Ocultar hasta que vuelva a expandir",

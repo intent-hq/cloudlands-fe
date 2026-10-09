@@ -2763,6 +2763,8 @@
   "chat_questionWizard_skip_label": "건너뛰기",
   "chat_questionWizard_send_label": "보내기",
   "chat_questionWizard_next_label": "계속",
+  "chat_questionWizard_imagesAttached_label_one": "[이미지 1개 첨부]",
+  "chat_questionWizard_imagesAttached_label_many": "[이미지 {count}개 첨부]",
   "chat_questionWizard_dismiss_label": "닫기",
   "chat_questionWizard_dismiss_tooltip": "답변하지 않고 영구적으로 닫기",
   "chat_questionWizard_hide_tooltip": "다시 펼칠 때까지 숨기기",

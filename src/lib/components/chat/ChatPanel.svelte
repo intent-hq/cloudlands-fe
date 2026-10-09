@@ -253,7 +253,7 @@
     selectUserMessageIndexUi,
   } from '$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors';
   import { wizardDraftKey } from './questions/wizard-draft-key';
-  import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
+  import { buildAnswerSubmission } from './questions/answer-message';
   import {
     appendScrollSample,
     classifyScrollbackGesture,
@@ -1297,7 +1297,7 @@
     );
   }
 
-  // Completing the wizard flattens all answers into ONE plain-text user
+  // Completing the wizard flattens all answers into ONE user
   // message of `Q:`/`A:` pairs sent through the ordinary send path, tagged
   // with `messageMetadata { type: "question_answers",
   // answeredQuestionsMessageId }` (wire contract). That structured tag — not
@@ -1305,16 +1305,14 @@
   // composer restores; an untagged user message leaves the Q&A pending.
   function handleQuestionWizardComplete(answers: QuestionAnswer[]): boolean {
     if (!workspace || !isActive || !pendingQuestions) return false;
-    const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
     if (
       !submitChatMessage(appStore, agentId, {
         wsId: workspace.id,
-        text,
+        ...buildAnswerSubmission(answers, pendingQuestions.messageId),
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
-        messageMetadata: buildAnswerMessageMetadata(pendingQuestions.messageId),
       })
     )
       return false;
@@ -7622,6 +7620,7 @@
                     <QuestionWizard
                       bind:this={questionWizard}
                       questions={pendingQuestions.questions}
+                      workspaceId={workspace?.id}
                       draft={questionWizardDraft}
                       onDraftChange={handleQuestionWizardDraftChanged}
                       onResolved={handleQuestionWizardResolved}
