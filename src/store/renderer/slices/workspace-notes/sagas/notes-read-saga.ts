@@ -85,6 +85,7 @@ import { adaptNoteSearchResponse } from '$lib/utils/palette-note-search';
 const logger = createLogger('NotesReadSaga');
 
 type ObservedAction = { type: string; payload?: unknown };
+type AttributionInvalidationAction = { type: string; payload?: [string, string] };
 type ReadAction = ReturnType<typeof readNoteRequested>;
 type ReadResult = { note: ReturnType<typeof toRuntimeNote> | null } | { error: Error };
 type ReadSlot = {
@@ -425,11 +426,10 @@ function* noteAttributionViewWorker(
   >['payload'];
   const authority = yield* selectPrincipalConnectionContext.effect();
   const invalidations = yield* actionChannel(
-    (next: ObservedAction) =>
+    (next: AttributionInvalidationAction) =>
       next.type === noteAttributionInvalidated.type &&
-      Array.isArray(next.payload) &&
-      next.payload[0] === workspaceId &&
-      next.payload[1] === noteId,
+      next.payload?.[0] === workspaceId &&
+      next.payload?.[1] === noteId,
     buffers.sliding(1),
   );
   try {
