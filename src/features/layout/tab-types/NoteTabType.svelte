@@ -22,16 +22,23 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectNoteById,
+    selectNoteContentView,
+    selectNotePresenceView,
+    selectNoteWorkspaceRoot,
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
     createNotePersistRequested,
     deleteNotePersistRequested,
-    ensureNoteContentLoadedRequested,
+    noteContentViewReleased,
+    noteContentViewRequested,
+    notePresenceViewReleased,
+    notePresenceViewRequested,
+    noteWorkspaceRootReleased,
+    noteWorkspaceRootRequested,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { isSpecNote } from '$shared/constants/notes';
   import { isNoteContentStale } from '$shared/utils/note-content';
-  import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import NoteWithComments from '$lib/components/workspace/NoteWithComments.svelte';
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
@@ -43,10 +50,6 @@
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import RenderedNotePreview from './RenderedNotePreview.svelte';
-  import {
-    joinNotePresence,
-    type RemoteNoteViewer,
-  } from '$features/notes/note-presence/note-presence-service';
   import NotePresenceAvatarStack from '$features/notes/note-presence/NotePresenceAvatarStack.svelte';
   import { selectAllScrollPositions } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -57,6 +60,7 @@
   import { store as appStore } from '$store/renderer/store';
   import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 
   const logger = createLogger('NoteTabType');
 
@@ -81,6 +85,19 @@
   $effect(() => noteViewNoteIdStore.set(tab.noteId ?? ''));
   const noteViewModeStore = selectNoteViewMode(noteViewWorkspaceIdStore, noteViewNoteIdStore);
   const noteViewMode = $derived($noteViewModeStore);
+  // svelte-ignore state_referenced_locally - selector targets are retargeted by the effects below
+  const noteUiConsumerStore = writable(`note-tab:${tab.id}`);
+  $effect(() => noteUiConsumerStore.set(`note-tab:${tab.id}`));
+  const noteContentView = selectNoteContentView(noteViewWorkspaceIdStore, noteUiConsumerStore);
+  const noteWorkspaceRoot = selectNoteWorkspaceRoot(noteViewWorkspaceIdStore, noteUiConsumerStore);
+  const notePresenceView = selectNotePresenceView(noteViewWorkspaceIdStore, noteUiConsumerStore);
+  const principalConnectionContext = selectPrincipalConnectionContext();
+  let noteUiRequestSequence = 0;
+
+  function nextNoteUiRequestId(consumerId: string, kind: string): string {
+    noteUiRequestSequence += 1;
+    return `${consumerId}:${kind}:${noteUiRequestSequence}`;
+  }
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -97,40 +114,57 @@
     }
   });
 
-  // Slim note.list rows carry no content (§5.2); fetch the full body when this
-  // tab shows a note whose content has not been loaded yet. A failed fetch
-  // leaves the row stale (notes.get swallows errors), so track it locally and
-  // surface an error state with retry instead of a permanent loading state.
+  // Slim note.list rows carry no content (§5.2); the read saga owns the request
+  // and its consumer/resource/authority-correlated outcome.
   const noteContentStale = $derived(isNoteContentStale($note));
-  let contentLoadFailedNoteId = $state<string | null>(null);
   const noteContentLoadFailed = $derived(
-    noteContentStale && contentLoadFailedNoteId === tab.noteId,
+    noteContentStale &&
+      $noteContentView?.workspaceId === workspaceId &&
+      $noteContentView?.noteId === tab.noteId &&
+      $noteContentView?.status === 'error',
   );
   $effect(() => {
     const noteId = tab.noteId;
-    if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
-    void appStore.dispatch(ensureNoteContentLoadedRequested(workspaceId, noteId)).then((loaded) => {
-      if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
-    });
+    const consumerId = `note-tab:${tab.id}`;
+    if (!isActive || !noteId || !noteContentStale || !$principalConnectionContext) return;
+    appStore.dispatch(
+      noteContentViewRequested(
+        consumerId,
+        nextNoteUiRequestId(consumerId, 'content'),
+        workspaceId,
+        noteId,
+      ),
+    );
+    return () => appStore.dispatch(noteContentViewReleased(workspaceId, consumerId));
   });
 
   function retryNoteContentLoad() {
-    contentLoadFailedNoteId = null;
+    const noteId = tab.noteId;
+    const consumerId = `note-tab:${tab.id}`;
+    if (!noteId) return;
+    appStore.dispatch(
+      noteContentViewRequested(
+        consumerId,
+        nextNoteUiRequestId(consumerId, 'content'),
+        workspaceId,
+        noteId,
+      ),
+    );
   }
 
-  // Get actual workspace root for file path
-  let actualWorkspaceRoot = $state<string | null>(null);
+  // Get the actual workspace root through the saga-owned correlated read.
   $effect(() => {
-    if (isActive && workspaceId) {
-      invoke<string>('workspace:get-root', { workspaceId }).then((rootPath) => {
-        if (rootPath) actualWorkspaceRoot = rootPath;
-      });
-    }
+    const consumerId = `note-tab:${tab.id}`;
+    if (!isActive || !workspaceId || !$principalConnectionContext) return;
+    appStore.dispatch(
+      noteWorkspaceRootRequested(consumerId, nextNoteUiRequestId(consumerId, 'root'), workspaceId),
+    );
+    return () => appStore.dispatch(noteWorkspaceRootReleased(workspaceId, consumerId));
   });
 
   const noteFilePath = $derived(
-    actualWorkspaceRoot && $note?.id
-      ? `${actualWorkspaceRoot}/.workspace/notes/${$note.id}.md`
+    $noteWorkspaceRoot?.status === 'ready' && $noteWorkspaceRoot.path && $note?.id
+      ? `${$noteWorkspaceRoot.path}/.workspace/notes/${$note.id}.md`
       : '',
   );
 
@@ -275,22 +309,21 @@
   // Other people's presence is only possible in a shared workspace.
   const showPresenceStack = $derived(($workspace?.memberCount ?? 0) >= 2 && !!tab.noteId);
 
-  let presenceViewers = $state<RemoteNoteViewer[]>([]);
-
   // Viewing presence belongs to the visible tab, including raw/preview mode.
-  // The lazy menu only renders this roster; the rich editor shares the lease.
+  // The saga owns the lease; the lazy menu renders its serializable projection.
   $effect(() => {
-    if (!isActive || !showPresenceStack || !tab.noteId) return;
-    const session = joinNotePresence(workspaceId, tab.noteId);
-    presenceViewers = session.getViewers();
-    const off = session.subscribe((next) => {
-      presenceViewers = next;
-    });
-    return () => {
-      off();
-      session.release();
-      presenceViewers = [];
-    };
+    const noteId = tab.noteId;
+    const consumerId = `note-tab:${tab.id}`;
+    if (!isActive || !showPresenceStack || !noteId || !$principalConnectionContext) return;
+    appStore.dispatch(
+      notePresenceViewRequested(
+        consumerId,
+        nextNoteUiRequestId(consumerId, 'presence'),
+        workspaceId,
+        noteId,
+      ),
+    );
+    return () => appStore.dispatch(notePresenceViewReleased(workspaceId, consumerId));
   });
 
   // Register header actions
@@ -317,7 +350,7 @@
 
 {#snippet noteActions()}
   {#if showPresenceStack && tab.noteId}
-    <NotePresenceAvatarStack viewers={presenceViewers} embedded />
+    <NotePresenceAvatarStack viewers={$notePresenceView?.viewers ?? []} embedded />
   {/if}
   <Menu.CommandItem
     icon={noteCopyFeedback ? faCheck : faCopy}

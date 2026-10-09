@@ -10,7 +10,6 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { commentsClient } from './comments.client';
-import { loadComments } from './comment-loader';
 import { convertBackendCommentToV2 } from './comment-types-v2';
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -193,11 +192,11 @@ describe('commentsClient (daemon comment.* seam, fake transport)', () => {
   });
 });
 
-describe('qualified creator through the real legacy read chain', () => {
+describe('qualified creator through the legacy client compatibility surface', () => {
   afterEach(() => vi.clearAllMocks());
   const identity = { provider: 'gitlab', host: 'gitlab.example:8443', externalUserId: '42' };
 
-  it('preserves imported identity-only and local author fields through client, loader and V2 conversion', async () => {
+  it('preserves imported identity-only and local author fields through client and V2 conversion', async () => {
     const original = listResponse.threads[0].comments[0];
     mockedRequest.mockResolvedValueOnce({
       threads: [
@@ -210,7 +209,9 @@ describe('qualified creator through the real legacy read chain', () => {
         },
       ],
     });
-    const loaded = await loadComments({ workspaceId: 'ws-1', noteId: 'note-1' });
+    const result = await commentsClient.list('ws-1', 'note-1');
+    expect(result.ok).toBe(true);
+    const loaded = result.ok ? result.data : [];
     const converted = loaded.map((c) => convertBackendCommentToV2(c, undefined, 'note-1', 'ws-1'));
     expect(converted[0]).toMatchObject({
       author: 'alice',

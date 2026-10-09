@@ -85,11 +85,6 @@ vi.mock('$store/renderer/store', async () => {
   return createStoreMockModule(mockStore);
 });
 
-vi.mock('../comment-loader', () => ({
-  loadComments: vi.fn(async () => []),
-  resolveComment: vi.fn(async () => true),
-}));
-
 // FAKE seam: appClient.comments.add is stubbed so no mutation reaches a
 // daemon; the REAL comments-write-service runs so the optimistic dispatch,
 // param passthrough, and rollback are the genuine code paths.
