@@ -35,7 +35,9 @@ const test = observedTest.extend({
 for (const requested of ['reduce', 'no-preference'] as const) {
   test.describe(requested, () => {
     test.use({ contextOptions: { reducedMotion: requested } });
-    // The first two tests share only evidence of ordered execution.
+    // Keep the complete pair in one worker so it verifies the cross-test boundary.
+    // A title/line selection or retry can run either case alone: that case still
+    // proves early media and runtime repair, but cannot claim a predecessor.
     test.describe.configure({ mode: 'default' });
     const expected = {
       reduce: requested === 'reduce',
@@ -66,10 +68,11 @@ for (const requested of ['reduce', 'no-preference'] as const) {
         await session.detach();
         const contextId = targetInfo.browserContextId!;
         expect(contextId).toBeTruthy();
-        if (sample === 2) {
-          expect(previous).toBeDefined();
-          expect(testInfo.workerIndex).toBe(previous!.workerIndex);
-          expect(contextId).not.toBe(previous!.contextId);
+        const predecessor = previous;
+        if (predecessor) {
+          expect(sample).toBe(2);
+          expect(testInfo.workerIndex).toBe(predecessor.workerIndex);
+          expect(contextId).not.toBe(predecessor.contextId);
         }
         previous = { workerIndex: testInfo.workerIndex, contextId };
         await page.emulateMedia({ reducedMotion: opposite });
@@ -91,6 +94,7 @@ for (const requested of ['reduce', 'no-preference'] as const) {
             requested,
             sample,
             ...previous,
+            predecessor: predecessor ?? null,
             early: await page.evaluate(() => window.__ctMotionAtDocumentStart),
             poisoned: opposite,
           }),
