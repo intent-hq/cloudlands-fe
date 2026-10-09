@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.215.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.214.1...v2.215.0) (2026-10-09)
+
+
+### 🚀 Features
+
+* enable Tailcat from remote device settings ([#3301](https://github.com/intent-hq/cloudlands-fe/issues/3301)) ([839ca66](https://github.com/intent-hq/cloudlands-fe/commit/839ca66d657bd6541d8ebf3ca18cc1bee887ad7d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.38 ([#3342](https://github.com/intent-hq/cloudlands-fe/issues/3342)) ([2a3b64f](https://github.com/intent-hq/cloudlands-fe/commit/2a3b64f4db5989a34855c017b9105861f083df5e))
+* offer downloads for unsupported binary artifact links ([#3335](https://github.com/intent-hq/cloudlands-fe/issues/3335)) ([dea8dda](https://github.com/intent-hq/cloudlands-fe/commit/dea8ddad64efd7633e3942ad3c5dae132fab7d7d))
+* restore browser primary selection after reconnect ([#3333](https://github.com/intent-hq/cloudlands-fe/issues/3333)) ([f75b931](https://github.com/intent-hq/cloudlands-fe/commit/f75b9313d4266e03a750fe2070dea1ff53d37dcd))
+* warn about provider CLIs below adapter minimums ([#3332](https://github.com/intent-hq/cloudlands-fe/issues/3332)) ([96ffd63](https://github.com/intent-hq/cloudlands-fe/commit/96ffd63cd383b39a0f241366e4ac7415c3e92a4b))
+
 ## [2.214.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.214.0...v2.214.1) (2026-10-09)
 
 
