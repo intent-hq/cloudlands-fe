@@ -90,6 +90,7 @@
   import {
     selectWorkspaceDrivingClient,
     selectWorkspaceBrowserClient,
+    selectOwnClientIdConfirmed,
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -565,6 +566,7 @@
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
   // indicator renders only when the workspace has a browser tab and another
   // eligible client could take over (or the pin is offline).
+  const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
   const browserResolution$ = selectWorkspaceBrowserClient(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
@@ -580,6 +582,7 @@
       workspaceId &&
       $canSetPrimaryClient$ &&
       $browserResolution$ !== null &&
+      $ownClientIdConfirmed$ &&
       !primaryAlreadySelected &&
       $drivingClient$.eligibleClients.some(
         (client) => client.clientId === $drivingClient$.ownClientId && client.connected,

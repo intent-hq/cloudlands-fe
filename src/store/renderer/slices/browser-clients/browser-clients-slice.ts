@@ -88,8 +88,6 @@ export const browserConnectionInvalidated = createAction(
   'browserClients/browserConnectionInvalidated',
 );
 
-export const liveClientListsInvalidated = createAction('browserClients/liveClientListsInvalidated');
-
 export const authenticatedClientsCleared = createAction<[context: string]>(
   'browserClients/authenticatedClientsCleared',
 );
@@ -155,11 +153,15 @@ browserClientsReducer.with(
   }),
 );
 browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
-  state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
+  state.ownClientId === clientId && state.ownClientIdConfirmed
+    ? state
+    : { ...state, ownClientId: clientId, ownClientIdConfirmed: true },
 );
 browserClientsReducer.with(browserConnectionInvalidated, (state) => ({
   ...state,
-  ownClientId: null,
+  // Keep hosted native surfaces mounted while the same client reconnects.
+  // Empty rosters/resolution fence recovery until fresh connection reads land.
+  ownClientIdConfirmed: false,
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,
   authenticatedContext: null,
@@ -173,19 +175,6 @@ browserClientsReducer.with(browserConnectionInvalidated, (state) => ({
         liveClients: createLiveClientCollection(),
         liveClientsLoaded: false,
       },
-    ]),
-  ),
-}));
-browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
-  ...state,
-  liveClients: createLiveClientCollection(),
-  liveClientsLoaded: false,
-  authenticatedContext: null,
-  authenticatedClients: createAuthenticatedClientCollection(),
-  byWorkspaceId: Object.fromEntries(
-    Object.entries(state.byWorkspaceId).map(([id, entry]) => [
-      id,
-      { ...entry, liveClients: createLiveClientCollection(), liveClientsLoaded: false },
     ]),
   ),
 }));

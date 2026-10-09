@@ -31,6 +31,8 @@ import {
   initialState as lifecycleInitialState,
   workspaceLifecycleReducer,
   workspaceMounted,
+  workspaceUnmounted,
+  workspaceDeleted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
 import {
@@ -41,6 +43,7 @@ import {
   setWorkspaceBrowserClientRequested,
   initialState,
 } from '../browser-clients-slice';
+import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { browserClientsSaga } from './browser-clients-saga';
 
@@ -55,7 +58,7 @@ const tasks: Task[] = [];
 let currentClient: LiveClient;
 let resolution: WorkspaceBrowserClient;
 
-function start() {
+function start(mounted: string[] = []) {
   const channel = stdChannel();
   let state = { browserClients: initialState, workspaceLifecycle: lifecycleInitialState };
   const dispatch = (action: StoreAction<unknown>) => {
@@ -65,6 +68,7 @@ function start() {
     };
     channel.put(action);
   };
+  for (const wsId of mounted) dispatch(workspaceMounted(wsId));
   tasks.push(runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga));
   return {
     dispatch,
@@ -274,13 +278,50 @@ describe('connection lifetime races', () => {
     },
   );
 
-  it('invalidates eligibility immediately on disconnect', async () => {
+  it('retains tab-host identity while invalidating recovery eligibility on disconnect', async () => {
     const run = start();
     run.dispatch(workspaceMounted('ws-1'));
     await settle();
     run.dispatch(connectionStatusChanged('disconnected'));
     await settle();
-    expect(run.view().ownClientId).toBe('');
+    // BrowserTabType uses ownClientId to retain the native hosted surface.
+    expect(run.view().ownClientId).toBe(desktop.clientId);
     expect(run.view().eligibleClients).toEqual([]);
   });
+});
+
+describe('mounted workspace lifetime across reconnect', () => {
+  it('refreshes workspaces already mounted when the browser saga starts', async () => {
+    const run = start(['ws-1']);
+    reconnect();
+    await settle();
+    expect(run.view().ownClientId).toBe(desktop.clientId);
+    expect(run.view().eligibleClients).toHaveLength(1);
+    expect(transport.request).toHaveBeenCalledWith('workspace.getBrowserClient', {
+      workspaceId: 'ws-1',
+    });
+  });
+
+  it.each([workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity])(
+    'does not reconnect a cleaned workspace until a real remount (%s)',
+    async (cleanup) => {
+      const run = start();
+      run.dispatch(workspaceMounted('ws-1'));
+      await settle();
+      run.dispatch(cleanup('ws-1'));
+      transport.request.mockClear();
+      reconnect();
+      reconnect();
+      await settle();
+      expect(
+        transport.request.mock.calls.some(([, params]) => params?.workspaceId === 'ws-1'),
+      ).toBe(false);
+      run.dispatch(workspaceMounted('ws-1'));
+      await settle();
+      expect(run.view().eligibleClients).toHaveLength(1);
+      expect(transport.request).toHaveBeenCalledWith('workspace.getBrowserClient', {
+        workspaceId: 'ws-1',
+      });
+    },
+  );
 });

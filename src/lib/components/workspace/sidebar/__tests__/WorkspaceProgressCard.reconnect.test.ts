@@ -37,6 +37,7 @@ import { selectPrincipalActionContext } from '$store/renderer/slices/principal/p
 import { browserClientsSaga } from '$store/renderer/slices/browser-clients/sagas/browser-clients-saga';
 import { workspaceReconnectSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
 import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
+import { refreshLiveClientsRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
 import { __resetOwnClientIdForTesting } from '$lib/client/live/live-clients-client';
 import WorkspaceProgressCard from '../WorkspaceProgressCard.svelte';
 
@@ -140,11 +141,13 @@ async function mount() {
 const primary = () => screen.getByText('Set Current Client as Primary');
 const writes = () =>
   wire.request.mock.calls.filter(([method]) => method === 'workspace.setBrowserClient');
-async function reconnect() {
+async function reconnect(reverse = false) {
   const previous = selectPrincipalActionContext.select(store.state);
   store.dispatch(connectionStatusChanged('disconnected'));
   store.dispatch(connectionStatusChanged('connected'));
-  for (const handler of wire.reconnect) handler();
+  const callbacks = [...wire.reconnect];
+  if (reverse) callbacks.reverse();
+  for (const handler of callbacks) handler();
   await waitFor(() => {
     const current = selectPrincipalActionContext.select(store.state);
     expect(current).not.toBeNull();
@@ -154,26 +157,30 @@ async function reconnect() {
 }
 
 describe('actual browser lifecycle to primary menu', () => {
-  it('recovers a missed pin event, cancels safely, and confirms the exact client once', async () => {
-    const view = await mount();
-    expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
-    resolution = { source: 'default', resolved: { clientId: own } };
-    await reconnect();
-    await waitFor(() =>
-      expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
-    );
-    await fireEvent.click(primary());
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(writes()).toEqual([]);
-    await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
-    await fireEvent.click(primary());
-    await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
-    await waitFor(() =>
-      expect(writes()).toEqual([
-        ['workspace.setBrowserClient', { workspaceId: 'ws-1', clientId: own }],
-      ]),
-    );
-  });
+  it.each([false, true])(
+    'recovers a missed pin event across repeated reconnects (reverse callbacks: %s)',
+    async (reverse) => {
+      const view = await mount();
+      expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
+      resolution = { source: 'default', resolved: { clientId: own } };
+      await reconnect(reverse);
+      await reconnect(reverse);
+      await waitFor(() =>
+        expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
+      );
+      await fireEvent.click(primary());
+      await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(writes()).toEqual([]);
+      await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+      await fireEvent.click(primary());
+      await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
+      await waitFor(() =>
+        expect(writes()).toEqual([
+          ['workspace.setBrowserClient', { workspaceId: 'ws-1', clientId: own }],
+        ]),
+      );
+    },
+  );
 
   it('retains a true self pin as unavailable after same-ID reconnect', async () => {
     await mount();
@@ -209,6 +216,34 @@ describe('actual browser lifecycle to primary menu', () => {
     );
     expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
     release({ browserClient: resolution });
+    await waitFor(() =>
+      expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
+    );
+  });
+
+  it('requires a fresh exact identity even when roster and resolution refresh first', async () => {
+    await mount();
+    const normal = wire.request.getMockImplementation()!;
+    let release!: (value: unknown) => void;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    let holdBrowserHello = true;
+    wire.request.mockImplementation((method, params) => {
+      if (method === 'client.hello' && holdBrowserHello) {
+        holdBrowserHello = false;
+        return pending;
+      }
+      return normal(method, params);
+    });
+    resolution = { source: 'default', resolved: null };
+    await reconnect();
+    store.dispatch(refreshLiveClientsRequested('ws-1'));
+    await waitFor(() =>
+      expect(store.state.browserClients.byWorkspaceId['ws-1'].liveClientsLoaded).toBe(true),
+    );
+    expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
+    release({ clientId: own });
     await waitFor(() =>
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
     );
