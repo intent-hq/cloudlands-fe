@@ -38,6 +38,7 @@
       | 'integration-error'
       | 'disconnected'
       | 'custom-view'
+      | 'custom-view-external'
       | 'custom-view-error'
       | 'custom-view-form'
       | 'assistant-long';
@@ -65,6 +66,7 @@
       'integration-error': { props: { scenario: 'integration-error' } },
       disconnected: { props: { scenario: 'disconnected' } },
       'custom-view': { props: { scenario: 'custom-view' } },
+      'custom-view-external': { props: { scenario: 'custom-view-external' } },
       'custom-view-error': { props: { scenario: 'custom-view-error' } },
       'custom-view-form': { props: { scenario: 'custom-view-form' } },
       'assistant-long': { props: { scenario: 'assistant-long' } },
@@ -323,6 +325,9 @@
               {
                 id: customView.id,
                 status: scenario === 'custom-view-error' ? 'error' : 'stopped',
+                ...(scenario === 'custom-view-external'
+                  ? { status: 'running' as const, external: true }
+                  : {}),
                 ...(scenario === 'custom-view-error' ? { errorCode: 'port-in-use' as const } : {}),
                 logs: scenario === 'custom-view-error' ? 'Port 4317 is already in use.' : '',
               },
