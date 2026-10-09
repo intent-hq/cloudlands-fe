@@ -1,7 +1,10 @@
 <script lang="ts">
   import { openDevConsole } from '$features/dev-console/dev-console-client';
   import { getSettingsPaletteCommands } from '$features/settings/settings-palette-commands';
-  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectPrincipalConnectionContext,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { ActionRow } from '$lib/components/ui/menu';
@@ -495,6 +498,7 @@
   // Global indexed note results complement local fuzzy title/tag discovery.
   const noteSearchConsumerId = crypto.randomUUID();
   const noteResults = selectPaletteNoteSearch(noteSearchConsumerId);
+  const principalConnectionContext = selectPrincipalConnectionContext();
   const indexedNotes = $derived(
     $noteResults.items
       .filter((item) => !item.isArchived)
@@ -510,6 +514,8 @@
       })),
   );
   $effect(() => {
+    const authority = $principalConnectionContext;
+    if (!authority) return;
     if (!isOpen) {
       appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
       return;

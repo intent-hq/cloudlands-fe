@@ -156,6 +156,17 @@ vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
 vi.mock('$lib/utils/open-message', () => ({ openMessage: openMessageMock }));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/principal/principal-selectors')
+  >()),
+  selectPrincipalConnectionContext: () => ({
+    subscribe: (fn: (context: string) => void) => {
+      fn('test-connection');
+      return () => {};
+    },
+  }),
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: backendRequestMock,
   backendSubscribe: vi.fn(),

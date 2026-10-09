@@ -8,6 +8,7 @@ import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { paletteNoteSearchRequested, paletteReducer } from '../../palette/palette-slice';
 import { selectPaletteNoteSearch } from '../../palette/palette-selectors';
+import { selectNoteAttributionView } from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -18,6 +19,8 @@ import {
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  noteAttributionInvalidated,
+  noteAttributionViewRequested,
   readNoteRequested,
   refreshNoteFromEventRequested,
   searchNotesRequested,
@@ -68,6 +71,8 @@ function note(id: string, overrides: Partial<Note> = {}): Note {
 function harness(seed: Note[] = []) {
   const channel = stdChannel();
   const actions: Parameters<typeof workspaceNotesReducer>[1][] = [];
+  let windowBackendId = 'backend-a';
+  let subscriptionPending = false;
   let workspaceNotes = workspaceNotesReducer(
     undefined,
     seed.length > 0
@@ -78,9 +83,9 @@ function harness(seed: Note[] = []) {
   const state = () => ({
     workspaceNotes,
     palette,
-    connections: { hasReceivedList: true, windowBackendId: 'backend-a' },
+    connections: { hasReceivedList: true, windowBackendId },
     daemonHealth: { health: 'up', connectionGeneration: 1 },
-    workspaceEvents: { subscriptionGeneration: 1, subscriptionPending: false },
+    workspaceEvents: { subscriptionGeneration: 1, subscriptionPending },
   });
   const dispatch = (action: any) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
@@ -97,7 +102,17 @@ function harness(seed: Note[] = []) {
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: state }, notesReadSaga);
-  return { actions, channel, dispatch, task, state };
+  return {
+    actions,
+    channel,
+    dispatch,
+    task,
+    state,
+    setConnectionContext(context: string | null) {
+      subscriptionPending = context === null;
+      if (context) windowBackendId = context;
+    },
+  };
 }
 
 describe('notesReadSaga', () => {
@@ -692,6 +707,34 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
+  it('coalesces an attribution update received while the current load is pending', async () => {
+    const first = deferred<any>();
+    const initial = {
+      workspaceId: WS,
+      noteId: 'note-1',
+      computedAt: 'initial',
+      attributions: {},
+    };
+    const refreshed = { ...initial, computedAt: 'refreshed' };
+    const load = vi
+      .spyOn(appClient.notes.lineAttribution, 'load')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(refreshed);
+    const run = harness();
+
+    run.dispatch(noteAttributionViewRequested('gutter', 'request-1', WS, 'note-1'));
+    await settle();
+    run.channel.put(noteAttributionInvalidated(WS, 'note-1'));
+    first.resolve(initial);
+
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(selectNoteAttributionView.select(run.state() as never, WS, 'gutter')?.data).toEqual(
+      refreshed,
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('debounces palette note searches and stores the correlated indexed outcome', async () => {
     const transport = await import('$lib/client/live/backend-transport');
     const response = {
@@ -726,6 +769,26 @@ describe('notesReadSaga', () => {
       requestId: 'request-1',
       loading: false,
       items: [{ noteId: 'note-1', workspaceId: WS }],
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles a palette search and clears loading when its connection authority changes', async () => {
+    const transport = await import('$lib/client/live/backend-transport');
+    const request = vi.spyOn(transport, 'backendRequest');
+    const run = harness();
+    const action = paletteNoteSearchRequested('palette', 'request-1', 'wombat', WS);
+
+    run.dispatch(action);
+    await settle();
+    run.setConnectionContext(null);
+
+    await expect(action.promise).resolves.toMatchObject({ capability: 'unknown', loading: false });
+    expect(request).not.toHaveBeenCalled();
+    expect(selectPaletteNoteSearch.select(run.state() as never, 'palette')).toMatchObject({
+      requestId: 'request-1',
+      loading: false,
     });
     run.task.cancel();
     await run.task.toPromise();

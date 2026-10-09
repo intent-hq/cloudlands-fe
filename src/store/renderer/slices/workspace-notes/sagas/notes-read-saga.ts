@@ -1,8 +1,10 @@
 import { buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
 import {
+  actionChannel,
   call,
   cancelled,
   delay,
+  flush,
   fork,
   join,
   put,
@@ -422,44 +424,56 @@ function* noteAttributionViewWorker(
     typeof noteAttributionViewRequested
   >['payload'];
   const authority = yield* selectPrincipalConnectionContext.effect();
-  while (true) {
-    try {
-      const data = yield* call(
-        [appClient.notes.lineAttribution, appClient.notes.lineAttribution.load],
-        workspaceId,
-        noteId,
-      );
-      if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
-      const valid =
-        data === null ||
-        (String(data.workspaceId) === workspaceId && String(data.noteId) === noteId);
-      yield* put(
-        noteAttributionViewFinished(
-          consumerId,
-          requestId,
-          workspaceId,
-          authority,
-          valid ? data : null,
-          valid ? undefined : 'Attribution response did not match the requested note',
-        ),
-      );
-    } catch (error) {
-      if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
-      yield* put(
-        noteAttributionViewFinished(
-          consumerId,
-          requestId,
-          workspaceId,
-          authority,
-          null,
-          error instanceof Error ? error.message : String(error),
-        ),
-      );
-    }
+  const invalidations = yield* actionChannel(
+    (next: ObservedAction) =>
+      next.type === noteAttributionInvalidated.type &&
+      Array.isArray(next.payload) &&
+      next.payload[0] === workspaceId &&
+      next.payload[1] === noteId,
+    buffers.sliding(1),
+  );
+  try {
     while (true) {
-      const next = yield* take(noteAttributionInvalidated);
-      if (next.payload[0] === workspaceId && next.payload[1] === noteId) break;
+      try {
+        const data = yield* call(
+          [appClient.notes.lineAttribution, appClient.notes.lineAttribution.load],
+          workspaceId,
+          noteId,
+        );
+        if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
+        const valid =
+          data === null ||
+          (String(data.workspaceId) === workspaceId && String(data.noteId) === noteId);
+        yield* put(
+          noteAttributionViewFinished(
+            consumerId,
+            requestId,
+            workspaceId,
+            authority,
+            valid ? data : null,
+            valid ? undefined : 'Attribution response did not match the requested note',
+          ),
+        );
+      } catch (error) {
+        if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
+        yield* put(
+          noteAttributionViewFinished(
+            consumerId,
+            requestId,
+            workspaceId,
+            authority,
+            null,
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
+      }
+      // The channel is registered before each load so update events received while
+      // it is pending produce exactly one trailing refresh rather than being lost.
+      if ((yield* flush(invalidations)).length > 0) continue;
+      yield* take(invalidations);
     }
+  } finally {
+    invalidations.close();
   }
 }
 
@@ -548,6 +562,7 @@ function* paletteNoteSearchWorker(action: ReturnType<typeof paletteNoteSearchReq
     }
     yield* delay(PALETTE_NOTE_SEARCH_DEBOUNCE_MS);
     if ((yield* selectPrincipalConnectionContext.effect()) !== authority) {
+      yield* put(paletteNoteSearchFinished(consumerId, requestId, authority, cancelledUpdate));
       yield* put(action.success(cancelledUpdate));
       settled = true;
       return;
@@ -561,6 +576,11 @@ function* paletteNoteSearchWorker(action: ReturnType<typeof paletteNoteSearchReq
     const update = adaptNoteSearchResponse(response, []);
     if ((yield* selectPrincipalConnectionContext.effect()) === authority) {
       yield* put(paletteNoteSearchFinished(consumerId, requestId, authority, update));
+    } else {
+      yield* put(paletteNoteSearchFinished(consumerId, requestId, authority, cancelledUpdate));
+      yield* put(action.success(cancelledUpdate));
+      settled = true;
+      return;
     }
     yield* put(action.success(update));
     settled = true;
