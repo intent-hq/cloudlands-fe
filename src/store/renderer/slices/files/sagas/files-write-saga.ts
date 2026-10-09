@@ -3,6 +3,7 @@ import {
   cancelled,
   cancel,
   fork,
+  spawn,
   delay,
   put,
   race,
@@ -49,6 +50,7 @@ function* serializeFileMutation<T>(
   workspaceId: string,
   path: string,
   run: (relativePath: string) => Promise<T>,
+  observeRead?: (action: ReturnType<typeof loadFileContentSucceeded>) => void,
 ): SagaGenerator<T> {
   // Tabs/cache entries retain their caller-facing paths. Only the transport and
   // queue identity use the workspace-relative resource, for every mutation kind.
@@ -56,7 +58,30 @@ function* serializeFileMutation<T>(
     ? yield* selectEffectiveFileExplorerWorkspacePath.effect(workspaceId)
     : '';
   const relativePath = stripWorkspacePrefix(path, workspacePath);
-  return yield* call(() => queueFileMutation(workspaceId, relativePath, () => run(relativePath)));
+  const execute = () => queueFileMutation(workspaceId, relativePath, () => run(relativePath));
+  if (!observeRead) return yield* call(execute);
+
+  // The transport queue outlives UI cancellation. Its task owns the observer,
+  // including after unmount/reopen, and releases it only when I/O settles.
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const completion = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  yield* spawn(function* () {
+    const reads = yield* fork(function* () {
+      while (true) observeRead(yield* take(loadFileContentSucceeded));
+    });
+    try {
+      resolve(yield* call(execute));
+    } catch (error) {
+      reject(error);
+    } finally {
+      yield* cancel(reads);
+    }
+  });
+  return yield* call(() => completion);
 }
 
 type SaveRequest = {
@@ -107,17 +132,6 @@ function* saveFileContentWorker(request: SaveRequest) {
     .some(
       (entry) => entry.isBinary && (entry.path === path || entry.absolutePath === absolutePath),
     );
-  const reads = yield* fork(function* () {
-    while (true) {
-      const { payload } = yield* take(loadFileContentSucceeded);
-      if (
-        payload[0] === workspaceId &&
-        payload[4] &&
-        (payload[1] === path || payload[2] === absolutePath)
-      )
-        becameBinary = true;
-    }
-  });
   try {
     const result = yield* call(
       serializeFileMutation<MutationResult>,
@@ -135,6 +149,14 @@ function* saveFileContentWorker(request: SaveRequest) {
           throw new Error(m.editor_fileViewer_binary_label());
         return appClient.files.write(workspaceId, relativePath, content);
       },
+      ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
+        if (
+          payload[0] === workspaceId &&
+          payload[4] &&
+          (payload[1] === path || payload[2] === absolutePath)
+        )
+          becameBinary = true;
+      },
     );
     if (result.success) {
       yield* put(saveFileContentSucceeded(workspaceId, path, content));
@@ -151,8 +173,6 @@ function* saveFileContentWorker(request: SaveRequest) {
     logger.error('Failed to save file content', error);
     const message = error instanceof Error ? error.message : String(error);
     yield* put(saveFileContentFailed(workspaceId, path, message));
-  } finally {
-    yield* cancel(reads);
   }
 }
 
@@ -247,26 +267,17 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         (entry.path === path || entry.absolutePath === options.absolutePath) &&
         cannotRestore(entry.originalContent),
     );
-  const reads = yield* fork(function* () {
-    while (true) {
-      const { payload } = yield* take(loadFileContentSucceeded);
-      if (
-        payload[0] === workspaceId &&
-        payload[4] &&
-        (payload[1] === path || payload[2] === options.absolutePath) &&
-        // A tree snapshot may still be reading old contents. Any concurrent
-        // binary observation invalidates it, even when that binary is UTF-8.
-        (options.content === undefined || cannotRestore(payload[3]))
-      )
-        unsafeSnapshot = true;
-    }
-  });
+  let requestCancelled = false;
+  const assertActive = () => {
+    if (requestCancelled) throw new Error(m.ui_reversibleActions_cancelled_message());
+  };
   try {
     const { content, relativePath } = yield* call(
       serializeFileMutation<{ content: string; relativePath: string }>,
       workspaceId,
       path,
       async (relativePath: string) => {
+        assertActive();
         const binaryEntry = [path, options.absolutePath, relativePath]
           .map((alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias))
           .find((entry) => entry?.isBinary);
@@ -278,6 +289,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
           options.content === undefined
             ? await appClient.files.read(workspaceId, relativePath)
             : null;
+        assertActive();
         const savedContent = options.content === undefined ? entry?.localContent : options.content;
         if (unsafeSnapshot || savedContent == null || entry?.truncated)
           throw new Error(m.fileExplorer_tree_undoUnavailable_error());
@@ -285,6 +297,16 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         if (!result.success)
           throw new Error(result.error ?? m.fileExplorer_tree_deleteFailed_error());
         return { content: savedContent, relativePath };
+      },
+      ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
+        if (
+          payload[0] === workspaceId &&
+          payload[4] &&
+          (payload[1] === path || payload[2] === options.absolutePath) &&
+          // A concurrent binary observation invalidates a pending tree snapshot.
+          (options.content === undefined || cannotRestore(payload[3]))
+        )
+          unsafeSnapshot = true;
       },
     );
     // Clear both tree and panel aliases before closing tabs: an absolute-path
@@ -309,9 +331,10 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   } finally {
-    yield* cancel(reads);
-    if (yield* cancelled())
+    if (yield* cancelled()) {
+      requestCancelled = true;
       yield* put(action.failure(new Error(m.ui_reversibleActions_cancelled_message())));
+    }
   }
 }
 

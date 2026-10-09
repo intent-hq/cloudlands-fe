@@ -198,6 +198,53 @@ describe('filesWriteSaga', () => {
   );
 
   it.each(
+    ['queued save', 'queued delete', 'pending tree read'].flatMap((operation) =>
+      [null, '\b\u0001', 'new text'].map((content) => ({ operation, content })),
+    ),
+  )(
+    'keeps $operation safe after unmount before a newer read ($content)',
+    async ({ operation, content }) => {
+      const read = deferred<Awaited<ReturnType<typeof appClient.files.read>>>();
+      vi.spyOn(appClient.files, 'read').mockReturnValue(read.promise);
+      const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+      const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
+      const h = startWrites();
+      const lease = operation === 'pending tree read' ? null : reserveGitMutation('ws-1');
+      try {
+        await lease?.ready;
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', 'old text'));
+        const request =
+          operation === 'queued save'
+            ? null
+            : deleteFileRequested('ws-1', 'a.ts', {
+                absolutePath: '/repo/a.ts',
+                ...(operation === 'queued delete' ? { content: 'old text' } : {}),
+              });
+        const outcome = request?.promise.catch((error) => error);
+        h.dispatch(request ?? saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', 'draft'));
+        h.dispatch(workspaceUnmounted('ws-1'));
+        h.dispatch(
+          loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', content, content !== 'new text'),
+        );
+        h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
+        read.resolve({ originalContent: 'old text', localContent: 'old text' });
+        await lease?.release();
+        await settle();
+        expect(remove).not.toHaveBeenCalled();
+        if (operation === 'queued save' && content === 'new text')
+          expect(write).toHaveBeenCalledWith('ws-1', 'a.ts', 'draft');
+        else expect(write).not.toHaveBeenCalled();
+        if (outcome) expect(await outcome).toBeInstanceOf(Error);
+      } finally {
+        read.resolve(null);
+        await lease?.release();
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(
     ['panel', 'explorer'].flatMap((origin) =>
       [
         { kind: 'binary controls', content: '\b\u0001' },
