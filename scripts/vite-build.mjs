@@ -23,5 +23,6 @@ const child = spawn(process.execPath, [viteBin, 'build', ...process.argv.slice(2
   env: { ...process.env, NODE_OPTIONS: nodeOptions },
 });
 child.on('exit', (code, signal) => {
+  if (signal) console.error(`vite build terminated by ${signal}`);
   process.exit(signal ? 1 : (code ?? 1));
 });
