@@ -6,7 +6,11 @@ import type { Workspace } from '$shared/types';
 import type { WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
-const wire = vi.hoisted(() => ({ request: vi.fn(), reconnect: new Set<() => void>() }));
+const wire = vi.hoisted(() => ({
+  request: vi.fn(),
+  subscribe: vi.fn(),
+  reconnect: new Set<() => void>(),
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: wire.request,
   onBackendReconnected: (handler: () => void) => {
@@ -14,7 +18,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     return () => wire.reconnect.delete(handler);
   },
   onBackendNotification: () => () => {},
-  backendSubscribe: async () => ({ subscriptionId: 'fixture-subscription' }),
+  backendSubscribe: wire.subscribe,
   backendUnsubscribe: async () => {},
 }));
 vi.mock('$lib/components/workspace/TaskStatusIndicator.svelte', async () => ({
@@ -45,6 +49,7 @@ import { __resetOwnClientIdForTesting } from '$lib/client/live/live-clients-clie
 import WorkspaceProgressCard from '../WorkspaceProgressCard.svelte';
 
 const own = 'exact-desktop';
+const principalRetryWait = { timeout: 3000 };
 const workspace = {
   id: WorkspaceId('ws-1'),
   title: 'Recovery fixture',
@@ -74,6 +79,7 @@ async function capabilities() {
 }
 
 beforeEach(() => {
+  wire.subscribe.mockReset().mockResolvedValue({ subscriptionId: 'fixture-subscription' });
   role = 'owner';
   resolution = { source: 'workspace', clientId: own, resolved: { clientId: own } };
   wire.request
@@ -160,25 +166,83 @@ async function reconnect(reverse = false) {
 }
 
 describe('actual browser lifecycle to primary menu', () => {
-  it('recovers on remount after the current browser hello fails once', async () => {
+  it('enables recovery after delayed startup status cancels the first hello', async () => {
+    cancels.forEach((cancel) => cancel());
+    dispose();
+    // Model first startup: subscription and browser hello are still pending,
+    // and no connected status has been observed yet.
+    let subscribe!: (value: unknown) => void;
+    wire.subscribe.mockReturnValue(
+      new Promise((resolve) => {
+        subscribe = resolve;
+      }),
+    );
+    dispose = store.init();
+    store.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'remote', windowBackendId: 'remote' }),
+    );
+    cancels = [principalSaga, workspaceReconnectSaga, browserClientsSaga, daemonEventsSaga].map(
+      (saga) => store.runSaga(saga),
+    );
+    const normal = wire.request.getMockImplementation()!;
+    let release!: (value: unknown) => void;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    wire.request.mockImplementation((method, params) => {
+      if (method === 'client.hello' && first) {
+        first = false;
+        return pending;
+      }
+      return normal(method, params);
+    });
+    resolution = { source: 'default', resolved: null };
+    store.dispatch(workspaceMounted('ws-1'));
+    const view = render(WorkspaceProgressCard, { workspaceId: workspace.id });
+    await waitFor(() => expect(first).toBe(false));
+    store.dispatch(connectionStatusChanged('connecting'));
+    store.dispatch(connectionStatusChanged('connected'));
+    release({ clientId: own });
+    subscribe({ subscriptionId: 'first-subscription' });
+    await capabilities();
+    await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+    await waitFor(() =>
+      expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
+    );
+    await fireEvent.click(primary());
+    await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
+    await waitFor(() =>
+      expect(writes()).toEqual([
+        ['workspace.setBrowserClient', { workspaceId: 'ws-1', clientId: own }],
+      ]),
+    );
+  });
+
+  it('recovers on remount after current browser admission fails during reconnect', async () => {
     const view = await mount();
     const normal = wire.request.getMockImplementation()!;
     let failBrowserHello = true;
     wire.request.mockImplementation((method, params) => {
       if (method === 'client.hello' && failBrowserHello) {
-        failBrowserHello = false;
         return Promise.reject(new Error('temporary browser hello failure'));
       }
       return normal(method, params);
     });
     resolution = { source: 'default', resolved: null };
-    await reconnect();
+    store.dispatch(connectionStatusChanged('disconnected'));
+    store.dispatch(connectionStatusChanged('connected'));
+    for (const handler of wire.reconnect) handler();
+    await waitFor(() => expect(store.state.principal.error).toBe('unavailable'));
     expect(store.state.browserClients.ownClientId).toBe(own);
     expect(store.state.browserClients.ownClientIdConfirmed).toBe(false);
     expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
     expect(writes()).toEqual([]);
     view.unmount();
     store.dispatch(workspaceUnmounted('ws-1'));
+    failBrowserHello = false;
+    store.dispatch(workspaceMounted('ws-1'));
+    await waitFor(() => expect(store.state.principal.status).toBe('ready'), principalRetryWait);
     await mount();
     await waitFor(() =>
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),

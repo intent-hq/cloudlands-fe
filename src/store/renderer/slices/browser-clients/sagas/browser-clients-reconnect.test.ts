@@ -241,6 +241,56 @@ function deferred<T>() {
 }
 
 describe('connection lifetime races', () => {
+  it('restarts canceled startup hydration on plain connected after a delayed status snapshot', async () => {
+    const oldHello = deferred<{ clientId: string }>();
+    const oldResolution = deferred<{ browserClient: WorkspaceBrowserClient }>();
+    const normal = transport.request.getMockImplementation()!;
+    let helloPending = true;
+    let resolutionPending = true;
+    transport.request.mockImplementation((method, params) => {
+      if (method === 'client.hello' && helloPending) {
+        helloPending = false;
+        return oldHello.promise;
+      }
+      if (method === 'workspace.getBrowserClient' && resolutionPending) {
+        resolutionPending = false;
+        return oldResolution.promise;
+      }
+      return normal(method, params);
+    });
+    const run = start();
+    run.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    run.dispatch(connectionStatusChanged('connecting'));
+    await settle();
+    run.dispatch(connectionStatusChanged('connected'));
+    await settle();
+    oldHello.resolve({ clientId: 'obsolete-startup-id' });
+    oldResolution.resolve({
+      browserClient: { source: 'workspace', clientId: 'obsolete-pin', resolved: null },
+    });
+    await settle();
+    expect(run.confirmed()).toBe(true);
+    expect(run.view()).toMatchObject({
+      ownClientId: desktop.clientId,
+      pinnedClientId: null,
+      eligibleClients: [{ clientId: desktop.clientId, connected: true }],
+      driving: { clientId: desktop.clientId, connected: true },
+    });
+  });
+
+  it('does not rehydrate an admitted connection on repeated connected metadata', async () => {
+    const run = start();
+    run.dispatch(workspaceMounted('ws-1'));
+    await settle();
+    transport.request.mockClear();
+    run.dispatch(connectionStatusChanged('connected'));
+    run.dispatch(connectionStatusChanged('connected'));
+    await settle();
+    expect(run.confirmed()).toBe(true);
+    expect(transport.request).not.toHaveBeenCalled();
+  });
+
   it.each(['resolve', 'reject'] as const)(
     'ignores old hello %s after current hydration succeeds',
     async (outcome) => {
