@@ -1,5 +1,6 @@
 import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 import {
   markAgentSeenAtBoundary,
@@ -45,6 +46,7 @@ import {
   recordWatchedStreamingTail,
 } from '../unread-tracking-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 export type DividerSessionBoundary =
   | { kind: 'tab-close'; agentIds: string[] }
@@ -206,6 +208,21 @@ function* handleChiefBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<v
   }
 }
 
+function* handleChiefUnmount(
+  tracker: BoundarySnapshotTracker,
+  { payload: [workspaceId] }: ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  if (workspaceId !== CHIEF_WORKSPACE_ID) return;
+  const current = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
+  if (current.chiefSessionAgentIds.length === 0) return;
+  const boundary: DividerSessionBoundary = {
+    kind: 'chief-card-close',
+    agentIds: current.chiefSessionAgentIds,
+  };
+  yield* call(finishBoundary, boundary);
+  tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
+}
+
 function* handleSend(action: ReturnType<typeof sendMessage>): SagaGenerator<void> {
   if (action.payload.agentId) yield* call(markAgentSeenOnUserSend, action.payload.agentId);
 }
@@ -270,6 +287,7 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(TAB_BOUNDARY_ACTIONS, handleTabBoundary, tracker),
     call(watchWorkspaceBoundaries, tracker),
     takeEvery(CHIEF_BOUNDARY_ACTIONS, handleChiefBoundary, tracker),
+    takeEvery(workspaceUnmounted, handleChiefUnmount, tracker),
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),
