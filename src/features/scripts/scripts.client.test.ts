@@ -30,6 +30,11 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
       Promise.resolve(null),
     ),
     backendRequestMock: vi.fn(async (method: string, params: any) => {
+      if (method === 'script.remove') {
+        const result = await scriptsRemove(params.workspaceId, params.scriptId);
+        if (!result.success) throw new Error(result.error);
+        return { ok: true };
+      }
       if (method === 'script.create') {
         const { workspaceId, ...definition } = params;
         const result = await scriptsCreate(workspaceId, definition);
@@ -42,7 +47,7 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
 );
 vi.mock('$lib/client', () => ({
   appClient: {
-    scripts: { list: scriptsList, create: scriptsCreate, remove: scriptsRemove },
+    scripts: { list: scriptsList, create: scriptsCreate },
     files: { read: filesRead },
   },
 }));
@@ -573,6 +578,44 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
 
     expect(result).toEqual({ success: false, error: 'daemon offline' });
     expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+  });
+});
+
+describe('scriptsClient.restoreSnapshot', () => {
+  afterEach(() => vi.clearAllMocks());
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'preserves %s purpose when recreating a snapshot',
+    async (purpose) => {
+      scriptsList.mockResolvedValueOnce([]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      expect((await scriptsClient.restoreSnapshot('ws-1', [liveScript({ purpose })])).success).toBe(
+        true,
+      );
+      expect(scriptsCreate).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({ name: 'dev', purpose: purpose ?? 'saved' }),
+      );
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('scriptId');
+    },
+  );
+  it('does not recreate definitions after a removal failure', async () => {
+    scriptsList.mockResolvedValueOnce([liveScript()]);
+    scriptsRemove.mockResolvedValueOnce({ success: false, error: 'offline' });
+    expect(await scriptsClient.restoreSnapshot('ws-1', [liveScript()])).toEqual({
+      success: false,
+      error: 'offline',
+    });
+    expect(scriptsCreate).not.toHaveBeenCalled();
+  });
+  it('reports a failed restore read and permits retry', async () => {
+    scriptsList.mockRejectedValueOnce(new Error('offline'));
+    expect(await scriptsClient.restoreSnapshot('ws-1', [])).toEqual({
+      success: false,
+      error: 'offline',
+    });
+    scriptsList.mockResolvedValueOnce([]);
+    expect((await scriptsClient.restoreSnapshot('ws-1', [])).success).toBe(true);
     expect(scriptsRemove).not.toHaveBeenCalled();
   });
 });

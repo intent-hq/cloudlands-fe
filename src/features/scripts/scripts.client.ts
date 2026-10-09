@@ -35,6 +35,9 @@ import { isLiveScriptStatus } from './utils/script-status';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
 import { withScriptDefinitionEdits } from './with-script-definition-edits';
+import { runMutation } from '$lib/client/live/live-support';
+import { store } from '$store/renderer/store';
+import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
 
 const logger = createLogger('ScriptsClient');
 
@@ -90,6 +93,11 @@ async function upsertDefinition(
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/** Called only while an edit or workspace reservation is owned. */
+function removeDefinition(workspaceId: string, scriptId: string): Promise<MutationResult> {
+  return runMutation('script.remove', { workspaceId, scriptId });
 }
 
 /**
@@ -169,7 +177,45 @@ export const scriptsClient = {
 
   /** Remove a script definition (`script.remove`, §5.8). */
   async remove(workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
-    return toCommandResponse(await appClient.scripts.remove(workspaceId, scriptId));
+    return withScriptDefinitionEdits(workspaceId, [scriptId], async () => {
+      const result = await removeDefinition(workspaceId, scriptId);
+      if (result.success) store.dispatch(removeScript(workspaceId, scriptId));
+      return toCommandResponse(result);
+    });
+  },
+
+  /** Restore detection's snapshot as one reserved remove-and-recreate operation. */
+  async restoreSnapshot(
+    workspaceId: string,
+    snapshot: WorkspaceScript[],
+  ): Promise<CommandResponse<void>> {
+    return withScriptDefinitionEdits(workspaceId, 'workspace', async () => {
+      try {
+        const current = await appClient.scripts.list(workspaceId);
+        for (const script of current) {
+          const result = await removeDefinition(workspaceId, script.id);
+          if (!result.success) return toCommandResponse(result);
+          store.dispatch(removeScript(workspaceId, script.id));
+        }
+        for (const script of snapshot) {
+          const result = await scriptsClient.create(workspaceId, {
+            name: script.name,
+            command: script.command,
+            mode: script.mode,
+            purpose: script.purpose ?? 'saved',
+            category: script.category,
+            source: script.source || 'user',
+            cwd: script.cwd,
+            env: script.env,
+            autoStart: script.autoStart,
+          });
+          if (!result.success) return { success: false, error: result.error };
+        }
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   },
 
   /** Start a script by ID (`script.start`, §5.8). */
@@ -328,7 +374,7 @@ export const scriptsClient = {
               });
               continue;
             }
-            const removeResult = await appClient.scripts.remove(workspaceId, s.id);
+            const removeResult = await removeDefinition(workspaceId, s.id);
             if (removeResult.success) {
               removed += 1;
             } else {

@@ -16,21 +16,30 @@ import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scrip
 import { scriptsClient } from './scripts.client';
 import type { ScriptWithState } from './types';
 
+const removeRequest = vi.hoisted(() => vi.fn());
+
 vi.mock('$lib/client/live/backend-transport', async () => {
   const { appClient } = await import('$lib/client');
   return {
-    backendRequest: vi.fn(async (_method: string, params: { workspaceId: string }) => {
-      const { workspaceId, ...definition } = params;
-      const result = await appClient.scripts.create(workspaceId, definition as never);
-      if (!result.success) throw new Error(result.error);
-      return result.script;
-    }),
+    backendRequest: vi.fn(
+      async (method: string, params: { workspaceId: string; scriptId?: string }) => {
+        if (method === 'script.remove') {
+          const result = await removeRequest(params.workspaceId, params.scriptId);
+          if (!result.success) throw new Error(result.error);
+          return { ok: true };
+        }
+        const { workspaceId, ...definition } = params;
+        const result = await appClient.scripts.create(workspaceId, definition as never);
+        if (!result.success) throw new Error(result.error);
+        return result.script;
+      },
+    ),
   };
 });
 
 vi.mock('$lib/client', () => ({
   appClient: {
-    scripts: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
+    scripts: { list: vi.fn(), create: vi.fn() },
     files: { read: vi.fn() },
   },
 }));
@@ -66,7 +75,7 @@ beforeEach(() => {
   store.dispatch(setScriptsData(WS, [script]));
   vi.mocked(appClient.scripts.list).mockResolvedValue([script]);
   vi.mocked(appClient.scripts.create).mockResolvedValue({ success: true });
-  vi.mocked(appClient.scripts.remove).mockResolvedValue({ success: true });
+  removeRequest.mockResolvedValue({ success: true });
   stop = store.runSaga(scriptsOperationSaga);
 });
 afterEach(() => {
@@ -86,7 +95,7 @@ describe('public definition writes and deletion', () => {
     });
     const saved = save();
     store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
-    expect(appClient.scripts.remove).not.toHaveBeenCalled();
+    expect(removeRequest).not.toHaveBeenCalled();
     pending.resolve([script]);
     expect((await saved).success).toBe(true);
     expect(deletableAtRead).toBe(false);
@@ -108,16 +117,16 @@ describe('public definition writes and deletion', () => {
     const upsert = deferred<{ success: boolean }>();
     const removal = deferred<{ success: boolean }>();
     vi.mocked(appClient.scripts.create).mockReturnValueOnce(upsert.promise);
-    vi.mocked(appClient.scripts.remove).mockReturnValueOnce(removal.promise);
+    removeRequest.mockReturnValueOnce(removal.promise);
     const detected = scriptsClient.detect(WS);
     expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(false);
     expect(selectCanDeleteScript.select(store.state, WS, 'stale')).toBe(false);
     scan.resolve(null);
     await vi.waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
     store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
-    expect(appClient.scripts.remove).not.toHaveBeenCalled();
+    expect(removeRequest).not.toHaveBeenCalled();
     upsert.resolve({ success: true });
-    await vi.waitFor(() => expect(appClient.scripts.remove).toHaveBeenCalledWith(WS, 'stale'));
+    await vi.waitFor(() => expect(removeRequest).toHaveBeenCalledWith(WS, 'stale'));
     expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(false);
     removal.resolve({ success: true });
     expect(await detected).toMatchObject({ success: true, detected: 1, removed: 1 });
@@ -139,7 +148,7 @@ describe('public definition writes and deletion', () => {
     store.dispatch(setScriptsData(WS, [auto]));
     expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(false);
     store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
-    expect(appClient.scripts.remove).not.toHaveBeenCalled();
+    expect(removeRequest).not.toHaveBeenCalled();
     expect((await save()).success).toBe(false);
     expect(appClient.scripts.list).toHaveBeenCalledOnce();
     read.resolve([auto]);
@@ -165,7 +174,7 @@ describe('public definition writes and deletion', () => {
 
   it('rejects the lower public creation API upsert while deletion is pending', async () => {
     const removal = deferred<{ success: boolean }>();
-    vi.mocked(appClient.scripts.remove).mockReturnValueOnce(removal.promise);
+    removeRequest.mockReturnValueOnce(removal.promise);
     store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
     const client = new LiveScriptsClient();
     const input = {
@@ -176,7 +185,7 @@ describe('public definition writes and deletion', () => {
     };
     // @ts-expect-error Existing IDs are not accepted by the ordinary creation boundary.
     expect((await client.create(WS, input)).success).toBe(false);
-    expect(backendRequest).not.toHaveBeenCalled();
+    expect(backendRequest).not.toHaveBeenCalledWith('script.create', expect.anything());
     removal.resolve({ success: true });
     await vi.waitFor(() =>
       expect(store.state.scripts.byWorkspaceId[WS].scripts.check).toBeUndefined(),
@@ -202,12 +211,62 @@ describe('public definition writes and deletion', () => {
 
   it('rejects detection before any reads when deletion is pending', async () => {
     const pending = deferred<{ success: boolean }>();
-    vi.mocked(appClient.scripts.remove).mockReturnValueOnce(pending.promise);
+    removeRequest.mockReturnValueOnce(pending.promise);
     store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
     expect((await scriptsClient.detect(WS)).success).toBe(false);
     expect(appClient.files.read).not.toHaveBeenCalled();
     expect(appClient.scripts.list).not.toHaveBeenCalled();
     pending.resolve({ success: true });
+  });
+
+  it('rejects direct removal during a pending definition save', async () => {
+    const pending = deferred<{ success: boolean }>();
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(pending.promise);
+    const saved = save();
+    await vi.waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    const removed = await scriptsClient.remove(WS, 'check');
+    pending.resolve({ success: true });
+    await saved;
+    expect(removed.success).toBe(false);
+    expect(removeRequest).not.toHaveBeenCalled();
+  });
+
+  it('holds a direct removal reservation until settled and prevents a later stale save', async () => {
+    const pending = deferred<{ success: boolean }>();
+    removeRequest.mockReturnValueOnce(pending.promise);
+    const removing = scriptsClient.remove(WS, 'check');
+    expect((await save()).success).toBe(false);
+    expect(appClient.scripts.list).not.toHaveBeenCalled();
+    pending.resolve({ success: true });
+    expect((await removing).success).toBe(true);
+    expect((await save()).success).toBe(false);
+    expect(appClient.scripts.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects Undo without any partial removal or recreation during an edit', async () => {
+    const pending = deferred<{ success: boolean }>();
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(pending.promise);
+    const saved = save();
+    await vi.waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    expect((await scriptsClient.restoreSnapshot(WS, [script])).success).toBe(false);
+    expect(removeRequest).not.toHaveBeenCalled();
+    expect(appClient.scripts.create).toHaveBeenCalledOnce();
+    pending.resolve({ success: true });
+    await saved;
+  });
+
+  it('keeps Undo reserved through its last recreation and releases failures', async () => {
+    const recreation = deferred<{ success: boolean; error: string }>();
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(recreation.promise);
+    const restored = scriptsClient.restoreSnapshot(WS, [script]);
+    await vi.waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    store.dispatch(setScriptsData(WS, [script]));
+    expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(false);
+    expect((await scriptsClient.remove(WS, 'check')).success).toBe(false);
+    expect(removeRequest).toHaveBeenCalledOnce();
+    recreation.resolve({ success: false, error: 'offline' });
+    expect(await restored).toEqual({ success: false, error: 'offline' });
+    expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(true);
   });
 
   it('holds deletion until the upsert settles, then removes after the save', async () => {
@@ -221,7 +280,7 @@ describe('public definition writes and deletion', () => {
       ),
     );
     store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
-    expect(appClient.scripts.remove).not.toHaveBeenCalled();
+    expect(removeRequest).not.toHaveBeenCalled();
     expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(false);
     pending.resolve({ success: true });
     await saved;
@@ -230,14 +289,14 @@ describe('public definition writes and deletion', () => {
     await vi.waitFor(() =>
       expect(store.state.scripts.byWorkspaceId[WS].scripts.check).toBeUndefined(),
     );
-    expect(appClient.scripts.remove).toHaveBeenCalledExactlyOnceWith(WS, 'check');
+    expect(removeRequest).toHaveBeenCalledExactlyOnceWith(WS, 'check');
     expect((await save()).success).toBe(false);
     expect(appClient.scripts.create).toHaveBeenCalledOnce();
   });
 
   it('refuses a late save while deletion is already pending', async () => {
     const pending = deferred<{ success: boolean }>();
-    vi.mocked(appClient.scripts.remove).mockReturnValue(pending.promise);
+    removeRequest.mockReturnValue(pending.promise);
     store.dispatch(deleteScriptRequested(WS, 'check', 'Delete failed'));
     expect((await save()).success).toBe(false);
     expect(appClient.scripts.list).not.toHaveBeenCalled();

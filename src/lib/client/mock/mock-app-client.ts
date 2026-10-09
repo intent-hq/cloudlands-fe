@@ -109,7 +109,6 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     list: async (workspaceId) =>
       fx.mockScripts.filter((script) => script.workspaceId === workspaceId),
     create: async () => OK,
-    remove: async () => OK,
     start: async () => OK,
     stop: async () => OK,
     restart: async () => OK,

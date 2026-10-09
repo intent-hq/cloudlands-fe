@@ -1946,8 +1946,6 @@ export interface ScriptsClient {
   ): Promise<ScriptWithState[]>;
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
-  /** `script.remove` — stop (if running) and forget a script. */
-  remove(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.start`. */
   start(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.stop`. */

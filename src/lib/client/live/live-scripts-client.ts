@@ -108,10 +108,6 @@ export class LiveScriptsClient implements ScriptsClient {
     }
   }
 
-  async remove(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation('script.remove', { workspaceId, scriptId });
-  }
-
   async start(workspaceId: string, scriptId: string): Promise<MutationResult> {
     return runMutation('script.start', { workspaceId, scriptId });
   }

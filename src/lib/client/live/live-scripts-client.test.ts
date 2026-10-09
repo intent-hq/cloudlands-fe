@@ -159,7 +159,6 @@ describe('LiveScriptsClient (fake transport)', () => {
   });
 
   it.each([
-    ['remove', 'script.remove'],
     ['start', 'script.start'],
     ['stop', 'script.stop'],
     ['restart', 'script.restart'],

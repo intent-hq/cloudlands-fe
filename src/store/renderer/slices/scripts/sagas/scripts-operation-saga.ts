@@ -32,6 +32,7 @@ import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 import { m } from '$shared/paraglide/messages.js';
 import { notify } from '$lib/components/patterns/notify';
 import { scriptsClient } from '$features/scripts/scripts.client';
+import { runMutation } from '$lib/client/live/live-support';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import {
@@ -124,6 +125,11 @@ function* waitForReadInvalidation(context: ScriptReadContext): SagaGenerator<tru
   return true;
 }
 
+/** Internal transport for the delete reservation already acquired by the reducer. */
+function removeReservedScript(workspaceId: string, scriptId: string) {
+  return runMutation('script.remove', { workspaceId, scriptId });
+}
+
 function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void> {
   const [workspaceId, scriptId, failureMessage] = action.payload;
   const operation = operationFor(action);
@@ -150,9 +156,9 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       : undefined;
   try {
     if (operation === 'delete' && (!before || isLiveScriptStatus(before.runtime?.status))) return;
-    const method = operation === 'delete' ? 'remove' : operation;
+    const method = operation === 'delete' ? removeReservedScript : scriptsClient[operation];
     const outcome = yield* race({
-      result: call([scriptsClient, scriptsClient[method]], workspaceId, scriptId),
+      result: call(method, workspaceId, scriptId),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
     if (outcome.cleanup || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))

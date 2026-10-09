@@ -10,6 +10,16 @@ const mocks = vi.hoisted(() => ({
   restart: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({ appClient: { scripts: mocks } }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(
+    async (method: string, params: { workspaceId: string; scriptId: string }) => {
+      expect(method).toBe('script.remove');
+      const result = await mocks.remove(params.workspaceId, params.scriptId);
+      if (!result.success) throw new Error(result.error);
+      return { ok: true };
+    },
+  ),
+}));
 
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: mocks }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
