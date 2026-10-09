@@ -72,7 +72,11 @@
           { id: 'edit', label: m.custom_views_edit(), disabled: $state$.busy },
           {
             id: 'server',
-            label: active ? m.custom_views_stop() : m.custom_views_start(),
+            label: active
+              ? $runtime$?.external
+                ? m.custom_views_disconnect()
+                : m.custom_views_stop()
+              : m.custom_views_start(),
             disabled: preview || $state$.busy,
           },
           { id: 'reload', label: m.menu_reload(), disabled: !url },
@@ -121,7 +125,9 @@
         size="lg"
         onClose={() => (logsOpen = false)}
       >
-        {#if $runtime$?.logs}
+        {#if $runtime$?.external}
+          <p class="type-body text-muted-foreground">{m.custom_views_external_logs()}</p>
+        {:else if $runtime$?.logs}
           <pre class="whitespace-pre-wrap break-words font-mono type-caption">{$runtime$.logs}</pre>
         {:else}
           <p class="type-body text-muted-foreground">{m.chat_toolDetails_noOutput_label()}</p>
