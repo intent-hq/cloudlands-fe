@@ -23,6 +23,10 @@ const child = spawn(process.execPath, [viteBin, 'build', ...process.argv.slice(2
   env: { ...process.env, NODE_OPTIONS: nodeOptions },
 });
 child.on('exit', (code, signal) => {
-  if (signal) console.error(`vite build terminated by ${signal}`);
-  process.exit(signal ? 1 : (code ?? 1));
+  if (signal) {
+    // Wait for piped stderr to flush before exiting, even with a slow reader.
+    process.stderr.write(`vite build terminated by ${signal}\n`, () => process.exit(1));
+  } else {
+    process.exit(code ?? 1);
+  }
 });

@@ -1,6 +1,7 @@
 // @vitest-environment node
 // @verify-changed-triggers: ./vite-build.mjs
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -46,6 +47,71 @@ function run(script: string, args: string[] = [], nodeOptions?: string) {
 }
 
 describe('vite-build child termination', () => {
+  // POSIX pipes are asynchronous on the writing side. Keep the reader paused
+  // until the child has filled stderr, then let the wrapper handle its signal.
+  it.skipIf(process.platform === 'win32')(
+    'flushes the signal diagnostic to a slow stderr reader',
+    async () => {
+      const { wrapper } = fixture(`
+      import { writeSync } from 'node:fs';
+      const stderrFd = process.stderr.fd;
+      const chunk = Buffer.alloc(4096, 'x');
+      let written = 0;
+      for (const size of [chunk.length, 1]) {
+        try {
+          while (written < 16 * 1024 * 1024) written += writeSync(stderrFd, chunk, 0, size);
+          throw new Error('stderr never applied backpressure');
+        } catch (error) {
+          if (error.code !== 'EAGAIN' && error.code !== 'EWOULDBLOCK') throw error;
+        }
+      }
+      writeSync(1, String(written));
+      process.kill(process.pid, 'SIGTERM');
+    `);
+      const child = spawn(process.execPath, [wrapper], {
+        env: { ...process.env, NODE_OPTIONS: '' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 10_000,
+        killSignal: 'SIGKILL',
+      });
+      const closed = once(child, 'close');
+      let output = '';
+      let stderr = '';
+      let drainTimer: ReturnType<typeof setTimeout> | undefined;
+      let reading = false;
+      const drain = () => {
+        if (reading) return;
+        reading = true;
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+      };
+      child.stdout.on('data', (chunk) => {
+        output += chunk.toString();
+        // This delay creates the slow consumer; elapsed time is not the oracle.
+        drainTimer ??= setTimeout(drain, 250);
+      });
+      // The old wrapper exits before draining; consume those retained bytes too.
+      child.on('exit', drain);
+      try {
+        const [code, signal] = await closed;
+        expect(signal).toBeNull();
+        expect(code).toBe(1);
+        const written = Number(output);
+        expect(written).toBeGreaterThan(0);
+        expect(stderr.slice(0, written)).toBe('x'.repeat(written));
+        const diagnostic = stderr.slice(written);
+        expect(diagnostic).toContain('SIGTERM');
+        expect(diagnostic).toMatch(/vite/i);
+      } finally {
+        clearTimeout(drainTimer);
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        drain();
+        await closed;
+      }
+    },
+  );
+
   // Windows emulates process.kill rather than reporting POSIX child signals.
   it.skipIf(process.platform === 'win32').each(['SIGTERM', 'SIGKILL'])(
     'reports an actual child %s while retaining wrapper exit 1',
