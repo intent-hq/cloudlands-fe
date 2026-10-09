@@ -4094,6 +4094,7 @@
   "scripts_delete_title": "「{name}」を削除しますか？",
   "scripts_delete_description": "保存されたスクリプトを完全に削除します。この操作は取り消せません。",
   "scripts_delete_disabled_description": "スクリプトを停止し、保留中の変更が完了してから削除してください。",
+  "scripts_pendingChange_error": "スクリプトの変更が進行中です。完了してからもう一度お試しください。",
   "scripts_delete_changed_error": "確認中にスクリプトが変更されました。現在の状態を確認して、もう一度お試しください。",
   "terminal_quakeOverlay_deleteScriptFailed_error": "スクリプトを削除できませんでした",
   "terminal_quakeOverlay_renameScriptFailed_error": "スクリプト名を変更できませんでした",

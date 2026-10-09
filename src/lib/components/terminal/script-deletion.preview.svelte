@@ -5,6 +5,7 @@
     status?: ScriptStatus;
     failDeletion?: boolean;
     pending?: boolean;
+    deferEdits?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'script-deletion',
@@ -43,17 +44,30 @@
   import { selectAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectWorkspaceTerminalState } from '$store/renderer/slices/terminals/terminals-selectors';
 
-  let { status = 'idle', failDeletion = false, pending = false }: Props = $props();
+  let {
+    status = 'idle',
+    failDeletion = false,
+    pending = false,
+    deferEdits = false,
+  }: Props = $props();
   const workspaceId = deletionPreviewWorkspace;
   const scriptId = deletionPreviewScript;
   const header = createPanelHeaderContext();
   let requests = $state<string[]>([]);
+  let releaseEdit!: () => void;
+  const editGate = new Promise<void>((resolve) => {
+    releaseEdit = resolve;
+  });
+  $effect(() => {
+    if (!deferEdits) releaseEdit();
+  });
   onDestroy(
     setupScriptDeletionPreview(
       (request) => {
         requests = [...requests, request];
       },
       () => failDeletion,
+      () => editGate,
     ),
   );
   const tabs$ = selectAllTabs(workspaceId);

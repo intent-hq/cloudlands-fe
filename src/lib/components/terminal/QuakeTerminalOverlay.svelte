@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { withScriptDefinitionEdits } from '$features/scripts/with-script-definition-edits';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -203,7 +204,13 @@
     if (!workspaceId) return;
     isDetectingScripts = true;
     try {
-      const result = await scriptsClient.detect(workspaceId);
+      const result = await withScriptDefinitionEdits(
+        workspaceId,
+        selectAllWorkspaceScriptEntries
+          .select(appStore.state, workspaceId)
+          .map((script) => script.id),
+        () => scriptsClient.detect(workspaceId),
+      );
       appStore.dispatch(refreshScripts(workspaceId));
       if (!result.success) {
         notify.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
@@ -463,7 +470,10 @@
       const trimmed = mutationValue.trim();
       if (trimmed && trimmed !== selectedScript.name) {
         const succeeded = await runScriptMutation(
-          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name: trimmed }),
+          () =>
+            withScriptDefinitionEdits(mutationWorkspaceId, [mutationScriptId], () =>
+              scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name: trimmed }),
+            ),
           m.terminal_quakeOverlay_renameScriptFailed_error(),
         );
         if (!succeeded) return;
@@ -519,7 +529,10 @@
       if (mutationValue !== selectedScript.command) updates.command = mutationValue;
       if (Object.keys(updates).length > 0) {
         const succeeded = await runScriptMutation(
-          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
+          () =>
+            withScriptDefinitionEdits(mutationWorkspaceId, [mutationScriptId], () =>
+              scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
+            ),
           m.terminal_quakeOverlay_updateCommandFailed_error(),
         );
         if (!succeeded) return;
@@ -731,9 +744,11 @@
     if (mutationScriptId && mutationValue.trim() && mutationWorkspaceId) {
       const succeeded = await runScriptMutation(
         () =>
-          scriptsClient.update(mutationWorkspaceId, mutationScriptId, {
-            name: mutationValue.trim(),
-          }),
+          withScriptDefinitionEdits(mutationWorkspaceId, [mutationScriptId], () =>
+            scriptsClient.update(mutationWorkspaceId, mutationScriptId, {
+              name: mutationValue.trim(),
+            }),
+          ),
         m.terminal_quakeOverlay_renameScriptFailed_error(),
       );
       if (!succeeded) return;

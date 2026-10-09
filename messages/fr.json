@@ -4094,6 +4094,7 @@
   "scripts_delete_title": "Supprimer « {name} » ?",
   "scripts_delete_description": "Le script enregistré sera définitivement supprimé. Cette action est irréversible.",
   "scripts_delete_disabled_description": "Arrêtez le script et attendez la fin des modifications avant de le supprimer.",
+  "scripts_pendingChange_error": "Une modification du script est en cours. Attendez la fin, puis réessayez.",
   "scripts_delete_changed_error": "Le script a changé pendant la confirmation. Vérifiez son état actuel et réessayez.",
   "terminal_quakeOverlay_deleteScriptFailed_error": "Impossible de supprimer le script",
   "terminal_quakeOverlay_renameScriptFailed_error": "Impossible de renommer le script",

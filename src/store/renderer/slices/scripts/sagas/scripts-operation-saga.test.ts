@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/client', () => ({ appClient: { scripts: mocks } }));
 
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: mocks }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
+
+import { notify } from '$lib/components/patterns/notify';
 
 import {
   workspaceDeleted,
@@ -112,6 +115,28 @@ describe('scriptsOperationSaga', () => {
       ]),
     );
   }
+
+  it('retires a denied delete and permits retry after admission returns', async () => {
+    const run = start();
+    seed(run);
+    const admitted = run.state.principal;
+    run.state.principal = { ...admitted, status: 'loading' };
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    await settle();
+    expect(mocks.remove).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalledWith(expect.any(String));
+    expect(run.state.scripts.byWorkspaceId[WS].operations['script-1']?.pending).not.toBe(true);
+    expect(run.actions).toContainEqual(
+      expect.objectContaining({ type: scriptOperationFailed.type }),
+    );
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeDefined();
+    run.state.principal = admitted;
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    await settle();
+    expect(mocks.remove).toHaveBeenCalledOnce();
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeUndefined();
+    await stop(run.task);
+  });
 
   it('removes only after success and serializes deletion with other lifecycle mutations', async () => {
     const pending = deferred<{ success: boolean }>();

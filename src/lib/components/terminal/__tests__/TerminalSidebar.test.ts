@@ -70,7 +70,8 @@ vi.mock('$features/scripts/scripts.client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>()),
   selectScriptEntries: Object.assign(
     (workspaceArg: any) => {
       selectorWorkspaceArgs.push(workspaceArg);
@@ -98,21 +99,34 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-
+  const { scriptsReducer, emptyWorkspaceState } =
+    await import('$store/renderer/slices/scripts/scripts-slice');
+  let scripts = scriptsReducer(undefined, { type: '@@init' });
   return createAppStoreMockModule({
     state: () => ({
       scripts: {
-        byWorkspaceId: {
-          'ws-1': {
-            scripts: {},
-            outputBuffers: {},
-            initialized: true,
-            loading: false,
-          },
-        },
+        byWorkspaceId: Object.fromEntries(
+          [...new Set(['ws-1', ...Object.keys(scriptEntries.byWorkspaceId)])].map((id) => [
+            id,
+            {
+              ...emptyWorkspaceState,
+              ...scripts.byWorkspaceId[id],
+              scripts: Object.fromEntries(
+                (scriptEntries.byWorkspaceId[id] ?? scriptEntries.value).map((script) => [
+                  script.id,
+                  script,
+                ]),
+              ),
+              initialized: true,
+            },
+          ]),
+        ),
       },
     }),
-    dispatch: mockDispatch,
+    dispatch: (action) => {
+      mockDispatch(action);
+      scripts = scriptsReducer(scripts, action);
+    },
   });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({

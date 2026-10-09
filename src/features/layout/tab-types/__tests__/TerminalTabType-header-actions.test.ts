@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
 
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: { select: () => 'admitted' },
+}));
+
 const dispatch = vi.hoisted(() => vi.fn());
 const mockState = vi.hoisted(() => ({ scripts: { byWorkspaceId: {} as Record<string, any> } }));
 vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn().mockResolvedValue(true) }));
@@ -20,6 +24,8 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ dispatch, state: mockState });
 });
 
+import { withScriptDefinitionEdits } from '$features/scripts/with-script-definition-edits';
+import { scriptsReducer } from '$store/renderer/slices/scripts/scripts-slice';
 import { confirm } from '$lib/components/patterns/confirm';
 import { store } from '$store/renderer/store';
 import TerminalTabTypeHeaderHarness from './mocks/TerminalTabTypeHeaderHarness.svelte';
@@ -117,6 +123,68 @@ describe('script panel deletion', () => {
         }),
       ),
     );
+  });
+
+  it('disables the panel menu during a deferred definition save', async () => {
+    dispatch.mockImplementation((action) => {
+      mockState.scripts = scriptsReducer(mockState.scripts as never, action);
+      (store as any).emitState();
+    });
+    let finish!: (value: { success: boolean }) => void;
+    const pending = withScriptDefinitionEdits(
+      'workspace-1',
+      ['check'],
+      () =>
+        new Promise<{ success: boolean }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+    await openMenu();
+    expect(
+      screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
+    ).toBe('true');
+    finish({ success: true });
+    await pending;
+    await waitFor(() =>
+      expect(
+        screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
+      ).not.toBe('true'),
+    );
+    dispatch.mockReset();
+  });
+
+  it('rejects a definition save started after panel confirmation opens', async () => {
+    dispatch.mockImplementation((action) => {
+      mockState.scripts = scriptsReducer(mockState.scripts as never, action);
+      (store as any).emitState();
+    });
+    let accept!: (value: boolean) => void;
+    vi.mocked(confirm).mockReturnValue(
+      new Promise((resolve) => {
+        accept = resolve;
+      }),
+    );
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
+    let finish!: (value: { success: boolean }) => void;
+    const pending = withScriptDefinitionEdits(
+      'workspace-1',
+      ['check'],
+      () =>
+        new Promise<{ success: boolean }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    accept(true);
+    await Promise.resolve();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/deleteScriptRequested' }),
+    );
+    finish({ success: true });
+    await pending;
+    dispatch.mockReset();
   });
 
   it('cancels without a deletion request', async () => {

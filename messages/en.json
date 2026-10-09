@@ -4094,6 +4094,7 @@
   "scripts_delete_title": "Delete “{name}”?",
   "scripts_delete_description": "This permanently deletes the saved script. This cannot be undone.",
   "scripts_delete_disabled_description": "Stop the script and wait for pending changes before deleting.",
+  "scripts_pendingChange_error": "The script has a pending change. Wait for it to finish and try again.",
   "scripts_delete_changed_error": "The script changed while confirmation was open. Check its current state and try again.",
   "terminal_quakeOverlay_deleteScriptFailed_error": "Failed to delete script",
   "terminal_quakeOverlay_renameScriptFailed_error": "Failed to rename script",

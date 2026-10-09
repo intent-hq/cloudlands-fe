@@ -29,6 +29,7 @@ import { selectWorkspaceActionContext } from '../../workspace/workspace-selector
 import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
+import { m } from '$shared/paraglide/messages.js';
 import { notify } from '$lib/components/patterns/notify';
 import { scriptsClient } from '$features/scripts/scripts.client';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
@@ -81,7 +82,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function operationFor(action: ScriptOperationRequest): ScriptQuickAction {
+function operationFor(action: ScriptOperationRequest): Exclude<ScriptQuickAction, 'edit'> {
   if (action.type === deleteScriptRequested.type) return 'delete';
   if (action.type === stopScriptRequested.type) return 'stop';
   return action.type === restartScriptRequested.type ? 'restart' : 'start';
@@ -123,8 +124,18 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
   const [workspaceId, scriptId, failureMessage] = action.payload;
   const operation = operationFor(action);
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
-  if (!authority) return;
   const pendingOperation = (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId];
+  // Definition edits share the reducer reservation but run in their caller.
+  // A lifecycle request rejected by that reservation must not send an RPC.
+  if (pendingOperation?.pending && pendingOperation.action !== operation) return;
+  if (!authority) {
+    if (pendingOperation?.pending) {
+      const message = m.workspace_client_accessChanged_error();
+      yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
+      if (failureMessage) yield* call([notify, notify.error], message);
+    }
+    return;
+  }
   const before = yield* selectScriptById.effect(workspaceId, scriptId);
   // Older daemons reset finished scripts silently. A changed row proves that
   // an event/read already supplied authority; otherwise reconcile runtime only.

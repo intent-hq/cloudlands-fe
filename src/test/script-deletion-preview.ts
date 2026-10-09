@@ -16,10 +16,13 @@ export const deletionPreviewScript = 'preview-check';
 export function setupScriptDeletionPreview(
   onRemove: (request: string) => void,
   shouldFail: () => boolean,
+  waitForEdit: () => Promise<void> = async () => {},
 ) {
   const workspaceId = deletionPreviewWorkspace;
   const scriptId = deletionPreviewScript;
   const previous = {
+    list: appClient.scripts.list,
+    create: appClient.scripts.create,
     remove: appClient.scripts.remove,
     start: appClient.scripts.start,
     output: appClient.scripts.output,
@@ -28,6 +31,18 @@ export function setupScriptDeletionPreview(
   const startGate = new Promise<void>((resolve) => {
     releaseStart = resolve;
   });
+  appClient.scripts.list = async () =>
+    Object.values(store.state.scripts.byWorkspaceId[workspaceId]?.scripts ?? {});
+  appClient.scripts.create = async (_ws, definition) => {
+    await waitForEdit();
+    return {
+      success: true,
+      script: {
+        ...store.state.scripts.byWorkspaceId[workspaceId].scripts[scriptId],
+        ...definition,
+      },
+    };
+  };
   appClient.scripts.remove = async (ws, id) => {
     onRemove(`${ws}:${id}`);
     return shouldFail() ? { success: false, error: 'Preview deletion failed' } : { success: true };

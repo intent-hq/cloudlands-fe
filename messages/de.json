@@ -4094,6 +4094,7 @@
   "scripts_delete_title": "„{name}“ löschen?",
   "scripts_delete_description": "Das gespeicherte Skript wird dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
   "scripts_delete_disabled_description": "Stoppen Sie das Skript und warten Sie ausstehende Änderungen ab, bevor Sie es löschen.",
+  "scripts_pendingChange_error": "Für das Skript steht eine Änderung aus. Warte, bis sie abgeschlossen ist, und versuche es erneut.",
   "scripts_delete_changed_error": "Das Skript wurde während der Bestätigung geändert. Prüfen Sie den aktuellen Zustand und versuchen Sie es erneut.",
   "terminal_quakeOverlay_deleteScriptFailed_error": "Skript konnte nicht gelöscht werden",
   "terminal_quakeOverlay_renameScriptFailed_error": "Skript konnte nicht umbenannt werden",

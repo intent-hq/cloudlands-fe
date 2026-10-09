@@ -38,7 +38,7 @@ type ScriptRetainedOutput = {
   text?: string;
 };
 
-export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete';
+export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete' | 'edit';
 
 export type ScriptOperationState = {
   action: ScriptQuickAction;

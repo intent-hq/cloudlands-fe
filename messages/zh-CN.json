@@ -4094,6 +4094,7 @@
   "scripts_delete_title": "删除“{name}”？",
   "scripts_delete_description": "这将永久删除已保存的脚本。此操作无法撤销。",
   "scripts_delete_disabled_description": "请停止脚本并等待待处理的更改完成后再删除。",
+  "scripts_pendingChange_error": "脚本有待处理的更改。请等待完成后重试。",
   "scripts_delete_changed_error": "确认期间脚本已更改。请检查当前状态后重试。",
   "terminal_quakeOverlay_deleteScriptFailed_error": "删除脚本失败",
   "terminal_quakeOverlay_renameScriptFailed_error": "重命名脚本失败",
