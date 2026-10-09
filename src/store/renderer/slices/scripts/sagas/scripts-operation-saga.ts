@@ -39,7 +39,11 @@ import {
   isScriptReadCurrent,
   type ScriptReadContext,
 } from '../utils/script-read-context';
-import { selectScriptById, selectWorkspaceScriptOperations } from '../scripts-selectors';
+import {
+  selectScriptById,
+  selectWorkspaceScriptOperations,
+  selectScriptDetectionOperation,
+} from '../scripts-selectors';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
 import {
   backendReconnected,
@@ -123,6 +127,7 @@ function* waitForReadInvalidation(context: ScriptReadContext): SagaGenerator<tru
 function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void> {
   const [workspaceId, scriptId, failureMessage] = action.payload;
   const operation = operationFor(action);
+  if ((yield* selectScriptDetectionOperation.effect(workspaceId))?.pending) return;
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
   const pendingOperation = (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId];
   // Definition edits share the reducer reservation but run in their caller.

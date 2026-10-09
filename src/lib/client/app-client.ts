@@ -1898,7 +1898,7 @@ export interface CommentsClient {
   delete(noteId: string, commentId: string, workspaceId?: string): Promise<MutationResult>;
 }
 
-/** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */
+/** New-definition input for `script.create`; ID upserts belong to the reserved edit API. */
 export interface ScriptCreateInput {
   /** Omit to use the daemon default; existing IDs retain their stored purpose. */
   purpose?: ScriptPurpose;
@@ -1909,7 +1909,8 @@ export interface ScriptCreateInput {
   env?: Record<string, string>;
   category?: string;
   autoStart?: boolean;
-  scriptId?: string;
+  /** Existing definitions must use scriptsClient.update so edits reserve before reads. */
+  scriptId?: never;
 }
 
 /** `script.create` outcome — carries the daemon's created definition on success. */

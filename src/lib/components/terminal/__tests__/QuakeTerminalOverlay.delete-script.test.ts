@@ -124,6 +124,18 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const { appClient } = await import('$lib/client');
+  return {
+    backendRequest: vi.fn(async (_method: string, params: { workspaceId: string }) => {
+      const { workspaceId, ...definition } = params;
+      const result = await appClient.scripts.create(workspaceId, definition as never);
+      if (!result.success) throw new Error(result.error);
+      return result.script;
+    }),
+  };
+});
+
 vi.mock('$lib/client', () => ({
   appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
 }));

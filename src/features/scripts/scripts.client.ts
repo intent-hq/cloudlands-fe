@@ -29,13 +29,11 @@ import type {
 } from './types';
 import { createLogger } from '$lib/utils/client-logger';
 import { appClient } from '$lib/client';
-import type { MutationResult } from '$lib/client';
+import type { MutationResult, ScriptCreateInput, ScriptCreateResult } from '$lib/client';
 import { detectScriptCandidates, type PackageManager } from './detect-scripts';
 import { isLiveScriptStatus } from './utils/script-status';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
-import { store } from '$store/renderer/store';
-import { selectAllWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
 import { withScriptDefinitionEdits } from './with-script-definition-edits';
 
 const logger = createLogger('ScriptsClient');
@@ -74,6 +72,24 @@ interface CommandResponse<T = unknown> {
 /** Fold an AppClient MutationResult into the CommandResponse shape callers expect. */
 function toCommandResponse(result: MutationResult): CommandResponse<void> {
   return result.success ? { success: true } : { success: false, error: result.error };
+}
+
+/** Raw ID upsert stays private to this module's reserved update/detection callbacks. */
+async function upsertDefinition(
+  workspaceId: string,
+  scriptId: string,
+  input: ScriptCreateInput,
+): Promise<ScriptCreateResult> {
+  try {
+    const script = await backendRequest<WorkspaceScript>('script.create', {
+      workspaceId,
+      scriptId,
+      ...input,
+    });
+    return { success: true, script };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**
@@ -136,8 +152,7 @@ export const scriptsClient = {
           error: m.scripts_client_updateRunning_error({ name: existing.name }),
         };
       }
-      const result = await appClient.scripts.create(workspaceId, {
-        scriptId,
+      const result = await upsertDefinition(workspaceId, scriptId, {
         name: updates.name ?? existing.name,
         command: updates.command ?? existing.command,
         mode: updates.mode ?? existing.mode,
@@ -218,133 +233,128 @@ export const scriptsClient = {
     packageManager?: PackageManager;
     error?: string;
   }> {
-    return withScriptDefinitionEdits(
-      workspaceId,
-      selectAllWorkspaceScriptEntries.select(store.state, workspaceId).map((script) => script.id),
-      async () => {
-        try {
-          const { candidates, packageManager } = await detectScriptCandidates(
-            appClient.files,
-            workspaceId,
-          );
-          const existing = await appClient.scripts.list(workspaceId, { archive: 'all' });
+    return withScriptDefinitionEdits(workspaceId, 'workspace', async () => {
+      try {
+        const { candidates, packageManager } = await detectScriptCandidates(
+          appClient.files,
+          workspaceId,
+        );
+        const existing = await appClient.scripts.list(workspaceId, { archive: 'all' });
 
-          const existingUserNames = new Set<string>();
-          const existingAutoByName = new Map<string, ScriptWithState>();
-          for (const s of existing) {
-            if (s.source === 'auto-detected') {
-              existingAutoByName.set(s.name, s);
-            } else {
-              existingUserNames.add(s.name);
-            }
+        const existingUserNames = new Set<string>();
+        const existingAutoByName = new Map<string, ScriptWithState>();
+        for (const s of existing) {
+          if (s.source === 'auto-detected') {
+            existingAutoByName.set(s.name, s);
+          } else {
+            existingUserNames.add(s.name);
           }
-
-          const detectedNames = new Set<string>();
-          const skippedRunning: string[] = [];
-          let added = 0;
-
-          for (const candidate of candidates) {
-            detectedNames.add(candidate.name);
-            if (existingUserNames.has(candidate.name)) continue;
-
-            const existingAuto = existingAutoByName.get(candidate.name);
-            if (!existingAuto) {
-              const createResult = await appClient.scripts.create(workspaceId, {
-                name: candidate.name,
-                command: candidate.command,
-                mode: candidate.mode,
-                purpose: 'saved',
-                category: candidate.category,
-              });
-              if (createResult.success) {
-                added += 1;
-              } else {
-                logger.warn('script.create failed for detected candidate', {
-                  name: candidate.name,
-                  error: createResult.error,
-                });
-              }
-            } else if (
-              existingAuto.command !== candidate.command ||
-              existingAuto.category !== candidate.category ||
-              existingAuto.mode !== candidate.mode
-            ) {
-              // The §5.8 scriptId upsert tears down the script's live PTY group
-              // daemon-side — never issue it against a live script (running,
-              // restarting, or any future transitional status). Skip and let the
-              // caller surface it so the user can stop + re-detect.
-              if (isLiveScriptStatus(existingAuto.runtime?.status)) {
-                skippedRunning.push(candidate.name);
-                logger.info('Skipping script.create upsert for live script', {
-                  name: candidate.name,
-                  scriptId: existingAuto.id,
-                });
-                continue;
-              }
-              const upsertResult = await appClient.scripts.create(workspaceId, {
-                scriptId: existingAuto.id,
-                name: candidate.name,
-                command: candidate.command,
-                mode: candidate.mode,
-                category: candidate.category,
-                ...(existingAuto.cwd !== undefined ? { cwd: existingAuto.cwd } : {}),
-                ...(existingAuto.env !== undefined ? { env: existingAuto.env } : {}),
-                ...(existingAuto.autoStart !== undefined
-                  ? { autoStart: existingAuto.autoStart }
-                  : {}),
-              });
-              if (!upsertResult.success) {
-                logger.warn('script.create upsert failed for detected candidate', {
-                  name: candidate.name,
-                  scriptId: existingAuto.id,
-                  error: upsertResult.error,
-                });
-              }
-            }
-          }
-
-          let removed = 0;
-          for (const [name, s] of existingAutoByName) {
-            if (!detectedNames.has(name)) {
-              // Removing a running script kills its live PTY group daemon-side —
-              // never issue script.remove against a running row. Skip and let the
-              // caller surface it so the user can stop + re-detect.
-              if (s.runtime?.status === 'running') {
-                skippedRunning.push(name);
-                logger.info('Skipping script.remove for running stale script', {
-                  name,
-                  scriptId: s.id,
-                });
-                continue;
-              }
-              const removeResult = await appClient.scripts.remove(workspaceId, s.id);
-              if (removeResult.success) {
-                removed += 1;
-              } else {
-                logger.warn('script.remove failed for stale auto-detected script', {
-                  name,
-                  scriptId: s.id,
-                  error: removeResult.error,
-                });
-              }
-            }
-          }
-
-          return {
-            success: true,
-            detected: candidates.length,
-            added,
-            removed,
-            ...(skippedRunning.length > 0 ? { skippedRunning } : {}),
-            packageManager,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          logger.error('Script detection failed', { error: message });
-          return { success: false, error: message };
         }
-      },
-    );
+
+        const detectedNames = new Set<string>();
+        const skippedRunning: string[] = [];
+        let added = 0;
+
+        for (const candidate of candidates) {
+          detectedNames.add(candidate.name);
+          if (existingUserNames.has(candidate.name)) continue;
+
+          const existingAuto = existingAutoByName.get(candidate.name);
+          if (!existingAuto) {
+            const createResult = await appClient.scripts.create(workspaceId, {
+              name: candidate.name,
+              command: candidate.command,
+              mode: candidate.mode,
+              purpose: 'saved',
+              category: candidate.category,
+            });
+            if (createResult.success) {
+              added += 1;
+            } else {
+              logger.warn('script.create failed for detected candidate', {
+                name: candidate.name,
+                error: createResult.error,
+              });
+            }
+          } else if (
+            existingAuto.command !== candidate.command ||
+            existingAuto.category !== candidate.category ||
+            existingAuto.mode !== candidate.mode
+          ) {
+            // The §5.8 scriptId upsert tears down the script's live PTY group
+            // daemon-side — never issue it against a live script (running,
+            // restarting, or any future transitional status). Skip and let the
+            // caller surface it so the user can stop + re-detect.
+            if (isLiveScriptStatus(existingAuto.runtime?.status)) {
+              skippedRunning.push(candidate.name);
+              logger.info('Skipping script.create upsert for live script', {
+                name: candidate.name,
+                scriptId: existingAuto.id,
+              });
+              continue;
+            }
+            const upsertResult = await upsertDefinition(workspaceId, existingAuto.id, {
+              name: candidate.name,
+              command: candidate.command,
+              mode: candidate.mode,
+              category: candidate.category,
+              ...(existingAuto.cwd !== undefined ? { cwd: existingAuto.cwd } : {}),
+              ...(existingAuto.env !== undefined ? { env: existingAuto.env } : {}),
+              ...(existingAuto.autoStart !== undefined
+                ? { autoStart: existingAuto.autoStart }
+                : {}),
+            });
+            if (!upsertResult.success) {
+              logger.warn('script.create upsert failed for detected candidate', {
+                name: candidate.name,
+                scriptId: existingAuto.id,
+                error: upsertResult.error,
+              });
+            }
+          }
+        }
+
+        let removed = 0;
+        for (const [name, s] of existingAutoByName) {
+          if (!detectedNames.has(name)) {
+            // Removing a running script kills its live PTY group daemon-side —
+            // never issue script.remove against a running row. Skip and let the
+            // caller surface it so the user can stop + re-detect.
+            if (s.runtime?.status === 'running') {
+              skippedRunning.push(name);
+              logger.info('Skipping script.remove for running stale script', {
+                name,
+                scriptId: s.id,
+              });
+              continue;
+            }
+            const removeResult = await appClient.scripts.remove(workspaceId, s.id);
+            if (removeResult.success) {
+              removed += 1;
+            } else {
+              logger.warn('script.remove failed for stale auto-detected script', {
+                name,
+                scriptId: s.id,
+                error: removeResult.error,
+              });
+            }
+          }
+        }
+
+        return {
+          success: true,
+          detected: candidates.length,
+          added,
+          removed,
+          ...(skippedRunning.length > 0 ? { skippedRunning } : {}),
+          packageManager,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('Script detection failed', { error: message });
+        return { success: false, error: message };
+      }
+    });
   },
 
   /**

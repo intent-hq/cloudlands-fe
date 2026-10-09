@@ -29,7 +29,15 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
     filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(() =>
       Promise.resolve(null),
     ),
-    backendRequestMock: vi.fn(() => Promise.resolve({ config: {} })),
+    backendRequestMock: vi.fn(async (method: string, params: any) => {
+      if (method === 'script.create') {
+        const { workspaceId, ...definition } = params;
+        const result = await scriptsCreate(workspaceId, definition);
+        if (!result.success) throw new Error(result.error);
+        return result.script;
+      }
+      return { config: {} };
+    }),
   }),
 );
 vi.mock('$lib/client', () => ({
@@ -243,6 +251,17 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
         category: 'dev',
       }),
     );
+    expect(backendRequestMock).toHaveBeenCalledWith('script.create', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-auto-dev',
+      name: 'dev',
+      command: 'pnpm dev',
+      mode: 'service',
+      category: 'dev',
+      cwd: undefined,
+      env: undefined,
+      autoStart: undefined,
+    });
     expect(result.success).toBe(true);
   });
 

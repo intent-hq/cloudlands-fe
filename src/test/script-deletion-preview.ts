@@ -1,4 +1,5 @@
 import { appClient } from '$lib/client';
+import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { store } from '$store/renderer/store';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -22,7 +23,6 @@ export function setupScriptDeletionPreview(
   const scriptId = deletionPreviewScript;
   const previous = {
     list: appClient.scripts.list,
-    create: appClient.scripts.create,
     remove: appClient.scripts.remove,
     start: appClient.scripts.start,
     output: appClient.scripts.output,
@@ -33,15 +33,21 @@ export function setupScriptDeletionPreview(
   });
   appClient.scripts.list = async () =>
     Object.values(store.state.scripts.byWorkspaceId[workspaceId]?.scripts ?? {});
-  appClient.scripts.create = async (_ws, definition) => {
+  const transport = resolveBackendTransport();
+  const previousRequest = transport.request;
+  transport.request = async <T>(
+    method: string,
+    params?: unknown,
+    options?: Parameters<typeof transport.request>[2],
+  ): Promise<T> => {
+    const definition = params as { workspaceId?: string; scriptId?: string } | undefined;
+    if (method !== 'script.create' || definition?.workspaceId !== workspaceId)
+      return previousRequest.call(transport, method, params, options) as Promise<T>;
     await waitForEdit();
     return {
-      success: true,
-      script: {
-        ...store.state.scripts.byWorkspaceId[workspaceId].scripts[scriptId],
-        ...definition,
-      },
-    };
+      ...store.state.scripts.byWorkspaceId[workspaceId].scripts[scriptId],
+      ...definition,
+    } as T;
   };
   appClient.scripts.remove = async (ws, id) => {
     onRemove(`${ws}:${id}`);
@@ -107,5 +113,6 @@ export function setupScriptDeletionPreview(
     releaseStart();
     stopOperations();
     Object.assign(appClient.scripts, previous);
+    transport.request = previousRequest;
   };
 }
