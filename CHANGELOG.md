@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.213.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.213.3...v2.213.4) (2026-10-09)
+
+
+### 🐛 Bug Fixes
+
+* enforce script mutation reservations at public boundaries ([#3327](https://github.com/intent-hq/cloudlands-fe/issues/3327)) ([b61693b](https://github.com/intent-hq/cloudlands-fe/commit/b61693b77ad3cb35c935a4891d9edeb37d51c1bf))
+
 ## [2.213.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.213.2...v2.213.3) (2026-10-09)
 
 
