@@ -2763,6 +2763,8 @@
   "chat_questionWizard_skip_label": "Überspringen",
   "chat_questionWizard_send_label": "Senden",
   "chat_questionWizard_next_label": "Weiter",
+  "chat_questionWizard_imagesAttached_label_one": "[1 Bild angehängt]",
+  "chat_questionWizard_imagesAttached_label_many": "[{count} Bilder angehängt]",
   "chat_questionWizard_dismiss_label": "Verwerfen",
   "chat_questionWizard_dismiss_tooltip": "Dauerhaft verwerfen, ohne zu antworten",
   "chat_questionWizard_hide_tooltip": "Ausblenden, bis Sie wieder aufklappen",

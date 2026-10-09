@@ -2763,6 +2763,8 @@
   "chat_questionWizard_skip_label": "Ignorer",
   "chat_questionWizard_send_label": "Envoyer",
   "chat_questionWizard_next_label": "Continuer",
+  "chat_questionWizard_imagesAttached_label_one": "[1 image jointe]",
+  "chat_questionWizard_imagesAttached_label_many": "[{count} images jointes]",
   "chat_questionWizard_dismiss_label": "Rejeter",
   "chat_questionWizard_dismiss_tooltip": "Rejeter définitivement sans répondre",
   "chat_questionWizard_hide_tooltip": "Masquer jusqu'à la prochaine ouverture",
