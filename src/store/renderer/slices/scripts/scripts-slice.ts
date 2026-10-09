@@ -92,16 +92,24 @@ export const setScriptListState =
 /** Refresh scripts for a workspace (triggers saga) */
 export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
 
-export const startScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/startScriptRequested',
-);
+export const startScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage?: string]
+>('scripts/startScriptRequested');
 
 export const stopScriptRequested = createAction<
   [wsId: string, scriptId: string, failureMessage?: string]
 >('scripts/stopScriptRequested');
 
-export const restartScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/restartScriptRequested',
+export const restartScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage?: string]
+>('scripts/restartScriptRequested');
+
+export const deleteScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage: string]
+>('scripts/deleteScriptRequested');
+
+export const editScriptRequested = createAction<[wsId: string, scriptId: string]>(
+  'scripts/editScriptRequested',
 );
 
 export const scriptOperationSucceeded = createAction<
@@ -273,6 +281,9 @@ function requestOperation(
   });
 }
 
+scriptsReducer.with(editScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'edit'),
+);
 scriptsReducer.with(startScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'start'),
 );
@@ -281,6 +292,9 @@ scriptsReducer.with(stopScriptRequested, (state, { payload: [wsId, scriptId] }) 
 );
 scriptsReducer.with(restartScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'restart'),
+);
+scriptsReducer.with(deleteScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'delete'),
 );
 scriptsReducer.with(scriptOperationSucceeded, (state, { payload: [wsId, scriptId, action] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -302,7 +316,14 @@ scriptsReducer.with(
 scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (Object.keys(ws.operations).length === 0) return state;
-  return setWorkspaceState(state, wsId, { ...ws, operations: {} });
+  // Definition upserts are promises owned by the edit caller, not cancellable
+  // saga tasks. Keep their reservation through unmount until the write settles.
+  const operations = Object.fromEntries(
+    Object.entries(ws.operations).filter(
+      ([, operation]) => operation.action === 'edit' && operation.pending,
+    ),
+  );
+  return setWorkspaceState(state, wsId, { ...ws, operations });
 });
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
   const ws = getWorkspaceState(state, wsId);

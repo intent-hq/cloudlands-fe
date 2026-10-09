@@ -70,7 +70,8 @@ vi.mock('$features/scripts/scripts.client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>()),
   selectScriptEntries: Object.assign(
     (workspaceArg: any) => {
       selectorWorkspaceArgs.push(workspaceArg);
@@ -98,21 +99,34 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-
+  const { scriptsReducer, emptyWorkspaceState } =
+    await import('$store/renderer/slices/scripts/scripts-slice');
+  let scripts = scriptsReducer(undefined, { type: '@@init' });
   return createAppStoreMockModule({
     state: () => ({
       scripts: {
-        byWorkspaceId: {
-          'ws-1': {
-            scripts: {},
-            outputBuffers: {},
-            initialized: true,
-            loading: false,
-          },
-        },
+        byWorkspaceId: Object.fromEntries(
+          [...new Set(['ws-1', ...Object.keys(scriptEntries.byWorkspaceId)])].map((id) => [
+            id,
+            {
+              ...emptyWorkspaceState,
+              ...scripts.byWorkspaceId[id],
+              scripts: Object.fromEntries(
+                (scriptEntries.byWorkspaceId[id] ?? scriptEntries.value).map((script) => [
+                  script.id,
+                  script,
+                ]),
+              ),
+              initialized: true,
+            },
+          ]),
+        ),
       },
     }),
-    dispatch: mockDispatch,
+    dispatch: (action) => {
+      mockDispatch(action);
+      scripts = scriptsReducer(scripts, action);
+    },
   });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -249,6 +263,26 @@ describe('TerminalSidebar detection flow', () => {
     vi.clearAllMocks();
     scriptEntries.value = [];
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+  });
+
+  it.each([
+    ['idle', 'Start', 'scripts/startScriptRequested'],
+    ['running', 'Restart', 'scripts/restartScriptRequested'],
+  ])('tracks %s lifecycle requests so deletion sees pending work', async (status, label, type) => {
+    scriptEntries.value = [
+      {
+        id: 'check',
+        name: 'Check',
+        command: 'true',
+        mode: 'command',
+        runtime: { status, restartCount: 0 },
+      },
+    ];
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type, payload: ['ws-1', 'check', expect.any(String)] }),
+    );
   });
 
   it('routes mixed finished/live Stop all through shared operations without changing selection', async () => {
@@ -754,5 +788,62 @@ describe('TerminalSidebar resize handle', () => {
 
     await fireEvent.mouseUp(document);
     expect(handle?.getAttribute('data-resizing')).toBe('false');
+  });
+});
+
+describe('sidebar inline rename deletion races', () => {
+  const scriptId = 'sidebar-rename';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scriptEntries.value = [
+      {
+        id: scriptId,
+        name: 'Rename target',
+        command: 'true',
+        mode: 'command',
+        source: 'user',
+        runtime: { status: 'idle', restartCount: 0 },
+      },
+    ];
+  });
+
+  async function rename() {
+    await fireEvent.dblClick(screen.getByRole('button', { name: /^Rename target/ }));
+    const input = document.querySelector(`[data-edit-script="${scriptId}"]`)!;
+    await fireEvent.input(input, { target: { value: 'New name' } });
+    await fireEvent.blur(input);
+  }
+
+  it('blocks shared deletion eligibility throughout a deferred inline rename', async () => {
+    const { store } = await import('$store/renderer/store');
+    const { selectCanDeleteScript } =
+      await import('$store/renderer/slices/scripts/scripts-selectors');
+    let finish!: (result: { success: boolean }) => void;
+    mockScriptUpdate.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', scriptId, { name: 'New name' });
+    expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(false);
+    finish({ success: true });
+    await waitFor(() =>
+      expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(true),
+    );
+  });
+
+  it('refuses inline rename while deletion is pending', async () => {
+    const { store } = await import('$store/renderer/store');
+    const { deleteScriptRequested, scriptOperationSucceeded } =
+      await import('$store/renderer/slices/scripts/scripts-slice');
+    mockScriptUpdate.mockResolvedValueOnce({ success: true });
+    store.dispatch(deleteScriptRequested('ws-1', scriptId, 'Delete failed'));
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(notify.warning).toHaveBeenCalled();
+    store.dispatch(scriptOperationSucceeded('ws-1', scriptId, 'delete'));
   });
 });
