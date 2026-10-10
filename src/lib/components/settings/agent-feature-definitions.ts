@@ -19,6 +19,7 @@ export const FEATURE_PATHS = [
   'agentFeatures.scripts',
   'agentFeatures.terminalAccess',
   'agentFeatures.browserAutomation',
+  'agentFeatures.desktopControl',
   'agentFeatures.richChatBlocks',
   'agentFeatures.structuredQuestions',
   'agentFeatures.attentionRequests',
@@ -65,6 +66,12 @@ export const FEATURES: {
     path: 'agentFeatures.browserAutomation',
     label: () => m.settings_agentFeatures_browserAutomation_label(),
     description: () => m.settings_agentFeatures_browserAutomation_description(),
+    defaultValue: true,
+  },
+  {
+    path: 'agentFeatures.desktopControl',
+    label: () => m.settings_agentFeatures_desktopControl_label(),
+    description: () => m.settings_agentFeatures_desktopControl_description(),
     defaultValue: true,
   },
   {

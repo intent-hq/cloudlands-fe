@@ -103,6 +103,24 @@ async function mountControls(
     },
     { theme, zoom, withAssistant },
   );
+  // The initial zoom IPC response is asynchronous; geometry requires its state
+  // and the corresponding Svelte update before a baseline can be measured.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { store } = await import('/src/store/renderer/store.ts');
+        return store.state.userPreferences.zoomFactor;
+      }),
+    )
+    .toBe(zoom);
+  await expect
+    .poll(() =>
+      page.locator('.window-title-bar').evaluate((element) => {
+        const transform = getComputedStyle(element).transform;
+        return new DOMMatrixReadOnly(transform).a;
+      }),
+    )
+    .toBeCloseTo(1 / zoom, 5);
 }
 
 async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linux') {
@@ -431,7 +449,7 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         return { panelItem: state.panelItem, divider: state.divider, requests: state.requests };
       })
       .toEqual({
-        panelItem: null,
+        panelItem: 'chief',
         divider: null,
         requests: [
           {
@@ -455,10 +473,9 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         : `/workspace/${destination === 'current workspace' ? 'titlebar-test' : 'titlebar-other'}`,
     );
     await page.evaluate(async () => {
-      const [{ store }, { bulkUpsertSessions }, nav, unread, { goto }] = await Promise.all([
+      const [{ store }, { bulkUpsertSessions }, unread, { goto }] = await Promise.all([
         import('/src/store/renderer/store.ts'),
         import('/src/store/renderer/slices/agent-session/agent-session-slice.ts'),
-        import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts'),
         import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts'),
         import('/test/fixtures/titlebar-navigation.svelte.ts'),
       ]);
@@ -479,7 +496,7 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
           },
         ] as never),
       );
-      store.dispatch(nav.openPanel('chief'));
+      // Returning must restore the remembered Assistant without selecting it again.
       await goto('/');
       store.dispatch(
         unread.startDividerSession('assistant-route-thread', 'assistant-message-arrived-away'),

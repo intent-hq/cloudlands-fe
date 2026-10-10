@@ -33,6 +33,9 @@ const mocks = vi.hoisted(() => {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
     browserClients: undefined as unknown,
+    desktopControl: undefined as
+      | import('$store/renderer/slices/desktop-control/desktop-control-types').DesktopControlState
+      | undefined,
     userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
@@ -366,6 +369,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
     mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.desktopControl = undefined;
     mocks.storeState.userPreferences = undefined;
     mocks.role.hidesOwnerActions = false;
     delete mocks.workspaceEntity.canManage;
@@ -971,7 +975,7 @@ describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () 
 describe('WorkspaceProgressCard driving browser client', () => {
   const OWN = 'client-own';
   const OTHER = 'client-other';
-  const SET_PRIMARY = { name: 'Set Current Client as Primary' };
+  const SET_PRIMARY = { name: 'Set primary client' };
 
   function liveClient(clientId: string, name: string): LiveClient {
     return {
@@ -1005,7 +1009,13 @@ describe('WorkspaceProgressCard driving browser client', () => {
     } satisfies BrowserClientsState;
   }
 
-  const browserTab: PanelTab = { id: 'tab-web', type: 'browser', title: 'Web', closable: true };
+  const browserTab: PanelTab = {
+    id: 'tab-web',
+    type: 'browser',
+    title: 'Web',
+    closable: true,
+    ownerAgentId: 'agent-1',
+  };
 
   /** Put `tabs` in the workspace's single panel (the indicator needs a browser tab). */
   function seedPanelTabs(tabs: PanelTab[]): void {
@@ -1034,6 +1044,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
     mocks.role.hidesOwnerActions = false;
     mocks.role.context = 'backend-a:principal-a';
     mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.desktopControl = undefined;
     seedPanelTabs([browserTab]);
   });
 
@@ -1044,7 +1055,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
     });
     const { container } = await renderDrivingCard();
 
-    expect(drivingIndicator(container)).toBeNull();
+    expect(drivingIndicator(container)?.getAttribute('aria-label')).toContain('laptop');
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
     expect((screen.getByRole('button', SET_PRIMARY) as HTMLButtonElement).disabled).toBe(false);
   });
@@ -1206,17 +1217,17 @@ describe('WorkspaceProgressCard driving browser client', () => {
     }
   });
 
-  it('never renders the indicator with one connected client even with browser tabs', async () => {
+  it('renders agent-owned browser activity with one connected client', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop')], {
       source: 'default',
       resolved: { clientId: OWN, name: 'laptop' },
     });
     const { container } = await renderDrivingCard();
 
-    expect(drivingIndicator(container)).toBeNull();
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('here');
   });
 
-  it('surfaces an offline pinned client without any browser tabs', async () => {
+  it('surfaces an offline pin without agent activity', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop')], {
       source: 'workspace',
       clientId: OTHER,
@@ -1226,6 +1237,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
     const { container } = await renderDrivingCard();
 
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
+    expect(drivingIndicator(container)?.getAttribute('aria-label')).toBe('Primary client offline');
   });
 
   it('clears the offline warning on reconnect without changing the primary client', async () => {
@@ -1299,6 +1311,53 @@ describe('WorkspaceProgressCard driving browser client', () => {
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('elsewhere');
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
     expect((screen.getByRole('button', SET_PRIMARY) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it('does not treat user-opened visible or hidden tabs as agent activity', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    seedPanelTabs([{ ...browserTab, ownerAgentId: undefined }]);
+    mocks.storeState.panelLayout.byWorkspaceId['ws-1'].hiddenTabs = createCollection('id', [
+      { ...browserTab, id: 'hidden-user', ownerAgentId: undefined },
+    ]);
+    try {
+      const { container } = await renderDrivingCard();
+      expect(drivingIndicator(container)).toBeNull();
+    } finally {
+      mocks.storeState.panelLayout.byWorkspaceId['ws-1'].hiddenTabs = undefined;
+    }
+  });
+  it('shows the actual active computer with one client, then hides it on Stop without changing the pin', async () => {
+    const { emptyDesktopEntry } =
+      await import('$store/renderer/slices/desktop-control/desktop-control-types');
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OWN,
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    seedPanelTabs([]);
+    const entry = {
+      ...emptyDesktopEntry('ws-1', 'agent'),
+      state: {
+        status: 'active' as const,
+        sessionId: 'session',
+        computerName: 'Actual Windows computer',
+      },
+    };
+    mocks.storeState.desktopControl = { generation: 0, seenEvents: [], byKey: { entry } };
+    const { container } = await renderDrivingCard();
+    expect(drivingIndicator(container)?.getAttribute('aria-label')).toContain(
+      'Actual Windows computer',
+    );
+    mocks.storeState.desktopControl.byKey.entry = { ...entry, state: { status: 'inactive' } };
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { emitState: () => void }).emitState();
+    await tick();
+    expect(drivingIndicator(container)).toBeNull();
+    expect(
+      (mocks.storeState.browserClients as BrowserClientsState).byWorkspaceId['ws-1'].browserClient,
+    ).toMatchObject({ source: 'workspace', clientId: OWN });
   });
   it('keeps recovery available with no tabs and no resolved client', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop')], { source: 'default', resolved: null });

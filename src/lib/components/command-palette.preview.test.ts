@@ -163,3 +163,16 @@ describe('command palette preview note search', () => {
     expect(store.state.palette.noteSearches.ids).not.toContain('preview-held');
   });
 });
+
+it('preserves a replacement bridge when the palette preview stops', () => {
+  const previousBridge = window.electronAPI;
+  start('search');
+  const replacementBridge = { ...previousBridge };
+  window.electronAPI = replacementBridge;
+  try {
+    stops.pop()?.();
+    expect(window.electronAPI).toBe(replacementBridge);
+  } finally {
+    window.electronAPI = previousBridge;
+  }
+});

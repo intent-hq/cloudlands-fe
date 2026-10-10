@@ -198,6 +198,9 @@ export class JsonRpcClient extends EventEmitter {
 
   private socket: Duplex | null = null;
   private protocolVersion: unknown;
+  private helloSnapshot: unknown;
+  private helloRevision = 0;
+  private renegotiatingHello = false;
   private socketIncarnation: object | null = null;
   private repositoryConnection: RepositoryConnection | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
@@ -271,6 +274,19 @@ export class JsonRpcClient extends EventEmitter {
     this.helloParams = options.helloParams;
     this.onHelloResult = options.onHelloResult;
     this.currentReconnectDelay = this.reconnectDelayMs;
+  }
+
+  /** Read connection metadata without renegotiating identity or desktop authority. */
+  readHelloSnapshot(): Promise<unknown> {
+    const refused = this.refuseIndependent();
+    if (refused) return Promise.reject(refused);
+    return this.own('hello-snapshot', async () => {
+      if (this.disposed) throw new Error('JSON-RPC client disposed');
+      await this.ensureConnected();
+      if (this.status !== 'connected' || this.helloSnapshot === undefined)
+        throw new Error('Current backend handshake is unavailable');
+      return structuredClone(this.helloSnapshot);
+    });
   }
 
   /** Stop autonomous producers now; sealing is a separate synchronous admission boundary. */
@@ -546,6 +562,8 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private beginHello(): object {
+    this.helloSnapshot = undefined;
+    this.helloRevision++;
     this.retireRepositoryIdentity();
     this.helloAttempt = Object.freeze({});
     return this.helloAttempt;
@@ -676,6 +694,13 @@ export class JsonRpcClient extends EventEmitter {
     if (this.trafficObservers.size === 0) return;
     try {
       const event = { ...build(), connectionGeneration: this.connectionGeneration };
+      // Desktop authority and user input must never reach diagnostic observers,
+      // which may persist or forward their traffic payloads to renderers.
+      if (
+        event.type === 'request' &&
+        (event.method === 'desktop.control' || event.method === 'desktop.revoke')
+      )
+        event.payload = { redacted: true };
       for (const observer of this.trafficObservers) {
         try {
           void observer(event)?.catch(() => {});
@@ -830,6 +855,8 @@ export class JsonRpcClient extends EventEmitter {
    */
   private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
     const socket = this.socket;
+    const helloRevision = method === HELLO_METHOD ? ++this.helloRevision : undefined;
+    if (method === HELLO_METHOD) this.helloSnapshot = undefined;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
       assertScopedFileReadSupport(method, params, this.protocolVersion);
@@ -852,6 +879,7 @@ export class JsonRpcClient extends EventEmitter {
           if (method === HELLO_METHOD && this.socket === socket) {
             this.protocolVersion = (result as { protocolVersion?: unknown } | null)
               ?.protocolVersion;
+            if (helloRevision === this.helloRevision) this.helloSnapshot = structuredClone(result);
           }
           resolve(result as T);
         },
@@ -892,28 +920,49 @@ export class JsonRpcClient extends EventEmitter {
     timeoutMs: number,
     parent?: object,
   ): Promise<unknown> {
-    // A queued hello must not supersede the startup/reconnect handshake it
-    // needs to finish. An already-connected renegotiation retires immediately,
-    // before even awaiting the persisted identity provider.
-    if (this.status === 'connected') this.beginHello();
-    const merged = await this.mergedHelloParams(params);
-    if (this.disposed) throw new Error('JSON-RPC client disposed');
-    if (this.status !== 'connected') await this.ensureConnected();
-    if (this.disposed) throw new Error('JSON-RPC client disposed');
-    // ensureConnected may itself have completed a handshake while this caller
-    // waited. Retire that identity too, immediately before this renegotiation.
-    const attempt = this.beginHello();
-    const incarnation = this.socketIncarnation;
-    const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
-    if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
+    let attempt: object | undefined;
+    let incarnation = this.socketIncarnation;
+    const beginRenegotiation = () => {
+      attempt = this.beginHello();
+      incarnation = this.socketIncarnation;
+      this.renegotiatingHello = true;
+      this.stopHeartbeat();
+      // Desktop execution and pending consent lose authority immediately, even
+      // while the identity provider is still resolving. Concurrent hellos may
+      // join this physical socket, but only the winning attempt restores it.
+      this.setStatus('connecting');
+    };
+    if (this.status === 'connected' || this.renegotiatingHello) beginRenegotiation();
+    try {
+      const merged = await this.mergedHelloParams(params);
+      if (this.disposed) throw new Error('JSON-RPC client disposed');
+      if (!this.renegotiatingHello || incarnation !== this.socketIncarnation)
+        await this.ensureConnected();
+      if (this.disposed) throw new Error('JSON-RPC client disposed');
+      beginRenegotiation();
+      const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
+      if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
+        return result;
+      this.own('hello-result', () =>
+        this.originalCallback(parent, (parent) =>
+          parent === undefined
+            ? this.onHelloResult?.(result)
+            : this.onHelloResult?.(result, parent),
+        ),
+      );
+      this.confirmHello(attempt!, result);
       return result;
-    this.own('hello-result', () =>
-      this.originalCallback(parent, (parent) =>
-        parent === undefined ? this.onHelloResult?.(result) : this.onHelloResult?.(result, parent),
-      ),
-    );
-    this.confirmHello(attempt, result);
-    return result;
+    } finally {
+      if (
+        attempt &&
+        this.socketIncarnation === incarnation &&
+        this.helloAttempt === attempt &&
+        !this.disposed
+      ) {
+        this.renegotiatingHello = false;
+        this.finishConnect();
+      }
+    }
   }
 
   /** Caller-supplied hello fields survive; the persisted identity wins on `clientId`. */
@@ -1359,6 +1408,9 @@ export class JsonRpcClient extends EventEmitter {
 
   private teardownSocket(): void {
     this.protocolVersion = undefined;
+    this.helloSnapshot = undefined;
+    this.helloRevision++;
+    this.renegotiatingHello = false;
     // Retire BEFORE any teardown callback can attempt another dispatch.
     this.retireRepositorySocket();
     if (!this.socket) return;

@@ -78,6 +78,10 @@ vi.mock('../json-rpc-client', () => ({
     request = vi.fn(async (method: string) =>
       method === 'system.status' ? systemStatus.value : {},
     );
+    readHelloSnapshot = vi.fn(async () => ({
+      clientId: 'cli-persisted',
+      server: { capabilities: { desktopControl: 1 } },
+    }));
     registerMethod(): () => void {
       return () => {};
     }
@@ -175,6 +179,42 @@ describe('backend.ipc client identity wiring (§5.17)', () => {
     });
     expect(typeof params.hostname).toBe('string');
     expect(mockGetOrCreateClientId).toHaveBeenCalled();
+  });
+
+  it('answers renderer capability probes from the current handshake without re-helloing', async () => {
+    const { getBackendClient, registerBackendHandlers } = await import('../backend.ipc');
+    const client = getBackendClient();
+    registerBackendHandlers();
+    const handler = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'backend:request')![1];
+    vi.mocked(client.request).mockClear();
+    for (const params of [{}, undefined]) {
+      const response = await handler({} as Electron.IpcMainInvokeEvent, {
+        method: 'client.hello',
+        params,
+        localMachine: true,
+      });
+      expect(response).toEqual({
+        ok: true,
+        result: { clientId: 'cli-persisted', server: { capabilities: { desktopControl: 1 } } },
+      });
+    }
+    expect(client.request).not.toHaveBeenCalledWith(
+      'client.hello',
+      expect.anything(),
+      expect.anything(),
+    );
+    await handler({} as Electron.IpcMainInvokeEvent, {
+      method: 'client.hello',
+      params: { name: 'Explicit new identity' },
+      localMachine: true,
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      'client.hello',
+      { name: 'Explicit new identity' },
+      { timeoutMs: undefined },
+    );
   });
 
   it('persists a daemon-returned clientId from the hello result (ignores malformed results)', async () => {

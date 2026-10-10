@@ -1,3 +1,4 @@
+import { desktopControlSaga } from './slices/desktop-control/sagas/desktop-control-saga';
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
@@ -141,6 +142,7 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
+  desktopControlSaga,
   modelNameCacheSaga,
   pendingRetentionSaga,
   homeIntegrationsSaga,

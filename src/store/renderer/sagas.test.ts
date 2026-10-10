@@ -14,6 +14,7 @@ import { sagas, startAllAppSagas } from './sagas';
 describe('renderer app saga registry', () => {
   function getAuditedSagaNames() {
     return [
+      'desktopControlSaga',
       'modelNameCacheSaga',
       'pendingRetentionSaga',
       'homeIntegrationsSaga',

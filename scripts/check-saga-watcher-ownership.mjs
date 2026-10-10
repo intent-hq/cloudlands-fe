@@ -39,7 +39,7 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
     pattern: /daemon-health-slice\.ts#connectionStatusChanged$/,
     rationale:
-      'browser-client mirror invalidation and hosted-tab registry synchronization are independent',
+      'browser-client mirror invalidation, hosted-tab registry synchronization and desktop consent cleanup are independent',
   },
   {
     pattern: /workspace-lifecycle-slice\.ts#backendReconnected$/,

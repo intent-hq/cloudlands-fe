@@ -415,7 +415,6 @@
     syncPaneOwnership(pane, value);
     return { destroy: () => homePanes.delete(pane) };
   }
-  // Sync outside paused keyed effects, including same-pane reversal.
   $effect.pre(() => {
     const activeTab = destination === 'workspaces' ? tab : null;
     untrack(() => {
@@ -732,12 +731,13 @@
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
             out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
             onoutrostart={(event) => {
-              // Outer routes can leave tab/destination unchanged; every outro revokes ownership.
               event.currentTarget.inert = true;
               event.currentTarget.setAttribute('aria-hidden', 'true');
               if (tabFocus?.value === renderedTab) tabFocus = null;
             }}
-            onintrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
+            onintrostart={(event) => {
+              if (!event.currentTarget.inert) syncPaneOwnership(event.currentTarget, renderedTab);
+            }}
           >
             <Tabs.Root
               bind:value={() => renderedTab, () => undefined}

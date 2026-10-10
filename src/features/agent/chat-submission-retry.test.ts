@@ -93,6 +93,7 @@ const shell = () => ({
   updatedAt: '2026-10-03T00:00:00Z',
 });
 const baseReply = async (method: string, params: any) => {
+  if (method === 'client.hello') return { server: { protocolVersion: '13.1' } };
   if (method === 'agent.get') return { agent: shell() };
   if (method === 'agent.getConversation')
     return { messages: [previous], totalMessages: 1, truncated: false };

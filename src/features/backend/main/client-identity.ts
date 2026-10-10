@@ -48,7 +48,7 @@ export interface ClientHostIdentity {
 export interface MainClientHelloParams extends ClientHostIdentity {
   clientId: string;
   name: string;
-  capabilities: { browserExec: true };
+  capabilities: { browserExec: true; desktopControl?: 1 };
 }
 
 let localHostIdentity: Pick<ClientHostIdentity, 'prettyHostname' | 'deviceKind'> = {};
@@ -88,10 +88,14 @@ export function getClientHostIdentity(): ClientHostIdentity {
 export async function buildMainClientHelloParams(
   config?: BackendConnectionConfig,
 ): Promise<MainClientHelloParams> {
+  const { desktopNativeAvailable } = await import('../../desktop/main/desktop-native');
   return {
     clientId: await getOrCreateClientId(config),
     name: DESKTOP_CLIENT_NAME,
-    capabilities: { browserExec: true },
+    capabilities: {
+      browserExec: true,
+      ...(desktopNativeAvailable() ? { desktopControl: 1 as const } : {}),
+    },
     ...getClientHostIdentity(),
   };
 }

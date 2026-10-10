@@ -1266,11 +1266,17 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    const [getContainer, measureTarget] = mocks.animateScrollTo.mock.calls[0];
     expect(getContainer()).toBe(scroll);
-    resolveTarget(scroll);
+    expect(measureTarget).toEqual(expect.any(Function));
+    expect(sourceTurnRect).not.toHaveBeenCalled();
+    const target = measureTarget(scroll);
     expect(sourceTurnRect).toHaveBeenCalledOnce();
+    sourceTurnRect.mockReturnValue({ top: 40, bottom: 460, height: 420 } as DOMRect);
+    expect(measureTarget(scroll)).toBe(target - 40);
     expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
+    turn.remove();
+    expect(getContainer()).toBeNull();
   });
 
   it('consumes a targeted browser capture and includes its image and context in the next send', async () => {
@@ -4119,9 +4125,15 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     flushFrame();
     await vi.waitFor(() => expect(mocks.animateScrollTo).toHaveBeenCalledOnce());
-    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
-    resolveTarget(getContainer());
-    expect(replacementBounds).toHaveBeenCalled();
+    const [getContainer, measureTarget] = mocks.animateScrollTo.mock.calls[0];
+    const scroll = screen.getByTestId('chat-transcript-scroll-viewport');
+    expect(getContainer()).toBe(scroll);
+    expect(measureTarget).toEqual(expect.any(Function));
+    expect(replacementBounds).not.toHaveBeenCalled();
+    measureTarget(scroll);
+    expect(replacementBounds).toHaveBeenCalledOnce();
+    messageB.remove();
+    expect(getContainer()).toBeNull();
   });
 
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {

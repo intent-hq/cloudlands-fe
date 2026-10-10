@@ -926,6 +926,7 @@ export const IPC_CHANNELS = {
   // through these request/subscription channels and receives daemon
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
+    DESKTOP_PERMISSIONS: 'backend:desktop-permissions',
     REQUEST: 'backend:request',
     NATIVE_REVIEW: {
       PREPARE: 'backend:native-review:prepare',

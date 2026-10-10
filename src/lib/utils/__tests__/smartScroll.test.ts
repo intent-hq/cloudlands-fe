@@ -85,11 +85,31 @@ describe('animateScrollTo', () => {
     expect(rafCallbacks).toHaveLength(0);
   });
 
+  it('tracks a moving destination through preceding layout changes', () => {
+    const container = makeContainer(400);
+    let target = 700;
+    const onComplete = vi.fn();
+    animateScrollTo(
+      () => container,
+      () => target,
+      150,
+      onComplete,
+    );
+    runFrames(75);
+    expect(container.scrollTop).toBeGreaterThan(400);
+    target -= 112;
+    runFrames(150);
+    expect(container.scrollTop).toBe(588);
+    expect(onComplete).toHaveBeenCalledExactlyOnceWith(container);
+    expect(rafCallbacks).toHaveLength(0);
+  });
+
   it('does not resolve a moving destination after navigation is superseded', () => {
     let current: HTMLElement | null = makeContainer(300);
     const container = current;
     const resolveDestination = vi.fn(() => 100);
-    animateScrollTo(() => current, resolveDestination, 150);
+    const onComplete = vi.fn();
+    animateScrollTo(() => current, resolveDestination, 150, onComplete);
     runFrames(75);
     const readingPosition = container.scrollTop;
     resolveDestination.mockClear();
@@ -97,6 +117,7 @@ describe('animateScrollTo', () => {
     current = null;
     runFrames(150);
     expect(resolveDestination).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
     expect(container.scrollTop).toBe(readingPosition);
     expect(rafCallbacks).toHaveLength(0);
   });

@@ -322,6 +322,32 @@ describe('renderer side-effect boundary guard', () => {
     ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
   });
 
+  it('pins backend bridges including native desktop permissions without allowing further expansion', () => {
+    const channels = [
+      'backend:get-status',
+      'backend:node-capabilities',
+      'backend:spawn-sidecar',
+      'backend:open-local-and-spawn',
+      'backend:restart-orphaned-sidecar',
+      'backend:get-sidecar-run-log',
+      'backend:desktop-permissions',
+    ];
+    const seeder = (names: string[]) => ({
+      path: 'src/store/renderer/seeders/backend-status-bridge-seeder.ts',
+      content: [
+        "import { registerMockIpcHandler } from '$shared/ipc-mock-router';",
+        ...names.map((name) => `registerMockIpcHandler('${name}', async () => undefined);`),
+      ].join('\n'),
+    });
+    expect(findRendererSideEffectBoundaryViolations([registry, seeder(channels)])).toEqual([]);
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        seeder([...channels, 'backend:unreviewed']),
+      ]),
+    ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
+  });
+
   it('pins the user MCP bridge seeder to its reviewed registration', () => {
     const seeder = (channels: string[]) => ({
       path: 'src/store/renderer/seeders/user-mcp-bridge-seeder.ts',

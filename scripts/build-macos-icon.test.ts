@@ -145,7 +145,7 @@ describe('modern macOS icon compiler', () => {
 
   it('packages the modern resource and declares the legacy fallback', () => {
     const config = readFileSync(join(process.cwd(), 'electron-builder.yml'), 'utf8');
-    expect(config).toMatch(/^beforePack: scripts\/build-macos-icon\.js$/m);
+    expect(config).toMatch(/^beforePack: scripts\/desktop-before-pack\.mjs$/m);
     expect(config).toContain('    - from: build/macos-icon/Assets.car\n      to: Assets.car');
     expect(config).toContain('    CFBundleIconName: Intent');
     expect(config).toContain('    CFBundleIconFile: icon.icns');

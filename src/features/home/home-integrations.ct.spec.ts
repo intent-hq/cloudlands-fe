@@ -664,6 +664,30 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   const filter = component.getByRole('combobox', { name: 'Home views', exact: true });
   await filter.click();
   await page.getByRole('option', { name: 'Created by me', exact: true }).click();
+  // The old linked row can remain visible during the debounced refresh. Observe
+  // this filter's wire request before the next selection can supersede it.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window
+          .__homeIntegrationBrowser!.calls.filter((call) => call.method === 'github.pulls.search')
+          .map(({ params }) => ({ filter: params.filter, state: params.state })),
+      ),
+    )
+    .toEqual([
+      { filter: 'assigned', state: 'open' },
+      { filter: 'created', state: 'open' },
+    ]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.__homeIntegrationBrowser!.calls.filter(
+            (call) => call.method === 'github.pulls.get' && call.params.number === 901,
+          ).length,
+      ),
+    )
+    .toBe(2);
   await expect(list).toContainText('Linked service fix');
   const status = component.getByRole('combobox', { name: 'Status', exact: true });
   await status.click();

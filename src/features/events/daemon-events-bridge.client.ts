@@ -4,6 +4,8 @@ import {
   announceSubmissionDelivery,
 } from '$features/agent/submission-evidence';
 import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
+import { desktopEventReceived } from '$store/renderer/slices/desktop-control/desktop-control-slice';
+import { parseDesktopEvent } from '$features/desktop/renderer/desktop-client';
 import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
@@ -3674,6 +3676,11 @@ export function routeDaemonEventsNotification(
   if (!event || typeof event !== 'object') return;
   const type = (event as { type?: unknown }).type;
   if (typeof type !== 'string') return;
+  if (type.startsWith('desktop:')) {
+    const desktop = parseDesktopEvent(event);
+    if (desktop) appStore.dispatch(desktopEventReceived(desktop));
+    return;
+  }
 
   // `settings:changed` (§6.5) is global — no `workspaceId` envelope is
   // expected, so it must be routed BEFORE the workspace-id gate below.
@@ -4365,6 +4372,7 @@ export function routeDaemonEventsNotification(
  * daemon restart.
  */
 export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
+  'desktop:*',
   'agent:*',
   'hub:checkpoint',
   // `file:*` is deliberately ABSENT: system-actor watcher bursts from every

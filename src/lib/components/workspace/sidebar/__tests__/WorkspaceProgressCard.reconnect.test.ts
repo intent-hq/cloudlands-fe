@@ -147,7 +147,7 @@ async function mount() {
   await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
   return view;
 }
-const primary = () => screen.getByText('Set Current Client as Primary');
+const primary = () => screen.getByText('Set primary client');
 const writes = () =>
   wire.request.mock.calls.filter(([method]) => method === 'workspace.setBrowserClient');
 async function reconnect(reverse = false) {
