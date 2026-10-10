@@ -7,8 +7,9 @@
  * directory pre-flight, because the daemon owns the checkout location
  * (same picked-repo flow as CompactWorkspaceInitializer).
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 const LOCAL_PATH = '/tmp/local-folder';
 const mocks = vi.hoisted(() => ({
@@ -48,9 +49,18 @@ vi.mock('svelte-fa', async () => {
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { store as appStore } from '$store/renderer/store';
-import { resetMockIpcRouter, setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
 import { m } from '$shared/paraglide/messages.js';
+import { store as appStore } from '$store/renderer/store';
+import { localRepoDiscoverySaga } from '$store/renderer/slices/known-repos/sagas/local-repo-discovery-saga';
+import { hostExecutionSaga } from '$store/renderer/slices/host-execution/sagas/host-execution-saga';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
+import { resetMockIpcRouter, setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
 // Side-effect import: bridges `file:getDirectoryStatus` → daemon `host.directoryStatus`.
 import '$store/renderer/seeders/host-bridge-seeder';
 
@@ -74,6 +84,17 @@ function mockDaemon(): Array<Record<string, unknown>> {
       });
     }
     if (method === 'host.checkGit') return Promise.resolve({ available: true });
+    if (method === 'repo.list') return Promise.resolve({ repos: [] });
+    if (method === 'workspace.list') return Promise.resolve({ workspaces: [] });
+    if (method === 'host.listDirectory')
+      return Promise.resolve({
+        path: '/home/dev',
+        home: '/home/dev',
+        parent: '/home',
+        entries: [],
+        favorites: [],
+      });
+    if (method === 'workspace.findRepositories') return Promise.resolve({ repositories: [] });
     return Promise.resolve(undefined);
   }) as never);
   return dirStatusCalls;
@@ -109,11 +130,14 @@ async function openGithubTab(
 }
 
 describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
-  beforeAll(() => {
-    appStore.init();
-  });
+  let disposeStore: () => void;
 
   beforeEach(() => {
+    disposeStore = appStore.init();
+    admitLegacyPrincipal();
+    appStore.dispatch(
+      hostExecutionConnectionChanged(selectPrincipalConnectionContext.select(appStore.state)),
+    );
     // Unrelated channels invoked during tab mount (github auth/search) resolve
     // to undefined instead of rejecting as unbridged.
     setMockIpcInvokeFallback(undefined);
@@ -121,6 +145,7 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
 
   afterEach(() => {
     cleanup();
+    disposeStore();
     backendRequestMock.mockReset();
     mocks.localDirectoryStatus = null;
     sessionStorage.clear();
@@ -132,6 +157,280 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     // re-registered on the next import in a fresh module registry).
     resetMockIpcRouter();
   });
+
+  it('discovers once on mount and preserves a manual selection when results arrive', async () => {
+    appStore.dispatch(hydrateWorkspaceInitializer({}));
+    let finishScan!: (value: { repositories: string[] }) => void;
+    const scan = new Promise<{ repositories: string[] }>((resolve) => {
+      finishScan = resolve;
+    });
+    backendRequestMock.mockImplementation((async (method: string) => {
+      if (method === 'repo.list') return { repos: [] };
+      if (method === 'workspace.list') return { workspaces: [] };
+      if (method === 'host.listDirectory')
+        return {
+          path: '/home/dev',
+          home: '/home/dev',
+          parent: '/home',
+          entries: [],
+          favorites: [],
+        };
+      if (method === 'workspace.findRepositories') return scan;
+      if (method === 'host.checkGit') return { available: true };
+      return undefined;
+    }) as never);
+    const stop = appStore.runSaga(localRepoDiscoverySaga);
+    try {
+      const selections: ProjectSelection[] = [];
+      render(ProjectPickerMessage, {
+        props: { onProjectChange: (value) => selections.push(value) },
+      });
+      await waitFor(() =>
+        expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
+          directory: '/home/dev',
+        }),
+      );
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.onboarding_localRepoTab_browse_ariaLabel() }),
+      );
+      await waitFor(() => expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH));
+      finishScan({ repositories: ['/home/dev/website'] });
+      await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+      expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH);
+      await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'no-match' } });
+      expect(screen.queryAllByRole('option')).toHaveLength(0);
+      await fireEvent.click(
+        screen.getByRole('tab', {
+          name: m.onboarding_projectPicker_githubRepo_label(),
+          exact: true,
+        }),
+      );
+      await fireEvent.click(
+        screen.getByRole('tab', {
+          name: m.onboarding_projectPicker_localFolder_label(),
+          exact: true,
+        }),
+      );
+      await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
+      expect(
+        backendRequestMock.mock.calls.filter(([method]) => method === 'workspace.findRepositories'),
+      ).toHaveLength(1);
+    } finally {
+      cleanup();
+      stop();
+    }
+  });
+
+  it('recovers rendered suggestions through the real host lifecycle without changing a manual selection', async () => {
+    mockDaemon();
+    const fallback = backendRequestMock.getMockImplementation()!;
+    let repositories = ['/home/dev/before-reconnect'];
+    backendRequestMock.mockImplementation(((method: string, params?: unknown) => {
+      if (method === 'workspace.findRepositories') return Promise.resolve({ repositories });
+      if (method === 'providers.catalog') return Promise.resolve(MOCK_PROVIDER_CATALOG);
+      return fallback(method, params);
+    }) as never);
+    const stopHost = appStore.runSaga(hostExecutionSaga);
+    const stopDiscovery = appStore.runSaga(localRepoDiscoverySaga);
+    const scans = () =>
+      backendRequestMock.mock.calls.filter(([method]) => method === 'workspace.findRepositories');
+    try {
+      // Initial host binding clears preferences; hydrate after that reset, as at boot.
+      appStore.dispatch(hydrateWorkspaceInitializer({}));
+      const selections: ProjectSelection[] = [];
+      render(ProjectPickerMessage, {
+        props: { onProjectChange: (value) => selections.push(value) },
+      });
+      await waitFor(() => expect(appStore.state.knownRepos.discovery.status).toBe('complete'));
+      await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.onboarding_localRepoTab_browse_ariaLabel() }),
+      );
+      await waitFor(() => expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH));
+      const selection = selections.at(-1);
+      appStore.dispatch(connectionStatusChanged('disconnected'));
+      await waitFor(() => expect(appStore.state.knownRepos.discovery.status).toBe('idle'));
+      await waitFor(() =>
+        expect(screen.queryByRole('option', { name: /before-reconnect/ })).toBeNull(),
+      );
+      expect(scans()).toHaveLength(1);
+      expect(selections.at(-1)).toEqual(selection);
+      repositories = ['/home/dev/after-reconnect'];
+      appStore.dispatch(connectionStatusChanged('connected'));
+      await tick();
+      expect(scans()).toHaveLength(1);
+      appStore.dispatch(daemonEventsSubscribed());
+      admitLegacyPrincipal();
+      await waitFor(() => expect(appStore.state.knownRepos.discovery.status).toBe('complete'));
+      await waitFor(() =>
+        expect(screen.getByRole('option', { name: /after-reconnect/ })).toBeTruthy(),
+      );
+      expect(screen.queryByRole('option', { name: /before-reconnect/ })).toBeNull();
+      expect(selections.at(-1)).toEqual(selection);
+      expect(scans()).toEqual([
+        ['workspace.findRepositories', { directory: '/home/dev' }],
+        ['workspace.findRepositories', { directory: '/home/dev' }],
+      ]);
+      appStore.dispatch(connectionStatusChanged('connected'));
+      admitLegacyPrincipal();
+      await tick();
+      expect(scans()).toHaveLength(2);
+    } finally {
+      cleanup();
+      stopDiscovery();
+      stopHost();
+    }
+  });
+
+  it.each(
+    [false, true].flatMap((hydratedBeforeMount) =>
+      ['click', 'Enter', ' '].map((activation) => ({ hydratedBeforeMount, activation })),
+    ),
+  )(
+    'discovers only after $activation on Local with saved GitHub preferences (hydrated before mount: $hydratedBeforeMount)',
+    async ({ hydratedBeforeMount, activation }) => {
+      mockDaemon();
+      const hydration = hydrateWorkspaceInitializer({
+        lastSelectedRepo: {
+          type: 'github',
+          path: 'octo/hello',
+          githubUrl: 'https://github.com/octo/hello',
+        },
+      });
+      if (hydratedBeforeMount) appStore.dispatch(hydration);
+      const stop = appStore.runSaga(localRepoDiscoverySaga);
+      try {
+        const selections: ProjectSelection[] = [];
+        render(ProjectPickerMessage, {
+          props: { onProjectChange: (value) => selections.push(value) },
+        });
+        await tick();
+        expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+        if (!hydratedBeforeMount) appStore.dispatch(hydration);
+        await waitFor(() => expect(selections.at(-1)?.type).toBe('github'));
+        expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+        expect(backendRequestMock).not.toHaveBeenCalledWith('workspace.findRepositories', {
+          directory: '/home/dev',
+        });
+        const localTab = screen.getByRole('tab', {
+          name: m.onboarding_projectPicker_localFolder_label(),
+          exact: true,
+        });
+        await fireEvent.focus(localTab);
+        expect(localTab.getAttribute('aria-selected')).toBe('false');
+        expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+        if (activation === 'click') await fireEvent.click(localTab);
+        else await fireEvent.keyDown(localTab, { key: activation });
+        await waitFor(() => expect(selections.at(-1)?.type).toBe('local'));
+        expect(localTab.getAttribute('aria-selected')).toBe('true');
+        await waitFor(() =>
+          expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
+            directory: '/home/dev',
+          }),
+        );
+        expect(
+          backendRequestMock.mock.calls.filter(
+            ([method]) => method === 'workspace.findRepositories',
+          ),
+        ).toHaveLength(1);
+      } finally {
+        cleanup();
+        stop();
+      }
+    },
+  );
+
+  it.each([null, { type: 'local' as const, path: '/tmp/saved' }])(
+    'discovers after Local preferences finish hydrating: %j',
+    async (lastSelectedRepo) => {
+      mockDaemon();
+      const stop = appStore.runSaga(localRepoDiscoverySaga);
+      try {
+        render(ProjectPickerMessage);
+        await tick();
+        expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+        appStore.dispatch(hydrateWorkspaceInitializer({ lastSelectedRepo }));
+        await waitFor(() =>
+          expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
+            directory: '/home/dev',
+          }),
+        );
+        expect(
+          backendRequestMock.mock.calls.filter(([method]) => method === 'repo.list'),
+        ).toHaveLength(1);
+      } finally {
+        cleanup();
+        stop();
+      }
+    },
+  );
+
+  it.each(['local-prefill', 'click', 'Enter', ' '])(
+    'honors an explicit %s before preference hydration',
+    async (source) => {
+      mockDaemon();
+      if (source === 'local-prefill')
+        sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: LOCAL_PATH }));
+      const stop = appStore.runSaga(localRepoDiscoverySaga);
+      try {
+        render(ProjectPickerMessage);
+        if (source !== 'local-prefill') {
+          await tick();
+          expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+          const localTab = screen.getByRole('tab', {
+            name: m.onboarding_projectPicker_localFolder_label(),
+            exact: true,
+          });
+          expect(localTab.getAttribute('aria-selected')).toBe('true');
+          await fireEvent.focus(localTab);
+          expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+          if (source === 'click') await fireEvent.click(localTab);
+          else await fireEvent.keyDown(localTab, { key: source });
+        }
+        await waitFor(() =>
+          expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
+            directory: '/home/dev',
+          }),
+        );
+        await fireEvent.click(
+          screen.getByRole('tab', {
+            name: m.onboarding_projectPicker_localFolder_label(),
+            exact: true,
+          }),
+        );
+        expect(
+          backendRequestMock.mock.calls.filter(
+            ([method]) => method === 'workspace.findRepositories',
+          ),
+        ).toHaveLength(1);
+      } finally {
+        cleanup();
+        stop();
+      }
+    },
+  );
+
+  it.each([{ githubUrl: 'https://github.com/octo/hello' }, { projectName: 'new-project' }])(
+    'does not discover for a non-Local prefill: %j',
+    async (prefill) => {
+      mockDaemon();
+      sessionStorage.setItem('workspace-prefill', JSON.stringify(prefill));
+      const stop = appStore.runSaga(localRepoDiscoverySaga);
+      try {
+        render(ProjectPickerMessage);
+        await tick();
+        appStore.dispatch(
+          hydrateWorkspaceInitializer({ lastSelectedRepo: { type: 'local', path: LOCAL_PATH } }),
+        );
+        await tick();
+        expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+        expect(backendRequestMock).not.toHaveBeenCalledWith('host.listDirectory', {});
+      } finally {
+        cleanup();
+        stop();
+      }
+    },
+  );
 
   it('typing owner/repo yields a valid picked-repo selection with no clonePath', async () => {
     mockDaemon();
