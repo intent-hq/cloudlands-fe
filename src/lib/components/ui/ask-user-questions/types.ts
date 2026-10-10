@@ -43,7 +43,8 @@ export interface AskUserQuestionsProps {
   questions: AskUserQuestion[];
   currentIndex?: number;
   defaultCurrentIndex?: number;
-  onCurrentIndexChange?: (index: number) => void;
+  /** Includes answers written during the same interaction, before controlled props refresh. */
+  onCurrentIndexChange?: (index: number, answers: Record<string, AskUserAnswer>) => void;
   answers?: Record<string, AskUserAnswer>;
   defaultAnswers?: Record<string, AskUserAnswer>;
   onAnswersChange?: (answers: Record<string, AskUserAnswer>) => void;

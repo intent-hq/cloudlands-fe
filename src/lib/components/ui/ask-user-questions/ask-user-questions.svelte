@@ -243,11 +243,11 @@
     return next;
   }
 
-  function setIndex(next: number) {
+  function setIndex(next: number, snapshot = latestAnswers) {
     const shouldRestoreFocus =
       restoreFocusOnNavigate && rootElement?.contains(document.activeElement);
     if (currentIndex === undefined) internalIndex = next;
-    onCurrentIndexChange?.(next);
+    onCurrentIndexChange?.(next, snapshot);
     if (shouldRestoreFocus) restoreFirstRow();
   }
 
@@ -260,7 +260,7 @@
 
   function goNext(snapshot: Record<string, AskUserAnswer>) {
     if (safeIndex >= questions.length - 1) onComplete?.(snapshot);
-    else setIndex(safeIndex + 1);
+    else setIndex(safeIndex + 1, snapshot);
   }
 
   function selectSingle(id: string) {
