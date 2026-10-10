@@ -85,6 +85,12 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectCanDeleteScript: () => ({
+    subscribe: (listener: (value: boolean) => void) => {
+      listener(false);
+      return () => {};
+    },
+  }),
   selectAllWorkspaceScriptEntries: Object.assign(
     () => ({
       subscribe(listener: (scripts: ScriptWithState[]) => void) {

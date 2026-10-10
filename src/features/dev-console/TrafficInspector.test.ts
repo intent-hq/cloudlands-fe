@@ -1,5 +1,10 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
+
+// The payload assertions deliberately pin literal wall-clock text. Keep the real
+// local formatter and scope its timezone to this suite, including module imports.
+vi.hoisted(() => vi.stubEnv('TZ', 'UTC'));
+afterAll(() => vi.unstubAllEnvs());
 import Shell from './DevConsoleShell.svelte';
 import { resetMonaco, editors, models, initializePayloadMonaco } from './__tests__/monaco-mock';
 vi.mock('./payload-monaco', () => ({ initializePayloadMonaco: () => initializePayloadMonaco() }));

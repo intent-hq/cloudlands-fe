@@ -5,12 +5,14 @@
    * Renders a file editor with auto-save, diff indicators, and header actions.
    */
 
+  import { editableText, fileSnapshot } from '$features/file/utils/file-content';
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { updateFileTabPath } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
     selectFileContent,
+    selectFileContentEntry,
     selectFileError,
     selectFileIsBinary,
     selectFileIsDirty,
@@ -336,14 +338,16 @@
     const rootPath = repoPath;
     return () => {
       if (!wsId || !filePath) return;
-      const content = selectFileContent.select(appStore.state, wsId, filePath);
+      const entry = selectFileContentEntry.select(appStore.state, wsId, filePath);
+      if (entry?.kind !== 'editable-text') return;
+      const content = editableText(entry.localContent);
       const dirty = selectFileIsDirty.select(appStore.state, wsId, filePath);
       const absolutePath = isAbsolutePath(filePath)
         ? filePath
         : rootPath
           ? `${rootPath}/${filePath}`
           : null;
-      if (dirty && content !== null && absolutePath) {
+      if (dirty && absolutePath) {
         appStore.dispatch(saveFileContentRequested(wsId, filePath, absolutePath, content));
       }
     };
@@ -388,16 +392,30 @@
   }
 
   function setFileContentFromEditor(content: string) {
-    if (isReadOnly || !tab.filePath || !workspaceId || !fileAbsolutePath) return;
+    if (isReadOnly || isFileBinary || !tab.filePath || !workspaceId || !fileAbsolutePath) return;
     // Optimistic local update + debounced file.write through the seam.
-    appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content));
+    appStore.dispatch(updateFileContent(workspaceId, tab.filePath, editableText(content)));
   }
 
   function saveFileContent() {
-    if (isReadOnly || !tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving)
+    if (
+      isReadOnly ||
+      isFileBinary ||
+      !tab.filePath ||
+      !fileAbsolutePath ||
+      fileContent === null ||
+      fileSaving
+    )
       return;
+    const entry = selectFileContentEntry.select(appStore.state, workspaceId, tab.filePath);
+    if (entry?.kind !== 'editable-text') return;
     appStore.dispatch(
-      saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent),
+      saveFileContentRequested(
+        workspaceId,
+        tab.filePath,
+        fileAbsolutePath,
+        editableText(entry.localContent),
+      ),
     );
   }
 
@@ -518,11 +536,22 @@
   function handleDeleteFile() {
     const absolutePath = fileAbsolutePath;
     if (isReadOnly || !tab.filePath || !workspaceId || !absolutePath) return;
+    const snapshot = fileSnapshot(
+      selectFileContentEntry.select(appStore.state, workspaceId, tab.filePath),
+    );
+    if (!snapshot) {
+      notify.error(
+        m.ui_reversibleActions_failed_error({
+          message: m.fileExplorer_tree_undoUnavailable_error(),
+        }),
+      );
+      return;
+    }
     appStore.dispatch(
       deleteFileWithUndoRequested(workspaceId, tab.filePath, {
         absolutePath,
         tabId: tab.id,
-        content: selectFileContent.select(appStore.state, workspaceId, tab.filePath) ?? '',
+        snapshot,
       }),
     );
   }
@@ -545,10 +574,10 @@
 
 {#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->
-  {#if !isOutsideWorkspace && !isReadOnly}
+  {#if !isOutsideWorkspace && !isReadOnly && !isFileBinary}
     <Menu.CommandItem icon={faFloppyDisk} label={saveStatusLabel} disabled />
   {/if}
-  {#if tab.filePath && !isOutsideWorkspace}
+  {#if tab.filePath && !isOutsideWorkspace && !isFileBinary}
     <ViewSettingsDropdown
       embedded
       showFold={false}
@@ -668,9 +697,24 @@
           </ul>
         {/if}
       </div>
+    {:else if isFileBinary}
+      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3 p-4">
+        <p>{m.editor_fileViewer_binary_label()}</p>
+        <p class="text-xs break-all">{tab.filePath}</p>
+        {#if !isReadOnly && workspaceFilePath}
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={handleDownloadFile}
+            disabled={!downloadReady || downloading}
+          >
+            {m.layout_fileTab_downloadFile_label()}
+          </Button>
+        {/if}
+      </div>
     {:else if fileContent !== null}
       {@const isSvgFile = tab.filePath?.toLowerCase().endsWith('.svg')}
-      {#if isFileBinary || isSvgFile}
+      {#if isSvgFile}
         <FileViewer
           filePath={tab.filePath || ''}
           {fileContent}

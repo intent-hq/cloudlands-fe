@@ -167,6 +167,18 @@ function panelTrigger(container: HTMLElement): HTMLButtonElement {
   )!;
 }
 
+it('renders an empty header while its tab list is unavailable, then recovers', async () => {
+  const view = renderHeader('terminal', { tabs: undefined });
+  expect(view.container.querySelector('[data-empty-panel-header]')).not.toBeNull();
+  await view.rerender({ tabs: [tab('terminal')], activeTabId: 'stale-tab' });
+  expect(view.container.querySelector('[data-panel-content-header]')).not.toBeNull();
+  expect(view.container.querySelector('[data-pane-stack-selector-trigger]')?.textContent).toContain(
+    tab('terminal').title,
+  );
+  await view.rerender({ tabs: undefined, activeTabId: null });
+  expect(view.container.querySelector('[data-empty-panel-header]')).not.toBeNull();
+});
+
 function dragEvent(target: Element) {
   const data = new Map<string, string>();
   const dataTransfer = {
@@ -558,21 +570,6 @@ describe('mounted panel header actions menu', () => {
     expect(onTabClose).toHaveBeenCalledOnce();
     expect(onTabClose).toHaveBeenCalledWith('browser-tab');
     expect(onClosePanel).not.toHaveBeenCalled();
-  });
-
-  it('disables pane movement when the layout provides no move callback', async () => {
-    const { container } = renderHeader('note');
-
-    await fireEvent.click(panelTrigger(container));
-
-    expect(
-      (await screen.findByRole('menuitem', { name: 'Move panel left' })).getAttribute(
-        'aria-disabled',
-      ),
-    ).toBe('true');
-    expect(
-      screen.getByRole('menuitem', { name: 'Move panel right' }).getAttribute('aria-disabled'),
-    ).toBe('true');
   });
 
   it('rejects a drag from the trigger but keeps blank-header dragging active', async () => {

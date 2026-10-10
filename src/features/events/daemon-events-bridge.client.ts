@@ -60,8 +60,8 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      flows through the same dispatch with its exact daemon message and
  *      `resetFirstChunk: false` so the spinner shows the startup phase until
  *      the first chunk / stream:end / failed clears it.
- *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
- *      notes-read-service, which dispatches `applyNoteCreated`/
+ *   4. `note:*` (workspace-scoped, §7) → `noteEventReceived` in the registered
+ *      workspace-notes saga, which dispatches `applyNoteCreated`/
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
  *      panel while the workspace is open. The same events also trigger a
@@ -77,11 +77,11 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      or opening the note. The event payload is self-sufficient
  *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
  *      directly without a follow-up fetch.
- *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
- *      the comments-read-service, which refetches the affected note's comments
+ *   6. `comment:added` / `comment:resolved` (§6.5) → `commentEventReceived` in
+ *      the workspace-notes saga, which refetches the affected note's comments
  *      and reconciles the global comments slice per-comment (add / update /
  *      remove) so other notes' comments stay intact. Wired the same way
- *      `note:*` funnels through the notes-read-service.
+ *      `note:*` funnels through the same registered saga owner.
  *   7. `pr:linked` / `pr:updated` / `pr:unlinked` (§7.6) → `updateWorkspaceEntity`
  *      on the workspace slice with `{ prNumber, prUrl, prStatus, activePullRequest }`
  *      (or the cleared shape on unlink). This replaces the legacy main→renderer
@@ -238,8 +238,10 @@ import {
   navigateAwayIfViewing,
 } from '$features/workspace/navigate-away-if-viewing';
 import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { applyNoteFromEvent } from '$features/notes/notes-read-service';
-import { applyCommentFromEvent } from '$features/comments/comments-read-service';
+import {
+  commentEventReceived,
+  noteEventReceived,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   ensureAgentSession,
   notePendingQuestionMarkerProjection,
@@ -2091,7 +2093,7 @@ function handleNoteEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyNoteFromEvent(workspaceId, noteId, type);
+  appStore.dispatch(noteEventReceived(workspaceId, noteId, type));
   debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
@@ -2147,7 +2149,7 @@ function handleCommentEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyCommentFromEvent(workspaceId, noteId, kind);
+  appStore.dispatch(commentEventReceived(workspaceId, noteId, kind));
 }
 
 /**
@@ -3244,7 +3246,7 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  *   { workspaceId }` — same debounced-reload gate.
  * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
  *   `{ workspaceId, noteId, attributions }` so the tiptap
- *   `LineAttributionGutter.svelte` `listenSync('line-attribution:updated')`
+ *   the workspace-notes read saga's `takeEveryFromListenSync` listener
  *   reload path fires without touching the daemon transport directly.
  * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
  *
@@ -3514,7 +3516,7 @@ function resolveHighlightId(highlightId: string): string {
 
 /**
  * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
- * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
+ * `{ route, workspaceId?, agentId?, highlightId?, durationMs? }`. Navigate the app UI to
  * the specified route and optionally pulse the highlight target with the given
  * duration. If highlightId is present, dispatch requestUiHighlight after
  * navigation settles.
@@ -3534,8 +3536,15 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       ? data.durationMs
       : undefined;
 
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
+
   import('$lib/utils/navigation.client')
-    .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
+    .then(({ navigateToRoute }) => navigateToRoute(route, options))
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -3575,7 +3584,7 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
 
 /**
  * `app:workspace-open` (§6.5 Chief-workspace workspace-open) — carries
- * `{ workspaceId, openInNewWindow? }`. Open the specified workspace in the
+ * `{ workspaceId, agentId?, openInNewWindow? }`. Open the specified workspace in the
  * current window (navigate to /workspace/:id) or in a new window if
  * openInNewWindow is true. Uses the IPC window.open-new channel when
  * openInNewWindow is set, falling back to in-window navigation on failure.
@@ -3590,6 +3599,12 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 
   const openInNewWindow = data.openInNewWindow === true;
   const route = `/workspace/${workspaceId}`;
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
 
   if (openInNewWindow) {
     // Try to open in new window via IPC, fall back to navigation if it fails
@@ -3607,7 +3622,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
             error: 'error' in result ? result.error : undefined,
           });
           const { navigateToRoute } = await import('$lib/utils/navigation.client');
-          return navigateToRoute(route, { assistantContent: true });
+          return navigateToRoute(route, options);
         }
       })
       .catch(async (error: unknown) => {
@@ -3616,14 +3631,14 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           error,
         });
         const { navigateToRoute } = await import('$lib/utils/navigation.client');
-        return navigateToRoute(route, { assistantContent: true });
+        return navigateToRoute(route, options);
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
     import('$lib/utils/navigation.client')
-      .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
+      .then(({ navigateToRoute }) => navigateToRoute(route, options))
       .catch((error: unknown) => {
         logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
       });

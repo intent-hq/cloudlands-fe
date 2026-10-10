@@ -12,9 +12,14 @@
  * derived goes null after removeScript exactly like production.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, waitFor } from '@testing-library/svelte';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ScriptWithState } from '$features/scripts/types';
+
+const authority = vi.hoisted(() => ({ current: 'admitted' as string | null }));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: { select: () => authority.current },
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
@@ -119,16 +124,28 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
-    restart: vi.fn(),
-    remove: vi.fn().mockResolvedValue({ success: true }),
-    update: vi.fn(),
-  },
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const { appClient } = await import('$lib/client');
+  return {
+    backendRequest: vi.fn(async (_method: string, params: { workspaceId: string }) => {
+      const { workspaceId, ...definition } = params;
+      const result = await appClient.scripts.create(workspaceId, definition as never);
+      if (!result.success) throw new Error(result.error);
+      return result.script;
+    }),
+  };
+});
+
+vi.mock('$lib/client', () => ({
+  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
 }));
+vi.mock('$features/scripts/scripts.client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/scripts/scripts.client')>();
+  return {
+    scriptsClient: { ...actual.scriptsClient, stop: vi.fn(), remove: vi.fn() },
+  };
+});
+vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn().mockResolvedValue(true) }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -143,12 +160,17 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ openUserTab }),
 }));
 
+import { confirm } from '$lib/components/patterns/confirm';
+import { notify } from '$lib/components/patterns/notify';
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { fireEvent, screen } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import { scriptsClient } from '$features/scripts/scripts.client';
 import {
   setScriptsData,
+  removeScript,
+  startScriptRequested,
+  updateRuntimeState,
   setScriptsInitialized,
 } from '$store/renderer/slices/scripts/scripts-slice';
 import {
@@ -156,6 +178,8 @@ import {
   openTerminalOverlay,
   selectScript,
 } from '$store/renderer/slices/terminals/terminals-slice';
+import { appClient } from '$lib/client';
+
 import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
@@ -203,6 +227,8 @@ warmImport(() => import('./mocks/MockButton.svelte'));
 describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authority.current = 'admitted';
+    vi.mocked(confirm).mockResolvedValue(true);
     (appStore as any).__reset();
   });
 
@@ -230,9 +256,9 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
     const { component } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
     await (component as any).handleScriptAction('delete', 'script-1');
 
-    expect(scriptsClient.remove).toHaveBeenCalledWith(WS_A, 'script-1');
+    expect(dispatchedTypes()).toContain('scripts/deleteScriptRequested');
+    appStore.dispatch(removeScript(WS_A, 'script-1'));
     expect(dispatchedTypes()).toContain('scripts/removeScript');
-    expect(dispatchedTypes()).toContain('terminals/clearScriptSelection');
     expect(rawSelectedScriptId(WS_A)).toBeNull();
   });
 
@@ -243,14 +269,101 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
     const { component } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
     await (component as any).handleScriptAction('delete', 'script-2');
 
+    appStore.dispatch(removeScript(WS_A, 'script-2'));
     expect(dispatchedTypes()).not.toContain('terminals/clearScriptSelection');
     expect(rawSelectedScriptId(WS_A)).toBe('script-1');
   });
 });
 
+describe('confirmed script deletion controls', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authority.current = 'admitted';
+    vi.mocked(confirm).mockResolvedValue(true);
+    (appStore as any).__reset();
+    seedWorkspace(WS_A, ['script-1', 'script-2'], 'script-1');
+    appStore.dispatch(openTerminalOverlay(WS_A));
+  });
+
+  it('names the script and cancellation sends no deletion request', async () => {
+    vi.mocked(confirm).mockResolvedValue(false);
+    render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.stringContaining('script-script-1'),
+        destructive: true,
+      }),
+    );
+    expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
+    expect(rawSelectedScriptId(WS_A)).toBe('script-1');
+  });
+
+  it.each(['running', 'starting', 'restarting', 'unknown', undefined])(
+    'disables deletion for %s',
+    async (status) => {
+      appStore.dispatch(updateRuntimeState(WS_A, 'script-1', { status: status as never }));
+      render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+      expect(
+        (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(confirm).not.toHaveBeenCalled();
+    },
+  );
+
+  it('disables deletion while a lifecycle request is pending', () => {
+    appStore.dispatch(startScriptRequested(WS_A, 'script-1'));
+    render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    expect(
+      (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it.each(['runtime', 'pending', 'selection', 'workspace', 'removed', 'renamed', 'unmounted'])(
+    'rechecks %s after confirmation opens',
+    async (change) => {
+      let accept!: (value: boolean) => void;
+      vi.mocked(confirm).mockReturnValue(
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+      );
+      const view = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
+      if (change === 'runtime')
+        appStore.dispatch(updateRuntimeState(WS_A, 'script-1', { status: 'running' }));
+      if (change === 'pending') appStore.dispatch(startScriptRequested(WS_A, 'script-1'));
+      if (change === 'selection') appStore.dispatch(selectScript(WS_A, 'script-2'));
+      if (change === 'workspace') await view.rerender({ workspaceId: 'ws-b' as WorkspaceId });
+      if (change === 'removed') appStore.dispatch(removeScript(WS_A, 'script-1'));
+      if (change === 'renamed')
+        appStore.dispatch(
+          setScriptsData(WS_A, [{ ...makeScript('script-1', WS_A), name: 'replacement' }]),
+        );
+      if (change === 'unmounted') view.unmount();
+      accept(true);
+      await waitFor(() => expect(notify.error).toHaveBeenCalled());
+      expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
+      expect(scriptsClient.remove).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['idle', 'exited'] as const)(
+    'requests deletion for %s from the visible header button',
+    async (status) => {
+      appStore.dispatch(updateRuntimeState(WS_A, 'script-1', { status }));
+      render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
+      await waitFor(() => expect(dispatchedTypes()).toContain('scripts/deleteScriptRequested'));
+    },
+  );
+});
+
 describe('QuakeTerminalOverlay script selection (intent-hq/monorepo#2236 regression)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authority.current = 'admitted';
+    vi.mocked(confirm).mockResolvedValue(true);
     (appStore as any).__reset();
   });
 
@@ -280,6 +393,8 @@ describe('QuakeTerminalOverlay script selection (intent-hq/monorepo#2236 regress
 describe('QuakeTerminalOverlay move to panel (intent-hq/intent#4436)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authority.current = 'admitted';
+    vi.mocked(confirm).mockResolvedValue(true);
     (appStore as any).__reset();
   });
 
@@ -321,4 +436,131 @@ describe('QuakeTerminalOverlay move to panel (intent-hq/intent#4436)', () => {
     expect(workspaceState(WS_A).placements).toEqual({ 'script-1': 'panel' });
     expect(workspaceState(WS_A).isOpen).toBe(false);
   });
+});
+
+describe('script definition and authority races', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authority.current = 'admitted';
+    vi.mocked(confirm).mockResolvedValue(true);
+    (appStore as any).__reset();
+    seedWorkspace(WS_A, ['script-1'], 'script-1');
+    appStore.dispatch(openTerminalOverlay(WS_A));
+    vi.mocked(appClient.scripts.list).mockResolvedValue([makeScript('script-1', WS_A)]);
+  });
+
+  it.each(['name', 'command'])('blocks deletion throughout a deferred %s save', async (field) => {
+    let finish!: (result: { success: boolean }) => void;
+    vi.mocked(appClient.scripts.create).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
+    if (field === 'name') {
+      await fireEvent.click(screen.getByTitle('Click to rename script'));
+      const input = view.container.querySelector('[data-edit-script-header-name]')!;
+      await fireEvent.input(input, { target: { value: 'Renamed' } });
+      await fireEvent.blur(input);
+    } else {
+      await fireEvent.click(screen.getByRole('button', { name: 'Edit command' }));
+      await fireEvent.input(screen.getByPlaceholderText('npm run dev'), {
+        target: { value: 'make check' },
+      });
+      await fireEvent.keyDown(screen.getByPlaceholderText('npm run dev'), {
+        key: 's',
+        ctrlKey: true,
+      });
+    }
+    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    expect(
+      (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    finish({ success: true });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it.each([false, true])(
+    'releases the delete button after a direct save fails (throw: %s)',
+    async (throws) => {
+      let finish!: () => void;
+      vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          finish = () =>
+            throws ? reject(new Error('offline')) : resolve({ success: false, error: 'offline' });
+        }),
+      );
+      render(QuakeTerminalOverlay, { workspaceId: WS_A });
+      const saved = scriptsClient.update(WS_A, 'script-1', { name: 'Renamed' });
+      const result = saved.catch((error: Error) => ({ success: false, error: error.message }));
+      await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+      expect(
+        (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      finish();
+      expect(await result).toEqual({ success: false, error: 'offline' });
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
+        ).toBe(false),
+      );
+    },
+  );
+
+  it('rejects a save started while confirmation is open', async () => {
+    let accept!: (value: boolean) => void;
+    let finish!: (result: { success: boolean }) => void;
+    vi.mocked(confirm).mockReturnValue(
+      new Promise((resolve) => {
+        accept = resolve;
+      }),
+    );
+    vi.mocked(appClient.scripts.create).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
+    await fireEvent.click(screen.getByTitle('Click to rename script'));
+    const input = view.container.querySelector('[data-edit-script-header-name]')!;
+    await fireEvent.input(input, { target: { value: 'Renamed' } });
+    await fireEvent.blur(input);
+    accept(true);
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
+    finish({ success: true });
+  });
+
+  it('reports missing authority before opening a confirmation', async () => {
+    authority.current = null;
+    render(QuakeTerminalOverlay, { workspaceId: WS_A });
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
+  });
+
+  it.each([null, 'new-admission'])(
+    'rejects authority changed to %s during confirmation',
+    async (next) => {
+      let accept!: (value: boolean) => void;
+      vi.mocked(confirm).mockReturnValue(
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+      );
+      render(QuakeTerminalOverlay, { workspaceId: WS_A });
+      await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
+      authority.current = next;
+      accept(true);
+      await waitFor(() => expect(notify.error).toHaveBeenCalled());
+      expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
+      expect(rawSelectedScriptId(WS_A)).toBe('script-1');
+    },
+  );
 });

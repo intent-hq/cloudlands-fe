@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
@@ -12,21 +14,10 @@
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
-  import {
-    requestArchiveWorkspace,
-    requestUnarchiveWorkspace,
-    requestDeleteWorkspace,
-  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import {
-    faThumbtack,
-    faBoxArchive,
-    faBoxOpen,
-    faTrash,
-    faArrowUpRightFromSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import { createHomeWorkspaceMenu } from './home-workspace-menu';
+  import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
@@ -106,79 +97,36 @@
     preview?: boolean;
     integrationPreview?: Partial<Record<'prs' | 'linear', HomeIntegrationsState>>;
   } = $props();
+  const microConnected$ = microConnectedReadable();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
+  function openWorkspace(id: string) {
+    contextMenu = null;
+    store.dispatch(openWorkspaceTab(id));
+    void goto(`/workspace/${encodeURIComponent(id)}`);
+  }
+  function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    openHomeWorkspaceFromEvent(event, id, openWorkspace);
+  }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
     contextMenu = {
       ...position,
-      returnFocus: position.returnFocus?.closest('[role="option"]') as HTMLElement | null,
+      returnFocus: position.returnFocus?.closest('[role="option"], button') as HTMLElement | null,
       workspace,
     };
   }
   function workspaceMenu(workspace: Workspace): SidebarMenuEntry[] {
-    const pinned = $pinnedIds$.includes(workspace.id);
-    const items: SidebarMenuEntry[] = [
-      {
-        id: 'open',
-        label: m.home_open_workspace(),
-        icon: faArrowUpRightFromSquare,
-        onClick: () => {
-          contextMenu = null;
-          store.dispatch(openWorkspaceTab(workspace.id));
-          void goto(`/workspace/${encodeURIComponent(workspace.id)}`);
-        },
-      },
-      {
-        id: 'pin',
-        label: pinned ? m.workspace_card_unpin_ariaLabel() : m.workspace_card_pin_ariaLabel(),
-        icon: faThumbtack,
-        onClick: () => {
-          contextMenu = null;
-          store.dispatch(togglePinWorkspace(workspace.id));
-          if (!pinned) updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } });
-          void tick().then(() =>
-            homeElement
-              ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-              ?.closest<HTMLElement>('[role="option"]')
-              ?.focus(),
-          );
-        },
-      },
-    ];
-    if (!selectHidesOwnerWorkspaceActions.select(store.state, workspace.id)) {
-      const archived = workspace.status === WorkspaceStatusEnum.Archived;
-      items.push(
-        { type: 'separator' },
-        {
-          id: 'archive',
-          label: archived
-            ? m.ui_workspaceActions_unarchiveSpace_label()
-            : m.workspace_card_archive_label(),
-          icon: archived ? faBoxOpen : faBoxArchive,
-          onClick: () => {
-            contextMenu = null;
-            store.dispatch(
-              archived
-                ? requestUnarchiveWorkspace(workspace.id)
-                : requestArchiveWorkspace(workspace.id),
-            );
-          },
-        },
-        {
-          id: 'delete',
-          label: m.workspace_card_deleteSpace_label(),
-          icon: faTrash,
-          destructive: true,
-          onClick: () => {
-            contextMenu = null;
-            store.dispatch(requestDeleteWorkspace(workspace.id));
-          },
-        },
-      );
-    }
-    return items;
+    return createHomeWorkspaceMenu(workspace, {
+      microConnected: $microConnected$,
+      pinned: $pinnedIds$.includes(workspace.id),
+      onOpen: openWorkspace,
+      onClose: () => (contextMenu = null),
+      expandPinned: () =>
+        updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
+      getHomeElement: () => homeElement,
+    });
   }
   const workspaces$ = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
@@ -459,16 +407,39 @@
         : null,
   );
   let homeElement = $state<HTMLDivElement | null>(null);
-  let pendingTabFocus: string | null = null;
-  function restoreTabFocus(header: HTMLElement) {
-    if (!pendingTabFocus) return;
-    const value = pendingTabFocus;
-    void tick().then(() => {
-      if (!header.isConnected) return;
-      header.querySelector<HTMLElement>(`[role="tab"][data-value="${value}"]`)?.focus();
-      if (pendingTabFocus === value) pendingTabFocus = null;
-    });
+  const homePanes = new Map<HTMLElement, typeof tab>();
+  let tabFocus = $state<{ value: typeof tab } | null>(null);
+  function syncPaneOwnership(pane: HTMLElement, value: typeof tab) {
+    pane.inert = destination !== 'workspaces' || value !== tab;
+    if (!pane.inert) pane.removeAttribute('aria-hidden');
+    else pane.setAttribute('aria-hidden', 'true');
   }
+  function registerHomePane(pane: HTMLElement, value: typeof tab) {
+    homePanes.set(pane, value);
+    syncPaneOwnership(pane, value);
+    return { destroy: () => homePanes.delete(pane) };
+  }
+  // Sync outside paused keyed effects, including same-pane reversal.
+  $effect.pre(() => {
+    const activeTab = destination === 'workspaces' ? tab : null;
+    untrack(() => {
+      for (const [pane, value] of homePanes) syncPaneOwnership(pane, value);
+      if (tabFocus?.value !== activeTab) tabFocus = null;
+    });
+  });
+  $effect(() => {
+    const intent = tabFocus;
+    if (!intent || destination !== 'workspaces' || intent.value !== tab) return;
+    void tick().then(() => {
+      if (tabFocus !== intent || destination !== 'workspaces' || tab !== intent.value) return;
+      const pane = [...homePanes].find(
+        ([node, value]) => value === intent.value && node.isConnected && !node.inert,
+      )?.[0];
+      const trigger = pane?.querySelector<HTMLElement>(`[role=tab][data-value="${intent.value}"]`);
+      trigger?.focus();
+      if (trigger && document.activeElement === trigger) tabFocus = null;
+    });
+  });
   let pendingFocusId = $state<string | null>(null);
   function closePreview() {
     pendingFocusId = selectedId;
@@ -761,16 +732,16 @@
             class="home-destination-content flex min-h-0 min-w-0 flex-col overflow-hidden"
             data-home-destination="workspaces"
             data-home-view={renderedTab}
+            use:registerHomePane={renderedTab}
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
             out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
             onoutrostart={(event) => {
+              // Outer routes can leave tab/destination unchanged; every outro revokes ownership.
               event.currentTarget.inert = true;
               event.currentTarget.setAttribute('aria-hidden', 'true');
+              if (tabFocus?.value === renderedTab) tabFocus = null;
             }}
-            onintrostart={(event) => {
-              event.currentTarget.inert = false;
-              event.currentTarget.removeAttribute('aria-hidden');
-            }}
+            onintrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
           >
             <Tabs.Root
               bind:value={() => renderedTab, () => undefined}
@@ -781,7 +752,7 @@
                 ) {
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
-                  pendingTabFocus = value;
+                  tabFocus = { value };
                   updateView({ tab: value });
                 }
               }}
@@ -791,7 +762,6 @@
               {#snippet children()}
                 {#snippet homeHeader()}
                   <header
-                    use:restoreTabFocus
                     class="home-header flex shrink-0 items-center gap-x-6 border-b border-border px-6"
                   >
                     <Tabs.List
@@ -913,6 +883,8 @@
                             {selectedId}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
+                            onopen={openWorkspace}
+                            oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />
                         {:else}
@@ -920,45 +892,49 @@
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
+                              onclick={(event) => openModifiedWorkspace(event, item.id)}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}
-                                {#if !selectedRepository && item.repositoryOwner}
-                                  <Tooltip.Provider
-                                    ><Tooltip.Root
-                                      ><Tooltip.Trigger
-                                        >{#snippet child({ props: homeTooltipProps })}<span
-                                            {...homeTooltipProps}
-                                          >
-                                            <GitHubAvatar
-                                              identity={item.repositoryOwner ?? ''}
-                                              size={20}
-                                              class="shrink-0 rounded-sm"
-                                            />
-                                          </span>{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content
-                                        >{[item.repositoryOwner, item.repositoryName]
-                                          .filter(Boolean)
-                                          .join('/')}</Tooltip.Content
-                                      ></Tooltip.Root
-                                    ></Tooltip.Provider
-                                  >
-                                {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
-                                  <Tooltip.Provider
-                                    ><Tooltip.Root
-                                      ><Tooltip.Trigger
-                                        >{#snippet child({ props: homeTooltipProps })}<span
-                                            {...homeTooltipProps}
-                                            class="flex size-5 items-center justify-center text-muted-foreground"
-                                            ><Fa icon={faFolder} /></span
-                                          >{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content
-                                        >{item.repositoryName ||
-                                          item.repositoryPath}</Tooltip.Content
-                                      ></Tooltip.Root
-                                    ></Tooltip.Provider
-                                  >
-                                {/if}
+                                <span class="flex items-center gap-2">
+                                  <WorkspaceMicroKeySlot workspaceId={item.id} />
+                                  {#if !selectedRepository && item.repositoryOwner}
+                                    <Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                            >
+                                              <GitHubAvatar
+                                                identity={item.repositoryOwner ?? ''}
+                                                size={20}
+                                                class="shrink-0 rounded-sm"
+                                              />
+                                            </span>{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{[item.repositoryOwner, item.repositoryName]
+                                            .filter(Boolean)
+                                            .join('/')}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >
+                                  {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
+                                    <Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                              class="flex size-5 items-center justify-center text-muted-foreground"
+                                              ><Fa icon={faFolder} /></span
+                                            >{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{item.repositoryName ||
+                                            item.repositoryPath}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >
+                                  {/if}
+                                </span>
                               {/snippet}
                               {#snippet title()}
                                 <span class="home-row-line">
@@ -1000,7 +976,7 @@
                                 </span>
                               {/snippet}
                               {#snippet trailing()}<span
-                                  class="workspace-row-meta flex items-center gap-2 text-muted-foreground"
+                                  class="workspace-row-meta flex shrink-0 items-center gap-2 text-muted-foreground"
                                 >
                                   {#if $pinnedIds$.includes(item.id)}<Tooltip.Provider
                                       ><Tooltip.Root
@@ -1017,7 +993,7 @@
                                     >{/if}
                                   <HomeWorkspaceStatus workspace={item} />
                                   <span
-                                    class="inline-flex w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
+                                    class="inline-flex min-w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
                                     data-home-row-time
                                   >
                                     <HomeActivityTime workspace={item} />
@@ -1035,6 +1011,16 @@
                             scroll: boolean,
                           )}
                             <ListView
+                              onkeydowncapture={(event) => {
+                                const option =
+                                  event.target instanceof HTMLElement
+                                    ? event.target.closest<HTMLElement>('[role="option"]')
+                                    : null;
+                                const id =
+                                  option?.querySelector<HTMLElement>('[data-home-workspace]')
+                                    ?.dataset.homeWorkspace;
+                                if (id) openModifiedWorkspace(event, id);
+                              }}
                               onkeydown={(event) => {
                                 const option =
                                   event.target instanceof HTMLElement

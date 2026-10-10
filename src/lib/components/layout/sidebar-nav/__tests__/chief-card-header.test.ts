@@ -70,10 +70,8 @@ describe('ChiefCard header', () => {
         appStore.dispatch(bulkUpsertSessions([makeChiefSession()]));
       }
       // Confirm the existing thread has reached the card before checking its child lifecycle.
-      const picker = await screen.findByRole('combobox', {
-        name: m.layout_chiefCard_threadPicker_ariaLabel(),
-      });
-      await waitFor(() => expect(picker.textContent).toContain(threadTitle));
+      const heading = await screen.findByRole('heading');
+      await waitFor(() => expect(heading.textContent).toContain(threadTitle));
       expect(screen.queryByTestId('mock-chat-panel')).toBeNull();
 
       await rerender({ isActive: true });

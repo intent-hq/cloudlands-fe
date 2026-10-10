@@ -123,7 +123,7 @@ it('uses an injected transport for delayed restore, flushed save, and clear', as
     set: vi.fn(async () => ({ ok: true, updatedAt: '2026-08-23T12:00:00.000Z' })),
     clear: vi.fn(async () => ({ ok: true })),
   };
-  stops = startChatFixtureSagas(store, { drafts: transport });
+  stops = startChatFixtureSagas(store, transport);
   store.dispatch(chatDraftOwnerOpened('composer'));
   store.dispatch(chatDraftRestoreRequested('composer', 'held', 'workspace', 'agent'));
   await settle();
@@ -163,7 +163,7 @@ it('starts question persistence alongside an injected draft owner and cancels he
     clear: vi.fn(async () => ({ ok: true })),
   };
   const start = vi.spyOn(store, 'runSaga');
-  stops = startChatFixtureSagas(store, { drafts: transport });
+  stops = startChatFixtureSagas(store, transport);
   expect(start).toHaveBeenCalledTimes(2);
   store.dispatch(chatDraftOwnerOpened('composer'));
   store.dispatch(chatDraftRestoreRequested('composer', 'held', 'workspace', 'agent'));

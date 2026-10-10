@@ -62,12 +62,14 @@ export const selectSubmissionIsCurrent = store.createSelector(
 export const selectAgentSubmissionDisplay = store.createSelector(
   (state, agentId: string, workspaceId: string) => {
     const scope = state.pendingSubmissions?.byAgentId[agentId]?.scope;
-    return scope?.workspaceId === workspaceId
-      ? selectPendingSubmissionDisplay.select(state, scope)
-      : projectPendingSubmissions(
-          undefined,
-          selectAgentQueueMessages.select(state, agentId, workspaceId),
-        );
+    const display =
+      scope?.workspaceId === workspaceId
+        ? selectPendingSubmissionDisplay.select(state, scope)
+        : projectPendingSubmissions(
+            undefined,
+            selectAgentQueueMessages.select(state, agentId, workspaceId),
+          );
+    return display;
   },
 );
 

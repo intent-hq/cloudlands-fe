@@ -84,6 +84,7 @@ import {
 import { shouldDeferTranscriptReveal } from '$lib/components/chat/chat-panel-visibility';
 import { selectSubscriptionSnapshotStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
 
 const WS = 'read-workspace';
 const AGENT = 'read-agent';
@@ -125,7 +126,11 @@ describe('background reads through the real store, sagas, clients and event brid
       stats: { total: 1, completed: 1, inProgress: 0 },
     }));
     dispose = store.init();
-    cancel.push(store.runSaga(agentSubscriptionReadSaga), store.runSaga(lifecycleReadSaga));
+    cancel.push(
+      ...startWorkspaceNotesSagaFixture(store),
+      store.runSaga(agentSubscriptionReadSaga),
+      store.runSaga(lifecycleReadSaga),
+    );
     store.dispatch(
       loadWorkspaceNotesSucceeded([WS], { [WS]: [{ ...note(''), contentLength: 5 }] }),
     );
@@ -359,11 +364,12 @@ describe('background reads through the real store, sagas, clients and event brid
     ]);
   });
 
-  it('joins concurrent note content demand without an unnecessary trailing note.get', async () => {
+  it('settles concurrent note content demand through one shared transport read', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();
     backend.onRequest('note.get', () => pending.promise);
     const first = ensureNoteContentLoaded(WS, 'task-note');
     const second = ensureNoteContentLoaded(WS, 'task-note');
+    await settle();
     expect(reads('note.get')).toEqual([
       { method: 'note.get', params: { workspaceId: WS, noteId: 'task-note' } },
     ]);
@@ -375,18 +381,21 @@ describe('background reads through the real store, sagas, clients and event brid
     expect(reads('note.get')).toHaveLength(1);
   });
 
-  it('preserves one trailing read when a genuine note event arrives during content demand', async () => {
+  it('preserves one trailing event read when a genuine note event arrives during content demand', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();
     let calls = 0;
     backend.onRequest('note.get', () =>
       ++calls === 1 ? pending.promise : { note: note('newer') },
     );
     const loaded = ensureNoteContentLoaded(WS, 'task-note');
+    await settle();
     event('note:updated', { noteId: 'task-note' });
     event('note:updated', { noteId: 'task-note' });
     pending.resolve({ note: note('older') });
     await settle();
     expect(await loaded).toBe(true);
+    // Event reads are trailing-coalesced, and their newer async-action seq keeps
+    // the earlier content-demand response from overwriting the refreshed note.
     expect(reads('note.get')).toHaveLength(2);
     expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
       'newer',

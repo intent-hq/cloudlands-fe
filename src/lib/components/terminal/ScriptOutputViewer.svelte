@@ -17,7 +17,6 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
-  import { scriptsClient } from '$features/scripts/scripts.client';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
@@ -32,7 +31,7 @@
     selectHidesAgentLifecycleActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-    removeScript,
+    startScriptRequested,
     scriptOutputRequested,
     scriptOutputReleased,
   } from '$store/renderer/slices/scripts/scripts-slice';
@@ -48,10 +47,9 @@
     scriptId: string;
     workspaceId: string;
     class?: string;
-    onDelete?: () => void;
   }
 
-  let { scriptId, workspaceId, class: className = '', onDelete }: Props = $props();
+  let { scriptId, workspaceId, class: className = '' }: Props = $props();
 
   const workspaceIdStore = writable('');
   const scriptIdStore = writable('');
@@ -266,17 +264,8 @@
 
   // ---- Start ----
 
-  async function handleStart(): Promise<void> {
-    await scriptsClient.start(workspaceId, scriptId);
-  }
-
-  // ---- Delete ----
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleDelete(): Promise<void> {
-    await scriptsClient.remove(workspaceId, scriptId);
-    appStore.dispatch(removeScript(workspaceId, scriptId));
-    onDelete?.();
+  function handleStart(): void {
+    appStore.dispatch(startScriptRequested(workspaceId, scriptId));
   }
 
   // ---- Ask Agent ----

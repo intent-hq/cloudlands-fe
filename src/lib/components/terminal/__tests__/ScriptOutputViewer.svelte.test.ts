@@ -1,3 +1,4 @@
+import { store as appStore } from '$store/renderer/store';
 /**
  * Regression tests for `ScriptOutputViewer.svelte` code-font wiring
  * (verifier follow-up).
@@ -31,7 +32,6 @@ const {
   fontReadableRef,
   scriptState,
   scriptSelectorArgs,
-  mockScriptStart,
   lifecycleGate,
   outputReadableRef,
   authorityReadableRef,
@@ -41,7 +41,6 @@ const {
   fontReadableRef: { value: null as any },
   scriptState: { byWorkspaceId: {} as Record<string, Record<string, any>> },
   scriptSelectorArgs: [] as unknown[][],
-  mockScriptStart: vi.fn(),
   lifecycleGate: { hidesAgentLifecycleActions: false },
   outputReadableRef: { value: null as any },
   authorityReadableRef: { value: null as any },
@@ -118,10 +117,6 @@ vi.mock('$features/terminal/terminal-theme-manager', () => ({
   },
 }));
 
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: { start: mockScriptStart, remove: vi.fn() },
-}));
-
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
   const makeSel = <T>(getter: (workspaceId: string, scriptId: string) => T) =>
     Object.assign(
@@ -188,7 +183,10 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 }));
 
 vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
-  removeScript: vi.fn(),
+  startScriptRequested: (...payload: unknown[]) => ({
+    type: 'scripts/startScriptRequested',
+    payload,
+  }),
   scriptOutputRequested: (...payload: unknown[]) => ({ type: 'scripts/outputRequested', payload }),
   scriptOutputReleased: (...payload: unknown[]) => ({ type: 'scripts/outputReleased', payload }),
 }));
@@ -342,7 +340,10 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     ).toBe(true);
 
     await fireEvent.click(screen.getByText('Run'));
-    expect(mockScriptStart).toHaveBeenCalledWith('ws-2', 's-1');
+    expect(appStore.dispatch).toHaveBeenCalledWith({
+      type: 'scripts/startScriptRequested',
+      payload: ['ws-2', 's-1'],
+    });
   });
 
   it('offers "Ask AI to Fix" on a failed script when agent creation is allowed', async () => {

@@ -81,7 +81,7 @@ test('Assistant sidebar updates active work and removes settled markers without 
   const rows = sidebar.getByRole('option');
   await expect(rows.first().locator('[data-thread-activity]')).toHaveCount(3);
   const titles = await rows.locator('[data-slot="list-row-title"]').allTextContents();
-  await rows.first().click();
+  await rows.first().click({ position: { x: 6, y: 6 } });
   await page.evaluate(() => window.__homeAssistantActivity!.settle('home-assistant-0'));
   await expect(rows.first().locator('[data-thread-activity]')).toHaveCount(0);
   await expect(rows.first()).toHaveAttribute('aria-selected', 'true');

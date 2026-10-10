@@ -1,8 +1,7 @@
 /** Indexed global note queries for the palette (search.notes, PROTOCOL §5.15). */
-import { backendRequest } from '$lib/client/live/backend-transport';
 import { buildMessageTitleSegments } from '$store/renderer/slices/command-palette/command-palette-utils';
+import type { PaletteNoteSearchUpdate } from '$store/renderer/slices/palette/palette-types';
 
-const NOTE_QUERY_DEBOUNCE_MS = 150;
 const NOTE_RESULT_LIMIT = 10;
 
 /** Required fields on an indexed daemon hit; preview is text, never trusted HTML. */
@@ -25,31 +24,7 @@ export interface IndexedNoteSearchResponse {
 
 export type NoteSearchWorkspace = NonNullable<Parameters<typeof buildMessageTitleSegments>[0]>;
 
-/** Presentation data only: navigation must use workspaceId + noteId, never id. */
-interface NoteQueryItem {
-  id: string;
-  type: 'note';
-  noteId: string;
-  workspaceId: string;
-  label: string;
-  /** Plain text; render with text interpolation, not {@html}. */
-  description: string;
-  score: number;
-  updatedAt: string;
-  isArchived: boolean;
-  isArchivedWorkspace: boolean;
-  workspaceName?: string;
-  repoLabel?: string;
-}
-
-export interface NoteQueryUpdate {
-  items: NoteQueryItem[];
-  loading: boolean;
-  capability: 'unknown' | 'indexed' | 'legacy';
-  /** Local title/tag discovery remains available when indexed results cannot be used. */
-  fallback: boolean;
-  error?: unknown;
-}
+export type NoteQueryUpdate = PaletteNoteSearchUpdate;
 
 function isIndexedNoteMatch(value: unknown): value is IndexedNoteMatch {
   if (!value || typeof value !== 'object') return false;
@@ -113,73 +88,5 @@ export function adaptNoteSearchResponse(
       // The search response owns archive state, including when metadata is missing/stale.
       isArchivedWorkspace: hit.workspaceArchived,
     })),
-  };
-}
-
-export interface NoteQueryController {
-  /** Global search with a soft active-workspace preference. Empty terms clear immediately. */
-  query(
-    term: string,
-    preferWorkspaceId: string | undefined,
-    workspaceItems: readonly NoteSearchWorkspace[],
-  ): void;
-  /** Invalidate queued and in-flight work, then emit empty idle state. */
-  clear(): void;
-  /** Invalidate queued and in-flight work without emitting (effect cleanup/unmount). */
-  cancel(): void;
-  /** Palette close: clear state and invalidate work. The controller may be reused on reopen. */
-  close(): void;
-}
-
-/**
- * Full snapshots are emitted on query/clear/close and after the current request settles.
- * A new query immediately discards prior rows, including on a workspace switch.
- * Cancellation is logical: transport requests may finish but can no longer publish.
- */
-export function createNoteQuery(onUpdate: (update: NoteQueryUpdate) => void): NoteQueryController {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  let generation = 0;
-
-  const cancel = () => {
-    ++generation;
-    if (timeout !== null) clearTimeout(timeout);
-    timeout = null;
-  };
-  const clear = () => {
-    cancel();
-    onUpdate({ items: [], loading: false, capability: 'unknown', fallback: true });
-  };
-
-  return {
-    query(term, preferWorkspaceId, workspaceItems) {
-      if (!term.trim()) {
-        clear();
-        return;
-      }
-      cancel();
-      const id = generation;
-      const workspaces = workspaceItems.map((workspace) => ({ ...workspace }));
-      onUpdate({ items: [], loading: true, capability: 'unknown', fallback: true });
-      timeout = setTimeout(async () => {
-        timeout = null;
-        let update: NoteQueryUpdate;
-        try {
-          const response = await backendRequest<unknown>('search.notes', {
-            query: term,
-            limit: NOTE_RESULT_LIMIT,
-            includeArchived: false,
-            ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
-          });
-          if (id !== generation) return;
-          update = adaptNoteSearchResponse(response, workspaces);
-        } catch (error) {
-          update = { items: [], loading: false, capability: 'unknown', fallback: true, error };
-        }
-        if (id === generation) onUpdate(update);
-      }, NOTE_QUERY_DEBOUNCE_MS);
-    },
-    clear,
-    cancel,
-    close: clear,
   };
 }

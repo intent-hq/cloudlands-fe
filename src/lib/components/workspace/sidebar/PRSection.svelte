@@ -4,13 +4,11 @@
   import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { createNativeSidebarReview } from '$features/accept-changes/native-sidebar-review.svelte';
   import NativeSidebarReview from '$features/accept-changes/components/NativeSidebarReview.svelte';
+  import PrRepositorySelect from '$features/accept-changes/components/PrRepositorySelect.svelte';
+  import { selectRepositorySelectionPending } from '$store/renderer/slices/repository-context/repository-context-selectors';
   import type { NativeSidebarReviewIntent } from '$store/renderer/slices/changes/changes-types';
   import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
   import { selectWorkspaceActionContext } from '$store/renderer/slices/workspace/workspace-selectors';
-  /**
-   * PRSection - Pull request creation, push/pull/sync, force push, rebase, connect remote, PR list
-   * Manages all PR-related UI state and handlers.
-   */
   import {
     prWorkflowRequested,
     resumePRWorkflowAfterAuth,
@@ -200,6 +198,7 @@
   const workspaceIdStore = toStore(() => workspaceId);
   const hostOperationContext$ = selectWorkspaceActionContext(workspaceIdStore);
   const nativeEnabled$ = selectLabsMultiplayerEnabled();
+  const remoteSaving$ = selectRepositorySelectionPending(workspaceIdStore);
   const nativeAdmission$ = selectPrincipalActionContext();
   const canHostOperations = $derived(isOwner && !!$hostOperationContext$);
   const canAdministerHost$ = selectCanAdministerHost();
@@ -343,6 +342,7 @@
   let authBannerKey = $state(0);
 
   const native = createNativeSidebarReview(() => ({
+    remoteSaving: $remoteSaving$,
     workspaceId,
     nativeReview,
     listOnly,
@@ -596,7 +596,14 @@
         </DividerButton>
       </div>
       <DividerPanel open={prDrawerOpen}>
-        {#if native.nativeMode}
+        <PrRepositorySelect
+          context={native.nativeRead.entry}
+          disabled={!!native.nativeIntent}
+          onsaved={native.startNativeRead}
+        />
+        {#if native.remoteSaving}
+          <p role="status">{m.repository_prRemote_saving_label()}</p>
+        {:else if native.nativeMode}
           <NativeSidebarReview review={native} />
         {:else if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
           <GitHubAuthBanner onSuccess={() => {}} />

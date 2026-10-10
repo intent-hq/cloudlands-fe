@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
+import { repositoryContextReducer } from '$store/renderer/slices/repository-context/repository-context-slice';
 import {
   gitReducer,
   gitReadRequested,
@@ -65,6 +66,7 @@ const mocks = vi.hoisted(() => {
 let reduxState = {
   git: gitReducer(undefined, { type: 'test/init' }),
   prWorkflow: prWorkflowReducer(undefined, { type: 'test/init' }),
+  repositoryContext: repositoryContextReducer(undefined, { type: 'test/init' }),
 };
 
 vi.mock('$store/renderer/store', async () => {
@@ -370,11 +372,13 @@ describe('PRSection', () => {
     reduxState = {
       git: gitReducer(undefined, { type: 'test/init' }),
       prWorkflow: prWorkflowReducer(undefined, { type: 'test/init' }),
+      repositoryContext: repositoryContextReducer(undefined, { type: 'test/init' }),
     };
     mocks.dispatch.mockImplementation((action) => {
       reduxState = {
         git: gitReducer(reduxState.git, action),
         prWorkflow: prWorkflowReducer(reduxState.prWorkflow, action),
+        repositoryContext: repositoryContextReducer(reduxState.repositoryContext, action),
       };
       (appStore as unknown as { emitState(): void }).emitState();
       return action;
