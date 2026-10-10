@@ -142,6 +142,23 @@ for (const { name, width, height, scenario } of cases) {
         transcript.locator('[data-message-id="home-assistant-response-11"]'),
       ).toBeVisible();
     }
+    // Reduced motion still creates short CSS transitions while the editor mounts.
+    // Measure scroll ownership only after the composer's initial layout has settled.
+    await expect(composer.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        composer.evaluate(
+          (element) =>
+            element
+              .getAnimations({ subtree: true })
+              .filter(
+                (animation) =>
+                  (animation.pending || animation.playState === 'running') &&
+                  animation.effect?.getComputedTiming().iterations !== Infinity,
+              ).length,
+        ),
+      )
+      .toBe(0);
     await expect.poll(async () => (await measure(host)).pageOverflow).toBeLessThanOrEqual(1);
     const before = await measure(host);
     expect(before.horizontalOverflow).toBeLessThanOrEqual(1);
