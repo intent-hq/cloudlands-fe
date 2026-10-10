@@ -25,6 +25,8 @@ if (args[0] === '--') {
   for (const childArgs of [
     ['scripts/check-deps-fresh.mjs'],
     generatedBuildConfigPrerequisite({ root }).args,
+    // This dependency contract uses node:test, not Vitest. Keep it in the required gate.
+    ['--test', 'scripts/table-paste-owner.test.mjs'],
     ['node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.config.ts', ...args],
   ]) {
     if (

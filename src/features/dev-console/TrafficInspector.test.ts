@@ -426,9 +426,13 @@ it.each(['chat.subscribe', 'note.subscribe'])(
     const text = documentFor(view, 'Response / error');
     expect(text.indexOf('"subscriptionId": "sub"')).toBeLessThan(text.indexOf('"snapshot"'));
     expect(text.indexOf('"snapshot"')).toBeLessThan(text.indexOf('"delta"'));
-    expect(text).toContain('10:00:00.005');
-    expect(text).toContain('10:00:00.017');
-    expect(text).toContain('10:00:00.040');
+    for (const milliseconds of [5, 17, 40]) {
+      const observed = new Date(Date.UTC(2026, 9, 2, 10, 0, 0, milliseconds));
+      const localTime = [observed.getHours(), observed.getMinutes(), observed.getSeconds()]
+        .map((value) => String(value).padStart(2, '0'))
+        .join(':');
+      expect(text).toContain(`${localTime}.${String(milliseconds).padStart(3, '0')}`);
+    }
     expect(text).toContain('5 ms since request');
     expect(text).toContain('12 ms since previous');
     expect(text).toContain('23 ms since previous');

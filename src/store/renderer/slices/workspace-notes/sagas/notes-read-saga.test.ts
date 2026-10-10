@@ -1,11 +1,16 @@
+import { noteDeleteRecoveryReserved } from '../workspace-notes-slice';
+import { noteDeleteViewChanged, noteDeleteViewRetired } from '../workspace-notes-slice';
 import { runSaga, stdChannel } from 'redux-saga';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
-import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceUnmounted,
+  backendReconnected,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { paletteNoteSearchRequested, paletteReducer } from '../../palette/palette-slice';
 import { selectPaletteNoteSearch } from '../../palette/palette-selectors';
 import { selectNoteAttributionView } from '../workspace-notes-selectors';
@@ -25,9 +30,12 @@ import {
   refreshNoteFromEventRequested,
   searchNotesRequested,
   selectNote,
+  specTaskLinksReceived,
   workspaceNotesReducer,
   workspaceNotesHydrationRequested,
 } from '../workspace-notes-slice';
+import { acquireFullNoteEditLease } from '../note-full-edit-lease';
+import { notePagesReducer, pagePanelOpened } from '../../note-pages/note-pages-slice';
 import { notesReadSaga } from './notes-read-saga';
 
 const WS = 'ws-notes-read';
@@ -35,12 +43,7 @@ const NOW = '2026-01-01T00:00:00.000Z';
 const workspaceMounted = (workspaceId: string) =>
   workspaceNotesHydrationRequested(workspaceId, 1, false);
 const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 
 function deferred<T>() {
@@ -68,7 +71,7 @@ function note(id: string, overrides: Partial<Note> = {}): Note {
   };
 }
 
-function harness(seed: Note[] = []) {
+function harness(seed: Note[] = [], notePages?: ReturnType<typeof notePagesReducer>) {
   const channel = stdChannel();
   const actions: Parameters<typeof workspaceNotesReducer>[1][] = [];
   let windowBackendId = 'backend-a';
@@ -82,6 +85,7 @@ function harness(seed: Note[] = []) {
   let palette = paletteReducer(undefined, { type: '@@init' });
   const state = () => ({
     workspaceNotes,
+    notePages,
     palette,
     connections: { hasReceivedList: true, windowBackendId },
     daemonHealth: { health: 'up', connectionGeneration: 1 },
@@ -90,12 +94,15 @@ function harness(seed: Note[] = []) {
   const dispatch = (action: any) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
     palette = paletteReducer(palette, action);
+    notePages = notePagesReducer(notePages, action);
     channel.put(action);
     if (
       action.type !== readNoteRequested.type &&
       action.type !== readNoteRequested.success.type &&
       action.type !== readNoteRequested.failure.type &&
-      action.type !== refreshNoteFromEventRequested.type
+      action.type !== refreshNoteFromEventRequested.type &&
+      // Internal identity allocation is reduced above; keep publication assertions unchanged.
+      action.type !== 'workspaceNotes/ensureNotePublicationLifetime'
     ) {
       actions.push(action);
     }
@@ -108,6 +115,7 @@ function harness(seed: Note[] = []) {
     dispatch,
     task,
     state,
+    send: dispatch,
     setConnectionContext(context: string | null) {
       subscriptionPending = context === null;
       if (context) windowBackendId = context;
@@ -116,9 +124,12 @@ function harness(seed: Note[] = []) {
 }
 
 describe('notesReadSaga', () => {
+  beforeEach(() => {
+    vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+  });
   afterEach(() => vi.restoreAllMocks());
 
-  it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
+  it('hydrates slim rows without a complete fetch when read paging is unsupported', async () => {
     const spec = {
       ...note(SPEC_NOTE_ID),
       is_pinned: true,
@@ -135,7 +146,7 @@ describe('notesReadSaga', () => {
     await settle();
 
     expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
-    expect(get.mock.calls).toEqual([[SPEC_NOTE_ID, WS]]);
+    expect(get).not.toHaveBeenCalled();
     expect(run.actions).toEqual([
       loadWorkspaceNotesSucceeded([WS], { [WS]: [note(SPEC_NOTE_ID)] }),
       selectNote(WS, SPEC_NOTE_ID),
@@ -144,7 +155,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('hydrate replaces the slim spec row with the full-spec fetch result', async () => {
+  it('keeps the slim spec row when task-link paging is unsupported', async () => {
     const slimSpec = note(SPEC_NOTE_ID, { content: '', contentPreview: 'pre', contentLength: 9 });
     const fullSpec = note(SPEC_NOTE_ID, { content: 'full body' });
     vi.spyOn(appClient.notes, 'list').mockResolvedValue([slimSpec, note('other', { content: '' })]);
@@ -156,7 +167,7 @@ describe('notesReadSaga', () => {
 
     expect(run.actions).toEqual([
       loadWorkspaceNotesSucceeded([WS], {
-        [WS]: [note(SPEC_NOTE_ID, { content: 'full body' }), note('other', { content: '' })],
+        [WS]: [slimSpec, note('other', { content: '' })],
       }),
       selectNote(WS, SPEC_NOTE_ID),
     ]);
@@ -164,7 +175,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('hydrate stays fail-soft when the spec fetch rejects — slim rows land as-is', async () => {
+  it('keeps slim rows without calling an unavailable full-read service', async () => {
     const slimSpec = note(SPEC_NOTE_ID, { content: '', contentPreview: 'pre', contentLength: 9 });
     vi.spyOn(appClient.notes, 'list').mockResolvedValue([slimSpec]);
     vi.spyOn(appClient.notes, 'get').mockRejectedValue(new Error('no spec'));
@@ -822,4 +833,287 @@ describe('notesReadSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+});
+
+it('uses bounded task links without hydrating a complete spec', async () => {
+  const slim = note(SPEC_NOTE_ID, { content: '', contentLength: 90000 });
+  vi.spyOn(appClient.notes, 'list').mockResolvedValue([slim]);
+  const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(slim);
+  vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(['b', 'a']);
+  const run = harness();
+  run.channel.put(workspaceMounted(WS));
+  await settle();
+  await settle();
+  expect(get).not.toHaveBeenCalled();
+  expect(run.actions).toContainEqual(specTaskLinksReceived(WS, ['b', 'a'], 0));
+  run.task.cancel();
+  await run.task.toPromise();
+  vi.restoreAllMocks();
+});
+
+describe('summary ownership across read lanes', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each([false, true])(
+    'rejects a stale hydration summary after a newer event or deletion: %s',
+    async (deleted) => {
+      const old = deferred<string[]>();
+      vi.spyOn(appClient.notes, 'listTaskLinks')
+        .mockReturnValueOnce(old.promise)
+        .mockResolvedValue(['new-link']);
+      vi.spyOn(appClient.notes, 'list').mockResolvedValue([
+        note('spec', { content: '', contentLength: 12 }),
+      ]);
+      vi.spyOn(appClient.notes, 'get').mockResolvedValue(note('spec', { content: 'fresh' }));
+      const h = harness();
+      try {
+        h.send(workspaceNotesHydrationRequested(WS, 1, false));
+        await settle();
+        h.send(
+          deleted ? applyNoteDeleted(WS, 'spec') : noteEventReceived(WS, 'spec', 'note:updated'),
+        );
+        await settle();
+        old.resolve(['old-link']);
+        await settle();
+        expect(h.state().workspaceNotes.byWorkspaceId[WS].specTaskLinks).toEqual(
+          deleted ? null : ['new-link'],
+        );
+        if (deleted)
+          expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.ids).not.toContain('spec');
+        else expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.ids).toContain('spec');
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+  it('refreshes a complete legacy spec after a bounded summary update', async () => {
+    vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(['new-link']);
+    vi.spyOn(appClient.notes, 'get').mockResolvedValue(note('spec', { content: 'fresh', rev: 2 }));
+    const h = harness([note('spec', { rev: 1 })]);
+    try {
+      h.send(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.map.spec.content).toBe('fresh');
+    } finally {
+      h.task.cancel();
+    }
+  });
+  it('keeps a valid listing when the spec is absent without falling back to a full read', async () => {
+    vi.spyOn(appClient.notes, 'listTaskLinks').mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'not-found', rpcCode: -32602 }),
+    );
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([note('other')]);
+    const get = vi.spyOn(appClient.notes, 'get');
+    const h = harness();
+    try {
+      h.send(workspaceNotesHydrationRequested(WS, 1, false));
+      await settle();
+      expect(h.state().workspaceNotes.byWorkspaceId[WS].initialized).toBe(true);
+      expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.ids).toEqual(['other']);
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      h.task.cancel();
+    }
+  });
+});
+
+it.each(['reconnect', 'unmount'])('discards a late summary chain after %s', async (kind) => {
+  const old = deferred<string[]>();
+  const links = vi
+    .spyOn(appClient.notes, 'listTaskLinks')
+    .mockReturnValueOnce(old.promise)
+    .mockResolvedValue(['new']);
+  const list = vi
+    .spyOn(appClient.notes, 'list')
+    .mockResolvedValue([note('spec', { content: '', contentLength: 50 })]);
+  const h = harness();
+  try {
+    h.send(workspaceNotesHydrationRequested(WS, 1, false));
+    await settle();
+    h.send(kind === 'reconnect' ? backendReconnected() : workspaceUnmounted(WS));
+    h.send(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+    old.resolve(['old']);
+    await settle();
+    expect(h.state().workspaceNotes.byWorkspaceId[WS].specTaskLinks).toEqual(['new']);
+  } finally {
+    h.task.cancel();
+    links.mockRestore();
+    list.mockRestore();
+  }
+});
+
+describe('full spec editor alongside a paged viewer', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each([false, true])(
+    'refreshes only while the explicit edit lease remains live (cancel=%s)',
+    async (cancel) => {
+      vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+      const pending = deferred<Note | null>();
+      const get = vi.spyOn(appClient.notes, 'get').mockReturnValueOnce(pending.promise);
+      const pages = notePagesReducer(undefined, pagePanelOpened(WS, 'spec', 'viewer'));
+      const run = harness([note('spec')], pages);
+      run.channel.put(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(get).not.toHaveBeenCalled();
+      const lease = acquireFullNoteEditLease(WS, 'spec');
+      run.channel.put(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(get).toHaveBeenCalledExactlyOnceWith('spec', WS);
+      if (cancel) lease.release();
+      pending.resolve(note('spec', { content: 'new complete revision', rev: 8 }));
+      await settle();
+      expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map.spec.content).toBe(
+        cancel ? 'body' : 'new complete revision',
+      );
+      lease.release();
+      get.mockClear();
+      run.channel.put(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(get).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+});
+
+it('keeps comment events and explicit comment demand bounded while a paged viewer owns the note', async () => {
+  const list = vi.spyOn(appClient.comments, 'list').mockResolvedValue([]);
+  const pages = notePagesReducer(undefined, pagePanelOpened(WS, 'paged-note', 'viewer'));
+  const run = harness([note('paged-note')], pages);
+  try {
+    run.channel.put(commentEventReceived(WS, 'paged-note', 'added'));
+    const request = loadNoteCommentsRequested(WS, 'paged-note');
+    run.channel.put(request);
+    await expect(request.promise).resolves.toEqual([]);
+    expect(list).not.toHaveBeenCalled();
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it('fences a pre-deletion workspace list after terminal history has retired', async () => {
+  const pending = deferred<Note[]>();
+  vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+  vi.spyOn(appClient.notes, 'list')
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValueOnce([note('new-note')]);
+  const run = harness([note('old-note')]);
+  try {
+    run.send(workspaceNotesHydrationRequested(WS, 1, true));
+    await settle();
+    const deleted = {
+      backendGeneration: 1,
+      workspaceId: WS,
+      noteId: 'old-note',
+      noteInstanceId: 'old-instance',
+      owner: 'confirmed-owner',
+      phase: 'deleted' as const,
+      held: true,
+      hidden: true,
+      canCancel: false,
+      terminalAbsent: { epoch: 'epoch', sequence: 4 },
+    };
+    run.send(noteDeleteViewChanged(deleted));
+    run.send(applyNoteDeleted(WS, 'old-note'));
+    run.send(noteDeleteViewRetired(deleted));
+    pending.resolve([note('old-note')]);
+    await settle();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map['old-note']).toBeUndefined();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].loading).toBe(false);
+    run.send(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map['new-note']).toBeDefined();
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it('rejects a late list captured before B deletion when retained A is rechecked afterward', async () => {
+  const pending = deferred<Note[]>();
+  vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+  const list = vi
+    .spyOn(appClient.notes, 'list')
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValueOnce([note('b', { content: 'fresh read', rev: 2 })]);
+  const run = harness([note('b', { content: 'old b', rev: 9 })]);
+  try {
+    const a = {
+      backendGeneration: 1,
+      workspaceId: WS,
+      noteId: 'a',
+      noteInstanceId: 'a-instance',
+      owner: 'owner-a',
+      phase: 'deleted' as const,
+      held: true,
+      hidden: true,
+      canCancel: false,
+      terminalAbsent: { epoch: 'epoch', sequence: 1 },
+    };
+    run.send(
+      noteDeleteRecoveryReserved(
+        { backendGeneration: 1, workspaceId: WS, noteId: 'a', ownerId: 'editor-a' },
+        true,
+      ),
+    );
+    run.send(noteDeleteViewChanged(a));
+    run.send(workspaceNotesHydrationRequested(WS, 1, true));
+    await settle();
+    expect(list).toHaveBeenCalledOnce();
+    const b = { ...a, noteId: 'b', noteInstanceId: 'b-instance', owner: 'owner-b' };
+    run.send(noteDeleteViewChanged(b));
+    run.send(applyNoteDeleted(WS, 'b'));
+    run.send(noteDeleteViewRetired(b));
+    const tokenB = run.state().workspaceNotes.byWorkspaceId[WS].deleteReadAuthority;
+    run.send(
+      loadWorkspaceNotesSucceeded(
+        [WS],
+        { [WS]: [note('b', { content: 'replacement b', rev: 1 })] },
+        { [WS]: tokenB },
+      ),
+    );
+    run.send(noteDeleteViewChanged({ ...a }));
+    pending.resolve([note('b', { content: 'old b', rev: 9 })]);
+    await settle();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map.b.content).toBe('replacement b');
+    expect(Object.values(run.state().workspaceNotes.deleteOperations ?? {})).toEqual([a]);
+    run.send(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map.b.content).toBe('fresh read');
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it('drops whole-comment hydration that races page ownership', async () => {
+  const pending = deferred<never[]>();
+  vi.spyOn(appClient.comments, 'list').mockReturnValue(pending.promise);
+  const run = harness();
+  try {
+    const action = loadNoteCommentsRequested(WS, 'spec');
+    run.channel.put(action);
+    await settle();
+    run.send(pagePanelOpened(WS, 'spec', 'reader') as never);
+    pending.resolve([{ id: 'whole' } as never]);
+    await expect(action.promise).resolves.toEqual([]);
+  } finally {
+    run.task.cancel();
+  }
+});
+
+it('does not load whole attribution while a paged viewer owns the note', async () => {
+  const load = vi.spyOn(appClient.notes.lineAttribution, 'load').mockResolvedValue(null);
+  const run = harness([], notePagesReducer(undefined, pagePanelOpened(WS, 'spec', 'reader')));
+  try {
+    run.channel.put(noteAttributionViewRequested('gutter', 'request', WS, 'spec'));
+    await settle();
+    expect(load).not.toHaveBeenCalled();
+  } finally {
+    run.task.cancel();
+  }
 });

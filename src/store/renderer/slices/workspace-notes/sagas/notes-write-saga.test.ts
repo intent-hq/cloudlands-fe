@@ -1,3 +1,13 @@
+import {
+  daemonHealthReducer,
+  connectionStatusChanged,
+} from '../../daemon-health/daemon-health-slice';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  noteDeleteViewChanged,
+  noteDeleteViewRetired,
+  applyNoteDeleted,
+} from '../workspace-notes-slice';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -79,14 +89,20 @@ function harness(seed: Note | Note[] = note(), comments: CommentV2[] = []) {
     loadWorkspaceNotesSucceeded(Object.keys(notesByWorkspace), notesByWorkspace),
   );
   let commentState = commentsReducer(undefined, loadCommentsAction(comments));
+  let daemonHealth = daemonHealthReducer(undefined, connectionStatusChanged('connected'));
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
+    daemonHealth = daemonHealthReducer(daemonHealth, action);
     commentState = commentsReducer(commentState, action);
     actions.push(action);
     return action;
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ workspaceNotes, comments: commentState }) },
+    {
+      channel,
+      dispatch,
+      getState: () => ({ workspaceNotes, daemonHealth, comments: commentState }),
+    },
     notesWriteSaga,
   );
   return { actions, channel, dispatch, getState: () => workspaceNotes, task };
@@ -929,3 +945,169 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 });
+
+it('does not restore a deleted lifetime from a late legacy delete rollback', async () => {
+  let finish!: (result: { success: boolean; error?: string }) => void;
+  vi.spyOn(appClient.notes, 'delete').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const run = harness();
+  try {
+    run.channel.put(deleteNote(WS, NOTE));
+    await settle();
+    const deleted = {
+      backendGeneration: 1,
+      workspaceId: WS,
+      noteId: NOTE,
+      noteInstanceId: 'old-instance',
+      owner: 'confirmed-owner',
+      phase: 'deleted' as const,
+      held: true,
+      hidden: true,
+      canCancel: false,
+      terminalAbsent: { epoch: 'epoch', sequence: 4 },
+    };
+    run.dispatch(noteDeleteViewChanged(deleted));
+    run.dispatch(applyNoteDeleted(WS, NOTE));
+    run.dispatch(noteDeleteViewRetired(deleted));
+    const replacement = note({ content: 'replacement body', rev: 1 });
+    run.dispatch(
+      loadWorkspaceNotesSucceeded(
+        [WS],
+        { [WS]: [replacement] },
+        { [WS]: run.getState().byWorkspaceId[WS].deleteReadAuthority },
+      ),
+    );
+    finish({ success: false, error: 'late rejection' });
+    await settle();
+    expect(run.getState().byWorkspaceId[WS].notes.map[NOTE].content).toBe('replacement body');
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it.each(['reconnect', 'workspace-reuse'] as const)(
+  'rejects late write publication after %s without mutating the replacement',
+  async (change) => {
+    let finish!: (result: { success: boolean; conflict?: { current: Note } }) => void;
+    const update = vi.spyOn(appClient.notes, 'updateMetadata').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([]);
+    const run = harness();
+    try {
+      run.channel.put(updateNoteTitle(WS, NOTE, 'old pending title'));
+      await settle();
+      expect(update).toHaveBeenCalledOnce();
+      if (change === 'reconnect') {
+        run.dispatch(connectionStatusChanged('disconnected'));
+        run.dispatch(connectionStatusChanged('connected'));
+      } else {
+        // Redux cleanup changes the lifetime even when the old physical callback survives.
+        run.dispatch(workspaceDeleted(WS, [], 'replaced'));
+      }
+      run.dispatch(
+        loadWorkspaceNotesSucceeded([WS], { [WS]: [note({ title: 'replacement', rev: 1 })] }),
+      );
+      finish({ success: false, conflict: { current: note({ title: 'old conflict', rev: 99 }) } });
+      await settle();
+      expect(run.getState().byWorkspaceId[WS].notes.map[NOTE]).toMatchObject({
+        title: 'replacement',
+        rev: 1,
+      });
+      expect(list).not.toHaveBeenCalled();
+      update.mockResolvedValue({ success: true });
+      run.channel.put(updateNoteTitle(WS, NOTE, 'fresh title'));
+      await settle();
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(run.getState().byWorkspaceId[WS].notes.map[NOTE]).toMatchObject({
+        title: 'fresh title',
+        rev: 2,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.restoreAllMocks();
+    }
+  },
+);
+
+it('does not refetch or clear retained content after an old-connection strict save rejects', async () => {
+  let reject!: (error: Error) => void;
+  const update = vi.spyOn(appClient.notes, 'update').mockImplementation(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  const get = vi
+    .spyOn(appClient.notes, 'get')
+    .mockResolvedValue(note({ content: 'stale echo', rev: 99 }));
+  const run = harness();
+  try {
+    run.channel.put(
+      updateNoteContent(WS, NOTE, 'retained draft', { strict: true, immediate: true, baseRev: 4 }),
+    );
+    await settle();
+    expect(update).toHaveBeenCalledOnce();
+    const retained = run.getState().retainedDrafts[JSON.stringify([WS, NOTE])];
+    expect(retained?.content).toBe('retained draft');
+    run.dispatch(connectionStatusChanged('disconnected'));
+    run.dispatch(connectionStatusChanged('connected'));
+    run.dispatch(
+      loadWorkspaceNotesSucceeded([WS], { [WS]: [note({ content: 'replacement', rev: 1 })] }),
+    );
+    reject(new Error('old request rejected'));
+    await settle();
+    expect(get).not.toHaveBeenCalled();
+    expect(run.getState().byWorkspaceId[WS].notes.map[NOTE].content).toBe('replacement');
+    expect(run.getState().retainedDrafts[JSON.stringify([WS, NOTE])]).toBe(retained);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.restoreAllMocks();
+  }
+});
+
+it.each(['reconnect', 'workspace-reuse'] as const)(
+  'does not start a new list request from an old create receipt after %s',
+  async (change) => {
+    let finish!: (result: { success: boolean }) => void;
+    const create = vi.spyOn(appClient.notes, 'create').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([]);
+    const run = harness();
+    try {
+      run.channel.put(createNote(WS, { title: 'old create', content: '' }));
+      await settle();
+      expect(create).toHaveBeenCalledOnce();
+      if (change === 'reconnect') {
+        run.dispatch(connectionStatusChanged('disconnected'));
+        run.dispatch(connectionStatusChanged('connected'));
+      } else run.dispatch(workspaceDeleted(WS, [], 'replaced'));
+      run.dispatch(
+        loadWorkspaceNotesSucceeded([WS], { [WS]: [note({ title: 'replacement', rev: 1 })] }),
+      );
+      finish({ success: true });
+      await settle();
+      expect(list).not.toHaveBeenCalled();
+      expect(run.getState().byWorkspaceId[WS].notes.map[NOTE].title).toBe('replacement');
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.restoreAllMocks();
+    }
+  },
+);

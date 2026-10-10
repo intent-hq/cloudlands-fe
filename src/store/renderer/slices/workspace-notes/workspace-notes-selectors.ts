@@ -41,7 +41,8 @@ export const selectNewlyCreatedNoteId = store.createSelector(
 
 export const selectHasPendingNoteContent = store.createSelector(
   (state, workspaceId: string, noteId: string): boolean =>
-    state.workspaceNotes.byWorkspaceId[workspaceId]?.pendingContentByNoteId[noteId] === true,
+    state.workspaceNotes.byWorkspaceId[workspaceId]?.pendingContentByNoteId[noteId] === true ||
+    !!state.workspaceNotes.retainedDrafts?.[JSON.stringify([workspaceId, noteId])],
 );
 
 export const selectNoteContentView = store.createSelector(
@@ -115,4 +116,21 @@ export const selectAllNotes = store.createSelector((state, workspaceId?: string 
 export const selectNoteVersions = store.createSelector(
   (state, workspaceId: string): NoteVersionsState | null =>
     state.workspaceNotes.byWorkspaceId[workspaceId]?.noteVersions ?? null,
+);
+
+export const selectSpecTaskLinks = store.createSelector(
+  (state, workspaceId: string): string[] | null =>
+    state.workspaceNotes.byWorkspaceId[workspaceId]?.specTaskLinks ?? null,
+);
+
+export const selectRetainedNoteDraft = store.createSelector(
+  (state, workspaceId: string, noteId: string) =>
+    state.workspaceNotes.retainedDrafts?.[JSON.stringify([workspaceId, noteId])],
+);
+
+export const selectNoteDeleteView = store.createSelector(
+  (state, workspaceId: string, noteId: string) =>
+    state.workspaceNotes.deleteOperations?.[
+      JSON.stringify([state.daemonHealth?.connectionGeneration ?? 0, workspaceId, noteId])
+    ],
 );

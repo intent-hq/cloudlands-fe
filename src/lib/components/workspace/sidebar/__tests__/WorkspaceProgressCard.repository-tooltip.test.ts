@@ -88,6 +88,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selector(() => mocks.notes),
+  selectSpecTaskLinks: mocks.selector(() => null),
 }));
 
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({

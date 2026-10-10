@@ -57,6 +57,10 @@ const mockState = vi.hoisted(() => {
   };
 });
 
+vi.mock('$features/notes/virtualized/NoteReadingView.svelte', async () => ({
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default,
+}));
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,
@@ -88,7 +92,13 @@ vi.mock('$lib/utils/client-logger', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mockState.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({
+      workspaceNotes: { byWorkspaceId: {}, retainedDrafts: {} },
+      daemonHealth: { connectionGeneration: 1 },
+    }),
+    dispatch: mockState.dispatch,
+  });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,

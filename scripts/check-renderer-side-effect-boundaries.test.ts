@@ -1,3 +1,6 @@
+// @verify-changed-triggers: src/store/renderer/seeders/source-clipboard-bridge-seeder.ts, scripts/check-renderer-side-effect-boundaries.mjs
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findRendererSideEffectBoundaryViolations } from './check-renderer-side-effect-boundaries.mjs';
 
@@ -341,6 +344,26 @@ describe('renderer side-effect boundary guard', () => {
         seeder(['user-mcp:authenticate', 'user-mcp:unreviewed']),
       ]),
     ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
+  });
+
+  it('pins the actual source clipboard bridge to its one reviewed loop registration', () => {
+    const path = 'src/store/renderer/seeders/source-clipboard-bridge-seeder.ts';
+    const content = readFileSync(join(process.cwd(), path), 'utf8');
+    expect(findRendererSideEffectBoundaryViolations([registry, { path, content }])).toEqual([]);
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        { path, content: `${content}\nregisterMockIpcHandler('unreviewed', () => undefined);` },
+      ]),
+    ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        { path: path.replace('source-clipboard-', 'unreviewed-clipboard-'), content },
+      ]),
+    ).toEqual([
+      expect.stringContaining('new renderer IPC bridge registration requires architecture review'),
+    ]);
   });
 
   it('rejects expansion of an approved bridge path', () => {

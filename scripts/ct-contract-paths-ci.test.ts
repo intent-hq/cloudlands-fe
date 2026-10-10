@@ -816,9 +816,9 @@ describe('shared browser jobs and nightly routing', () => {
       .trim();
   }
 
-  it('retains all four independent CT shards and their build/test memory budgets', () => {
+  it('retains all eight independent CT shards and their build/test memory budgets', () => {
     const ct = jobLines('test-ct', browserWorkflow);
-    expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
+    expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(field(ct, 'fail-fast')).toBe('false');
     expect(jobField(ct, 'timeout-minutes')).toBe('50');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
@@ -833,7 +833,7 @@ describe('shared browser jobs and nightly routing', () => {
     const ct = jobLines('test-ct', browserWorkflow);
     const quarantine = step(ct, 'Quarantined component tests (advisory)');
     expect(field(quarantine, 'continue-on-error')).toBe('true');
-    for (const shard of [1, 2, 3, 4]) {
+    for (const shard of [1, 2, 3, 4, 5, 6, 7, 8]) {
       for (const failed of [false, true]) {
         expect(evaluateCondition(field(quarantine, 'if'), { ...context, shard, failed })).toBe(
           shard === 1,
@@ -934,7 +934,7 @@ describe('shared browser jobs and nightly routing', () => {
       expect(args).toContain('--reporter=list,html,json');
       expect(field(testStep, 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe('playwright-report/results.json');
       if (job === 'test-ct') {
-        expect(args).toContain('--shard=1/4');
+        expect(args).toContain('--shard=1/8');
         expect(args).toContain('--fail-on-flaky-tests');
       } else if (job === 'test-playwright') expect(args).toContain('--shard=1/4');
       // Exercise Playwright's real discovery/exit policy without starting a browser.

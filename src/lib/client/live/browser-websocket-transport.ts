@@ -1,3 +1,8 @@
+import {
+  NoteDeleteSubscriptionLedger,
+  type NoteDeleteSubscription,
+} from '$shared/note-delete-subscription-ledger';
+import { assertNoteUpdateFrame } from '$shared/note-update-frame';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -212,6 +217,8 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout>;
 }
 
+// Shared across browser transport instances. Unknown retired sockets remain charged.
+const noteDeleteSubscriptions = new NoteDeleteSubscriptionLedger();
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RECONNECT_MS = 1_000;
 const DEFAULT_MAX_RECONNECT_MS = 30_000;
@@ -368,6 +375,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
             ? { clientId: this.clientId, ...(params as Record<string, unknown>) }
             : params;
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
+        try {
+          assertNoteUpdateFrame(method, payload);
+        } catch (error) {
+          fail(error);
+          return;
+        }
         const capabilityGeneration =
           method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
         if (method === 'client.hello') this.nodeCapabilities = null;
@@ -416,6 +429,28 @@ export class BrowserWebSocketTransport implements BackendTransport {
         this.ensureConnected().then(send, fail);
       }
     });
+  }
+
+  async subscribeNoteDeletion(workspaceId: string): Promise<NoteDeleteSubscription> {
+    const socket = await this.ensureConnected();
+    if (this.disposed || !this.connected || !this.helloConfirmed || this.socket !== socket)
+      throw new BackendError({
+        code: 'NOTE_DELETE_SUBSCRIPTION_UNAVAILABLE',
+        message: 'Bound note deletion subscription unavailable',
+      });
+    const ack = await noteDeleteSubscriptions.subscribe(
+      {
+        incarnation: socket,
+        principal: this,
+        isLive: () => !this.disposed && this.connected && this.socket === socket,
+        request: (method, params) => this.requestOnSocket(method, params, undefined, socket),
+      },
+      workspaceId,
+    );
+    return {
+      subscriptionId: ack.subscriptionId,
+      unsubscribe: () => noteDeleteSubscriptions.cleanup(this, ack.handle),
+    };
   }
 
   async subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T> {
@@ -533,11 +568,13 @@ export class BrowserWebSocketTransport implements BackendTransport {
     // there so it runs exactly once per drop.
     socket.onerror = null;
     socket.onclose = () => {
-      if (this.socket !== socket) return;
-      this.connecting = false;
-      this.onConnectionFailure(
-        new BackendError({ code: 'TRANSPORT_ERROR', message: 'WebSocket connection closed' }),
-      );
+      if (this.socket === socket) {
+        this.connecting = false;
+        this.onConnectionFailure(
+          new BackendError({ code: 'TRANSPORT_ERROR', message: 'WebSocket connection closed' }),
+        );
+      }
+      noteDeleteSubscriptions.connectionClosed(socket);
     };
   }
 
@@ -692,7 +729,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
     socket.onopen = null;
     socket.onmessage = null;
     socket.onerror = null;
-    socket.onclose = null;
+    // A retired socket may close later. This callback releases only its own debt.
+    socket.onclose = () => noteDeleteSubscriptions.connectionClosed(socket);
     try {
       socket.close();
     } catch {

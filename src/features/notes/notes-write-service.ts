@@ -3,6 +3,7 @@ import type { CreateNoteRequest } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
 import {
   createNotePersistRequested,
+  retryNoteContentRequested,
   deleteNotePersistRequested,
   flushNoteContentRequested,
   settleNoteContentRequested,
@@ -29,7 +30,7 @@ export function updateNoteContent(
   workspaceId: string,
   noteId: string,
   content: string,
-  options?: { immediate?: boolean; baseRev?: number; baseContent?: string },
+  options?: { immediate?: boolean; baseRev?: number; baseContent?: string; strict?: boolean },
 ): void {
   appStore.dispatch(updateNoteContentAction(workspaceId, noteId, content, options));
 }
@@ -51,4 +52,25 @@ export function updateNoteTitle(workspaceId: string, noteId: string, title: stri
 
 export function deleteNote(workspaceId: string, noteId: string): Promise<void> {
   return appStore.dispatch(deleteNotePersistRequested(workspaceId, noteId));
+}
+
+export function subscribeNoteContentFailure(
+  workspaceId: string,
+  noteId: string,
+  listener: (failure: Error | undefined) => void,
+): () => void {
+  let previous: string | undefined;
+  let initialized = false;
+  return appStore.getReadableState().subscribe((state) => {
+    const message =
+      state.workspaceNotes.retainedDrafts?.[JSON.stringify([workspaceId, noteId])]?.error;
+    if (!initialized || message !== previous) {
+      initialized = true;
+      previous = message;
+      listener(message === undefined ? undefined : new Error(message));
+    }
+  });
+}
+export function retryNoteContent(workspaceId: string, noteId: string): Promise<void> {
+  return appStore.dispatch(retryNoteContentRequested(workspaceId, noteId));
 }

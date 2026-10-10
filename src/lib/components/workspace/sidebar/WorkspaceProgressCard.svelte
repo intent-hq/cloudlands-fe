@@ -49,7 +49,10 @@
   import { logger, createLogger } from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
-  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    selectAllNotes,
+    selectSpecTaskLinks,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
     fetchReadyTasks,
     applyReadyTasks,
@@ -134,6 +137,7 @@
   // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
   const sidebarSide$ = selectSidebarSide();
   const notes = selectAllNotes(workspaceIdStore);
+  const specTaskLinks$ = selectSpecTaskLinks(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
   // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
   // daemon for collaborators (`require_owner`), so the menu hides them up front.
@@ -743,8 +747,12 @@
   }
 
   // Sort notes by their order in the parent's content, falling back to peerOrder/createdAt
-  function sortByContentOrder(notesToSort: Note[], parentContent: string | undefined): Note[] {
-    const orderFromContent = extractOrderedSpecTaskIds(parentContent);
+  function sortByContentOrder(
+    notesToSort: Note[],
+    parentContent: string | undefined,
+    orderedIds?: string[] | null,
+  ): Note[] {
+    const orderFromContent = orderedIds ?? extractOrderedSpecTaskIds(parentContent);
     const orderMap = new Map(orderFromContent.map((id, index) => [id, index]));
 
     return [...notesToSort].sort((a, b) => {
@@ -857,14 +865,15 @@
     // Get root tasks (direct children of spec - their parentId is 'spec')
     // Only include tasks that are actually referenced in the spec note content
     // If spec has no task links, fall back to all direct children of spec
-    const specTaskIds = extractSpecTaskIds(specNote?.content);
+    const specTaskIds =
+      $specTaskLinks$ !== null ? new Set($specTaskLinks$) : extractSpecTaskIds(specNote?.content);
     const hasSpecLinks = specTaskIds.size > 0;
     const roots = taskNotes.filter(
       (n) => isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
     );
 
     // Sort roots by their order in the spec note content
-    const sortedRoots = sortByContentOrder(roots, specNote?.content);
+    const sortedRoots = sortByContentOrder(roots, specNote?.content, $specTaskLinks$);
 
     return sortedRoots.map(buildNode);
   }
@@ -923,7 +932,7 @@
 
   // Check if spec has meaningful content
   const specHasContent = $derived.by(() => {
-    if (!specNote?.content) return false;
+    if (!specNote?.content) return (specNote?.contentLength ?? 0) > 0;
     const trimmedContent = specNote.content.trim();
     return trimmedContent.length >= 20; // Need some actual content
   });
@@ -1223,6 +1232,7 @@
       <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
         <FlameGraph
           notes={$notes}
+          specTaskLinks={$specTaskLinks$}
           onTaskClick={_onOpenNote}
           progress={completionRatio}
           loading={!taskProgressReady}

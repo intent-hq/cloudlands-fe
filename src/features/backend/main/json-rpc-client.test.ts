@@ -2432,3 +2432,19 @@ describe('M original producer admission and member drain', () => {
     expect(() => client.beginMemberRetirement()).toThrow('not enrolled');
   });
 });
+
+it('refuses an oversized complete-note frame before writing to the daemon', async () => {
+  const { client, socket } = makeClient();
+  client.start();
+  socket.open();
+  await expect(
+    client.request('note.update', {
+      workspaceId: 'w',
+      noteId: 'n',
+      expectedVersion: 4,
+      content: '"'.repeat(21_000_000),
+    }),
+  ).rejects.toThrow('transport limit');
+  expect(socket.writes).toHaveLength(0);
+  client.dispose();
+});

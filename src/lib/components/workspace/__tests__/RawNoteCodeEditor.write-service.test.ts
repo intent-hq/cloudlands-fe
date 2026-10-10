@@ -11,7 +11,7 @@ import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 // service against the REAL configured store, so the draft chain (base rev,
 // echo rebase, pending replay) is exercised end to end.
 vi.mock('$lib/client', () => ({
-  appClient: { notes: { setContent: vi.fn(), list: vi.fn(async () => []) } },
+  appClient: { notes: { update: vi.fn(), list: vi.fn(async () => []) } },
 }));
 vi.mock('svelte-sonner', () => ({ toast: { warning: vi.fn(), error: vi.fn() } }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
@@ -76,7 +76,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// AC8 on the raw editor. While save 1 is in flight, a refetch lands a newer
+// Conversion-returned content may differ from the draft. While save 1 is in flight, a refetch lands a newer
 // rev, so its echo is superseded and the pending draft is rebased onto the
 // echo text — but the editor still shows the pre-rebase text. A keystroke
 // typed on that text must be replayed onto the rebased draft; read as derived
@@ -85,7 +85,7 @@ afterEach(() => {
 it('replays a draft typed before a superseded echo onto the rebased pending draft', async () => {
   vi.useFakeTimers();
   seed('body', 4);
-  const wire = vi.mocked(appClient.notes.setContent);
+  const wire = vi.mocked(appClient.notes.update);
   wire.mockReset();
   let resolveFirst!: (value: unknown) => void;
   let resolveSecond!: (value: unknown) => void;
@@ -93,7 +93,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   wire.mockReturnValueOnce(new Promise((r) => (resolveSecond = r)) as never);
   wire.mockImplementation((async (_id: string, content: string, rev: number) => {
     expect(rev).toBe(9);
-    return { success: true, newContent: content, noteRev: 10 };
+    return { content, rev: 10 };
   }) as never);
 
   const view = render(RawNoteCodeEditor, {
@@ -123,7 +123,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   await syncStore();
   expect(input.value).toBe('body first second third');
 
-  resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+  resolveFirst({ content: 'AGENT body first', rev: 6 });
   await first;
   await tick();
   await syncStore();
@@ -133,7 +133,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   await vi.advanceTimersByTimeAsync(1000);
   expect(wire).toHaveBeenLastCalledWith(NOTE, 'AGENT body first second', 6, WS);
 
-  resolveSecond({ success: true, newContent: 'AGENT body first second LATER', noteRev: 9 });
+  resolveSecond({ content: 'AGENT body first second LATER', rev: 9 });
   await flushNoteContent(WS, NOTE);
   await syncStore();
 
@@ -144,4 +144,49 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   expect(selectNoteById.select(appStore.state, WS, NOTE)?.content).toContain('AGENT');
   expect(input.value).toContain('AGENT');
   for (const call of wire.mock.calls) expect(call[2]).toEqual(expect.any(Number));
+});
+
+it('saves a complete oversized handoff against its original revision, then reopens and edits again', async () => {
+  vi.useFakeTimers();
+  const base = 'HEAD\n' + '漢字 preserve spaces  \n'.repeat(30_000) + 'TAIL';
+  const draft = base + ' rich growth';
+  seed(base, 20);
+  const wire = vi.mocked(appClient.notes.update);
+  wire.mockReset();
+  let rev = 20;
+  wire.mockImplementation((async (_id: string, content: string) => ({
+    content,
+    rev: ++rev,
+  })) as never);
+  const view = render(RawNoteCodeEditor, {
+    workspaceId: WS,
+    noteId: NOTE,
+    content: base,
+    rev: 20,
+    initialDraft: {
+      content: draft,
+      baseContent: base,
+      rev: 20,
+      selection: { anchor: draft.length, head: draft.length },
+    },
+  });
+  expect((view.getByTestId('code-editor') as HTMLTextAreaElement).value).toBe(draft);
+  await vi.advanceTimersByTimeAsync(1000);
+  await flushNoteContent(WS, NOTE);
+  expect(wire).toHaveBeenCalledExactlyOnceWith(NOTE, draft, 20, WS);
+  view.unmount();
+  const saved = selectNoteById.select(appStore.state, WS, NOTE)!;
+  const reopened = render(RawNoteCodeEditor, {
+    workspaceId: WS,
+    noteId: NOTE,
+    content: saved.content,
+    rev: saved.rev,
+  });
+  const input = reopened.getByTestId('code-editor') as HTMLTextAreaElement;
+  expect(input.value).toBe(draft);
+  await fireEvent.input(input, { target: { value: draft + ' second edit' } });
+  await vi.advanceTimersByTimeAsync(1000);
+  await flushNoteContent(WS, NOTE);
+  expect(wire).toHaveBeenLastCalledWith(NOTE, draft + ' second edit', 21, WS);
+  expect(selectNoteById.select(appStore.state, WS, NOTE)?.content).toBe(draft + ' second edit');
 });

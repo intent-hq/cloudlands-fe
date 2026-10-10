@@ -12,6 +12,7 @@
 
 import { Node, mergeAttributes } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { Plugin } from '@tiptap/pm/state';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('CommentAnchor');
@@ -199,11 +200,51 @@ export const CommentAnchor = Node.create({
     };
   },
 
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            compositionend(view) {
+              // Chromium may commit composition correctly in the model but leave
+              // its DOM caret inside the noneditable anchor's rendering text.
+              // Let native composition processing finish, then synchronize only
+              // that invalid caret through the editor's own selection mapping.
+              queueMicrotask(() => {
+                if (view.isDestroyed || view.composing || !view.hasFocus()) return;
+                const selection = view.dom.ownerDocument.getSelection();
+                if (!selection?.isCollapsed || !view.state.selection.empty) return;
+                const node = selection.focusNode;
+                const element = node?.nodeType === 1 ? (node as Element) : node?.parentElement;
+                const anchor = element?.closest(
+                  '.comment-anchor[data-anchor-id][contenteditable="false"]',
+                );
+                if (anchor && view.dom.contains(anchor)) view.focus();
+              });
+              return false;
+            },
+          },
+        },
+      }),
+    ];
+  },
+
   // Custom serialization for markdown
   addNodeView() {
     return ({ node }) => {
       const dom = document.createElement('span');
-      dom.style.display = 'none';
+      // Chromium drops display:none descendants when a native edit moves their
+      // containing paragraph (for example, into a table). Keep the live atom in
+      // the editing layout without allocating visible space. Serialization stays
+      // invisible; no transaction needs to recreate intentionally deleted anchors.
+      dom.style.display = 'inline-block';
+      dom.style.width = '0';
+      dom.style.height = '0';
+      dom.style.overflow = 'hidden';
+      // A nonempty atom keeps Chromium's composition range attached at its edge.
+      // This node-view-only character never enters the document or serialization.
+      dom.textContent = '\u2060';
+      dom.setAttribute('aria-hidden', 'true');
       dom.className = 'comment-anchor';
 
       // Add the data attributes from the node

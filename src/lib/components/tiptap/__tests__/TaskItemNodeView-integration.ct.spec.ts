@@ -7,7 +7,7 @@ import TipTapEditorTestHarness from './TipTapEditorTestHarness.svelte';
  * These tests mount a real TipTap editor in the browser and verify that:
  * 1. Task items render with visible text content
  * 2. Checkboxes are interactive and update state
- * 3. The checkbox toggle works (todo → in-progress/checked → todo)
+ * 3. The checkbox toggle works (todo → in-progress → done → todo)
  */
 
 test.describe('TaskItemNodeView Integration', () => {
@@ -54,14 +54,14 @@ test.describe('TaskItemNodeView Integration', () => {
     // Verify initial state (todo = unchecked)
     await expect(checkbox).toHaveAttribute('aria-checked', 'false');
 
-    // Click checkbox (todo → in-progress, checked)
+    // Click checkbox (todo → in-progress, mixed)
     await checkbox.click();
 
     const taskItem = component.locator('[data-type="taskItem"]').first();
     await expect(taskItem).toHaveAttribute('data-status', 'in-progress');
     await expect(component.locator('[role="checkbox"]').first()).toHaveAttribute(
       'aria-checked',
-      'true',
+      'mixed',
     );
   });
 
@@ -85,12 +85,15 @@ test.describe('TaskItemNodeView Integration', () => {
     await expect(checkbox()).toHaveAttribute('aria-checked', 'false');
     await expect(taskItem).toHaveAttribute('data-status', 'todo');
 
-    // Click 1: todo → in-progress (checked)
+    // Click 1: todo → in-progress (mixed)
     await checkbox().click();
-    await expect(checkbox()).toHaveAttribute('aria-checked', 'true');
+    await expect(checkbox()).toHaveAttribute('aria-checked', 'mixed');
     await expect(taskItem).toHaveAttribute('data-status', 'in-progress');
 
-    // Click 2: in-progress (checked) → todo (unchecked)
+    // Click 2: in-progress (mixed) → done (checked)
+    await checkbox().click();
+    await expect(checkbox()).toHaveAttribute('aria-checked', 'true');
+    await expect(taskItem).toHaveAttribute('data-status', 'done');
     await checkbox().click();
     await expect(checkbox()).toHaveAttribute('aria-checked', 'false');
     await expect(taskItem).toHaveAttribute('data-status', 'todo');
@@ -115,13 +118,13 @@ test.describe('TaskItemNodeView Integration', () => {
     // Verify initial text is present
     await expect(contentDiv).toContainText('Important task text that should not disappear');
 
-    // Click 1: todo → in-progress (checked)
+    // Click 1: todo → in-progress (mixed)
     await checkbox().click();
 
     // Text should still be there!
     await expect(contentDiv).toContainText('Important task text that should not disappear');
 
-    // Click 2: in-progress (checked) → todo (unchecked)
+    // Click 2: in-progress (mixed) → done (checked)
     await checkbox().click();
 
     // Text should STILL be there!

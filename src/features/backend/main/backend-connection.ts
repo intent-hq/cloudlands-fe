@@ -1,3 +1,9 @@
+import {
+  bindPhysicalSocketCloseSource,
+  createPhysicalSocketCloseSignal,
+  observePhysicalSocketClose,
+  restorePhysicalSocketCloseObserver,
+} from './physical-socket-close';
 /**
  * Connection-target resolution and the default socket factory for the live
  * backend transport.
@@ -638,6 +644,7 @@ export function raceDuplexSockets(
   // torn-down candidate stays observable (and, pre-settlement, aggregated).
   const teardownCandidate = (candidate: Duplex): void => {
     candidate.removeAllListeners();
+    restorePhysicalSocketCloseObserver(candidate);
     candidate.on('error', (error: Error) => {
       if (error instanceof PinMismatchError) {
         const host = candidateHosts.get(candidate) ?? '';
@@ -651,6 +658,7 @@ export function raceDuplexSockets(
     candidate.destroy();
   };
 
+  const physicalClose = createPhysicalSocketCloseSignal();
   const facade = new Duplex({
     allowHalfOpen: false,
     read() {
@@ -672,11 +680,14 @@ export function raceDuplexSockets(
         if (candidate !== winner) teardownCandidate(candidate);
       }
       winner?.removeAllListeners();
+      if (winner) restorePhysicalSocketCloseObserver(winner);
       winner?.on('error', () => {});
       winner?.destroy();
       callback(error);
     },
   });
+
+  bindPhysicalSocketCloseSource(facade, physicalClose);
 
   const failRace = (error: Error): void => {
     if (settled) return;
@@ -744,11 +755,13 @@ export function raceDuplexSockets(
     settled = true;
     clearTimeout(timer);
     winner = candidate;
+    observePhysicalSocketClose(candidate, () => physicalClose.closeObserved());
     for (const other of candidates) {
       if (other === candidate) continue;
       teardownCandidate(other);
     }
     candidate.removeAllListeners();
+    restorePhysicalSocketCloseObserver(candidate);
     // Forward the winning socket through the facade: data, error, and close
     // all surface exactly as they would on a single-host socket.
     candidate.on('data', (chunk: Buffer | string) => facade.push(chunk));
@@ -1067,6 +1080,7 @@ function captureFingerprintDirect(
  */
 export class WebSocketDuplex extends Duplex {
   private readonly ws: WsWebSocket;
+  private readonly physicalClose = createPhysicalSocketCloseSignal();
   private writeBuffer = '';
   // Named to avoid clashing with `Duplex.closed` (public in Node's types).
   private wsClosed = false;
@@ -1074,6 +1088,7 @@ export class WebSocketDuplex extends Duplex {
   constructor(ws: WsWebSocket) {
     super({ allowHalfOpen: false });
     this.ws = ws;
+    bindPhysicalSocketCloseSource(this, this.physicalClose);
     ws.on('open', () => this.emit('connect'));
     ws.on('message', (data: RawData, isBinary: boolean) => {
       if (isBinary) return;
@@ -1091,6 +1106,7 @@ export class WebSocketDuplex extends Duplex {
       this.emit('error', err);
     });
     ws.on('close', () => {
+      this.physicalClose.closeObserved();
       if (this.wsClosed) return;
       this.wsClosed = true;
       this.push(null);

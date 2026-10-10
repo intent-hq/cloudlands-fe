@@ -10,6 +10,7 @@
   import TaskStatusProgress from '../TaskStatusProgress.svelte';
   interface Props {
     notes: Note[];
+    specTaskLinks?: string[] | null;
     onTaskClick?: (noteId: string) => void;
     /** Canonical BE-owned completion ratio, from 0 to 1. Undefined while loading. */
     progress?: number;
@@ -20,6 +21,7 @@
 
   let {
     notes = [],
+    specTaskLinks = null,
     onTaskClick,
     progress,
     loading = progress === undefined,
@@ -35,8 +37,12 @@
   }
 
   // Sort notes by their order in the parent's content, falling back to peerOrder/createdAt
-  function sortByContentOrder(notesToSort: Note[], parentContent: string | undefined): Note[] {
-    const orderFromContent = extractOrderedSpecTaskIds(parentContent);
+  function sortByContentOrder(
+    notesToSort: Note[],
+    parentContent: string | undefined,
+    orderedIds?: string[] | null,
+  ): Note[] {
+    const orderFromContent = orderedIds ?? extractOrderedSpecTaskIds(parentContent);
     const orderMap = new Map(orderFromContent.map((id, index) => [id, index]));
 
     return [...notesToSort].sort((a, b) => {
@@ -123,14 +129,15 @@
     // Get root tasks (direct children of spec - their parentId is 'spec')
     // Only include tasks that are actually referenced in the spec note content
     // If spec has no task links, fall back to all direct children of spec
-    const specTaskIds = extractSpecTaskIds(specNote?.content);
+    const specTaskIds =
+      specTaskLinks !== null ? new Set(specTaskLinks) : extractSpecTaskIds(specNote?.content);
     const hasSpecLinks = specTaskIds.size > 0;
     const roots = taskNotes.filter(
       (n) => isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
     );
 
     // Sort roots by their order in the spec note content
-    const sortedRoots = sortByContentOrder(roots, specNote?.content);
+    const sortedRoots = sortByContentOrder(roots, specNote?.content, specTaskLinks);
 
     return sortedRoots.map(buildNode);
   }

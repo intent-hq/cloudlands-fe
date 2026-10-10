@@ -1,3 +1,4 @@
+import { notePagesReducer } from './slices/note-pages/note-pages-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
@@ -162,6 +163,7 @@ export const reducers = {
   questionUi: questionUiReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
+  notePages: notePagesReducer,
   workspaceTasks: workspaceTasksReducer,
   workspaceSummaries: workspaceSummariesReducer,
   workspaceOperations: workspaceOperationsReducer,

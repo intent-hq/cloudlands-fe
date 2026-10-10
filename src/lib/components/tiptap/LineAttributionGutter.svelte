@@ -11,6 +11,7 @@
   - Updates on scroll and resize
 -->
 <script lang="ts">
+  import { isPagedNoteSession } from '$features/notes/notes-read-service';
   import { logger } from '$lib/utils/client-logger';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -407,7 +408,7 @@
     const currentWorkspaceId = String(workspaceId);
     const currentNoteId = String(noteId);
     const authority = $principalConnectionContext;
-    if (!authority) return;
+    if (!authority || isPagedNoteSession(currentWorkspaceId, currentNoteId)) return;
     attributionRequestSequence += 1;
     appStore.dispatch(
       noteAttributionViewRequested(

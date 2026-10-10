@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note } from '$shared/types';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -16,6 +16,27 @@ import {
   restoreNoteVersion,
   settleNoteContentRequested,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+
+import { prepareNoteDeleteEditors } from '$features/notes/note-delete-editors';
+const deleteGate = vi.hoisted(() => ({
+  held: false,
+  listeners: new Set<(held: boolean) => void>(),
+  retain: vi.fn((_draft: unknown) => true),
+  input: vi.fn(),
+  release: vi.fn(),
+  reserve: vi.fn<() => (() => void) | undefined>(),
+}));
+vi.mock('$features/notes/note-delete-gate', () => ({
+  isNoteDeleteHeld: () => deleteGate.held,
+  subscribeNoteDeleteHold: (_ws: string, _note: string, listener: (held: boolean) => void) => {
+    listener(deleteGate.held);
+    deleteGate.listeners.add(listener);
+    return () => deleteGate.listeners.delete(listener);
+  },
+  retainNoteDeleteDraft: deleteGate.retain,
+  reserveNoteDeleteDraft: deleteGate.reserve,
+  notifyNoteDeleteInput: deleteGate.input,
+}));
 
 const {
   mockDispatch,
@@ -110,6 +131,7 @@ const {
     currentNoteId: 'spec',
     notesVersion: 0,
     notesById: {} as Record<string, any>,
+    retainedDrafts: {} as Record<string, any>,
   };
 
   const currentNoteSubscribers = new Set<(value: any) => void>();
@@ -148,6 +170,7 @@ const {
   });
 
   const mockSelectorStore = {
+    publicationState: {} as Record<string, any>,
     createSelector: (selectorFunc: (...args: any[]) => any) => {
       const readableSelector = Object.assign(() => constantReadable(undefined), {
         select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
@@ -162,7 +185,17 @@ const {
     get state() {
       const map = state.notesById;
       return {
-        workspaceNotes: { byWorkspaceId: { 'ws-1': { notes: { map, ids: Object.keys(map) } } } },
+        workspaceNotes: {
+          ...this.publicationState,
+          retainedDrafts: state.retainedDrafts,
+          byWorkspaceId: {
+            ...this.publicationState.byWorkspaceId,
+            'ws-1': {
+              ...this.publicationState.byWorkspaceId?.['ws-1'],
+              notes: { map, ids: Object.keys(map) },
+            },
+          },
+        },
       };
     },
   };
@@ -177,6 +210,7 @@ const {
     resetNotes() {
       state.currentNoteId = 'spec';
       state.notesById = {};
+      state.retainedDrafts = {};
       state.notesVersion = 0;
       emitCurrentNote();
       emitNotesVersion();
@@ -359,6 +393,13 @@ vi.mock('$store/renderer/configured-store', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectRetainedNoteDraft: {
+    effect: function* (workspaceId: string, noteId: string) {
+      return mockSelectorStore.state.workspaceNotes.retainedDrafts[
+        JSON.stringify([workspaceId, noteId])
+      ];
+    },
+  },
   selectNoteById: Object.assign(() => currentNoteReadable, {
     select: (_state: any, _workspaceId: string, noteId: string) => getNoteById(noteId),
     effect: function* (_workspaceId: string, noteId: string) {
@@ -423,6 +464,8 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 }));
 
 vi.mock('$features/notes/notes-write-service', () => ({
+  subscribeNoteContentFailure: vi.fn(() => () => {}),
+  retryNoteContent: vi.fn(async () => {}),
   updateNoteContent: mockUpdateNoteContent,
   hasPendingNoteContent: mockHasPendingNoteContent,
   flushNoteContent: mockFlushNoteContent,
@@ -608,17 +651,32 @@ async function startPersistenceOwner(options: { versions?: boolean } = {}) {
   const { runSaga, stdChannel } = await import('redux-saga');
   const { notesWriteSaga } =
     await import('$store/renderer/slices/workspace-notes/sagas/notes-write-saga');
+  const { initialState, workspaceNotesReducer, ensureNotePublicationLifetime } =
+    await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+  mockSelectorStore.publicationState = initialState;
   const channel = stdChannel();
   let pending = false;
   setRoutePersistenceToSaga(true);
   mockHasPendingNoteContent.mockImplementation(() => pending);
   mockDispatch.mockImplementation((action: any) => {
-    if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+    if (action.type === ensureNotePublicationLifetime.type) {
+      // Real publication capture requires its allocation to reduce before the next select.
+      mockSelectorStore.publicationState = workspaceNotesReducer(
+        mockSelectorStore.state.workspaceNotes,
+        action,
+      );
+    } else if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
       const { noteId, update } = action.payload;
       replaceNotes([{ ...getNoteById(noteId), ...update }]);
     } else if (action.type === 'workspaceNotes/applyNoteUpdated') {
       const [, , note] = action.payload;
       replaceNotes([note]);
+    } else if (action.type === 'workspaceNotes/setRetainedNoteDraft') {
+      const [workspaceId, noteId, draft] = action.payload;
+      const retained = mockSelectorStore.state.workspaceNotes.retainedDrafts;
+      const key = JSON.stringify([workspaceId, noteId]);
+      if (draft) retained[key] = draft;
+      else delete retained[key];
     } else if (action.type === 'workspaceNotes/setNoteContentPending') {
       pending = action.payload[2];
     }
@@ -655,6 +713,10 @@ async function startPersistenceOwner(options: { versions?: boolean } = {}) {
 describe('NoteWithComments task conversion regression', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSelectorStore.publicationState = {};
+    deleteGate.held = false;
+    deleteGate.reserve.mockReset().mockImplementation(() => deleteGate.release);
+    deleteGate.listeners.clear();
     mockUpdateNoteContent.mockReset();
     mockHasPendingNoteContent.mockReset().mockReturnValue(false);
     mockFlushNoteContent.mockReset().mockResolvedValue(undefined);
@@ -722,6 +784,171 @@ describe('NoteWithComments task conversion regression', () => {
     await Promise.resolve();
     await tick();
   }
+
+  async function readyDeleteEditor() {
+    if (!getNoteById('baseline'))
+      replaceNotes([createNote('baseline', 'Baseline', 'Baseline content', { rev: 4 })]);
+    selectCurrentNote('baseline');
+    const view = await renderInitializedNote();
+    await waitFor(() => expect(view.container.querySelector('[aria-busy="false"]')).toBeTruthy());
+    const ownedEditor = () =>
+      editorInstances.find(
+        (editor) =>
+          !editor.isDestroyed && editor.view.dom === view.container.querySelector('.ProseMirror'),
+      );
+    await waitFor(() => expect(ownedEditor()).toBeDefined());
+    return { view, editor: ownedEditor()! };
+  }
+  const deleteScope = { backendGeneration: 0, workspaceId: WORKSPACE_ID, noteId: 'baseline' };
+
+  it('keeps rich editing read-only until a recovery reservation is admitted', async () => {
+    deleteGate.reserve.mockReturnValueOnce(undefined);
+    const { view, editor } = await readyDeleteEditor();
+    expect(editor.isEditable).toBe(false);
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    await fireEvent.click(view.getByRole('alert').querySelector('button')!);
+    await tick();
+    expect(editor.isEditable).toBe(true);
+  });
+
+  it('keeps rich editing frozen after Done settles during deletion preparation', async () => {
+    const { view, editor } = await readyDeleteEditor();
+    let acknowledge!: () => void;
+    mockSettleNoteContent.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const done = view.component.finishEditing();
+    await tick();
+    await waitFor(() => expect(mockSettleNoteContent).toHaveBeenCalled());
+    const preparing = prepareNoteDeleteEditors(deleteScope);
+    acknowledge();
+    await done;
+    const lease = await preparing;
+    try {
+      await tick();
+      expect(editor.isEditable).toBe(false);
+      expect(lease.current()).toBe(true);
+    } finally {
+      lease.release();
+    }
+    await tick();
+    expect(editor.isEditable).toBe(true);
+  });
+
+  it('flushes actual rich source and waits for acknowledgement before authorizing deletion', async () => {
+    const { editor } = await readyDeleteEditor();
+    editor.commands.insertContent('local draft ');
+    let acknowledge!: () => void;
+    mockSettleNoteContent.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    let prepared = false;
+    const preparing = prepareNoteDeleteEditors(deleteScope).then(
+      (lease) => {
+        prepared = true;
+        return { lease };
+      },
+      (error: unknown) => ({ error }),
+    );
+    try {
+      await waitFor(() => expect(mockSettleNoteContent).toHaveBeenCalled());
+      expect(prepared).toBe(false);
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'baseline',
+        expect.stringContaining('local draft'),
+        expect.objectContaining({ immediate: true, strict: true, baseContent: 'Baseline content' }),
+      );
+      acknowledge();
+      const result = await preparing;
+      if ('error' in result) throw result.error;
+      expect(result.lease.current()).toBe(true);
+    } finally {
+      acknowledge?.();
+      const result = await preparing;
+      if ('lease' in result) result.lease.release();
+    }
+  });
+
+  it('rejects a failed rich acknowledgement and keeps the editor draft available', async () => {
+    const { editor } = await readyDeleteEditor();
+    editor.commands.insertContent('conflicted draft ');
+    mockSettleNoteContent.mockRejectedValueOnce(new Error('strict-base conflict'));
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow('strict-base conflict');
+    await tick();
+    expect(editor.getText()).toContain('conflicted draft');
+    expect(editor.isEditable).toBe(true);
+  });
+
+  it('refuses deletion preparation when the canonical note disappears and preserves the rich draft', async () => {
+    const { editor } = await readyDeleteEditor();
+    editor.commands.insertContent('keep missing-note draft ');
+    replaceNotes([]);
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow(
+      'The note is no longer available',
+    );
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    expect(mockSettleNoteContent).not.toHaveBeenCalled();
+    expect(editor.getText()).toContain('keep missing-note draft');
+  });
+
+  it('rejects two dirty rich views before either competing draft is flushed', async () => {
+    const first = await readyDeleteEditor();
+    const second = await readyDeleteEditor();
+    expect(first.editor).not.toBe(second.editor);
+    expect(first.editor.isDestroyed).toBe(false);
+    expect(second.editor.isDestroyed).toBe(false);
+    first.editor.commands.insertContent('first local draft ');
+    second.editor.commands.insertContent('second local draft ');
+    expect(first.editor.view.dom).toBe(first.view.container.querySelector('.ProseMirror'));
+    expect(second.editor.view.dom).toBe(second.view.container.querySelector('.ProseMirror'));
+    expect(first.editor.getText()).toContain('first local draft');
+    expect(second.editor.getText()).toContain('second local draft');
+    expect(first.editor.getText()).not.toBe(second.editor.getText());
+    const preparing = prepareNoteDeleteEditors(deleteScope);
+    try {
+      await expect(preparing).rejects.toThrow('Save or close competing note drafts');
+    } finally {
+      await preparing.then(
+        (lease) => lease.release(),
+        () => {},
+      );
+    }
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    expect(first.editor.getText()).toContain('first local draft');
+    expect(second.editor.getText()).toContain('second local draft');
+  });
+
+  it('retains the rich draft without a teardown save when remote deletion holds the note', async () => {
+    const { view, editor } = await readyDeleteEditor();
+    editor.commands.insertContent('recover me ');
+    deleteGate.held = true;
+    deleteGate.listeners.forEach((listener) => listener(true));
+    view.unmount();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    expect(deleteGate.retain).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...deleteScope,
+        content: expect.stringContaining('recover me'),
+        baseContent: 'Baseline content',
+        ownerId: expect.any(String),
+      }),
+    );
+  });
+
+  it('rejects rich IME composition before any deletion flush', async () => {
+    const { view } = await readyDeleteEditor();
+    await fireEvent.compositionStart(view.container.querySelector('.ProseMirror')!);
+    await expect(prepareNoteDeleteEditors(deleteScope)).rejects.toThrow();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+  });
 
   it('keeps the newest note when conversions complete in reverse order', async () => {
     const view = await renderInitializedNote();
@@ -972,6 +1199,7 @@ describe('NoteWithComments task conversion regression', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'base x1 x2', {
+        strict: true,
         immediate: false,
         baseRev: 4,
         baseContent: 'base',
@@ -1018,6 +1246,7 @@ describe('NoteWithComments task conversion regression', () => {
         editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' first');
         await vi.advanceTimersByTimeAsync(1000);
         expect(updateNoteContent).toHaveBeenLastCalledWith('ws-1', 'spec', 'body first', {
+          strict: true,
           immediate: false,
           baseRev: 4,
           baseContent: 'body',
@@ -1041,6 +1270,7 @@ describe('NoteWithComments task conversion regression', () => {
         await tick();
 
         expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', expectedDraft, {
+          strict: true,
           immediate: false,
           baseRev: 5,
           baseContent: 'body first',
@@ -1170,11 +1400,11 @@ describe('NoteWithComments task conversion regression', () => {
       resolveSecond = resolve;
     });
     const wire = vi
-      .spyOn(appClient.notes, 'setContent')
+      .spyOn(appClient.notes, 'update')
       .mockReturnValueOnce(first as never)
       .mockReturnValueOnce(second as never)
       .mockImplementation(((_id: string, content: string) =>
-        Promise.resolve({ success: true, newContent: content, noteRev: 10 })) as never);
+        Promise.resolve({ success: true, content: content, rev: 10 })) as never);
     replaceNotes([createNote('spec', 'Spec', 'body', { rev: 4 })]);
     const owner = await startPersistenceOwner();
     const view = await renderInitializedNote('spec', 'body');
@@ -1195,7 +1425,7 @@ describe('NoteWithComments task conversion regression', () => {
       await vi.advanceTimersByTimeAsync(0);
       editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' newest');
       replaceNotes([createNote('spec', 'Spec', 'AGENT body first LATER', { rev: 8 })]);
-      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      resolveFirst({ success: true, content: 'AGENT body first', rev: 6 });
       await tick();
       await vi.advanceTimersByTimeAsync(0);
       expect(wire).toHaveBeenCalledTimes(2);
@@ -1206,8 +1436,8 @@ describe('NoteWithComments task conversion regression', () => {
       await vi.advanceTimersByTimeAsync(1000);
       resolveSecond({
         success: true,
-        newContent: 'AGENT body first plus typing newest LATER',
-        noteRev: 9,
+        content: 'AGENT body first plus typing newest LATER',
+        rev: 9,
       });
       await tick();
       await vi.advanceTimersByTimeAsync(3000);
@@ -1218,11 +1448,11 @@ describe('NoteWithComments task conversion regression', () => {
       expect(wire.mock.calls[2]).toEqual(['spec', finalText, 9, 'ws-1']);
       expect(getNoteById('spec')).toMatchObject({ content: finalText, rev: 10 });
     } finally {
-      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      resolveFirst({ success: true, content: 'AGENT body first', rev: 6 });
       resolveSecond({
         success: true,
-        newContent: 'AGENT body first plus typing newest LATER',
-        noteRev: 9,
+        content: 'AGENT body first plus typing newest LATER',
+        rev: 9,
       });
       await mockSelectorStore.dispatch(settleNoteContentRequested('ws-1', 'spec'));
       await owner.stop();
@@ -1269,6 +1499,7 @@ describe('NoteWithComments task conversion regression', () => {
       await tick();
 
       expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'note A local', {
+        strict: true,
         immediate: false,
         baseRev: 4,
         baseContent: 'note A',
@@ -1300,7 +1531,7 @@ describe('NoteWithComments task conversion regression', () => {
   it('waits for an already in-flight save before dispatching a version restore', async () => {
     const { appClient } = await import('$lib/client');
     let resolveSave!: (value: unknown) => void;
-    const wire = vi.spyOn(appClient.notes, 'setContent').mockReturnValueOnce(
+    const wire = vi.spyOn(appClient.notes, 'update').mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSave = resolve;
       }) as never,
@@ -1316,7 +1547,7 @@ describe('NoteWithComments task conversion regression', () => {
       mockDispatch.mock.calls.some(
         ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
       );
-    const saveResult = { success: true, newContent: 'note A local', noteRev: 5 };
+    const saveResult = { success: true, content: 'note A local', rev: 5 };
     try {
       editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
       await vi.advanceTimersByTimeAsync(1801);
@@ -1365,7 +1596,7 @@ describe('NoteWithComments task conversion regression', () => {
       let resolveSecond: ((value: unknown) => void) | undefined;
       let resolveRestore: ((value: unknown) => void) | undefined;
       const wire = vi
-        .spyOn(appClient.notes, 'setContent')
+        .spyOn(appClient.notes, 'update')
         .mockImplementationOnce((_id, content) => {
           rpcs.push(`setContent:${content}`);
           return new Promise((resolve) => {
@@ -1399,8 +1630,8 @@ describe('NoteWithComments task conversion regression', () => {
         mockDispatch.mock.calls.some(
           ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
         );
-      const firstResult = { success: true, newContent: 'note A local', noteRev: 5 };
-      const secondResult = { success: true, newContent: 'note A local more', noteRev: 6 };
+      const firstResult = { success: true, content: 'note A local', rev: 5 };
+      const secondResult = { success: true, content: 'note A local more', rev: 6 };
       try {
         editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
         await vi.advanceTimersByTimeAsync(1801);
@@ -1518,7 +1749,7 @@ a<b>c
         WORKSPACE_ID,
         'math-note',
         source + ' edited',
-        { immediate: true, baseContent: source, baseRev: 4 },
+        { strict: true, immediate: true, baseContent: source, baseRev: 4 },
       ),
     );
   });
@@ -1538,7 +1769,7 @@ a<b>c
         WORKSPACE_ID,
         'math-boundary',
         'Intro\n\n$x$\n\n# Heading edited',
-        { immediate: true, baseContent: source, baseRev: 4 },
+        { strict: true, immediate: true, baseContent: source, baseRev: 4 },
       ),
     );
   });
@@ -1546,11 +1777,11 @@ a<b>c
   it('sends the original review source through the real note write saga', async () => {
     const { appClient } = await import('$lib/client');
     const source = '$a<b$ and $c>d$';
-    const wire = vi.spyOn(appClient.notes, 'setContent').mockResolvedValueOnce({
+    const wire = vi.spyOn(appClient.notes, 'update').mockResolvedValueOnce({
       success: true,
-      newContent: source + ' edited',
-      noteRev: 5,
-    });
+      content: source + ' edited',
+      rev: 5,
+    } as never);
     replaceNotes([createNote('math-wire', 'Math wire', source, { rev: 4 })]);
     const owner = await startPersistenceOwner();
     const view = await renderInitializedNote('math-wire', source);
@@ -1573,7 +1804,7 @@ a<b>c
   });
 
   it('flushes exact math source before the editor unmounts for another view', async () => {
-    replaceNotes([createNote('math-note', 'Math note', 'Before')]);
+    replaceNotes([createNote('math-note', 'Math note', 'Before', { rev: 4 })]);
     const view = await renderInitializedNote('math-note', 'Before');
     await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
     const editor = editorInstances.at(-1);
@@ -1591,7 +1822,7 @@ a<b>c
         WORKSPACE_ID,
         'math-note',
         String.raw`Draft $x^2$ and \(y\)`,
-        { immediate: true, baseContent: 'Before' },
+        { strict: true, immediate: true, baseContent: 'Before', baseRev: 4 },
       ),
     );
   });

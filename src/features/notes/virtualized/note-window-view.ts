@@ -1,0 +1,2778 @@
+import type { EditorView } from '@tiptap/pm/view';
+import { sameNoteScope } from '$lib/client/note-pages';
+import type { NoteViewCoordinates } from './note-view-coordinates';
+import type { Workspace } from '$shared/types';
+import { Editor, Extension } from '@tiptap/core';
+import { AllSelection, TextSelection, EditorState } from '@tiptap/pm/state';
+import type { Node as PMNode } from '@tiptap/pm/model';
+import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
+import { createEditorConfig } from '$lib/utils/editor-config';
+import { NoteNativeLifetime } from './note-native-lifetime';
+import { NoteRetainedNativeLifetime } from './note-retained-native-lifetime';
+import { createEditorDeferredTasks } from '$lib/utils/editor-deferred-tasks';
+import { logger } from '$lib/utils/client-logger';
+import { measureNoteProjection } from './note-view-cost';
+import { validateNoteNativeOutput } from './note-native-output-validation';
+import { measureNoteDom } from './note-dom-cost';
+import { projectNoteWindow } from './note-window-projection';
+import type { SourceProjection } from './projection/source-projection';
+import { NOTE_WINDOW_LIMITS, type NoteWindow } from './note-window-reader';
+import type { NoteResourceCost } from './note-resource-ledger';
+import { createNoteTransactionRelay, type NoteTransactionOwner } from './note-transaction-relay';
+
+import { NoteEditAuthority } from './editing/note-edit-authority';
+import {
+  validateLocalPointOutput,
+  validateLocalPointMountedOutput,
+} from './editing/note-local-point-history';
+import {
+  captureNoteSelectionMarkdown,
+  type NoteSelectionMarkdownIdentity,
+} from './editing/note-selection-markdown-capture';
+
+import {
+  captureNoteRenderedSearch,
+  type NoteRenderedSearchInput,
+} from './editing/note-rendered-search-capture';
+import type { NoteRenderedSearchPage } from './editing/note-rendered-search-results';
+import {
+  captureNoteMarker,
+  isNoteMarkerCapture,
+  noteMarkerCaptureLimits,
+  UnsupportedNoteMarkerCapture,
+  type NoteMarkerCapture,
+  type NoteMarkerCaptureInput,
+} from './editing/note-marker-capture';
+import {
+  captureNoteMarkerSelection,
+  isNoteMarkerSelectionCapture,
+} from './editing/note-marker-selection-capture';
+import type { NoteSourceSelection } from './note-source-selection';
+export type { NoteSourceSelection } from './note-source-selection';
+
+export interface NoteViewEditing {
+  /** Resolve a current document-owned authority for this mounted window. Binding is
+   * pure; an unsupported or stale window remains read-only. */
+  bind(
+    window: NoteWindow,
+    projection: SourceProjection,
+    doc: PMNode,
+    state?: EditorState,
+    retainedInitial?: boolean,
+  ): NoteTransactionOwner | undefined;
+  /** A retained prepared context belongs to one pending/mounted native view. */
+  borrow?(window: NoteWindow): {
+    suspend?(): Promise<void>;
+    resume?(): void;
+    bind: NoteViewEditing['bind'];
+    initialSelection?(): NoteSourceSelection;
+    retire?(): void;
+    release(): void;
+  };
+  selectionChanged?(selection: NoteSourceSelection): void;
+  undo(): void;
+  redo(): void;
+}
+export interface NoteWindowViewOptions {
+  workspace?: Workspace;
+  seek(position: number): void;
+  /** Optional read-only same-anchor growth; caller validates this exact prefix. */
+  grow?(window: NoteWindow, minimumEnd: number): boolean | void;
+  selectionChanged(selection: NoteSourceSelection): void;
+  fullOperation(kind: 'copy' | 'search' | 'selectAll', selection: NoteSourceSelection): void;
+  editing?: NoteViewEditing;
+  changed?(): void;
+  failed?(): void;
+  /** Retain the actual admitted DATA graph until this view releases its reference. */
+  retainWindow?(window: NoteWindow): () => void;
+}
+/** One disposable native view. No source backing, page cache, persistence or per-view history.
+ * Geometry, Editor/DOM and in-progress composition are its only runtime ownership. */
+/** Admitted reader data only, not arbitrary proxies. Never invoke context
+ * getters or serializers: a later owner callback may install either. */
+function markerContextWitness(context: NoteWindow['context']) {
+  const refs: { object: object; keys: string[]; values: unknown[]; array: boolean }[] = [];
+  let bytes = 0;
+  const visit = (value: unknown, depth: number): unknown => {
+    if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+      if (typeof value === 'string' && value.length > NOTE_WINDOW_LIMITS.contextBytes)
+        throw new Error('Marker context exceeds budget');
+      if (typeof value === 'number' && !Number.isFinite(value))
+        throw new Error('Invalid marker context number');
+      bytes += new TextEncoder().encode(JSON.stringify(value)).length;
+      if (bytes > NOTE_WINDOW_LIMITS.contextBytes) throw new Error('Marker context exceeds budget');
+      return value;
+    }
+    if (!value || typeof value !== 'object' || depth > 2)
+      throw new Error('Invalid marker context data');
+    const array = Array.isArray(value),
+      proto = Object.getPrototypeOf(value);
+    if (array ? proto !== Array.prototype : proto !== Object.prototype && proto !== null)
+      throw new Error('Invalid marker context prototype');
+    if (Object.getOwnPropertyDescriptor(value, 'toJSON'))
+      throw new Error('Executable marker context');
+    const length = array ? Object.getOwnPropertyDescriptor(value, 'length') : undefined;
+    if (
+      array &&
+      (!length ||
+        !('value' in length) ||
+        !Number.isSafeInteger(length.value) ||
+        length.value < 0 ||
+        length.value > NOTE_WINDOW_LIMITS.descriptors)
+    )
+      throw new Error('Marker context count exceeded');
+    const keys = Reflect.ownKeys(value);
+    if (keys.length > (array ? length!.value + 1 : 16) || keys.some((k) => typeof k !== 'string'))
+      throw new Error('Marker context fields exceeded');
+    const fields = keys as string[],
+      values: unknown[] = [];
+    if (
+      array &&
+      (fields.length !== length!.value + 1 ||
+        fields.some(
+          (k) => k !== 'length' && (!/^(0|[1-9][0-9]*)$/.test(k) || Number(k) >= length!.value),
+        ))
+    )
+      throw new Error('Invalid marker context array');
+    bytes += 2;
+    for (const key of fields) {
+      const d = Object.getOwnPropertyDescriptor(value, key);
+      if (!d || !('value' in d) || (key !== 'length' && !d.enumerable))
+        throw new Error('Executable marker context property');
+      values.push(d.value);
+      if (array && key === 'length') continue;
+      bytes += 1 + (array ? 0 : new TextEncoder().encode(JSON.stringify(key)).length + 1);
+      visit(d.value, depth + 1);
+    }
+    refs.push({ object: value, keys: fields, values, array });
+    return undefined;
+  };
+  visit(context, 0);
+  if (bytes > NOTE_WINDOW_LIMITS.contextBytes) throw new Error('Marker context exceeds budget');
+  return () => {
+    for (const { object, keys, values, array } of refs) {
+      const proto = Object.getPrototypeOf(object);
+      if (array ? proto !== Array.prototype : proto !== Object.prototype && proto !== null)
+        return false;
+      if (Object.getOwnPropertyDescriptor(object, 'toJSON')) return false;
+      // Bounded enumeration aborts before traversal of any unexpected field.
+      let count = 0;
+      for (const key in object) {
+        if (!Object.hasOwn(object, key) || ++count > keys.length || !keys.includes(key))
+          return false;
+      }
+      if (count + (array ? 1 : 0) !== keys.length) return false;
+      for (let i = 0; i < keys.length; i++) {
+        const d = Object.getOwnPropertyDescriptor(object, keys[i]);
+        if (
+          !d ||
+          !('value' in d) ||
+          d.value !== values[i] ||
+          (keys[i] !== 'length' && !d.enumerable)
+        )
+          return false;
+      }
+    }
+    return true;
+  };
+}
+
+export interface NoteReadingSurface {
+  /** Shared renderer admission policy supplied by the application rollout owner. */
+  resourceLimits: NoteResourceCost;
+  /** Supplied by the document-operation owner only after rollout prerequisites pass.
+   * Never use visible editor text as the implementation of this operation. */
+  copyDocument(): Promise<void>;
+  /** Revoke an outstanding whole-source copy when this surface retires. Physical
+   * IO and unpublished sink cleanup keep their resource lease until settled. */
+  cancelCopy?(): void;
+  /** Native selection capture and bounded staged output; absent until its
+   * configured-schema, transport and platform sink prerequisites are supplied. */
+  copySelection?(): Promise<'copied' | 'noCopy'>;
+  cancelSelectionCopy?(): void;
+  /** Explicit captured native rendered search; callback settlement retains DATA.
+   * Page references are borrowed until callback settlement; callers retaining
+   * them afterward must separately admit/copy their state.
+   * A supplied operation is independent of normal route/capability activation. */
+  searchRendered?(
+    query: string,
+    consume: (page: NoteRenderedSearchPage) => Promise<void>,
+  ): Promise<void>;
+  cancelRenderedSearch?(): void;
+  /** Explicit clean marker source operation; callback text is borrowed until
+   * settlement and never establishes server marker provenance by itself. */
+  readMarkerSource?(position: number, consume: (text: string) => Promise<void>): Promise<void>;
+  cancelMarkerSource?(): void;
+  selectionChanged(selection: NoteSourceSelection): void;
+  fullOperation: NoteWindowViewOptions['fullOperation'];
+  editing?: NoteViewEditing;
+  prepareEditing?(window: NoteWindow): {
+    ready: Promise<NoteViewEditing | undefined>;
+    cancel(): void;
+    release(): Promise<void>;
+    /** Retire navigation delivery while existing native borrowers finish. */
+    retire?(): Promise<void>;
+  };
+  ready?(view: NoteWindowView): void;
+}
+interface WindowLease {
+  editing?: NoteViewEditing;
+  bind?: NoteViewEditing['bind'];
+  initialSelection?: () => NoteSourceSelection;
+  retire?: () => void;
+  borrowed: boolean;
+  suspend(): Promise<void>;
+  resume(): void;
+  retain(): () => void;
+  release(): void;
+}
+export class NoteWindowView {
+  editor?: Editor;
+  private retained?: {
+    phase: 'preparing' | 'mounted' | 'detaching' | 'detached' | 'retired';
+    setup: boolean;
+    tasks: ReturnType<typeof createEditorDeferredTasks>;
+    router: NoteRetainedNativeLifetime;
+    editor?: Editor;
+    ticket?: ReturnType<NoteRetainedNativeLifetime['begin']>;
+    scope?: ReturnType<NonNullable<Editor['options']['deferredTasks']>['beginMount']>;
+    token?: object;
+    cleanup?: Promise<void>;
+    failed?: boolean;
+    construction?: { lifetime: NoteNativeLifetime; settled: Promise<void> };
+    taskSettlement?: Promise<void>;
+  };
+  private selectionBorrowEpoch = 0;
+  private selectionBorrowExhausted = false;
+  private restoreSelectionObserver?: () => void;
+  private readonly selectionBorrowListeners = new Set<() => void>();
+  get selectionCaptureGeneration() {
+    return this.selectionBorrowEpoch;
+  }
+  private invalidateSelectionBorrows() {
+    if (this.selectionBorrowEpoch === Number.MAX_SAFE_INTEGER) this.selectionBorrowExhausted = true;
+    else this.selectionBorrowEpoch++;
+    for (const notify of [...this.selectionBorrowListeners]) notify();
+  }
+  /** Caller admits capture/borrow DATA before entry and supplies an irreversible
+   * operation-current predicate. Local native/lifecycle loss notifies subscribers
+   * immediately; external operation changes remain the owner's subscription.
+   * Release only after dependent IO settles, even after current() becomes false. */
+  borrowSelectionMarkdown(
+    identity: NoteSelectionMarkdownIdentity,
+    operationCurrent: () => boolean,
+  ) {
+    return this.borrowNativeCapture(identity, operationCurrent, (editor, authority, current) =>
+      captureNoteSelectionMarkdown(editor.view, {
+        authority,
+        identity,
+        selection: this.getSelection(),
+        current,
+      }),
+    );
+  }
+  borrowRenderedSearch(
+    identity: NoteSelectionMarkdownIdentity,
+    query: NoteRenderedSearchInput['query'],
+    operationCurrent: () => boolean,
+  ) {
+    return this.borrowNativeCapture(
+      identity,
+      operationCurrent,
+      (editor, authority, current) =>
+        captureNoteRenderedSearch(editor.view, {
+          authority,
+          identity,
+          query,
+          selection: this.getSelection(),
+          current,
+        }),
+      true,
+    );
+  }
+  /** Selection output uses the read-only marker lease, never an editing authority.
+   * Every executable owner check precedes the producer's final native proof. */
+  borrowMarkerSelectionMarkdown(
+    identity: NoteSelectionMarkdownIdentity,
+    operationCurrent: () => boolean,
+  ) {
+    let snapshot:
+      | { editor: Editor; projection: SourceProjection; identity: NoteSelectionMarkdownIdentity }
+      | undefined;
+    let marker: ReturnType<NoteWindowView['borrowMarkerOccurrence']> | undefined;
+    {
+      const editor = this.editor,
+        projection = this.committedProjection;
+      const paragraph = editor?.state.doc.firstChild;
+      if (!editor || !projection || !paragraph || paragraph.childCount !== 3)
+        // i18n-ignore (internal typed refusal; not rendered UI text)
+        throw new UnsupportedNoteMarkerCapture('Unsupported marker selection context');
+      const position = 1 + paragraph.child(0).nodeSize;
+      snapshot = { editor, projection, identity };
+      marker = this.borrowMarkerOccurrence(identity, position, operationCurrent);
+    }
+    let captured: ReturnType<typeof captureNoteMarkerSelection> | undefined;
+    let lost = false,
+      released = false;
+    const listeners = new Set<() => void>();
+    const lose = () => {
+      if (lost) return;
+      lost = true;
+      captured = undefined;
+      snapshot = undefined;
+      marker?.retire();
+      for (const listener of [...listeners]) {
+        try {
+          listener();
+        } catch (error) {
+          logger.error('Failed to notify marker selection loss', error);
+        }
+      }
+    };
+    const prove = () => {
+      const s = snapshot,
+        borrowed = marker;
+      if (!s || !borrowed) throw new Error('Marker selection borrow retired');
+      return captureNoteMarkerSelection(s.editor.view, {
+        projection: s.projection,
+        identity: s.identity,
+        selection: this.getSelection(),
+        current: borrowed.current,
+      });
+    };
+    const current = () => {
+      if (lost || released || !captured || !snapshot) return false;
+      try {
+        const s = snapshot;
+        // The helper calls marker.current before its final mapping validation.
+        // Do not add an executable owner callback after that proof.
+        const proof = prove();
+        if (
+          !isNoteMarkerSelectionCapture(proof) ||
+          JSON.stringify(proof) !== JSON.stringify(captured) ||
+          this.editor !== s.editor ||
+          this.committedProjection !== s.projection ||
+          snapshot !== s
+        )
+          lose();
+      } catch {
+        lose();
+      }
+      return !lost && !released;
+    };
+    let unsubscribe: (() => void) | undefined;
+    const release = () => {
+      if (released) return;
+      released = true;
+      const stop = unsubscribe;
+      unsubscribe = undefined;
+      stop?.();
+      lose();
+      listeners.clear();
+      const drop = marker;
+      marker = undefined;
+      drop?.release();
+    };
+    try {
+      captured = prove();
+      if (!isNoteMarkerSelectionCapture(captured))
+        throw new Error('Invalid marker selection capture');
+      unsubscribe = marker.subscribe(lose);
+      // subscribe executes ownership checks; renew proof afterward.
+      if (!current()) throw new Error('Stale marker selection capture');
+      const capture = captured;
+      if (!capture) throw new Error('Marker selection capture lost');
+      return Object.freeze({
+        capture,
+        current,
+        release,
+        subscribe: (f: () => void) => {
+          if (!current()) {
+            f();
+            return () => {};
+          }
+          listeners.add(f);
+          return () => {
+            listeners.delete(f);
+          };
+        },
+      });
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+  /** Read-only correspondence for one mounted atom. This is not canonical marker
+   * provenance or edit authority. Caller admits capture/proof DATA before entry;
+   * the existing window lease remains held until explicit physical settlement. */
+  borrowMarkerOccurrence(
+    identity: NoteMarkerCaptureInput['identity'],
+    position: number,
+    operationCurrent: () => boolean,
+  ) {
+    const editor = this.editor,
+      window = this.window,
+      projection = this.committedProjection,
+      lease = this.currentLease;
+    let contextCurrent = window ? markerContextWitness(window.context) : undefined;
+    const boundaries = window?.context.filter((item) => item.kind === 'boundary');
+    const boundary = boundaries?.[0];
+
+    if (
+      !editor ||
+      !window ||
+      window.text.length > noteMarkerCaptureLimits.windowUnits ||
+      !projection ||
+      !lease ||
+      !this.options.retainWindow ||
+      this.historyOwner ||
+      this.mountedEditing ||
+      this.options.editing ||
+      projection instanceof NoteEditAuthority ||
+      window.native ||
+      window.canonicalOwners?.length ||
+      boundaries?.length !== 1 ||
+      window.context.length > NOTE_WINDOW_LIMITS.descriptors ||
+      window.context.some(
+        (item) =>
+          item !== boundary &&
+          (item.kind !== 'span' ||
+            !['text', 'commentMarker'].includes(item.role) ||
+            item.nativeRef ||
+            item.sourceMapRef ||
+            item.codeSource ||
+            item.sourceRange.start < window.range.start ||
+            item.sourceRange.end > window.range.end),
+      ) ||
+      boundary?.kind !== 'boundary' ||
+      boundary.construct !== 'paragraph' ||
+      boundary.entryPath !== 'markdown' ||
+      boundary.parentRef ||
+      boundary.nativeRef ||
+      boundary.sourceMapRef ||
+      boundary.attributesRef ||
+      boundary.profile ||
+      boundary.htmlPosition ||
+      boundary.htmlSource ||
+      boundary.tablePosition ||
+      boundary.sourceRange.start !== window.range.start ||
+      boundary.sourceRange.end !== window.range.end ||
+      boundary.continuationBefore ||
+      boundary.continuationAfter ||
+      editor.state.doc.childCount !== 1 ||
+      projection.source !== window.text ||
+      projection.start !== window.range.start ||
+      !Number.isSafeInteger(position) ||
+      position < 1 ||
+      !Number.isSafeInteger(identity.documentGeneration) ||
+      identity.documentGeneration !== 0
+    )
+      throw new UnsupportedNoteMarkerCapture('Unsupported read-only native marker borrow');
+    const original = Object.freeze({ ...identity, scope: Object.freeze({ ...identity.scope }) });
+    let snapshot:
+      | {
+          editor: Editor;
+          window: NoteWindow;
+          projection: SourceProjection;
+          lease: WindowLease;
+          state: EditorState;
+          epoch: number;
+          text: string;
+          start: number;
+          end: number;
+          length: number;
+          context: NoteWindow['context'];
+          boundary: Extract<NoteWindow['context'][number], { kind: 'boundary' }>;
+          boundaryId: string;
+          entryPath: typeof boundary.entryPath;
+          expiry: string | undefined;
+        }
+      | undefined = {
+      editor,
+      window,
+      projection,
+      lease,
+      state: editor.state,
+      epoch: this.selectionCaptureGeneration,
+      text: window.text,
+      start: window.range.start,
+      end: window.range.end,
+      length: window.sourceLength,
+      context: window.context,
+      boundary,
+      boundaryId: boundary.id,
+      entryPath: boundary.entryPath,
+      expiry: window.expiresAt,
+    };
+    let checkOperation: (() => boolean) | undefined = operationCurrent;
+    let captured: NoteMarkerCapture | undefined;
+    let retained: (() => void) | undefined;
+    let lost = false,
+      released = false;
+    const listeners = new Set<() => void>();
+    const notify = (f: () => void) => {
+      try {
+        f();
+      } catch (error) {
+        logger.error('Failed to notify native marker loss', error);
+      }
+    };
+    const lose = () => {
+      if (lost) return;
+      lost = true;
+      snapshot = undefined;
+      contextCurrent = undefined;
+      captured = undefined;
+      checkOperation = undefined;
+      for (const f of [...listeners]) notify(f);
+    };
+    const same = (s: NonNullable<typeof snapshot>, time: number) =>
+      !this.disposed &&
+      !this.selectionBorrowExhausted &&
+      !s.editor.isDestroyed &&
+      !this.historyBusy &&
+      !this.transactionRelay?.busy &&
+      !s.editor.view.composing &&
+      !this.pins.has(this.compositionPin) &&
+      !this.historyOwner &&
+      !this.mountedEditing &&
+      !this.options.editing &&
+      this.editor === s.editor &&
+      s.editor.state === s.state &&
+      this.window === s.window &&
+      this.committedProjection === s.projection &&
+      this.projection === s.projection &&
+      this.currentLease === s.lease &&
+      this.selectionCaptureGeneration === s.epoch &&
+      original.liveGeneration === s.epoch &&
+      s.window.text === s.text &&
+      s.window.range.start === s.start &&
+      s.window.range.end === s.end &&
+      s.window.sourceLength === s.length &&
+      s.projection.source === s.text &&
+      s.projection.start === s.start &&
+      !s.window.native &&
+      !s.window.canonicalOwners?.length &&
+      Object.getOwnPropertyDescriptor(s.window, 'context')?.value === s.context &&
+      contextCurrent?.() === true &&
+      s.boundary.kind === 'boundary' &&
+      s.boundary.id === s.boundaryId &&
+      s.boundary.construct === 'paragraph' &&
+      s.boundary.entryPath === s.entryPath &&
+      !s.boundary.parentRef &&
+      s.boundary.sourceRange.start === s.start &&
+      s.boundary.sourceRange.end === s.end &&
+      !s.boundary.continuationBefore &&
+      !s.boundary.continuationAfter &&
+      s.window.sourceRevision === original.sourceRevision &&
+      s.window.snapshotId === original.snapshotId &&
+      sameNoteScope(s.window.scope, original.scope) &&
+      s.window.expiresAt === s.expiry &&
+      Date.parse(s.expiry ?? '') >= Date.parse(original.expiresAt) &&
+      Date.parse(original.expiresAt) > time &&
+      identity.sourceRevision === original.sourceRevision &&
+      identity.snapshotId === original.snapshotId &&
+      identity.documentGeneration === original.documentGeneration &&
+      identity.liveGeneration === original.liveGeneration &&
+      identity.selectionGeneration === original.selectionGeneration &&
+      identity.expiresAt === original.expiresAt &&
+      sameNoteScope(identity.scope, original.scope);
+    const current = () => {
+      if (lost || released || !snapshot) return false;
+      try {
+        const s = snapshot;
+        const time = Date.now();
+        if (!same(s, time) || !checkOperation?.() || !same(s, Date.now())) lose();
+        if (!lost && captured) {
+          const proof = captureNoteMarker(s.editor.view, {
+            projection: s.projection,
+            identity: original,
+            position,
+            current: () => true,
+          });
+          if (JSON.stringify(proof) !== JSON.stringify(captured) || !same(s, time)) lose();
+        }
+      } catch {
+        lose();
+      }
+      return !lost && !released;
+    };
+    if (!current()) throw new Error('Stale native marker borrow');
+    const invalidated = () => lose();
+    this.selectionBorrowListeners.add(invalidated);
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.selectionBorrowListeners.delete(invalidated);
+      lose();
+      listeners.clear();
+      const drop = retained;
+      retained = undefined;
+      drop?.();
+    };
+    try {
+      retained = lease.retain();
+      const s = snapshot;
+      if (!s) throw new Error('Native marker borrow lost before capture');
+      const capture = captureNoteMarker(s.editor.view, {
+        projection: s.projection,
+        identity: original,
+        position,
+        current,
+      });
+      if (!isNoteMarkerCapture(capture)) throw new Error('Invalid native marker capture');
+      captured = capture;
+      if (!current()) throw new Error('Native marker changed during capture');
+      return Object.freeze({
+        capture,
+        current,
+        retire: lose,
+        release,
+        subscribe: (f: () => void) => {
+          if (!current()) {
+            notify(f);
+            return () => {};
+          }
+          listeners.add(f);
+          return () => {
+            listeners.delete(f);
+          };
+        },
+      });
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+  private borrowNativeCapture<T>(
+    identity: NoteSelectionMarkdownIdentity,
+    operationCurrent: () => boolean,
+    captureNative: (editor: Editor, authority: NoteEditAuthority, current: () => boolean) => T,
+    verifyCorrespondence = false,
+  ) {
+    const editor = this.editor,
+      window = this.window,
+      authority = this.committedProjection,
+      owner = this.historyOwner,
+      lease = this.currentLease,
+      editing = this.mountedEditing;
+    if (
+      !editor ||
+      !window ||
+      !(authority instanceof NoteEditAuthority) ||
+      !owner ||
+      !lease ||
+      !this.options.retainWindow
+    )
+      throw new Error('Missing current native selection authority');
+    const capturedIdentity = Object.freeze({
+      ...identity,
+      scope: Object.freeze({ ...identity.scope }),
+    });
+    let snapshot:
+      | {
+          editor: Editor;
+          window: NoteWindow;
+          authority: NoteEditAuthority;
+          owner: NoteTransactionOwner;
+          lease: WindowLease;
+          editing: NoteViewEditing | undefined;
+          state: EditorState;
+          epoch: number;
+          windowExpiry: string | undefined;
+        }
+      | undefined = {
+      editor,
+      window,
+      authority,
+      owner,
+      lease,
+      editing,
+      state: editor.state,
+      epoch: this.selectionCaptureGeneration,
+      windowExpiry: window.expiresAt,
+    };
+    let checkOperation: (() => boolean) | undefined = operationCurrent;
+    let retained: (() => void) | undefined;
+    let captured: T | undefined;
+    let lost = false,
+      released = false;
+    const listeners = new Set<() => void>();
+    const notify = (changed: () => void) => {
+      try {
+        changed();
+      } catch (error) {
+        logger.error('Failed to notify selection borrow loss', error);
+      }
+    };
+    const lose = () => {
+      if (lost) return;
+      lost = true;
+      // Drop native graph references immediately; the shared context lease stays
+      // charged until the consumer settles its IO and explicitly releases.
+      snapshot = undefined;
+      captured = undefined;
+      checkOperation = undefined;
+      for (const changed of [...listeners]) notify(changed);
+    };
+    const same = (s: NonNullable<typeof snapshot>) =>
+      !this.disposed &&
+      !this.selectionBorrowExhausted &&
+      !s.editor.isDestroyed &&
+      !this.historyBusy &&
+      !this.transactionRelay?.busy &&
+      !s.editor.view.composing &&
+      !this.pins.has(this.compositionPin) &&
+      this.selectionCaptureGeneration === s.epoch &&
+      capturedIdentity.liveGeneration === s.epoch &&
+      this.editor === s.editor &&
+      s.editor.state === s.state &&
+      this.window === s.window &&
+      this.committedProjection === s.authority &&
+      this.projection === s.authority &&
+      this.historyOwner === s.owner &&
+      this.currentLease === s.lease &&
+      this.historyLease === s.lease &&
+      this.mountedEditing === s.editing &&
+      this.options.editing === s.editing &&
+      s.authority.doc === s.state.doc &&
+      s.authority.generation === capturedIdentity.documentGeneration &&
+      s.authority.sourceRevision === capturedIdentity.sourceRevision &&
+      s.authority.snapshotId === capturedIdentity.snapshotId &&
+      sameNoteScope(s.authority.scope, capturedIdentity.scope) &&
+      s.window.expiresAt === s.windowExpiry &&
+      s.window.sourceRevision === capturedIdentity.sourceRevision &&
+      s.window.snapshotId === capturedIdentity.snapshotId &&
+      sameNoteScope(s.window.scope, capturedIdentity.scope) &&
+      Date.parse(s.windowExpiry ?? '') >= Date.parse(capturedIdentity.expiresAt) &&
+      Date.parse(capturedIdentity.expiresAt) > Date.now() &&
+      identity.sourceRevision === capturedIdentity.sourceRevision &&
+      identity.snapshotId === capturedIdentity.snapshotId &&
+      identity.documentGeneration === capturedIdentity.documentGeneration &&
+      identity.liveGeneration === capturedIdentity.liveGeneration &&
+      identity.selectionGeneration === capturedIdentity.selectionGeneration &&
+      identity.expiresAt === capturedIdentity.expiresAt &&
+      sameNoteScope(identity.scope, capturedIdentity.scope);
+    const current = () => {
+      if (lost || released || !snapshot) return false;
+      try {
+        const s = snapshot;
+        if (!same(s) || !s.owner.current() || !checkOperation?.() || !s.owner.current() || !same(s))
+          lose();
+        if (!lost && verifyCorrespondence && captured !== undefined) {
+          // Ownership callbacks above may mutate correspondence in place. Repeat
+          // the bounded native proof after the last such callback; this final
+          // capture uses no external owner callback and never publishes a new DTO.
+          const verified = captureNative(s.editor, s.authority, () => true);
+          if (JSON.stringify(verified) !== JSON.stringify(captured)) lose();
+        }
+      } catch {
+        lose();
+      }
+      return !lost && !released;
+    };
+    if (!current()) throw new Error('Stale native selection borrow');
+    const invalidated = () => lose();
+    this.selectionBorrowListeners.add(invalidated);
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.selectionBorrowListeners.delete(invalidated);
+      snapshot = undefined;
+      checkOperation = undefined;
+      const releaseData = retained;
+      retained = undefined;
+      lose();
+      listeners.clear();
+      releaseData?.();
+    };
+    try {
+      retained = lease.retain();
+      const capture = captureNative(editor, authority, current);
+      captured = capture;
+      if (!current()) throw new Error('Native selection changed during borrow');
+      const subscribe = (changed: () => void) => {
+        if (!current()) {
+          notify(changed);
+          return () => {};
+        }
+        listeners.add(changed);
+        return () => {
+          listeners.delete(changed);
+        };
+      };
+      return Object.freeze({ capture, current, release, subscribe });
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+  private committedProjection?: SourceProjection;
+  private committedCoordinates?: NoteViewCoordinates;
+  private transactionRelay?: ReturnType<typeof createNoteTransactionRelay>;
+  get projection() {
+    if (this.transactionRelay?.busy && this.editor)
+      return this.transactionRelay.projectionAt(this.editor.state) ?? this.committedProjection;
+    return this.committedProjection;
+  }
+  private get coordinates(): NoteViewCoordinates | undefined {
+    if (this.transactionRelay?.busy && this.editor) {
+      const provisional = this.transactionRelay.coordinatesAt(this.editor.state);
+      if (provisional) return provisional;
+    }
+    if (this.committedCoordinates) return this.committedCoordinates;
+    const window = this.window;
+    return (
+      window && {
+        start: window.range.start,
+        end: window.range.end,
+        length: window.sourceLength,
+        toBase: (position: number) => position,
+      }
+    );
+  }
+  private seekCurrent(position: number, affinity: -1 | 1 = 1, preserveFind = false) {
+    if (!preserveFind) this.cancelFindSelection();
+    if (this.historyBusy) return;
+    const coordinates = this.coordinates;
+    if (coordinates)
+      this.options.seek(
+        coordinates.toBase(Math.max(0, Math.min(coordinates.length, position)), affinity),
+      );
+    else this.options.seek(Math.max(0, position));
+  }
+  private pendingFindSelection?: {
+    selection: NoteSourceSelection;
+    scope: NoteWindow['scope'];
+    revision: string;
+    snapshotId: string;
+    current(): boolean;
+  };
+  window?: NoteWindow;
+  private pending?: NoteWindow;
+  private currentLease?: WindowLease;
+  private mountedEditing?: NoteViewEditing;
+  private historyOwner?: NoteTransactionOwner;
+  private historyLease?: WindowLease;
+  private historyEditing?: NoteViewEditing;
+  private historyBusy = false;
+  private historyCancelled = false;
+  private pendingHistory?: 'undo' | 'redo';
+  private lifetime?: NoteNativeLifetime;
+  private bindEditing?: (editing: NoteViewEditing | undefined) => boolean;
+  private pendingLease?: WindowLease;
+  private pins = new Set<string | symbol>();
+  private readonly compositionPin = Symbol('native composition');
+  private disposed = false;
+  private applying = false;
+  private requested = -1;
+  private rate = 0.35;
+  private growthFrame = 0;
+  private growthAttempt?: NoteWindow;
+  private readAvailable = true;
+  private readLoading = false;
+  private readFailed = false;
+  // Only explicit paging records scalar-safe admitted starts. Fixed bounded
+  // history; after eviction or a direct Find jump, source zero is the safe fallback.
+  private pageAnchors: number[] = [];
+  private pageIdentity?: string;
+  private frame = 0;
+  private domFrame = 0;
+  private programmatic = false;
+  private selection: NoteSourceSelection = {
+    anchor: 0,
+    head: 0,
+    anchorAffinity: 1,
+    headAffinity: 1,
+  };
+  private anchor?: { source: number; offset: number };
+  private navigationAnchor?: { source: number; offset: number };
+  readonly host = document.createElement('div');
+  private readonly before = document.createElement('div');
+  private readonly after = document.createElement('div');
+  readonly cost = {
+    createdViews: 0,
+    destroyedViews: 0,
+    mountedViews: 0,
+    mountedNodes: 0,
+    mountedDomNodes: 0,
+    domPayloadBytes: 0,
+    domPeakBytes: 0,
+    domMeasurementNodes: 0,
+    sourceBytes: 0,
+    contextBytes: 0,
+    pendingBytes: 0,
+    derivedBytes: 0,
+    projectionPeakBytes: 0,
+    windowAssemblyPeakBytes: 0,
+  };
+  private observer: ResizeObserver;
+  private domObserver: MutationObserver;
+  constructor(
+    readonly scroller: HTMLElement,
+    private readonly options: NoteWindowViewOptions,
+  ) {
+    this.before.setAttribute('aria-hidden', 'true');
+    this.after.setAttribute('aria-hidden', 'true');
+    this.host.className = 'note-window-native';
+    this.host.style.position = 'relative';
+    scroller.append(this.before, this.host, this.after);
+    scroller.style.overflowAnchor = 'none';
+    scroller.addEventListener('scroll', this.scroll, { passive: true });
+    scroller.addEventListener('wheel', this.physicalIntent, { passive: true });
+    scroller.addEventListener('pointerdown', this.physicalIntent);
+    scroller.addEventListener('keydown', this.keydown, true);
+    scroller.addEventListener('copy', this.copy, true);
+    this.host.addEventListener('compositionstart', this.compositionStart);
+    this.host.addEventListener('compositionend', this.compositionEnd);
+    this.observer = new ResizeObserver(() => {
+      if (!this.retained) this.measure();
+    });
+    this.observer.observe(this.host);
+    this.domObserver = new MutationObserver(() => {
+      if (!this.retained) this.scheduleDomMeasurement();
+    });
+    this.observeDom();
+  }
+  private observeDom(root: Node = this.host) {
+    this.domObserver.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+  }
+  private scheduleDomMeasurement = () => {
+    if (this.disposed || this.domFrame || (this.retained && this.retained.phase !== 'mounted'))
+      return;
+    const ticket = this.retained?.ticket;
+    this.domFrame = requestAnimationFrame(() => {
+      if (ticket && (this.retained?.ticket !== ticket || this.retained.phase !== 'mounted')) return;
+      this.domFrame = 0;
+      this.measureDom();
+    });
+  };
+  private measurementBinding() {
+    const r = this.retained,
+      ticket = r?.ticket,
+      editor = this.editor,
+      phase = r?.phase;
+    return () =>
+      !this.disposed &&
+      (!r ||
+        (this.retained === r &&
+          r.ticket === ticket &&
+          !!ticket?.open &&
+          r.phase === phase &&
+          (phase === 'preparing' || phase === 'mounted') &&
+          this.editor === editor));
+  }
+  private measureDom() {
+    const current = this.measurementBinding();
+    if (!current()) return;
+    const measured = measureNoteDom(this.host);
+    if (!current()) return;
+    this.cost.mountedDomNodes = measured.nodes;
+    this.cost.domPayloadBytes = measured.payloadBytes;
+    this.cost.domPeakBytes = Math.max(this.cost.domPeakBytes, measured.payloadBytes);
+    this.cost.domMeasurementNodes += measured.nodes;
+    // Releasing old roots prevents detached primitive output from staying owned.
+    this.domObserver.disconnect();
+    if (!current()) return;
+    this.observeDom();
+    for (const root of measured.shadowRoots) {
+      if (!current()) return;
+      this.observeDom(root);
+    }
+  }
+  updateEditing(editing?: NoteViewEditing) {
+    this.invalidateSelectionBorrows();
+    if (this.historyBusy) {
+      if (this.currentLease?.initialSelection) this.currentLease.retire?.();
+      this.historyCancelled = true;
+      this.options.editing = editing;
+      return;
+    }
+    if (this.transactionRelay?.defer('owner', () => this.updateEditing(editing))) return;
+    const changed = editing !== this.options.editing || editing !== this.mountedEditing;
+    this.options.editing = editing;
+    this.mountedEditing = editing;
+    if (changed) {
+      this.cancelFindSelection();
+      this.currentLease?.retire?.();
+      this.historyOwner = undefined;
+      this.historyLease = undefined;
+      this.historyEditing = undefined;
+      // A borrowed factory is single-use and refers to the original base document.
+      // The caller supplies the next prepared context to show(), which remounts it.
+      const borrowed = this.currentLease?.borrowed || editing?.borrow;
+      this.editor?.setEditable(borrowed ? false : (this.bindEditing?.(editing) ?? false), false);
+    }
+  }
+  private publishSelection() {
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    const admission = this.historyOwner?.saveAdmission;
+    if (admission && (!admission.mutable() || !admission.permitsSelection(this.selection))) return;
+    const leave = admission?.enter();
+    try {
+      this.invalidateSelectionBorrows();
+      if (this.historyBusy) return;
+      const selection = this.getSelection();
+      if (admission && !admission.permitsSelection(selection)) return;
+      this.mountedEditing?.selectionChanged?.(selection);
+      if (admission && !admission.permitsSelection(selection)) return;
+      this.options.selectionChanged(selection);
+    } finally {
+      leave?.();
+    }
+  }
+  private bindSaveAdmission(view: EditorView) {
+    const owner = this.historyOwner;
+    owner?.saveAdmission?.bind(
+      view,
+      () =>
+        this.historyOwner === owner &&
+        this.editor?.view === view &&
+        !this.disposed &&
+        !this.historyBusy &&
+        !this.transactionRelay?.busy &&
+        (!this.retained || this.retained.phase === 'mounted'),
+    );
+  }
+  getSelection(): NoteSourceSelection {
+    return { ...this.selection };
+  }
+  private command(kind: 'copy' | 'search' | 'selectAll') {
+    if (this.historyBusy || (this.retained && this.retained.phase !== 'mounted')) return;
+    if (kind === 'selectAll' && this.coordinates) {
+      if (this.historyOwner?.saveAdmission && !this.historyOwner.saveAdmission.mutable()) return;
+      this.selection = {
+        anchor: 0,
+        head: this.coordinates.length,
+        anchorAffinity: 1,
+        headAffinity: 1,
+      };
+      this.publishSelection();
+      if (this.editor) {
+        this.applying = true;
+        try {
+          this.editor.view.dispatch(
+            this.editor.state.tr
+              .setSelection(new AllSelection(this.editor.state.doc))
+              .setMeta('addToHistory', false),
+          );
+        } finally {
+          this.applying = false;
+        }
+      }
+    }
+    this.options.fullOperation(kind, this.getSelection());
+  }
+  private physicalIntent = () => {
+    this.cancelFindSelection();
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    // A user scroll wins over a pending resize correction and over programmatic
+    // scroll-event suppression. The next scroll event captures the new anchor.
+    this.anchor = undefined;
+    this.programmatic = false;
+  };
+  private keydown = (event: KeyboardEvent) => {
+    if (['PageDown', 'PageUp', 'Home', 'End', 'ArrowDown', 'ArrowUp'].includes(event.key))
+      this.physicalIntent();
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
+    const key = event.key.toLowerCase();
+    if (key === 'a' || key === 'f') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.command(key === 'a' ? 'selectAll' : 'search');
+    }
+  };
+  private copy = (event: Event) => {
+    if (
+      this.historyBusy ||
+      this.transactionRelay?.busy ||
+      (this.retained && this.retained.phase !== 'mounted')
+    ) {
+      event.preventDefault();
+      return;
+    }
+    const w = this.coordinates,
+      s = this.selection;
+    if (w && (s.anchor < w.start || s.anchor > w.end || s.head < w.start || s.head > w.end)) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.command('copy');
+    }
+  };
+  forceMount(reason: 'focus' | 'selection' | 'composition') {
+    const owner = Symbol(reason);
+    this.pin(owner);
+    return () => this.release(owner);
+  }
+  private compositionStart = () => {
+    this.cancelFindSelection();
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    this.invalidateSelectionBorrows();
+    this.pins.add(this.compositionPin);
+  };
+  private compositionEnd = () => {
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    const ticket = this.retained?.ticket;
+    // ProseMirror's final composition transaction runs before the next animation frame.
+    cancelAnimationFrame(this.frame);
+    this.frame = requestAnimationFrame(() => {
+      if (ticket && (this.retained?.ticket !== ticket || this.retained.phase !== 'mounted')) return;
+      this.frame = 0;
+      this.release(this.compositionPin);
+    });
+  };
+  pin(reason: string | symbol) {
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    this.pins.add(reason);
+  }
+  release(reason: string | symbol) {
+    if (!this.pins.delete(reason)) return;
+    if (!this.pins.size && this.pending) {
+      const pending = this.pending;
+      this.show(pending);
+    }
+    if (!this.pins.size && this.pendingHistory) {
+      const direction = this.pendingHistory;
+      this.pendingHistory = undefined;
+      this.history(direction);
+    }
+  }
+  reveal(position: number) {
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    this.navigationAnchor = { source: position, offset: this.scroller.clientHeight / 3 };
+    if (
+      this.coordinates &&
+      position >= this.coordinates.start &&
+      position <= this.coordinates.end
+    ) {
+      this.anchor = this.navigationAnchor;
+      this.navigationAnchor = undefined;
+      this.restoreAnchor();
+    } else this.seekCurrent(Math.max(0, position - 1024));
+  }
+  setSelection(
+    selection: NoteSourceSelection,
+    findIntent?: NoteWindowView['pendingFindSelection'],
+    seekStart?: number,
+  ) {
+    if (!findIntent) this.cancelFindSelection();
+    const current = () =>
+      !findIntent || (findIntent.current() && this.pendingFindSelection === findIntent);
+    if (!current()) return;
+    const admission = this.historyOwner?.saveAdmission;
+    if (admission && (!admission.mutable() || !admission.permitsSelection(selection))) return;
+    const leaveSelection = admission?.enter();
+    try {
+      if (this.retained && this.retained.phase !== 'mounted') return;
+      this.invalidateSelectionBorrows();
+      if (this.historyBusy) return;
+      if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
+      this.selection = { ...selection };
+      this.publishSelection();
+      if (!current()) return;
+      const w = this.coordinates,
+        p = this.projection,
+        e = this.editor;
+      if (
+        !w ||
+        !p ||
+        !e ||
+        selection.head < w.start ||
+        selection.head > w.end ||
+        (seekStart !== undefined && (selection.anchor < w.start || selection.anchor > w.end))
+      ) {
+        this.navigationAnchor = { source: selection.head, offset: this.scroller.clientHeight / 3 };
+        this.seekCurrent(
+          seekStart ?? Math.max(0, selection.head - 1024),
+          selection.headAffinity,
+          !!findIntent,
+        );
+        return;
+      }
+      this.applying = true;
+      try {
+        e.view.dispatch(
+          e.state.tr
+            .setSelection(
+              TextSelection.create(
+                e.state.doc,
+                p.pmAt(
+                  Math.max(w.start, Math.min(w.end, selection.anchor)),
+                  selection.anchorAffinity,
+                ),
+                p.pmAt(selection.head, selection.headAffinity),
+              ),
+            )
+            .setMeta('addToHistory', false),
+        );
+      } finally {
+        this.applying = false;
+      }
+    } finally {
+      leaveSelection?.();
+    }
+  }
+  cancelFindSelection() {
+    this.pendingFindSelection = undefined;
+  }
+  /** Explicit Find navigation only. Typing and generic selection never take focus. */
+  selectFindHit(selection: NoteSourceSelection, current: () => boolean) {
+    this.cancelFindSelection();
+    const window = this.window;
+    if (!window) return;
+    const intent = {
+      selection: { ...selection },
+      scope: { ...window.scope },
+      revision: window.sourceRevision,
+      snapshotId: window.snapshotId,
+      current,
+    };
+    this.pendingFindSelection = intent;
+    if (!current() || this.pendingFindSelection !== intent || !this.findSelectionAvailable()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    this.setSelection(selection, intent, Math.min(selection.anchor, selection.head));
+    if (this.pendingFindSelection === intent) this.publishFindSelection();
+  }
+  private retireFindSelection(intent: NonNullable<NoteWindowView['pendingFindSelection']>) {
+    if (this.pendingFindSelection === intent) this.pendingFindSelection = undefined;
+  }
+  private findSelectionAvailable() {
+    return (
+      !this.disposed &&
+      !this.retained &&
+      !this.historyOwner &&
+      !this.historyBusy &&
+      !this.historyCancelled &&
+      !this.transactionRelay?.busy &&
+      !this.pins.size &&
+      !this.editor?.view.composing &&
+      !this.editor?.isEditable &&
+      this.readAvailable &&
+      !this.readFailed
+    );
+  }
+  private publishFindSelection(settled = false) {
+    const intent = this.pendingFindSelection;
+    if (!intent) return;
+    const window = this.window,
+      editor = this.editor,
+      projection = this.projection;
+    const current = () =>
+      intent.current() &&
+      this.pendingFindSelection === intent &&
+      this.findSelectionAvailable() &&
+      this.window === window &&
+      this.editor === editor &&
+      this.projection === projection &&
+      !!window &&
+      sameNoteScope(window.scope, intent.scope) &&
+      window.sourceRevision === intent.revision &&
+      window.snapshotId === intent.snapshotId;
+    if (!current() || !window || !editor || !projection) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const { anchor, head, anchorAffinity, headAffinity } = intent.selection;
+    if (Math.min(anchor, head) < window.range.start || Math.max(anchor, head) > window.range.end) {
+      if (settled) this.retireFindSelection(intent);
+      return;
+    }
+    const view = editor.view,
+      root = view.root;
+    let state = view.state;
+    const pmAnchor = projection.pmAt(anchor, anchorAffinity),
+      pmHead = projection.pmAt(head, headAffinity);
+    const mounted = () =>
+      current() &&
+      editor.view === view &&
+      view.state === state &&
+      this.selection.anchor === anchor &&
+      this.selection.head === head &&
+      state.selection.anchor === pmAnchor &&
+      state.selection.head === pmHead &&
+      projection.sourceAt(pmAnchor) === anchor &&
+      projection.sourceAt(pmHead) === head &&
+      view.dom.isConnected &&
+      view.dom.getRootNode() === root;
+    if (!mounted()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    view.dom.focus({ preventScroll: true });
+    // TipTap emits a focus-only transaction. Preserve the exact document and
+    // selection, then pin the new state before resolving DOM endpoints.
+    if (
+      current() &&
+      editor.view === view &&
+      view.state.doc === state.doc &&
+      view.state.selection.eq(state.selection)
+    )
+      state = view.state;
+    if (!mounted()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const a = view.domAtPos(pmAnchor);
+    if (!mounted()) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const h = view.domAtPos(pmHead);
+    if (
+      !mounted() ||
+      !view.dom.contains(a.node) ||
+      !view.dom.contains(h.node) ||
+      !a.node.isConnected ||
+      !h.node.isConnected ||
+      a.node.getRootNode() !== root ||
+      h.node.getRootNode() !== root
+    ) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    const selection = (root as Document).getSelection?.() ?? view.dom.ownerDocument.getSelection();
+    if (!mounted() || !selection) {
+      this.retireFindSelection(intent);
+      return;
+    }
+    selection.setBaseAndExtent(a.node, a.offset, h.node, h.offset);
+    const published = mounted();
+    this.retireFindSelection(intent);
+    if (published) this.reveal(anchor);
+  }
+  private captureAnchor() {
+    const e = this.editor,
+      p = this.projection,
+      current = this.measurementBinding();
+    if (!e || !p || !current()) return undefined;
+    const view = e.view;
+    const rect = this.scroller.getBoundingClientRect();
+    if (!current()) return undefined;
+    const hit = view.posAtCoords({ left: rect.left + 24, top: rect.top + 4 });
+    if (!hit || !current()) return undefined;
+    try {
+      const source = p.sourceAt(hit.pos);
+      if (!current()) return undefined;
+      const offset = view.coordsAtPos(hit.pos).top - rect.top;
+      if (!current()) return undefined;
+      return { source, offset };
+    } catch {
+      return undefined;
+    }
+  }
+  private releasePending() {
+    const lease = this.pendingLease;
+    this.pending = undefined;
+    this.pendingLease = undefined;
+    this.cost.pendingBytes = 0;
+    lease?.release();
+  }
+  private retain(window: NoteWindow): WindowLease {
+    const data = this.options.retainWindow?.(window);
+    const editing = this.options.editing;
+    try {
+      if (this.retained && (this.disposed || this.retained.phase !== 'preparing'))
+        throw new Error('Retained acquisition lost');
+      const borrow = editing?.borrow?.(window);
+      let released = false,
+        references = 1;
+      let suspended = false;
+      let waiter: { promise: Promise<void>; resolve(): void } | undefined;
+      const drop = () => {
+        --references;
+        if (references === 1) {
+          waiter?.resolve();
+          waiter = undefined;
+        }
+        if (references !== 0) return;
+        try {
+          borrow?.release();
+        } finally {
+          data?.();
+        }
+      };
+      return {
+        editing,
+        bind: borrow?.bind ?? editing?.bind.bind(editing),
+        initialSelection: borrow?.initialSelection,
+        retire: borrow?.retire,
+        borrowed: !!borrow,
+        suspend() {
+          suspended = true;
+          const dependent = borrow?.suspend?.();
+          if (references === 1) return Promise.resolve(dependent);
+          if (!waiter) {
+            let resolve!: () => void;
+            const promise = new Promise<void>((done) => {
+              resolve = done;
+            });
+            waiter = { promise, resolve };
+          }
+          return Promise.all([waiter.promise, dependent]).then(() => undefined);
+        },
+        resume() {
+          if (released || references !== 1) throw new Error('Native lease is not settled');
+          borrow?.resume?.();
+          if (released || references !== 1) throw new Error('Native lease lost');
+          suspended = false;
+        },
+        retain() {
+          if (released || suspended || references === Number.MAX_SAFE_INTEGER)
+            throw new Error('Native window lease unavailable');
+          references++;
+          let done = false;
+          return () => {
+            if (done) return;
+            done = true;
+            drop();
+          };
+        },
+        release() {
+          if (released) return;
+          released = true;
+          drop();
+        },
+      };
+    } catch (error) {
+      data?.();
+      throw error;
+    }
+  }
+  /** Explicit opt-in before the first schema/grant is issued. */
+  prepareRetained(window: NoteWindow) {
+    if (this.retained || this.editor || this.disposed)
+      throw new Error('Retained host already used');
+    let constructed!: () => void;
+    const construction = {
+      lifetime: new NoteNativeLifetime(),
+      settled: new Promise<void>((done) => {
+        constructed = done;
+      }),
+    };
+    const r = {
+      construction,
+      phase: 'preparing' as const,
+      setup: true,
+      tasks: createEditorDeferredTasks(),
+      router: new NoteRetainedNativeLifetime(),
+    };
+    this.retained = r;
+    const ready = (async () => {
+      try {
+        let shown: boolean;
+        try {
+          shown = this.show(window);
+        } finally {
+          constructed();
+        }
+        if (!shown || !this.currentLease?.initialSelection)
+          throw new Error('Retained host requires a genuine local context');
+        r.setup = false;
+        await this.finishRetainedMount(true);
+      } catch (error) {
+        this.retireRetained();
+        throw error;
+      }
+    })();
+    return Object.freeze({ ready, cancel: () => this.retireRetained() });
+  }
+  private bindRetainedPhysicalView() {
+    const r = this.retained!,
+      editor = r.editor!,
+      ticket = r.ticket!,
+      view = editor.view;
+    r.router.assert(ticket, view);
+    this.observer.disconnect();
+    this.domObserver.disconnect();
+    const observedCurrent = () =>
+      r.ticket === ticket && r.phase === 'mounted' && ticket.open && this.editor === editor;
+    this.observer = new ResizeObserver(() => {
+      if (observedCurrent()) this.measure();
+    });
+    this.domObserver = new MutationObserver(() => {
+      if (observedCurrent()) this.scheduleDomMeasurement();
+    });
+    this.observer.observe(this.host);
+    const dispatch = view.props.dispatchTransaction;
+    if (!dispatch) throw new Error('Missing configured native dispatch');
+    const handlers = view.props.handleDOMEvents;
+    const handleKeyDown = view.props.handleKeyDown;
+    const current = () => r.phase === 'mounted' && this.editor === editor && editor.view === view;
+    const events: NonNullable<typeof handlers> = {};
+    for (const key of Object.keys(handlers ?? {})) {
+      const name = key as keyof NonNullable<typeof handlers>;
+      const handler = handlers?.[name];
+      if (handler)
+        events[name] = ((native, event) => {
+          r.router.assert(ticket, native);
+          return current() ? handler.call(view, native, event as never) : true;
+        }) as typeof handler;
+    }
+    view.setProps({
+      dispatchTransaction: (transaction) => {
+        if (!current()) throw new Error('Retained mount is not ready');
+        return r.router.dispatch(ticket, view, transaction, () => dispatch.call(view, transaction));
+      },
+      handleDOMEvents: events,
+      handleKeyDown: handleKeyDown
+        ? (native, event) => {
+            r.router.assert(ticket, native);
+            return current() ? handleKeyDown.call(view, native, event) : true;
+          }
+        : undefined,
+    });
+    const update = view.updateState;
+    const observed = (state: EditorState) => {
+      const admission = this.historyOwner?.saveAdmission;
+      if (admission && !admission.permits(state))
+        throw new Error('Local point save fences native state');
+      const leave = admission?.enter();
+      try {
+        r.router.assert(ticket, view);
+        if (state !== view.state) this.invalidateSelectionBorrows();
+        r.router.assert(ticket, view);
+        if (this.disposed || this.historyCancelled || this.editor !== editor)
+          throw new Error('Retained mount lost during selection notification');
+        if (admission && !admission.permits(state))
+          throw new Error('Local point save lost before native state');
+        update.call(view, state);
+      } finally {
+        leave?.();
+      }
+    };
+    view.updateState = observed;
+    this.bindSaveAdmission(view);
+    this.restoreSelectionObserver = () => {
+      if (view.updateState === observed) view.updateState = update;
+    };
+  }
+  private async finishRetainedMount(first: boolean) {
+    const r = this.retained!,
+      editor = r.editor!,
+      ticket = r.ticket!,
+      scope = r.scope!;
+    const owner = this.historyOwner,
+      lease = this.currentLease;
+    if (!owner || !scope || !lease || r.phase !== 'preparing')
+      throw new Error('Retained owner missing');
+    await scope.whenIdle();
+    if (r.phase !== 'preparing') throw new Error('Retained mount lost');
+    const view = editor.view,
+      state = view.state,
+      schema = editor.schema;
+    const endpoint = owner.retainedEndpoint?.();
+    const initial = endpoint?.initial ?? (first ? owner.initial : undefined);
+    if (!initial || (!first && !endpoint)) throw new Error('Retained endpoint missing');
+    const plugins = state.plugins.slice(),
+      selection = state.selection;
+    const expected = endpoint?.selection ?? this.selection;
+    const anchor = initial.projection.pmAt(expected.anchor, expected.anchorAffinity);
+    const head = initial.projection.pmAt(expected.head, expected.headAffinity);
+    const relay = this.transactionRelay?.plugin;
+    if (!relay || plugins.filter((p) => p === relay).length !== 1)
+      throw new Error('Retained relay binding missing');
+    const witness = r.tasks.captureIdle(scope, editor, view);
+    // setEditable/layout/current hooks can execute; the final checks are callback-free.
+    editor.setEditable(true, false);
+    this.layout();
+    this.measureDom();
+    this.options.changed?.();
+    const valid = owner.current();
+    if (
+      !valid ||
+      r.phase !== 'preparing' ||
+      this.disposed ||
+      this.historyOwner !== owner ||
+      this.currentLease !== lease ||
+      this.editor !== editor ||
+      editor.view !== view ||
+      view.state !== state ||
+      (endpoint
+        ? !validateLocalPointMountedOutput(endpoint.nativeOutput, initial, state.doc)
+        : state.doc !== initial.doc) ||
+      editor.schema !== schema ||
+      state.schema !== schema ||
+      state.selection !== selection ||
+      selection.anchor !== anchor ||
+      selection.head !== head ||
+      state.plugins.length !== plugins.length ||
+      !state.plugins.every((p, i) => p === plugins[i]) ||
+      !ticket.lifetime.idle ||
+      (endpoint && !validateLocalPointOutput(endpoint.nativeOutput, initial)) ||
+      !r.tasks.validateIdle(witness)
+    )
+      throw new Error('Retained mount final proof failed');
+    r.phase = 'mounted';
+  }
+  private retainedPhysicalCleanup(): Promise<void> {
+    const r = this.retained!;
+    if (r.cleanup) return r.cleanup;
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    r.cleanup = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    void r.cleanup.catch(() => undefined);
+    const construction = r.construction,
+      lifetime = r.ticket?.lifetime ?? construction?.lifetime,
+      scope = r.scope,
+      lease = this.currentLease;
+    try {
+      const dependent = lease?.suspend();
+      if (r.ticket) r.router.close(r.ticket);
+      this.invalidateSelectionBorrows();
+      this.restoreSelectionObserver?.();
+      this.restoreSelectionObserver = undefined;
+      cancelAnimationFrame(this.frame);
+      cancelAnimationFrame(this.domFrame);
+      this.frame = this.domFrame = 0;
+      this.domObserver.disconnect();
+      this.observer.disconnect();
+      this.editor = undefined;
+      const native = Promise.resolve(construction?.settled).then(async () => {
+        const ownedLease = this.currentLease;
+        if (lease && ownedLease !== lease) throw new Error('Retained cleanup lease changed');
+        if (r.phase === 'retired') ownedLease?.retire?.();
+        await Promise.all([
+          ownedLease === lease ? undefined : ownedLease?.suspend(),
+          lifetime?.dispose(
+            () => r.editor?.unmount(),
+            () => {},
+          ),
+        ]);
+      });
+      void Promise.all([scope?.settled, r.taskSettlement, native, dependent]).then(() => {
+        this.cost.mountedViews = 0;
+        this.cost.mountedNodes = 0;
+        this.cost.destroyedViews++;
+        resolve();
+      }, reject);
+    } catch (error) {
+      reject(error);
+    }
+    return r.cleanup;
+  }
+  detachRetained(): Promise<object> {
+    const r = this.retained;
+    if (
+      !r ||
+      r.phase !== 'mounted' ||
+      this.historyBusy ||
+      this.transactionRelay?.busy ||
+      this.pins.size ||
+      this.editor?.view.composing
+    )
+      return Promise.reject(new Error('Retained detach is not admitted'));
+    r.phase = 'detaching';
+    // Block new borrows before owner/invalidation callbacks can reenter.
+    void this.currentLease?.suspend();
+    try {
+      if (!this.historyOwner?.retainedEndpoint?.()) throw new Error('Retained group missing');
+    } catch (error) {
+      this.retireRetained();
+      return Promise.reject(error);
+    }
+    const owner = this.historyOwner,
+      lease = this.currentLease;
+    return this.retainedPhysicalCleanup().then(
+      () => {
+        const valid = owner?.current();
+        if (
+          !valid ||
+          r.phase !== 'detaching' ||
+          this.historyOwner !== owner ||
+          this.currentLease !== lease
+        ) {
+          this.retireRetained();
+          throw new Error('Retained detach lost');
+        }
+        const token = Object.freeze({});
+        r.token = token;
+        r.phase = 'detached';
+        return token;
+      },
+      (error) => {
+        this.retireRetained();
+        throw error;
+      },
+    );
+  }
+  attachRetained(token: object) {
+    const r = this.retained;
+    if (!r || r.phase !== 'detached' || !r.token || token !== r.token)
+      throw new Error('Retained detach token is not admitted');
+    r.token = undefined;
+    r.phase = 'preparing';
+    r.cleanup = undefined;
+    const ready = (async () => {
+      try {
+        const editor = r.editor!,
+          owner = this.historyOwner,
+          lease = this.currentLease;
+        const endpoint = owner?.retainedEndpoint?.();
+        const valid = owner?.current();
+        if (
+          !endpoint ||
+          !valid ||
+          this.disposed ||
+          r.phase !== 'preparing' ||
+          this.historyOwner !== owner ||
+          this.currentLease !== lease
+        )
+          throw new Error('Retained proof lost');
+        const before = editor.state;
+        if (
+          before.schema !== editor.schema ||
+          !validateLocalPointMountedOutput(endpoint.nativeOutput, endpoint.initial, before.doc)
+        )
+          throw new Error('Retained native endpoint mismatch');
+        this.currentLease!.resume();
+        const lifetime = new NoteNativeLifetime();
+        r.ticket = r.router.begin(editor, lifetime);
+        this.lifetime = lifetime;
+        const element = document.createElement('div');
+        this.host.replaceChildren(element);
+        try {
+          r.router.mount(r.ticket, element);
+        } catch (error) {
+          r.failed = true;
+          throw error;
+        }
+        r.scope = editor.captureDeferredTasks(editor.view);
+        this.editor = editor;
+        this.bindRetainedPhysicalView();
+        this.cost.createdViews++;
+        this.cost.mountedViews = 1;
+        this.observeDom();
+        await this.finishRetainedMount(false);
+      } catch (error) {
+        this.retireRetained();
+        throw error;
+      }
+    })();
+    return Object.freeze({ ready, cancel: () => this.retireRetained() });
+  }
+  private retireRetained() {
+    const r = this.retained;
+    if (!r || r.phase === 'retired') return;
+    r.phase = 'retired';
+    r.token = undefined;
+    try {
+      r.taskSettlement = r.tasks.retire();
+    } catch {
+      r.failed = true;
+    }
+    try {
+      this.currentLease?.retire?.();
+    } catch {
+      r.failed = true;
+    }
+    void this.retainedPhysicalCleanup()
+      .then(() => {
+        r.editor?.destroy();
+        r.editor = undefined;
+        if (r.failed) throw new Error('Partial retained construction keeps debt');
+        this.currentLease?.release();
+        r.editor = undefined;
+        this.currentLease = undefined;
+        this.historyOwner = undefined;
+      })
+      .catch((error) => logger.error('Failed to retire retained editor', error));
+  }
+  /** Navigation changes the desired window, not the owner of a still-composing
+   * mounted view. Its context independently checks revision, expiry and revocation. */
+  showPrepared(window: NoteWindow, editing?: NoteViewEditing) {
+    if (this.historyBusy) return false;
+    if (
+      this.window &&
+      this.currentLease?.borrowed &&
+      sameNoteScope(this.window.scope, window.scope) &&
+      this.window.sourceRevision === window.sourceRevision
+    )
+      this.options.editing = editing;
+    else this.updateEditing(editing);
+    return this.show(window);
+  }
+  show(window: NoteWindow, history?: { lease: WindowLease }) {
+    if (this.retained) {
+      if (!this.retained.setup) return false;
+      this.retained.setup = false;
+    }
+    this.invalidateSelectionBorrows();
+    if (this.historyBusy && !history) return false;
+    if (this.disposed) return false;
+    if (this.transactionRelay?.busy) {
+      if (this.pending !== window || this.pendingLease?.editing !== this.options.editing) {
+        this.releasePending();
+        const lease = this.retain(window);
+        this.pending = window;
+        this.pendingLease = lease;
+        this.cost.pendingBytes = window.cost.sourceBytes + window.cost.contextBytes;
+      }
+      this.transactionRelay.defer('window', () => {
+        if (this.pending) this.show(this.pending);
+      });
+      return false;
+    }
+    if (this.window === window && this.currentLease?.editing === this.options.editing) {
+      this.pending = undefined;
+      this.pendingLease?.release();
+      this.pendingLease = undefined;
+      return true;
+    }
+    if (!history && (this.pins.size || this.editor?.view.composing)) {
+      if (this.pending === window && this.pendingLease?.editing === this.options.editing)
+        return false;
+      this.releasePending();
+      const lease = this.retain(window);
+      this.pendingLease = lease;
+      this.pending = window;
+      this.cost.pendingBytes = window.cost.sourceBytes + window.cost.contextBytes;
+      return false;
+    }
+    const retained =
+      this.pending === window && this.pendingLease?.editing === this.options.editing
+        ? this.pendingLease
+        : undefined;
+    if (!retained) this.releasePending();
+    const lease = history?.lease ?? retained ?? this.retain(window);
+    this.pending = undefined;
+    this.pendingLease = undefined;
+    const lifetime = this.retained?.construction?.lifetime ?? new NoteNativeLifetime();
+    if (this.retained) {
+      this.currentLease = lease;
+      this.lifetime = lifetime;
+      if (this.disposed || this.retained.phase !== 'preparing')
+        throw new Error('Retained acquisition lost');
+    }
+    let candidate: Editor | undefined;
+    let candidateHost: HTMLDivElement | undefined;
+    let published = false;
+    try {
+      const anchor = this.navigationAnchor ?? this.captureAnchor();
+      // Build/admit first; unsupported context must leave the existing view intact.
+      const projection = projectNoteWindow(window);
+      let admitted = measureNoteProjection(projection);
+      this.cost.projectionPeakBytes = Math.max(
+        this.cost.projectionPeakBytes,
+        this.cost.derivedBytes + admitted.derivedBytes,
+      );
+      this.cost.windowAssemblyPeakBytes = Math.max(
+        this.cost.windowAssemblyPeakBytes,
+        window.cost.assemblyPeakBytes,
+      );
+      const config = createEditorConfig({
+        element: this.host,
+        content: '',
+        workspace: this.options.workspace,
+        editable: !!this.options.editing,
+        useMarkdown: true,
+        enableComments: false,
+        enableMentions: !this.retained,
+        deferredTasks: this.retained?.tasks.port,
+        enableNotePrimitives: true,
+        onUpdate: () => {},
+      });
+      const extensions = (config.extensions ?? []).map((e) =>
+        e.name === 'starterKit'
+          ? e.configure({ undoRedo: false, ...(this.retained ? { dropcursor: false } : {}) })
+          : e,
+      );
+      let boundEditing = lease.editing;
+      let editOwner: NoteTransactionOwner | undefined;
+      let currentProjection = projection;
+      let currentCoordinates: NoteViewCoordinates | undefined;
+      const transactions = createNoteTransactionRelay(
+        () =>
+          !this.historyBusy &&
+          (this.retained
+            ? this.retained.phase === 'mounted' &&
+              !!this.retained.ticket &&
+              this.retained.router.admitted(this.retained.ticket)
+            : !lease.initialSelection || lifetime.idle) &&
+          this.editor === candidate &&
+          this.mountedEditing === boundEditing
+            ? editOwner
+            : undefined,
+        this.retained
+          ? (transaction, state) => this.retained!.router.filter(transaction, state)
+          : undefined,
+      );
+      const retireFailedView = () => {
+        if (this.editor !== candidate) return;
+        this.destroyEditor();
+        this.pending = undefined;
+        this.pendingLease?.release();
+        this.pendingLease = undefined;
+        this.cost.pendingBytes = 0;
+        this.options.failed?.();
+      };
+      const relay = Extension.create({
+        name: 'noteDocumentCommands',
+        priority: 2000,
+        addProseMirrorPlugins: () => [transactions.plugin],
+        dispatchTransaction({ transaction, next }) {
+          try {
+            transactions.dispatch(transaction, next, this.editor);
+          } catch (error) {
+            try {
+              retireFailedView();
+            } catch (cleanup) {
+              throw new AggregateError([error, cleanup], 'Native note view retirement failed', {
+                cause: error,
+              });
+            }
+            throw error;
+          }
+        },
+        addKeyboardShortcuts: () => ({
+          'Mod-z': () => {
+            this.history('undo');
+            return true;
+          },
+          'Mod-Shift-z': () => {
+            this.history('redo');
+            return true;
+          },
+          'Mod-a': () => {
+            this.command('selectAll');
+            return true;
+          },
+          'Mod-f': () => {
+            this.command('search');
+            return true;
+          },
+        }),
+      });
+      candidateHost = document.createElement('div');
+      candidateHost.style.cssText =
+        'position:absolute;visibility:hidden;inset:0 auto auto 0;width:100%';
+      this.host.append(candidateHost);
+      candidate = new Editor({
+        ...config,
+        element: null,
+        content: projection.content,
+        // Keep read-only selection and Find/Select All reachable by keyboard.
+        coreExtensionOptions: { ...config.coreExtensionOptions, tabindex: { value: '0' } },
+        ...(this.retained ? { autofocus: false } : {}),
+        extensions: this.retained
+          ? this.retained.router.extensions([...extensions, CommentAnchor, relay])
+          : lifetime.extensions([...extensions, CommentAnchor, relay]),
+        editorProps: {
+          ...config.editorProps,
+          handleDOMEvents: {
+            ...config.editorProps?.handleDOMEvents,
+            copy: (_view, event) => {
+              if (this.historyBusy || transactions.busy) {
+                event.preventDefault();
+                return true;
+              }
+              const coordinates = this.coordinates;
+              if (
+                coordinates &&
+                (this.selection.anchor < coordinates.start ||
+                  this.selection.anchor > coordinates.end ||
+                  this.selection.head < coordinates.start ||
+                  this.selection.head > coordinates.end)
+              ) {
+                event.preventDefault();
+                this.command('copy');
+                return true;
+              }
+              return false;
+            },
+          },
+          handleKeyDown: (_view, event) => {
+            if (
+              event.key === 'ArrowDown' ||
+              event.key === 'ArrowRight' ||
+              event.key === 'ArrowUp' ||
+              event.key === 'ArrowLeft'
+            ) {
+              const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1;
+              const coordinates = this.coordinates;
+              if (!coordinates) return false;
+              const edge = direction > 0 ? coordinates.end : coordinates.start;
+              if (
+                Math.abs(this.selection.head - edge) < 2 &&
+                edge > 0 &&
+                edge < coordinates.length
+              ) {
+                const head = Math.min(
+                  coordinates.length,
+                  Math.max(0, this.selection.head + direction),
+                );
+                if (
+                  this.historyOwner?.saveAdmission &&
+                  !this.historyOwner.saveAdmission.mutable()
+                ) {
+                  event.preventDefault();
+                  return true;
+                }
+                this.selection = {
+                  ...this.selection,
+                  anchor: event.shiftKey ? this.selection.anchor : head,
+                  head,
+                };
+                this.publishSelection();
+                this.seekCurrent(head, direction);
+                event.preventDefault();
+                return true;
+              }
+            }
+            return false;
+          },
+        },
+        onTransaction: ({ transaction, appendedTransactions }) => {
+          if (
+            this.editor === candidate &&
+            [transaction, ...appendedTransactions].some(
+              (step) => step.docChanged || step.selectionSet,
+            )
+          )
+            this.invalidateSelectionBorrows();
+          if (
+            !candidate ||
+            this.historyBusy ||
+            this.applying ||
+            this.editor !== candidate ||
+            (this.retained && this.retained.phase !== 'mounted')
+          )
+            return;
+          const chain = [transaction, ...appendedTransactions];
+          if (chain.some((step) => step.docChanged)) {
+            const accepted = transactions.adopt(chain, this.editor.state);
+            if (!accepted) {
+              // A replaced owner may not adopt a stale native result.
+              editOwner = undefined;
+              this.editor.setEditable(false, false);
+              return;
+            }
+            currentProjection = accepted.projection;
+            this.committedProjection = accepted.projection;
+            currentCoordinates = accepted.coordinates;
+            this.committedCoordinates = accepted.coordinates;
+            this.layout();
+            this.cost.projectionPeakBytes = Math.max(
+              this.cost.projectionPeakBytes,
+              this.cost.derivedBytes + accepted.cost.derivedBytes,
+            );
+            this.cost.derivedBytes = accepted.cost.derivedBytes;
+            let nodes = 0;
+            this.editor.state.doc.descendants(() => {
+              nodes++;
+            });
+            this.cost.mountedNodes = nodes;
+          }
+          if (chain.some((step) => step.selectionSet || step.docChanged) && this.projection) {
+            try {
+              const selection = this.editor.state.selection;
+              const anchor = this.projection.sourceAt(selection.anchor),
+                head = this.projection.sourceAt(selection.head);
+              const nextSelection = { anchor, head, anchorAffinity: 1, headAffinity: 1 } as const;
+              if (
+                !this.historyOwner?.saveAdmission ||
+                this.historyOwner.saveAdmission.permitsSelection(nextSelection)
+              ) {
+                this.cancelFindSelection();
+                this.selection = nextSelection;
+                this.publishSelection();
+              }
+            } catch {
+              /* Structural atoms report their bounded source range through navigation. */
+            }
+          }
+        },
+      });
+      if (this.retained) {
+        // Own the returned Editor before any context or admission callback.
+        this.retained.editor = candidate;
+        if (this.retained.phase !== 'preparing') throw new Error('Retained construction lost');
+      }
+      if (lease.initialSelection) {
+        const selected = lease.initialSelection();
+        candidate.view.updateState(
+          candidate.state.apply(
+            candidate.state.tr.setSelection(
+              TextSelection.create(
+                candidate.state.doc,
+                projection.pmAt(selected.anchor, selected.anchorAffinity),
+                projection.pmAt(selected.head, selected.headAffinity),
+              ),
+            ),
+          ),
+        );
+        this.selection = { ...selected };
+      }
+      editOwner = lease.bind?.(
+        window,
+        projection,
+        candidate.state.doc,
+        candidate.state,
+        !!this.retained,
+      );
+      if (editOwner) {
+        const initial = editOwner.initial;
+        if (
+          !editOwner.current() ||
+          initial.doc.type.schema !== candidate.schema ||
+          !initial.doc.eq(
+            validateNoteNativeOutput(candidate.schema, initial.projection.content, {
+              current: () => editOwner?.current() ?? false,
+            }),
+          )
+        )
+          // i18n-ignore (internal validation; the view displays a localized error)
+          throw new Error('Invalid initial note edit authority');
+        admitted = measureNoteProjection(initial.projection);
+        this.cost.projectionPeakBytes = Math.max(
+          this.cost.projectionPeakBytes,
+          this.cost.derivedBytes + admitted.derivedBytes,
+        );
+        // The editor is still unmounted. Install the materialized dirty document
+        // and its exact map together, without a synthetic edit or history entry.
+        candidate.view.updateState(
+          EditorState.create({
+            schema: candidate.schema,
+            doc: initial.doc,
+            ...(this.retained ? { selection: candidate.state.selection } : {}),
+          }),
+        );
+        currentProjection = initial.projection;
+        currentCoordinates = initial.coordinates;
+      }
+      candidate.setEditable(!!editOwner, false);
+      if (this.retained) {
+        this.retained.editor = candidate;
+        this.retained.ticket = this.retained.router.begin(candidate, lifetime);
+        this.retained.router.mount(this.retained.ticket, candidateHost);
+        this.retained.scope = candidate.captureDeferredTasks(candidate.view);
+      } else {
+        candidate.mount(candidateHost);
+        this.destroyEditor();
+      }
+      this.host.replaceChildren(candidateHost);
+      candidateHost.removeAttribute('style');
+      this.committedProjection = currentProjection;
+      this.committedCoordinates = currentCoordinates;
+      this.window = window;
+      this.editor = candidate;
+      this.transactionRelay = transactions;
+      this.bindEditing = (editing) => {
+        boundEditing = editing;
+        editOwner = editing?.bind(window, currentProjection, editor.state.doc, editor.state);
+        if (editOwner && (!editOwner.current() || !editOwner.initial.doc.eq(editor.state.doc)))
+          editOwner = undefined;
+        this.historyOwner = editOwner;
+        this.historyLease = editOwner ? this.currentLease : undefined;
+        this.historyEditing = editOwner ? editing : undefined;
+        if (editOwner) {
+          currentCoordinates = editOwner.initial.coordinates;
+          this.committedCoordinates = currentCoordinates;
+        }
+        return !!editOwner;
+      };
+      this.historyOwner = editOwner;
+      this.historyLease = editOwner ? lease : undefined;
+      this.historyEditing = editOwner ? lease.editing : undefined;
+      this.currentLease = lease;
+      this.mountedEditing = lease.editing;
+      this.lifetime = lifetime;
+      this.cost.pendingBytes = 0;
+      published = true;
+      const editor = candidate;
+      if (this.retained) this.bindRetainedPhysicalView();
+      // Observe the actual native state boundary as well as TipTap transactions:
+      // direct updateState/rollback must not restore a previously borrowed epoch.
+      const nativeView = editor.view,
+        updateState = nativeView.updateState;
+      const capturedTicket = this.retained?.ticket;
+      const observeState = (state: EditorState) => {
+        const admission = this.historyOwner?.saveAdmission;
+        if (admission && !admission.permits(state))
+          throw new Error('Local point save fences native state');
+        const leave = admission?.enter();
+        try {
+          if (capturedTicket) this.retained!.router.assert(capturedTicket, nativeView);
+          if (nativeView.state !== state) this.invalidateSelectionBorrows();
+          if (capturedTicket) {
+            this.retained!.router.assert(capturedTicket, nativeView);
+            if (this.disposed || this.historyCancelled || this.editor !== editor)
+              throw new Error('Retained mount lost during selection notification');
+          }
+          if (admission && !admission.permits(state))
+            throw new Error('Local point save lost before native state');
+          updateState.call(nativeView, state);
+        } finally {
+          leave?.();
+        }
+      };
+      const nativeDestroyed = () => this.invalidateSelectionBorrows();
+      nativeView.updateState = observeState;
+      this.bindSaveAdmission(nativeView);
+      editor.on('destroy', nativeDestroyed);
+      this.restoreSelectionObserver = () => {
+        if (nativeView.updateState === observeState) nativeView.updateState = updateState;
+        editor.off('destroy', nativeDestroyed);
+      };
+      this.cost.createdViews++;
+      this.cost.mountedViews = 1;
+      let nodes = 0;
+      editor.state.doc.descendants(() => {
+        nodes++;
+      });
+      this.cost.mountedNodes = nodes;
+      this.cost.sourceBytes = window.cost.sourceBytes;
+      this.cost.contextBytes = window.cost.contextBytes;
+      this.cost.derivedBytes = admitted.derivedBytes;
+      this.measureDom();
+      this.requested = -1;
+      this.layout();
+      const coordinates = this.coordinates;
+      if (
+        coordinates &&
+        anchor &&
+        anchor.source >= coordinates.start &&
+        anchor.source <= coordinates.end
+      ) {
+        this.anchor = anchor;
+        this.navigationAnchor = undefined;
+        this.restoreAnchor();
+      }
+      if (
+        coordinates &&
+        this.selection.head >= coordinates.start &&
+        this.selection.head <= coordinates.end
+      ) {
+        this.setSelection(this.selection, this.pendingFindSelection);
+      }
+      this.publishFindSelection(true);
+      this.options.changed?.();
+      this.queueGrowth();
+      return true;
+    } catch (error) {
+      if (!published && this.retained) {
+        this.retained.failed = true;
+        this.retireRetained();
+      } else if (!published) {
+        lease.retire?.();
+        void lifetime
+          .dispose(
+            () => candidate?.destroy(),
+            () => lease?.release(),
+          )
+          .catch((cleanupError) =>
+            logger.error('Failed to dispose candidate note view', cleanupError),
+          );
+        candidateHost?.remove();
+      }
+      throw error;
+    }
+  }
+  /** A bounded document command, never the disposable editor's local history. */
+  private localHistory(
+    plan: NonNullable<ReturnType<NonNullable<NoteTransactionOwner['history']>>>,
+    owner: NoteTransactionOwner,
+    editor: Editor,
+    window: NoteWindow,
+    editing: NoteViewEditing | undefined,
+  ): boolean {
+    const output = plan.nativeOutput,
+      initial = plan.initial;
+    const before = editor.state,
+      schema = editor.schema,
+      lifetime = this.lifetime,
+      lease = this.currentLease;
+    let installed = false,
+      completed = false;
+    const same = () =>
+      !this.historyCancelled &&
+      !this.disposed &&
+      this.editor === editor &&
+      this.window === window &&
+      this.historyOwner === owner &&
+      this.mountedEditing === editing &&
+      this.options.editing === editing &&
+      this.currentLease === lease &&
+      this.lifetime === lifetime &&
+      editor.schema === schema;
+    try {
+      if (
+        !output ||
+        !plan.commitNative ||
+        !lifetime?.idle ||
+        initial.doc.type.schema !== schema ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      for (const key of ['anchor', 'head', 'anchorAffinity', 'headAffinity'] as const)
+        if (plan.selection[key] !== output.selection[key]) return false;
+      const anchor = initial.projection.pmAt(
+          output.selection.anchor,
+          output.selection.anchorAffinity,
+        ),
+        head = initial.projection.pmAt(output.selection.head, output.selection.headAffinity);
+      const selected = TextSelection.create(initial.doc, anchor, head);
+      // Reinitialize the existing configured plugins (including the relay) under
+      // the SAME editor/schema. Plugin init/updateState are callback boundaries.
+      const plugins = before.plugins.slice();
+      const next = EditorState.create({
+        schema,
+        doc: initial.doc,
+        plugins,
+        selection: selected,
+      });
+      const native = () =>
+        next.doc === initial.doc &&
+        next.schema === schema &&
+        next.selection === selected &&
+        next.plugins.length === plugins.length &&
+        next.plugins.every((plugin, i) => plugin === plugins[i]) &&
+        selected.anchor === anchor &&
+        selected.head === head &&
+        selected.$anchor.doc === initial.doc &&
+        selected.$head.doc === initial.doc;
+      const cost = measureNoteProjection(initial.projection);
+      if (
+        !plan.current() ||
+        !same() ||
+        editor.state !== before ||
+        !lifetime.idle ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      installed = true;
+      editor.view.updateState(next);
+      if (
+        !plan.current() ||
+        !same() ||
+        editor.state !== next ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      plan.commitNative(editor.view, next);
+      if (
+        !plan.adopted() ||
+        !same() ||
+        editor.state !== next ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      this.committedProjection = initial.projection;
+      this.committedCoordinates = initial.coordinates;
+      this.selection = { ...output.selection };
+      this.cost.derivedBytes = cost.derivedBytes;
+      this.layout();
+      this.measureDom();
+      if (
+        !plan.adopted() ||
+        !same() ||
+        editor.state !== next ||
+        !native() ||
+        !validateLocalPointOutput(output, initial)
+      )
+        return false;
+      completed = true;
+      return true;
+    } catch (error) {
+      logger.error('Failed to install local note history', error);
+      return false;
+    } finally {
+      // ACKed Redux is never rolled back. Failed native publication retires the
+      // view while the caller keeps historyBusy through abandon/physical cleanup.
+      if (installed && !completed) this.destroyEditor();
+    }
+  }
+  history(direction: 'undo' | 'redo') {
+    if (this.retained && this.retained.phase !== 'mounted') return false;
+    this.invalidateSelectionBorrows();
+    if (this.disposed || this.historyBusy) return false;
+    if (this.transactionRelay?.defer('history', () => this.history(direction))) return false;
+    if (this.pins.size || this.editor?.view.composing) {
+      // At most one command waits for the current composition; further commands
+      // are refused until it settles, rather than retaining an unbounded queue.
+      this.pendingHistory ??= direction;
+      return false;
+    }
+    const owner = this.historyOwner,
+      editor = this.editor,
+      window = this.window,
+      editing = this.mountedEditing;
+    if (!owner?.history) {
+      this.mountedEditing?.[direction]();
+      return false;
+    }
+    if (this.currentLease?.initialSelection) {
+      this.historyBusy = true;
+      this.historyCancelled = false;
+      let localPlan: ReturnType<NonNullable<NoteTransactionOwner['history']>>;
+      try {
+        if (
+          !editor ||
+          !window ||
+          this.historyLease !== this.currentLease ||
+          this.historyEditing !== editing ||
+          this.options.editing !== editing ||
+          !this.lifetime?.idle ||
+          !owner.current() ||
+          this.historyCancelled
+        )
+          return false;
+        localPlan = owner.history(direction);
+        if (!localPlan?.nativeOutput || !localPlan.current() || this.historyCancelled) return false;
+        return this.localHistory(localPlan, owner, editor, window, editing);
+      } catch {
+        return false;
+      } finally {
+        try {
+          localPlan?.abandon?.();
+        } finally {
+          if (this.historyCancelled) this.destroyEditor();
+          this.historyBusy = false;
+          if (this.historyCancelled) this.destroy();
+        }
+      }
+    }
+    if (
+      !editor ||
+      !window ||
+      this.historyLease !== this.currentLease ||
+      this.historyEditing !== editing ||
+      this.options.editing !== editing ||
+      !owner.current()
+    )
+      return false;
+    let plan: ReturnType<NonNullable<NoteTransactionOwner['history']>>;
+    let lease: WindowLease | undefined;
+    try {
+      plan = owner.history(direction);
+      if (!plan || !plan.current()) return false;
+      if (plan.nativeOutput) {
+        plan.abandon?.();
+        return false;
+      }
+      const initial = plan.initial;
+      if (
+        initial.doc.type.schema !== editor.schema ||
+        !initial.doc.eq(
+          validateNoteNativeOutput(editor.schema, initial.projection.content, {
+            current: () => plan?.current() ?? false,
+          }),
+        )
+      )
+        return false;
+      measureNoteProjection(initial.projection);
+      lease = this.retain(window);
+      if (
+        this.editor !== editor ||
+        this.window !== window ||
+        this.historyOwner !== owner ||
+        this.mountedEditing !== editing ||
+        !plan.current()
+      ) {
+        lease.release();
+        return false;
+      }
+    } catch {
+      lease?.release();
+      return false;
+    }
+    this.historyBusy = true;
+    this.historyCancelled = false;
+    let mounted = false,
+      transferred = false;
+    try {
+      // Admission is complete. Hide/retire old native text before publication;
+      // callbacks cannot publish selection, navigation, copy or edits in this gap.
+      this.destroyEditor();
+      this.host.replaceChildren();
+      this.window = undefined;
+      if (this.historyCancelled || !plan.current()) return false;
+      plan.commit();
+      if (this.historyCancelled || !plan.adopted()) return false;
+      this.selection = { ...plan.selection };
+      transferred = true;
+      mounted = this.show(window, { lease });
+      return mounted;
+    } catch (error) {
+      this.options.failed?.();
+      logger.error('Failed to adopt note history', error);
+      return false;
+    } finally {
+      this.historyBusy = false;
+      if (!transferred) lease.release();
+      if (this.historyCancelled) this.destroy();
+      else if (mounted) this.setSelection(plan.selection);
+    }
+  }
+  private layout() {
+    const w = this.coordinates;
+    if (!w) return;
+    // A compressed document extent stays within browser layout coordinate limits.
+    const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.length));
+    this.before.style.height = `${w.start * rate}px`;
+    this.after.style.height = `${(w.length - w.end) * rate}px`;
+  }
+  private restoreAnchor() {
+    const current = this.measurementBinding(),
+      anchor = this.anchor,
+      editor = this.editor,
+      projection = this.projection;
+    if (!anchor || !editor || !projection || !current()) return;
+    const at = projection.pmAt(anchor.source);
+    if (!current()) return;
+    const top = editor.view.coordsAtPos(at).top;
+    if (!current()) return;
+    const rect = this.scroller.getBoundingClientRect();
+    if (!current()) return;
+    const delta = top - rect.top - anchor.offset;
+    if (Math.abs(delta) > 0.5) {
+      this.programmatic = true;
+      this.scroller.scrollTop += delta;
+    }
+  }
+  updateReadStatus(available: boolean, loading: boolean, failed: boolean) {
+    this.readAvailable = available;
+    this.readLoading = loading;
+    this.readFailed = failed;
+    if (!available || failed) this.cancelFindSelection();
+    if (!available || loading || failed) {
+      cancelAnimationFrame(this.growthFrame);
+      this.growthFrame = 0;
+    } else this.queueGrowth();
+  }
+  private queueGrowth() {
+    const window = this.window;
+    if (
+      !this.options.grow ||
+      !window ||
+      this.disposed ||
+      this.growthFrame ||
+      !this.readAvailable ||
+      this.readLoading ||
+      this.readFailed ||
+      this.options.editing ||
+      this.retained ||
+      this.historyBusy ||
+      this.pins.size ||
+      this.editor?.view.composing ||
+      window.documentEnd ||
+      this.growthAttempt === window
+    )
+      return;
+    const current = this.measurementBinding();
+    this.growthFrame = requestAnimationFrame(() => {
+      this.growthFrame = 0;
+      if (
+        !current() ||
+        this.window !== window ||
+        !this.readAvailable ||
+        this.readLoading ||
+        this.readFailed ||
+        this.pins.size ||
+        this.editor?.view.composing ||
+        this.options.editing
+      )
+        return;
+      const viewport = this.scroller.getBoundingClientRect(),
+        rect = this.host.getBoundingClientRect();
+      if (
+        !current() ||
+        rect.top < viewport.top - 1 ||
+        rect.bottom >= viewport.bottom ||
+        viewport.height <= 0 ||
+        rect.height <= 0
+      )
+        return;
+      this.growthAttempt = window;
+      const minimumEnd = Math.min(
+        window.sourceLength,
+        window.range.end + Math.max(1, window.range.end - window.range.start),
+      );
+      this.options.grow?.(window, minimumEnd);
+    });
+  }
+  /** Explicit paging works even when the source extent has no scrollbar. */
+  page(direction: -1 | 1) {
+    const window = this.window;
+    if (
+      !window ||
+      this.disposed ||
+      !this.readAvailable ||
+      this.readLoading ||
+      this.options.editing ||
+      this.pins.size
+    )
+      return;
+    if (direction === 1 ? window.range.end >= window.sourceLength : window.range.start === 0)
+      return;
+    const identity = JSON.stringify([window.scope, window.sourceRevision, window.snapshotId]);
+    if (identity !== this.pageIdentity) {
+      this.pageIdentity = identity;
+      this.pageAnchors = [];
+    }
+    let target: number;
+    if (direction === 1) {
+      if (this.pageAnchors.at(-1) !== window.range.start) this.pageAnchors.push(window.range.start);
+      if (this.pageAnchors.length > 16) this.pageAnchors.shift();
+      target = window.range.end;
+    } else {
+      while (this.pageAnchors.length && this.pageAnchors.at(-1)! >= window.range.start)
+        this.pageAnchors.pop();
+      target = this.pageAnchors.pop() ?? 0;
+    }
+    cancelAnimationFrame(this.growthFrame);
+    this.growthFrame = 0;
+    this.navigationAnchor = { source: target, offset: 0 };
+    this.readLoading = true;
+    this.seekCurrent(target, direction);
+  }
+  private measure() {
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    const coordinates = this.coordinates;
+    if (!coordinates || this.disposed) return;
+    this.scheduleDomMeasurement();
+    const current = this.measurementBinding();
+    const anchor = this.anchor ?? this.captureAnchor();
+    if (!current()) return;
+    const height = this.host.getBoundingClientRect().height;
+    if (!current()) return;
+    if (height > 0) {
+      this.rate = height / Math.max(1, coordinates.end - coordinates.start);
+      this.layout();
+    }
+    if (!current()) return;
+    this.anchor = anchor;
+    this.restoreAnchor();
+    this.queueGrowth();
+  }
+  private scroll = () => {
+    if (this.retained && this.retained.phase !== 'mounted') return;
+    if (this.programmatic) {
+      this.programmatic = false;
+      return;
+    }
+    const w = this.coordinates;
+    if (!w) return;
+    const current = this.measurementBinding();
+    const viewport = this.scroller.getBoundingClientRect();
+    if (!current()) return;
+    const rect = this.host.getBoundingClientRect();
+    if (!current()) return;
+    const anchor = this.captureAnchor();
+    if (!current()) return;
+    this.anchor = anchor;
+    let target: number | undefined;
+    if (rect.bottom < viewport.top || rect.top > viewport.bottom) {
+      const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.length));
+      target = Math.floor(this.scroller.scrollTop / rate);
+    } else if (rect.bottom < viewport.bottom + 120 && w.end < w.length) {
+      // A small admitted window cannot overlap itself: request its scalar-safe
+      // end rather than reissuing the current start indefinitely.
+      target = w.end - w.start <= 1024 ? w.end : w.end - 1024;
+    } else if (rect.top > viewport.top - 120 && w.start > 0) {
+      target = Math.max(0, w.start - 3072);
+    }
+    if (target !== undefined) {
+      target = Math.max(0, Math.min(w.length - 1, target));
+      if (target !== this.requested) {
+        this.requested = target;
+        this.seekCurrent(target, target < w.start ? -1 : 1);
+      }
+    }
+  };
+  private destroyEditor() {
+    if (this.retained) {
+      this.retireRetained();
+      return;
+    }
+    this.invalidateSelectionBorrows();
+    this.restoreSelectionObserver?.();
+    this.restoreSelectionObserver = undefined;
+    const editor = this.editor,
+      lifetime = this.lifetime,
+      lease = this.currentLease;
+    lease?.retire?.();
+    this.editor = undefined;
+    this.bindEditing = undefined;
+    this.lifetime = undefined;
+    this.currentLease = undefined;
+    this.mountedEditing = undefined;
+    this.historyOwner = undefined;
+    this.historyLease = undefined;
+    this.historyEditing = undefined;
+    this.committedProjection = undefined;
+    this.committedCoordinates = undefined;
+    this.transactionRelay = undefined;
+    this.window = undefined;
+    if (lifetime) {
+      void lifetime
+        .dispose(
+          () => editor?.destroy(),
+          () => lease?.release(),
+        )
+        .catch((error) => logger.error('Failed to dispose native note view', error));
+    } else {
+      editor?.destroy();
+      lease?.release();
+    }
+    if (editor) {
+      this.cost.destroyedViews++;
+      this.cost.mountedViews = 0;
+    }
+  }
+  destroy() {
+    this.cancelFindSelection();
+    this.invalidateSelectionBorrows();
+    if (this.historyBusy) {
+      if (this.currentLease?.initialSelection) this.currentLease.retire?.();
+      this.historyCancelled = true;
+      return;
+    }
+    if (this.transactionRelay?.defer('destroy', () => this.destroy())) return;
+    this.disposed = true;
+    cancelAnimationFrame(this.growthFrame);
+    this.growthAttempt = undefined;
+    this.pageAnchors = [];
+    cancelAnimationFrame(this.frame);
+    this.observer.disconnect();
+    cancelAnimationFrame(this.domFrame);
+    this.domObserver.disconnect();
+    this.scroller.removeEventListener('scroll', this.scroll);
+    this.scroller.removeEventListener('wheel', this.physicalIntent);
+    this.scroller.removeEventListener('pointerdown', this.physicalIntent);
+    this.scroller.removeEventListener('keydown', this.keydown, true);
+    this.scroller.removeEventListener('copy', this.copy, true);
+    this.host.removeEventListener('compositionstart', this.compositionStart);
+    this.host.removeEventListener('compositionend', this.compositionEnd);
+    this.destroyEditor();
+    this.committedProjection = undefined;
+    this.committedCoordinates = undefined;
+    this.window = undefined;
+    this.pending = undefined;
+    this.pendingLease?.release();
+    this.pendingLease = undefined;
+    this.pins.clear();
+    this.pendingHistory = undefined;
+    this.before.remove();
+    this.host.remove();
+    this.after.remove();
+    this.cost.mountedNodes = 0;
+    this.cost.mountedDomNodes = 0;
+    this.cost.domPayloadBytes = 0;
+    this.cost.sourceBytes = 0;
+    this.cost.contextBytes = 0;
+    this.cost.pendingBytes = 0;
+    this.cost.derivedBytes = 0;
+  }
+}

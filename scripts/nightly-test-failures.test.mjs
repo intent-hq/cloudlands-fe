@@ -502,3 +502,31 @@ describe('trusted workflow execution policy', () => {
     ).toBe(false);
   });
 });
+
+describe('component shard artifact collection', () => {
+  it.each([4, 8])('collects every required artifact from a %i-shard run', (count) => {
+    const data = fixture(count);
+    const out = temporary();
+    const downloaded = [];
+    const client = {
+      run: () => data.run,
+      jobs: () => data.jobs,
+      artifacts: () => data.artifacts,
+      archive: (artifact) => {
+        downloaded.push(artifact.name);
+        return data.documents[artifact.name];
+      },
+    };
+    expect(
+      main(['collect', '--run', '1234', '--out', out], {
+        createClient: () => client,
+        env: {},
+      }),
+    ).toBe(0);
+    expect(new Set(downloaded).size).toBe(count + 7);
+    expect(downloaded).toHaveLength(count + 7);
+    const plan = JSON.parse(readFileSync(join(out, 'plan.json'), 'utf8'));
+    expect(plan.incidents).toEqual([]);
+    expect(plan.lanes).toHaveLength(count + 6);
+  });
+});

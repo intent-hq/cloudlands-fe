@@ -66,7 +66,7 @@ type LoadingWindow = typeof window & {
   stopDiagramLoadCapture: () => void;
   releaseDiagramFont: () => void;
   diagramFontHeld: boolean;
-  switchDiagramNote: (blocks: string[]) => void;
+  switchDiagramNote: (blocks: string[], noteId?: string) => void;
 };
 
 async function mountNote(
@@ -182,11 +182,11 @@ async function mountNote(
         noteId: initialNoteId as string | undefined,
       });
       const currentNote = fromStore(note);
-      w.switchDiagramNote = (blocks) => {
+      w.switchDiagramNote = (blocks, noteId = 'switched-note') => {
         w.diagramLoadFrames = [];
         stopped = false;
         requestAnimationFrame(sample);
-        note.set({ content: noteContent(blocks), noteId: 'switched-note' });
+        note.set({ content: noteContent(blocks), noteId });
       };
       mount(NoteWithComments, {
         target: host,
@@ -493,20 +493,39 @@ test('switching notes waits for the new diagrams and releases the old observer',
   await expect(page.locator('#diagram-loading-note .mermaid-svg > svg')).toBeVisible();
 });
 
-test('empty sources and plain-text fallback do not trap the note loading state', async ({
+test('empty sources and size-based editors do not trap the note loading state', async ({
   page,
 }, info) => {
   await mountNote(page, 712, [mermaid('')]);
   expectStableNote(await finishCapture(page, info));
   await expect(page.locator('#diagram-loading-note .mermaid-empty')).toBeVisible();
+  const richContent = 'Complete rich content. '.repeat(10_000);
   await page.evaluate(
     (blocks) => (window as LoadingWindow).switchDiagramNote(blocks),
-    ['Plain-text fallback content. '.repeat(8000)],
+    [richContent],
   );
-  await expect(page.locator('#diagram-loading-note pre').first()).toBeVisible();
-  await expect(page.locator('#diagram-loading-note pre').first()).toContainText(
-    'Plain-text fallback content.',
+  const rich = page.locator('#diagram-loading-note .tiptap[contenteditable="true"]');
+  await expect(rich).toBeVisible();
+  await expect(rich).toContainText(richContent.trim());
+  await expect(page.locator('#diagram-loading-note .tiptap-editor-wrapper')).toHaveAttribute(
+    'aria-busy',
+    'false',
   );
+  await expect(page.getByTestId('raw-note-view')).toHaveCount(0);
+
+  // Above the 300,000-byte rich limit, the complete note uses an editable
+  // raw view rather than the former read-only plain-text fallback.
+  await page.evaluate(
+    (blocks) => (window as LoadingWindow).switchDiagramNote(blocks, 'raw-note'),
+    ['Complete raw content. '.repeat(15_000)],
+  );
+  const raw = page.getByTestId('raw-note-view');
+  await expect(raw.locator('.monaco-editor')).toBeVisible();
+  await expect(raw.getByRole('textbox', { name: 'Editor content', exact: true })).toBeEditable();
+  await expect(rich).toBeHidden();
+  await raw.locator('.monaco-editor').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await expect(raw).toContainText('Text after the diagram.');
 });
 
 test('initial sizing preserves correction of unreadable authored label colors', async ({

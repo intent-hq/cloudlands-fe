@@ -199,38 +199,47 @@ const SelectionPreservation = Extension.create({
   },
 
   onFocus() {
-    // Clear preserved selection when editor gains focus
-    this.storage.preservedSelection = null;
-    // Use setTimeout to dispatch after focus handling is complete (avoids infinite loop)
-    const view = this.editor.view;
-    setTimeout(() => {
-      if (view && !view.isDestroyed) {
-        // Dispatch empty transaction to trigger decoration recalculation
-        view.dispatch(view.state.tr.setMeta('selectionPreservation', 'focus'));
-      }
-    }, 0);
+    const scope = this.editor.captureDeferredTasks(this.editor.view);
+    const apply = () => {
+      scope?.assertOpen();
+      this.storage.preservedSelection = null;
+      const view = this.editor.view;
+      const notify = () => {
+        scope?.assertOpen();
+        if (view && !view.isDestroyed) {
+          view.dispatch(view.state.tr.setMeta('selectionPreservation', 'focus'));
+        }
+      };
+      if (scope) scope.enqueue('selection-focus', notify);
+      else setTimeout(notify, 0);
+    };
+    if (scope) scope.run(apply);
+    else apply();
   },
 
   onBlur() {
-    // Preserve the current selection when editor loses focus
-    const { from, to } = this.editor.state.selection;
-    if (from !== to) {
-      this.storage.preservedSelection = { from, to };
-    } else {
-      this.storage.preservedSelection = null;
-    }
-    // Use setTimeout to dispatch after blur handling is complete (avoids infinite loop)
-    const view = this.editor.view;
-    setTimeout(() => {
-      if (view && !view.isDestroyed) {
-        // Dispatch empty transaction to trigger decoration recalculation
-        view.dispatch(view.state.tr.setMeta('selectionPreservation', 'blur'));
-      }
-    }, 0);
+    const scope = this.editor.captureDeferredTasks(this.editor.view);
+    const apply = () => {
+      scope?.assertOpen();
+      const { from, to } = this.editor.state.selection;
+      this.storage.preservedSelection = from !== to ? { from, to } : null;
+      const view = this.editor.view;
+      const notify = () => {
+        scope?.assertOpen();
+        if (view && !view.isDestroyed) {
+          view.dispatch(view.state.tr.setMeta('selectionPreservation', 'blur'));
+        }
+      };
+      if (scope) scope.enqueue('selection-blur', notify);
+      else setTimeout(notify, 0);
+    };
+    if (scope) scope.run(apply);
+    else apply();
   },
 });
 
 interface EditorConfigOptions {
+  deferredTasks?: EditorOptions['deferredTasks'];
   ariaLabel?: string;
   element: HTMLElement;
   content: string;
@@ -255,6 +264,7 @@ interface EditorConfigOptions {
  */
 export function createEditorConfig(options: EditorConfigOptions): EditorOptions {
   const {
+    deferredTasks,
     ariaLabel = m.workspace_noteWithComments_editor_ariaLabel(),
     element,
     content,
@@ -974,6 +984,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
     extensions,
     content,
     editable,
+    ...(deferredTasks ? { deferredTasks } : {}),
     // Disable the buggy 'delete' core extension that emits delete events.
     // It has a bug where it calls nodeAt(newStart - 1) without checking if newStart is 0,
     // causing "Position -1 outside of fragment" errors. We don't use the delete events anyway.
@@ -1013,52 +1024,70 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         return;
       }
 
-      // Check if editor is fully initialized and view is available
-      // The view might exist but not be fully initialized, so we need to check both
-      if (!editor.view || !editor.isEditable) {
-        // Editor not fully ready, just update content
-        onUpdate(editor.getHTML());
-        return;
-      }
+      const scope = editor.captureDeferredTasks(editor.view);
+      const update = () => {
+        scope?.assertOpen();
+        // Check if editor is fully initialized and view is available
+        // The view might exist but not be fully initialized, so we need to check both
+        if (!editor.view || !editor.isEditable) {
+          // Editor not fully ready, just update content
+          const html = editor.getHTML();
+          scope?.assertOpen();
+          onUpdate(html);
+          scope?.assertOpen();
+          return;
+        }
 
-      // Try to safely access view properties
-      let hasFocus = false;
-      let selectionFrom = 0;
-      let selectionTo = 0;
+        // Try to safely access view properties
+        let hasFocus = false;
+        let selectionFrom = 0;
+        let selectionTo = 0;
 
-      try {
-        // Store current selection and focus state
-        const { from, to } = editor.state.selection;
-        selectionFrom = from;
-        selectionTo = to;
+        try {
+          // Store current selection and focus state
+          const { from, to } = editor.state.selection;
+          selectionFrom = from;
+          selectionTo = to;
 
-        // Safely check if editor has focus
-        // Use a try-catch because hasFocus might throw if view is not fully initialized
-        hasFocus = editor.view.hasFocus?.() ?? false;
-      } catch (e) {
-        // If we can't access view properties, assume no focus
-        logger.debug('Could not access editor view properties:', e);
-      }
+          // Safely check if editor has focus
+          // Use a try-catch because hasFocus might throw if view is not fully initialized
+          hasFocus = editor.view.hasFocus?.() ?? false;
+        } catch (e) {
+          // If we can't access view properties, assume no focus
+          logger.debug('Could not access editor view properties:', e);
+        }
 
-      // Always use HTML output (styled with prose classes)
-      // Note: We're not using the markdown extension for output
-      onUpdate(editor.getHTML());
+        scope?.assertOpen();
+        // Always use HTML output (styled with prose classes)
+        // Note: We're not using the markdown extension for output
+        const html = editor.getHTML();
+        scope?.assertOpen();
+        onUpdate(html);
+        scope?.assertOpen();
 
-      // Restore focus and selection after update if editor had focus
-      if (hasFocus) {
-        requestAnimationFrame(() => {
-          if (!editor.isDestroyed && editor.view) {
-            try {
-              editor.commands.focus();
-              // Try to restore selection position
-              editor.commands.setTextSelection({ from: selectionFrom, to: selectionTo });
-            } catch {
-              // Selection might be out of bounds after content change or view not ready
-              editor.commands.focus('end');
+        // Restore focus and selection after update if editor had focus
+        if (hasFocus) {
+          const restore = () => {
+            scope?.assertOpen();
+            if (!editor.isDestroyed && editor.view) {
+              try {
+                editor.commands.focus();
+                scope?.assertOpen();
+                // Try to restore selection position
+                editor.commands.setTextSelection({ from: selectionFrom, to: selectionTo });
+              } catch {
+                scope?.assertOpen();
+                // Selection might be out of bounds after content change or view not ready
+                editor.commands.focus('end');
+              }
             }
-          }
-        });
-      }
+          };
+          if (scope) scope.enqueue('update-focus', restore);
+          else requestAnimationFrame(restore);
+        }
+      };
+      if (scope) scope.run(update);
+      else update();
     },
     editorProps: {
       attributes: {

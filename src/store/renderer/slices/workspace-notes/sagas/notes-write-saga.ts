@@ -1,3 +1,9 @@
+import {
+  captureNotePublicationOwner,
+  isNotePublicationOwnerCurrent,
+  isNotePublicationLifetimeCurrent,
+  type NotePublicationOwner,
+} from './note-publication-owner';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
@@ -15,6 +21,7 @@ import {
 import { appClient } from '$lib/client';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { isNoteContentStale } from '$shared/utils/note-content';
 import { rebaseText } from '$lib/notes/text-rebase';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -36,7 +43,12 @@ import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/p
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
-import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
+import {
+  selectNoteById,
+  selectWorkspaceNotesState,
+  selectRetainedNoteDraft,
+  selectNoteDeleteView,
+} from '../workspace-notes-selectors';
 import {
   addOptimisticNote,
   addCommentRequested,
@@ -55,6 +67,8 @@ import {
   respondToCommentRequested,
   resolveCommentRequested,
   setNoteContentPending,
+  setRetainedNoteDraft,
+  retryNoteContentRequested,
   settleNoteContentRequested,
   updateNote,
   updateNoteContent,
@@ -76,6 +90,7 @@ type PendingContent = {
   noteId: string;
   content: string;
   seq: number;
+  strict?: boolean;
 };
 type ContentCommand = PendingContent;
 type MetadataCommand = {
@@ -111,6 +126,7 @@ type ResolveCommentCommand = {
   noteId: string;
   commentId: string;
 };
+type RetryCommand = { kind: 'retry'; workspaceId: string; noteId: string };
 type BarrierCommand = { kind: 'barrier'; workspaceId: string; noteId: string };
 type MutationCommand =
   | ContentCommand
@@ -120,8 +136,9 @@ type MutationCommand =
   | RespondCommentCommand
   | DeleteCommentCommand
   | ResolveCommentCommand
-  | BarrierCommand;
-type MutationCompletion = { value: unknown };
+  | BarrierCommand
+  | RetryCommand;
+type MutationCompletion = { value?: unknown; error?: Error };
 type MutationEnvelope = {
   command: MutationCommand;
   generation: number;
@@ -207,14 +224,25 @@ function optimisticNote(
   };
 }
 
-function* refetchWorkspaceNotes(workspaceId: string) {
+function* refetchWorkspaceNotes(workspaceId: string, priorOwner?: NotePublicationOwner) {
+  if (priorOwner && !(yield* isNotePublicationOwnerCurrent(priorOwner))) return;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const readAuthority = owner.readAuthority;
   try {
     const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
       [appClient.notes, appClient.notes.list],
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     const notes = response.map(toRuntimeNote);
-    yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    yield* put(
+      loadWorkspaceNotesSucceeded(
+        [workspaceId],
+        { [workspaceId]: notes },
+        ...(readAuthority ? ([{ [workspaceId]: readAuthority }] as const) : ([] as const)),
+      ),
+    );
   } catch (error) {
     logger.error('Failed to refetch notes after a mutation error', error);
   }
@@ -224,7 +252,10 @@ function* reconcileConflict(
   workspaceId: string,
   noteId: string,
   result: MutationResult,
+  owner: NotePublicationOwner,
 ): SagaGenerator<boolean> {
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return true;
+  const readAuthority = owner.readAuthority;
   if (!result.conflict) return false;
   const current = result.conflict.current;
   if (current && typeof current === 'object') {
@@ -234,10 +265,15 @@ function* reconcileConflict(
     // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
     const cached = yield* selectNoteById.effect(workspaceId, canonicalId);
     yield* put(
-      applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
+      applyNoteUpdated(
+        workspaceId,
+        canonicalId,
+        withPreservedUnmetDependsOn(note, cached),
+        ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+      ),
     );
   } else {
-    yield* call(refetchWorkspaceNotes, workspaceId);
+    yield* call(refetchWorkspaceNotes, workspaceId, owner);
   }
   logger.warn('Note mutation conflicted; reloaded the latest version', { noteId });
   notify.warning(m.notes_writeService_noteChanged_label(), {
@@ -300,10 +336,14 @@ function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
+  owner: NotePublicationOwner,
 ): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId, seq } = command;
   const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  // Acknowledgement settles its real request, but cannot republish into a later note lifetime.
+  if (!(yield* isNotePublicationOwnerCurrent(owner)))
+    return nextRev === undefined ? { content: echoed } : { content: echoed, rev: nextRev };
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
@@ -332,6 +372,8 @@ function forgetDraft(key: string, draft: PendingContent): void {
 
 function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent | undefined> {
   const { workspaceId, noteId } = command;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
   const key = noteKey(workspaceId, noteId);
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   // The rev the draft is based on is always sent; it is absent only when the
@@ -339,8 +381,86 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
   // conflicts, so a failure here is a generic failure — no reload+toast
   // conflict path. `command.content` is read here, not at enqueue time: an
   // earlier save's echo may have rebased it while queued.
-  const rev = draftBaseRev.get(key) ?? note?.rev;
+  const rev = command.strict ? draftBaseRev.get(key) : (draftBaseRev.get(key) ?? note?.rev);
+  // A failed complete draft blocks queued and future automatic writes too.
+  const retained = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+  if (retained?.error) return undefined;
+  let failed = false;
   try {
+    if (command.strict) {
+      try {
+        if (rev === undefined) throw new Error('A loaded note revision is required');
+        const saved = yield* call(
+          [appClient.notes, appClient.notes.update],
+          noteId,
+          command.content,
+          rev,
+          workspaceId,
+        );
+        return yield* call(
+          applyContentSaveResult,
+          command,
+          rev,
+          {
+            success: true,
+            newContent: saved.content,
+            noteRev: saved.rev,
+          },
+          owner,
+        );
+      } catch (error) {
+        if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
+        const failure = error instanceof Error ? error : new Error(String(error));
+        const rpcCode = (error as { rpcCode?: number } | null)?.rpcCode;
+        if (rpcCode !== -32005 && rev !== undefined) {
+          let current: Note | null = null;
+          try {
+            current = yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId);
+          } catch {
+            /* Keep the unacknowledged draft. */
+          }
+          if (
+            (yield* isNotePublicationOwnerCurrent(owner)) &&
+            current &&
+            current.id === noteId &&
+            current.workspaceId === workspaceId &&
+            current.content === command.content &&
+            current.rev !== undefined &&
+            Number.isSafeInteger(current.rev) &&
+            !isNoteContentStale(current) &&
+            current.rev > rev
+          ) {
+            return yield* call(
+              applyContentSaveResult,
+              command,
+              rev,
+              {
+                success: true,
+                newContent: current.content,
+                noteRev: current.rev,
+              },
+              owner,
+            );
+          }
+        }
+        if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
+        failed = true;
+        const newest = (unackedDrafts.get(key) ?? []).at(-1) ?? command;
+        pendingContent.set(key, newest);
+        yield* put(
+          setRetainedNoteDraft(workspaceId, noteId, {
+            workspaceId,
+            noteId,
+            content: newest.content,
+            rev,
+            error: failure.message,
+          }),
+        );
+        yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: newest.content }));
+        notify.error(m.notes_writeService_saveFailed_error(), { description: failure.message });
+        return undefined;
+      }
+    }
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.setContent],
       noteId,
@@ -348,21 +468,37 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       rev,
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
     if (!result.success) {
       logger.error('Failed to save note content', result.error);
       notify.error(m.notes_writeService_saveFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
-      yield* call(refetchWorkspaceNotes, workspaceId);
+      yield* call(refetchWorkspaceNotes, workspaceId, owner);
       return undefined;
     }
-    return yield* call(applyContentSaveResult, command, rev, result);
+    return yield* call(applyContentSaveResult, command, rev, result, owner);
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
     logger.error('Failed to save note content', error);
-    yield* call(refetchWorkspaceNotes, workspaceId);
+    yield* call(refetchWorkspaceNotes, workspaceId, owner);
     return undefined;
   } finally {
+    // Cancellation is handled by workspace cleanup; it never acknowledges a write.
+    if (failed || (yield* cancelled()) || !(yield* isNotePublicationOwnerCurrent(owner))) return;
     forgetDraft(key, command);
+    if (command.strict) {
+      const newest = (unackedDrafts.get(key) ?? []).at(-1);
+      yield* put(
+        setRetainedNoteDraft(
+          workspaceId,
+          noteId,
+          newest
+            ? { workspaceId, noteId, content: newest.content, rev: draftBaseRev.get(key) }
+            : undefined,
+        ),
+      );
+    }
     // This was the latest edit and nothing later can compare against it; the
     // next edit chain starts from the store's (now in-sync) rev.
     if (latestEditSeq.get(key) === command.seq) {
@@ -426,6 +562,8 @@ function* resolveComment(command: ResolveCommentCommand): SagaGenerator<boolean>
 
 function* saveMetadata(command: MetadataCommand) {
   const { workspaceId, noteId, patch, rollback, titleOnly } = command;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   const rev = note?.rev;
   try {
@@ -436,8 +574,9 @@ function* saveMetadata(command: MetadataCommand) {
       rev,
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     if (!result.success) {
-      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
+      if (yield* call(reconcileConflict, workspaceId, noteId, result, owner)) return;
       logger.error(
         titleOnly ? 'Failed to update note title' : 'Failed to update note metadata',
         result.error,
@@ -454,12 +593,16 @@ function* saveMetadata(command: MetadataCommand) {
     if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
   } catch (error) {
     logger.error('Failed to update note metadata', error);
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
   }
 }
 
 function* removeNote(command: DeleteCommand) {
   const { workspaceId, noteId, snapshot } = command;
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const readAuthority = owner.readAuthority;
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.delete],
@@ -467,20 +610,38 @@ function* removeNote(command: DeleteCommand) {
       snapshot?.rev,
       workspaceId,
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     if (result.success) return;
-    if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
+    if (yield* call(reconcileConflict, workspaceId, noteId, result, owner)) return;
     logger.error('Failed to delete note', result.error);
     notify.error(m.notes_writeService_deleteFailed_error(), {
       description: result.error ?? m.notes_writeService_unknown_error(),
     });
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (snapshot)
+      yield* put(
+        applyNoteCreated(
+          workspaceId,
+          snapshot,
+          ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+        ),
+      );
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
     logger.error('Failed to delete note', error);
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (snapshot)
+      yield* put(
+        applyNoteCreated(
+          workspaceId,
+          snapshot,
+          ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+        ),
+      );
   }
 }
 
 function* runMutation(command: MutationCommand) {
+  if (command.kind === 'retry')
+    return yield* call(retryContent, command.workspaceId, command.noteId);
   if (command.kind === 'content') return yield* call(saveContent, command);
   if (command.kind === 'metadata') return yield* call(saveMetadata, command);
   if (command.kind === 'delete') return yield* call(removeNote, command);
@@ -505,6 +666,7 @@ function* enqueueMutation(
   try {
     yield* put(queue, { ...envelope, completion });
     const result = yield* take(completion);
+    if (result.error) throw result.error;
     return result.value;
   } finally {
     completion.close();
@@ -514,18 +676,23 @@ function* enqueueMutation(
 function* flushPendingNoteContent(workspaceId: string, noteId: string) {
   const key = noteKey(workspaceId, noteId);
   const pending = pendingContent.get(key);
-  if (!pending) return undefined;
+  if (!pending || (yield* selectRetainedNoteDraft.effect(workspaceId, noteId))?.error)
+    return undefined;
   pendingContent.delete(key);
   if (noteMutationQueue) return yield* enqueueMutation(noteMutationQueue, pending, true);
   return yield* call(runMutation, pending);
 }
 
 function* settlePendingNoteContent(workspaceId: string, noteId: string) {
+  const before = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+  if (before?.error) throw new Error(before.error);
   yield* call(flushPendingNoteContent, workspaceId, noteId);
   if (noteMutationQueue) {
     const barrier: BarrierCommand = { kind: 'barrier', workspaceId, noteId };
     yield* call(enqueueMutation, noteMutationQueue, barrier, true);
   }
+  const after = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+  if (after?.error) throw new Error(after.error);
 }
 
 function* handleContentAction(
@@ -538,7 +705,10 @@ function* handleContentAction(
   if (!workspaceId || !noteId || typeof content !== 'string') return;
   const key = noteKey(workspaceId, noteId);
   if (!draftBaseRev.has(key)) {
-    const baseRev = options.baseRev ?? (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
+    const retained = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+    const baseRev = options.strict
+      ? (retained?.rev ?? options.baseRev)
+      : (options.baseRev ?? (yield* selectNoteById.effect(workspaceId, noteId))?.rev);
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
   }
   const newest = (unackedDrafts.get(key) ?? []).at(-1);
@@ -548,16 +718,39 @@ function* handleContentAction(
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
   latestEditSeq.set(key, seq);
-  const pending: PendingContent = { kind: 'content', workspaceId, noteId, content, seq };
+  const pending: PendingContent = {
+    kind: 'content',
+    workspaceId,
+    noteId,
+    content,
+    seq,
+    strict: options.strict,
+  };
   // A still-debounced draft is replaced, never sent.
   const replaced = pendingContent.get(key);
   if (replaced) forgetDraft(key, replaced);
   unackedDrafts.set(key, [...(unackedDrafts.get(key) ?? []), pending]);
   pendingContent.set(key, pending);
   yield* put(setNoteContentPending(workspaceId, noteId, true));
+  const retained = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+  if (options.strict)
+    yield* put(
+      setRetainedNoteDraft(workspaceId, noteId, {
+        workspaceId,
+        noteId,
+        content,
+        rev: draftBaseRev.get(key),
+        ...(retained?.error ? { error: retained.error } : {}),
+      }),
+    );
+  if (retained?.error) return;
   try {
     if (!options.immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
-    if (pendingContent.get(key) !== pending) return;
+    if (
+      pendingContent.get(key) !== pending ||
+      (yield* selectRetainedNoteDraft.effect(workspaceId, noteId))?.error
+    )
+      return;
     pendingContent.delete(key);
     yield* enqueueMutation(queue, pending, true);
   } finally {
@@ -568,6 +761,60 @@ function* handleContentAction(
         yield* put(setNoteContentPending(workspaceId, noteId, false));
       }
     }
+  }
+}
+
+function* retryContent(workspaceId: string, noteId: string) {
+  if ((yield* selectNoteDeleteView.effect(workspaceId, noteId))?.held)
+    throw new Error('Check note deletion status before retrying this draft.');
+  const retained = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+  if (!retained?.error) return;
+  const current = yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId);
+  const latest = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+  if (
+    !current ||
+    current.id !== noteId ||
+    current.workspaceId !== workspaceId ||
+    isNoteContentStale(current) ||
+    !Number.isSafeInteger(current.rev) ||
+    current.rev !== retained.rev ||
+    latest !== retained
+  )
+    throw new Error(retained.error);
+  const key = noteKey(workspaceId, noteId);
+  const seq = (latestEditSeq.get(key) ?? 0) + 1;
+  const command: ContentCommand = {
+    kind: 'content',
+    workspaceId,
+    noteId,
+    content: retained.content,
+    strict: true,
+    seq,
+  };
+  latestEditSeq.set(key, seq);
+  if (retained.rev !== undefined) draftBaseRev.set(key, retained.rev);
+  unackedDrafts.set(key, [command]);
+  pendingContent.delete(key);
+  yield* put(setRetainedNoteDraft(workspaceId, noteId, { ...retained, error: undefined }));
+  yield* put(setNoteContentPending(workspaceId, noteId, true));
+  yield* call(saveContent, command);
+  const after = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+  if (after?.error) throw new Error(after.error);
+}
+function* handleRetryRequested(action: ReturnType<typeof retryNoteContentRequested>) {
+  const [workspaceId, noteId] = action.payload;
+  try {
+    if (noteMutationQueue)
+      yield* call(
+        enqueueMutation,
+        noteMutationQueue,
+        { kind: 'retry' as const, workspaceId, noteId },
+        true,
+      );
+    yield* call(settlePendingNoteContent, workspaceId, noteId);
+    yield* put(action.success(undefined as void));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
 
@@ -807,12 +1054,16 @@ function* createNewNote(
   const optimistic = optimisticNote(workspaceId, tempId, data);
   let keepOptimistic = true;
   yield* put(addOptimisticNote(workspaceId, optimistic));
+  const owner = yield* captureNotePublicationOwner(workspaceId);
+  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const readAuthority = owner.readAuthority;
 
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.create],
       createRequest(workspaceId, data),
     );
+    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
     if (!result.success) {
       yield* put(removeOptimisticNote(workspaceId, tempId));
       keepOptimistic = false;
@@ -825,8 +1076,15 @@ function* createNewNote(
         [appClient.notes, appClient.notes.list],
         workspaceId,
       );
+      if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
       const notes = response.map(toRuntimeNote);
-      yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+      yield* put(
+        loadWorkspaceNotesSucceeded(
+          [workspaceId],
+          { [workspaceId]: notes },
+          ...(readAuthority ? ([{ [workspaceId]: readAuthority }] as const) : ([] as const)),
+        ),
+      );
       keepOptimistic = false;
       const created = notes.find((note) => !before.has(String(note.id)));
       if (!created) return undefined;
@@ -838,7 +1096,11 @@ function* createNewNote(
       return undefined;
     }
   } finally {
-    if (keepOptimistic && (yield* cancelled())) {
+    if (
+      keepOptimistic &&
+      (yield* isNotePublicationLifetimeCurrent(owner)) &&
+      ((yield* cancelled()) || !(yield* isNotePublicationOwnerCurrent(owner)))
+    ) {
       yield* put(removeOptimisticNote(workspaceId, tempId));
     }
   }
@@ -922,11 +1184,18 @@ function* consumeMutation(envelope: MutationEnvelope) {
     yield* call(settleDiscardedMutation, envelope);
     return;
   }
-  const { mutation } = yield* race({
-    mutation: call(runMutation, command),
-    cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
-  });
-  if (completion) yield* put(completion, { value: mutation });
+  try {
+    const { mutation } = yield* race({
+      mutation: call(runMutation, command),
+      cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
+    });
+    if (completion) yield* put(completion, { value: mutation });
+  } catch (error) {
+    // A rejected retry must settle its caller without killing the note FIFO.
+    if (completion)
+      yield* put(completion, { error: error instanceof Error ? error : new Error(String(error)) });
+    else logger.error('Failed to mutate note', error);
+  }
 }
 
 function* consumeMutations(queue: Channel<MutationEnvelope>) {
@@ -956,6 +1225,7 @@ export function* notesWriteSaga() {
     yield* takeEvery(createNotePersistRequested, handleCreatePersistRequested);
     yield* takeEvery(createNoteRequested, handleCreateRequested);
     yield* takeEvery(flushNoteContentRequested, handleFlushRequested);
+    yield* takeEvery(retryNoteContentRequested, handleRetryRequested);
     yield* takeEvery(settleNoteContentRequested, handleSettleRequested, queue);
     yield* takeEvery(addCommentRequested, handleAddComment, queue);
     yield* takeEvery(respondToCommentRequested, handleRespondComment, queue);

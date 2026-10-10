@@ -1,4 +1,20 @@
 <script lang="ts">
+  import {
+    subscribeNoteContentFailure,
+    retryNoteContent,
+  } from '$features/notes/notes-write-service';
+  import {
+    registerNoteDeleteEditor,
+    type NoteDeleteEditorScope,
+  } from '$features/notes/note-delete-editors';
+  import {
+    isNoteDeleteHeld,
+    subscribeNoteDeleteHold,
+    retainNoteDeleteDraft,
+    reserveNoteDeleteDraft,
+    notifyNoteDeleteInput,
+  } from '$features/notes/note-delete-gate';
+  import { Button } from '$lib/components/ui/button';
   /* eslint-disable max-lines */
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import CommentDialog from '$lib/components/tiptap/CommentDialog.svelte';
@@ -11,7 +27,9 @@
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger } from '$lib/i18n/format';
+  import { shouldUseRawNoteEditor } from '$features/notes/note-edit-policy';
+  import { mapOffsetThroughDiff } from '$lib/notes/text-rebase';
+  import { textOffsetOfDocPos } from './note-with-comments/external-update-editor';
   import { untrack, onMount, onDestroy, tick } from 'svelte';
   import { createTaskAgentStatusMountManager } from './note-with-comments/task-agent-status-mount-manager';
   import { runAssignAgentTaskMenuAction } from './note-with-comments/task-menu-assign-agent-action';
@@ -157,13 +175,13 @@
   }
 
   const handleImagePaste = createImagePasteHandler({
-    getEditor: () => editor,
+    getEditor: () => (deletionHeld() ? null : editor),
     getWorkspaceId: () => workspace?.id,
     logger,
   });
 
   const handleDrop = createImageDropHandler({
-    getEditor: () => editor,
+    getEditor: () => (deletionHeld() ? null : editor),
     getWorkspaceId: () => workspace?.id,
     logger,
   });
@@ -231,10 +249,12 @@
 
   // Props
   let {
-    workspace,
-    noteId,
-    content = '',
+    workspace: requestedWorkspace,
+    noteId: requestedNoteId,
+    noteInstanceId: requestedNoteInstanceId,
+    content: requestedContent = '',
     editable = true,
+    rawView: requestedRawView,
     showSuggestions = true,
     showComments = true,
     shouldFocus = false,
@@ -248,8 +268,11 @@
   }: {
     workspace: Workspace;
     noteId?: string;
+    noteInstanceId?: string;
     content?: string;
     editable?: boolean;
+    /** Applied mode held by a full-source owner while a view transition settles. */
+    rawView?: boolean;
     showSuggestions?: boolean;
     showComments?: boolean;
     shouldFocus?: boolean;
@@ -265,6 +288,71 @@
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
   } = $props();
+
+  // Anonymous editors have no persistence owner. Keep their existing editor bound
+  // to the original input after user edits; a later prop change cannot assign
+  // those edits to a persisted note or erase them during owner reinitialization.
+  // This holds one live editor, not an additional global recovery entry.
+  let anonymousOwner = $state.raw<{
+    workspace: Workspace;
+    content: string;
+    noteInstanceId?: string;
+    rawView?: boolean;
+  }>();
+  let workspace = $derived(anonymousOwner?.workspace ?? requestedWorkspace);
+  let noteId = $derived(anonymousOwner ? undefined : requestedNoteId);
+  let noteInstanceId = $derived(
+    anonymousOwner ? anonymousOwner.noteInstanceId : requestedNoteInstanceId,
+  );
+  let content = $derived(anonymousOwner ? anonymousOwner.content : requestedContent);
+  let rawView = $derived(anonymousOwner ? anonymousOwner.rawView : requestedRawView);
+  let anonymousOwnerChanged = $derived(
+    !!anonymousOwner &&
+      (requestedWorkspace.id !== anonymousOwner.workspace.id ||
+        !!requestedNoteId ||
+        requestedNoteInstanceId !== anonymousOwner.noteInstanceId ||
+        requestedContent !== anonymousOwner.content ||
+        requestedRawView !== anonymousOwner.rawView),
+  );
+  // Once this instance adopts a persisted identity, losing that identity is
+  // a broken binding, not permission to start an unrelated anonymous draft.
+  let acceptsAnonymousInput = $state(!requestedNoteId && !requestedNoteInstanceId);
+  $effect.pre(() => {
+    if (noteId || noteInstanceId) acceptsAnonymousInput = false;
+  });
+  let missingPersistedIdentity = $derived(!noteId && !acceptsAnonymousInput);
+  let anonymousExportFailed = $state(false);
+  function exportAnonymousDraft(): void {
+    if (!anonymousOwner || !editor || editor.isDestroyed) return;
+    anonymousExportFailed = false;
+    try {
+      const draft = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
+      const url = URL.createObjectURL(new Blob([draft], { type: 'text/markdown;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'anonymous-note.md';
+      try {
+        document.body.append(link);
+        link.click();
+      } finally {
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+    } catch {
+      anonymousExportFailed = true;
+    }
+  }
+  function discardAnonymousDraft(): void {
+    if (!anonymousOwnerChanged) return;
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = null;
+    if (userTypingTimeout) clearTimeout(userTypingTimeout);
+    userTypingTimeout = null;
+    isUserTyping = false;
+    hasUserEditedSinceLastSave = false;
+    anonymousExportFailed = false;
+    anonymousOwner = undefined;
+  }
 
   // One cache-busting token per editor instance: every debounced external
   // re-process keeps identical workspace image URLs instead of re-fetching
@@ -508,11 +596,204 @@
   let headingScrollHandler: ((e: any) => void) | null = null;
   let taskScrollHandler: ((e: any) => void) | null = null;
 
-  // Content size limit — notes above this threshold are shown as plain text
-  // to prevent the markdown processing pipeline from freezing the UI.
-  const MAX_NOTE_CONTENT_SIZE = 200 * 1024; // 200KB
+  // The cutoff applies to full rich editing; oversized source remains editable in Monaco.
   let isTooLargeForRichEditor = $state(false);
-  let plainTextFallbackContent = $state('');
+  let rawDraft = $state<
+    | {
+        content: string;
+        baseContent: string;
+        rev?: number;
+        selection: { anchor: number; head: number };
+      }
+    | undefined
+  >();
+  let composing = false;
+  let rawDraftWasMounted = false;
+
+  let deleteOwnerId = $state(crypto.randomUUID());
+  let recoveryAdmitted = $state(false);
+  let recoveryAdmissionAttempted = $state(false);
+  let releaseRecoveryReservation: (() => void) | undefined;
+  const editorBackendGeneration = appStore.state.daemonHealth?.connectionGeneration ?? 0;
+  let localDeletionHeld = $state(false);
+  let domainDeletionHeld = $state(false);
+  let deleteInputVersion = 0;
+  let deleteRegistration: ReturnType<typeof registerNoteDeleteEditor> | undefined;
+  let deleteScope: NoteDeleteEditorScope | undefined;
+  let lastSubmittedRichDraft: { content: string; baseContent: string; rev?: number } | undefined;
+  function deletionHeld(): boolean {
+    return (
+      (!!noteId && !recoveryAdmitted) ||
+      anonymousOwnerChanged ||
+      missingPersistedIdentity ||
+      localDeletionHeld ||
+      domainDeletionHeld ||
+      editorBackendGeneration !== (appStore.state.daemonHealth?.connectionGeneration ?? 0) ||
+      (!!noteId && isNoteDeleteHeld(workspace.id, noteId))
+    );
+  }
+  function holdDeleteEditor(held: boolean): void {
+    localDeletionHeld = held;
+    rawNoteEditorRef?.setDeletionHeld(held);
+    if (editor && !editor.isDestroyed)
+      editor.setEditable(editable && !finishing && !deletionHeld(), false);
+    if (held && saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+  }
+  function invalidateDeleteInput(): void {
+    deleteInputVersion++;
+    deleteRegistration?.invalidate();
+    if (deleteScope && deletionHeld())
+      notifyNoteDeleteInput({ ...deleteScope, ownerId: deleteOwnerId });
+  }
+  function retryRecoveryReservation(): void {
+    if (!deleteScope || releaseRecoveryReservation) return;
+    releaseRecoveryReservation = reserveNoteDeleteDraft({ ...deleteScope, ownerId: deleteOwnerId });
+    recoveryAdmitted = !!releaseRecoveryReservation;
+    recoveryAdmissionAttempted = true;
+  }
+  function retainRichDraft(scope = deleteScope, ownerId = deleteOwnerId): void {
+    if (!scope || !recoveryAdmitted) return;
+    if (rawNoteEditorRef) {
+      if (rawNoteEditorRef.getDeleteState().ownerId === ownerId)
+        rawNoteEditorRef.retainDeleteDraft();
+      return;
+    }
+    if (shouldShowRawNoteView && rawDraftWasMounted) return;
+    let draft: { content: string; baseContent: string; rev?: number } | undefined = rawDraft;
+    if (!draft) {
+      if (!editor || editor.isDestroyed) return;
+      const content = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
+      const submitted =
+        content === lastKnownContent &&
+        lastSubmittedRichDraft &&
+        (saveFailure ||
+          selectHasPendingNoteContent.select(appStore.state, scope.workspaceId, scope.noteId));
+      const source = submitted
+        ? lastSubmittedRichDraft!
+        : { content, baseContent: lastKnownContent, rev: lastKnownRev };
+      draft = source;
+    }
+    if (draft.content === draft.baseContent) return;
+    retainNoteDeleteDraft({
+      ...scope,
+      ownerId,
+      content: draft.content,
+      baseContent: draft.baseContent,
+      rev: draft.rev,
+    });
+  }
+
+  $effect(() => {
+    const targetWorkspace = workspace.id;
+    const targetNote = noteId;
+    const targetInstance = noteInstanceId;
+    if (!targetNote) {
+      return untrack(() => {
+        deleteScope = undefined;
+        deleteRegistration = undefined;
+        recoveryAdmitted = false;
+        recoveryAdmissionAttempted = false;
+        localDeletionHeld = false;
+        domainDeletionHeld = false;
+      });
+    }
+    return untrack(() => {
+      const scope = {
+        backendGeneration: editorBackendGeneration,
+        workspaceId: targetWorkspace,
+        noteId: targetNote,
+        noteInstanceId: targetInstance,
+      };
+      if (deleteScope) deleteOwnerId = crypto.randomUUID();
+      deleteScope = scope;
+      const ownerId = deleteOwnerId;
+      releaseRecoveryReservation = reserveNoteDeleteDraft({ ...scope, ownerId });
+      recoveryAdmitted = !!releaseRecoveryReservation;
+      recoveryAdmissionAttempted = true;
+      // A replacement binding does not inherit the previous view's local preparation.
+      // Its own domain subscription and registration establish the applicable hold.
+      localDeletionHeld = false;
+      const unsubscribe = subscribeNoteDeleteHold(targetWorkspace, targetNote, (held) => {
+        domainDeletionHeld = held;
+        if (editor && !editor.isDestroyed)
+          editor.setEditable(editable && !finishing && !deletionHeld(), false);
+        if (held && saveDebounceTimer) {
+          clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = null;
+        }
+      });
+      const current = () =>
+        !isComponentDestroyed &&
+        recoveryAdmitted &&
+        !isInitializing &&
+        workspace.id === targetWorkspace &&
+        noteId === targetNote &&
+        noteInstanceId === targetInstance &&
+        editorBackendGeneration === (appStore.state.daemonHealth?.connectionGeneration ?? 0) &&
+        (!rawNoteEditorRef || rawNoteEditorRef.getDeleteState().current);
+      const assertFlushOwner = () => {
+        if (!current() || domainDeletionHeld || isNoteDeleteHeld(targetWorkspace, targetNote))
+          throw new Error('The note is no longer available for deletion');
+      };
+      const registration = registerNoteDeleteEditor(scope, {
+        current,
+        version: () =>
+          `${deleteInputVersion}:${rawNoteEditorRef?.getDeleteState().version ?? 'rich'}`,
+        dirty: () =>
+          rawNoteEditorRef
+            ? rawNoteEditorRef.getDeleteState().dirty
+            : (!!lastSubmittedRichDraft &&
+                (!!saveFailure ||
+                  selectHasPendingNoteContent.select(
+                    appStore.state,
+                    targetWorkspace,
+                    targetNote,
+                  ))) ||
+              (!!editor &&
+                !editor.isDestroyed &&
+                hasUserEditedSinceLastSave &&
+                processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true }) !==
+                  lastKnownContent),
+        composing: () =>
+          composing || !!editor?.view.composing || !!rawNoteEditorRef?.getDeleteState().composing,
+        hold: holdDeleteEditor,
+        flush: async () => {
+          assertFlushOwner();
+          if (rawNoteEditorRef) await rawNoteEditorRef.flushForDeletion();
+          else {
+            if (editor && hasUserEditedSinceLastSave) await saveEditorContent(true, true);
+            assertFlushOwner();
+            await appStore.dispatch(settleNoteContentRequested(targetWorkspace, targetNote));
+          }
+          assertFlushOwner();
+        },
+      });
+      deleteRegistration = registration;
+      return () => {
+        if (
+          localDeletionHeld ||
+          domainDeletionHeld ||
+          isNoteDeleteHeld(targetWorkspace, targetNote) ||
+          workspace.id !== targetWorkspace ||
+          noteId !== targetNote ||
+          noteInstanceId !== targetInstance ||
+          editorBackendGeneration !== (appStore.state.daemonHealth?.connectionGeneration ?? 0)
+        )
+          retainRichDraft(scope, ownerId);
+        else {
+          rawNoteEditorRef?.flushPendingSave();
+          if (editor && hasUserEditedSinceLastSave) void saveEditorContent(true);
+        }
+        registration.unregister();
+        unsubscribe();
+        releaseRecoveryReservation?.();
+        releaseRecoveryReservation = undefined;
+      };
+    });
+  });
 
   let isInitialized = $state(false);
   let isInitializing = $state(true);
@@ -575,9 +856,9 @@
   // Both task-menu actions launch an agent; the popovers are withheld
   // (never disabled) where the daemon would refuse the create.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
-  let isRawNoteViewEnabled = $derived($rawNoteViewEnabled$ === true);
+  let isRawNoteViewEnabled = $derived(rawView ?? $rawNoteViewEnabled$ === true);
   let shouldShowRawNoteView = $derived(
-    isRawNoteViewEnabled && !isInitializing && !isTooLargeForRichEditor,
+    (isRawNoteViewEnabled || isTooLargeForRichEditor) && !isInitializing,
   );
 
   $effect(() => {
@@ -740,7 +1021,7 @@
   });
 
   let hasActiveComments = $derived.by(() => {
-    if (isRawNoteViewEnabled) return false;
+    if (shouldShowRawNoteView) return false;
 
     // Only reserve space for comments if:
     // 1. Comments feature is enabled (showComments is true)
@@ -752,10 +1033,25 @@
   });
 
   let wasRawNoteViewEnabled = false;
-  let rawNoteEditorRef = $state<{ flushPendingSave: () => void } | null>(null);
+  let rawNoteEditorRef = $state<{
+    flushPendingSave(): void;
+    flushForDeletion(): Promise<void>;
+    setDeletionHeld(held: boolean): void;
+    retainDeleteDraft(): void;
+    getDeleteState(): {
+      ownerId: string;
+      version: string;
+      dirty: boolean;
+      composing: boolean;
+      current: boolean;
+    };
+  } | null>(null);
 
   $effect(() => {
-    if (!isRawNoteViewEnabled) {
+    if (rawNoteEditorRef) rawDraftWasMounted = true;
+  });
+  $effect(() => {
+    if (!isRawNoteViewEnabled && !isTooLargeForRichEditor) {
       rawNoteEditorRef?.flushPendingSave();
       if (wasRawNoteViewEnabled && !editor && element && !isComponentDestroyed) {
         wasRawNoteViewEnabled = false;
@@ -791,11 +1087,109 @@
 
     lastKnownContent = currentNoteContent;
     lastKnownRev = currentNoteRev;
-    if (!isTooLargeForRichEditor) {
-      isInitializing = false;
-    }
+    isInitializing = false;
     isInitialized = true;
   });
+
+  function moveGrowingNoteToRaw(): boolean {
+    if (
+      !noteId ||
+      !editor ||
+      editor.isDestroyed ||
+      composing ||
+      editor.view.composing ||
+      !editable ||
+      deletionHeld() ||
+      isInitializing
+    )
+      return false;
+    const markdown = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
+    if (!shouldUseRawNoteEditor(markdown)) return false;
+    const { doc, selection } = editor.state;
+    const plain = doc.textBetween(0, doc.content.size, '\n', '\uFFFC');
+    const sourceOffset = (position: number) =>
+      mapOffsetThroughDiff(plain, markdown, textOffsetOfDocPos(doc, position));
+    rawDraftWasMounted = false;
+    rawDraft = {
+      content: markdown,
+      baseContent: lastKnownContent,
+      rev: lastKnownRev,
+      selection: { anchor: sourceOffset(selection.anchor), head: sourceOffset(selection.head) },
+    };
+    // Monaco starts a fresh undo history at this complete draft. The handoff
+    // itself is not an undoable deletion, nor an invitation to remount rich mode.
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+    isTooLargeForRichEditor = true;
+    return true;
+  }
+  $effect(() => {
+    if (!element) return;
+    const start = () => {
+      composing = true;
+      invalidateDeleteInput();
+    };
+    const end = () => {
+      composing = false;
+      // ProseMirror commits its composition in the same event turn.
+      setTimeout(() => {
+        if (!isComponentDestroyed) moveGrowingNoteToRaw();
+      }, 0);
+    };
+    element.addEventListener('compositionstart', start);
+    element.addEventListener('compositionend', end);
+    return () => {
+      element.removeEventListener('compositionstart', start);
+      element.removeEventListener('compositionend', end);
+    };
+  });
+  $effect(() => {
+    if (editor && !editor.isDestroyed)
+      editor.setEditable(editable && !finishing && !deletionHeld(), false);
+  });
+  let finishing = $state(false);
+  let saveFailure = $state<Error | undefined>();
+  $effect(() => {
+    if (!noteId) return;
+    return subscribeNoteContentFailure(workspace.id, noteId, (failure) => {
+      saveFailure = failure;
+    });
+  });
+  async function retryFullSave() {
+    if (!noteId || deletionHeld()) return;
+    try {
+      await retryNoteContent(workspace.id, noteId);
+    } catch (error) {
+      saveFailure = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  export async function finishEditing(): Promise<void> {
+    if (deletionHeld()) throw new Error('The note is pending deletion');
+    const targetWorkspace = workspace.id;
+    const targetNote = noteId;
+    const current = () =>
+      !isComponentDestroyed &&
+      workspace.id === targetWorkspace &&
+      noteId === targetNote &&
+      !deletionHeld();
+    if (composing || editor?.view.composing)
+      throw new Error('Finish composing before closing the editor');
+    finishing = true;
+    if (editor && !editor.isDestroyed) editor.setEditable(false, false);
+    try {
+      await tick();
+      if (!current()) throw new Error('The note editor changed while finishing');
+      rawNoteEditorRef?.flushPendingSave();
+      if (editor && hasUserEditedSinceLastSave) await saveEditorContent(true);
+      if (!current()) throw new Error('The note editor changed while finishing');
+      if (targetNote)
+        await appStore.dispatch(settleNoteContentRequested(targetWorkspace, targetNote));
+    } finally {
+      finishing = false;
+    }
+  }
 
   // Debounce content updates
   function debounceUpdate() {
@@ -805,12 +1199,22 @@
     // post-apply reset tail used to gate this too and only dropped real
     // keystrokes (no edit flag, no save timer → the keystroke was overwritten
     // by the next external apply and never persisted; monorepo#535).
-    if (shouldIgnoreLocalEditorUpdate({ isInitializing })) {
+    if (
+      missingPersistedIdentity ||
+      (!!noteId && !recoveryAdmitted) ||
+      shouldIgnoreLocalEditorUpdate({ isInitializing })
+    ) {
       return;
     }
 
+    if (!noteId && !anonymousOwner) {
+      anonymousOwner = { workspace: { ...workspace }, content, noteInstanceId, rawView };
+    }
     isUserTyping = true;
     hasUserEditedSinceLastSave = true;
+    invalidateDeleteInput();
+    if (deletionHeld()) return;
+    if (moveGrowingNoteToRaw()) return;
 
     if (userTypingTimeout) {
       clearTimeout(userTypingTimeout);
@@ -859,8 +1263,16 @@
    * Save the current editor content to the store and backend.
    * Called both by debounce timer and on cleanup to prevent data loss.
    */
-  async function saveEditorContent(immediate = false) {
+  async function saveEditorContent(immediate = false, preparingDelete = false) {
     if (!editor || !workspace?.id || !noteId) return;
+    if (deletionHeld() && !preparingDelete) return;
+    if (
+      preparingDelete &&
+      (domainDeletionHeld ||
+        isNoteDeleteHeld(workspace.id, noteId) ||
+        editorBackendGeneration !== (appStore.state.daemonHealth?.connectionGeneration ?? 0))
+    )
+      throw new Error('The note is no longer available for deletion');
 
     // Check if this is a recovery save at the start
     const wasRecoverySave = isRecoverySave;
@@ -882,6 +1294,11 @@
       }
 
       const baseline = lastKnownContent;
+      lastSubmittedRichDraft = {
+        content: markdownContent,
+        baseContent: baseline,
+        rev: lastKnownRev,
+      };
       // Update last known content when user saves
       lastKnownContent = markdownContent;
       // NOTE: We intentionally do NOT set hasUserEditedSinceLastSave = false here.
@@ -892,6 +1309,7 @@
       // Update note content via Redux dispatch
       {
         const note = selectNoteById.select(appStore.state, workspace.id, noteId);
+        if (!note && preparingDelete) throw new Error('The note is no longer available');
         if (note) {
           // The save's base is the rev the editor text was derived from, not
           // whatever rev the store holds now: a note:updated refetch may
@@ -913,6 +1331,7 @@
           appStore.dispatch(
             updateNoteContent(workspace.id, noteId, markdownContent, {
               immediate,
+              strict: true,
               baseRev: lastKnownRev,
               baseContent: baseline,
             }),
@@ -924,6 +1343,10 @@
       // before saving to disk. Frontend recovery is disabled via ENABLE_MAIN_PROCESS_RECOVERY flag.
     } catch (error) {
       logger.error('[NoteWithComments] Error saving content', error);
+      if (preparingDelete) {
+        if (lastSubmittedRichDraft) lastKnownContent = lastSubmittedRichDraft.baseContent;
+        throw error;
+      }
     }
   }
 
@@ -938,6 +1361,7 @@
   }
 
   async function handleSuggestionDecision(decision: SuggestionDecision) {
+    if (deletionHeld()) return;
     const suggestionId = selectedSuggestion?.id;
     if (!editor || !suggestionId) return;
     const applied = await applySuggestionDecision(editor, suggestionId, decision, () =>
@@ -988,6 +1412,7 @@
     taskData: any,
     options?: { skipSave?: boolean },
   ): void {
+    if (deletionHeld()) return;
     if (action === 'assign-agent') {
       const state = appStore.state;
       const parentNote = noteId ? selectNoteById.select(state, workspace.id, noteId) : null;
@@ -1044,6 +1469,7 @@
 
   // Handle add comment button click
   function handleAddCommentClick() {
+    if (deletionHeld()) return;
     if (editor && editor.view) {
       const { from } = editor.state.selection;
       const rect = editor.view.coordsAtPos(from);
@@ -1060,6 +1486,7 @@
 
   // Handle comment submission
   async function handleCommentSubmit(event: CustomEvent<{ content: string; type: string }>) {
+    if (deletionHeld()) return;
     const { content, type } = event.detail;
 
     if (commentManager) {
@@ -1070,6 +1497,7 @@
 
   // Handle resolve comment
   async function handleResolveComment(commentId: string) {
+    if (deletionHeld()) return;
     if (commentManager) {
       await commentManager.resolveComment(commentId);
     }
@@ -1077,6 +1505,7 @@
 
   // Handle reply to comment
   async function handleReplyToComment(commentId: string, content: string) {
+    if (deletionHeld()) return false;
     if (!commentManager) return false;
     return (await commentManager.replyToComment(commentId, content)) !== null;
   }
@@ -1088,6 +1517,7 @@
   // which triggers the existing external content update flow (Redux content change →
   // safety-net externalUpdateVersion increment → runExternalContentUpdateEffect).
   async function handleRestoreVersion(versionId: string) {
+    if (deletionHeld()) return;
     const targetWorkspaceId = workspace?.id;
     const targetNoteId = noteId;
     if (!targetNoteId || !targetWorkspaceId) {
@@ -1125,7 +1555,12 @@
         void saveEditorContent();
       }
       await appStore.dispatch(settleNoteContentRequested(targetWorkspaceId, targetNoteId));
-      if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
+      if (
+        isComponentDestroyed ||
+        deletionHeld() ||
+        noteId !== targetNoteId ||
+        workspace?.id !== targetWorkspaceId
+      ) {
         return;
       }
     } while (saveDebounceTimer);
@@ -1203,28 +1638,8 @@
 
     // Compute placeholder based on whether this is the spec note and initial spec write is in progress
 
-    // Guard: if content exceeds the safe size limit, show plain text fallback
-    // instead of running the expensive markdown processing pipeline
-    if (goalContent.length > MAX_NOTE_CONTENT_SIZE) {
-      logger.warn(
-        '[NoteWithComments] Content exceeds MAX_NOTE_CONTENT_SIZE, using plain text fallback',
-        {
-          noteId,
-          contentLength: goalContent.length,
-          limit: MAX_NOTE_CONTENT_SIZE,
-        },
-      );
-      isTooLargeForRichEditor = true;
-      plainTextFallbackContent = goalContent;
-      isInitializing = false;
-      isInitialized = true;
-      return;
-    }
-
-    isTooLargeForRichEditor = false;
-
-    if (isRawNoteViewEnabled) {
-      plainTextFallbackContent = '';
+    isTooLargeForRichEditor = shouldUseRawNoteEditor(goalContent);
+    if (isTooLargeForRichEditor || isRawNoteViewEnabled) {
       isInitializing = false;
       isInitialized = true;
       return;
@@ -1247,7 +1662,7 @@
     const config = createEditorConfig({
       element,
       content: initialEditorContent,
-      editable,
+      editable: editable && !finishing && !deletionHeld(),
       workspace: editorWorkspace, // Also supplies the task-item owner workspace.
       onUpdate: () => {
         debounceUpdate();
@@ -1347,7 +1762,7 @@
     }
 
     // Focus the editor if requested (e.g., when creating a new note)
-    if (shouldFocus && editable) {
+    if (shouldFocus && editable && !deletionHeld()) {
       editorToFocus = editor;
     }
 
@@ -1461,6 +1876,7 @@
 
   // Cleanup
   function cleanup() {
+    if (deletionHeld()) retainRichDraft();
     // Flush any pending save BEFORE destroying the editor
     // This prevents data loss when switching to version view or navigating away
     // Must happen before cleanupFn() which destroys the editor
@@ -1468,7 +1884,7 @@
       clearTimeout(saveDebounceTimer);
       saveDebounceTimer = null;
       // Save immediately if there might be pending changes
-      if (editor && !editor.isDestroyed) {
+      if (editor && !editor.isDestroyed && !deletionHeld()) {
         void saveEditorContent(true);
       }
     }
@@ -1542,6 +1958,10 @@
       lastNoteId = currentNoteId;
       lastKnownContent = '';
       lastKnownRev = undefined;
+      lastSubmittedRichDraft = undefined;
+      rawDraft = undefined;
+      rawDraftWasMounted = false;
+      isTooLargeForRichEditor = shouldUseRawNoteEditor(currentNoteContent);
       hasUserEditedSinceLastSave = false;
       isRestorePending = false;
       lastSafetyNetSyncedContent = undefined;
@@ -1602,24 +2022,13 @@
           editor === conversionEditor &&
           !conversionEditor.isDestroyed;
 
-        // Guard: if new note content exceeds the safe size limit, show plain text fallback
-        if (newContent.length > MAX_NOTE_CONTENT_SIZE) {
-          logger.warn(
-            '[NoteWithComments] Switched to note exceeding MAX_NOTE_CONTENT_SIZE, using plain text fallback',
-            {
-              noteId,
-              contentLength: newContent.length,
-              limit: MAX_NOTE_CONTENT_SIZE,
-            },
-          );
-          isTooLargeForRichEditor = true;
-          plainTextFallbackContent = newContent;
+        isTooLargeForRichEditor = shouldUseRawNoteEditor(newContent);
+        if (isTooLargeForRichEditor) {
           lastKnownContent = newContent;
           lastKnownRev = newRev;
           isInitializing = false;
           return;
         }
-        isTooLargeForRichEditor = false;
 
         isInitializing = true;
 
@@ -1725,12 +2134,13 @@
   // Watch for external content changes and update editor
   $effect(() => {
     const updateVersion = externalUpdateVersion;
+    if (deletionHeld()) return;
 
     void runExternalContentUpdateEffect({
       updateVersion,
       // CRITICAL: Pass destruction check to prevent async callbacks from accessing
       // reactive state after component destruction, avoiding "N is not a function" errors
-      isDestroyed: () => isComponentDestroyed,
+      isDestroyed: () => isComponentDestroyed || deletionHeld(),
       getEditor: () => editor as any,
       getIsInitialized: () => isInitialized,
       getHasPendingNoteContent: () =>
@@ -1841,7 +2251,7 @@
   $effect(() => {
     const reduxContent = currentNoteContent;
     const reduxRev = currentNoteRev;
-    if (reduxRev === undefined || reduxContent !== lastKnownContent) return;
+    if (deletionHeld() || reduxRev === undefined || reduxContent !== lastKnownContent) return;
     if (lastKnownRev !== undefined && reduxRev <= lastKnownRev) return;
     lastKnownRev = reduxRev;
   });
@@ -1937,6 +2347,7 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    if (deletionHeld()) retainRichDraft();
     noteConversionGeneration += 1;
 
     taskAgentStatusMountManager.destroy();
@@ -2163,6 +2574,37 @@
   aria-label={m.workspace_noteWithComments_editor_ariaLabel()}
   tabindex="-1"
 >
+  {#if missingPersistedIdentity}
+    <div role="alert" class="px-4 py-2 text-sm">
+      <p>{m.notes_editor_missingIdentity_label()}</p>
+    </div>
+  {/if}
+  {#if anonymousOwnerChanged}
+    <div role="alert" class="px-4 py-2 text-sm" data-testid="anonymous-note-draft">
+      <p>{m.notes_editor_anonymousDraft_label()}</p>
+      <Button size="sm" onclick={exportAnonymousDraft}
+        >{m.notes_delete_recoveryExport_label()}</Button
+      >
+      <Button size="sm" variant="ghost" onclick={discardAnonymousDraft}
+        >{m.notes_delete_recoveryDiscard_label()}</Button
+      >
+      {#if anonymousExportFailed}<p>{m.layout_fileTab_downloadFailed_error()}</p>{/if}
+    </div>
+  {/if}
+  {#if noteId && recoveryAdmissionAttempted && !recoveryAdmitted}
+    <div role="alert" class="px-4 py-2 text-sm">
+      <p>{m.notes_delete_recoveryCapacity_error()}</p>
+      <Button size="sm" onclick={retryRecoveryReservation}>{m.ui_combobox_retry_label()}</Button>
+    </div>
+  {/if}
+  {#if saveFailure}
+    <div role="alert" class="px-4 py-2 text-sm">
+      <p>{m.notes_writeService_saveFailed_error()} {saveFailure.message}</p>
+      <Button size="sm" onclick={retryFullSave} disabled={localDeletionHeld || domainDeletionHeld}
+        >{m.ui_combobox_retry_label()}</Button
+      >
+    </div>
+  {/if}
   <!-- Search Bar -->
   {#if showSearch}
     <PanelFindBar
@@ -2209,7 +2651,9 @@
     >
       <!-- Note Metadata Bar (task status, etc.) -->
       {#if currentNote && noteId && !shouldShowRawNoteView}
-        <NoteMetadataBar workspaceId={workspace.id} note={currentNote} />
+        <div inert={localDeletionHeld || domainDeletionHeld}>
+          <NoteMetadataBar workspaceId={workspace.id} note={currentNote} />
+        </div>
 
         <!-- Code Changes Card (shows files changed by assigned agents) -->
         <NoteCodeChangesCard workspaceId={workspace.id} note={currentNote} />
@@ -2245,31 +2689,27 @@
           </div>
         {/if}
 
-        <!-- Plain text fallback for notes that exceed the rich editor size limit -->
-        {#if isTooLargeForRichEditor}
-          <div class="w-full p-4">
-            <div
-              class="mb-3 rounded-md bg-warning/10 border border-warning/30 px-4 py-2 text-sm text-warning-ink"
-            >
-              {m.workspace_noteWithComments_tooLarge_label({
-                sizeKb: formatInteger(Math.round(plainTextFallbackContent.length / 1024)),
-              })}
-            </div>
-            <pre
-              class="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">{plainTextFallbackContent}</pre>
-          </div>
-        {/if}
-
         {#if shouldShowRawNoteView && noteId}
-          <RawNoteCodeEditor
-            bind:this={rawNoteEditorRef}
-            workspaceId={workspace.id}
-            {noteId}
-            content={currentNoteContent}
-            rev={currentNoteRev}
-            {editable}
-            {isPanelFocused}
-          />
+          {#key JSON.stringify( [editorBackendGeneration, workspace.id, noteId, noteInstanceId, deleteOwnerId] )}
+            <RawNoteCodeEditor
+              bind:this={rawNoteEditorRef}
+              workspaceId={workspace.id}
+              {noteId}
+              recoveryOwnerId={deleteOwnerId}
+              {recoveryAdmitted}
+              content={currentNoteContent}
+              rev={currentNoteRev}
+              initialDraft={rawDraft}
+              editable={editable &&
+                recoveryAdmitted &&
+                !finishing &&
+                !localDeletionHeld &&
+                !domainDeletionHeld}
+              deleteHeld={localDeletionHeld}
+              onDeleteInput={invalidateDeleteInput}
+              {isPanelFocused}
+            />
+          {/key}
         {/if}
 
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -2325,8 +2765,10 @@
             editorWrapper={element}
             comments={$noteComments$}
             onResolve={handleResolveComment}
-            onAccept={(id) => appStore.dispatch(updateCommentAction(id, { status: 'accepted' }))}
-            onReject={(id) => appStore.dispatch(updateCommentAction(id, { status: 'rejected' }))}
+            onAccept={(id) =>
+              !deletionHeld() && appStore.dispatch(updateCommentAction(id, { status: 'accepted' }))}
+            onReject={(id) =>
+              !deletionHeld() && appStore.dispatch(updateCommentAction(id, { status: 'rejected' }))}
             onReply={handleReplyToComment}
           />
         {/if}

@@ -1,3 +1,6 @@
+import { readNoteTaskLinks } from '../note-task-links';
+import { LiveNotePagesClient } from './live-note-pages-client';
+import { LiveNoteDeleteClient } from './live-note-delete-client';
 /**
  * Live notes domain backed by the intentd daemon.
  *
@@ -144,6 +147,12 @@ class LiveLineAttributionClient implements LineAttributionClient {
 }
 
 export class LiveNotesClient implements NotesClient {
+  readonly deletion = new LiveNoteDeleteClient();
+  readonly pages = new LiveNotePagesClient();
+
+  listTaskLinks(workspaceId: string, noteId: string): Promise<string[] | null> {
+    return readNoteTaskLinks(this.pages, workspaceId, noteId);
+  }
   readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
 
   async list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]> {
@@ -205,6 +214,39 @@ export class LiveNotesClient implements NotesClient {
 
   async create(request: CreateNoteRequest): Promise<MutationResult> {
     return runMutation('note.create', { ...request, idempotencyKey: newIdempotencyKey() });
+  }
+
+  async update(
+    noteId: string,
+    content: string,
+    expectedVersion: number,
+    workspaceId: string,
+  ): Promise<Note> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0)
+      throw new Error('A loaded note revision is required');
+    const result = await backendRequest<unknown>('note.update', {
+      workspaceId,
+      noteId,
+      content,
+      expectedVersion,
+    });
+    const raw = result && typeof result === 'object' && 'note' in result ? result.note : result;
+    if (
+      !raw ||
+      typeof raw !== 'object' ||
+      !('id' in raw) ||
+      raw.id !== noteId ||
+      ('workspaceId' in raw && raw.workspaceId !== workspaceId) ||
+      ('workspace_id' in raw && raw.workspace_id !== workspaceId) ||
+      !('content' in raw) ||
+      typeof raw.content !== 'string' ||
+      !('rev' in raw) ||
+      typeof raw.rev !== 'number' ||
+      !Number.isSafeInteger(raw.rev) ||
+      raw.rev <= expectedVersion
+    )
+      throw new Error('The saved note acknowledgement was incomplete');
+    return normalizeNote(raw as Record<string, unknown>, workspaceId);
   }
 
   async setContent(

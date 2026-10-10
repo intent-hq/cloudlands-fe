@@ -990,6 +990,27 @@ describe('observational node capabilities', () => {
   });
 });
 
+it('does not send an oversized complete-note JSON frame', async () => {
+  const h = createHarness();
+  const ready = h.transport.request('probe');
+  await connect(h.socket());
+  await flush();
+  const probe = h.socket().lastFrame();
+  h.socket().receive({ jsonrpc: '2.0', id: probe.id, result: {} });
+  await ready;
+  const sent = h.socket().sent.length;
+  await expect(
+    h.transport.request('note.update', {
+      workspaceId: 'w',
+      noteId: 'n',
+      expectedVersion: 4,
+      content: '"'.repeat(21_000_000),
+    }),
+  ).rejects.toThrow('transport limit');
+  expect(h.socket().sent).toHaveLength(sent);
+  h.transport.dispose();
+});
+
 describe('binary file reads through browser transport normalization', () => {
   it.each([
     ['stream did not contain valid UTF-8', 'binary'],

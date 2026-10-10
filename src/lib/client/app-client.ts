@@ -1,3 +1,5 @@
+import type { NotePagesClient } from './note-pages';
+import type { NoteDeleteClient } from './note-delete';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -1624,6 +1626,11 @@ export interface LineAttributionClient {
 }
 
 export interface NotesClient {
+  /** Optional daemon-owned deletion grace; unsupported clients must not fall back to immediate deletion. */
+  deletion?: NoteDeleteClient;
+  /** Explicit opt-in; complete legacy Note methods remain separate. */
+  pages?: NotePagesClient;
+  listTaskLinks?(workspaceId: string, noteId: string): Promise<string[] | null>;
   /**
    * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
    * requests the content-free projection — rows carry `content: ""` plus
@@ -1659,6 +1666,14 @@ export interface NotesClient {
     expectedVersion?: number,
     workspaceId?: string,
   ): Promise<MutationResult>;
+  /** Exact complete editor draft; requires a loaded revision and returns the final Note.
+   * Throws on conflict or transport failure; never retries unconditionally. */
+  update(
+    noteId: string,
+    content: string,
+    expectedVersion: number,
+    workspaceId: string,
+  ): Promise<Note>;
   /** Surgical, append-safe insert (`note.add`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   add(
     noteId: string,

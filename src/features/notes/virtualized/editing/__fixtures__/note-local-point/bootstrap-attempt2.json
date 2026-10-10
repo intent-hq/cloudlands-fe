@@ -1,0 +1,50 @@
+{
+  "claim": "Immutable attempt2 raw frames; offline original-clock bootstrap only. No missing edit context or shared receipt invented.",
+  "evidenceManifestSha256": "b7ff65b738d5779d6400f88378c3366cf93e65f66dc943588874cea79cd65376",
+  "frontendTranscriptSha256": "392c9cc8edfc8a898f59028bebca3dbb1c6c75ab38044b084a612eca39b345ba",
+  "capturedAtMs": 1791257338253,
+  "frames": [
+    {
+      "direction": "received",
+      "digest": "f704ef7a73b441015b900244af77fa4c81e77c24120a8b464c279b9f3b19415c",
+      "chain": "f1ced15167cc58d000bfbeb870cb29ee4fd6623c417df0718338a52de374a248",
+      "frame": "{\"control\":\"ready\",\"contractHash\":\"943ac9cd2086865fb4df7446eb079c3bf833d3374f6576f176072dda0e68eeb4\",\"backendHead\":\"9992531727ebeb25e1fd48afb9948c5e0699daa6\",\"principal\":\"daemon\",\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"initialState\":{\"kind\":\"notePageState\",\"scope\":{\"backendId\":\"48c9012642e02bbd098244a2d221a633\",\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"noteInstanceId\":\"70efb2ed0d0de00b2e3cc9382eea54f7\"},\"stateGeneration\":\"0\",\"sourceRevision\":\"r:0:8fd1e374d12b4c96ebeb3a2dfd3e5c55\",\"attributionGeneration\":\"2fa6e45739ebaa17d45fd0db6b29c3b9\",\"attributionState\":\"pending\",\"commentRevision\":\"d718110200755f35fe8fe5c832aa403a\",\"deleted\":false,\"invalidation\":\"all\"}}\n"
+    },
+    {
+      "direction": "sent",
+      "digest": "8fc8c767c607c2654119d455546a35e3375a94225720ab31ec75f4fd44cab935",
+      "chain": "070852384b7d6e15adfbd5ea515ecb2decc184a7b84b464334206ebb0f0b8cb4",
+      "frame": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"note.get\",\"params\":{\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"page\":{\"kind\":\"source\",\"maxSourceBytes\":4096,\"at\":0,\"sourceRevision\":\"r:0:8fd1e374d12b4c96ebeb3a2dfd3e5c55\",\"noteInstanceId\":\"70efb2ed0d0de00b2e3cc9382eea54f7\",\"maxWireBytes\":8192,\"maxItems\":64}}}\n"
+    },
+    {
+      "direction": "received",
+      "digest": "ac5215cd605eb42b9450e347809cea3785e819eff3ed2c05e7a86bed345a07bf",
+      "chain": "2420553c16eb8dd46d2445e5de3a2212a81154dd3532283976b19ec2e4c5c34d",
+      "frame": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"scope\":{\"backendId\":\"48c9012642e02bbd098244a2d221a633\",\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"noteInstanceId\":\"70efb2ed0d0de00b2e3cc9382eea54f7\"},\"sourceRevision\":\"r:0:8fd1e374d12b4c96ebeb3a2dfd3e5c55\",\"snapshotId\":\"a0b81b23ccae4b9fb347acf6cd46ecb2\",\"expiresAt\":\"2026-10-06T03:33:58.253671922Z\",\"kind\":\"noteSourcePage\",\"sourceLength\":2,\"metadataRef\":\"AaC4GyPMrkufs0es9s1G7LIAAgQIAAAAAA.5UyhbgeR8qFyeeIus03CwVu1pzpnlJRZPyZGVHzgM44\",\"contextRef\":\"AaC4GyPMrkufs0es9s1G7LIABAEMAAwADAIAAAAA.gVHuVHM0JwiTrEUnJ7lDAdpzvDY2nxN_m1FM6wyyKA4\",\"range\":{\"start\":0,\"end\":2},\"text\":\"ab\",\"nextCursor\":null,\"previousCursor\":null}}\n"
+    },
+    {
+      "direction": "sent",
+      "digest": "58a13b07811f7f7730fa185c8d3f93cc24e93e0e29ad124a5c37efa896788b7f",
+      "chain": "134f3f96983adba935d3905a8cb093610da6b44746733b33b45b5401592218a6",
+      "frame": "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"note.get\",\"params\":{\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"page\":{\"kind\":\"context\",\"contextRef\":\"AaC4GyPMrkufs0es9s1G7LIABAEMAAwADAIAAAAA.gVHuVHM0JwiTrEUnJ7lDAdpzvDY2nxN_m1FM6wyyKA4\",\"maxWireBytes\":8192,\"maxItems\":64}}}\n"
+    },
+    {
+      "direction": "received",
+      "digest": "caca62cd04fb9cf70a1f08e196631fab9bc40493b3f99659a65154c6205acdc3",
+      "chain": "ca2529f80aad207f48ce97bc078f285c741cdd402eb83d3e2a2d0e484fb27478",
+      "frame": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"scope\":{\"backendId\":\"48c9012642e02bbd098244a2d221a633\",\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"noteInstanceId\":\"70efb2ed0d0de00b2e3cc9382eea54f7\"},\"sourceRevision\":\"r:0:8fd1e374d12b4c96ebeb3a2dfd3e5c55\",\"snapshotId\":\"a0b81b23ccae4b9fb347acf6cd46ecb2\",\"expiresAt\":\"2026-10-06T03:33:58.253671922Z\",\"kind\":\"noteContextPage\",\"items\":[{\"kind\":\"boundary\",\"id\":\"0000000000000001\",\"sourceRange\":{\"start\":0,\"end\":2},\"construct\":\"paragraph\",\"continuationBefore\":false,\"continuationAfter\":false,\"entryPath\":\"markdown\",\"detailRef\":\"AaC4GyPMrkufs0es9s1G7LIAAwILAQkAAAAA.m6y7Gqg-5aT28JVFbFXP697-f-1wXugmJI3sJ2GNa0Y\"},{\"kind\":\"span\",\"id\":\"0000000000000002\",\"sourceRange\":{\"start\":0,\"end\":2},\"role\":\"text\",\"parentRef\":\"AaC4GyPMrkufs0es9s1G7LIABAILAQwADAIAAAAA.N2mflLOsuQQHZhAfRC50Cvqn1AaA4mK-zQHCpgt-Wu0\"}],\"nextCursor\":null}}\n"
+    },
+    {
+      "direction": "sent",
+      "digest": "9c9248dc8ed76a811e6df34f00321bed5af54615f5f495c22b8cc0766c1e0929",
+      "chain": "c8a45479c14e040e8e82f6f98db87afc375f67b668990dd7367137751b6b5bbf",
+      "frame": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"note.get\",\"params\":{\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"page\":{\"kind\":\"context\",\"contextRef\":\"AaC4GyPMrkufs0es9s1G7LIABAILAQwADAIAAAAA.N2mflLOsuQQHZhAfRC50Cvqn1AaA4mK-zQHCpgt-Wu0\",\"maxWireBytes\":8192,\"maxItems\":64}}}\n"
+    },
+    {
+      "direction": "received",
+      "digest": "65ca958d5f3891117f281e292b6655bbd480b8b66056dbf5723ed12e827e25f7",
+      "chain": "0f31cc48b9c3d231376dff01065bac29aaf1e8b2e95b43bc20c7f41027c92991",
+      "frame": "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"scope\":{\"backendId\":\"48c9012642e02bbd098244a2d221a633\",\"workspaceId\":\"2f05f19d-c476-4982-ab5e-4a399f8563ec\",\"noteId\":\"n1\",\"noteInstanceId\":\"70efb2ed0d0de00b2e3cc9382eea54f7\"},\"sourceRevision\":\"r:0:8fd1e374d12b4c96ebeb3a2dfd3e5c55\",\"snapshotId\":\"a0b81b23ccae4b9fb347acf6cd46ecb2\",\"expiresAt\":\"2026-10-06T03:33:58.253671922Z\",\"kind\":\"noteContextPage\",\"items\":[{\"kind\":\"boundary\",\"id\":\"0000000000000001\",\"sourceRange\":{\"start\":0,\"end\":2},\"construct\":\"paragraph\",\"continuationBefore\":false,\"continuationAfter\":false,\"entryPath\":\"markdown\",\"detailRef\":\"AaC4GyPMrkufs0es9s1G7LIAAwILAQkAAAAA.m6y7Gqg-5aT28JVFbFXP697-f-1wXugmJI3sJ2GNa0Y\"}],\"nextCursor\":null}}\n"
+    }
+  ]
+}

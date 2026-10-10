@@ -51,7 +51,7 @@ const listResponse = {
 };
 
 describe('commentsClient (daemon comment.* seam, fake transport)', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => mockedRequest.mockReset());
 
   it('list sends comment.list and flattens threads into NoteComment[]', async () => {
     mockedRequest.mockResolvedValueOnce(listResponse);

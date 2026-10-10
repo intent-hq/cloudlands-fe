@@ -163,3 +163,100 @@ describe('command palette preview note search', () => {
     expect(store.state.palette.noteSearches.ids).not.toContain('preview-held');
   });
 });
+
+it('composes the indexed preview and settlement action with one real root owner', async () => {
+  const { workspaceNotesSaga } =
+    await import('$store/renderer/slices/workspace-notes/sagas/workspace-notes-saga');
+  const { paletteNoteSearchFixture } = await import('./command-palette-browser-fixtures');
+  stops.push(store.runSaga(workspaceNotesSaga));
+  start('search');
+  const node = document.createElement('div');
+  const action = paletteNoteSearchFixture(node);
+  stops.push(action.destroy);
+  const invoke = vi.spyOn(window.electronAPI, 'invoke');
+  const result = await store.dispatch(searchNotesRequested('context', workspaceId));
+  expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.REQUEST, {
+    method: 'search.notes',
+    params: { query: 'context', limit: 10, includeArchived: false, preferWorkspaceId: workspaceId },
+  });
+  expect(result).toMatchObject({ indexed: true });
+  expect(result.matches).toHaveLength(10);
+  await vi.waitFor(() => expect(node.dataset.searchSettled).toBe('context'));
+});
+
+it('retires old settlement listeners without cancelling the root or a remounted indexed fixture', async () => {
+  const { workspaceNotesSaga } =
+    await import('$store/renderer/slices/workspace-notes/sagas/workspace-notes-saga');
+  const { paletteNoteSearchFixture } = await import('./command-palette-browser-fixtures');
+  stops.push(store.runSaga(workspaceNotesSaga));
+  const mount = () => {
+    const stop = preview.states.search.setup!() as () => void;
+    const node = document.createElement('div');
+    const action = paletteNoteSearchFixture(node);
+    const destroy = () => {
+      action.destroy();
+      stop();
+    };
+    stops.push(destroy);
+    return { node, destroy };
+  };
+  const before = window.electronAPI;
+  const old = mount();
+  const oldBridge = window.electronAPI;
+  const originalInvoke = oldBridge.invoke.bind(oldBridge);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const oldInvoke = vi.spyOn(oldBridge, 'invoke').mockImplementation(async (...args) => {
+    const result = await originalInvoke(...args);
+    await pending;
+    return result;
+  });
+  const inFlight = store.dispatch(searchNotesRequested('context', workspaceId));
+  await vi.waitFor(() => expect(oldInvoke).toHaveBeenCalledTimes(1));
+  old.destroy();
+  const fresh = mount();
+  const freshBridge = window.electronAPI;
+  old.destroy();
+  expect(window.electronAPI).toBe(freshBridge);
+  release();
+  await expect(inFlight).resolves.toMatchObject({ indexed: true });
+  expect(old.node.dataset.searchSettled).toBeUndefined();
+  expect(fresh.node.dataset.searchSettled).toBeUndefined();
+  const invoke = vi.spyOn(freshBridge, 'invoke');
+  await store.dispatch(searchNotesRequested('keyboard', workspaceId));
+  await vi.waitFor(() => expect(fresh.node.dataset.searchSettled).toBe('keyboard'));
+  expect(invoke).toHaveBeenCalledTimes(1);
+  fresh.destroy();
+  window.electronAPI = freshBridge;
+  await store.dispatch(searchNotesRequested('context', workspaceId));
+  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(fresh.node.dataset.searchSettled).toBe('keyboard');
+  window.electronAPI = before;
+});
+
+it('does not restore a bridge installed by another owner', () => {
+  const previousBridge = window.electronAPI;
+  const stop = preview.states.search.setup!() as () => void;
+  stops.push(stop);
+  const otherBridge = { ...window.electronAPI };
+  window.electronAPI = otherBridge;
+  stop();
+  expect(window.electronAPI).toBe(otherBridge);
+  window.electronAPI = previousBridge;
+});
+
+it('isolates indexed preview hits from local note browsing without changing the default fixture', async () => {
+  const { selectAllNotes } =
+    await import('$store/renderer/slices/workspace-notes/workspace-notes-selectors');
+  start('indexed-context-search');
+  expect(selectAllNotes.select(store.state, workspaceId)).toEqual([]);
+  const result = await store.dispatch(searchNotesRequested('context', workspaceId));
+  expect(result).toMatchObject({ indexed: true });
+  expect(result.matches).toHaveLength(10);
+  expect(result.matches[0]).toMatchObject({ noteId: 'preview-palette-note-0', workspaceId });
+  stops.pop()?.();
+  start('context-search');
+  expect(selectAllNotes.select(store.state, workspaceId)).toHaveLength(16);
+});

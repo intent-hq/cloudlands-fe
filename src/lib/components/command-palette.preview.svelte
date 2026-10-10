@@ -10,11 +10,12 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setupPaletteNoteSearchFixture } from './command-palette-browser-fixtures';
   import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
-  function setup(longNames = false) {
+  function setup(longNames = false, legacy = false, indexedOnly = false) {
     const notes: Note[] = Array.from({ length: 16 }, (_, index) => ({
       id: NoteId(`preview-palette-note-${index}`),
       workspaceId,
@@ -33,8 +34,10 @@
       createdAt: timestamp,
       updatedAt: timestamp,
     }));
-    const stopSearch = setupPaletteNoteSearch(notes);
-    appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    const stopSearch = legacy ? setupPaletteNoteSearchFixture() : setupPaletteNoteSearch(notes);
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: indexedOnly ? [] : notes }),
+    );
     appStore.dispatch(
       setChangesData(
         workspaceId,
@@ -52,7 +55,10 @@
         2,
       ),
     );
+    let stopped = false;
     return () => {
+      if (stopped) return;
+      stopped = true;
       stopSearch();
       appStore.dispatch(clearWorkspaceNotesForWorkspaces([workspaceId]));
       appStore.dispatch(clearWorkspace(workspaceId));
@@ -78,6 +84,16 @@
     states: {
       grouped: { props: { initialQuery: '' }, setup },
       context: { props: { initialQuery: '#' }, setup },
+      'context-search': { props: { initialQuery: '#context' }, setup },
+      'indexed-context-search': {
+        props: { initialQuery: '#context' },
+        setup: () => setup(false, false, true),
+      },
+      'legacy-context-search': {
+        props: { initialQuery: '#context' },
+        setup: () => setup(false, true),
+      },
+      'legacy-grouped': { props: { initialQuery: '' }, setup: () => setup(false, true) },
       search: { props: { initialQuery: 'context' }, setup },
       empty: { props: { initialQuery: 'no-matching-context-xyz' }, setup },
       'empty-category': { props: { initialQuery: '@' }, setup },
@@ -102,6 +118,7 @@
 </script>
 
 <script lang="ts">
+  import { paletteNoteSearchFixture } from './command-palette-browser-fixtures';
   import CommandPalette from './CommandPalette.svelte';
   import { Button } from '$lib/components/ui/button';
   let {
@@ -111,7 +128,7 @@
   let isOpen = $state(true);
 </script>
 
-<div class="min-h-[700px]" data-command-palette-preview>
+<div class="min-h-[700px]" data-command-palette-preview use:paletteNoteSearchFixture>
   <Button onclick={() => (isOpen = true)}>Open palette</Button>
   <CommandPalette
     bind:isOpen

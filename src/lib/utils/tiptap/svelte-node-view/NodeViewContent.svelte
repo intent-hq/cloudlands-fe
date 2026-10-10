@@ -21,13 +21,15 @@
 
   const { as = 'div' as T, children, ...rest }: Props = $props();
 
-  let element: HTMLElement;
+  let element: HTMLElement | null = null;
 
   // Get the contentDOMElement from context (set by SvelteNodeViewRenderer)
   const nodeViewContext = getContext<NodeViewContext>(NODE_VIEW_CONTEXT_KEY);
 
   onMount(async () => {
     await tick();
+    // Destruction clears bind:this while this mount callback is suspended.
+    if (!element) return;
     element.style.whiteSpace = 'pre-wrap';
 
     // Actively append the contentDOMElement if it exists and isn't already a child.

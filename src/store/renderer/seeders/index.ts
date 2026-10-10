@@ -33,6 +33,7 @@ import './window-state-bridge-seeder';
 import './power-bridge-seeder';
 import './browser-ipc-bridge-seeder';
 import './native-dialog-bridge-seeder';
+import './source-clipboard-bridge-seeder';
 import './voice-local-bridge-seeder';
 import './notification-bridge-seeder';
 import './quit-confirmation-bridge-seeder';

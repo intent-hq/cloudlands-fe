@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import type { NoteDeleteView } from '$store/renderer/slices/workspace-notes/note-delete-state';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -25,6 +26,7 @@ const mockState = vi.hoisted(() => {
     workspaceId: 'ws-1',
     title: 'Note 1',
     content: 'Note content',
+    contentLength: undefined as number | undefined,
     contentType: 'markdown',
     tags: [],
     isPinned: false,
@@ -36,13 +38,37 @@ const mockState = vi.hoisted(() => {
 
   return {
     dispatch: vi.fn(),
+    appState: {
+      daemonHealth: { connectionGeneration: 1 },
+      workspaceNotes: { deleteOperations: {} as Record<string, NoteDeleteView> },
+      panelLayout: {
+        byWorkspaceId: {} as Record<
+          string,
+          { panels: Record<string, { id: string; tabs: unknown[] }> }
+        >,
+      },
+    },
+    loadContent: vi.fn(async () => true),
+    loadFullEdit: vi.fn(async () => true),
+    releaseFullEdit: vi.fn(),
+    pageSession: store<
+      | {
+          status: string;
+          state?: Pick<import('$lib/client/note-pages').NotePageState, 'scope'>;
+        }
+      | undefined
+    >(undefined),
     noteViewMode: store<'editor' | 'raw' | 'preview'>('editor'),
     spellcheckEnabled: store(true),
     noteFontStyle: store('sans'),
     scrollPositions: store<Record<string, number>>({}),
     initialSpecWriteInProgress: store(false),
     notesState: store({ loading: false, initialized: true }),
-    workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
+    workspace: store<{ id: string; path: string; branchName: string } | undefined>({
+      id: 'ws-1',
+      path: '/tmp/ws-1',
+      branchName: 'main',
+    }),
     defaultNote,
     note: store<typeof defaultNote | undefined>(defaultNote),
     noteContentView: store<unknown>(undefined),
@@ -52,9 +78,11 @@ const mockState = vi.hoisted(() => {
   };
 });
 
+vi.mock('$features/notes/virtualized/NoteReadingView.svelte', async () => ({
+  default: (await import('./mocks/MockNoteReadingView.svelte')).default,
+}));
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
-  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default,
+  default: (await import('./mocks/MockFullNoteEditor.svelte')).default,
 }));
 vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
@@ -82,6 +110,9 @@ vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => ({
   faTrash: { iconName: 'trash' },
 }));
 vi.mock('$lib/icons/faNote', () => ({ faNote: { iconName: 'note' } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { custom: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
+}));
 vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn(async () => '/tmp/ws-1') }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -91,7 +122,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => mockState.appState,
     dispatch: mockState.dispatch,
   });
 });
@@ -104,6 +135,18 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectNoteWorkspaceRoot: () => mockState.noteWorkspaceRoot,
   selectNotePresenceView: () => mockState.notePresenceView,
   selectWorkspaceNotesState: () => mockState.notesState,
+}));
+vi.mock('$features/notes/notes-read-service', () => ({
+  ensureNoteContentLoaded: mockState.loadContent,
+  beginFullNoteEdit: () => ({ load: mockState.loadFullEdit, release: mockState.releaseFullEdit }),
+}));
+vi.mock('$store/renderer/slices/note-pages/note-pages-selectors', () => ({
+  selectNotePageSession: () => mockState.pageSession,
+}));
+vi.mock('$features/notes/notes-write-service', () => ({
+  createNote: vi.fn(),
+  deleteNote: vi.fn(),
+  updateNoteContent: vi.fn(),
 }));
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectPrincipalConnectionContext: () => mockState.principalConnectionContext,
@@ -137,7 +180,16 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
-  closeTab: () => ({ type: 'panelLayout/closeTab' }),
+  closeTab: (
+    layoutId: string,
+    tabId: string,
+    panelId?: string,
+    _timestamp?: number,
+    options?: { preservePanel?: boolean },
+  ) => ({
+    type: 'panelLayout/closeTab',
+    payload: { wsId: layoutId, tabId, panelId, preservePanel: options?.preservePanel },
+  }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectNoteViewMode: () => mockState.noteViewMode,
@@ -150,11 +202,65 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', () => ({
 }));
 
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
-import { deleteNotePersistRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { fullEditControl } from './mocks/MockFullNoteEditor.svelte';
+import { noteDeleteKey } from '$store/renderer/slices/workspace-notes/note-delete-state';
+import { scheduleNoteDeleteRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { notify } from '$lib/components/patterns/notify';
+
+function pendingDeletion(): NoteDeleteView {
+  return {
+    backendGeneration: 1,
+    workspaceId: 'ws-1',
+    noteId: 'note-1',
+    owner: 'delete-owner',
+    noteInstanceId: 'instance-1',
+    phase: 'pending',
+    held: true,
+    hidden: true,
+    canCancel: true,
+    deadline: performance.now() + 15000,
+    receipt: {
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      noteInstanceId: 'instance-1',
+      state: 'PENDING',
+      operationKey: { epoch: 'epoch', nonce: 'nonce', issuedTickMs: 0 },
+      sequence: 1,
+      deadlineTickMs: 15000,
+      deleteAt: '2026-10-08T15:00:00Z',
+      expiresTickMs: null,
+      reason: null,
+    },
+  };
+}
+function retainDeletion(view: NoteDeleteView) {
+  mockState.appState.workspaceNotes.deleteOperations[noteDeleteKey(1, 'ws-1', 'note-1')] = view;
+}
+function installTab(layoutId = 'ws-1') {
+  const tab = { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' };
+  mockState.appState.panelLayout.byWorkspaceId[layoutId] = {
+    panels: { panel: { id: 'panel', tabs: [tab] } },
+  };
+  return tab;
+}
+
+beforeEach(() => {
+  mockState.dispatch.mockReset();
+  mockState.appState.workspaceNotes.deleteOperations = {};
+  mockState.appState.panelLayout.byWorkspaceId = {};
+  vi.mocked(notify.custom).mockClear();
+  vi.mocked(notify.error).mockClear();
+  fullEditControl.instances = [];
+});
 
 describe('NoteTabType note view modes', () => {
   beforeEach(() => {
     mockState.dispatch.mockClear();
+    mockState.loadFullEdit.mockReset().mockResolvedValue(true);
+    mockState.releaseFullEdit.mockClear();
+    mockState.loadContent.mockClear();
+    mockState.pageSession.set(undefined);
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
     mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
@@ -231,6 +337,7 @@ $$\frac{1}{2}$$
       '\n\nCode stays literal: `$not-math$`. Costs $5 and $10. Unfinished \\(x + 1';
     mockState.note.set({ ...mockState.defaultNote, content: source });
     mockState.noteViewMode.set('preview');
+    mockState.workspace.set(undefined);
 
     const { container } = render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
@@ -258,12 +365,31 @@ $$\frac{1}{2}$$
     expect(preview.textContent).toContain('External update');
 
     mockState.noteViewMode.set('editor');
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
     await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
-    expect(screen.getByTestId('mock-component')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy selected note text' })).toBeTruthy();
+  });
+
+  it('uses the rendered preview without a workspace while preserving the editor preference', async () => {
+    mockState.workspace.set(undefined);
+    const { container } = render(NoteTabTypeHeaderHarness, {
+      props: {
+        tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' },
+        layoutId: 'assistant-layout',
+      },
+    });
+    const preview = await screen.findByRole('document', { name: 'Rendered note preview' });
+    expect(preview.textContent).toContain('Note content');
+    expect(container.querySelector('[contenteditable="true"]')).toBeNull();
+    expect(mockState.noteViewMode.get()).toBe('editor');
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
+    await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Copy selected note text' })).toBeTruthy();
   });
 
   it('saves preview scroll position to the owning tab when returning to the editor', async () => {
     mockState.noteViewMode.set('preview');
+    mockState.workspace.set(undefined);
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
@@ -271,6 +397,7 @@ $$\frac{1}{2}$$
     const preview = await screen.findByTestId('rendered-note-preview');
     preview.scrollTop = 240;
     mockState.noteViewMode.set('editor');
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
 
     await waitFor(() =>
       expect(mockState.dispatch).toHaveBeenCalledWith({
@@ -282,6 +409,7 @@ $$\frac{1}{2}$$
 
   it('keeps a pending restore through delayed preview layout and isolates note navigation', async () => {
     mockState.noteViewMode.set('preview');
+    mockState.workspace.set(undefined);
     mockState.scrollPositions.set({ 'tab-1': 310 });
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
@@ -294,6 +422,7 @@ $$\frac{1}{2}$$
       }),
     );
     mockState.noteViewMode.set('editor');
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
 
     await waitFor(() =>
       expect(mockState.dispatch).toHaveBeenCalledWith({
@@ -309,6 +438,7 @@ $$\frac{1}{2}$$
 
   it('uses a matching navigation restore without leaving listeners after unmount', async () => {
     mockState.noteViewMode.set('preview');
+    mockState.workspace.set(undefined);
     const view = render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
@@ -332,6 +462,7 @@ $$\frac{1}{2}$$
 
   it('saves and restores independently when a mounted preview retargets across tabs', async () => {
     mockState.noteViewMode.set('preview');
+    mockState.workspace.set(undefined);
     mockState.scrollPositions.set({ 'tab-a': 0, 'tab-b': 320 });
     const view = render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-a', type: 'note', title: 'Note A', noteId: 'note-a' } },
@@ -383,9 +514,9 @@ $$\frac{1}{2}$$
   });
 
   it.each([
-    { state: 'editor', note: { ...mockState.defaultNote }, loading: false, initialized: true },
+    { state: 'read-only', note: { ...mockState.defaultNote }, loading: false, initialized: true },
     {
-      state: 'empty',
+      state: 'read-only',
       note: { ...mockState.defaultNote, content: '' },
       loading: false,
       initialized: true,
@@ -472,21 +603,105 @@ $$\frac{1}{2}$$
     });
   });
 
-  it('preserves spec protection while exposing deletion only for ordinary notes', async () => {
-    const { rerender } = render(NoteTabTypeHeaderHarness, {
-      props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' } },
-    });
-    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
-    expect(screen.queryByRole('menuitem', { name: 'Delete note' })).toBeNull();
-    await rerender({ tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } });
-    const deletion = await screen.findByRole('menuitem', { name: 'Delete note' });
-    await fireEvent.click(deletion);
-    expect(mockState.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        asyncActionType: deleteNotePersistRequested.asyncActionType,
+  it.each([undefined, 'assistant-layout'])(
+    'protects spec and closes only the owning layout after confirmed scheduling %s',
+    async (layoutId) => {
+      let request!: ReturnType<typeof scheduleNoteDeleteRequested>;
+      mockState.dispatch.mockImplementation((action) => {
+        if (action.asyncActionType === scheduleNoteDeleteRequested.asyncActionType)
+          request = action;
+      });
+      const tab = installTab(layoutId ?? 'ws-1');
+      const { rerender } = render(NoteTabTypeHeaderHarness, {
+        props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' }, layoutId },
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+      expect(screen.queryByRole('menuitem', { name: 'Delete note' })).toBeNull();
+      expect(
+        mockState.dispatch.mock.calls.some(
+          ([action]) => action.asyncActionType === scheduleNoteDeleteRequested.asyncActionType,
+        ),
+      ).toBe(false);
+      await rerender({ tab, layoutId });
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete note' }));
+      expect(request).toMatchObject({
+        asyncActionType: scheduleNoteDeleteRequested.asyncActionType,
         payload: ['ws-1', 'note-1'],
-      }),
-    );
+      });
+      expect(
+        mockState.dispatch.mock.calls.some(([action]) => action.type === 'panelLayout/closeTab'),
+      ).toBe(false);
+      const confirmed = pendingDeletion();
+      retainDeletion(confirmed);
+      request.success(confirmed);
+      await waitFor(() =>
+        expect(mockState.dispatch).toHaveBeenCalledWith({
+          type: 'panelLayout/closeTab',
+          payload: {
+            wsId: layoutId ?? 'ws-1',
+            tabId: 'tab-1',
+            panelId: 'panel',
+            preservePanel: true,
+          },
+        }),
+      );
+      expect(
+        mockState.dispatch.mock.calls.some(
+          ([action]) =>
+            action.asyncActionType === 'workspaceNotes/deleteNotePersistRequested' ||
+            action.asyncActionType === 'workspaceNotes/createNotePersistRequested',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each(['rejected', 'uncertain'] as const)(
+    'keeps the tab open after %s scheduling',
+    async (outcome) => {
+      mockState.dispatch.mockImplementation((action) => {
+        if (action.asyncActionType !== scheduleNoteDeleteRequested.asyncActionType) return;
+        if (outcome === 'rejected') action.failure(new Error('Schedule rejected'));
+        else {
+          const uncertain = {
+            ...pendingDeletion(),
+            phase: 'uncertain' as const,
+            receipt: undefined,
+            canCancel: false,
+          };
+          retainDeletion(uncertain);
+          action.success(uncertain);
+        }
+      });
+      render(NoteTabTypeHeaderHarness, { tab: installTab() });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete note' }));
+      await waitFor(() =>
+        expect(outcome === 'rejected' ? notify.error : notify.custom).toHaveBeenCalled(),
+      );
+      expect(
+        mockState.dispatch.mock.calls.some(([action]) => action.type === 'panelLayout/closeTab'),
+      ).toBe(false);
+      expect(mockState.note.get()?.content).toBe('Note content');
+    },
+  );
+
+  it('does not close a tab replaced while its deletion acknowledgement is pending', async () => {
+    let request!: ReturnType<typeof scheduleNoteDeleteRequested>;
+    mockState.dispatch.mockImplementation((action) => {
+      if (action.asyncActionType === scheduleNoteDeleteRequested.asyncActionType) request = action;
+    });
+    const original = installTab();
+    render(NoteTabTypeHeaderHarness, { tab: original });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete note' }));
+    mockState.appState.panelLayout.byWorkspaceId['ws-1'].panels.panel.tabs = [{ ...original }];
+    const confirmed = pendingDeletion();
+    retainDeletion(confirmed);
+    request.success(confirmed);
+    await waitFor(() => expect(notify.custom).toHaveBeenCalled());
+    expect(
+      mockState.dispatch.mock.calls.some(([action]) => action.type === 'panelLayout/closeTab'),
+    ).toBe(false);
   });
 
   it('clears pending copy feedback timer when unmounted', async () => {
@@ -494,6 +709,7 @@ $$\frac{1}{2}$$
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
+    mockState.workspace.set(undefined);
     const { unmount } = render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
@@ -506,5 +722,626 @@ $$\frac{1}{2}$$
     unmount();
 
     expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(callsBeforeUnmount);
+  });
+
+  it('an explicitly supplied paged surface never fetches a complete slim-note body', async () => {
+    mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
+    const surface = {
+      resourceLimits: {
+        payloadBytes: 262144,
+        stringUnits: 786432,
+        objectNodes: 262144,
+        domNodes: 0,
+        physicalReads: 4,
+        assemblies: 0,
+      },
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-paged', type: 'note', noteId: 'note-1' },
+      layoutId: 'assistant-layout',
+      readingSurface: surface,
+    });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(mockState.loadContent).not.toHaveBeenCalled();
+    const actionTypes = mockState.dispatch.mock.calls.map(([action]) => action.type);
+    expect(actionTypes.indexOf('notePages/resourceLimitsConfigured')).toBeGreaterThanOrEqual(0);
+    expect(actionTypes.indexOf('notePages/resourceLimitsConfigured')).toBeLessThan(
+      actionTypes.indexOf('notePages/panelOpened'),
+    );
+    const clipboard = { writeText: vi.fn(async () => {}) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy full note' }));
+    await waitFor(() => expect(surface.copyDocument).toHaveBeenCalledTimes(1));
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+  });
+  it('retires an actual staged copy owner on tab unmount while its sink is held', async () => {
+    const a = await import('$store/renderer/slices/note-pages/note-pages-slice');
+    const { createNoteDocumentSession } =
+      await import('$features/notes/virtualized/editing/note-document-edit-session');
+    const { createNoteSourceCopyOwner } =
+      await import('$features/notes/virtualized/editing/note-source-copy');
+    const scope = {
+      backendId: 'backend',
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      noteInstanceId: 'incarnation',
+    };
+    let state = a.notePagesReducer(undefined, a.pagePanelOpened('ws-1', 'note-1', 'tab-copy'));
+    state = {
+      ...state,
+      byWorkspaceId: {
+        'ws-1': {
+          notes: {
+            'note-1': {
+              ...state.byWorkspaceId['ws-1'].notes['note-1'],
+              status: 'ready',
+              document: createNoteDocumentSession(scope, 'r1', 3),
+              state: {
+                kind: 'notePageState',
+                scope,
+                sourceRevision: 'r1',
+                stateGeneration: '1',
+                commentRevision: '1',
+                attributionGeneration: '1',
+                attributionState: 'ready',
+                deleted: false,
+                invalidation: 'all',
+              },
+            },
+          },
+        },
+      },
+    };
+    const limits = {
+      payloadBytes: 10000000,
+      stringUnits: 10000000,
+      objectNodes: 100000,
+      domNodes: 0,
+      physicalReads: 1,
+      assemblies: 1,
+    };
+    state = a.notePagesReducer(state, a.pageResourceLimitsConfigured(limits));
+    const listeners = new Set<() => void>();
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const sink = {
+      write: vi.fn(async () => {
+        await held;
+      }),
+      commit: vi.fn(),
+      abort: vi.fn(async () => {}),
+    };
+    const stage = {
+      begin: vi.fn(async () => {}),
+      append: vi.fn(async () => {}),
+      seal: vi.fn(async () => 3),
+      read: vi.fn(async (consume: (text: string) => Promise<void>) => {
+        await consume('abc');
+        return true;
+      }),
+      cancel: vi.fn(async () => {}),
+    };
+    const owner = createNoteSourceCopyOwner({
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      editorSessionId: 'editor',
+      selectionGeneration: () => 3,
+      current: () => true,
+      client: { createSourceOperation: () => stage },
+      openSink: async () => sink,
+      port: {
+        read: () => state,
+        dispatch(action) {
+          state = a.notePagesReducer(state, action);
+          listeners.forEach((fn) => fn());
+        },
+        subscribe(fn) {
+          listeners.add(fn);
+          return () => {
+            listeners.delete(fn);
+          };
+        },
+      },
+    });
+    const surface = {
+      ...owner,
+      resourceLimits: limits,
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3000000 });
+    const clipboard = { writeText: vi.fn(async () => {}) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    const { unmount } = render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-copy', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy full note' }));
+    await waitFor(() => expect(sink.write).toHaveBeenCalledWith('abc'));
+    unmount();
+    expect(state.resourceLedger.used.physicalReads).toBe(1);
+    finish();
+    await waitFor(() => expect(sink.abort).toHaveBeenCalledOnce());
+    expect(sink.commit).not.toHaveBeenCalled();
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+    expect(mockState.loadContent).not.toHaveBeenCalled();
+    expect(state.resourceLedger.used.physicalReads).toBe(0);
+    expect(listeners.size).toBe(0);
+  });
+
+  it('missing read capability does not load the complete body merely to view', async () => {
+    mockState.pageSession.set({ status: 'legacy' });
+    mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
+    const surface = {
+      resourceLimits: {
+        payloadBytes: 262144,
+        stringUnits: 786432,
+        objectNodes: 262144,
+        domNodes: 0,
+        physicalReads: 4,
+        assemblies: 0,
+      },
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-legacy', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await screen.findByRole('button', { name: 'Copy selected note text' });
+    expect(mockState.loadContent).not.toHaveBeenCalled();
+  });
+  it('keeps the page session owned while a prepared tab uses legacy compatibility', async () => {
+    const { pagePanelOpened, pagePanelClosed } =
+      await import('$store/renderer/slices/note-pages/note-pages-slice');
+    mockState.pageSession.set({ status: 'legacy' });
+    const surface = {
+      resourceLimits: {
+        payloadBytes: 262144,
+        stringUnits: 786432,
+        objectNodes: 262144,
+        domNodes: 0,
+        physicalReads: 4,
+        assemblies: 0,
+      },
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    const { unmount } = render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-legacy-owner', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith(
+        pagePanelOpened('ws-1', 'note-1', 'tab-legacy-owner'),
+      ),
+    );
+    mockState.dispatch.mockClear();
+    mockState.pageSession.set({ status: 'connecting' });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(mockState.dispatch).not.toHaveBeenCalledWith(
+      pagePanelClosed('ws-1', 'note-1', 'tab-legacy-owner'),
+    );
+    unmount();
+    expect(mockState.dispatch).toHaveBeenCalledWith(
+      pagePanelClosed('ws-1', 'note-1', 'tab-legacy-owner'),
+    );
+  });
+});
+
+describe('paged selection copy callback', () => {
+  it.each(['copied', 'noCopy', 'failure'] as const)(
+    'routes selection copy without a source fallback (%s)',
+    async (result) => {
+      const surface = {
+        resourceLimits: {
+          payloadBytes: 1,
+          stringUnits: 1,
+          objectNodes: 1,
+          domNodes: 0,
+          physicalReads: 1,
+          assemblies: 1,
+        },
+        copyDocument: vi.fn(async () => {}),
+        copySelection: vi.fn(async () => {
+          if (result === 'failure') throw new Error('Unsupported');
+          return result;
+        }),
+        cancelSelectionCopy: vi.fn(),
+        cancelRenderedSearch: vi.fn(),
+        cancelMarkerSource: vi.fn(),
+        selectionChanged: vi.fn(),
+        fullOperation: vi.fn(),
+      };
+      const { unmount } = render(NoteTabTypeHeaderHarness, {
+        tab: { id: 'selection-tab', type: 'note', noteId: 'note-1' },
+        readingSurface: surface,
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Copy selected note text' }));
+      await waitFor(() => expect(surface.copySelection).toHaveBeenCalledOnce());
+      expect(surface.copyDocument).not.toHaveBeenCalled();
+      expect(surface.fullOperation).not.toHaveBeenCalled();
+      unmount();
+      expect(surface.cancelSelectionCopy).toHaveBeenCalledOnce();
+      expect(surface.cancelRenderedSearch).toHaveBeenCalled();
+      expect(surface.cancelMarkerSource).toHaveBeenCalledOnce();
+    },
+  );
+  it('preserves explicit full-operation handling when selection adapter is absent', async () => {
+    const surface = {
+      resourceLimits: {
+        payloadBytes: 1,
+        stringUnits: 1,
+        objectNodes: 1,
+        domNodes: 0,
+        physicalReads: 1,
+        assemblies: 1,
+      },
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'selection-unsupported', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy selected note text' }));
+    expect(surface.fullOperation).toHaveBeenCalledWith('copy', {
+      anchor: 1,
+      head: 2,
+      anchorAffinity: 1,
+      headAffinity: -1,
+    });
+    expect(surface.copyDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('explicit full editing from a paginated view', () => {
+  const surface = () => ({
+    resourceLimits: {
+      payloadBytes: 262144,
+      stringUnits: 786432,
+      objectNodes: 262144,
+      domNodes: 0,
+      physicalReads: 4,
+      assemblies: 0,
+    },
+    copyDocument: vi.fn(async () => {}),
+    cancelCopy: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+  });
+  beforeEach(() => {
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
+    mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
+    mockState.initialSpecWriteInProgress.set(false);
+    mockState.pageSession.set(undefined);
+    mockState.dispatch.mockClear();
+    mockState.loadContent.mockClear();
+    mockState.loadFullEdit.mockReset().mockResolvedValue(true);
+    mockState.releaseFullEdit.mockClear();
+  });
+  afterEach(cleanup);
+  it.each([
+    {
+      label: 'matching',
+      scopeWorkspace: 'ws-1',
+      scopeNote: 'note-1',
+      present: true,
+      expected: 'original-instance',
+    },
+    {
+      label: 'foreign workspace',
+      scopeWorkspace: 'foreign-workspace',
+      scopeNote: 'note-1',
+      present: true,
+      expected: undefined,
+    },
+    {
+      label: 'foreign note',
+      scopeWorkspace: 'ws-1',
+      scopeNote: 'foreign-note',
+      present: true,
+      expected: undefined,
+    },
+    {
+      label: 'absent state',
+      scopeWorkspace: 'ws-1',
+      scopeNote: 'note-1',
+      present: false,
+      expected: undefined,
+    },
+  ])(
+    'retains only the matching page incarnation after the reader retires: $label',
+    async ({ scopeWorkspace, scopeNote, present, expected }) => {
+      mockState.pageSession.set({
+        status: 'ready',
+        state: present
+          ? {
+              scope: {
+                backendId: 'backend',
+                workspaceId: scopeWorkspace,
+                noteId: scopeNote,
+                noteInstanceId: 'original-instance',
+              },
+            }
+          : undefined,
+      });
+      let loaded!: (value: boolean) => void;
+      mockState.loadFullEdit.mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            loaded = resolve;
+          }),
+      );
+      render(NoteTabTypeHeaderHarness, {
+        tab: { id: 'edit-instance', type: 'note', noteId: 'note-1' },
+        readingSurface: surface(),
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+      await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+      mockState.pageSession.set(undefined);
+      loaded(true);
+      await screen.findByTestId('full-note-editor');
+      expect(fullEditControl.instances).toEqual([expected]);
+    },
+  );
+
+  it('retires paged ownership, loads only on Edit, and restores viewing on Done', async () => {
+    const reading = surface();
+    const view = render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'edit-tab', type: 'note', noteId: 'note-1' },
+      readingSurface: reading,
+    });
+    expect(mockState.loadFullEdit).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+    await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+    expect(mockState.dispatch.mock.calls.some(([a]) => a.type === 'notePages/panelClosed')).toBe(
+      true,
+    );
+    expect(reading.cancelCopy).toHaveBeenCalledOnce();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Done', exact: true }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Edit', exact: true })).toBeTruthy(),
+    );
+    expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
+    expect(mockState.loadContent).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it.each(['cancel', 'switch', 'unmount'] as const)(
+    'ignores a full-source response after %s',
+    async (action) => {
+      let resolve!: (value: boolean) => void;
+      mockState.loadFullEdit.mockReturnValueOnce(
+        new Promise((r) => {
+          resolve = r;
+        }),
+      );
+      const view = render(NoteTabTypeHeaderHarness, {
+        tab: { id: 'edit-tab', type: 'note', noteId: 'note-1' },
+        readingSurface: surface(),
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+      await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+      expect(screen.queryByRole('button', { name: 'Done', exact: true })).toBeNull();
+      if (action === 'cancel')
+        await fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+      if (action === 'switch')
+        await view.rerender({ tab: { id: 'other-tab', type: 'note', noteId: 'other' } });
+      if (action === 'unmount') view.unmount();
+      resolve(true);
+      await new Promise<void>((r) => queueMicrotask(r));
+      expect(screen.queryByRole('button', { name: 'Done', exact: true })).toBeNull();
+      expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
+    },
+  );
+  it('keeps load failures non-writable and permits retry', async () => {
+    mockState.loadFullEdit.mockResolvedValueOnce(false);
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'edit-tab', type: 'note', noteId: 'note-1' },
+      readingSurface: surface(),
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Done', exact: true })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Done', exact: true })).toBeTruthy(),
+    );
+  });
+  it('does not allow editing while the initial spec writer owns an empty note', async () => {
+    mockState.initialSpecWriteInProgress.set(true);
+    mockState.note.set({ ...mockState.defaultNote, id: 'spec', content: '' });
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'spec-tab', type: 'note', noteId: 'spec' },
+      readingSurface: surface(),
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+    expect(mockState.loadFullEdit).not.toHaveBeenCalled();
+  });
+});
+
+describe('Assistant full-source entry ownership', () => {
+  const props = () => ({
+    tab: { id: 'assistant-note', type: 'note', noteId: 'note-1' },
+    workspaceId: 'ws-1',
+    layoutId: '__chief__-chat-empty',
+  });
+  beforeEach(() => {
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
+    mockState.note.set({ ...mockState.defaultNote });
+    mockState.initialSpecWriteInProgress.set(false);
+    mockState.noteViewMode.set('editor');
+    mockState.pageSession.set(undefined);
+    mockState.dispatch.mockClear();
+    mockState.loadFullEdit.mockReset().mockResolvedValue(true);
+    mockState.releaseFullEdit.mockClear();
+    fullEditControl.finish = vi.fn(async () => {});
+    fullEditControl.mounts = [];
+  });
+  afterEach(cleanup);
+
+  it.each(['editor', 'raw'] as const)(
+    'acquires complete source for Assistant %s intent only',
+    async (mode) => {
+      mockState.noteViewMode.set(mode);
+      const view = render(NoteTabTypeHeaderHarness, props());
+      await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+      const editor = await screen.findByTestId('full-note-editor');
+      expect(editor.dataset.raw).toBe(String(mode === 'raw'));
+      expect(mockState.dispatch.mock.calls.some(([a]) => a.type === 'notePages/panelOpened')).toBe(
+        false,
+      );
+      mockState.workspace.set({ id: 'ws-1', path: '/tmp/refreshed', branchName: 'main' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(mockState.loadFullEdit).toHaveBeenCalledOnce();
+      view.unmount();
+      expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
+      mockState.loadFullEdit.mockClear();
+      render(NoteTabTypeHeaderHarness, { ...props(), layoutId: 'ws-1' });
+      await screen.findByRole('button', { name: 'Edit', exact: true });
+      expect(mockState.loadFullEdit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps editor and lease until preview settlement and does not reopen unchanged intent', async () => {
+    let settle!: () => void;
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('full-note-editor')).toBeTruthy();
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    settle();
+    await screen.findByTestId('rendered-note-preview');
+    expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
+    expect(mockState.loadFullEdit).toHaveBeenCalledOnce();
+  });
+
+  it('keeps raw mode and draft owner when preview save fails', async () => {
+    mockState.noteViewMode.set('raw');
+    fullEditControl.finish = vi.fn(async () => {
+      throw new Error('save uncertain');
+    });
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('full-note-editor').dataset.raw).toBe('true');
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('rendered-note-preview')).toBeNull();
+  });
+
+  it('ignores a superseded preview settlement after returning to editing', async () => {
+    let settle!: () => void;
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    mockState.noteViewMode.set('raw');
+    await waitFor(() => expect(screen.getByTestId('full-note-editor').dataset.raw).toBe('true'));
+    settle();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('full-note-editor')).toBeTruthy();
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+  });
+
+  it.each(['preview', 'layout', 'unmount'] as const)(
+    'rejects late acquisition after %s',
+    async (change) => {
+      let loaded!: (value: boolean) => void;
+      mockState.loadFullEdit.mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            loaded = resolve;
+          }),
+      );
+      const view = render(NoteTabTypeHeaderHarness, props());
+      await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+      expect(fullEditControl.mounts).toEqual([]);
+      if (change === 'preview') mockState.noteViewMode.set('preview');
+      if (change === 'layout') await view.rerender({ ...props(), layoutId: 'ws-1' });
+      if (change === 'unmount') view.unmount();
+      await waitFor(() => expect(mockState.releaseFullEdit).toHaveBeenCalledOnce());
+      loaded(true);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByTestId('full-note-editor')).toBeNull();
+      expect(fullEditControl.mounts).toEqual([]);
+    },
+  );
+
+  it('leaves acquisition errors for explicit retry rather than reopening on workspace refresh', async () => {
+    mockState.loadFullEdit.mockResolvedValueOnce(false);
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByRole('alert');
+    mockState.workspace.set({ id: 'ws-1', path: '/tmp/refreshed', branchName: 'main' });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(mockState.loadFullEdit).toHaveBeenCalledOnce();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+    await screen.findByTestId('full-note-editor');
+    expect(mockState.loadFullEdit).toHaveBeenCalledTimes(2);
+  });
+  it('never constructs an editor before deferred complete-source admission', async () => {
+    let loaded!: (value: boolean) => void;
+    mockState.loadFullEdit.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          loaded = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+    expect(fullEditControl.mounts).toEqual([]);
+    loaded(true);
+    await screen.findByTestId('full-note-editor');
+    expect(fullEditControl.mounts).toEqual([false]);
+  });
+
+  it('binds the admitted editor before settling a same-turn preview request', async () => {
+    let loaded!: (value: boolean) => void, settled!: () => void;
+    mockState.loadFullEdit.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          loaded = resolve;
+        }),
+    );
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settled = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+    loaded(true);
+    await Promise.resolve();
+    mockState.noteViewMode.set('preview');
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    expect(fullEditControl.mounts).toEqual([false]);
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    settled();
+    await screen.findByTestId('rendered-note-preview');
+    expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
   });
 });
