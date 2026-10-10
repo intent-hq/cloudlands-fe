@@ -8,7 +8,7 @@ export interface StreamLifecycleDiagnostic {
   correlationBasis?: 'assistant-message' | 'turn' | 'unjoinable';
   subscriptionGeneration?: number;
   transportGeneration?: number;
-  pushKind?: 'snapshot' | 'delta';
+  pushKind?: 'snapshot' | 'delta' | 'history';
   pushSeq?: number;
   reconcilerResult?: 'applied' | 'duplicate' | 'stale' | 'gap' | 'reset';
   callbackResult?:

@@ -4,7 +4,7 @@
  *
  * Post-#729, replies carry no anchor/anchorText on the wire — they anchor
  * through their thread root via threadId/parentId. Two paths still diverged:
- * 1. The legacy loadComments path synthesized a point/range anchor for every
+ * 1. The former legacy load path synthesized a point/range anchor for every
  *    comment, replies included (comment-manager-v2 → convertBackendCommentToV2).
  * 2. replyToComment cloned the parent's anchor/anchorText/anchorContext onto
  *    the optimistic reply, so its shape flipped when the daemon refetch
@@ -20,9 +20,15 @@ const { storeControl, loadNoteCommentsMock, respondToCommentRequestedMock } = vi
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const { addCommentAction, commentsReducer, initialState } = await vi.importActual<
-    typeof import('$store/renderer/slices/comments/comments-slice')
-  >('$store/renderer/slices/comments/comments-slice');
+  const {
+    addCommentAction,
+    commentLoadFinished,
+    commentsReducer,
+    initialState,
+    replaceNoteCommentsAction,
+  } = await vi.importActual<typeof import('$store/renderer/slices/comments/comments-slice')>(
+    '$store/renderer/slices/comments/comments-slice',
+  );
   let state = { comments: initialState };
   storeControl.reset = () => {
     state = { comments: initialState };
@@ -41,18 +47,35 @@ vi.mock('$store/renderer/store', async () => {
       success?: (value: unknown) => unknown;
       failure?: (error: unknown) => unknown;
     }) => {
-      if (action.asyncActionType === 'workspaceNotes/loadNoteCommentsRequested') {
-        const [workspaceId, noteId] = action.payload as [string, string];
-        return Promise.resolve(loadNoteCommentsMock(workspaceId, noteId));
+      if (action.asyncActionType === 'comments/loadRequested') {
+        const [consumerId, requestId, workspaceId, noteId] = action.payload as [
+          string,
+          string,
+          string,
+          string,
+        ];
+        state = { comments: commentsReducer(state.comments, action as never) };
+        return Promise.resolve(loadNoteCommentsMock(workspaceId, noteId)).then((comments) => {
+          const current = state.comments.loadsByConsumer.map[consumerId];
+          if (current?.requestId !== requestId) return comments;
+          state = {
+            comments: commentsReducer(
+              commentsReducer(
+                state.comments,
+                replaceNoteCommentsAction(workspaceId, noteId, comments),
+              ),
+              commentLoadFinished(consumerId, requestId, workspaceId, 'test-authority'),
+            ),
+          };
+          return comments;
+        });
       }
       if (action.asyncActionType === 'workspaceNotes/respondToCommentRequested') {
         const [noteId, optimistic, params] = action.payload as [string, any, any];
         state = { comments: commentsReducer(state.comments, addCommentAction(optimistic)) };
-        void Promise.resolve(respondToCommentRequestedMock(noteId, optimistic, params)).then(
-          action.success,
-          action.failure,
-        );
-        return action;
+        const promise = Promise.resolve(respondToCommentRequestedMock(noteId, optimistic, params));
+        void promise.then(action.success, action.failure);
+        return promise;
       }
       state = { comments: commentsReducer(state.comments, action as never) };
       return action;
@@ -91,7 +114,7 @@ import {
 } from '$store/renderer/slices/comments/comments-selectors';
 import { createTestEditor, destroyTestEditor } from './test-utils';
 
-/** Minimal legacy `NoteComment` rows as `comment-loader` returns them. */
+/** Minimal legacy `NoteComment` rows returned by the compatibility client. */
 const now = new Date().toISOString();
 const backendRoot = {
   id: 'root-1',
@@ -319,6 +342,14 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
       const replies = comments.filter((c) => c.parentId === 'root-1');
       expect(activeRoots.map((c) => c.id)).toEqual(['root-1']);
       expect(replies.map((c) => c.id)).toEqual([reply!.id]);
+    });
+
+    it('reports a failed persisted reply so the composer can retain its draft', async () => {
+      await manager.initialize(editor);
+      appStore.dispatch(loadCommentsAction([rootV2]));
+      respondToCommentRequestedMock.mockResolvedValueOnce(false);
+
+      await expect(manager.replyToComment('root-1', 'keep this draft')).resolves.toBeNull();
     });
   });
 });

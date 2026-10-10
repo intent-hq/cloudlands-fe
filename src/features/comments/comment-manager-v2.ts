@@ -13,7 +13,8 @@ import { findCommentAnchors, getAllAnchoredCommentIds } from '$lib/components/ti
 import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
 import {
-  replaceNoteCommentsAction,
+  commentLoadReleased,
+  commentLoadRequested,
   updateCommentAction,
 } from '$store/renderer/slices/comments/comments-slice';
 import {
@@ -24,7 +25,6 @@ import { store as appStore } from '$store/renderer/store';
 import {
   addCommentRequested,
   deleteCommentRequested,
-  loadNoteCommentsRequested,
   resolveCommentRequested,
   respondToCommentRequested,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
@@ -36,6 +36,7 @@ import {
 } from './utils/anchor-reconciliation';
 
 const logger = createLogger('CommentManagerV2');
+let nextCommentManagerConsumerId = 0;
 
 export class CommentManagerV2 {
   private editor: Editor | null = null;
@@ -47,6 +48,8 @@ export class CommentManagerV2 {
   private anchorInsertionAttempts = new Map<string, number>(); // Track failed attempts per comment
   private readonly MAX_ANCHOR_ATTEMPTS = 2; // Maximum attempts to insert anchors for a comment
   private orphanCheckTimeout: NodeJS.Timeout | null = null; // Debounce orphan checks
+  private readonly loadConsumerId = `comment-manager:${++nextCommentManagerConsumerId}`;
+  private loadRequestSequence = 0;
 
   constructor(
     workspaceId: string,
@@ -95,6 +98,7 @@ export class CommentManagerV2 {
     this.isInitialized = false;
     this.isInsertingAnchors = false;
     this.anchorInsertionAttempts.clear();
+    appStore.dispatch(commentLoadReleased(this.loadConsumerId));
 
     logger.info('Comment manager destroyed');
   }
@@ -105,12 +109,15 @@ export class CommentManagerV2 {
   private async loadComments() {
     try {
       const v2Comments = await appStore.dispatch(
-        loadNoteCommentsRequested(this.workspaceId, this.noteId),
+        commentLoadRequested(
+          this.loadConsumerId,
+          `${this.loadConsumerId}:${++this.loadRequestSequence}`,
+          this.workspaceId,
+          this.noteId,
+        ),
       );
 
       if (!this.editor) return;
-
-      appStore.dispatch(replaceNoteCommentsAction(this.workspaceId, this.noteId, v2Comments));
 
       logger.info('Loading comments from backend', {
         count: v2Comments.length,
@@ -1141,7 +1148,7 @@ export class CommentManagerV2 {
     // `comment.respond` + rollback are owned there.
     // `authorType: 'user'` marks the UI-driven reply as user-authored (the
     // daemon defaults to 'agent' when absent).
-    await appStore.dispatch(
+    const persisted = await appStore.dispatch(
       respondToCommentRequested(this.noteId, reply, {
         workspaceId: this.workspaceId,
         commentId: parentId,
@@ -1150,6 +1157,7 @@ export class CommentManagerV2 {
         authorType: 'user',
       }),
     );
+    if (!persisted) return null;
 
     logger.info('Added reply', { replyId: reply.id, parentId });
     return reply;

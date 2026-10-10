@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { createHomeWorkspaceActions } from './home-workspace-actions.svelte';
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
@@ -92,6 +94,7 @@
     preview?: boolean;
     integrationPreview?: Partial<Record<'prs' | 'linear', HomeIntegrationsState>>;
   } = $props();
+  const microConnected$ = microConnectedReadable();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const dismissalResult$ = selectAttentionDismissalResult();
   const dismissalConsumerId = $props.id();
@@ -99,6 +102,7 @@
     root: () => homeElement,
     selectedId: () => selectedId,
     pinnedIds: () => $pinnedIds$,
+    microConnected: () => $microConnected$,
     expandPinned: () => updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
     consumerId: dismissalConsumerId,
     dismissalRequestId: () => $dismissalResult$?.requestId,
@@ -887,10 +891,10 @@
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             {selectedId}
-                            onmenu={workspaceActions.showMenu}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
+                            oncontextmenu={workspaceActions.showMenu}
                             archived={filter === 'archived'}
                           />
                         {:else}
@@ -902,42 +906,45 @@
                               oncontextmenu={(event) => workspaceActions.showMenu(event, item)}
                             >
                               {#snippet leading()}
-                                {#if !selectedRepository && item.repositoryOwner}
-                                  <Tooltip.Provider
-                                    ><Tooltip.Root
-                                      ><Tooltip.Trigger
-                                        >{#snippet child({ props: homeTooltipProps })}<span
-                                            {...homeTooltipProps}
-                                          >
-                                            <GitHubAvatar
-                                              identity={item.repositoryOwner ?? ''}
-                                              size={20}
-                                              class="shrink-0 rounded-sm"
-                                            />
-                                          </span>{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content
-                                        >{[item.repositoryOwner, item.repositoryName]
-                                          .filter(Boolean)
-                                          .join('/')}</Tooltip.Content
-                                      ></Tooltip.Root
-                                    ></Tooltip.Provider
-                                  >
-                                {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
-                                  <Tooltip.Provider
-                                    ><Tooltip.Root
-                                      ><Tooltip.Trigger
-                                        >{#snippet child({ props: homeTooltipProps })}<span
-                                            {...homeTooltipProps}
-                                            class="flex size-5 items-center justify-center text-muted-foreground"
-                                            ><Fa icon={faFolder} /></span
-                                          >{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content
-                                        >{item.repositoryName ||
-                                          item.repositoryPath}</Tooltip.Content
-                                      ></Tooltip.Root
-                                    ></Tooltip.Provider
-                                  >
-                                {/if}
+                                <span class="flex items-center gap-2">
+                                  <WorkspaceMicroKeySlot workspaceId={item.id} />
+                                  {#if !selectedRepository && item.repositoryOwner}
+                                    <Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                            >
+                                              <GitHubAvatar
+                                                identity={item.repositoryOwner ?? ''}
+                                                size={20}
+                                                class="shrink-0 rounded-sm"
+                                              />
+                                            </span>{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{[item.repositoryOwner, item.repositoryName]
+                                            .filter(Boolean)
+                                            .join('/')}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >
+                                  {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
+                                    <Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                              class="flex size-5 items-center justify-center text-muted-foreground"
+                                              ><Fa icon={faFolder} /></span
+                                            >{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{item.repositoryName ||
+                                            item.repositoryPath}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >
+                                  {/if}
+                                </span>
                               {/snippet}
                               {#snippet title()}
                                 <span class="home-row-line">

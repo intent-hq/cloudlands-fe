@@ -39,6 +39,79 @@ test('Board dismissal keeps selected details and focus when the card moves', asy
   });
 });
 
+for (const view of ['list', 'board'] as const) {
+  test(`Home ${view} preserves frozen dismissal and pin focus across Micro connection changes`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+    const component = await mount(Preview, { props: { micro: true } });
+    if (view === 'board')
+      await component.getByRole('button', { name: 'Board view', exact: true }).click();
+    const row =
+      view === 'list'
+        ? component.getByRole('option', { name: 'Review onboarding' })
+        : component
+            .locator('[data-home-board]')
+            .getByRole('button', { name: 'Review onboarding', exact: true });
+    await row.focus();
+    await page.keyboard.press('Shift+F10');
+    await expect(
+      page.getByRole('menuitem', { name: 'Assign to Micro Key', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+    await expect(row).toBeFocused();
+    await page.keyboard.press('Shift+F10');
+    await testInfo.attach(`dismiss-micro-${view}-before`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await page.evaluate(() => {
+      window.__homeDismiss!.addReason();
+      window.__homeMicroPreview!.setConnected(false);
+    });
+    await expect(
+      page.getByRole('menuitem', { name: 'Assign to Micro Key', exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__homeDismiss!.calls.length)).toBe(1);
+    expect(await page.evaluate(() => window.__homeDismiss!.calls[0])).toEqual({
+      channel: IPC_CHANNELS.BACKEND.REQUEST,
+      method: 'workspace.dismissAttention',
+      params: { workspaceId: 'dismiss-review', reasons: observedReasons },
+    });
+    await expect(row.locator('[data-home-status]')).toHaveAttribute(
+      'data-home-status',
+      'needs-you',
+    );
+    await expect(row).toBeFocused();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+    await expect(row.locator('[data-home-status]')).toHaveAccessibleName(/Waiting/);
+    await expect(row).toBeFocused();
+    await testInfo.attach(`dismiss-micro-${view}-after`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await testInfo.attach(`dismiss-micro-${view}-wire`, {
+      body: JSON.stringify(
+        await page.evaluate(() => ({
+          requests: window.__homeDismiss!.calls,
+          responses: window.__homeDismiss!.responses,
+          current: window.__homeDismiss!.snapshot(),
+        })),
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+  });
+}
+
 for (const surface of ['home', 'sidebar'] as const) {
   test(`${surface} freezes the menu snapshot and acknowledges only observed reasons`, async ({
     mount,

@@ -2766,6 +2766,8 @@
   "chat_questionWizard_skip_label": "건너뛰기",
   "chat_questionWizard_send_label": "보내기",
   "chat_questionWizard_next_label": "계속",
+  "chat_questionWizard_imagesAttached_label_one": "[이미지 1개 첨부]",
+  "chat_questionWizard_imagesAttached_label_many": "[이미지 {count}개 첨부]",
   "chat_questionWizard_dismiss_label": "닫기",
   "chat_questionWizard_dismiss_tooltip": "답변하지 않고 영구적으로 닫기",
   "chat_questionWizard_hide_tooltip": "다시 펼칠 때까지 숨기기",
@@ -4093,6 +4095,12 @@
   "terminal_quakeOverlay_startScriptFailed_error": "스크립트를 시작하지 못했습니다",
   "terminal_quakeOverlay_stopScriptFailed_error": "스크립트를 중지하지 못했습니다",
   "terminal_quakeOverlay_restartScriptFailed_error": "스크립트를 다시 시작하지 못했습니다",
+  "scripts_delete_label": "스크립트 삭제",
+  "scripts_delete_title": "“{name}”을(를) 삭제할까요?",
+  "scripts_delete_description": "저장된 스크립트가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+  "scripts_delete_disabled_description": "스크립트를 중지하고 대기 중인 변경이 완료된 후 삭제하세요.",
+  "scripts_pendingChange_error": "스크립트 변경이 진행 중입니다. 완료될 때까지 기다린 후 다시 시도하세요.",
+  "scripts_delete_changed_error": "확인 중에 스크립트가 변경되었습니다. 현재 상태를 확인한 후 다시 시도하세요.",
   "terminal_quakeOverlay_deleteScriptFailed_error": "스크립트를 삭제하지 못했습니다",
   "terminal_quakeOverlay_renameScriptFailed_error": "스크립트 이름을 바꾸지 못했습니다",
   "terminal_quakeOverlay_updateCommandFailed_error": "스크립트 명령을 업데이트하지 못했습니다",
@@ -4463,6 +4471,7 @@
   "fileTracking_codeChanges_unknown_fallback": "알 수 없음",
   "fileExplorer_tree_file_fallback": "파일",
   "fileExplorer_tree_deleteFailed_error": "파일을 삭제하지 못했습니다",
+  "fileExplorer_tree_undoUnavailable_error": "실행 취소로 내용을 복원할 수 없어 여기서는 이 파일을 삭제할 수 없습니다.",
   "editor_fileViewer_unknown_fallback": "알 수 없음",
   "fileTracking_startNew_previousWorkspace_fallback": "이전 작업 공간",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "이전 작업 공간",
@@ -7495,5 +7504,6 @@
   "chat_failureRecovery_queued_label": "대기 중",
   "chat_failureRecovery_action_label": "조치 필요",
   "chat_failureRecovery_queued_description": "메시지가 대기 중입니다. 아래 컨트롤로 관리하세요.",
-  "chat_failureRecovery_action_description": "응답이 완료되기 전에 중지되었습니다."
+  "chat_failureRecovery_action_description": "응답이 완료되기 전에 중지되었습니다.",
+  "providers_cliVersionWarning_message": "{provider} CLI 버전 {version}은 지원되는 최소 버전 {minimumVersion}보다 낮습니다. 데몬 호스트에서 CLI를 업데이트하세요."
 }

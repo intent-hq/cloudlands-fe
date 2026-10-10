@@ -2766,6 +2766,8 @@
   "chat_questionWizard_skip_label": "Omitir",
   "chat_questionWizard_send_label": "Enviar",
   "chat_questionWizard_next_label": "Continuar",
+  "chat_questionWizard_imagesAttached_label_one": "[1 imagen adjunta]",
+  "chat_questionWizard_imagesAttached_label_many": "[{count} imágenes adjuntas]",
   "chat_questionWizard_dismiss_label": "Descartar",
   "chat_questionWizard_dismiss_tooltip": "Descartar permanentemente sin responder",
   "chat_questionWizard_hide_tooltip": "Ocultar hasta que vuelva a expandir",
@@ -4093,6 +4095,12 @@
   "terminal_quakeOverlay_startScriptFailed_error": "No se pudo iniciar el script",
   "terminal_quakeOverlay_stopScriptFailed_error": "No se pudo detener el script",
   "terminal_quakeOverlay_restartScriptFailed_error": "No se pudo reiniciar el script",
+  "scripts_delete_label": "Eliminar script",
+  "scripts_delete_title": "¿Eliminar «{name}»?",
+  "scripts_delete_description": "El script guardado se eliminará permanentemente. Esta acción no se puede deshacer.",
+  "scripts_delete_disabled_description": "Detén el script y espera a que terminen los cambios pendientes antes de eliminarlo.",
+  "scripts_pendingChange_error": "El script tiene un cambio pendiente. Espera a que termine e inténtalo de nuevo.",
+  "scripts_delete_changed_error": "El script cambió durante la confirmación. Comprueba su estado actual e inténtalo de nuevo.",
   "terminal_quakeOverlay_deleteScriptFailed_error": "No se pudo eliminar el script",
   "terminal_quakeOverlay_renameScriptFailed_error": "No se pudo cambiar el nombre del script",
   "terminal_quakeOverlay_updateCommandFailed_error": "No se pudo actualizar el comando del script",
@@ -4463,6 +4471,7 @@
   "fileTracking_codeChanges_unknown_fallback": "desconocido",
   "fileExplorer_tree_file_fallback": "archivo",
   "fileExplorer_tree_deleteFailed_error": "No se pudo eliminar el archivo",
+  "fileExplorer_tree_undoUnavailable_error": "Este archivo no se puede eliminar aquí porque Deshacer no puede restaurar su contenido.",
   "editor_fileViewer_unknown_fallback": "Desconocido",
   "fileTracking_startNew_previousWorkspace_fallback": "espacio de trabajo anterior",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "el espacio de trabajo anterior",
@@ -7495,5 +7504,6 @@
   "chat_failureRecovery_queued_label": "En cola",
   "chat_failureRecovery_action_label": "Requiere atención",
   "chat_failureRecovery_queued_description": "Hay un mensaje en cola. Usa sus controles de abajo para gestionarlo.",
-  "chat_failureRecovery_action_description": "La respuesta se detuvo antes de terminar."
+  "chat_failureRecovery_action_description": "La respuesta se detuvo antes de terminar.",
+  "providers_cliVersionWarning_message": "La versión {version} de la CLI de {provider} es anterior a la mínima compatible {minimumVersion}. Actualiza la CLI en el equipo del daemon."
 }

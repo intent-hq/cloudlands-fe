@@ -5,12 +5,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
+  remove: vi.fn(),
   stop: vi.fn(),
   restart: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({ appClient: { scripts: mocks } }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(
+    async (method: string, params: { workspaceId: string; scriptId: string }) => {
+      expect(method).toBe('script.remove');
+      const result = await mocks.remove(params.workspaceId, params.scriptId);
+      if (!result.success) throw new Error(result.error);
+      return { ok: true };
+    },
+  ),
+}));
 
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: mocks }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
+
+import { notify } from '$lib/components/patterns/notify';
 
 import {
   workspaceDeleted,
@@ -18,6 +32,9 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   scriptsReducer,
+  setScriptsData,
+  deleteScriptRequested,
+  removeScript,
   clearScriptOperations,
   refreshScripts,
   restartScriptRequested,
@@ -86,10 +103,99 @@ async function stop(task: Task) {
 describe('scriptsOperationSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.remove.mockResolvedValue({ success: true });
     mocks.start.mockResolvedValue({ success: true });
     mocks.stop.mockResolvedValue({ success: true });
     mocks.restart.mockResolvedValue({ success: true });
   });
+
+  function seed(run: ReturnType<typeof start>, status = 'idle') {
+    run.dispatch(
+      setScriptsData(WS, [
+        {
+          id: 'script-1',
+          workspaceId: WS,
+          name: 'Check',
+          command: 'make check',
+          mode: 'command',
+          source: 'user',
+          createdAt: '2026-10-09',
+          runtime: { status, restartCount: 0 },
+        } as never,
+      ]),
+    );
+  }
+
+  it('retires a denied delete and permits retry after admission returns', async () => {
+    const run = start();
+    seed(run);
+    const admitted = run.state.principal;
+    run.state.principal = { ...admitted, status: 'loading' };
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    await settle();
+    expect(mocks.remove).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalledWith(expect.any(String));
+    expect(run.state.scripts.byWorkspaceId[WS].operations['script-1']?.pending).not.toBe(true);
+    expect(run.actions).toContainEqual(
+      expect.objectContaining({ type: scriptOperationFailed.type }),
+    );
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeDefined();
+    run.state.principal = admitted;
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    await settle();
+    expect(mocks.remove).toHaveBeenCalledOnce();
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeUndefined();
+    await stop(run.task);
+  });
+
+  it('removes only after success and serializes deletion with other lifecycle mutations', async () => {
+    const pending = deferred<{ success: boolean }>();
+    mocks.remove.mockReturnValue(pending.promise);
+    const run = start();
+    seed(run);
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    run.dispatch(startScriptRequested(WS, 'script-1'));
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    expect(mocks.remove.mock.calls).toEqual([[WS, 'script-1']]);
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeDefined();
+    pending.resolve({ success: true });
+    await settle();
+    expect(run.actions).toContainEqual(removeScript(WS, 'script-1'));
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeUndefined();
+    await stop(run.task);
+  });
+
+  it.each(['running', 'starting', 'restarting', 'unknown'])(
+    'refuses deletion for %s even when dispatched directly',
+    async (status) => {
+      const run = start();
+      seed(run, status);
+      run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+      await settle();
+      expect(mocks.remove).not.toHaveBeenCalled();
+      expect(run.state.scripts.byWorkspaceId[WS].operations['script-1']).toBeUndefined();
+      await stop(run.task);
+    },
+  );
+
+  it.each(['response', 'throw'])(
+    'preserves the script and records a visible %s failure',
+    async (kind) => {
+      if (kind === 'response') mocks.remove.mockResolvedValue({ success: false, error: 'offline' });
+      else mocks.remove.mockRejectedValue(new Error('offline'));
+      const run = start();
+      seed(run);
+      run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+      await settle();
+      expect(run.actions).toContainEqual(
+        scriptOperationFailed(WS, 'script-1', 'delete', 'offline'),
+      );
+      expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeDefined();
+      expect(run.actions).not.toContainEqual(removeScript(WS, 'script-1'));
+      await stop(run.task);
+    },
+  );
 
   it('runs start, stop, and restart without redundant list refreshes', async () => {
     const run = start();

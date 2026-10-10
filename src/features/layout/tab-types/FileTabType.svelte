@@ -336,6 +336,7 @@
     const rootPath = repoPath;
     return () => {
       if (!wsId || !filePath) return;
+      if (selectFileIsBinary.select(appStore.state, wsId, filePath)) return;
       const content = selectFileContent.select(appStore.state, wsId, filePath);
       const dirty = selectFileIsDirty.select(appStore.state, wsId, filePath);
       const absolutePath = isAbsolutePath(filePath)
@@ -388,13 +389,20 @@
   }
 
   function setFileContentFromEditor(content: string) {
-    if (isReadOnly || !tab.filePath || !workspaceId || !fileAbsolutePath) return;
+    if (isReadOnly || isFileBinary || !tab.filePath || !workspaceId || !fileAbsolutePath) return;
     // Optimistic local update + debounced file.write through the seam.
     appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content));
   }
 
   function saveFileContent() {
-    if (isReadOnly || !tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving)
+    if (
+      isReadOnly ||
+      isFileBinary ||
+      !tab.filePath ||
+      !fileAbsolutePath ||
+      fileContent === null ||
+      fileSaving
+    )
       return;
     appStore.dispatch(
       saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent),
@@ -522,7 +530,7 @@
       deleteFileWithUndoRequested(workspaceId, tab.filePath, {
         absolutePath,
         tabId: tab.id,
-        content: selectFileContent.select(appStore.state, workspaceId, tab.filePath) ?? '',
+        content: selectFileContent.select(appStore.state, workspaceId, tab.filePath),
       }),
     );
   }
@@ -545,10 +553,10 @@
 
 {#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->
-  {#if !isOutsideWorkspace && !isReadOnly}
+  {#if !isOutsideWorkspace && !isReadOnly && !isFileBinary}
     <Menu.CommandItem icon={faFloppyDisk} label={saveStatusLabel} disabled />
   {/if}
-  {#if tab.filePath && !isOutsideWorkspace}
+  {#if tab.filePath && !isOutsideWorkspace && !isFileBinary}
     <ViewSettingsDropdown
       embedded
       showFold={false}
@@ -668,9 +676,24 @@
           </ul>
         {/if}
       </div>
+    {:else if isFileBinary}
+      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3 p-4">
+        <p>{m.editor_fileViewer_binary_label()}</p>
+        <p class="text-xs break-all">{tab.filePath}</p>
+        {#if !isReadOnly && workspaceFilePath}
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={handleDownloadFile}
+            disabled={!downloadReady || downloading}
+          >
+            {m.layout_fileTab_downloadFile_label()}
+          </Button>
+        {/if}
+      </div>
     {:else if fileContent !== null}
       {@const isSvgFile = tab.filePath?.toLowerCase().endsWith('.svg')}
-      {#if isFileBinary || isSvgFile}
+      {#if isSvgFile}
         <FileViewer
           filePath={tab.filePath || ''}
           {fileContent}

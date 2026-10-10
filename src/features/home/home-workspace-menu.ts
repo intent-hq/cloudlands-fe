@@ -1,3 +1,4 @@
+import { createWorkspaceMicroKeyMenu } from '$features/hardware-console/assignment/workspace-key-menu';
 import { tick } from 'svelte';
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
@@ -20,6 +21,7 @@ import {
 
 interface HomeWorkspaceMenuOptions {
   pinned: boolean;
+  microConnected: boolean;
   onOpen: (id: string) => void;
   onClose: () => void;
   expandPinned: () => void;
@@ -28,7 +30,14 @@ interface HomeWorkspaceMenuOptions {
 
 export function createHomeWorkspaceMenu(
   workspace: Workspace,
-  { pinned, onOpen, onClose, expandPinned, getHomeElement }: HomeWorkspaceMenuOptions,
+  {
+    pinned,
+    microConnected,
+    onOpen,
+    onClose,
+    expandPinned,
+    getHomeElement,
+  }: HomeWorkspaceMenuOptions,
 ): SidebarMenuEntry[] {
   const items: SidebarMenuEntry[] = [
     {
@@ -49,12 +58,13 @@ export function createHomeWorkspaceMenu(
         void tick().then(() =>
           getHomeElement()
             ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-            ?.closest<HTMLElement>('[role="option"], [data-home-workspace]')
+            ?.closest<HTMLElement>('[role="option"], button')
             ?.focus(),
         );
       },
     },
   ];
+  items.push(...createWorkspaceMicroKeyMenu(workspace.id, { connected: microConnected, onClose }));
   if (!selectHidesOwnerWorkspaceActions.select(store.state, workspace.id)) {
     const archived = workspace.status === WorkspaceStatusEnum.Archived;
     items.push(

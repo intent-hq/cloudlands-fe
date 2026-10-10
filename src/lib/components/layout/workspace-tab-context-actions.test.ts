@@ -1,5 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-import { isSeparator } from '$lib/components/ui/sidebar-context-menu/types';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockWorkspace } from '../../../test/factories/workspace.factory';
+import { WorkspaceStatus } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
+import { store } from '$store/renderer/store';
+import { hydrateHardwareConsoleKeyPins } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import { UNASSIGNED_KEY_PIN } from '$features/hardware-console/assignment/key-assignment';
+import { type SidebarMenuItem, isSeparator } from '$lib/components/ui/sidebar-context-menu/types';
 import {
   buildWorkspaceTabContextMenu,
   getWorkspaceTabBulkCloseIds,
@@ -54,5 +61,70 @@ describe('workspace tab context actions', () => {
     for (const entry of entries) {
       if ('onClick' in entry && entry.disabled) expect(entry.disabledReason).toBeTruthy();
     }
+  });
+});
+
+describe('workspace tab hardware assignment', () => {
+  beforeEach(() => {
+    store.init();
+    store.dispatch(replaceWorkspaceList([createMockWorkspace({ id: WorkspaceId('target') })]));
+    store.dispatch(hydrateHardwareConsoleKeyPins(Array(6).fill(UNASSIGNED_KEY_PIN), ['target']));
+  });
+
+  function hardwareMenu(microConnected = true) {
+    const onDismiss = vi.fn();
+    const onClose = vi.fn();
+    const entries = buildWorkspaceTabContextMenu({
+      order: ['target', 'other'],
+      workspaceId: 'target',
+      microConnected,
+      onClose,
+      onCloseTabs: vi.fn(),
+      onDismiss,
+    });
+    const item = (id: string) =>
+      entries.find((entry) => 'id' in entry && entry.id === id) as SidebarMenuItem | undefined;
+    return { item, onDismiss, onClose };
+  }
+
+  it('assigns an initially unnumbered tab and dismisses without closing the tab', () => {
+    const { item, onDismiss, onClose } = hardwareMenu();
+    expect(item('unassign-micro-key')).toBeUndefined();
+    const choices = item('assign-micro-key')?.submenu;
+    expect(choices).toHaveLength(6);
+    choices![5].onClick();
+    expect(store.state.hardwareConsole.keyPins[5]).toBe('target');
+    expect(store.state.hardwareConsole.excludedWorkspaceIds).not.toContain('target');
+    expect(onDismiss).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+    const assigned = hardwareMenu();
+    expect(assigned.item('assign-micro-key')?.submenu?.[5].checked).toBe(true);
+    assigned.item('unassign-micro-key')!.onClick();
+    expect(store.state.hardwareConsole.keyPins[5]).toBe(UNASSIGNED_KEY_PIN);
+    expect(store.state.hardwareConsole.excludedWorkspaceIds).toContain('target');
+  });
+
+  it('keeps tab close actions but omits assignment for archived workspaces', () => {
+    store.dispatch(
+      replaceWorkspaceList([
+        createMockWorkspace({ id: WorkspaceId('target'), status: WorkspaceStatus.Archived }),
+      ]),
+    );
+    const { item } = hardwareMenu();
+    expect(item('assign-micro-key')).toBeUndefined();
+    expect(item('unassign-micro-key')).toBeUndefined();
+    expect(item('close')).toBeDefined();
+  });
+
+  it('keeps close actions while disconnected and preserves saved assignments', () => {
+    store.dispatch(hydrateHardwareConsoleKeyPins(['target', ...Array(5).fill(UNASSIGNED_KEY_PIN)]));
+    const before = store.state.hardwareConsole;
+    const { item } = hardwareMenu(false);
+    expect(item('assign-micro-key')).toBeUndefined();
+    expect(item('unassign-micro-key')).toBeUndefined();
+    expect(item('close')).toBeDefined();
+    expect(item('close-others')).toBeDefined();
+    expect(item('close-right')).toBeDefined();
+    expect(store.state.hardwareConsole).toBe(before);
   });
 });

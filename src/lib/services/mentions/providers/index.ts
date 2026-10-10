@@ -117,17 +117,20 @@ export class NoteProvider implements Provider {
   }
 
   /**
-   * Fetch notes from a specific workspace via the live notes client (note.list, PROTOCOL §5.2)
+   * Fetch notes from a specific workspace through the root-owned note read saga.
    */
   private async fetchNotesFromWorkspace(
     workspaceId: string,
     workspaceTitle?: string,
   ): Promise<Array<{ note: any; workspaceId: string; workspaceTitle?: string }>> {
     try {
-      const { appClient } = await import('$lib/client');
+      const [{ store: appStore }, { listSlimNotesRequested }] = await Promise.all([
+        import('$store/renderer/store'),
+        import('$store/renderer/slices/workspace-notes/workspace-notes-slice'),
+      ]);
       // Slim projection (§5.2): mention search matches/previews against the
       // first ~500 chars (contentPreview) instead of pulling full bodies.
-      const notes = await appClient.notes.list(workspaceId, { projection: 'slim' });
+      const notes = await appStore.dispatch(listSlimNotesRequested(workspaceId));
       return notes.map((note) => ({
         note,
         workspaceId,

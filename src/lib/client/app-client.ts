@@ -1056,7 +1056,16 @@ export interface AgentsClient {
  * synthetic in-flight message / activity flags and the delta stream's
  * terminal `streamingComplete` frames.
  */
+export interface InitialChatHistory {
+  target: number;
+  received: number;
+  complete: boolean;
+}
+
 export interface ChatTranscript {
+  initialHistory?: InitialChatHistory;
+  /** Cumulative historical rows; never a live-message or replacement-snapshot signal. */
+  fromHistory?: true;
   /** Exclusive older-page continuation from the authoritative snapshot. */
   nextToken?: string | null;
   messages: AgentMessage[];
@@ -1892,7 +1901,7 @@ export interface CommentsClient {
   delete(noteId: string, commentId: string, workspaceId?: string): Promise<MutationResult>;
 }
 
-/** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */
+/** New-definition input for `script.create`; ID upserts belong to the reserved edit API. */
 export interface ScriptCreateInput {
   /** Omit to use the daemon default; existing IDs retain their stored purpose. */
   purpose?: ScriptPurpose;
@@ -1903,7 +1912,8 @@ export interface ScriptCreateInput {
   env?: Record<string, string>;
   category?: string;
   autoStart?: boolean;
-  scriptId?: string;
+  /** Existing definitions must use scriptsClient.update so edits reserve before reads. */
+  scriptId?: never;
 }
 
 /** `script.create` outcome — carries the daemon's created definition on success. */
@@ -1939,8 +1949,6 @@ export interface ScriptsClient {
   ): Promise<ScriptWithState[]>;
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
-  /** `script.remove` — stop (if running) and forget a script. */
-  remove(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.start`. */
   start(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.stop`. */

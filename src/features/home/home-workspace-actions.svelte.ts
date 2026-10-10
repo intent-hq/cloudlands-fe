@@ -17,6 +17,7 @@ interface HomeWorkspaceActionsOptions {
   root: () => HTMLElement | null;
   selectedId: () => string | null;
   pinnedIds: () => readonly string[];
+  microConnected: () => boolean;
   expandPinned: () => void;
   consumerId: string;
   dismissalRequestId: () => string | undefined;
@@ -118,6 +119,7 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
     const pinned = options.pinnedIds().includes(workspace.id);
     const items = createHomeWorkspaceMenu(workspace, {
       pinned,
+      microConnected: options.microConnected(),
       onOpen: options.onOpen,
       onClose: () => (contextMenu = null),
       expandPinned: options.expandPinned,

@@ -3,6 +3,7 @@ import type { Collection } from '@themislib/themis/utils/collections/collection-
 export type FileContentEntry = {
   path: string;
   absolutePath: string | null;
+  /** null means no restorable text snapshot, including undecodable binary files. */
   originalContent: string | null;
   localContent: string | null;
   lastUpdated: number;
@@ -37,7 +38,7 @@ export type FileDeleteOptions = {
   absolutePath: string;
   tabId?: string;
   /** Editor deletion restores the current draft; tree deletion reads the disk. */
-  content?: string;
+  content?: string | null;
 };
 
 export type FilesWorkspaceState = {

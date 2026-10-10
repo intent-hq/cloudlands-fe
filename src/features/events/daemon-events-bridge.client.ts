@@ -3252,7 +3252,7 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  *   { workspaceId }` — same debounced-reload gate.
  * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
  *   `{ workspaceId, noteId, attributions }` so the tiptap
- *   `LineAttributionGutter.svelte` `listenSync('line-attribution:updated')`
+ *   the workspace-notes read saga's `takeEveryFromListenSync` listener
  *   reload path fires without touching the daemon transport directly.
  * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
  *

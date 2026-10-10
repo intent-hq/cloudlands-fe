@@ -1,12 +1,14 @@
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
-import { runSaga, stdChannel } from 'redux-saga';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type SagaMonitor } from 'redux-saga';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { LiveFilesClient } from '$lib/client/live/live-files-client';
 import { notify } from '$lib/components/patterns/notify';
 import { store as appStore } from '../../../store';
+import { reserveGitMutation } from '../../../utils/worktree-mutation-queue';
 import { closeTab, closeTabsByType } from '../../panel-layout/panel-layout-slice';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
 import {
@@ -22,6 +24,7 @@ import {
   deleteFileRequested,
   deleteFileWithUndoRequested,
   restoreFileContentRequested,
+  removeFileContentEntry,
   loadFileContentSucceeded,
   saveFileContentFailed,
   saveFileContentRequested,
@@ -37,13 +40,15 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
-function startWrites() {
+function startWrites(sagaMonitor?: SagaMonitor) {
   const channel = stdChannel();
   const actions: Parameters<typeof filesReducer>[1][] = [];
   let files = filesReducer(undefined, { type: 'test/init' });
@@ -60,8 +65,11 @@ function startWrites() {
     channel.put(action);
     return action;
   };
+  vi.spyOn(appStore, 'state', 'get').mockImplementation(
+    () => ({ files, workspace, fileExplorer }) as never,
+  );
   const task = runSaga(
-    { channel, getState: () => ({ files, workspace, fileExplorer }), dispatch },
+    { channel, getState: () => ({ files, workspace, fileExplorer }), dispatch, sagaMonitor },
     filesWriteSaga,
   );
   return {
@@ -79,10 +87,272 @@ const settle = async () => {
 };
 
 describe('filesWriteSaga', () => {
+  beforeEach(() => {
+    vi.spyOn(appStore, 'state', 'get').mockReturnValue({
+      files: filesReducer(undefined, { type: 'test/init' }),
+    } as never);
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.mocked(backendRequest).mockReset();
+  });
+
+  it.each([
+    'autosave',
+    'explicit',
+    'queued',
+    'queued alias',
+    'queued then unmount',
+    'queued then prune',
+  ] as const)('blocks %s writes after a text-to-binary read', async (mode) => {
+    vi.useFakeTimers();
+    const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+    const h = startWrites();
+    const path = mode === 'queued alias' ? '/repo/a.ts' : 'a.ts';
+    const lease = mode.startsWith('queued') ? reserveGitMutation('ws-1') : null;
+    try {
+      await lease?.ready;
+      h.dispatch(loadFileContentSucceeded('ws-1', path, '/repo/a.ts', 'text'));
+      h.dispatch(updateFileContent('ws-1', path, 'unsaved draft'));
+      if (lease) h.dispatch(saveFileContentRequested('ws-1', path, '/repo/a.ts', 'unsaved draft'));
+      h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', null, true));
+      if (mode === 'explicit')
+        h.dispatch(saveFileContentRequested('ws-1', path, '/repo/a.ts', 'unsaved draft'));
+      if (mode === 'queued then unmount') h.dispatch(workspaceUnmounted('ws-1'));
+      if (mode === 'queued then prune') h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
+      await lease?.release();
+      await vi.advanceTimersByTimeAsync(2 * FILE_CONTENT_SAVE_DEBOUNCE_MS);
+      expect(write).not.toHaveBeenCalled();
+      if (!mode.startsWith('queued then'))
+        expect(h.entry()).toMatchObject({
+          isBinary: true,
+          originalContent: null,
+          localContent: null,
+        });
+    } finally {
+      await lease?.release();
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it.each(
+    ['retained', 'pruned', 'unmounted'].flatMap((cleanup) =>
+      [null, '\b\u0001'].map((content) => ({ cleanup, content })),
+    ),
+  )(
+    'refuses queued panel deletion after binary reread and $cleanup cleanup ($content)',
+    async ({ cleanup, content }) => {
+      const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
+      const h = startWrites();
+      const lease = reserveGitMutation('ws-1');
+      try {
+        await lease.ready;
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', 'old text'));
+        const request = deleteFileRequested('ws-1', 'a.ts', {
+          absolutePath: '/repo/a.ts',
+          content: 'old text',
+        });
+        const outcome = request.promise.catch((error) => error);
+        h.dispatch(request);
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', content, true));
+        if (cleanup === 'pruned') h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
+        if (cleanup === 'unmounted') h.dispatch(workspaceUnmounted('ws-1'));
+        await lease.release();
+        await settle();
+        expect(remove).not.toHaveBeenCalled();
+        expect(await outcome).toBeInstanceOf(Error);
+      } finally {
+        await lease.release();
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['retained', 'pruned', 'unmounted'])(
+    'refuses a stale tree snapshot after binary observation and %s cleanup',
+    async (cleanup) => {
+      const read = deferred<Awaited<ReturnType<typeof appClient.files.read>>>();
+      vi.spyOn(appClient.files, 'read').mockReturnValue(read.promise);
+      const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
+      const h = startWrites();
+      try {
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', 'old text'));
+        const request = deleteFileRequested('ws-1', 'a.ts', { absolutePath: '/repo/a.ts' });
+        const outcome = request.promise.catch((error) => error);
+        h.dispatch(request);
+        expect(appClient.files.read).toHaveBeenCalledWith('ws-1', 'a.ts');
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', '\b\u0001', true));
+        if (cleanup === 'pruned') h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
+        if (cleanup === 'unmounted') h.dispatch(workspaceUnmounted('ws-1'));
+        read.resolve({ originalContent: 'old text', localContent: 'old text' });
+        await settle();
+        expect(remove).not.toHaveBeenCalled();
+        expect(await outcome).toBeInstanceOf(Error);
+      } finally {
+        read.resolve(null);
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(
+    ['queued save', 'queued delete', 'pending tree read'].flatMap((operation) =>
+      [null, '\b\u0001', 'new text'].map((content) => ({ operation, content })),
+    ),
+  )(
+    'keeps $operation safe after unmount before a newer read ($content)',
+    async ({ operation, content }) => {
+      const read = deferred<Awaited<ReturnType<typeof appClient.files.read>>>();
+      vi.spyOn(appClient.files, 'read').mockReturnValue(read.promise);
+      const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+      const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
+      const h = startWrites();
+      const lease = operation === 'pending tree read' ? null : reserveGitMutation('ws-1');
+      try {
+        await lease?.ready;
+        h.dispatch(loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', 'old text'));
+        const request =
+          operation === 'queued save'
+            ? null
+            : deleteFileRequested('ws-1', 'a.ts', {
+                absolutePath: '/repo/a.ts',
+                ...(operation === 'queued delete' ? { content: 'old text' } : {}),
+              });
+        const outcome = request?.promise.catch((error) => error);
+        h.dispatch(request ?? saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', 'draft'));
+        h.dispatch(workspaceUnmounted('ws-1'));
+        h.dispatch(
+          loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', content, content !== 'new text'),
+        );
+        h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
+        read.resolve({ originalContent: 'old text', localContent: 'old text' });
+        await lease?.release();
+        await settle();
+        expect(remove).not.toHaveBeenCalled();
+        if (operation === 'queued save' && content === 'new text')
+          expect(write).toHaveBeenCalledWith('ws-1', 'a.ts', 'draft');
+        else expect(write).not.toHaveBeenCalled();
+        if (outcome) expect(await outcome).toBeInstanceOf(Error);
+      } finally {
+        read.resolve(null);
+        await lease?.release();
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(
+    ['success', 'failure', 'rejection'].flatMap((outcome) =>
+      [false, true].map((unmount) => ({ outcome, unmount })),
+    ),
+  )(
+    'releases the binary observer after transport $outcome (unmount=$unmount)',
+    async ({ outcome, unmount }) => {
+      const pendingReads = new Set<number>();
+      const h = startWrites({
+        effectTriggered: ({ effectId, effect }) => {
+          if (effect.type === 'TAKE' && effect.payload.pattern === loadFileContentSucceeded)
+            pendingReads.add(effectId);
+        },
+        effectResolved: (effectId) => {
+          pendingReads.delete(effectId);
+        },
+        effectCancelled: (effectId) => {
+          pendingReads.delete(effectId);
+        },
+      });
+      const transport = deferred<{ success: boolean; error?: string }>();
+      vi.spyOn(appClient.files, 'write').mockReturnValue(transport.promise);
+      try {
+        h.dispatch(saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', 'text'));
+        expect(pendingReads.size).toBe(1);
+        if (unmount) h.dispatch(workspaceUnmounted('ws-1'));
+        expect(pendingReads.size).toBe(1);
+        if (outcome === 'rejection') transport.reject(new Error('transport disconnected'));
+        else
+          transport.resolve(
+            outcome === 'success' ? { success: true } : { success: false, error: 'disk full' },
+          );
+        await vi.waitFor(() => expect(pendingReads.size).toBe(0));
+      } finally {
+        transport.resolve({ success: true });
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(
+    ['panel', 'explorer'].flatMap((origin) =>
+      [
+        { kind: 'binary controls', content: '\b\u0001' },
+        { kind: 'normal Unicode', content: '\ufeffHello café\r\n' },
+        { kind: 'empty file', content: '' },
+        { kind: 'invalid UTF-8', content: null },
+      ].map((sample) => ({ origin, ...sample })),
+    ),
+  )('preserves bytes for $origin Delete and Undo of $kind', async ({ origin, content }) => {
+    vi.useFakeTimers();
+    const warning = vi.spyOn(notify, 'warning').mockReturnValue('undo-toast');
+    const error = vi.spyOn(notify, 'error').mockReturnValue('error-toast');
+    vi.spyOn(notify, 'dismiss').mockImplementation(() => undefined);
+    const client = new LiveFilesClient();
+    vi.spyOn(appClient.files, 'read').mockImplementation(client.read.bind(client));
+    vi.spyOn(appClient.files, 'delete').mockImplementation(client.delete.bind(client));
+    vi.spyOn(appClient.files, 'write').mockImplementation(client.write.bind(client));
+    const original =
+      content === null ? new Uint8Array([0xff, 0x80]) : new TextEncoder().encode(content);
+    let disk: Uint8Array | undefined = original.slice();
+    vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+      if (method === 'file.read') {
+        if (content === null)
+          throw new BackendError({
+            code: 'INTERNAL_ERROR',
+            rpcCode: -32603,
+            message: 'Internal error',
+            data: { detail: 'stream did not contain valid UTF-8' },
+          });
+        return content;
+      }
+      if (method === 'file.delete') {
+        disk = undefined;
+        return { ok: true };
+      }
+      disk = new TextEncoder().encode((params as { content: string }).content);
+      return { ok: true };
+    });
+    const h = startWrites();
+    vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(h.dispatch);
+    try {
+      const entry = origin === 'panel' ? await client.read('ws-1', 'a.ts') : null;
+      h.dispatch(
+        deleteFileWithUndoRequested('ws-1', 'a.ts', {
+          absolutePath: '/repo/a.ts',
+          ...(origin === 'panel' ? { content: entry!.localContent, tabId: 'tab-1' } : {}),
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      if (content === null) {
+        expect(error).toHaveBeenCalledOnce();
+        expect(warning).not.toHaveBeenCalled();
+        expect(
+          vi.mocked(backendRequest).mock.calls.some(([method]) => method === 'file.delete'),
+        ).toBe(false);
+      } else {
+        expect(disk).toBeUndefined();
+        expect(warning).toHaveBeenCalledOnce();
+        await (warning.mock.calls[0][1]?.action as { onClick: () => Promise<void> }).onClick();
+      }
+      expect(disk).toEqual(original);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
   });
 
   it('retains explicit-save mode and never overwrites an edit made during a direct save', async () => {
@@ -487,6 +757,7 @@ describe('filesWriteSaga', () => {
       actions.push(action);
       channel.put(action);
     };
+    vi.spyOn(appStore, 'state', 'get').mockImplementation(() => ({ files }) as never);
     const task = runSaga({ channel, getState: () => ({ files }), dispatch }, filesWriteSaga);
 
     const first = updateFileContent('ws-1', 'a.ts', 'first');
@@ -527,6 +798,7 @@ describe('filesWriteSaga', () => {
       actions.push(action);
       channel.put(action);
     };
+    vi.spyOn(appStore, 'state', 'get').mockImplementation(() => ({ files }) as never);
     const task = runSaga({ channel, getState: () => ({ files }), dispatch }, filesWriteSaga);
 
     const first = updateFileContent('ws-1', 'a.ts', 'first');
@@ -568,6 +840,7 @@ describe('filesWriteSaga', () => {
       actions.push(action);
       channel.put(action);
     };
+    vi.spyOn(appStore, 'state', 'get').mockImplementation(() => ({ files }) as never);
     const task = runSaga({ channel, getState: () => ({ files }), dispatch }, filesWriteSaga);
 
     const first = saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', 'first');

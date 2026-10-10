@@ -23,9 +23,32 @@ const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalSt
 
 vi.mock('$store/renderer/store', async () => {
   const { get } = await import('svelte/store');
+  const { scriptsReducer, emptyWorkspaceState } =
+    await import('$store/renderer/slices/scripts/scripts-slice');
+  let scripts = scriptsReducer(undefined, { type: '@@init' });
   const store: any = {
-    state: {},
-    dispatch: mockDispatch,
+    get state() {
+      return {
+        scripts: {
+          byWorkspaceId: Object.fromEntries(
+            ['ws-1', 'ws-a', 'ws-b'].map((id) => [
+              id,
+              {
+                ...emptyWorkspaceState,
+                ...scripts.byWorkspaceId[id],
+                scripts: Object.fromEntries(
+                  scriptEntries.value.map((script) => [script.id, script]),
+                ),
+              },
+            ]),
+          ),
+        },
+      };
+    },
+    dispatch: (action: any) => {
+      mockDispatch(action);
+      scripts = scriptsReducer(scripts, action);
+    },
     createSelector: (fn: (state: any, ...args: any[]) => any) =>
       Object.assign(
         (...args: any[]) => ({
@@ -106,7 +129,9 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   }),
 }));
 
-vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>();
   const readable = <T>(read: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
       listener(read());
@@ -114,6 +139,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
     },
   });
   return {
+    ...actual,
     selectAllWorkspaceScriptEntries: Object.assign(() => readable(() => scriptEntries.value), {
       select: () => scriptEntries.value,
     }),
@@ -121,10 +147,12 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
       select: () => scriptEntries.value,
     }),
     selectWorkspaceScriptsInitialized: () => readable(() => true),
+    selectCanDeleteScript: () => readable(() => false),
   };
 });
 
-vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
+vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-slice')>()),
   refreshScripts: (...payload: any[]) => ({ type: 'scripts/refresh', payload }),
   disposeScripts: (...payload: any[]) => ({ type: 'scripts/dispose', payload }),
   removeScript: (...payload: any[]) => ({ type: 'scripts/remove', payload }),

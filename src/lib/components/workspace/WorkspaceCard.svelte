@@ -9,7 +9,6 @@
     faBellSlash,
     faBoxArchive,
     faCheck,
-    faKeyboard,
     faRightLeft,
     faThumbtack,
     faTrash,
@@ -40,7 +39,6 @@
     getSidebarContextPosition,
     type SidebarContextPosition,
     type SidebarMenuEntry,
-    type SidebarMenuItem,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import type { Workspace, AttentionReminderReason } from '$shared/types';
   import type { PullRequestInfo } from '$shared/types';
@@ -51,22 +49,13 @@
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
-  import {
-    markKeySlotUnassigned,
-    pinWorkspaceToKey,
-  } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-  import {
-    selectWorkspacePinnedKeySlot,
-    selectWorkspaceResolvedKeySlot,
-    selectHardwareConsoleKeySlots,
-  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
-  import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
+  import { selectWorkspaceResolvedKeySlot } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import { createWorkspaceMicroKeyMenu } from '$features/hardware-console/assignment/workspace-key-menu';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
   import {
     selectHidesOwnerWorkspaceActions,
     selectWorkspaceActivePullRequest,
-    selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
@@ -666,52 +655,12 @@
       });
     }
 
-    if ($microConnected$) {
-      const pinnedSlot = selectWorkspacePinnedKeySlot.select(appStore.state, workspace.id);
-      const resolvedSlot = selectWorkspaceResolvedKeySlot.select(appStore.state, workspace.id);
-      const occupiedSlots = selectHardwareConsoleKeySlots.select(appStore.state);
-      const assignSubmenu: SidebarMenuItem[] = [];
-      for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
-        const occupantId = occupiedSlots[slot];
-        const occupant =
-          occupantId && occupantId !== workspace.id
-            ? selectWorkspaceById.select(appStore.state, occupantId)
-            : undefined;
-        assignSubmenu.push({
-          id: `assign-micro-key-${slot + 1}`,
-          label: occupant
-            ? m.workspace_card_assignOccupiedMicroKey_label({
-                number: formatInteger(slot + 1),
-                title: occupant.title,
-              })
-            : m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
-          checked: pinnedSlot === slot,
-          closeOnSelect: true,
-          onClick: () => {
-            appStore.dispatch(pinWorkspaceToKey(slot, workspace.id));
-            closeContextMenu();
-          },
-        });
-      }
-      items.push({
-        id: 'assign-micro-key',
-        label: m.workspace_card_assignMicroKey_label(),
-        icon: faKeyboard,
-        onClick: () => {},
-        selection: 'single',
-        submenu: assignSubmenu,
-      });
-      if (resolvedSlot !== null) {
-        items.push({
-          id: 'unassign-micro-key',
-          label: m.workspace_card_unassignMicroKey_label(),
-          onClick: () => {
-            appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
-            closeContextMenu();
-          },
-        });
-      }
-    }
+    items.push(
+      ...createWorkspaceMicroKeyMenu(workspace.id, {
+        connected: $microConnected$,
+        onClose: closeContextMenu,
+      }),
+    );
 
     const reminder =
       contextMenu || overflowMenuOpen

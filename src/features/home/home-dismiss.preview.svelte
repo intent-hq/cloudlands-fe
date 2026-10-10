@@ -3,6 +3,7 @@
   interface Props {
     sidebar?: boolean;
     collaborator?: boolean;
+    micro?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'home-dismiss',
@@ -17,15 +18,18 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import HomePage from './HomePage.svelte';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { startHomeDismissPreview } from './home-preview-lifecycle';
-  let { sidebar = false, collaborator = false }: Props = $props();
+  import { setupHomeMicroPreview } from './home-micro-preview-fixture';
+  let { sidebar = false, collaborator = false, micro = false }: Props = $props();
   const dispose = startHomeDismissPreview(collaborator);
+  const microFixture = untrack(() => (micro ? setupHomeMicroPreview(true) : null));
   const workspace$ = selectWorkspaceById('dismiss-review');
   onDestroy(() => {
+    microFixture?.dispose();
     dispose();
   });
 </script>

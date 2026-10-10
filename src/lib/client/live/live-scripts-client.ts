@@ -86,6 +86,10 @@ export class LiveScriptsClient implements ScriptsClient {
 
   async create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult> {
     try {
+      if (input.scriptId !== undefined) {
+        // i18n-ignore (developer API misuse, rejected before any request)
+        throw new Error('Use scriptsClient.update to edit an existing script.');
+      }
       const script = await backendRequest<WorkspaceScript>('script.create', {
         workspaceId,
         name: input.name,
@@ -96,17 +100,12 @@ export class LiveScriptsClient implements ScriptsClient {
         ...(input.env !== undefined ? { env: input.env } : {}),
         ...(input.category !== undefined ? { category: input.category } : {}),
         ...(input.autoStart !== undefined ? { autoStart: input.autoStart } : {}),
-        ...(input.scriptId !== undefined ? { scriptId: input.scriptId } : {}),
       });
       const id = typeof script?.id === 'string' ? script.id : undefined;
       return { success: true, ...(id ? { id } : {}), ...(script ? { script } : {}) };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-  }
-
-  async remove(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation('script.remove', { workspaceId, scriptId });
   }
 
   async start(workspaceId: string, scriptId: string): Promise<MutationResult> {

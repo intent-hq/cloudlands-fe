@@ -31,6 +31,7 @@ import {
   chatStateReducer,
   initialState as chatInitial,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   olderHistoryPageRequested,
   historyGapFillRequested,
   historySeekRequested,
@@ -91,6 +92,35 @@ function harness() {
 
 describe('direct message seek pagination ownership', () => {
   afterEach(() => vi.resetAllMocks());
+  it('defers a direct seek until initial completion installs the cursor', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    try {
+      mock.dispatch(
+        chatInitialHistoryProgressed(AGENT, { target: 20, received: 1, complete: false }),
+      );
+      mock.getConversation.mockResolvedValue(page(498));
+      const seeking = seekConversationToMessage(AGENT, 'm-500', WS);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mock.getConversation).not.toHaveBeenCalled();
+      mock.dispatch(
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: true,
+          totalMessages: 1000,
+          nextToken: 'before-980',
+          initialHistory: { target: 20, received: 20, complete: true },
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      await expect(seeking).resolves.toBe(true);
+      expect(mock.getConversation).toHaveBeenCalledTimes(1);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.useRealTimers();
+    }
+  });
+
   it.each(['older', 'gap'] as const)(
     'continues %s paging from the sought window, preserving the live tail',
     async (direction) => {

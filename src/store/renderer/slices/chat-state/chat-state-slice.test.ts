@@ -29,6 +29,7 @@ import {
   chatQueuedRetryRecordsCleared,
   chatLiveStreamPhaseChanged,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   scrollbackFetchStarted,
   scrollbackOlderPageSettled,
   scrollbackGapPageSettled,
@@ -126,6 +127,45 @@ function stateWithModelUnavailable() {
 }
 
 describe('chatStateReducer', () => {
+  it('opens the history gate atomically with final pagination and resets it on recovery', () => {
+    let state = chatStateReducer(
+      initialState,
+      chatLiveStreamPhaseChanged('progressive', 'connecting'),
+    );
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(true);
+    state = chatStateReducer(
+      state,
+      chatInitialHistoryProgressed('progressive', { target: 20, received: 1, complete: false }),
+    );
+    expect(state.byAgentId.progressive.transcriptHydratedOnce).not.toBe(true);
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(true);
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied('progressive', {
+        truncated: true,
+        totalMessages: 21,
+        nextToken: 'before-1',
+        initialHistory: { target: 20, received: 20, complete: true },
+      }),
+    );
+    expect(state.byAgentId.progressive).toMatchObject({
+      initialHistoryPending: false,
+      scrollbackOlderToken: 'before-1',
+    });
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged('progressive', 'resyncing'));
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(true);
+    expect(state.byAgentId.progressive.transcriptSnapshot).toBeUndefined();
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied('progressive', {
+        truncated: false,
+        totalMessages: 1,
+        nextToken: null,
+      }),
+    );
+    expect(state.byAgentId.progressive.initialHistoryPending).toBe(false);
+  });
+
   it('returns initial state', () => {
     expect(chatStateReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
