@@ -18,11 +18,12 @@
     pagePanelClosed,
   } from '$store/renderer/slices/note-pages/note-pages-slice';
   import { appClient } from '$lib/client';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { Editor } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import LineAttributionGutter from '../LineAttributionGutter.svelte';
   import type { NoteId, WorkspaceId } from '$shared/types';
+  import { startLineAttributionReadFixture } from '../../../../test/fixtures/line-attribution-read-fixture';
 
   interface Props {
     hostWidth: number;
@@ -42,6 +43,8 @@
 
   let editorElement: HTMLDivElement;
   let editor: Editor | null = $state(null);
+  const stopReadFixture = startLineAttributionReadFixture();
+  onDestroy(stopReadFixture);
 
   let wholeAttributionReads = $state(0);
   onMount(() => {

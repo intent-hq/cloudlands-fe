@@ -19,6 +19,7 @@ import net, { type AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Duplex, PassThrough } from 'node:stream';
+import tls from 'node:tls';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -2381,6 +2382,7 @@ describe('testWssConnection saved-route probes', () => {
 
   it('succeeds through one deduplicated alternate while the primary stalls, then closes both', async () => {
     let accepted!: () => void;
+    let primaryAccepted = false;
     daemon.upgradeGate = new Promise<void>((resolve) => {
       accepted = resolve;
     });
@@ -2389,44 +2391,36 @@ describe('testWssConnection saved-route probes', () => {
       sockets.add(socket);
       socket.resume();
       socket.once('close', () => sockets.delete(socket));
+      primaryAccepted = true;
       accepted();
     });
+    const handshakes = daemon.secureConnections;
+    const request = vi.fn(() => ({ result: null }));
+    daemon.handler = request;
     try {
-      // macOS does not configure the Linux 127/8 aliases; use a bound local endpoint.
-      let primaryHost: string | undefined;
-      const failures: unknown[] = [];
-      for (const host of ['::1', '127.0.0.2']) {
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const onError = (error: Error) => {
-              stalled.off('listening', onListening);
-              reject(error);
-            };
-            const onListening = () => {
-              stalled.off('error', onError);
-              resolve();
-            };
-            stalled.once('error', onError);
-            stalled.once('listening', onListening);
-            stalled.listen({ port: daemon.port, host, ipv6Only: true });
-          });
-          primaryHost = host;
-          break;
-        } catch (error) {
-          failures.push(error);
-        }
-      }
-      if (!primaryHost)
-        throw new AggregateError(failures, 'No distinct loopback endpoint available');
-      const handshakes = daemon.secureConnections;
-      const request = vi.fn(() => ({ result: null }));
-      daemon.handler = request;
+      await new Promise<void>((resolve, reject) => {
+        stalled.once('error', reject);
+        stalled.listen(0, '127.0.0.1', resolve);
+      });
+      const stalledPort = (stalled.address() as AddressInfo).port;
+      const connect = tls.connect;
+      // Keep two logical routes without requiring a second loopback alias.
+      // Only the stalled candidate is redirected; both use real sockets and
+      // the alternate still exercises TLS pinning and authenticated upgrade.
+      vi.spyOn(tls, 'connect').mockImplementation(((options: tls.ConnectionOptions) =>
+        connect(
+          options.host === '127.0.0.2' && Number(options.port) === daemon.port
+            ? { ...options, host: '127.0.0.1', port: stalledPort }
+            : options,
+        )) as typeof tls.connect);
+      const primaryHost = '127.0.0.2';
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       await testWssConnection({
         ...config(),
         host: primaryHost,
         hosts: [primaryHost, daemon.host, `  ${daemon.host}  `, ''],
       });
+      expect(primaryAccepted).toBe(true);
       // No clock advancement: success cannot wait for the stalled primary's deadline.
       expect(vi.getTimerCount()).toBe(0);
       expect(daemon.secureConnections - handshakes).toBe(1);

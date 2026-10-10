@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
-import * as os from 'node:os';
+import { isolatedProfileHome } from '../../../../test/fixtures/isolated-profile-home';
 import * as path from 'node:path';
 import tls from 'node:tls';
 import { EventEmitter } from 'node:events';
@@ -43,9 +43,7 @@ beforeEach(async () => {
   vi.resetModules();
   spawn.mockReset();
   getBackendClient.mockReset();
-  directory = fs.realpathSync(
-    fs.mkdtempSync(path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'ip-')),
-  );
+  directory = isolatedProfileHome('manual-123-1');
   const policy = await import('../../../../main/isolated-test-profile');
   profile = policy.prepareIsolatedTestProfile(directory, 'manual-123-1', 'a'.repeat(40));
   policy.activateIsolatedTestProfile(profile);

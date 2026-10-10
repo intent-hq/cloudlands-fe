@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { store } from '$store/renderer/store';
 import { searchNotesRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-import { createNoteQuery } from '$lib/utils/palette-note-search';
+import {
+  paletteNoteSearchReleased,
+  paletteNoteSearchRequested,
+} from '$store/renderer/slices/palette/palette-slice';
+import { selectPaletteNoteSearch } from '$store/renderer/slices/palette/palette-selectors';
 import { preview } from './command-palette.preview.svelte';
 
 const workspaceId = 'preview-command-palette';
@@ -26,16 +30,17 @@ describe('command palette preview note search', () => {
     for (const state of ['search', 'long-names']) {
       start(state);
       const invoke = vi.spyOn(window.electronAPI, 'invoke');
-      const update = vi.fn();
-      const query = createNoteQuery(update);
-      stops.push(() => query.cancel());
+      const consumerId = `preview-${state}`;
+      stops.push(() => store.dispatch(paletteNoteSearchReleased(consumerId)));
       const term = state === 'search' ? 'keyboard' : 'implementation notes';
-      query.query(term, workspaceId, []);
+      store.dispatch(paletteNoteSearchRequested(consumerId, `request-${state}`, term, workspaceId));
 
       await vi.waitFor(() =>
-        expect(update).toHaveBeenLastCalledWith(
-          expect.objectContaining({ loading: false, capability: 'indexed', fallback: false }),
-        ),
+        expect(selectPaletteNoteSearch.select(store.state, consumerId)).toMatchObject({
+          loading: false,
+          capability: 'indexed',
+          fallback: false,
+        }),
       );
       expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.REQUEST, {
         method: 'search.notes',
@@ -46,7 +51,7 @@ describe('command palette preview note search', () => {
           preferWorkspaceId: workspaceId,
         },
       });
-      const result = update.mock.lastCall![0];
+      const result = selectPaletteNoteSearch.select(store.state, consumerId);
       expect(result.items).toHaveLength(10);
       expect(result.items[0]).toMatchObject({
         noteId: 'preview-palette-note-0',
@@ -54,9 +59,11 @@ describe('command palette preview note search', () => {
         isArchived: false,
         isArchivedWorkspace: false,
       });
-      query.query('no-matching-context-xyz', undefined, []);
+      store.dispatch(
+        paletteNoteSearchRequested(consumerId, `empty-request-${state}`, 'no-matching-context-xyz'),
+      );
       await vi.waitFor(() =>
-        expect(update).toHaveBeenLastCalledWith({
+        expect(selectPaletteNoteSearch.select(store.state, consumerId)).toMatchObject({
           items: [],
           loading: false,
           capability: 'indexed',
@@ -116,6 +123,44 @@ describe('command palette preview note search', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(previousInvoke).not.toHaveBeenCalled();
     expect(invoke).toHaveBeenCalledOnce();
+  });
+
+  it('settles and releases a held palette query before restoring the preview bridge', async () => {
+    const previousBridge = window.electronAPI;
+    start('search');
+    const originalInvoke = window.electronAPI.invoke.bind(window.electronAPI);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const invoke = vi.spyOn(window.electronAPI, 'invoke').mockImplementation(async (...args) => {
+      const response = await originalInvoke(...args);
+      await held;
+      return response;
+    });
+    const action = paletteNoteSearchRequested(
+      'preview-held',
+      'preview-held-request',
+      'context',
+      workspaceId,
+    );
+    store.dispatch(action);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledOnce());
+
+    stops.pop()?.();
+    await expect(action.promise).resolves.toMatchObject({ capability: 'unknown', items: [] });
+    expect(selectPaletteNoteSearch.select(store.state, 'preview-held')).toMatchObject({
+      requestId: 'preview-held-request',
+      loading: false,
+      capability: 'unknown',
+    });
+    expect(window.electronAPI).toBe(previousBridge);
+
+    store.dispatch(paletteNoteSearchReleased('preview-held'));
+    release();
+    await held;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.state.palette.noteSearches.ids).not.toContain('preview-held');
   });
 });
 

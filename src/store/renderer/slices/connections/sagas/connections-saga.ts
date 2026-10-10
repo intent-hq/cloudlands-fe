@@ -39,6 +39,7 @@ import {
 } from '../connections-selectors';
 import type { ConnectionWorkflowOutcome } from '../connections-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { connectionTunnelSaga } from './connection-tunnel-saga';
 import {
   CONNECTIONS_CHANGED_EVENT,
   CONNECTION_AUTH_REJECTED_EVENT,
@@ -1096,6 +1097,7 @@ function* pumpUpdateActions(updateActions: Channel<UpdateBackendAction>): SagaGe
 }
 
 export function* connectionsSaga(): SagaGenerator<void> {
+  yield* fork(connectionTunnelSaga);
   const events = createConnectionsEventChannel();
   const updateActions = sagaChannel<UpdateBackendAction>();
   const tracker: DaemonBehindTracker = { evaluatedById: new Map(), toastedIds: new Set() };

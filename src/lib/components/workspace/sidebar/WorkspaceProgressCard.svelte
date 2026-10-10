@@ -90,7 +90,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-  import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import {
+    selectWorkspaceDrivingClient,
+    selectWorkspaceBrowserClient,
+    selectOwnClientIdConfirmed,
+  } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
@@ -566,6 +570,8 @@
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
   // indicator renders only when the workspace has a browser tab and another
   // eligible client could take over (or the pin is offline).
+  const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
+  const browserResolution$ = selectWorkspaceBrowserClient(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
   const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
@@ -579,6 +585,8 @@
     Boolean(
       workspaceId &&
       $canSetPrimaryClient$ &&
+      $browserResolution$ !== null &&
+      $ownClientIdConfirmed$ &&
       !primaryAlreadySelected &&
       $drivingClient$.eligibleClients.some(
         (client) => client.clientId === $drivingClient$.ownClientId && client.connected,
@@ -614,12 +622,14 @@
   function handleConfirmSetPrimaryClient() {
     const pending = pendingPrimaryClient;
     pendingPrimaryClient = null;
+    // A backend change can precede the rendered selector update.
     if (
       !pending ||
       !canSetPrimaryClient ||
       pending.workspaceId !== workspaceId ||
       pending.clientId !== $drivingClient$.ownClientId ||
-      pending.context !== $principalActionContext$
+      pending.context !== $principalActionContext$ ||
+      pending.context !== selectPrincipalActionContext.select(appStore.state)
     )
       return;
     appStore.dispatch(setWorkspaceBrowserClientRequested(pending.workspaceId, pending.clientId));

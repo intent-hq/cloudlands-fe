@@ -145,6 +145,8 @@
     selectAwaitingSwitchBackSnapshot,
     selectChatError,
     selectChatAgentState,
+    selectInitialChatHistory,
+    selectInitialChatHistoryPending,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
     selectChatLastAttemptedMessage,
@@ -251,7 +253,7 @@
     selectUserMessageIndexUi,
   } from '$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors';
   import { wizardDraftKey } from './questions/wizard-draft-key';
-  import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
+  import { buildAnswerSubmission } from './questions/answer-message';
   import {
     appendScrollSample,
     classifyScrollbackGesture,
@@ -608,6 +610,8 @@
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
+  const initialHistory$ = selectInitialChatHistory(agentIdStore);
+  const initialHistoryPending$ = selectInitialChatHistoryPending(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
   const transcriptSnapshotMeta$ = selectTranscriptSnapshotMeta(agentIdStore);
   // First-hydration latch: false until the initial hydration settles, then
@@ -623,7 +627,7 @@
   // paged history read — must not render as a complete conversation. Refresh
   // re-hydrations (latch already true) keep the messages visible.
   const isFirstHydrationLoading = $derived(
-    !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
+    !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading' && !$initialHistory$?.received,
   );
   const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
   const authoritativeConversationEvidence = $derived(
@@ -1293,7 +1297,7 @@
     );
   }
 
-  // Completing the wizard flattens all answers into ONE plain-text user
+  // Completing the wizard flattens all answers into ONE user
   // message of `Q:`/`A:` pairs sent through the ordinary send path, tagged
   // with `messageMetadata { type: "question_answers",
   // answeredQuestionsMessageId }` (wire contract). That structured tag — not
@@ -1301,16 +1305,14 @@
   // composer restores; an untagged user message leaves the Q&A pending.
   function handleQuestionWizardComplete(answers: QuestionAnswer[]): boolean {
     if (!workspace || !isActive || !pendingQuestions) return false;
-    const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
     if (
       !submitChatMessage(appStore, agentId, {
         wsId: workspace.id,
-        text,
+        ...buildAnswerSubmission(answers, pendingQuestions.messageId),
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
-        messageMetadata: buildAnswerMessageMetadata(pendingQuestions.messageId),
       })
     )
       return false;
@@ -2610,13 +2612,14 @@
   // (falsely signalling "you've reached the beginning" while older rows
   // still exist above the resident window).
   const conversationStartLoaded = $derived(
-    isConversationStartLoaded({
-      exhausted: $historyExhausted$,
-      historyCount: $agentHistoryMessages$.length,
-      tailCount: $agentMessages$.length,
-      tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
-      totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
-    }),
+    !$initialHistoryPending$ &&
+      isConversationStartLoaded({
+        exhausted: $historyExhausted$,
+        historyCount: $agentHistoryMessages$.length,
+        tailCount: $agentMessages$.length,
+        tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
+        totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
+      }),
   );
   const previousUserMessageTargets = $derived(
     indexPreviousUserMessages(composedTranscript, conversationStartLoaded),
@@ -2630,6 +2633,7 @@
     if (!isActive || !agentId || !workspace?.id || !$transcriptSnapshotMeta$) return;
     const chat = selectChatAgentState.select(appStore.state, agentId);
     if (
+      chat.initialHistoryPending ||
       chat.scrollbackOlderBlocked ||
       chat.fetchingOlderHistory ||
       chat.fetchingGapFill ||
@@ -2658,7 +2662,7 @@
 
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
-    if (!isActive || !container || !workspace?.id || !agentId) return;
+    if (!isActive || !container || !workspace?.id || !agentId || $initialHistoryPending$) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
     if ($fetchingHistorySeek$ || $fetchingGapFill$ || seekLandingPending) return;
@@ -3057,7 +3061,7 @@
   }
 
   function runSpacerReconcile(force: boolean) {
-    if (!isActive || isComponentDestroyed) return;
+    if (!isActive || isComponentDestroyed || $initialHistoryPending$) return;
     const container = scrollContainer;
     if (!container) return;
     // A seek in flight / landing owns the spacers — its settle handler sizes
@@ -3161,6 +3165,7 @@
     if (!isActive) return;
     void ($agentHistoryMessages$.length + $agentMessages$.length);
     void $transcriptSnapshotMeta$?.totalMessages;
+    if ($initialHistoryPending$) return;
     const exhausted = $historyExhausted$;
     const gapOpen = $historySegmentMeta$.gapToTail;
     void $fetchingOlderHistory$;
@@ -3521,13 +3526,18 @@
   // it after — this composes with the LazyTurn height ledger, which only
   // compensates height CHANGES of existing turns, never new siblings.
   let anchoredHistoryLength = -1;
+  let anchoredInitialReceived = 0;
   $effect.pre(() => {
     const historyLength = $agentHistoryMessages$.length;
+    const initialReceived = $initialHistory$?.received ?? 0;
     if (!isActive) {
+      anchoredInitialReceived = initialReceived;
       anchoredHistoryLength = historyLength;
       return;
     }
-    if (historyLength === anchoredHistoryLength) return;
+    if (historyLength === anchoredHistoryLength && initialReceived === anchoredInitialReceived)
+      return;
+    anchoredInitialReceived = initialReceived;
     const isFirstRun = anchoredHistoryLength === -1;
     anchoredHistoryLength = historyLength;
     const container = untrack(() => scrollContainer);
@@ -3575,7 +3585,12 @@
   let latchedDividerSessionAgentId: string | null = null;
   $effect(() => {
     if (!agentId || latchedDividerSessionAgentId === agentId) return;
-    if ($transcriptHydration$ !== 'settled') return;
+    if (
+      $transcriptHydration$ !== 'settled' ||
+      $initialHistoryPending$ ||
+      $awaitingSwitchBackSnapshot$
+    )
+      return;
     latchedDividerSessionAgentId = agentId;
     appStore.dispatch(
       startDividerSession(
@@ -3602,6 +3617,20 @@
   // One-shot guard: the divider entry-positioning happens once per panel mount
   // (first transcript availability), never again on later marker convergence.
   let hasAppliedNewMessagesEntryScroll = false;
+  $effect(() => {
+    if ($initialHistory$?.complete !== true) return;
+    const anchor = newMessagesDividerAnchorId;
+    if (
+      !anchor ||
+      hasAppliedNewMessagesEntryScroll ||
+      cachedScrollRestoreTop !== null ||
+      !shouldFollowBottom ||
+      showSearch
+    )
+      return;
+    hasAppliedNewMessagesEntryScroll = true;
+    void scrollToNewMessagesDivider(anchor);
+  });
   // One-shot guard: the cached scroll position is applied once on the first
   // transcript availability after remount, never again on later hydrations.
   let hasConsumedCachedScrollRestore = false;
@@ -3611,7 +3640,7 @@
   let cachedScrollRestoreAttempts = 0;
   let cachedScrollRestoreRetryFrame: number | null = null;
   $effect(() => {
-    if (isActive) {
+    if (isActive && !$initialHistoryPending$) {
       if (cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore)
         scheduleCachedScrollRestoreRetry();
       return;
@@ -3636,7 +3665,12 @@
   // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
   // above). Returns true when the cached position was consumed.
   function applyCachedScrollRestore(): boolean {
-    if (!isActive || cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore)
+    if (
+      !isActive ||
+      $initialHistoryPending$ ||
+      cachedScrollRestoreTop === null ||
+      hasConsumedCachedScrollRestore
+    )
       return false;
     // Not consumed until the container is bound, so a premature call cannot
     // silently drop the cached position.
@@ -3686,10 +3720,13 @@
   $effect(() => {
     const container = scrollContainer;
     if (!isActive || !container) return;
-    const cancel = () => cancelPendingCachedScrollRestore();
+    const cancel = () => {
+      if ($initialHistoryPending$) hasAppliedNewMessagesEntryScroll = true;
+      cancelPendingCachedScrollRestore();
+    };
     const onPointerDown = (event: PointerEvent) => {
       if (event.target === container && event.offsetX >= container.clientWidth) {
-        cancelPendingCachedScrollRestore();
+        cancel();
       }
     };
     container.addEventListener('wheel', cancel, { passive: true });
@@ -3801,7 +3838,10 @@
         currentCount,
         currentNewestId,
       );
-    const shouldScroll = hasNewMessages && (isFirstMessage || shouldFollowBottom);
+    const shouldScroll =
+      hasNewMessages &&
+      (isFirstMessage || shouldFollowBottom) &&
+      !($initialHistoryPending$ && hasAppliedNewMessagesEntryScroll);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
@@ -6751,7 +6791,7 @@
                    per-fetch: it stays up across the settle-chain gaps between
                    pages and hides after a short quiet window once the walk
                    stops (see syncOlderHistoryIndicator). -->
-              {#if olderHistoryIndicatorVisible}
+              {#if olderHistoryIndicatorVisible || ($initialHistoryPending$ && ($initialHistory$?.received ?? 0) > 0)}
                 <div
                   class="flex items-center justify-start gap-2 py-2 text-left text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"
@@ -7580,6 +7620,7 @@
                     <QuestionWizard
                       bind:this={questionWizard}
                       questions={pendingQuestions.questions}
+                      workspaceId={workspace?.id}
                       draft={questionWizardDraft}
                       onDraftChange={handleQuestionWizardDraftChanged}
                       onResolved={handleQuestionWizardResolved}

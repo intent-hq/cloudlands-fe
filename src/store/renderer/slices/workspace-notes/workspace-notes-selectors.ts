@@ -45,6 +45,44 @@ export const selectHasPendingNoteContent = store.createSelector(
     !!state.workspaceNotes.retainedDrafts?.[JSON.stringify([workspaceId, noteId])],
 );
 
+export const selectNoteContentView = store.createSelector(
+  (state, workspaceId: string, consumerId: string) =>
+    getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.contentViews ??
+        emptyWorkspaceNotesState.contentViews,
+      consumerId,
+    ),
+);
+
+export const selectNoteWorkspaceRoot = store.createSelector(
+  (state, workspaceId: string, consumerId: string) =>
+    getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.workspaceRoots ??
+        emptyWorkspaceNotesState.workspaceRoots,
+      consumerId,
+    ),
+);
+
+export const selectNotePresenceView = store.createSelector(
+  (state, workspaceId: string, consumerId: string) => {
+    const view = getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.presenceViews ??
+        emptyWorkspaceNotesState.presenceViews,
+      consumerId,
+    );
+    return view ? { ...view, viewers: getItems(view.viewers) } : undefined;
+  },
+);
+
+export const selectNoteAttributionView = store.createSelector(
+  (state, workspaceId: string, consumerId: string) =>
+    getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.attributionViews ??
+        emptyWorkspaceNotesState.attributionViews,
+      consumerId,
+    ),
+);
+
 // ============================================================================
 // Note item selectors
 // ============================================================================

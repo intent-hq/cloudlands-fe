@@ -19,6 +19,7 @@ const {
   createSelectorReadable,
   paletteMruEntries,
   paletteFileMru,
+  paletteNoteSearch,
   collaboratorState,
   multiplayerState,
   gitlabState,
@@ -37,6 +38,15 @@ const {
   });
 
   const backendRequestMock = vi.fn(async () => ({ files: [], matches: [] }));
+  const paletteNoteSearch = {
+    value: { items: [], loading: false, capability: 'unknown', fallback: true } as any,
+    generation: 0,
+    subscribers: new Set<(value: any) => void>(),
+  };
+  const publishNoteSearch = (value: any) => {
+    paletteNoteSearch.value = value;
+    for (const subscriber of paletteNoteSearch.subscribers) subscriber(value);
+  };
   const reduxDispatchMock = vi.fn(
     (action: {
       asyncActionType?: string;
@@ -53,6 +63,63 @@ const {
           includeArchived: false,
           ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
         }).then(action.success, action.failure);
+      }
+      if (action.asyncActionType === 'palette/noteSearchRequested') {
+        const [, , query, preferWorkspaceId] = action.payload ?? [];
+        const generation = ++paletteNoteSearch.generation;
+        const idle = { items: [], loading: false, capability: 'unknown', fallback: true };
+        if (typeof query !== 'string' || !query.trim()) {
+          publishNoteSearch(idle);
+          action.success?.(idle);
+        } else {
+          publishNoteSearch({ ...idle, loading: true });
+          setTimeout(async () => {
+            if (generation !== paletteNoteSearch.generation) return;
+            try {
+              const response: any = await backendRequestMock('search.notes', {
+                query,
+                limit: 10,
+                includeArchived: false,
+                ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
+              });
+              if (generation !== paletteNoteSearch.generation) return;
+              const indexed = response?.indexed === true && Array.isArray(response.matches);
+              const update = indexed
+                ? {
+                    items: response.matches.slice(0, 10).map((hit: any) => ({
+                      id: JSON.stringify([hit.workspaceId, hit.noteId]),
+                      type: 'note',
+                      noteId: hit.noteId,
+                      workspaceId: hit.workspaceId,
+                      label: hit.title,
+                      description: hit.preview,
+                      score: hit.score,
+                      updatedAt: hit.updatedAt,
+                      isArchived: hit.isArchived,
+                      isArchivedWorkspace: hit.workspaceArchived,
+                    })),
+                    loading: false,
+                    capability: 'indexed',
+                    fallback: false,
+                  }
+                : { ...idle, capability: 'legacy' };
+              publishNoteSearch(update);
+              action.success?.(update);
+            } catch (error) {
+              if (generation !== paletteNoteSearch.generation) return;
+              const update = {
+                ...idle,
+                error: error instanceof Error ? error.message : String(error),
+              };
+              publishNoteSearch(update);
+              action.success?.(update);
+            }
+          }, 150);
+        }
+      }
+      if (action.type === 'palette/noteSearchReleased') {
+        ++paletteNoteSearch.generation;
+        publishNoteSearch({ items: [], loading: false, capability: 'unknown', fallback: true });
       }
       return action;
     },
@@ -72,6 +139,7 @@ const {
     createSelectorReadable,
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
+    paletteNoteSearch,
     collaboratorState: {
       workspace: false,
       client: false,
@@ -88,6 +156,17 @@ vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
 vi.mock('$lib/utils/open-message', () => ({ openMessage: openMessageMock }));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/principal/principal-selectors')
+  >()),
+  selectPrincipalConnectionContext: () => ({
+    subscribe: (fn: (context: string) => void) => {
+      fn('test-connection');
+      return () => {};
+    },
+  }),
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: backendRequestMock,
   backendSubscribe: vi.fn(),
@@ -124,6 +203,13 @@ vi.mock('$store/renderer/slices/palette/palette-selectors', () => ({
     subscribe: (fn: (value: Record<string, number>) => void) => {
       fn(paletteFileMru.value);
       return () => {};
+    },
+  }),
+  selectPaletteNoteSearch: () => ({
+    subscribe: (fn: (value: any) => void) => {
+      paletteNoteSearch.subscribers.add(fn);
+      fn(paletteNoteSearch.value);
+      return () => paletteNoteSearch.subscribers.delete(fn);
     },
   }),
 }));

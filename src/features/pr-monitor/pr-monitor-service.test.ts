@@ -7,6 +7,9 @@
  * of each monitor lifecycle event into the row list.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
+import producerRowsRaw from './__fixtures__/legacy-monitor-rows.fixture';
+import producerProvenance from './__fixtures__/legacy-monitor-provenance.json';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -36,6 +39,97 @@ const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
 const mockedUnsubscribe = vi.mocked(backendUnsubscribe);
 const mockedOnNotification = vi.mocked(onBackendNotification);
+
+// These rows are serialized by Rust's real pr_monitor_wire; never normalize
+// them here. In particular, an array must fail the numeric-count assertion.
+const producerCases: Array<{
+  name: string;
+  monitor: PrMonitorRow;
+  requirements?: { checks: { failingRequired: string[]; pendingRequired: string[] } };
+}> = JSON.parse(producerRowsRaw).cases;
+
+describe('Rust compact monitor producer contract', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('retains the exact serialized producer bytes recorded in provenance', () => {
+    expect(createHash('sha256').update(producerRowsRaw).digest('hex')).toBe(
+      producerProvenance.sha256,
+    );
+  });
+
+  it.each([
+    ['empty', 0, 0, 0, 0, true],
+    ['pending-build', 0, 1, 0, 1, true],
+    ['multiple-pending', 0, 2, 0, 2, true],
+    ['mixed-required-optional', 2, 2, 3, 3, true],
+    ['optional-only', 0, 0, 1, 1, true],
+    ['unknown-required', 0, 0, 1, 1, false],
+    ['unknown-empty', 0, 0, 0, 0, false],
+    ['unknown-threads', 0, 0, 0, 0, true],
+  ] as const)(
+    'passes numeric required counts through prMonitor.list: %s',
+    async (name, failing, pending, totalFailed, totalPending, requiredKnown) => {
+      const fixture = producerCases.find((entry) => entry.name === name)!;
+      expect(fixture, `missing producer case ${name}`).toBeDefined();
+      mockedRequest.mockResolvedValueOnce({ monitors: [fixture.monitor] });
+
+      const [monitor] = await listPrMonitors(fixture.monitor.workspaceId);
+
+      expect(mockedRequest).toHaveBeenCalledWith('prMonitor.list', {
+        workspaceId: fixture.monitor.workspaceId,
+      });
+      expect(monitor).toEqual(fixture.monitor);
+      expect(monitor.lastSnapshot?.checks.failingRequired).toBe(failing);
+      expect(monitor.lastSnapshot?.checks.pendingRequired).toBe(pending);
+      expect(monitor.lastSnapshot?.checks.failed).toBe(totalFailed);
+      expect(monitor.lastSnapshot?.checks.pending).toBe(totalPending);
+      expect(monitor.lastSnapshot?.checks.requiredKnown).toBe(requiredKnown);
+      expect(Array.isArray(fixture.requirements?.checks.failingRequired)).toBe(true);
+      expect(Array.isArray(fixture.requirements?.checks.pendingRequired)).toBe(true);
+      expect(monitor).not.toHaveProperty('pausedUntil');
+    },
+  );
+
+  it('retains full named requirements independently of compact counts', () => {
+    const fixture = producerCases.find((entry) => entry.name === 'mixed-required-optional')!;
+    expect(fixture.requirements?.checks.failingRequired).toEqual(['test', 'lint']);
+    expect(fixture.requirements?.checks.pendingRequired).toEqual(['build', 'e2e']);
+  });
+
+  it.each(['missing-baseline', 'paused-missing-baseline'])(
+    'does not invent a baseline or required counts: %s',
+    async (name) => {
+      const fixture = producerCases.find((entry) => entry.name === name)!;
+      mockedRequest.mockResolvedValueOnce({ monitors: [fixture.monitor] });
+      const [monitor] = await listPrMonitors(fixture.monitor.workspaceId);
+      expect(monitor).toEqual(fixture.monitor);
+      for (const key of ['lastSnapshot', 'title', 'url']) {
+        expect(monitor).not.toHaveProperty(key);
+      }
+      if (name === 'paused-missing-baseline') {
+        expect(monitor.pausedUntil).toBe('2026-01-02T04:00:00Z');
+        expect(monitor.lastError).toContain('rate limited');
+      } else {
+        expect(monitor).not.toHaveProperty('pausedUntil');
+      }
+    },
+  );
+
+  it.each(['unknown-required', 'unknown-threads'])(
+    'keeps unreadable thread counts absent: %s',
+    async (name) => {
+      const fixture = producerCases.find((entry) => entry.name === name)!;
+      mockedRequest.mockResolvedValueOnce({ monitors: [fixture.monitor] });
+      const [monitor] = await listPrMonitors(fixture.monitor.workspaceId);
+      expect(monitor.lastSnapshot?.threads).not.toHaveProperty('unresolved');
+      if (name === 'unknown-required') {
+        expect(monitor.lastSnapshot?.rulesKnown).toBe(false);
+        expect(monitor.lastSnapshot?.approvals.needed).toBeNull();
+        expect(monitor.lastSnapshot?.threads.resolutionRequired).toBeNull();
+      }
+    },
+  );
+});
 
 /** PROTOCOL §6.9 prMonitor.list row (`lastSnapshot` arrives on list only). */
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {

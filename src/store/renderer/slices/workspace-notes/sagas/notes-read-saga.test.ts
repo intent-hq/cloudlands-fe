@@ -11,6 +11,9 @@ import {
   workspaceUnmounted,
   backendReconnected,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { paletteNoteSearchRequested, paletteReducer } from '../../palette/palette-slice';
+import { selectPaletteNoteSearch } from '../../palette/palette-selectors';
+import { selectNoteAttributionView } from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -21,6 +24,8 @@ import {
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  noteAttributionInvalidated,
+  noteAttributionViewRequested,
   readNoteRequested,
   refreshNoteFromEventRequested,
   searchNotesRequested,
@@ -69,14 +74,27 @@ function note(id: string, overrides: Partial<Note> = {}): Note {
 function harness(seed: Note[] = [], notePages?: ReturnType<typeof notePagesReducer>) {
   const channel = stdChannel();
   const actions: Parameters<typeof workspaceNotesReducer>[1][] = [];
+  let windowBackendId = 'backend-a';
+  let subscriptionPending = false;
   let workspaceNotes = workspaceNotesReducer(
     undefined,
     seed.length > 0
       ? loadWorkspaceNotesSucceeded([WS], { [WS]: seed })
       : ({ type: '@@init' } as never),
   );
-  const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
+  let palette = paletteReducer(undefined, { type: '@@init' });
+  const state = () => ({
+    workspaceNotes,
+    notePages,
+    palette,
+    connections: { hasReceivedList: true, windowBackendId },
+    daemonHealth: { health: 'up', connectionGeneration: 1 },
+    workspaceEvents: { subscriptionGeneration: 1, subscriptionPending },
+  });
+  const dispatch = (action: any) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
+    palette = paletteReducer(palette, action);
+    notePages = notePagesReducer(notePages, action);
     channel.put(action);
     if (
       action.type !== readNoteRequested.type &&
@@ -90,17 +108,17 @@ function harness(seed: Note[] = [], notePages?: ReturnType<typeof notePagesReduc
     }
     return action;
   };
-  const task = runSaga(
-    { channel, dispatch, getState: () => ({ workspaceNotes, notePages }) },
-    notesReadSaga,
-  );
+  const task = runSaga({ channel, dispatch, getState: state }, notesReadSaga);
   return {
     actions,
     channel,
+    dispatch,
     task,
-    state: () => workspaceNotes,
-    send: (action: Parameters<typeof workspaceNotesReducer>[1]) => {
-      dispatch(action);
+    state,
+    send: dispatch,
+    setConnectionContext(context: string | null) {
+      subscriptionPending = context === null;
+      if (context) windowBackendId = context;
     },
   };
 }
@@ -228,7 +246,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('settles every concurrent full-content request while only the latest seq applies', async () => {
+  it('settles every concurrent full-content request through one shared transport read', async () => {
     const pending = deferred<Note>();
     const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
     const run = harness([note('note-1', { content: '', contentLength: 4 })]);
@@ -240,11 +258,7 @@ describe('notesReadSaga', () => {
     run.channel.put(second);
     run.channel.put(third);
     await settle();
-    expect(get.mock.calls).toEqual([
-      ['note-1', WS],
-      ['note-1', WS],
-      ['note-1', WS],
-    ]);
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
 
     pending.resolve(note('note-1', { content: 'body', contentLength: 4 }));
     await expect(Promise.all([first.promise, second.promise, third.promise])).resolves.toEqual([
@@ -259,12 +273,9 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('settles stale reads without applying an older seq result', async () => {
-    const older = deferred<Note>();
-    const newer = deferred<Note>();
-    vi.spyOn(appClient.notes, 'get')
-      .mockReturnValueOnce(older.promise)
-      .mockReturnValueOnce(newer.promise);
+  it('joins same-resource explicit reads while settling each originating action', async () => {
+    const pending = deferred<Note>();
+    const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
     const run = harness([note('note-1')]);
     const first = readNoteRequested(WS, 'note-1');
     const second = readNoteRequested(WS, 'note-1');
@@ -272,13 +283,15 @@ describe('notesReadSaga', () => {
     run.channel.put(first);
     run.channel.put(second);
     await settle();
-    newer.resolve(note('note-1', { title: 'Newest' }));
-    await expect(second.promise).resolves.toEqual(note('note-1', { title: 'Newest' }));
-    older.resolve(note('note-1', { title: 'Stale' }));
-    await expect(first.promise).resolves.toEqual(note('note-1', { title: 'Stale' }));
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
+    pending.resolve(note('note-1', { title: 'Shared' }));
+    await expect(Promise.all([first.promise, second.promise])).resolves.toEqual([
+      note('note-1', { title: 'Shared' }),
+      note('note-1', { title: 'Shared' }),
+    ]);
 
     expect(run.actions).toEqual([
-      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Newest' })),
+      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Shared' })),
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -299,16 +312,12 @@ describe('notesReadSaga', () => {
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     await settle();
-    expect(get.mock.calls).toEqual([
-      ['note-1', WS],
-      ['note-1', WS],
-      ['note-1', WS],
-    ]);
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
 
     first.resolve(note('note-1', { content: 'intermediate', contentLength: 12, rev: 5 }));
     await expect(ensure.promise).resolves.toBe(true);
     await settle();
-    expect(get.mock.calls).toHaveLength(3);
+    expect(get.mock.calls).toHaveLength(2);
     expect(run.actions.filter((action) => action.type === applyNoteUpdated.type).at(-1)).toEqual(
       applyNoteUpdated(
         WS,
@@ -708,6 +717,122 @@ describe('notesReadSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it('coalesces an attribution update received while the current load is pending', async () => {
+    const first = deferred<any>();
+    const initial = {
+      workspaceId: WS,
+      noteId: 'note-1',
+      computedAt: 'initial',
+      attributions: {},
+    };
+    const refreshed = { ...initial, computedAt: 'refreshed' };
+    const load = vi
+      .spyOn(appClient.notes.lineAttribution, 'load')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(refreshed);
+    const run = harness();
+
+    run.dispatch(noteAttributionViewRequested('gutter', 'request-1', WS, 'note-1'));
+    await settle();
+    run.channel.put(noteAttributionInvalidated(WS, 'note-1'));
+    first.resolve(initial);
+
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(selectNoteAttributionView.select(run.state() as never, WS, 'gutter')?.data).toEqual(
+      refreshed,
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('debounces palette note searches and stores the correlated indexed outcome', async () => {
+    const transport = await import('$lib/client/live/backend-transport');
+    const response = {
+      indexed: true,
+      requestId: 'daemon-request',
+      matches: [
+        {
+          workspaceId: WS,
+          noteId: 'note-1',
+          title: 'Result',
+          preview: 'body',
+          score: 2,
+          updatedAt: NOW,
+          isArchived: false,
+          workspaceArchived: false,
+        },
+      ],
+    };
+    const request = vi.spyOn(transport, 'backendRequest').mockResolvedValue(response);
+    const run = harness();
+    const action = paletteNoteSearchRequested('palette', 'request-1', 'wombat', WS);
+
+    run.dispatch(action);
+    await expect(action.promise).resolves.toMatchObject({ capability: 'indexed', fallback: false });
+    expect(request).toHaveBeenCalledExactlyOnceWith('search.notes', {
+      query: 'wombat',
+      limit: 10,
+      includeArchived: false,
+      preferWorkspaceId: WS,
+    });
+    expect(selectPaletteNoteSearch.select(run.state() as never, 'palette')).toMatchObject({
+      requestId: 'request-1',
+      loading: false,
+      items: [{ noteId: 'note-1', workspaceId: WS }],
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles a palette search and clears loading when its connection authority changes', async () => {
+    const transport = await import('$lib/client/live/backend-transport');
+    const request = vi.spyOn(transport, 'backendRequest');
+    const run = harness();
+    const action = paletteNoteSearchRequested('palette', 'request-1', 'wombat', WS);
+
+    run.dispatch(action);
+    await settle();
+    run.setConnectionContext(null);
+
+    await expect(action.promise).resolves.toMatchObject({ capability: 'unknown', loading: false });
+    expect(request).not.toHaveBeenCalled();
+    expect(selectPaletteNoteSearch.select(run.state() as never, 'palette')).toMatchObject({
+      requestId: 'request-1',
+      loading: false,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels an obsolete palette debounce and settles both callers', async () => {
+    const transport = await import('$lib/client/live/backend-transport');
+    const request = vi.spyOn(transport, 'backendRequest').mockResolvedValue({
+      indexed: true,
+      requestId: 'daemon-request',
+      matches: [],
+    });
+    const run = harness();
+    const first = paletteNoteSearchRequested('palette', 'request-1', 'old', WS);
+    const second = paletteNoteSearchRequested('palette', 'request-2', 'new', WS);
+
+    run.dispatch(first);
+    run.dispatch(second);
+    await expect(first.promise).resolves.toMatchObject({ capability: 'unknown' });
+    await expect(second.promise).resolves.toMatchObject({ capability: 'indexed' });
+    expect(request).toHaveBeenCalledExactlyOnceWith('search.notes', {
+      query: 'new',
+      limit: 10,
+      includeArchived: false,
+      preferWorkspaceId: WS,
+    });
+    expect(selectPaletteNoteSearch.select(run.state() as never, 'palette')).toMatchObject({
+      requestId: 'request-2',
+      capability: 'indexed',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 });
 
 it('uses bounded task links without hydrating a complete spec', async () => {
@@ -749,9 +874,12 @@ describe('summary ownership across read lanes', () => {
         await settle();
         old.resolve(['old-link']);
         await settle();
-        expect(h.state().byWorkspaceId[WS].specTaskLinks).toEqual(deleted ? null : ['new-link']);
-        if (deleted) expect(h.state().byWorkspaceId[WS].notes.ids).not.toContain('spec');
-        else expect(h.state().byWorkspaceId[WS].notes.ids).toContain('spec');
+        expect(h.state().workspaceNotes.byWorkspaceId[WS].specTaskLinks).toEqual(
+          deleted ? null : ['new-link'],
+        );
+        if (deleted)
+          expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.ids).not.toContain('spec');
+        else expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.ids).toContain('spec');
       } finally {
         h.task.cancel();
       }
@@ -764,7 +892,7 @@ describe('summary ownership across read lanes', () => {
     try {
       h.send(noteEventReceived(WS, 'spec', 'note:updated'));
       await settle();
-      expect(h.state().byWorkspaceId[WS].notes.map.spec.content).toBe('fresh');
+      expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.map.spec.content).toBe('fresh');
     } finally {
       h.task.cancel();
     }
@@ -779,8 +907,8 @@ describe('summary ownership across read lanes', () => {
     try {
       h.send(workspaceNotesHydrationRequested(WS, 1, false));
       await settle();
-      expect(h.state().byWorkspaceId[WS].initialized).toBe(true);
-      expect(h.state().byWorkspaceId[WS].notes.ids).toEqual(['other']);
+      expect(h.state().workspaceNotes.byWorkspaceId[WS].initialized).toBe(true);
+      expect(h.state().workspaceNotes.byWorkspaceId[WS].notes.ids).toEqual(['other']);
       expect(get).not.toHaveBeenCalled();
     } finally {
       h.task.cancel();
@@ -806,7 +934,7 @@ it.each(['reconnect', 'unmount'])('discards a late summary chain after %s', asyn
     await settle();
     old.resolve(['old']);
     await settle();
-    expect(h.state().byWorkspaceId[WS].specTaskLinks).toEqual(['new']);
+    expect(h.state().workspaceNotes.byWorkspaceId[WS].specTaskLinks).toEqual(['new']);
   } finally {
     h.task.cancel();
     links.mockRestore();
@@ -834,7 +962,7 @@ describe('full spec editor alongside a paged viewer', () => {
       if (cancel) lease.release();
       pending.resolve(note('spec', { content: 'new complete revision', rev: 8 }));
       await settle();
-      expect(run.state().byWorkspaceId[WS].notes.map.spec.content).toBe(
+      expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map.spec.content).toBe(
         cancel ? 'body' : 'new complete revision',
       );
       lease.release();
@@ -892,11 +1020,11 @@ it('fences a pre-deletion workspace list after terminal history has retired', as
     run.send(noteDeleteViewRetired(deleted));
     pending.resolve([note('old-note')]);
     await settle();
-    expect(run.state().byWorkspaceId[WS].notes.map['old-note']).toBeUndefined();
-    expect(run.state().byWorkspaceId[WS].loading).toBe(false);
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map['old-note']).toBeUndefined();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].loading).toBe(false);
     run.send(workspaceNotesHydrationRequested(WS, 2, true));
     await settle();
-    expect(run.state().byWorkspaceId[WS].notes.map['new-note']).toBeDefined();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map['new-note']).toBeDefined();
   } finally {
     run.task.cancel();
     await run.task.toPromise();
@@ -939,7 +1067,7 @@ it('rejects a late list captured before B deletion when retained A is rechecked 
     run.send(noteDeleteViewChanged(b));
     run.send(applyNoteDeleted(WS, 'b'));
     run.send(noteDeleteViewRetired(b));
-    const tokenB = run.state().byWorkspaceId[WS].deleteReadAuthority;
+    const tokenB = run.state().workspaceNotes.byWorkspaceId[WS].deleteReadAuthority;
     run.send(
       loadWorkspaceNotesSucceeded(
         [WS],
@@ -950,14 +1078,42 @@ it('rejects a late list captured before B deletion when retained A is rechecked 
     run.send(noteDeleteViewChanged({ ...a }));
     pending.resolve([note('b', { content: 'old b', rev: 9 })]);
     await settle();
-    expect(run.state().byWorkspaceId[WS].notes.map.b.content).toBe('replacement b');
-    expect(Object.values(run.state().deleteOperations ?? {})).toEqual([a]);
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map.b.content).toBe('replacement b');
+    expect(Object.values(run.state().workspaceNotes.deleteOperations ?? {})).toEqual([a]);
     run.send(workspaceNotesHydrationRequested(WS, 2, true));
     await settle();
-    expect(run.state().byWorkspaceId[WS].notes.map.b.content).toBe('fresh read');
+    expect(run.state().workspaceNotes.byWorkspaceId[WS].notes.map.b.content).toBe('fresh read');
   } finally {
     run.task.cancel();
     await run.task.toPromise();
     vi.restoreAllMocks();
+  }
+});
+
+it('drops whole-comment hydration that races page ownership', async () => {
+  const pending = deferred<never[]>();
+  vi.spyOn(appClient.comments, 'list').mockReturnValue(pending.promise);
+  const run = harness();
+  try {
+    const action = loadNoteCommentsRequested(WS, 'spec');
+    run.channel.put(action);
+    await settle();
+    run.send(pagePanelOpened(WS, 'spec', 'reader') as never);
+    pending.resolve([{ id: 'whole' } as never]);
+    await expect(action.promise).resolves.toEqual([]);
+  } finally {
+    run.task.cancel();
+  }
+});
+
+it('does not load whole attribution while a paged viewer owns the note', async () => {
+  const load = vi.spyOn(appClient.notes.lineAttribution, 'load').mockResolvedValue(null);
+  const run = harness([], notePagesReducer(undefined, pagePanelOpened(WS, 'spec', 'reader')));
+  try {
+    run.channel.put(noteAttributionViewRequested('gutter', 'request', WS, 'spec'));
+    await settle();
+    expect(load).not.toHaveBeenCalled();
+  } finally {
+    run.task.cancel();
   }
 });

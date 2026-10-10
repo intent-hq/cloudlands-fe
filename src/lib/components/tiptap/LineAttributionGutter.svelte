@@ -13,6 +13,8 @@
 <script lang="ts">
   import { isPagedNoteSession } from '$features/notes/notes-read-service';
   import { logger } from '$lib/utils/client-logger';
+  import { untrack } from 'svelte';
+  import { writable } from 'svelte/store';
 
   import type { Editor } from '@tiptap/core';
   import {
@@ -27,8 +29,6 @@
     type CoalescedSpan,
     type IndicatorEntry,
   } from './attribution-span-coalescer';
-  import { listenSync } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
   import type { WorkspaceId, NoteId } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
@@ -36,6 +36,12 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { selectNoteAttributionView } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    noteAttributionViewReleased,
+    noteAttributionViewRequested,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 
   interface Props {
     editor: Editor;
@@ -45,6 +51,21 @@
   }
 
   let { editor, workspaceId, noteId, markdown }: Props = $props();
+
+  const componentId = $props.id();
+  const attributionConsumerId = `line-attribution:${componentId}`;
+  // svelte-ignore state_referenced_locally - selector targets are retargeted below
+  const attributionWorkspaceIdStore = writable(String(workspaceId));
+  // svelte-ignore state_referenced_locally - selector targets are retargeted below
+  const attributionNoteIdStore = writable(String(noteId));
+  $effect(() => attributionWorkspaceIdStore.set(String(workspaceId)));
+  $effect(() => attributionNoteIdStore.set(String(noteId)));
+  const attributionView = selectNoteAttributionView(
+    attributionWorkspaceIdStore,
+    attributionConsumerId,
+  );
+  const principalConnectionContext = selectPrincipalConnectionContext();
+  let attributionRequestSequence = 0;
 
   // Line attribution data loaded from disk
   let lineAttributions: LineAttributions = $state(new Map());
@@ -172,36 +193,6 @@
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       handleSpanClick(event, span);
-    }
-  }
-
-  /**
-   * Load line attribution data via the daemon (PROTOCOL §5.2.1
-   * `note.lineAttribution.load`). Returns the bare `LineAttributionData |
-   * null` payload; a `null` result means the daemon has not computed
-   * attributions yet, in which case the gutter renders empty.
-   */
-  async function loadAttributions() {
-    if (isPagedNoteSession(workspaceId, noteId)) return;
-    try {
-      const data = await appClient.notes.lineAttribution.load(workspaceId, noteId);
-      if (isPagedNoteSession(workspaceId, noteId)) return;
-
-      if (data) {
-        // Convert from Record<lineNumber, AttributionInfo> to Map<number, AttributionInfo>
-        const map = new Map<number, AttributionInfo>();
-        for (const [lineNum, attrInfo] of Object.entries(data.attributions)) {
-          map.set(Number(lineNum), attrInfo as AttributionInfo);
-        }
-        lineAttributions = map;
-
-        // Update indicators after loading data
-        updateIndicators();
-      } else {
-        logger.debug('[LineAttributionGutter] No attribution data found');
-      }
-    } catch (error) {
-      logger.debug('[LineAttributionGutter] Failed to load attributions', { error });
     }
   }
 
@@ -411,11 +402,38 @@
     }
   }
 
-  // Load attributions once on mount (untracked to avoid infinite loop)
+  // The read saga owns the request and event-driven refresh lifetime. This
+  // component only maps the serializable result onto editor geometry.
   $effect(() => {
-    logger.debug('[LineAttributionGutter] Mounting, loading attributions once');
-    loadAttributions();
+    const currentWorkspaceId = String(workspaceId);
+    const currentNoteId = String(noteId);
+    const authority = $principalConnectionContext;
+    if (!authority || isPagedNoteSession(currentWorkspaceId, currentNoteId)) return;
+    attributionRequestSequence += 1;
+    appStore.dispatch(
+      noteAttributionViewRequested(
+        attributionConsumerId,
+        `${attributionConsumerId}:${attributionRequestSequence}`,
+        currentWorkspaceId,
+        currentNoteId,
+      ),
+    );
+    return () =>
+      appStore.dispatch(noteAttributionViewReleased(currentWorkspaceId, attributionConsumerId));
+  });
 
+  $effect(() => {
+    const data = $attributionView?.data;
+    const map = new Map<number, AttributionInfo>();
+    for (const [lineNum, attrInfo] of Object.entries(data?.attributions ?? {})) {
+      map.set(Number(lineNum), attrInfo as AttributionInfo);
+    }
+    lineAttributions = map;
+    if (map.size === 0) spans = [];
+    untrack(updateIndicators);
+  });
+
+  $effect(() => {
     // Update timestamps every minute to keep them fresh
     timestampUpdateInterval = window.setInterval(() => {
       logger.debug('[LineAttributionGutter] Updating timestamps...');
@@ -487,47 +505,6 @@
       if (updateTimeout !== null) {
         clearTimeout(updateTimeout);
       }
-    };
-  });
-
-  // Listen for line-attribution:updated events from backend
-  // Use a single listener that checks current noteId/workspaceId at event time
-  $effect(() => {
-    // Capture current values as strings to ensure consistent comparison
-    const currentWorkspaceId = String(workspaceId);
-    const currentNoteId = String(noteId);
-    if (isPagedNoteSession(currentWorkspaceId, currentNoteId)) return;
-
-    logger.debug('[LineAttributionGutter] Setting up line-attribution:updated listener', {
-      workspaceId: currentWorkspaceId,
-      noteId: currentNoteId,
-    });
-
-    // Use listenSync for synchronous cleanup without race conditions
-    const unsubscribe = listenSync('line-attribution:updated', (event: any) => {
-      // Handle both wrapped and unwrapped payloads
-      const payload = event?.payload || event || {};
-      const eventWorkspaceId = String(payload.workspaceId || '');
-      const eventNoteId = String(payload.noteId || '');
-
-      logger.debug('[LineAttributionGutter] Received line-attribution:updated event', {
-        eventWorkspaceId,
-        eventNoteId,
-        currentWorkspaceId,
-        currentNoteId,
-        match: eventWorkspaceId === currentWorkspaceId && eventNoteId === currentNoteId,
-      });
-
-      // Only reload if it's for this workspace and note (use string comparison)
-      if (eventWorkspaceId === currentWorkspaceId && eventNoteId === currentNoteId) {
-        logger.debug('[LineAttributionGutter] Reloading attributions due to backend update');
-        loadAttributions();
-      }
-    });
-
-    return () => {
-      logger.debug('[LineAttributionGutter] Cleaning up line-attribution:updated listener');
-      unsubscribe();
     };
   });
 </script>

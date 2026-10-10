@@ -48,8 +48,14 @@ import type {
   ConnectionWorkflowIntent,
   ConnectionWorkflowOutcome,
   SelfPublicationOperation,
+  ConnectionTunnelIntent,
 } from './connections-types';
 import type { SelfPublishedStateResult } from '$shared/types/connections';
+import type { SettingsFormRequest } from '../settings-events/settings-events-types';
+
+export const connectionTunnelRequested = createAction<
+  [request: SettingsFormRequest, intent: ConnectionTunnelIntent]
+>('connections/tunnelRequested');
 
 // ---------------------------------------------------------------------------
 // Initial state

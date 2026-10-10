@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScriptWithState } from './types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 
@@ -29,12 +29,25 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
     filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(() =>
       Promise.resolve(null),
     ),
-    backendRequestMock: vi.fn(() => Promise.resolve({ config: {} })),
+    backendRequestMock: vi.fn(async (method: string, params: any) => {
+      if (method === 'script.remove') {
+        const result = await scriptsRemove(params.workspaceId, params.scriptId);
+        if (!result.success) throw new Error(result.error);
+        return { ok: true };
+      }
+      if (method === 'script.create') {
+        const { workspaceId, ...definition } = params;
+        const result = await scriptsCreate(workspaceId, definition);
+        if (!result.success) throw new Error(result.error);
+        return result.script;
+      }
+      return { config: {} };
+    }),
   }),
 );
 vi.mock('$lib/client', () => ({
   appClient: {
-    scripts: { list: scriptsList, create: scriptsCreate, remove: scriptsRemove },
+    scripts: { list: scriptsList, create: scriptsCreate },
     files: { read: filesRead },
   },
 }));
@@ -43,11 +56,20 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { scriptsClient } from './scripts.client';
+import { store } from '$store/renderer/store';
+import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
+
+beforeEach(() => {
+  store.dispose();
+  store.init();
+});
+afterEach(() => store.dispose());
 
 function fileEntry(path: string, content: string): FileContentEntry {
   return {
     path,
     absolutePath: null,
+    kind: 'editable-text',
     originalContent: content,
     localContent: content,
     lastUpdated: 0,
@@ -203,6 +225,9 @@ describe('scriptsClient.create purpose forwarding', () => {
 });
 
 describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
+  beforeEach(() =>
+    store.dispatch(setScriptsData('ws-1', [liveScript(), liveScript({ id: 'script-auto-dev' })])),
+  );
   afterEach(() => vi.clearAllMocks());
 
   it('merges partial updates into the existing definition and upserts via script.create with the existing scriptId', async () => {
@@ -232,6 +257,17 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
         category: 'dev',
       }),
     );
+    expect(backendRequestMock).toHaveBeenCalledWith('script.create', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-auto-dev',
+      name: 'dev',
+      command: 'pnpm dev',
+      mode: 'service',
+      category: 'dev',
+      cwd: undefined,
+      env: undefined,
+      autoStart: undefined,
+    });
     expect(result.success).toBe(true);
   });
 
@@ -543,6 +579,44 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
 
     expect(result).toEqual({ success: false, error: 'daemon offline' });
     expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+  });
+});
+
+describe('scriptsClient.restoreSnapshot', () => {
+  afterEach(() => vi.clearAllMocks());
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'preserves %s purpose when recreating a snapshot',
+    async (purpose) => {
+      scriptsList.mockResolvedValueOnce([]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      expect((await scriptsClient.restoreSnapshot('ws-1', [liveScript({ purpose })])).success).toBe(
+        true,
+      );
+      expect(scriptsCreate).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({ name: 'dev', purpose: purpose ?? 'saved' }),
+      );
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('scriptId');
+    },
+  );
+  it('does not recreate definitions after a removal failure', async () => {
+    scriptsList.mockResolvedValueOnce([liveScript()]);
+    scriptsRemove.mockResolvedValueOnce({ success: false, error: 'offline' });
+    expect(await scriptsClient.restoreSnapshot('ws-1', [liveScript()])).toEqual({
+      success: false,
+      error: 'offline',
+    });
+    expect(scriptsCreate).not.toHaveBeenCalled();
+  });
+  it('reports a failed restore read and permits retry', async () => {
+    scriptsList.mockRejectedValueOnce(new Error('offline'));
+    expect(await scriptsClient.restoreSnapshot('ws-1', [])).toEqual({
+      success: false,
+      error: 'offline',
+    });
+    scriptsList.mockResolvedValueOnce([]);
+    expect((await scriptsClient.restoreSnapshot('ws-1', [])).success).toBe(true);
     expect(scriptsRemove).not.toHaveBeenCalled();
   });
 });

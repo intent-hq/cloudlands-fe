@@ -17,6 +17,7 @@ import {
   createCollection,
   getItem,
   removeItem,
+  replaceItem,
   updateItem,
   upsertItem,
 } from '@themislib/themis/utils/collections/collection-utils';
@@ -31,6 +32,12 @@ import type {
   WorkspaceNotesState,
   RetainedNoteDraft,
 } from './workspace-notes-types';
+import type {
+  NoteAttributionViewState,
+  NotePresenceViewer,
+  NoteUiRequestState,
+} from './workspace-notes-types';
+import type { LineAttributionData } from '$lib/client';
 import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
 
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };
@@ -55,6 +62,10 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   specTaskLinksGeneration: 0,
   specDeleted: false,
   pendingContentByNoteId: {},
+  contentViews: createCollection('consumerId'),
+  workspaceRoots: createCollection('consumerId'),
+  presenceViews: createCollection('consumerId'),
+  attributionViews: createCollection('consumerId'),
 };
 
 export const initialState: WorkspaceNotesState = {
@@ -310,6 +321,10 @@ export const readNoteRequested = createAsyncAction<
   [workspaceId: string, noteId: string, eventType?: NoteEventType],
   Note | null
 >('workspaceNotes/readNoteRequested', 'workspaceNotes/readNoteSettled');
+export const listSlimNotesRequested = createAsyncAction<[workspaceId: string], Note[]>(
+  'workspaceNotes/listSlimNotesRequested',
+  'workspaceNotes/listSlimNotesSettled',
+);
 export const searchNotesRequested = createAsyncAction<
   [query: string, preferWorkspaceId?: string],
   unknown
@@ -341,6 +356,72 @@ export const commentEventReceived = createAction<
 export const setNoteContentPending = createAction<
   [workspaceId: string, noteId: string, pending: boolean]
 >('workspaceNotes/setNoteContentPending');
+
+export const noteContentViewRequested = createAction<
+  [consumerId: string, requestId: string, workspaceId: string, noteId: string]
+>('workspaceNotes/noteContentViewRequested');
+export const noteContentViewFinished = createAction<
+  [
+    workspaceId: string,
+    consumerId: string,
+    requestId: string,
+    authority: string | null,
+    error?: string,
+  ]
+>('workspaceNotes/noteContentViewFinished');
+export const noteContentViewReleased = createAction<[workspaceId: string, consumerId: string]>(
+  'workspaceNotes/noteContentViewReleased',
+);
+export const noteWorkspaceRootRequested = createAction<
+  [consumerId: string, requestId: string, workspaceId: string]
+>('workspaceNotes/noteWorkspaceRootRequested');
+export const noteWorkspaceRootFinished = createAction<
+  [
+    workspaceId: string,
+    consumerId: string,
+    requestId: string,
+    authority: string | null,
+    path: string | null,
+    error?: string,
+  ]
+>('workspaceNotes/noteWorkspaceRootFinished');
+export const noteWorkspaceRootReleased = createAction<[workspaceId: string, consumerId: string]>(
+  'workspaceNotes/noteWorkspaceRootReleased',
+);
+export const notePresenceViewRequested = createAction<
+  [consumerId: string, requestId: string, workspaceId: string, noteId: string]
+>('workspaceNotes/notePresenceViewRequested');
+export const notePresenceViewersReceived = createAction<
+  [
+    workspaceId: string,
+    consumerId: string,
+    requestId: string,
+    authority: string | null,
+    viewers: NotePresenceViewer[],
+  ]
+>('workspaceNotes/notePresenceViewersReceived');
+export const notePresenceViewReleased = createAction<[workspaceId: string, consumerId: string]>(
+  'workspaceNotes/notePresenceViewReleased',
+);
+export const noteAttributionViewRequested = createAction<
+  [consumerId: string, requestId: string, workspaceId: string, noteId: string]
+>('workspaceNotes/noteAttributionViewRequested');
+export const noteAttributionViewFinished = createAction<
+  [
+    consumerId: string,
+    requestId: string,
+    workspaceId: string,
+    authority: string | null,
+    data: LineAttributionData | null,
+    error?: string,
+  ]
+>('workspaceNotes/noteAttributionViewFinished');
+export const noteAttributionViewReleased = createAction<[workspaceId: string, consumerId: string]>(
+  'workspaceNotes/noteAttributionViewReleased',
+);
+export const noteAttributionInvalidated = createAction<[workspaceId: string, noteId: string]>(
+  'workspaceNotes/noteAttributionInvalidated',
+);
 
 /** Saga trigger: update note title */
 export const updateNoteTitle = createAction<[workspaceId: string, noteId: string, title: string]>(
@@ -699,6 +780,198 @@ workspaceNotesReducer.with(
     if (pending) pendingContentByNoteId[noteId] = true;
     else delete pendingContentByNoteId[noteId];
     return setWorkspaceState(state, workspaceId, { ...ws, pendingContentByNoteId });
+  },
+);
+
+workspaceNotesReducer.with(
+  noteContentViewRequested,
+  (state, { payload: [consumerId, requestId, workspaceId, noteId] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    const next: NoteUiRequestState = {
+      consumerId,
+      requestId,
+      workspaceId,
+      noteId,
+      authority: null,
+      status: 'loading',
+    };
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      contentViews: upsertItem(ws.contentViews, next),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteContentViewFinished,
+  (state, { payload: [workspaceId, consumerId, requestId, authority, error] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    const current = ws ? getItem(ws.contentViews, consumerId) : undefined;
+    if (!ws || !current || current.requestId !== requestId) return state;
+    const next: NoteUiRequestState = {
+      ...current,
+      authority,
+      status: error ? 'error' : 'ready',
+    };
+    if (error) next.error = error;
+    else delete next.error;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      contentViews: replaceItem(ws.contentViews, consumerId, next),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteContentViewReleased,
+  (state, { payload: [workspaceId, consumerId] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws || !getItem(ws.contentViews, consumerId)) return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      contentViews: removeItem(ws.contentViews, consumerId),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteWorkspaceRootRequested,
+  (state, { payload: [consumerId, requestId, workspaceId] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      workspaceRoots: upsertItem(ws.workspaceRoots, {
+        consumerId,
+        requestId,
+        workspaceId,
+        authority: null,
+        status: 'loading',
+        path: null,
+      }),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteWorkspaceRootFinished,
+  (state, { payload: [workspaceId, consumerId, requestId, authority, path, error] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    const current = ws ? getItem(ws.workspaceRoots, consumerId) : undefined;
+    if (!ws || !current || current.requestId !== requestId) return state;
+    const next = {
+      ...current,
+      authority,
+      path,
+      status: error ? ('error' as const) : ('ready' as const),
+    };
+    if (error) next.error = error;
+    else delete next.error;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      workspaceRoots: replaceItem(ws.workspaceRoots, consumerId, next),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteWorkspaceRootReleased,
+  (state, { payload: [workspaceId, consumerId] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws || !getItem(ws.workspaceRoots, consumerId)) return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      workspaceRoots: removeItem(ws.workspaceRoots, consumerId),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  notePresenceViewRequested,
+  (state, { payload: [consumerId, requestId, workspaceId, noteId] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      presenceViews: upsertItem(ws.presenceViews, {
+        consumerId,
+        requestId,
+        workspaceId,
+        noteId,
+        authority: null,
+        status: 'loading',
+        viewers: createCollection('principalId'),
+      }),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  notePresenceViewersReceived,
+  (state, { payload: [workspaceId, consumerId, requestId, authority, viewers] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    const current = ws ? getItem(ws.presenceViews, consumerId) : undefined;
+    if (!ws || !current || current.requestId !== requestId) return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      presenceViews: upsertItem(ws.presenceViews, {
+        ...current,
+        authority,
+        status: 'ready',
+        viewers: createCollection('principalId', viewers),
+      }),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  notePresenceViewReleased,
+  (state, { payload: [workspaceId, consumerId] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws || !getItem(ws.presenceViews, consumerId)) return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      presenceViews: removeItem(ws.presenceViews, consumerId),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteAttributionViewRequested,
+  (state, { payload: [consumerId, requestId, workspaceId, noteId] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      attributionViews: upsertItem(ws.attributionViews, {
+        consumerId,
+        requestId,
+        workspaceId,
+        noteId,
+        authority: null,
+        status: 'loading',
+        data: null,
+      }),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteAttributionViewFinished,
+  (state, { payload: [consumerId, requestId, workspaceId, authority, data, error] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    const current = ws ? getItem(ws.attributionViews, consumerId) : undefined;
+    if (!ws || !current || current.requestId !== requestId) return state;
+    const next: NoteAttributionViewState = {
+      ...current,
+      authority,
+      data,
+      status: error ? 'error' : 'ready',
+    };
+    if (error) next.error = error;
+    else delete next.error;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      attributionViews: replaceItem(ws.attributionViews, consumerId, next),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteAttributionViewReleased,
+  (state, { payload: [workspaceId, consumerId] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws || !getItem(ws.attributionViews, consumerId)) return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      attributionViews: removeItem(ws.attributionViews, consumerId),
+    });
   },
 );
 workspaceNotesReducer.with(fetchNoteVersions, (state, { payload: [workspaceId, noteId] }) => {

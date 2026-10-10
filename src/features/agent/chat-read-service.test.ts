@@ -52,6 +52,7 @@ import {
 import { selectTranscriptHydration } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { addMessage } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { loadChatTranscript } from './chat-read-service';
+import { chatInitialHistoryProgressed } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -101,6 +102,16 @@ describe('chatReadService (fake seam, real store)', () => {
     clearPendingAgentDeletions();
     agentsApi.get.mockResolvedValue(null as never);
     agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
+  });
+
+  it('does not start a competing event-driven history read during progressive delivery', async () => {
+    const agentId = 'progressive-event-read';
+    appStore.dispatch(
+      chatInitialHistoryProgressed(agentId, { target: 20, received: 1, complete: false }),
+    );
+    await loadChatTranscript(agentId, WS);
+    expect(agentsApi.get).not.toHaveBeenCalled();
+    expect(agentsApi.getConversation).not.toHaveBeenCalled();
   });
 
   it('loadChatTranscript fetches session + transcript and hydrates messages', async () => {

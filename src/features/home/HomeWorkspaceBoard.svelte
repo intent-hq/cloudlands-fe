@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
@@ -17,6 +18,7 @@
     selectedId,
     onselect,
     onopen,
+    oncontextmenu,
     archived = false,
     showRepository = true,
     groups,
@@ -25,6 +27,7 @@
     selectedId: string | null;
     onselect: (id: string) => void;
     onopen: (id: string) => void;
+    oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
@@ -87,16 +90,22 @@
                 if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
                   onselect(workspace.id);
               }}
-              onkeydown={(event) => openHomeWorkspaceFromEvent(event, workspace.id, onopen)}
+              oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
+              onkeydown={(event) => {
+                oncontextmenu?.(event, workspace);
+                if (!event.defaultPrevented)
+                  openHomeWorkspaceFromEvent(event, workspace.id, onopen);
+              }}
               aria-label={workspace.title}
             >
               <span class="flex items-start justify-between gap-3">
+                <WorkspaceMicroKeySlot workspaceId={workspace.id} />
                 <Tooltip.Provider
                   ><Tooltip.Root
                     ><Tooltip.Trigger
                       >{#snippet child({ props: homeTooltipProps })}<span
                           {...homeTooltipProps}
-                          class="min-w-0 line-clamp-2 break-words font-medium"
+                          class="min-w-0 flex-1 line-clamp-2 break-words font-medium"
                         >
                           {workspace.title}
                         </span>{/snippet}</Tooltip.Trigger
