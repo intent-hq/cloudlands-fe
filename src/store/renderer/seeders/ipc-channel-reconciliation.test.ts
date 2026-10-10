@@ -571,6 +571,11 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // a bridge the slice default `isConsoleOwner: true` stands and no IPC is
   // attempted). A mock bridge would shadow the main-process tracker.
   'hardware-console:get-owner-status',
+  // Desktop-only notification MP3 picker/read: local-notification-audio.ts
+  // calls the real preload directly and gates unsupported browser capability.
+  // Routing these through daemon/workspace IPC could read the wrong machine.
+  'notification:pick-sound',
+  'notification:read-sound',
 ]);
 
 /**

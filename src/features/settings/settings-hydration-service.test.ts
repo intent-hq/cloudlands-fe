@@ -1,3 +1,5 @@
+import { runSaga } from 'redux-saga';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { updateSpy, catalogSpy, listSpy, commitSpy } = vi.hoisted(() => ({
@@ -8,7 +10,7 @@ const { updateSpy, catalogSpy, listSpy, commitSpy } = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: (method: string, params?: unknown) => {
-    if (method === 'settings.list') return listSpy();
+    if (method === 'settings.list') return listSpy(method, params);
     if (method === 'settings.update')
       return updateSpy(params).then(
         (response: { applied: AppliedSettingChange[]; revision?: number }) => {
@@ -39,6 +41,11 @@ const testStore = appStore as typeof appStore & {
 testStore.getExistingStoreContext = function () {
   return this.storeContext;
 };
+import {
+  hydrateSettingsOnceSaga,
+  settingsHydrationSaga,
+} from '$store/renderer/slices/settings-events/sagas/settings-hydration-saga';
+import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
   applySettingsChanges as applyReceivedSettings,
   BG_MODEL_MIGRATION_MARKER_KEY,
@@ -127,6 +134,97 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     dispose?.();
     vi.clearAllMocks();
   });
+
+  it('reads the daemon settings.list wire snapshot and restores the saved desktop sound', async () => {
+    listSpy.mockResolvedValue({
+      revision: 12,
+      settings: [
+        {
+          path: 'notifications.soundPath',
+          value: '/Users/me/persisted.mp3',
+          label: 'Notification sound path',
+          description: 'Desktop MP3 path',
+          category: 'notifications',
+          type: 'string',
+          defaultValue: '',
+        },
+      ],
+    });
+    admitLegacyPrincipal();
+    await runSaga(
+      { dispatch: appStore.dispatch.bind(appStore), getState: () => appStore.state },
+      hydrateSettingsOnceSaga,
+    ).toPromise();
+    expect(listSpy).toHaveBeenCalledExactlyOnceWith('settings.list', undefined);
+    expect(appStore.state.userPreferences.soundPath).toBe('/Users/me/persisted.mp3');
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('hydrates custom audio and externally cleared preferences without echo writes', () => {
+    applySettingsChanges([
+      { path: 'notifications.soundPath', value: '/Users/me/notify.mp3' },
+      { path: 'notifications.soundEnabled', value: false },
+      { path: 'notifications.volume', value: 0.7 },
+    ]);
+    expect(appStore.state.userPreferences).toMatchObject({
+      soundPath: '/Users/me/notify.mp3',
+      soundEnabled: false,
+      volume: 0.7,
+    });
+    applySettingsChanges([{ path: 'notifications.soundPath', value: '' }]);
+    expect(appStore.state.userPreferences).toMatchObject({
+      soundPath: '',
+      soundEnabled: false,
+      volume: 0.7,
+    });
+    applySettingsChanges([{ path: 'notifications.soundPath', value: null }]);
+    expect(appStore.state.userPreferences.soundPath).toBe('');
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['/Users/me/new.mp3', ''])(
+    'preserves a soundPath change to %j arriving during the initial snapshot',
+    async (soundPath) => {
+      applySettingsChanges([{ path: 'notifications.soundPath', value: '/Users/me/before.mp3' }]);
+      const snapshot = {
+        revision: 1,
+        settings: [
+          {
+            path: 'notifications.soundPath',
+            value: '/Users/me/stale.mp3',
+            label: 'Notification sound path',
+            description: 'Desktop MP3 path',
+            category: 'notifications',
+            type: 'string',
+            defaultValue: '',
+          },
+        ],
+      };
+      let resolveSnapshot!: (value: typeof snapshot) => void;
+      listSpy.mockReturnValue(
+        new Promise<typeof snapshot>((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+      );
+      const stopHydration = appStore.runSaga(settingsHydrationSaga);
+      admitLegacyPrincipal();
+      try {
+        await vi.waitFor(() =>
+          expect(listSpy).toHaveBeenCalledExactlyOnceWith('settings.list', undefined),
+        );
+        appStore.dispatch(
+          settingsChangesReceived([{ path: 'notifications.soundPath', value: soundPath }], 2),
+        );
+        resolveSnapshot(snapshot);
+        await vi.waitFor(() => {
+          expect(appStore.state.userPreferences.soundPath).toBe(soundPath);
+        });
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        stopHydration();
+      }
+    },
+  );
 
   it('hydrates the default provider and enablement map from model.defaultProvider / providers.enabled', async () => {
     applySettingsChanges([
