@@ -9,13 +9,13 @@
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
-          "height": 126,
+          "height": 144,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
+          "width": 264.5,
           "x": 273,
           "y": 195
         },
@@ -29,22 +29,22 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 273,
-          "y": 329
+          "width": 264.5,
+          "x": 553.5,
+          "y": 195
         },
         "data-slot=button#3": {
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
-          "height": 126,
+          "height": 144,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 647,
+          "width": 264.5,
+          "x": 834,
           "y": 195
         },
         "data-slot=button#4": {
@@ -57,22 +57,22 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 1021,
+          "width": 264.5,
+          "x": 1114.5,
           "y": 195
         },
         "data-slot=button#5": {
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
-          "height": 108,
+          "height": 126,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 1021,
+          "width": 264.5,
+          "x": 1114.5,
           "y": 311
         },
         "data-slot=button#6": {
@@ -85,9 +85,9 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 1021,
-          "y": 427
+          "width": 264.5,
+          "x": 1114.5,
+          "y": 445
         }
       },
       "root": {
@@ -109,7 +109,7 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
+          "width": 264.5,
           "x": 273,
           "y": 195
         },
@@ -123,22 +123,22 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 273,
-          "y": 329
+          "width": 264.5,
+          "x": 553.5,
+          "y": 195
         },
         "data-slot=button#3": {
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
-          "height": 126,
+          "height": 144,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 647,
+          "width": 264.5,
+          "x": 834,
           "y": 195
         },
         "data-slot=button#4": {
@@ -151,8 +151,8 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 1021,
+          "width": 264.5,
+          "x": 1114.5,
           "y": 195
         },
         "data-slot=button#5": {
@@ -165,8 +165,8 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 1021,
+          "width": 264.5,
+          "x": 1114.5,
           "y": 311
         },
         "data-slot=button#6": {
@@ -179,8 +179,8 @@
           "marginTop": 0,
           "paddingLeft": 16,
           "paddingRight": 16,
-          "width": 358,
-          "x": 1021,
+          "width": 264.5,
+          "x": 1114.5,
           "y": 427
         }
       },
@@ -219,7 +219,7 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 245
+          "y": 301
         },
         "data-slot=list-row#3": {
           "fontSize": 15,
@@ -233,7 +233,7 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 349
+          "y": 405
         },
         "data-slot=list-row#4": {
           "fontSize": 15,
@@ -247,7 +247,7 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 453
+          "y": 509
         },
         "data-slot=list-row#5": {
           "fontSize": 15,
@@ -261,7 +261,7 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 501
+          "y": 557
         },
         "data-slot=list-row#6": {
           "fontSize": 15,
@@ -275,7 +275,7 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 549
+          "y": 605
         }
       },
       "root": {

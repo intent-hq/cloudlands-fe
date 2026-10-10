@@ -66,6 +66,12 @@ for (const view of ['list', 'board'] as const) {
     await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
     await expect(row).toBeFocused();
     await page.keyboard.press('Shift+F10');
+    await page.getByRole('menuitem', { name: 'Unpin', exact: true }).click();
+    await expect(row).toBeFocused();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+    await expect(row).toBeFocused();
+    await page.keyboard.press('Shift+F10');
     await testInfo.attach(`dismiss-micro-${view}-before`, {
       body: await page.screenshot(),
       contentType: 'image/png',

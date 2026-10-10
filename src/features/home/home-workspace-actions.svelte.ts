@@ -2,6 +2,7 @@ import { tick } from 'svelte';
 import { dismissibleWorkspaceReasons } from '$shared/utils/workspace-attention-reminder';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { requestDismissWorkspaceAttention } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { store } from '$store/renderer/store';
 import type { Workspace, AttentionReminderReason } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
@@ -49,6 +50,46 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
     sourceMenu: HTMLElement | null;
   } | null>(null);
   let retainedDismissedSelection = $state<string | null>(null);
+  let pendingPin = $state<{
+    workspaceId: string;
+    pinned: boolean;
+    sourceRow: HTMLElement | null;
+    sourceMenu: HTMLElement | null;
+  } | null>(null);
+  function pinWorkspace(workspaceId: string) {
+    const source = options
+      .root()
+      ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspaceId)}"]`);
+    const pinned = !store.state.sidebarNav.pinnedWorkspaceIds.includes(workspaceId);
+    pendingPin = {
+      workspaceId,
+      pinned,
+      sourceRow: source?.closest<HTMLElement>('[role="option"]') ?? source ?? null,
+      sourceMenu: document.activeElement?.closest<HTMLElement>('[role="menu"]') ?? null,
+    };
+    store.dispatch(togglePinWorkspace(workspaceId));
+    if (pinned) options.expandPinned();
+  }
+  $effect(() => {
+    const pending = pendingPin;
+    if (!pending || options.pinnedIds().includes(pending.workspaceId) !== pending.pinned) return;
+    pendingPin = null;
+    void tick().then(() => {
+      const row = options
+        .root()
+        ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(pending.workspaceId)}"]`);
+      const target = row?.closest<HTMLElement>('[role="option"]') ?? row;
+      const active = document.activeElement;
+      const ownsFocus =
+        active &&
+        (pending.sourceRow?.contains(active) ||
+          target?.contains(active) ||
+          pending.sourceMenu?.contains(active));
+      const removedRowLostFocus =
+        active === document.body && pending.sourceRow && !pending.sourceRow.isConnected;
+      if (ownsFocus || removedRowLostFocus) target?.focus();
+    });
+  });
   function dismissReminder(workspace: Workspace, snapshot: ReminderMenuSnapshot) {
     if (!snapshot.principalContext) return;
     contextMenu = null;
@@ -122,8 +163,7 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
       microConnected: options.microConnected(),
       onOpen: options.onOpen,
       onClose: () => (contextMenu = null),
-      expandPinned: options.expandPinned,
-      getHomeElement: options.root,
+      onPin: () => pinWorkspace(workspace.id),
     });
     if (snapshot.reasons.length && snapshot.principalContext)
       items.splice(2, 0, {

@@ -1,10 +1,8 @@
 import { createWorkspaceMicroKeyMenu } from '$features/hardware-console/assignment/workspace-key-menu';
-import { tick } from 'svelte';
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
-import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   requestArchiveWorkspace,
@@ -24,20 +22,12 @@ interface HomeWorkspaceMenuOptions {
   microConnected: boolean;
   onOpen: (id: string) => void;
   onClose: () => void;
-  expandPinned: () => void;
-  getHomeElement: () => HTMLElement | null;
+  onPin: () => void;
 }
 
 export function createHomeWorkspaceMenu(
   workspace: Workspace,
-  {
-    pinned,
-    microConnected,
-    onOpen,
-    onClose,
-    expandPinned,
-    getHomeElement,
-  }: HomeWorkspaceMenuOptions,
+  { pinned, microConnected, onOpen, onClose, onPin }: HomeWorkspaceMenuOptions,
 ): SidebarMenuEntry[] {
   const items: SidebarMenuEntry[] = [
     {
@@ -53,14 +43,7 @@ export function createHomeWorkspaceMenu(
       icon: faThumbtack,
       onClick: () => {
         onClose();
-        store.dispatch(togglePinWorkspace(workspace.id));
-        if (!pinned) expandPinned();
-        void tick().then(() =>
-          getHomeElement()
-            ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-            ?.closest<HTMLElement>('[role="option"], button')
-            ?.focus(),
-        );
+        onPin();
       },
     },
   ];
