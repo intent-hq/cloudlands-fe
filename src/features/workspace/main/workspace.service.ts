@@ -367,11 +367,7 @@ export class WorkspaceService {
       const limit = options?.limit || filteredWorkspaces.length;
       const paginatedWorkspaces = filteredWorkspaces.slice(offset, offset + limit);
 
-      // Workspace payloads are metadata-only; diff/git summaries are fetched
-      // on demand via dedicated endpoints, `taskStats` rides along from the
-      // daemon rows (PROTOCOL.md §5.1), and agent IDs come straight off the
-      // daemon `workspace.list` rows' `agentSummary.agentIds` (§5.1 card
-      // aggregates) — no per-workspace `agent.list` fan-out (monorepo#1768).
+      // Preserve daemon card aggregates; diff/git summaries use dedicated reads.
       const sanitizedWorkspaces = paginatedWorkspaces.map((workspace) =>
         this.toWorkspaceMetadata(workspace),
       );
@@ -414,38 +410,13 @@ export class WorkspaceService {
   }
 
   /**
-   * Convert a workspace to its metadata-only payload shape: high-frequency
-   * summary fields are stripped and agent summary carries IDs only, projected
-   * from the daemon row's `agentSummary.agentIds` (PROTOCOL.md §5.1 card
-   * aggregates) and present only when non-empty. `taskStats` is the cheap
-   * daemon-computed task progress rollup and passes through untouched.
+   * Keep daemon card aggregates (PROTOCOL §5.1) intact across desktop IPC.
+   * Diff/git summaries are fetched through their dedicated endpoints.
    */
   private toWorkspaceMetadata(workspace: Workspace): WorkspaceMetadata {
     const {
       diffs: _diffs,
       diffSummary: _diffSummary,
-      agentSummary,
-      gitSummary: _gitSummary,
-      ...metadata
-    } = workspace;
-
-    const agentIds = agentSummary?.agentIds ?? [];
-    return {
-      ...metadata,
-      ...(agentIds.length > 0 ? { agentSummary: { agentIds } } : {}),
-    };
-  }
-
-  /**
-   * Strip high-frequency summary fields from a workspace so returned payloads
-   * stay metadata-only (`taskStats` rides along — it is the cheap daemon-side
-   * rollup, PROTOCOL §5.1). Fetch summaries on demand via dedicated endpoints.
-   */
-  private stripWorkspaceSummaries(workspace: Workspace): Workspace {
-    const {
-      diffs: _diffs,
-      diffSummary: _diffSummary,
-      agentSummary: _agentSummary,
       gitSummary: _gitSummary,
       ...metadata
     } = workspace;
@@ -764,9 +735,9 @@ export class WorkspaceService {
       // (PROTOCOL.md §5.1); the FE no longer writes worktree/git/diffs
       // enrichment back to disk from a read path. Daemon gap: daemon should
       // validate worktree paths and own git repo info. Workspace payloads are
-      // metadata-only; diff/git/task summaries are fetched on demand via
+      // metadata-only; diff/git summaries are fetched on demand via
       // dedicated endpoints.
-      return { ok: true, data: this.stripWorkspaceSummaries(workspace) };
+      return { ok: true, data: this.toWorkspaceMetadata(workspace) };
     } catch (error) {
       logger.error('Failed to get workspace', error as Error, { workspaceId: id });
       return {
@@ -850,7 +821,7 @@ export class WorkspaceService {
       // request fields (prStatus, activePullRequest, pullRequests) are applied
       // on top so callers see them. Existing data provides fallback for any
       // fields the daemon may drop from its `workspace.update` response.
-      const merged: Workspace = this.stripWorkspaceSummaries({
+      const merged: Workspace = this.toWorkspaceMetadata({
         ...existingResult.data,
         ...daemonWorkspace,
       });

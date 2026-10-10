@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Wire-contract tests for the workspace.service ↔ daemon agent-ID surface.
- * Workspace agent IDs come from the `agentSummary.agentIds` card aggregate on
+ * Wire-contract tests for the workspace.service ↔ daemon card aggregate.
+ * Workspace agent summaries come from the `agentSummary` card aggregate on
  * `workspace.list` / `workspace.get` rows (PROTOCOL.md §5.1) — the service
  * must NOT fan out per-workspace `agent.list` RPCs (monorepo#1768).
  *
@@ -40,6 +40,7 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
 
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
+import { WorkspaceId } from '../../../../shared/types/branded-ids';
 
 const GIT_CONFIG_FIXTURE = `
 [core]
@@ -80,7 +81,7 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
     vi.clearAllMocks();
   });
 
-  it('listWorkspaces issues no agent.list and reads agentSummary.agentIds off the workspace.list row', async () => {
+  it('preserves agent cards through the desktop list entry point without agent.list fan-out', async () => {
     const now = new Date().toISOString();
     daemonWorkspaces.push({
       id: 'wire-test-ws',
@@ -95,7 +96,16 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
         count: 2,
         agents: [
           { id: 'agent-a', name: 'A', status: 'idle', isStreaming: false, isResponding: false },
-          { id: 'agent-b', name: 'B', status: 'idle', isStreaming: false, isResponding: false },
+          {
+            id: 'agent-b',
+            name: 'B',
+            status: 'active',
+            parentAgentId: 'agent-a',
+            lastActivity: now,
+            isBackground: true,
+            isStreaming: false,
+            isResponding: false,
+          },
         ],
         agentIds: ['agent-a', 'agent-b'],
       },
@@ -110,23 +120,31 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
       updatedAt: now,
       agentSummary: { count: 0, agents: [], agentIds: [] },
     });
+    daemonWorkspaces.push({
+      id: 'wire-test-ws-no-summary',
+      title: 'No summary',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+    });
 
     requestMock.mockClear();
 
-    const listed = await service.listWorkspaces({ lite: true });
+    const listed = await service.listAllWorkspaces({ lite: true });
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
 
-    const agentListCalls = requestMock.mock.calls.filter(([m]) => m === 'agent.list');
-    expect(agentListCalls).toHaveLength(0);
+    expect(requestMock.mock.calls).toEqual([['workspace.list', { includeArchived: true }]]);
 
-    const withAgents = listed.data.workspaces.find((w) => w.id === 'wire-test-ws');
-    expect(withAgents?.agentSummary).toEqual({ agentIds: ['agent-a', 'agent-b'] });
+    const withAgents = listed.data.find((w) => w.id === 'wire-test-ws');
+    expect(withAgents?.agentSummary).toEqual(daemonWorkspaces[0].agentSummary);
 
-    // Empty agentIds ⇒ agentSummary omitted from the outgoing metadata payload.
-    const withoutAgents = listed.data.workspaces.find((w) => w.id === 'wire-test-ws-empty');
+    const withoutAgents = listed.data.find((w) => w.id === 'wire-test-ws-empty');
     expect(withoutAgents).toBeDefined();
-    expect(withoutAgents?.agentSummary).toBeUndefined();
+    expect(withoutAgents?.agentSummary).toEqual({ count: 0, agents: [], agentIds: [] });
+    expect(listed.data.find((w) => w.id === 'wire-test-ws-no-summary')).not.toHaveProperty(
+      'agentSummary',
+    );
   });
 
   it('listWorkspaces (non-lite) also issues no agent.list', async () => {
@@ -154,8 +172,38 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
 
-    expect(requestMock.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(0);
-    expect(listed.data.workspaces[0]?.agentSummary).toEqual({ agentIds: ['agent-a'] });
+    expect(requestMock.mock.calls).toEqual([['workspace.list', { includeArchived: false }]]);
+    expect(listed.data.workspaces[0]?.agentSummary).toEqual(daemonWorkspaces[0].agentSummary);
+  });
+
+  it('keeps card agents when desktop workspace detail replaces a list row', async () => {
+    const summary = {
+      count: 1,
+      agentIds: ['agent-a'],
+      agents: [
+        {
+          id: 'agent-a',
+          name: 'Coordinator',
+          status: 'active',
+          isStreaming: false,
+          isResponding: false,
+        },
+      ],
+    };
+    daemonWorkspaces.push({
+      id: 'wire-test-ws',
+      title: 'Wire Test',
+      status: 'Active',
+      createdAt: '2026-10-08T20:00:00Z',
+      updatedAt: '2026-10-08T20:00:00Z',
+      agentSummary: summary,
+    });
+
+    const result = await service.getWorkspace(WorkspaceId('wire-test-ws'));
+
+    expect(requestMock).toHaveBeenCalledWith('workspace.get', { workspaceId: 'wire-test-ws' });
+    expect(requestMock.mock.calls.filter(([method]) => method === 'agent.list')).toHaveLength(0);
+    expect(result).toMatchObject({ ok: true, data: { agentSummary: summary } });
   });
 
   it('listWorkspaces carries taskStats from the workspace.list row through the metadata payload (monorepo#1934)', async () => {

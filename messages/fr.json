@@ -7050,6 +7050,7 @@
   "home_workspace_view": "Vue des espaces de travail",
   "home_list_view": "Vue en liste",
   "home_board_view": "Vue en tableau",
+  "home_dashboard_view_label": "Vue du tableau de bord",
   "home_board_waiting": "En attente",
   "home_board_idle": "Inactif",
   "home_board_complete": "Terminé",

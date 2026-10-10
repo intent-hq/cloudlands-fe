@@ -4,11 +4,13 @@
   import HomeSearch from './HomeSearch.svelte';
   import Fa from 'svelte-fa';
   import { faList, faTableColumns } from '@fortawesome/free-solid-svg-icons';
+  import SquaresFour from 'phosphor-svelte/lib/SquaresFourIcon';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import HomeFilterSelect from './HomeFilterSelect.svelte';
   import HomeViewOptions from './HomeViewOptions.svelte';
   import type { HomeFilter } from './home-model';
+  import type { HomeConfiguration } from './home-workspaces-persistence';
   let {
     query,
     filter,
@@ -21,11 +23,11 @@
   }: {
     query: string;
     filter: HomeFilter;
-    view: 'list' | 'board';
+    view: HomeConfiguration['view'];
     filters: { id: HomeFilter; label: string; count: number }[];
     onquery: (query: string) => void;
     onfilter: (filter: HomeFilter) => void;
-    onview: (view: 'list' | 'board') => void;
+    onview: (view: HomeConfiguration['view']) => void;
     settings: Snippet;
     children?: Snippet;
   } = $props();
@@ -64,7 +66,7 @@
     onclick={() => onfilter('archived')}>{m.home_filter_archived()}</Button
   >
 </div>
-<div class="home-workspace-filters-compact ml-auto min-w-0">
+<div class="home-workspace-filters-compact ml-auto min-w-0 shrink-0">
   <HomeFilterSelect
     value={filter}
     label={m.layout_allCard_status_label()}
@@ -93,6 +95,15 @@
     aria-label={m.home_board_view()}
     tooltip={m.home_board_view()}
     onclick={() => onview('board')}><Fa icon={faTableColumns} /></Button
+  >
+  <Button
+    variant="ghost"
+    size="icon-sm"
+    active={view === 'dashboard'}
+    aria-pressed={view === 'dashboard'}
+    aria-label={m.home_dashboard_view_label()}
+    tooltip={m.home_dashboard_view_label()}
+    onclick={() => onview('dashboard')}><SquaresFour size={16} /></Button
   >
 </div>
 <HomeViewOptions>{@render settings()}</HomeViewOptions>

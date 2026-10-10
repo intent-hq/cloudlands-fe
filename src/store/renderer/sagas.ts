@@ -1,4 +1,5 @@
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
+import { dashboardDetailsSaga } from './slices/dashboard-details/sagas/dashboard-details-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
 import { providerAdapterPreparationSaga } from './slices/agent-availability/sagas/provider-adapter-preparation-saga';
@@ -145,6 +146,7 @@ export const sagas = [
   pendingRetentionSaga,
   homeIntegrationsSaga,
   homeWorkspacesSaga,
+  dashboardDetailsSaga,
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,

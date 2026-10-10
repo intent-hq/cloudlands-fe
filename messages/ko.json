@@ -7050,6 +7050,7 @@
   "home_workspace_view": "워크스페이스 보기",
   "home_list_view": "목록 보기",
   "home_board_view": "보드 보기",
+  "home_dashboard_view_label": "대시보드 보기",
   "home_board_waiting": "대기 중",
   "home_board_idle": "유휴",
   "home_board_complete": "완료",

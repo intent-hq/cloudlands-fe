@@ -87,7 +87,8 @@
               <span class="size-2 rounded-full bg-current"></span>
             {/if}
           </span>
-          {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{explanation}</span
+          {#if showLabel}<span class="text-foreground">{presentation.label}</span><span
+              class="sr-only">{explanation}</span
             >{/if}
         </span>{/snippet}</Tooltip.Trigger
     ><Tooltip.Content>{explanation}</Tooltip.Content></Tooltip.Root

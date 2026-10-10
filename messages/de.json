@@ -7050,6 +7050,7 @@
   "home_workspace_view": "Arbeitsbereichsansicht",
   "home_list_view": "Listenansicht",
   "home_board_view": "Boardansicht",
+  "home_dashboard_view_label": "Dashboardansicht",
   "home_board_waiting": "Wartend",
   "home_board_idle": "Inaktiv",
   "home_board_complete": "Abgeschlossen",
