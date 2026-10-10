@@ -152,7 +152,10 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
 import { isHostMembershipChange } from '$shared/types/principal';
-import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalConnectionContext,
+} from '$store/renderer/slices/principal/principal-selectors';
 import { hostMembershipListsChanged } from '$store/renderer/slices/host-membership/host-membership-slice';
 import {
   hostMembershipChanged,
@@ -2526,12 +2529,13 @@ const aggregateFetchInFlightByWorkspace = new Set<string>();
 const aggregateFetchFollowUpWantedByWorkspace = new Set<string>();
 
 async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promise<void> {
+  const principalContext = selectPrincipalActionContext.select(appStore.state);
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
     const response = (await backendRequest('workspace.get', { workspaceId })) as
       { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
-    if (workspace) {
+    if (workspace && principalContext === selectPrincipalActionContext.select(appStore.state)) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
       appStore.dispatch(setWorkspaceEntity(workspace));
@@ -2593,6 +2597,8 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   const wireChanges = (data as { changes?: unknown }).changes;
   if (!wireChanges || typeof wireChanges !== 'object') return;
   const raw = wireChanges as Record<string, unknown>;
+  // Receipt-free invalidation: every recipient reads its own reminder projection.
+  if (raw.attentionReminder === true) void reconcileWorkspaceAggregates(workspaceId);
   // `mcpServerToggled` (§5.22 per-workspace disable) is a non-column delta —
   // a self-sufficient notification of a workspace-scoped `mcp.servers.toggle`,
   // never a `Workspace` field — so it routes to the mcp-settings slice and is

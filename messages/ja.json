@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "今は非表示にする",
+  "workspace_ops_dismissFailed_error": "このリマインダーを非表示にできませんでした。もう一度お試しください。",
+  "home_status_waiting": "返信を待っています。現在のリマインダーは非表示です。",
   "workspace_setupScript_configUnavailable_description": "リポジトリのセットアップスクリプトを読み取れませんでした。ワークスペースを作成する前に、選択したスクリプトを確認してください。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Intent Mobile を接続するには、このデバイスでリモートアクセスを有効にしてください。",
@@ -6966,6 +6969,7 @@
   "home_assistant_description": "計画を立て、質問し、作業を調整する場所です。",
   "home_filter_all": "すべてのワークスペース",
   "home_filter_attention": "対応が必要",
+  "home_filter_pr_ready": "PR 準備完了",
   "home_filter_running": "実行中",
   "home_filter_unread": "未読",
   "home_filter_archived": "アーカイブ済み",

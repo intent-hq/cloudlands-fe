@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "지금은 숨기기",
+  "workspace_ops_dismissFailed_error": "이 알림을 숨기지 못했습니다. 다시 시도하세요.",
+  "home_status_waiting": "응답을 기다리는 중입니다. 현재 알림은 숨겨져 있습니다.",
   "workspace_setupScript_configUnavailable_description": "저장소의 설정 스크립트를 읽을 수 없습니다. 워크스페이스를 만들기 전에 선택한 스크립트를 확인하세요.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Intent Mobile을 연결하려면 이 기기에서 원격 액세스를 활성화하세요.",
@@ -6966,6 +6969,7 @@
   "home_assistant_description": "계획을 세우고, 질문하고, 작업을 조율하는 공간입니다.",
   "home_filter_all": "모든 워크스페이스",
   "home_filter_attention": "내 주의 필요",
+  "home_filter_pr_ready": "PR 준비됨",
   "home_filter_running": "실행 중",
   "home_filter_unread": "읽지 않음",
   "home_filter_archived": "보관됨",

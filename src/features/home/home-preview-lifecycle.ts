@@ -5,15 +5,18 @@ import { appClient } from '$lib/client';
 import { startChatFixtureSagas } from '../../test/chat-fixture-sagas';
 import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
 import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-browser-fixtures';
+import { setupHomeDismissFixtures } from './home-dismiss-browser-fixtures';
 import { setupHomeAssistantRenameFixtures } from './home-assistant-rename-browser-fixtures';
 
-export function startHomePreviewFixtures() {
+export function startHomePreviewFixtures(extraFixtures: () => Array<() => void> = () => []) {
   return startHomePreview(() => {
     const stopIntegrations = setupHomeIntegrationsFixtures(store);
     const stopActivity = setupHomeAssistantActivityFixtures();
     const stopRenames = setupHomeAssistantRenameFixtures();
+    const extraStops = extraFixtures();
     return [
       () => {
+        extraStops.forEach((stop) => stop());
         stopRenames();
         stopActivity();
         stopIntegrations();
@@ -38,4 +41,8 @@ export function startHomePreview(startSagas: () => Array<() => void>) {
     });
   const stops = startSagas();
   return () => stops.forEach((stop) => stop());
+}
+
+export function startHomeDismissPreview(collaborator: boolean) {
+  return startHomePreviewFixtures(() => [setupHomeDismissFixtures(collaborator)]);
 }

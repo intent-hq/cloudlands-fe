@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "Masquer pour le moment",
+  "workspace_ops_dismissFailed_error": "Impossible de masquer ce rappel. Réessayez.",
+  "home_status_waiting": "En attente de votre réponse ; le rappel actuel est masqué.",
   "workspace_setupScript_configUnavailable_description": "Impossible de lire le script de configuration du dépôt. Vérifiez le script sélectionné avant de créer l’espace de travail.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Activez l’accès à distance sur cet appareil pour connecter Intent Mobile.",
@@ -6966,6 +6969,7 @@
   "home_assistant_description": "Un espace pour planifier, poser des questions et coordonner votre travail.",
   "home_filter_all": "Tous les espaces de travail",
   "home_filter_attention": "Votre attention requise",
+  "home_filter_pr_ready": "PR prête",
   "home_filter_running": "En cours",
   "home_filter_unread": "Non lus",
   "home_filter_archived": "Archivés",

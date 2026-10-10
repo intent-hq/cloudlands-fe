@@ -33,6 +33,7 @@ import type {
  * stays aligned with the live store shape.
  */
 import type {
+  AttentionReminderReason,
   AgentDelegatedCounts,
   AgentListScope,
   AgentMessage,
@@ -471,6 +472,8 @@ export interface WorkspacesClient {
    * `workspace:attention-changed`, which drives the reactive UI clear.
    */
   markSeen(id: string): Promise<MutationResult>;
+  /** Acknowledge exact observed reminders for the bound person; omitted reasons use legacy behavior. */
+  dismissAttention(id: string, reasons?: AttentionReminderReason[]): Promise<Workspace>;
   setActive(id: string): Promise<MutationResult>;
   recentViews(): Promise<Record<string, number>>;
   /**

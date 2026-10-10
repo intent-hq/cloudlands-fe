@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "暫時忽略",
+  "workspace_ops_dismissFailed_error": "無法忽略此提醒，請再試一次。",
+  "home_status_waiting": "正在等待你的回覆；目前提醒已忽略。",
   "workspace_setupScript_configUnavailable_description": "無法讀取儲存庫的設定指令碼。請在建立工作區之前檢查所選指令碼。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "在此裝置上啟用遠端存取以連線至 Intent Mobile。",
@@ -6966,6 +6969,7 @@
   "home_assistant_description": "在這裡制定計畫、提出問題並協調工作。",
   "home_filter_all": "所有工作區",
   "home_filter_attention": "需要你處理",
+  "home_filter_pr_ready": "PR 已就緒",
   "home_filter_running": "執行中",
   "home_filter_unread": "未讀",
   "home_filter_archived": "已歸檔",

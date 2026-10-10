@@ -317,6 +317,17 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
  *  owner-only method, so the desktop hides those surfaces up front. */
 export type WorkspaceRole = 'owner' | 'collaborator';
 
+export interface AttentionReminderReason {
+  id: string;
+  revision: string;
+}
+
+export interface WorkspaceAttentionReminder {
+  reasons: AttentionReminderReason[];
+  dismissed: boolean;
+  displayStatus: WorkspaceDisplayStatus | 'waiting';
+}
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -348,6 +359,8 @@ export interface Workspace {
    *  daemon-side: open/draft PR → open tasks → merged PR → complete. Optional on
    *  decode — when absent (older daemons) the FE defaults to 'not_started'. */
   displayStatus?: WorkspaceDisplayStatus;
+  /** Caller-relative reminder projection; raw status and pending work remain unchanged. */
+  attentionReminder?: WorkspaceAttentionReminder;
   /** BE-owned dismissible attention flag (blue dot; PROTOCOL §5.1 / §9.9). The
    *  daemon raises 'unread' when an agent finishes its work; cleared via
    *  `workspace.markSeen` / `workspace.dismissAttention`. Optional on decode —

@@ -1,7 +1,13 @@
 <script lang="ts">
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
-  import { faCircleCheck, faCircleQuestion, faCircleExclamation } from '$lib/icons/phosphor-icons';
+  import {
+    faHourglass,
+    faCircleCheck,
+    faCircleQuestion,
+    faCircleExclamation,
+    faCodePullRequest,
+  } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
   import { getHomeStatusCause } from './home-attention';
   import { m } from '$shared/paraglide/messages.js';
@@ -12,6 +18,7 @@
     class: className,
     showLabel = false,
   }: { workspace: HomeTriageInput; class?: string; showLabel?: boolean } = $props();
+  const waiting = $derived(getHomeStatusCause(workspace) === 'waiting');
   const group = $derived(getHomeTriageGroup(workspace));
   const explanation = $derived.by(() => {
     switch (getHomeStatusCause(workspace)) {
@@ -31,6 +38,8 @@
         return m.home_status_merged();
       case 'complete':
         return m.home_status_complete();
+      case 'waiting':
+        return m.home_status_waiting();
       case 'unread':
         return m.home_status_unread();
       default:
@@ -39,6 +48,12 @@
   });
   const failed = $derived(workspace.displayStatus === 'failed');
   const presentation = $derived.by(() => {
+    if (waiting)
+      return {
+        label: m.workspace_taskStatus_waiting_label(),
+        icon: faHourglass,
+        color: 'text-muted-foreground',
+      };
     switch (group) {
       case 'needs-you':
         return {
@@ -46,6 +61,8 @@
           icon: faCircleQuestion,
           color: '',
         };
+      case 'pr-ready':
+        return { label: m.home_filter_pr_ready(), icon: faCodePullRequest, color: 'text-success' };
       case 'running':
         return { label: m.home_filter_running(), icon: null, color: 'text-primary' };
       case 'blocked':

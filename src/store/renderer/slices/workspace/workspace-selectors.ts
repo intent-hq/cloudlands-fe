@@ -1,3 +1,4 @@
+import { workspaceReminderStatus } from '$shared/utils/workspace-attention-reminder';
 import { store } from '../../store';
 import {
   PullRequestStatus,
@@ -181,7 +182,13 @@ export const selectIsWorkspaceHostLocal = store.createSelector<[wsId: string], b
  * agents). Absent reads as false: older daemons never send the field.
  */
 export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true,
+  (state, wsId) => {
+    const workspace = selectWorkspaceById.select(state, wsId);
+    return (
+      workspace?.waiting === true ||
+      (workspace !== undefined && workspaceReminderStatus(workspace) === 'waiting')
+    );
+  },
 );
 
 /** Primary selection uses the transport host-member gate, independently of Labs. */

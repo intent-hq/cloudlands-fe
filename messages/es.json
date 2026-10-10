@@ -1,4 +1,7 @@
 {
+  "workspace_card_dismissForNow_label": "Descartar por ahora",
+  "workspace_ops_dismissFailed_error": "No se pudo descartar este recordatorio. Inténtalo de nuevo.",
+  "home_status_waiting": "Esperando tu respuesta; el recordatorio actual está descartado.",
   "workspace_setupScript_configUnavailable_description": "No se pudo leer el script de configuración del repositorio. Revisa el script seleccionado antes de crear el espacio de trabajo.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Activa el acceso remoto en este dispositivo para conectar Intent Mobile.",
@@ -6966,6 +6969,7 @@
   "home_assistant_description": "Un lugar para planificar, hacer preguntas y coordinar su trabajo.",
   "home_filter_all": "Todos los espacios de trabajo",
   "home_filter_attention": "Requieren su atención",
+  "home_filter_pr_ready": "PR lista",
   "home_filter_running": "En ejecución",
   "home_filter_unread": "Sin leer",
   "home_filter_archived": "Archivados",
