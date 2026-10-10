@@ -1,6 +1,7 @@
 import { call, takeEvery } from 'typed-redux-saga';
 import { store } from '$store/renderer/store';
 import { searchNotesRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { bindPaletteFixtureConnection } from '../../test/fixtures/command-palette-note-search-fixture';
 import { paletteNoteSearchRequested } from '$store/renderer/slices/palette/palette-slice';
 import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
@@ -20,7 +21,7 @@ function* observePaletteFixtureSearches() {
   yield* takeEvery([searchNotesRequested, paletteNoteSearchRequested], function* (action) {
     const query =
       action.type === paletteNoteSearchRequested.type ? action.payload[2] : action.payload[0];
-    if (!query.trim()) return;
+    if (!query?.trim()) return;
     const recipients = [...listeners];
     try {
       yield* call(() => action.promise);
@@ -47,6 +48,7 @@ function observePaletteNoteSearchFixture(onSettled: (query: string) => void) {
 
 /** Serial legacy preview mounts exercise local discovery, including all 16 seeded notes. */
 export function setupPaletteNoteSearchFixture(onSettled?: (query: string) => void) {
+  bindPaletteFixtureConnection();
   const previousBridge = window.electronAPI;
   installMockElectronBridge({
     'search.notes': (raw) => {
