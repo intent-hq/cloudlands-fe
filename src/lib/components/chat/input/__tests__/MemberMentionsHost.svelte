@@ -18,6 +18,8 @@
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   // eslint-disable-next-line themis/forbidden-component-import -- Isolated fixture runs the production membership lifecycle against a mock transport.
   import { presenceSaga } from '$store/renderer/slices/presence/sagas/presence-saga';
+  // eslint-disable-next-line themis/forbidden-component-import -- Isolated fixture runs production note reads against a mock transport.
+  import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
   import { presenceReset } from '$store/renderer/slices/presence/presence-slice';
   import { selectWorkspaceMentionMembers } from '$store/renderer/slices/presence/presence-selectors';
   import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -151,9 +153,11 @@
       ),
     );
     const fixturePrincipal = store.state.principal;
+    const cancelNotesRead = store.runSaga(notesReadSaga);
     // Start only after self admission so the generic helper principal never hydrates members.
     const cancel = store.runSaga(presenceSaga);
     return () => {
+      cancelNotesRead();
       cancel();
       store.dispatch(presenceReset());
       if (store.dispatch === fixtureDispatch && store.state.principal === fixturePrincipal) {
