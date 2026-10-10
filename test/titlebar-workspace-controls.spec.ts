@@ -123,6 +123,95 @@ async function changeZoom(page: Page, zoom: number) {
   }, zoom);
 }
 
+for (const platform of ['macOS', 'Windows'] as const) {
+  test(`${platform} keeps Home unobstructed when workspace tabs overflow after resizing`, async ({
+    page,
+  }, testInfo) => {
+    await emulatePlatform(page, platform);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 1200, height: 300 });
+    await mountControls(page, 'light', 1);
+    await page.evaluate(async () => {
+      const { store } = await import('/src/store/renderer/store.ts');
+      const { openWorkspaceTab } =
+        await import('/src/store/renderer/slices/tab-state/tab-state-slice.ts');
+      const { setWorkspaceEntity } =
+        await import('/src/store/renderer/slices/workspace/workspace-slice.ts');
+      const { WorkspaceStatus } = await import('/src/shared/types.ts');
+      const { WorkspaceId } = await import('/src/shared/types/branded-ids.ts');
+      for (const [id, title] of [
+        ['titlebar-test', 'Switch issue triage to Codex'],
+        ['titlebar-remote', 'Remote development'],
+        ['titlebar-review', 'Review workspace changes'],
+      ]) {
+        store.dispatch(
+          setWorkspaceEntity({
+            id: WorkspaceId(id),
+            title,
+            branch: id,
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            status: WorkspaceStatus.Active,
+            createdAt: '2026-10-06T12:00:00.000Z',
+            updatedAt: '2026-10-06T12:00:00.000Z',
+          }),
+        );
+        store.dispatch(openWorkspaceTab(id));
+      }
+    });
+    const home = page.locator('[data-titlebar-spaces-control]');
+    const strip = page.locator('[data-workspace-tab-scroller]');
+    await expect(page.locator('[data-workspace-tab-title]')).toHaveCount(3);
+    const geometry = () =>
+      page.locator('.window-title-bar').evaluate((root) => {
+        const home = root.querySelector<HTMLElement>('[data-titlebar-spaces-control]')!;
+        const fixed = root.querySelector('[data-titlebar-fixed-controls]')!.getBoundingClientRect();
+        const strip = root.querySelector<HTMLElement>('[data-workspace-tab-scroller]')!;
+        const box = home.getBoundingClientRect();
+        return {
+          homeRight: box.right,
+          fixedRight: fixed.right,
+          scrollable: strip.scrollWidth > strip.clientWidth,
+          homeUnobstructed: [0.1, 0.5, 0.9].every((fraction) =>
+            home.contains(
+              document.elementFromPoint(box.x + box.width * fraction, box.y + box.height / 2),
+            ),
+          ),
+        };
+      });
+    await expect.poll(async () => (await geometry()).scrollable).toBe(false);
+    const wide = await geometry();
+    await page.setViewportSize({ width: 640, height: 300 });
+    await expect.poll(async () => (await geometry()).scrollable).toBe(true);
+    const narrow = await geometry();
+    await testInfo.attach('resize-geometry', {
+      body: JSON.stringify({ wide, narrow }),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('narrow-titlebar', {
+      body: await page.locator('.window-title-bar-wrapper').screenshot(),
+      contentType: 'image/png',
+    });
+    expect(narrow.fixedRight).toBeCloseTo(wide.fixedRight, 1);
+    expect(narrow.homeUnobstructed).toBe(true);
+    await strip.evaluate((node) => {
+      node.scrollLeft = node.scrollWidth;
+    });
+    await expect.poll(async () => (await geometry()).homeUnobstructed).toBe(true);
+    await strip.evaluate((node) => {
+      node.scrollLeft = 0;
+    });
+    await expect.poll(async () => (await geometry()).homeUnobstructed).toBe(true);
+    const homeBox = (await home.boundingBox())!;
+    await home.click({ position: { x: homeBox.width * 0.9, y: homeBox.height / 2 } });
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await page.setViewportSize({ width: 1200, height: 300 });
+    await expect.poll(async () => (await geometry()).scrollable).toBe(false);
+    await expect.poll(async () => (await geometry()).homeUnobstructed).toBe(true);
+  });
+}
+
 test('keeps the Mac Home hit target clear of traffic lights through live zoom and reset', async ({
   page,
 }) => {
