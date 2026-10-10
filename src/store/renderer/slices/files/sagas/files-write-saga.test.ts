@@ -187,11 +187,14 @@ describe('filesWriteSaga', () => {
         const outcome = request.promise.catch((error) => error);
         h.dispatch(request);
         h.dispatch(
-          loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', {
-            kind: 'restorable-snapshot',
-            content: content,
-            isBinary: true,
-          }),
+          loadFileContentSucceeded(
+            'ws-1',
+            'a.ts',
+            '/repo/a.ts',
+            content === null
+              ? { kind: 'preview-only', isBinary: true }
+              : { kind: 'restorable-snapshot', content, isBinary: true },
+          ),
         );
         if (cleanup === 'pruned') h.dispatch(removeFileContentEntry('ws-1', 'a.ts'));
         if (cleanup === 'unmounted') h.dispatch(workspaceUnmounted('ws-1'));

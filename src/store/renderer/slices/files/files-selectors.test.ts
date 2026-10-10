@@ -89,7 +89,12 @@ describe('files selectors', () => {
 
   it('returns original content for clean files', () => {
     const state = stateWithFiles([
-      fileEntry({ kind: 'editable-text', originalContent: 'clean', localContent: 'clean' }),
+      fileEntry({
+        kind: 'editable-text',
+        isBinary: false,
+        originalContent: 'clean',
+        localContent: 'clean',
+      }),
     ]);
 
     expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe('clean');
@@ -97,7 +102,12 @@ describe('files selectors', () => {
 
   it('returns original content when original content is set', () => {
     const state = stateWithFiles([
-      fileEntry({ localContent: 'edited', kind: 'editable-text', originalContent: 'original' }),
+      fileEntry({
+        localContent: 'edited',
+        kind: 'editable-text',
+        isBinary: false,
+        originalContent: 'original',
+      }),
     ]);
 
     expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe('original');
