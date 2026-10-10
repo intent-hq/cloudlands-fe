@@ -3,7 +3,7 @@ import {
   selectIsHostMember,
 } from '../host-execution/host-execution-selectors';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { resolveProviderEnabled } from '$shared/provider-catalog';
+import { providerTokenCapability, resolveProviderEnabled } from '$shared/provider-catalog';
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import { store } from '../../store';
 import {
@@ -188,3 +188,12 @@ export const selectFastModeSupportedProviders = store.createSelector((state): st
     (id) => selectProviderCatalogEntry.select(state, id)?.supportsFastMode === true,
   );
 });
+
+export const selectProviderAccessToken = store.createSelector(
+  (state, providerId: string) => state.providerSettings.accessTokens?.[providerId],
+);
+
+export const selectProviderAccessTokenCapability = store.createSelector(
+  (state, providerId: string) =>
+    providerTokenCapability(selectProviderCatalogEntry.select(state, providerId)),
+);

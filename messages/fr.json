@@ -7501,5 +7501,19 @@
   "chat_failureRecovery_action_label": "Action requise",
   "chat_failureRecovery_queued_description": "Un message est en attente. Utilisez ses commandes ci-dessous pour le gérer.",
   "chat_failureRecovery_action_description": "La réponse a été interrompue avant la fin.",
-  "providers_cliVersionWarning_message": "La version {version} de la CLI {provider} est inférieure au minimum pris en charge {minimumVersion}. Mettez à jour la CLI sur l’hôte du daemon."
+  "providers_cliVersionWarning_message": "La version {version} de la CLI {provider} est inférieure au minimum pris en charge {minimumVersion}. Mettez à jour la CLI sur l’hôte du daemon.",
+  "settings_providerToken_label": "Jeton d’accès facultatif",
+  "settings_providerToken_saved": "Jeton enregistré · non vérifié",
+  "settings_providerToken_absent": "Aucun jeton enregistré",
+  "settings_providerToken_manual": "Sans jeton, connectez-vous sur chaque machine cible avec le compte qui exécute le nœud.",
+  "settings_providerToken_nextLaunch": "Les modifications concernent les nouveaux agents. Les agents en cours conservent leur authentification.",
+  "settings_providerToken_claude": "Créez un jeton Claude avec claude setup-token.",
+  "settings_providerToken_codex": "Utilisez un jeton d’accès Codex d’un espace ChatGPT Business ou Enterprise éligible.",
+  "settings_providerToken_save": "Enregistrer le jeton",
+  "settings_providerToken_replace": "Remplacer le jeton",
+  "settings_providerToken_remove": "Supprimer le jeton",
+  "settings_providerToken_loading": "Chargement des paramètres du jeton…",
+  "settings_providerToken_unavailable": "Les paramètres de jeton ne sont pas disponibles sur ce daemon.",
+  "settings_providerToken_error": "Impossible de modifier le jeton. Réessayez.",
+  "settings_providerToken_loadError": "Impossible de charger les paramètres du jeton. Réessayez."
 }

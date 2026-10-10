@@ -7501,5 +7501,19 @@
   "chat_failureRecovery_action_label": "需要处理",
   "chat_failureRecovery_queued_description": "有一条消息正在排队。请使用下方控件进行管理。",
   "chat_failureRecovery_action_description": "回复在完成前停止了。",
-  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低于支持的最低版本 {minimumVersion}。请在守护进程主机上更新 CLI。"
+  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低于支持的最低版本 {minimumVersion}。请在守护进程主机上更新 CLI。",
+  "settings_providerToken_label": "访问令牌（可选）",
+  "settings_providerToken_saved": "令牌已保存 · 未验证",
+  "settings_providerToken_absent": "未保存令牌",
+  "settings_providerToken_manual": "如果不使用令牌，请在每台目标机器上以运行节点的账户登录。",
+  "settings_providerToken_nextLaunch": "更改适用于新启动的智能体。运行中的智能体保留当前身份验证。",
+  "settings_providerToken_claude": "使用 claude setup-token 创建 Claude 设置令牌。",
+  "settings_providerToken_codex": "请使用符合条件的 ChatGPT Business 或 Enterprise 工作区的 Codex 访问令牌。",
+  "settings_providerToken_save": "保存令牌",
+  "settings_providerToken_replace": "替换令牌",
+  "settings_providerToken_remove": "移除令牌",
+  "settings_providerToken_loading": "正在加载令牌设置…",
+  "settings_providerToken_unavailable": "此守护进程不支持令牌设置。",
+  "settings_providerToken_error": "无法更新令牌，请重试。",
+  "settings_providerToken_loadError": "无法加载令牌设置，请重试。"
 }

@@ -71,6 +71,7 @@
   } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
+  import ProviderAccessToken from './ProviderAccessToken.svelte';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
@@ -176,6 +177,7 @@
     orderedCatalogEntries.map((provider) => {
       const status = $providerStatusMap$[provider.id];
       return {
+        catalogEntry: provider,
         id: provider.id,
         name: provider.displayName,
         displayName: provider.displayName,
@@ -781,6 +783,7 @@
                   </div>
                 </div>
               </div>
+              <ProviderAccessToken provider={provider.catalogEntry} />
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />
               {/if}

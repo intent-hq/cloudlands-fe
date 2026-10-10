@@ -46,6 +46,14 @@ const ProviderCatalogEntrySchema = z
     // consumers treat absence as unsupported.
     supportsTestPrompt: z.boolean().optional(),
     supportsFastMode: z.boolean().optional(),
+    accessToken: z
+      .object({
+        kind: z.enum(['claudeSetupToken', 'codexAccessToken']),
+        settingPath: z.string(),
+        label: z.string(),
+        guidance: z.string(),
+      })
+      .optional(),
   })
   .passthrough();
 
@@ -91,4 +99,19 @@ export function resolveProviderEnabled(
 ): boolean {
   if (opts.canBeDisabled === false) return true;
   return enabledProviders[providerId] ?? false;
+}
+
+/** Only consume the documented provider/path pairs; metadata cannot select arbitrary settings. */
+export function providerTokenCapability(entry: ProviderCatalogEntry | undefined) {
+  const token = entry?.accessToken;
+  if (
+    (entry?.id === 'claude-code' &&
+      token?.kind === 'claudeSetupToken' &&
+      token.settingPath === 'providers.claude-code.accessToken') ||
+    (entry?.id === 'codex' &&
+      token?.kind === 'codexAccessToken' &&
+      token.settingPath === 'providers.codex.accessToken')
+  )
+    return token;
+  return undefined;
 }

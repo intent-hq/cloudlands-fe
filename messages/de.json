@@ -7501,5 +7501,19 @@
   "chat_failureRecovery_action_label": "Aktion erforderlich",
   "chat_failureRecovery_queued_description": "Eine Nachricht wartet. Verwalten Sie sie über die Steuerelemente unten.",
   "chat_failureRecovery_action_description": "Die Antwort wurde vorzeitig beendet.",
-  "providers_cliVersionWarning_message": "Die CLI-Version {version} von {provider} liegt unter der unterstützten Mindestversion {minimumVersion}. Aktualisieren Sie die CLI auf dem Daemon-Host."
+  "providers_cliVersionWarning_message": "Die CLI-Version {version} von {provider} liegt unter der unterstützten Mindestversion {minimumVersion}. Aktualisieren Sie die CLI auf dem Daemon-Host.",
+  "settings_providerToken_label": "Optionales Zugriffstoken",
+  "settings_providerToken_saved": "Token gespeichert · nicht verifiziert",
+  "settings_providerToken_absent": "Kein Token gespeichert",
+  "settings_providerToken_manual": "Melden Sie sich ohne Token auf jedem Zielrechner mit dem Konto an, das den Knoten ausführt.",
+  "settings_providerToken_nextLaunch": "Änderungen gelten für neue Agenten. Laufende Agenten behalten ihre aktuelle Authentifizierung.",
+  "settings_providerToken_claude": "Erstellen Sie mit claude setup-token ein Claude-Setup-Token.",
+  "settings_providerToken_codex": "Verwenden Sie ein Codex-Zugriffstoken aus einem berechtigten ChatGPT Business- oder Enterprise-Workspace.",
+  "settings_providerToken_save": "Token speichern",
+  "settings_providerToken_replace": "Token ersetzen",
+  "settings_providerToken_remove": "Token entfernen",
+  "settings_providerToken_loading": "Token-Einstellungen werden geladen…",
+  "settings_providerToken_unavailable": "Token-Einstellungen sind auf diesem Daemon nicht verfügbar.",
+  "settings_providerToken_error": "Das Token konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut.",
+  "settings_providerToken_loadError": "Token-Einstellungen konnten nicht geladen werden. Bitte versuchen Sie es erneut."
 }
