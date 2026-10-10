@@ -112,7 +112,11 @@ import type { SystemStatusState } from '$store/renderer/slices/system-status/sys
 import type { AutoUpdateState } from '$store/renderer/slices/auto-update/auto-update-types';
 import type { CommentV2 } from '$store/renderer/slices/comments/comments-types';
 import type { AuthorType, CommentType } from '$features/comments/comment-types-v2';
-import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
+import type {
+  EditableText,
+  RestorableSnapshot,
+  FileContentEntry,
+} from '$store/renderer/slices/files/files-types';
 
 /** Disposer returned by every `subscribe()` call. */
 export type Unsubscribe = () => void;
@@ -1375,7 +1379,11 @@ export interface FilesClient {
   /** Per-file git status keyed by workspace-relative path, for the explorer overlay. */
   gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>>;
   /** Write file content (`file.write`); create-ish, so the live client attaches an idempotencyKey (§5.6). */
-  write(workspaceId: string, path: string, content: string): Promise<MutationResult>;
+  write(
+    workspaceId: string,
+    path: string,
+    content: EditableText | RestorableSnapshot,
+  ): Promise<MutationResult>;
   /** Delete a file (`file.delete`). */
   delete(workspaceId: string, path: string): Promise<MutationResult>;
   /** Create a directory (`file.mkdir`); create, so the live client attaches an idempotencyKey (§5.6). */

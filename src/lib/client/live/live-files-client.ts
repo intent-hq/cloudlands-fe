@@ -12,7 +12,13 @@
  */
 import { detectBinaryContent } from '$shared/binary-file-extensions';
 import type { FileGitStatus, FileNode } from '$shared/types';
-import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
+import { fileContentData, editableText } from '$features/file/utils/file-content';
+import type {
+  EditableText,
+  RestorableSnapshot,
+  FileContent,
+  FileContentEntry,
+} from '$store/renderer/slices/files/files-types';
 import type { FilesClient, MutationResult } from '../app-client';
 import { backendRequest } from './backend-transport';
 import { BackendError } from './backend-transport-types';
@@ -31,21 +37,15 @@ function hasBinaryControls(content: string): boolean {
 }
 
 /** Map raw daemon file content into a `FileContentEntry`. */
-function toFileContentEntry(
-  path: string,
-  content: string | null,
-  isBinary = false,
-): FileContentEntry {
+function toFileContentEntry(path: string, content: FileContent): FileContentEntry {
   return {
     path,
     absolutePath: null,
-    originalContent: content,
-    localContent: content,
+    ...fileContentData(content),
     lastUpdated: Date.now(),
     loading: false,
     saving: false,
     error: null,
-    isBinary,
     truncated: false,
   };
 }
@@ -127,7 +127,10 @@ export class LiveFilesClient implements FilesClient {
       const isBinary =
         hasBinaryControls(content) ||
         detectBinaryContent(new TextEncoder().encode(content.slice(0, 8192)));
-      return toFileContentEntry(path, content, isBinary);
+      return toFileContentEntry(
+        path,
+        isBinary ? { kind: 'restorable-snapshot', content, isBinary: true } : editableText(content),
+      );
     } catch (error) {
       // file.read uses Rust read_to_string. Its decoding failure proves that
       // the file exists but cannot be read as text. Cache only a binary marker;
@@ -135,7 +138,7 @@ export class LiveFilesClient implements FilesClient {
       if (error instanceof BackendError && error.rpcCode === -32603) {
         const message = mutationErrorMessage(error);
         if (message.endsWith('stream did not contain valid UTF-8')) {
-          return toFileContentEntry(path, null, true);
+          return toFileContentEntry(path, { kind: 'preview-only', isBinary: true });
         }
         // File I/O currently has no structured not-found discriminator. Keep
         // suffix recovery for ENOENT (and Windows PATH_NOT_FOUND) only.
@@ -199,11 +202,15 @@ export class LiveFilesClient implements FilesClient {
   // DATA SAFETY: these are destructive against the user's real files; they are
   // only ever exercised against the FAKE socket in tests.
 
-  async write(workspaceId: string, path: string, content: string): Promise<MutationResult> {
+  async write(
+    workspaceId: string,
+    path: string,
+    content: EditableText | RestorableSnapshot,
+  ): Promise<MutationResult> {
     return runMutation('file.write', {
       workspaceId,
       path,
-      content,
+      content: content.content,
       idempotencyKey: newIdempotencyKey(),
     });
   }

@@ -24,7 +24,10 @@ describe('LiveFilesClient mutations (fake transport)', () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveFilesClient();
 
-    const result = await client.write('ws-1', 'src/a.ts', 'hello');
+    const result = await client.write('ws-1', 'src/a.ts', {
+      kind: 'editable-text',
+      content: 'hello',
+    });
 
     expect(result).toEqual({ success: true });
     expect(mockedRequest).toHaveBeenCalledWith(
@@ -42,8 +45,8 @@ describe('LiveFilesClient mutations (fake transport)', () => {
     mockedRequest.mockResolvedValue({ ok: true });
     const client = new LiveFilesClient();
 
-    await client.write('ws-1', 'a.ts', 'x');
-    await client.write('ws-1', 'a.ts', 'y');
+    await client.write('ws-1', 'a.ts', { kind: 'editable-text', content: 'x' });
+    await client.write('ws-1', 'a.ts', { kind: 'editable-text', content: 'y' });
 
     const first = (mockedRequest.mock.calls[0][1] as { idempotencyKey: string }).idempotencyKey;
     const second = (mockedRequest.mock.calls[1][1] as { idempotencyKey: string }).idempotencyKey;
@@ -96,7 +99,10 @@ describe('LiveFilesClient mutations (fake transport)', () => {
     mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const client = new LiveFilesClient();
 
-    expect(await client.write('ws-1', 'a.ts', 'x')).toEqual({ success: false, error: 'boom' });
+    expect(await client.write('ws-1', 'a.ts', { kind: 'editable-text', content: 'x' })).toEqual({
+      success: false,
+      error: 'boom',
+    });
   });
 });
 
@@ -162,6 +168,7 @@ describe('LiveFilesClient.read', () => {
     );
     expect(await new LiveFilesClient().read('remote-workspace', path)).toMatchObject({
       isBinary: true,
+      kind: 'preview-only',
       originalContent: null,
       localContent: null,
       error: null,
@@ -205,6 +212,7 @@ describe('LiveFilesClient.read', () => {
       mockedRequest.mockResolvedValueOnce('\b\u0001');
       expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
         isBinary: true,
+        kind: 'restorable-snapshot',
         originalContent: '\b\u0001',
         localContent: '\b\u0001',
       });
@@ -215,6 +223,7 @@ describe('LiveFilesClient.read', () => {
     mockedRequest.mockResolvedValueOnce('PK\0\0');
     expect(await new LiveFilesClient().read('ws-1', 'data.bin')).toMatchObject({
       isBinary: true,
+      kind: 'restorable-snapshot',
       originalContent: 'PK\0\0',
       localContent: 'PK\0\0',
     });
@@ -232,6 +241,7 @@ describe('LiveFilesClient.read', () => {
     mockedRequest.mockResolvedValueOnce(content);
     expect(await new LiveFilesClient().read('ws-1', path)).toMatchObject({
       isBinary: true,
+      kind: 'restorable-snapshot',
       originalContent: content,
       localContent: content,
     });
@@ -249,6 +259,7 @@ describe('LiveFilesClient.read', () => {
     mockedRequest.mockResolvedValueOnce(content);
     expect(await new LiveFilesClient().read('ws-1', 'data.unknown')).toMatchObject({
       isBinary: false,
+      kind: 'editable-text',
       originalContent: content,
       localContent: content,
     });
