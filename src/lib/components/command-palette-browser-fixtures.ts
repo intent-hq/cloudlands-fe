@@ -1,6 +1,7 @@
 import { call, takeEvery } from 'typed-redux-saga';
 import { store } from '$store/renderer/store';
 import { searchNotesRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { paletteNoteSearchRequested } from '$store/renderer/slices/palette/palette-slice';
 import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
 import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
@@ -16,12 +17,15 @@ export function paletteNoteSearchFixture(node: HTMLElement) {
 }
 
 function* observePaletteFixtureSearches() {
-  yield* takeEvery(searchNotesRequested, function* (action) {
+  yield* takeEvery([searchNotesRequested, paletteNoteSearchRequested], function* (action) {
+    const query =
+      action.type === paletteNoteSearchRequested.type ? action.payload[2] : action.payload[0];
+    if (!query.trim()) return;
     const recipients = [...listeners];
     try {
       yield* call(() => action.promise);
       for (const listener of recipients) {
-        if (listeners.has(listener)) listener(action.payload[0]);
+        if (listeners.has(listener)) listener(query);
       }
     } catch {
       // Failed requests are not successful settlement evidence.

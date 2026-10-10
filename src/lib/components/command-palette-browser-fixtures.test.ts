@@ -9,7 +9,11 @@ import {
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
-import { createNoteQuery, type NoteQueryUpdate } from '$lib/utils/palette-note-search';
+import {
+  paletteNoteSearchRequested,
+  paletteNoteSearchReleased,
+} from '$store/renderer/slices/palette/palette-slice';
+import { selectPaletteNoteSearch } from '$store/renderer/slices/palette/palette-selectors';
 import {
   paletteNoteSearchFixture,
   setupPaletteNoteSearchFixture,
@@ -72,17 +76,23 @@ it('returns query-filtered legacy hits within the request limit and settles loca
   expect(
     await backendRequest('search.notes', { query: 'missing', limit: 10, includeArchived: false }),
   ).toEqual({ requestId: 'palette-fixture:missing', matches: [] });
-  const updates: NoteQueryUpdate[] = [];
-  const controller = createNoteQuery((value) => updates.push(value));
-  controller.query('context', workspaceId, []);
+  const consumerId = 'palette-browser-fixture';
+  store.dispatch(paletteNoteSearchRequested(consumerId, 'search', 'context', workspaceId));
   await vi.runAllTimersAsync();
   expect(callback).toHaveBeenCalledExactlyOnceWith('context');
-  expect(updates.at(-1)).toMatchObject({ loading: false, capability: 'legacy', fallback: true });
-  controller.query('', workspaceId, []);
+  expect(selectPaletteNoteSearch.select(store.state, consumerId)).toMatchObject({
+    loading: false,
+    capability: 'legacy',
+    fallback: true,
+  });
+  store.dispatch(paletteNoteSearchRequested(consumerId, 'empty', '', workspaceId));
   await vi.runAllTimersAsync();
   expect(callback).toHaveBeenCalledTimes(1);
-  expect(updates.at(-1)).toMatchObject({ loading: false, items: [] });
-  controller.close();
+  expect(selectPaletteNoteSearch.select(store.state, consumerId)).toMatchObject({
+    loading: false,
+    items: [],
+  });
+  store.dispatch(paletteNoteSearchReleased(consumerId));
 });
 
 it('restores its bridge and cannot release a remounted owner twice', async () => {
