@@ -141,11 +141,30 @@ describe('WorkspaceStorageManager', () => {
 
   describe('migrateWorkspaceId', () => {
     it('should migrate state from old to new ID', () => {
-      manager.saveState('old-id', { workspace: { id: 'old-id', status: 'ready' } }, true);
+      manager.saveState(
+        'old-id',
+        {
+          workspace: { id: 'old-id', status: 'ready' },
+          mainPanel: { type: 'notes', selectedNoteId: 'project-plan' },
+          drawer: { open: true, type: 'agent', itemId: 'agent-1' },
+        },
+        true,
+      );
       manager.migrateWorkspaceId('old-id', 'new-id');
 
-      expect(manager.loadState('new-id')).toBeDefined();
-      expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('workspace:state:old-id');
+      expect(manager.loadState('old-id')).toBeNull();
+      const reloadedManager = new WorkspaceStorageManager();
+      try {
+        expect(reloadedManager.loadState('new-id')).toMatchObject({
+          workspace: { id: 'new-id', status: 'ready' },
+          mainPanel: { type: 'notes', selectedNoteId: 'project-plan' },
+          drawer: { open: true, type: 'agent', itemId: 'agent-1' },
+        });
+        expect(reloadedManager.loadState('old-id')).toBeNull();
+        expect(mockLocalStorage.getItem('workspace:state:old-id')).toBeNull();
+      } finally {
+        reloadedManager.cleanup();
+      }
     });
   });
 

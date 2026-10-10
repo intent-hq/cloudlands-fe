@@ -160,13 +160,12 @@ describe('pathFuzzyMatch', () => {
   });
 
   it('should score filename matches higher', () => {
-    const withFilename = pathFuzzyMatch('routes/page', 'src/routes/shared/+page.svelte');
-    const withoutFilename = pathFuzzyMatch('routes/shared', 'src/routes/shared/+page.svelte');
+    // Same query, exact segments and adjacency; only filename position differs.
+    const withFilename = pathFuzzyMatch('routes/page', 'src/routes/page');
+    const withoutFilename = pathFuzzyMatch('routes/page', 'src/routes/page/child');
     expect(withFilename).not.toBeNull();
     expect(withoutFilename).not.toBeNull();
-    // Both should have valid scores
-    expect(withFilename!.score).toBeGreaterThan(0);
-    expect(withoutFilename!.score).toBeGreaterThan(0);
+    expect(withFilename!.score).toBeGreaterThan(withoutFilename!.score);
   });
 
   it('should match file extensions correctly', () => {

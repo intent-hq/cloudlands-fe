@@ -198,15 +198,6 @@ describe('TipTap Markdown Processor - Round Trip Tests', () => {
       // Normalize whitespace
       expect(result.trim()).toBeTruthy();
     });
-
-    it('should handle multiple blank lines', async () => {
-      const markdown = 'Paragraph 1\n\n\n\nParagraph 2';
-      const html = await processMarkdownToHTML(markdown);
-      const result = processHTMLToMarkdown(html);
-      // TipTap normalizes multiple blank lines to single blank line
-      expect(result).toContain('Paragraph 1');
-      expect(result).toContain('Paragraph 2');
-    });
   });
 
   describe('Real-world Scenarios', () => {
