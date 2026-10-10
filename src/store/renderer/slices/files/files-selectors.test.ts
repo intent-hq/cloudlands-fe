@@ -24,6 +24,7 @@ function fileEntry(overrides: Partial<FileContentEntry> = {}): FileContentEntry 
   return {
     path: PATH,
     absolutePath: '/repo/src/app.ts',
+    kind: 'restorable-snapshot',
     originalContent: 'original',
     localContent: 'edited',
     lastUpdated: 7,
@@ -87,14 +88,16 @@ describe('files selectors', () => {
   });
 
   it('returns original content for clean files', () => {
-    const state = stateWithFiles([fileEntry({ originalContent: 'clean', localContent: 'clean' })]);
+    const state = stateWithFiles([
+      fileEntry({ kind: 'editable-text', originalContent: 'clean', localContent: 'clean' }),
+    ]);
 
     expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe('clean');
   });
 
   it('returns original content when original content is set', () => {
     const state = stateWithFiles([
-      fileEntry({ localContent: 'edited', originalContent: 'original' }),
+      fileEntry({ localContent: 'edited', kind: 'editable-text', originalContent: 'original' }),
     ]);
 
     expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe('original');
@@ -103,15 +106,18 @@ describe('files selectors', () => {
   it('tracks dirty state through edit and revert', () => {
     const loadedFilesState = filesReducer(
       undefined,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
     const editedFilesState = filesReducer(
       loadedFilesState,
-      updateFileContent(WS_ID, PATH, 'edited'),
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
     );
     const revertedFilesState = filesReducer(
       editedFilesState,
-      updateFileContent(WS_ID, PATH, 'original'),
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'original' }),
     );
 
     expect(selectFileIsDirty.select({ files: loadedFilesState } as any, WS_ID, PATH)).toBe(false);

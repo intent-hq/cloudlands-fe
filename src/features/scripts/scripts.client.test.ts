@@ -69,6 +69,7 @@ function fileEntry(path: string, content: string): FileContentEntry {
   return {
     path,
     absolutePath: null,
+    kind: 'editable-text',
     originalContent: content,
     localContent: content,
     lastUpdated: 0,
