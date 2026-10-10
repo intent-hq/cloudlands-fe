@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.215.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.1...v2.215.2) (2026-10-10)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.40 ([#3349](https://github.com/intent-hq/cloudlands-fe/issues/3349)) ([a009485](https://github.com/intent-hq/cloudlands-fe/commit/a00948506e6b94a695fdd77c512a009b9163d785))
+* bump intentd sidecar to v0.10.41 ([#3350](https://github.com/intent-hq/cloudlands-fe/issues/3350)) ([946b39f](https://github.com/intent-hq/cloudlands-fe/commit/946b39f389d0da0ba998cfc2958ed5042b19a471))
+* preserve answers when advancing question wizard ([#3340](https://github.com/intent-hq/cloudlands-fe/issues/3340)) ([4bd4d05](https://github.com/intent-hq/cloudlands-fe/commit/4bd4d051601bd80f3b5f3d20303fdee69e470e69))
+* restore Micro workspace numbering across home and tabs ([#3331](https://github.com/intent-hq/cloudlands-fe/issues/3331)) ([3414cc4](https://github.com/intent-hq/cloudlands-fe/commit/3414cc4850a03f631eae187ccea937b080c2c59b))
+
 ## [2.215.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.0...v2.215.1) (2026-10-10)
 
 
