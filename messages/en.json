@@ -7501,5 +7501,7 @@
   "chat_failureRecovery_action_label": "Needs attention",
   "chat_failureRecovery_queued_description": "A message is queued. Use its controls below to manage it.",
   "chat_failureRecovery_action_description": "The response stopped before it finished.",
-  "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host."
+  "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host.",
+  "browser_activity_browsing_label": "Browsing {host}",
+  "browser_activity_unavailable_tooltip": "This browser tab is no longer available"
 }

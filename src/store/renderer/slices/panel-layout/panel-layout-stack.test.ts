@@ -7,8 +7,11 @@ import {
   closeActiveTab,
   closeTab,
   emptyWorkspaceState,
+  goBack,
+  goForward,
   moveTabToPanel,
   openTab,
+  openTabBehindActive,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openTabInRightmostColumn,
@@ -56,6 +59,98 @@ function state(panelIds: string[] = ['p1']) {
 }
 
 describe('column stack algorithm', () => {
+  const browser = {
+    type: 'browser' as const,
+    title: 'Browser',
+    browserUrl: 'https://example.test',
+    ownerAgentId: 'agent-1',
+    closable: true,
+  };
+
+  it('inserts successive background opens immediately behind current content and preserves forward tabs', () => {
+    const original = state(['p1', 'p2']);
+    original.byWorkspaceId[WS].panels.p1.tabs = [note('older'), note('current'), note('forward')];
+    original.byWorkspaceId[WS].panels.p1.activeTabId = 'current';
+    const opened = panelLayoutReducer(original, openTabBehindActive(WS, browser, 'browser-1'));
+    const next = panelLayoutReducer(opened, openTabBehindActive(WS, browser, 'browser-2'));
+    const before = original.byWorkspaceId[WS];
+    const after = next.byWorkspaceId[WS];
+
+    expect(after.panels.p1.tabs.map((tab) => tab.id)).toEqual([
+      'older',
+      'browser-1',
+      'browser-2',
+      'current',
+      'forward',
+    ]);
+    expect(after.panels.p1.activeTabId).toBe('current');
+    expect(after.panels.p2).toBe(before.panels.p2);
+    expect(after.focusedPanelId).toBe(before.focusedPanelId);
+    expect(after.pendingFocusTabId).toBe(before.pendingFocusTabId);
+    expect(after.pendingPanelReveal).toBe(before.pendingPanelReveal);
+    expect(after.focusHistory).toBe(before.focusHistory);
+    expect(after.layoutHistory).toBe(before.layoutHistory);
+  });
+
+  it('keeps forward layout history navigable after a background open', () => {
+    const opened = panelLayoutReducer(state(), openTab(WS, note('later'), 'p1', 'later', true, 10));
+    const backed = panelLayoutReducer(opened, goBack(WS));
+    const background = panelLayoutReducer(backed, openTabBehindActive(WS, browser, 'background'));
+
+    expect(background.byWorkspaceId[WS].layoutHistory).toBe(backed.byWorkspaceId[WS].layoutHistory);
+    expect(background.byWorkspaceId[WS].historyIndex).toBe(backed.byWorkspaceId[WS].historyIndex);
+    const forwarded = panelLayoutReducer(background, goForward(WS)).byWorkspaceId[WS];
+    expect(forwarded.panels.p1.activeTabId).toBe('later');
+    expect(forwarded.hiddenTabs.map.background).toMatchObject({
+      id: 'background',
+      ownerAgentId: 'agent-1',
+    });
+  });
+
+  it('does not duplicate or reactivate a redelivered tab id, including hidden tabs', () => {
+    const action = openTabBehindActive(WS, browser, 'browser-1');
+    const opened = panelLayoutReducer(state(), action);
+    expect(panelLayoutReducer(opened, action)).toBe(opened);
+    const hidden = panelLayoutReducer(opened, closeTab(WS, 'browser-1'));
+    expect(panelLayoutReducer(hidden, action)).toBe(hidden);
+  });
+
+  it('keeps distinct main-issued ids separate even when URLs match across owners', () => {
+    const first = panelLayoutReducer(state(), openTabBehindActive(WS, browser, 'browser-1'));
+    const second = panelLayoutReducer(
+      first,
+      openTabBehindActive(WS, { ...browser, ownerAgentId: 'agent-2' }, 'browser-2'),
+    );
+    expect(second.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual([
+      'browser-1',
+      'browser-2',
+      'tab-p1',
+    ]);
+  });
+
+  it('fills an empty panel with a focus-preserving reveal to suppress URL-bar autofocus', () => {
+    const next = panelLayoutReducer(undefined, openTabBehindActive(WS, browser, 'first'))
+      .byWorkspaceId[WS];
+    expect(next.panels.default.activeTabId).toBe('first');
+    expect(next.pendingFocusTabId).toBeNull();
+    expect(next.pendingPanelReveal).toEqual({
+      panelId: 'default',
+      tabId: 'first',
+      requestId: 'first',
+      preserveFocus: true,
+    });
+  });
+
+  it('rejects cross-workspace content without changing the existing layout', () => {
+    const original = state();
+    expect(
+      panelLayoutReducer(
+        original,
+        openTabBehindActive(WS, { ...browser, workspaceId: 'other' }, 'browser-1'),
+      ),
+    ).toBe(original);
+  });
+
   it('pushes normal opens into the intended stack and activates existing resources', () => {
     const opened = panelLayoutReducer(
       state(),

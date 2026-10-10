@@ -35,6 +35,7 @@
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import { resolveLocalToolImageSource } from './local-tool-image-source';
   import ChatImageBlock from './ChatImageBlock.svelte';
+  import BrowserActivityBadge from '$features/browser/BrowserActivityBadge.svelte';
 
   interface Props {
     saved?: { expanded?: boolean; showImageTechnicalDetails?: boolean };
@@ -435,6 +436,14 @@
     toolCallId={toolUse.toolCallId || undefined}
     conversationLayer="tool-activity"
   />
+
+  {#if workspaceId && parsedResult?.browserOpenedTabs?.length}
+    <div class="flex min-w-0 flex-wrap gap-1.5 px-2 py-1" data-testid="browser-activity-badges">
+      {#each parsedResult.browserOpenedTabs as tab (tab.tabId)}
+        <BrowserActivityBadge {workspaceId} tabId={tab.tabId} url={tab.url} />
+      {/each}
+    </div>
+  {/if}
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
   {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}

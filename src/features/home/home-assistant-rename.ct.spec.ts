@@ -204,6 +204,9 @@ test('Assistant header preserves editing while the sidebar history scrolls', asy
   const list = sidebar.getByRole('listbox');
   await list.getByRole('option').first().focus();
   await page.keyboard.press('End');
+  await expect(
+    list.getByRole('option', { name: 'Assistant conversation 240', exact: true }),
+  ).toBeFocused();
   await page.keyboard.press('Enter');
   const header = component.locator('[data-chief-header-row]');
   await expect(header.getByRole('heading')).toHaveText('Assistant conversation 240');

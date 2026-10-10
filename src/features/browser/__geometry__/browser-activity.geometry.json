@@ -1,0 +1,29 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "opened": {
+    "420": {
+      "probes": {
+        "data-testid=browser-activity-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 284,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 334,
+        "width": 420
+      }
+    }
+  }
+}

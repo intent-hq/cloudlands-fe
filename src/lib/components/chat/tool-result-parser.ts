@@ -131,6 +131,7 @@ export interface ParsedToolResult {
   }>;
   // For browser results
   browserAction?: string;
+  browserOpenedTabs?: Array<{ tabId: string; url: string }>;
   screenshotBase64?: string;
   screenshotUrl?: string;
   screenshotMimeType?: BrowserScreenshotMimeType;
@@ -359,7 +360,12 @@ export function parseToolResult(
     name.includes('workspace-mcp') ||
     (typeof input.code === 'string' && typeof input.summary === 'string');
   if (isWorkspaceApi && typeof input.code === 'string') {
-    return parseWorkspaceApiResult(input, resultText);
+    const parsed = parseWorkspaceApiResult(input, resultText);
+    if (parsed.type !== 'browser' && /\bws\.browser\./.test(input.code) && resultText) {
+      const opened = parseBrowserOpenedTabs(input, decodeStructuredResult(resultText));
+      if (opened.length) parsed.browserOpenedTabs = opened;
+    }
+    return parsed;
   }
 
   // ── Workspace info tools (BEFORE 'view' check to prevent view_workspace misrouting) ──
@@ -1918,33 +1924,42 @@ function parseNoteListResult(
   return parsed;
 }
 
-/**
- * Parse browser tool result (MCP browser_exec with actions array)
- *
- * The result is an ExecutionResult:
- * {
- *   success: boolean;
- *   results: ActionResult[];  // one per action
- *   error?: string;
- * }
- *
- * Each ActionResult:
- * {
- *   action: string;
- *   success: boolean;
- *   result?: unknown;  // action-specific
- *   error?: string;
- * }
- *
- * Result types by action:
- * - screenshot: { base64: string, width: number, height: number }
- * - listTabs: Array<{ tabId, url, title, mounted }>
- * - getAccessibilityTree: string (YAML)
- * - evaluate: any (raw JS value)
- * - openTab: { success: boolean, message: string } | { reused: boolean, tabId: string, url: string }
- * - navigate: { url: string, tabId?: string }
- * - focusTab: boolean
- */
+function parseBrowserOpenedTabs(
+  input: Record<string, any>,
+  data: unknown,
+): NonNullable<ParsedToolResult['browserOpenedTabs']> {
+  const opened: NonNullable<ParsedToolResult['browserOpenedTabs']> = [];
+  const unwrappedOpen =
+    (input.actions?.length === 1 && input.actions[0]?.action === 'openTab') ||
+    (typeof input.code === 'string' && /\bopenTab\b/.test(input.code));
+
+  function visit(value: unknown, isOpen = false): void {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const row = value as Record<string, unknown>;
+    if (Array.isArray(row.results)) {
+      visit(row.results);
+      return;
+    }
+    if (row.success === false || row.error || row.isError === true) return;
+    if (typeof row.action === 'string') {
+      if (row.action === 'openTab' && row.success === true) visit(row.result, true);
+      return;
+    }
+    if (!isOpen && !(unwrappedOpen && (row.success === true || row.reused === true))) return;
+    const url = typeof row.requestedUrl === 'string' ? row.requestedUrl : row.url;
+    if (typeof row.tabId !== 'string' || !row.tabId || typeof url !== 'string' || !url) return;
+    if (!opened.some((tab) => tab.tabId === row.tabId)) opened.push({ tabId: row.tabId, url });
+  }
+
+  visit(data);
+  return opened;
+}
+
+/** Parse browser action envelopes and legacy unwrapped MCP results. */
 function parseBrowserResult(input: Record<string, any>, result: unknown): ParsedToolResult {
   const parsed: ParsedToolResult = {
     type: 'browser',
@@ -1967,12 +1982,15 @@ function parseBrowserResult(input: Record<string, any>, result: unknown): Parsed
     return parsed;
   }
 
+  const opened = parseBrowserOpenedTabs(input, decodeStructuredResult(resultText));
+  if (opened.length) parsed.browserOpenedTabs = opened;
+
   // BrowserExecTool UNWRAPS single-action results before returning:
   //   - screenshot: JSON.stringify({ base64, width, height })
   //   - listTabs:   JSON.stringify([ {tabId, url, title, mounted}, ... ])
   //   - evaluate:   the raw JS result as a string (e.g., "ok", "reloading")
   //   - focusTab:   "true" or "false"
-  //   - openTab:    JSON.stringify({ success, message })
+  //   - openTab:    JSON.stringify({ success, message, tabId, url })
   //   - getAccessibilityTree: YAML string
   //   - no result:  "Action 'xxx' completed"
   // For multiple actions, it returns JSON.stringify(ActionResult[])
