@@ -13,7 +13,7 @@ try {
   if (!quiet) console.log('🔍 Running TypeScript type check...');
 
   // Run tsc in noEmit mode to check types without generating files
-  execSync('npx tsc --noEmit', {
+  execSync('corepack pnpm exec tsc --noEmit', {
     cwd: process.cwd(),
     stdio: quiet ? 'pipe' : 'inherit',
     encoding: 'utf-8',
