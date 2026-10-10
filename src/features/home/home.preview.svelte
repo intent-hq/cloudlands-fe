@@ -13,12 +13,16 @@
   declare global {
     interface Window {
       __homeAssistantPreview?: { removeSelectedThread: () => void };
+      __homeWorkspacePreview?: {
+        navigation: () => { currentTabId: string | null; tabOrder: string[] };
+      };
     }
   }
 
   interface Props {
     scenario?:
       | 'populated'
+      | 'status-icons'
       | 'board'
       | 'empty'
       | 'assistant'
@@ -42,6 +46,7 @@
     defaultState: 'populated',
     states: {
       populated: { props: { scenario: 'populated' } },
+      'status-icons': { props: { scenario: 'status-icons' } },
       board: { props: { scenario: 'board' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
@@ -139,6 +144,47 @@
         id: WorkspaceId(item.id),
       }) as Workspace,
   );
+  const statusFixtures: Workspace[] = [
+    ...fixtures.filter((workspace) => workspace.status === WorkspaceStatus.Active),
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-blocked'),
+      title: 'Resolve a blocked workspace',
+      displayStatus: 'blocked' as const,
+      attention: undefined,
+      statusMessage: 'Waiting for a missing dependency.',
+    },
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-failed'),
+      title: 'Retry a failed workspace',
+      displayStatus: 'failed' as const,
+      attention: undefined,
+      statusMessage: 'The last run failed and needs attention.',
+    },
+    {
+      ...fixtures[2],
+      id: WorkspaceId('home-unknown-time'),
+      title: 'Idle workspace with no recorded activity',
+      attention: undefined,
+      createdAt: '',
+      updatedAt: '',
+      lastActivity: '',
+      statusMessage: 'No activity timestamp is available.',
+    },
+  ].map((workspace, index) => ({
+    ...workspace,
+    lastContentActivity:
+      index === 8
+        ? undefined
+        : new Date(
+            Date.now() -
+              [
+                37_000, 3_600_000, 86_400_000, 172_800_000, 518_400_000, 2_419_200_000,
+                5_184_000_000, 31_536_000_000,
+              ][index],
+          ).toISOString(),
+  }));
   const assistantFixtures: AgentSession[] = Array.from({ length: 240 }, (_, index) => {
     const name =
       [
@@ -195,6 +241,7 @@
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
     closePanel,
+    hydrateSidebarNav,
     openPanel,
     setChiefActiveAgentId,
     setShowCreateModal,
@@ -221,7 +268,14 @@
   let { scenario = 'populated', height = 720 }: Props = $props();
   const assistant = $derived(scenario === 'assistant-long');
   const dispose = startHomePreviewFixtures();
+  const previousPinnedIds = store.state.sidebarNav.pinnedWorkspaceIds;
   const showCreateModal$ = selectShowCreateModal();
+  window.__homeWorkspacePreview = {
+    navigation: () => ({
+      currentTabId: store.state.tabState.currentTabId,
+      tabOrder: store.state.tabState.workspaceStacks.flat(),
+    }),
+  };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
   store.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
@@ -238,6 +292,11 @@
     admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
     store.dispatch(closePanel());
     store.dispatch(resetHomeWorkspaceView());
+    store.dispatch(
+      hydrateSidebarNav({
+        pinnedWorkspaceIds: scenario === 'status-icons' ? ['home-complete'] : previousPinnedIds,
+      }),
+    );
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     const threads =
       scenario === 'assistant-many' || scenario === 'assistant-activity-many'
@@ -271,7 +330,7 @@
       replaceWorkspaceList(
         scenario === 'empty'
           ? []
-          : fixtures.map((workspace) => ({
+          : (scenario === 'status-icons' ? statusFixtures : fixtures).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
             })),
@@ -369,13 +428,16 @@
       store.dispatch(openPanel('chief'));
     }
     if (scenario === 'board') store.dispatch(updateHomeWorkspaceView({ view: scenario }));
+    if (scenario === 'status-icons') store.dispatch(updateHomeWorkspaceView({ groupBy: 'none' }));
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
       store.dispatch(updateHomeWorkspaceView({ tab: 'linear' }));
   });
   onDestroy(() => {
+    store.dispatch(hydrateSidebarNav({ pinnedWorkspaceIds: previousPinnedIds }));
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
+    delete window.__homeWorkspacePreview;
     dispose();
   });
 </script>

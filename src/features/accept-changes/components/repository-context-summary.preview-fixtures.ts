@@ -44,6 +44,7 @@ export interface SelectionFixtureOptions {
 }
 
 export type SummaryScene =
+  | 'mixed-providers'
   | 'selection-edit'
   | 'selection-history'
   | 'selection-reset'
@@ -129,6 +130,29 @@ export function summaryContext(
     };
   if (scene === 'selection-required')
     primary.reviewSelection.outcome = { state: 'selection-required', reason: 'ambiguous-targets' };
+  if (scene === 'mixed-providers') {
+    const github = {
+      provider: 'github' as const,
+      instanceBaseUrl: 'https://github.com',
+      projectPath: 'acme/editor',
+    };
+    primary.remotes.push({
+      name: 'github',
+      fetch: [
+        {
+          url: 'git@github.com:acme/editor.git',
+          resolution: { state: 'resolved', target: github },
+        },
+      ],
+      push: [],
+    });
+    primary.targets.push({ target: github, availability: 'connected', capabilities: [] });
+    primary.reviewSelection = {
+      saved: { mode: 'unresolved-historical' },
+      noRemotes: false,
+      outcome: { state: 'selection-required', reason: 'unresolved-historical-choice' },
+    };
+  }
   if (scene === 'no-remote') {
     primary.remotes = [];
     primary.targets = [];
@@ -194,6 +218,7 @@ export function installSummaryFixture(
   }> = [];
   const selectionReleases: string[] = [];
   const selectionChannels = IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION;
+  const savedRemotes = new Map<string, string>();
   function previewFor(root: RepositoryRootIdentity): SelectionPreview {
     return {
       root,
@@ -224,7 +249,14 @@ export function installSummaryFixture(
     };
     let finish!: (value?: SelectionObservation) => void, lose!: () => void;
     const promise = new Promise((resolve, reject) => {
-      finish = (value) =>
+      finish = (value) => {
+        if (
+          scene === 'mixed-providers' &&
+          !value &&
+          command?.kind === 'save' &&
+          command.choice.mode === 'explicit-remote'
+        )
+          savedRemotes.set(JSON.stringify(root), command.choice.remoteName);
         resolve({
           ok: true,
           result: value ?? {
@@ -259,6 +291,7 @@ export function installSummaryFixture(
             },
           },
         });
+      };
       lose = () => reject(new Error('Controlled response loss'));
     });
     selectionRequests.push({ id, root, command, kind, finish, lose });
@@ -334,7 +367,24 @@ export function installSummaryFixture(
       };
       let finish!: (context?: RepositoryContext) => void;
       const promise = new Promise((resolve) => {
-        finish = (context = summaryContext(scene, String(params.workspaceId))) =>
+        finish = (context = summaryContext(scene, String(params.workspaceId))) => {
+          if (scene === 'mixed-providers') {
+            for (const entry of context.roots) {
+              const remoteName = savedRemotes.get(JSON.stringify(entry.root));
+              const resolution = entry.remotes.find((remote) => remote.name === remoteName)
+                ?.fetch[0]?.resolution;
+              if (remoteName && resolution?.state === 'resolved')
+                entry.reviewSelection = {
+                  saved: { mode: 'explicit-remote', remoteName },
+                  noRemotes: false,
+                  outcome: {
+                    state: 'resolved',
+                    target: resolution.target,
+                    source: 'explicit-remote',
+                  },
+                };
+            }
+          }
           resolve({
             ok: true,
             result: {
@@ -352,6 +402,7 @@ export function installSummaryFixture(
                     },
             },
           });
+        };
       });
       reads.push({ id, method, params, finish });
       if (scene !== 'loading') finish();

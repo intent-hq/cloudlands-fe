@@ -55,7 +55,11 @@
     hasPanelLayoutManager,
   } from '$features/layout/panel-layout-adapter';
 
-  import { deleteNote, createNote, updateNoteTitle } from '$features/notes/notes-write-service';
+  import {
+    createNotePersistRequested,
+    deleteNotePersistRequested,
+    updateNoteTitlePersistRequested,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
   import { store as appStore } from '$store/renderer/store';
@@ -128,8 +132,9 @@
       const trimmed = editingValue.trim();
       const note = notes.find((n) => n.id === editingNoteId);
       if (note && trimmed !== getNoteTitle(note)) {
-        // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-        void updateNoteTitle(workspaceId, editingNoteId, trimmed);
+        void appStore.dispatch(
+          updateNoteTitlePersistRequested(workspaceId, editingNoteId, trimmed),
+        );
       }
     }
     cancelEdit();
@@ -222,8 +227,7 @@
             layoutManager.closeTabsByType('note', 'noteId', note.id);
           }
 
-          // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-          void deleteNote(workspaceId, note.id);
+          void appStore.dispatch(deleteNotePersistRequested(workspaceId, note.id));
           closeContextMenu();
 
           notify.warning(
@@ -234,15 +238,16 @@
                 action: {
                   label: m.ui_workspaceActions_undo_label(),
                   onClick: () => {
-                    // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-                    void createNote(workspaceId, {
-                      title: savedNote.title,
-                      content: savedNote.content,
-                      contentType: savedNote.contentType,
-                      tags: savedNote.tags,
-                      parentId: savedNote.parentId,
-                      visibility: savedNote.visibility,
-                    });
+                    void appStore.dispatch(
+                      createNotePersistRequested(workspaceId, {
+                        title: savedNote.title,
+                        content: savedNote.content,
+                        contentType: savedNote.contentType,
+                        tags: savedNote.tags,
+                        parentId: savedNote.parentId,
+                        visibility: savedNote.visibility,
+                      }),
+                    );
                   },
                 },
               },

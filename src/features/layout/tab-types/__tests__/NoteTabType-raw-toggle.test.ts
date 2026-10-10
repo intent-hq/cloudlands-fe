@@ -45,6 +45,10 @@ const mockState = vi.hoisted(() => {
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
     defaultNote,
     note: store<typeof defaultNote | undefined>(defaultNote),
+    noteContentView: store<unknown>(undefined),
+    noteWorkspaceRoot: store<unknown>(undefined),
+    notePresenceView: store<unknown>(undefined),
+    principalConnectionContext: store('test-connection'),
   };
 });
 
@@ -96,12 +100,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockState.note, { select: () => mockState.note.get() }),
+  selectNoteContentView: () => mockState.noteContentView,
+  selectNoteWorkspaceRoot: () => mockState.noteWorkspaceRoot,
+  selectNotePresenceView: () => mockState.notePresenceView,
   selectWorkspaceNotesState: () => mockState.notesState,
 }));
-vi.mock('$features/notes/notes-write-service', () => ({
-  createNote: vi.fn(),
-  deleteNote: vi.fn(),
-  updateNoteContent: vi.fn(),
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalConnectionContext: () => mockState.principalConnectionContext,
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectIsInitialSpecWriteInProgress: () => mockState.initialSpecWriteInProgress,
@@ -145,6 +150,7 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', () => ({
 }));
 
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
+import { deleteNotePersistRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 describe('NoteTabType note view modes', () => {
   beforeEach(() => {
@@ -155,6 +161,9 @@ describe('NoteTabType note view modes', () => {
     mockState.scrollPositions.set({});
     mockState.notesState.set({ loading: false, initialized: true });
     mockState.note.set({ ...mockState.defaultNote });
+    mockState.noteContentView.set(undefined);
+    mockState.noteWorkspaceRoot.set(undefined);
+    mockState.notePresenceView.set(undefined);
     mockState.initialSpecWriteInProgress.set(false);
   });
 
@@ -472,8 +481,12 @@ $$\frac{1}{2}$$
     await rerender({ tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } });
     const deletion = await screen.findByRole('menuitem', { name: 'Delete note' });
     await fireEvent.click(deletion);
-    const { deleteNote } = await import('$features/notes/notes-write-service');
-    expect(deleteNote).toHaveBeenCalledExactlyOnceWith('ws-1', 'note-1');
+    expect(mockState.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        asyncActionType: deleteNotePersistRequested.asyncActionType,
+        payload: ['ws-1', 'note-1'],
+      }),
+    );
   });
 
   it('clears pending copy feedback timer when unmounted', async () => {

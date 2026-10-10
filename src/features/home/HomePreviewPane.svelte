@@ -2,24 +2,27 @@
   import type { Snippet } from 'svelte';
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
   import { slide } from '$lib/motion';
+  import { observeHomePanelWidth } from './home-panel-width';
 
   let { children }: { children: Snippet } = $props();
+  let maxWidth = $state(Number.MAX_SAFE_INTEGER);
 </script>
 
 <div
   class="home-preview-pane min-h-0 min-w-0 shrink-0 bg-sidebar pl-3"
+  use:observeHomePanelWidth={(width) => (maxWidth = width)}
   transition:slide|global={{ axis: 'x', tier: 'fast' }}
 >
   <ResizablePanel
     storageKey="home-preview-width"
     side="right"
     minWidth={320}
-    maxWidth={800}
+    {maxWidth}
     defaultWidth={460}
     handleClassName="home-preview-resize-handle"
     className="home-preview-resizable h-full max-w-full home-panel bg-background"
   >
-    <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+    <div class="h-full min-h-0 overflow-hidden rounded-(--panel-shell-radius)">
       {@render children()}
     </div>
   </ResizablePanel>
@@ -27,7 +30,7 @@
 
 <style>
   .home-preview-pane {
-    max-width: 60%;
+    max-width: 100%;
     height: 100%;
   }
   .home-preview-pane :global(.home-preview-resizable) {

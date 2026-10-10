@@ -65,7 +65,10 @@
     faArrowUpRightFromSquare,
     faCircle,
     faPencil,
+    faTrash,
   } from '@fortawesome/free-solid-svg-icons';
+  import { confirmScriptDeletion } from '$features/scripts/confirm-script-deletion';
+  import { selectCanDeleteScript } from '$store/renderer/slices/scripts/scripts-selectors';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
   import {
@@ -85,7 +88,8 @@
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
     refreshScripts,
-    removeScript,
+    startScriptRequested,
+    restartScriptRequested,
     stopScriptRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
@@ -126,6 +130,7 @@
   const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 
+  let mounted = true;
   const workspaceOwnership = $derived.by(() => ({ workspaceId }));
   const isRealWorkspace = $derived(
     !!workspaceId &&
@@ -385,19 +390,22 @@
       );
       return;
     }
-    const succeeded = await runScriptMutation(
-      () => scriptsClient[action === 'delete' ? 'remove' : action](mutationWorkspaceId, scriptId),
-      scriptActionErrors[action](),
-    );
-    if (!succeeded) return;
-
     if (action === 'delete') {
-      const wasSelected =
-        selectWorkspaceTerminalState.select(appStore.state, mutationWorkspaceId)
-          .selectedScriptId === scriptId;
-      appStore.dispatch(removeScript(mutationWorkspaceId, scriptId));
-      if (wasSelected) appStore.dispatch(clearScriptSelection(mutationWorkspaceId));
+      const selection = selectedScriptId;
+      await confirmScriptDeletion(
+        mutationWorkspaceId,
+        scriptId,
+        () => mounted && workspaceOwnership === ownership && selectedScriptId === selection,
+      );
+      return;
     }
+    appStore.dispatch(
+      (action === 'start' ? startScriptRequested : restartScriptRequested)(
+        mutationWorkspaceId,
+        scriptId,
+        scriptActionErrors[action](),
+      ),
+    );
   }
 
   // ---- Script header state (for top header bar when script is selected) ----
@@ -407,6 +415,10 @@
       ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
+  const selectedScriptIdStore = writable('');
+  $effect(() => selectedScriptIdStore.set(selectedScriptId ?? ''));
+  const canDeleteScript$ = selectCanDeleteScript(workspaceIdStore, selectedScriptIdStore);
+
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
 
   // Display form of the selected script's detected URL: the loopback rewrite
@@ -961,6 +973,7 @@
   }
 
   onDestroy(() => {
+    mounted = false;
     if (pendingClickTimeout) {
       clearTimeout(pendingClickTimeout);
       pendingClickTimeout = null;
@@ -1179,6 +1192,19 @@
                 </Button>
               {/if}
 
+              <Button
+                variant="ghost-light"
+                size="icon-compact"
+                onclick={() => handleScriptAction('delete', selectedScriptId!)}
+                disabled={!$canDeleteScript$}
+                tooltip={$canDeleteScript$
+                  ? m.scripts_delete_label()
+                  : m.scripts_delete_disabled_description()}
+                aria-label={m.scripts_delete_label()}
+              >
+                <Fa icon={faTrash} size="xs" />
+              </Button>
+
               <!-- Collapse Button -->
               <Button
                 variant="ghost-light"
@@ -1293,14 +1319,7 @@
 
             {#if selectedScriptId}
               {#key `${workspaceId}:${selectedScriptId}`}
-                <ScriptOutputViewer
-                  scriptId={selectedScriptId}
-                  {workspaceId}
-                  class="flex-1"
-                  onDelete={() => {
-                    setSelectedScript(null);
-                  }}
-                />
+                <ScriptOutputViewer scriptId={selectedScriptId} {workspaceId} class="flex-1" />
               {/key}
             {/if}
 

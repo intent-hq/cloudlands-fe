@@ -2,6 +2,7 @@
 import RealTooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
 import RealTooltipShortcut from '$lib/components/ui/tooltip/TooltipShortcut.svelte';
 import { m } from '$shared/paraglide/messages.js';
+import { readable } from 'svelte/store';
 import { mount, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTabLivenessStore } from './__tests__/mocks/workspace-tab-liveness-store';
@@ -11,6 +12,13 @@ const mocks = vi.hoisted(() => ({
   fixture: null as ReturnType<typeof createTabLivenessStore> | null,
 }));
 const fixture = () => mocks.fixture!;
+
+vi.mock('$features/hardware-console/device/connection-status', () => ({
+  microConnectedReadable: () => readable(false),
+}));
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectWorkspaceResolvedKeySlot: () => readable(null),
+}));
 
 vi.mock('$app/navigation', () => ({
   goto: async (url: string) =>

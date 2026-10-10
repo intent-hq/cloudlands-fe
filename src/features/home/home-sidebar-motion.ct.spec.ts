@@ -111,6 +111,12 @@ test('Sidebar fades in both directions and keeps filters, drafts, and toggle ali
       return Math.abs(indicator!.x - selected!.x);
     })
     .toBeLessThan(1);
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser?.calls ?? []))
+    .toContainEqual({
+      method: 'drafts.get',
+      params: { workspaceId: '__chief__', agentId: 'home-assistant-0' },
+    });
   const draft = component.locator('.home-surface [contenteditable="true"]').first();
   await draft.fill('Keep this draft through the animation');
   await page.evaluate(() => (window.__sidebarMotionRecords = []));
@@ -133,11 +139,33 @@ test('Sidebar fades in both directions and keeps filters, drafts, and toggle ali
   expect(assistantExit.frames.at(-1)!.x).toBeGreaterThan(0);
   expect(assistantExit.frames.at(-1)!.opacity).toBe(0);
   await expect(component.locator('.workspace-list').getByRole('option')).toHaveCount(1);
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser?.calls ?? []))
+    .toContainEqual({
+      method: 'drafts.set',
+      params: {
+        workspaceId: '__chief__',
+        agentId: 'home-assistant-0',
+        text: 'Keep this draft through the animation',
+      },
+    });
   await assistant.click();
   await expect(draft).toHaveText('Keep this draft through the animation');
   await expect(sidebar.locator('[data-home-sidebar-exiting]')).toHaveCount(0);
   await testInfo.attach('sidebar-directional-motion', {
     body: JSON.stringify({ forward, backward }, null, 2),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('sidebar-draft-wire', {
+    body: JSON.stringify(
+      await page.evaluate(() =>
+        (window.__homeIntegrationBrowser?.calls ?? []).filter(({ method }) =>
+          method.startsWith('drafts.'),
+        ),
+      ),
+      null,
+      2,
+    ),
     contentType: 'application/json',
   });
   await testInfo.attach('sidebar-motion-after', {
@@ -163,6 +191,12 @@ test('Sidebar handles rapid reversals, keyboard switching, and reduced motion wh
   });
   const assistant = tabs.getByRole('tab', { name: 'Assistant', exact: true });
   await expect(assistant).toHaveAttribute('aria-selected', 'true');
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser?.calls ?? []))
+    .toContainEqual({
+      method: 'drafts.get',
+      params: { workspaceId: '__chief__', agentId: 'home-assistant-0' },
+    });
   await expect(sidebar.locator('[data-home-sidebar-exiting]')).toHaveCount(0);
   await expect(sidebar.getByRole('listbox')).toBeVisible();
   expect(await sidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
@@ -204,16 +238,21 @@ test('Home content enters and exits horizontally in the direction of its tabs', 
 }, testInfo) => {
   const component = await mount(Preview);
   const records: SidebarMotionRecord[] = [];
+  let currentView = 'workspaces';
   for (const [name, view] of [
     ['Pull requests', 'prs'],
     ['Linear issues', 'linear'],
     ['Workspaces', 'workspaces'],
   ] as const) {
     await page.evaluate(() => (window.__sidebarMotionRecords = []));
-    await component.locator('.home-header').getByRole('tab', { name, exact: true }).click();
-    await expect(
-      component.locator('.home-header').getByRole('tab', { name, exact: true }),
-    ).toHaveAttribute('aria-selected', 'true');
+    await component
+      .locator(`[data-home-view="${currentView}"] .home-header`)
+      .getByRole('tab', { name, exact: true })
+      .click();
+    const selectedTab = component
+      .locator(`[data-home-view="${view}"] .home-header`)
+      .getByRole('tab', { name, exact: true });
+    await expect(selectedTab).toHaveAttribute('aria-selected', 'true');
     await expect
       .poll(() =>
         page.evaluate(
@@ -233,10 +272,9 @@ test('Home content enters and exits horizontally in the direction of its tabs', 
     expect(record.frames[0].opacity).toBe(0);
     expect(record.frames.at(-1)).toMatchObject({ x: 0, y: 0, opacity: 1 });
     expect(record.headerDisplayed).toBe(true);
-    await expect(
-      component.locator('.home-header').getByRole('tab', { name, exact: true }),
-    ).toBeVisible();
+    await expect(selectedTab).toBeVisible();
     records.push(record);
+    currentView = view;
   }
   await testInfo.attach('home-content-horizontal-motion', {
     body: JSON.stringify(records, null, 2),

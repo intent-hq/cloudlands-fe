@@ -10,14 +10,16 @@
  * - Cmd+Click (⌘ on Mac, Ctrl on Windows/Linux) → Open in embedded browser panel
  * - Auth/OAuth URLs → Always open in external browser
  * - GitHub issue/PR URLs (plain click) → Configured default action
+ * - Workspace preview links → Enter the workspace and open its content panel
  * - Intent links (intent://) → Handle internally (navigate to notes/tasks)
  * - File links (file://) → Open in external editor
  * - Other links → External browser as fallback
  */
 
 import { Logger } from '$shared/logger';
-import type { WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
 import { writeTextToClipboard } from '$lib/utils/clipboard';
+import { notify } from '$lib/components/patterns/notify';
 import {
   type GitHubIssueOrPrRef,
   type LinkHandlerOptions,
@@ -29,6 +31,7 @@ import {
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import {
   focusPanel,
@@ -38,7 +41,6 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 const logger = new Logger('LinkHandler');
 
@@ -57,7 +59,7 @@ const logger = new Logger('LinkHandler');
  *    origin) → workspace file viewer
  * 5. Auth/OAuth URLs → external browser (always)
  * 6. `http(s)://` + forceExternal → external browser
- * 7. `http(s)://` + Cmd+Click → embedded browser panel (external browser
+ * 7. `http(s)://` + workspace preview or Cmd+Click → embedded browser panel (external browser
  *    fallback without a workspaceId)
  * 8. GitHub issue/PR URLs (plain click with coordinates) → configured default action
  * 9. `http(s)://` (plain click) → external browser
@@ -68,7 +70,14 @@ const logger = new Logger('LinkHandler');
  */
 export async function handleLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
-    const sourcePanelId = getSourcePanelId(options);
+    const openInWorkspace = shouldOpenInWorkspace(options);
+    const sourcePanelId = openInWorkspace ? undefined : getSourcePanelId(options);
+    options = { ...options, openInWorkspace, sourcePanelId };
+    const sourceTarget = options.event?.target;
+    const assistantLayoutId =
+      sourceTarget instanceof Element
+        ? sourceTarget.closest<HTMLElement>('[data-assistant-layout-id]')?.dataset.assistantLayoutId
+        : undefined;
     // Try custom handler first
     if (options.customHandler) {
       const handled = await options.customHandler(url);
@@ -81,7 +90,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
     if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal) {
       const { showAssistantContent } = await import('$features/home/assistant-panels');
       const target = options.rawHref?.startsWith('/workspace/') ? options.rawHref : url;
-      if (await showAssistantContent(target)) return true;
+      if (await showAssistantContent(target, { layoutId: assistantLayoutId })) return true;
     }
 
     // Handle intent:// links (internal navigation to notes/tasks)
@@ -118,9 +127,10 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         return await openInExternalBrowser(url);
       }
 
-      // Cmd+Click → embedded browser panel (requires a workspace), otherwise external browser
-      if (isCmdClickModifier(options)) {
+      // Workspace previews and Cmd+Click use the owning workspace's browser panel.
+      if (openInWorkspace || isCmdClickModifier(options)) {
         if (options.workspaceId) {
+          await activateLinkWorkspace(options.workspaceId, options);
           return await openInBrowserPanel(url, options.workspaceId, sourcePanelId);
         }
         logger.debug('No workspaceId available, opening in external browser', { url });
@@ -184,11 +194,15 @@ async function handleIntentLink(url: string, options: LinkHandlerOptions): Promi
   try {
     const { parseIntentLink, handleIntentLink: handleIntent } =
       await import('$lib/utils/workspaces-link-handler');
-    if (options.canOpenFile && parseIntentLink(url).type === 'file' && !options.canOpenFile())
-      return false;
+    const info = parseIntentLink(url);
+    if (options.canOpenFile && info.type === 'file' && !options.canOpenFile()) return false;
+    const targetWorkspaceId = info.workspaceId
+      ? WorkspaceId(info.workspaceId)
+      : options.workspaceId;
+    if (info.valid) await activateLinkWorkspace(targetWorkspaceId, options);
     focusSourcePanel(options);
     return await handleIntent(url, {
-      workspaceId: options.workspaceId,
+      workspaceId: options.openInWorkspace ? targetWorkspaceId : options.workspaceId,
       sourcePanelId: options.sourcePanelId,
       openInAdjacentPanel: options.openInAdjacentPanel ?? isCmdClickModifier(options),
       openInNewAdjacentPanel: options.openInNewAdjacentPanel ?? false,
@@ -218,6 +232,7 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
         terminalId,
         workspaceId: options.workspaceId,
       });
+      await activateLinkWorkspace(options.workspaceId, options);
       focusSourcePanel(options);
       const terminalTab = {
         type: 'terminal' as const,
@@ -268,6 +283,32 @@ function normalizeWorkspaceRelativePath(path: string): string | null {
   const segments = path.split('/').filter((segment) => segment && segment !== '.');
   if (segments.length === 0 || segments.some((segment) => segment === '..')) return null;
   return segments.join('/');
+}
+
+function shouldOpenInWorkspace(options: LinkHandlerOptions): boolean {
+  if (options.openInWorkspace !== undefined) return options.openInWorkspace;
+  const target = options.event?.target;
+  if (!(target instanceof Element)) return false;
+  const workspaceId = target.closest<HTMLElement>('[data-workspace-link-target]')?.dataset
+    .workspaceLinkTarget;
+  return !!workspaceId && workspaceId === options.workspaceId;
+}
+
+async function activateLinkWorkspace(
+  workspaceId: WorkspaceId | undefined,
+  options: LinkHandlerOptions,
+): Promise<void> {
+  if (!options.openInWorkspace || !workspaceId) return;
+  const { navigateToRoute } = await import('$lib/utils/navigation.client');
+  try {
+    await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+  } catch (error) {
+    notify.error(m.ui_linkHandler_navigationFailed_title(), {
+      description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),
+    });
+    throw error;
+  }
 }
 
 function getSourcePanelId(options: LinkHandlerOptions): string | undefined {
@@ -391,6 +432,7 @@ async function openFilePathLink(
     path = normalizedPath;
 
     const openInAdjacentPanel = isCmdClickModifier(options);
+    await activateLinkWorkspace(workspaceId, options);
     focusSourcePanel(options);
     appStore.dispatch(
       openWorkspaceFile(workspaceId, path, {

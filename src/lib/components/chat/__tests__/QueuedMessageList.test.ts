@@ -1137,6 +1137,7 @@ describe('QueuedMessageList', () => {
 
     expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe('try again');
     expect(screen.getByTestId('queued-message-retry-status').getAttribute('role')).toBe('status');
+    expect(screen.getByTestId('queued-message-retry-status').textContent?.trim()).toBe('Queued');
     await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
     expect(screen.queryByTestId('queued-message-retry-status')).toBeNull();
     pending.resolve('delivered');

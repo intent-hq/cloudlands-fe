@@ -2,6 +2,7 @@
  * Host Requirements Selectors
  */
 
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 
 export const selectGitRequirement = store.createSelector((state) => state.hostRequirements.git);
@@ -23,3 +24,8 @@ export const selectHostRequirementsHasCheckedOnce = store.createSelector(
 export const selectAllRequirementsMet = store.createSelector(
   (state) => state.hostRequirements.git.available && state.hostRequirements.node.ok,
 );
+
+export const selectProviderCliRequirements = store.createSelector((state) => {
+  const result = state.hostRequirements.providerCli;
+  return result ? { context: result.context, warnings: getItems(result.warnings) } : undefined;
+});

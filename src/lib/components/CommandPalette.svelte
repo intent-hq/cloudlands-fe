@@ -1,6 +1,10 @@
 <script lang="ts">
   import { openDevConsole } from '$features/dev-console/dev-console-client';
-  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
+  import { getSettingsPaletteCommands } from '$features/settings/settings-palette-commands';
+  import {
+    selectPrincipalConnectionContext,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { ActionRow } from '$lib/components/ui/menu';
@@ -25,7 +29,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
-  import { createNoteQuery, type NoteQueryUpdate } from '$lib/utils/palette-note-search';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
@@ -45,6 +48,7 @@
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
+    selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -81,10 +85,13 @@
   import {
     recordPaletteFileMru,
     recordPaletteMruItem,
+    paletteNoteSearchReleased,
+    paletteNoteSearchRequested,
   } from '$store/renderer/slices/palette/palette-slice';
   import {
     selectPaletteFileMru,
     selectPaletteMruEntries,
+    selectPaletteNoteSearch,
   } from '$store/renderer/slices/palette/palette-selectors';
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
@@ -134,6 +141,7 @@
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const canCreate$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
@@ -142,7 +150,13 @@
     'open-url',
   ]);
   const commands = $derived(
-    COMMAND_PALETTE_COMMANDS.filter(
+    [
+      ...COMMAND_PALETTE_COMMANDS,
+      ...getSettingsPaletteCommands({
+        isCollaboratorOnlyClient: $isCollaboratorOnlyClient$,
+        multiplayerEnabled: $labsMultiplayerEnabled$,
+      }),
+    ].filter(
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
@@ -482,19 +496,11 @@
   });
 
   // Global indexed note results complement local fuzzy title/tag discovery.
-  let noteResults = $state<NoteQueryUpdate>({
-    items: [],
-    loading: false,
-    capability: 'unknown',
-    fallback: true,
-  });
-  const noteQuery = createNoteQuery((update) => {
-    untrack(() => {
-      noteResults = update;
-    });
-  });
+  const noteSearchConsumerId = crypto.randomUUID();
+  const noteResults = selectPaletteNoteSearch(noteSearchConsumerId);
+  const principalConnectionContext = selectPrincipalConnectionContext();
   const indexedNotes = $derived(
-    noteResults.items
+    $noteResults.items
       .filter((item) => !item.isArchived)
       .map((item) => ({
         ...item,
@@ -508,19 +514,24 @@
       })),
   );
   $effect(() => {
+    const authority = $principalConnectionContext;
+    if (!authority) return;
     if (!isOpen) {
-      noteQuery.close();
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
       return;
     }
     const term = parsedQuery.searchTerm;
     if (isGoToLineMode || !term || (activeFilter && activeFilter !== 'note')) {
-      noteQuery.clear();
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
       return;
     }
-    noteQuery.query(term, workspaceId, []);
-    // Cleanup also invalidates in-flight responses on unmount.
-    return () => noteQuery.cancel();
+    appStore.dispatch(
+      paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), term, workspaceId),
+    );
+    return () =>
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
   });
+  onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
   function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
@@ -825,6 +836,12 @@
     if (shouldClose) onClose?.();
   }
   function handleCommand(commandId: string): boolean {
+    const settingsCommand = commands.find((command) => command.id === commandId);
+    if (settingsCommand && 'settingsTab' in settingsCommand) {
+      appStore.dispatch(setShowCreateModal(false));
+      navigateToSettings({ tab: settingsCommand.settingsTab });
+      return true;
+    }
     switch (commandId) {
       case 'new-workspace':
         if (selectWorkspaceCreationVisible.select(appStore.state)) {
@@ -832,6 +849,7 @@
         }
         return true;
       case 'settings':
+        appStore.dispatch(setShowCreateModal(false));
         navigateToSettings();
         return true;
       case 'enable-experimental-multiplayer':
@@ -1049,7 +1067,7 @@
             {/if}
           </div>
         </div>
-      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || noteResults.loading}
+      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || $noteResults.loading}
         <div
           bind:this={resultsRef}
           class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2"
@@ -1128,7 +1146,7 @@
             {/if}
           {/each}
 
-          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || noteResults.loading}
+          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || $noteResults.loading}
             {#each [0, 1, 2] as i}
               <div class="w-full px-3 h-11 flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
@@ -1137,7 +1155,7 @@
             {/each}
           {/if}
         </div>
-      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !noteResults.loading}
+      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !$noteResults.loading}
         <EmptyState class="min-h-0 flex-1 overflow-y-auto py-10" contentClass="break-words">
           {#snippet icon()}<Fa icon={faSearch} class="size-5" />{/snippet}
           {#snippet title()}

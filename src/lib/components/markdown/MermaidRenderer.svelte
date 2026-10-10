@@ -2096,6 +2096,12 @@ ${source}`;
     overflow: visible;
   }
 
+  /* Terminal gaps are measured in screen pixels immediately after sizing. Keep
+     reduced-motion's nonzero blanket duration from animating the readable width. */
+  .mermaid-presentation :global(svg[aria-roledescription='flowchart-v2']) {
+    transition-property: fill, stroke, opacity;
+  }
+
   /* Layout reads must see the new transforms synchronously. The global reduced-motion
      duration otherwise creates transitions on these groups' default `all` property. */
   .mermaid-presentation

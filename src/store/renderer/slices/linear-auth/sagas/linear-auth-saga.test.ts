@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getAuthState: vi.fn(),
   update: vi.fn(),
   reset: vi.fn(),
+  navigateToSettings: vi.fn(),
 }));
 vi.mock('$features/linear-auth/renderer/linear-auth.client', () => ({
   linearAuthClient: { getAuthState: mocks.getAuthState },
@@ -13,6 +14,9 @@ vi.mock('$lib/client', () => ({
   appClient: { settings: { update: mocks.update, reset: mocks.reset } },
 }));
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: mocks.navigateToSettings,
+}));
 
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -26,6 +30,7 @@ import {
   startLinearAuth,
 } from '../linear-auth-slice';
 import { linearAuthSaga } from './linear-auth-saga';
+import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
 const settle = async () => {
   await Promise.resolve();
@@ -353,7 +358,20 @@ describe('linearAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('shares the legacy start status owner and makes reads latest-wins', async () => {
+  it('opens API-key settings and dismisses the New Workspace overlay when Connect is requested', async () => {
+    const run = harness();
+    run.channel.put(startLinearAuth());
+    await vi.waitFor(() => {
+      expect(mocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'connections' });
+    });
+    expect(run.dispatched).toContainEqual(setShowCreateModal(false));
+    expect(mocks.getAuthState).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('makes initialization reads latest-wins', async () => {
     let resolve!: (value: unknown) => void;
     mocks.getAuthState
       .mockReturnValueOnce(
@@ -364,7 +382,7 @@ describe('linearAuthSaga', () => {
       .mockResolvedValueOnce({ isAuthenticated: false, requiresDaemonAuth: true });
     const run = harness();
     run.channel.put(initializeLinearAuth());
-    run.channel.put(startLinearAuth());
+    run.channel.put(initializeLinearAuth());
     await settle();
     resolve({ isAuthenticated: true, requiresDaemonAuth: false });
     await settle();

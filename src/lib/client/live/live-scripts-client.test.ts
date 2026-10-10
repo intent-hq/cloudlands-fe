@@ -95,7 +95,6 @@ describe('LiveScriptsClient (fake transport)', () => {
       env: { PORT: '3000' },
       category: 'dev',
       autoStart: true,
-      scriptId: 's-1',
     });
 
     expect(mockedRequest).toHaveBeenCalledWith('script.create', {
@@ -107,9 +106,17 @@ describe('LiveScriptsClient (fake transport)', () => {
       env: { PORT: '3000' },
       category: 'dev',
       autoStart: true,
-      scriptId: 's-1',
     });
     expect(result).toEqual({ success: true, id: 's-1', script: definition });
+  });
+
+  it('refuses an ID upsert through the public creation API', async () => {
+    const client = new LiveScriptsClient();
+    const input = { name: 'renamed', command: 'true', mode: 'command' as const, scriptId: 's-1' };
+    // @ts-expect-error Existing IDs are forbidden even through a widened object.
+    const result = await client.create('ws-1', input);
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
   });
 
   it.each(['saved', 'oneOff'] as const)(
@@ -152,7 +159,6 @@ describe('LiveScriptsClient (fake transport)', () => {
   });
 
   it.each([
-    ['remove', 'script.remove'],
     ['start', 'script.start'],
     ['stop', 'script.stop'],
     ['restart', 'script.restart'],

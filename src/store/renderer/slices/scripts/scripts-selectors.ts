@@ -94,7 +94,19 @@ export const selectWorkspaceScriptEntries = store.createSelector(
 );
 
 export const selectWorkspaceScriptOperations = store.createSelector(
-  (state, wsId: string): Record<string, ScriptOperationState> => getWs(state, wsId).operations,
+  (state, wsId: string): Record<string, ScriptOperationState> => {
+    const ws = getWs(state, wsId);
+    if (!ws.detectionOperation?.pending) return ws.operations;
+    // Every row shares detection's reservation, including newly hydrated rows.
+    return {
+      ...ws.operations,
+      ...Object.fromEntries(Object.keys(ws.scripts).map((id) => [id, ws.detectionOperation!])),
+    };
+  },
+);
+
+export const selectScriptDetectionOperation = store.createSelector(
+  (state, wsId: string): ScriptOperationState | undefined => getWs(state, wsId).detectionOperation,
 );
 
 /** Get runtime for a script in a specific workspace (parameterized). */
@@ -113,4 +125,17 @@ export const selectAllWorkspaceScriptEntries = store.createSelector(
 /** Request-owned event journal; absence means the request was invalidated. */
 export const selectScriptReadJournal = store.createSelector(
   (state, wsId: string, requestId: string) => getWs(state, wsId).pendingReads?.[requestId],
+);
+
+/** Deletion is available only for a known, stopped definition without an in-flight mutation. */
+export const selectCanDeleteScript = store.createSelector(
+  (state, wsId: string, scriptId: string): boolean => {
+    const script = selectScriptById.select(state, wsId, scriptId);
+    return (
+      !!script &&
+      !isLiveScriptStatus(script.runtime?.status) &&
+      !getWs(state, wsId).detectionOperation?.pending &&
+      !getWs(state, wsId).operations[scriptId]?.pending
+    );
+  },
 );

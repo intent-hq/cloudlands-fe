@@ -8,8 +8,13 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import {
+    createChatDraftFixture,
+    type DraftFixtureRequest,
+  } from '../../../../test/fixtures/chat-drafts';
   import {
     principalContextChanged,
     principalReceived,
@@ -48,6 +53,7 @@
     chief = false,
     streaming = false,
     draft = '',
+    persistedDraft = '',
     attention = null,
     queued = false,
     suggestions = false,
@@ -71,6 +77,7 @@
     chief?: boolean;
     streaming?: boolean;
     draft?: string;
+    persistedDraft?: string;
     attention?: 'blocker' | 'discussion' | null;
     queued?: boolean;
     suggestions?: boolean;
@@ -104,6 +111,7 @@
     chief,
     streaming,
     draft,
+    persistedDraft,
     suggestions,
     questions,
     transcript,
@@ -114,11 +122,20 @@
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
   const timestamp = '2026-08-23T12:00:00.000Z';
+  let draftRequests = $state<DraftFixtureRequest[]>([]);
+  const draftFixture = createChatDraftFixture((request) => {
+    draftRequests = [...draftRequests, request];
+  });
+  const initialDraft = fixture.persistedDraft || fixture.draft;
+  if (initialDraft) draftFixture.seed(workspaceId, agentId, initialDraft);
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: () => [] })
+    ? startRootStoreLifecycle(store, {
+        startSagas: (appStore) => startChatFixtureSagas(appStore, draftFixture.client),
+      })
     : () => {};
+  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store, draftFixture.client);
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -592,6 +609,7 @@
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
   onDestroy(() => {
+    stopChatSagas.forEach((stop) => stop());
     disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
@@ -606,6 +624,7 @@
 </script>
 
 <section style:zoom data-testid="chat-panel-composer-host">
+  <output hidden data-testid="composer-draft-requests">{JSON.stringify(draftRequests)}</output>
   <div class="relative" style:width="{width}px" style:height="{height}px">
     <div class="absolute inset-0 h-full w-full">
       <PanelLayout {workspaceId} layoutId={workspaceId} />

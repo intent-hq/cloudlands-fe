@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
@@ -10,11 +11,14 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
   import { scrollFade } from '$lib/actions/scroll-fade';
+  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
 
   let {
     workspaces,
     selectedId,
     onselect,
+    onopen,
+    oncontextmenu,
     archived = false,
     showRepository = true,
     groups,
@@ -22,6 +26,8 @@
     workspaces: Workspace[];
     selectedId: string | null;
     onselect: (id: string) => void;
+    onopen: (id: string) => void;
+    oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
@@ -80,16 +86,26 @@
               aria-pressed={selectedId === workspace.id}
               wrapContent={false}
               class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-4 text-left shadow-xs"
-              onclick={() => onselect(workspace.id)}
+              onclick={(event) => {
+                if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
+                  onselect(workspace.id);
+              }}
+              oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
+              onkeydown={(event) => {
+                oncontextmenu?.(event, workspace);
+                if (!event.defaultPrevented)
+                  openHomeWorkspaceFromEvent(event, workspace.id, onopen);
+              }}
               aria-label={workspace.title}
             >
               <span class="flex items-start justify-between gap-3">
+                <WorkspaceMicroKeySlot workspaceId={workspace.id} />
                 <Tooltip.Provider
                   ><Tooltip.Root
                     ><Tooltip.Trigger
                       >{#snippet child({ props: homeTooltipProps })}<span
                           {...homeTooltipProps}
-                          class="min-w-0 line-clamp-2 break-words font-medium"
+                          class="min-w-0 flex-1 line-clamp-2 break-words font-medium"
                         >
                           {workspace.title}
                         </span>{/snippet}</Tooltip.Trigger

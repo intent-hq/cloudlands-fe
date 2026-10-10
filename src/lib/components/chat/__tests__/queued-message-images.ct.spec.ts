@@ -73,12 +73,8 @@ async function queueScreenshot(component: Locator) {
       .not.toBe('pending');
     return mode;
   };
-  // The expander can disappear as the measured preview catches up with a new row.
-  // Only act on settled clipping; an already-unclipped preview needs no click.
-  if ((await settledPreview()) === 'clipped') {
-    await queue.getByRole('button', { name: 'Show all queued messages', exact: true }).click();
-    expect(await settledPreview()).toBe('expanded');
-  }
+  // Wait for the measured preview to settle without changing the queue disclosure.
+  await settledPreview();
   return queue.screenshot();
 }
 
