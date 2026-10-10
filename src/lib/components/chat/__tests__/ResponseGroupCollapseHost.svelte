@@ -51,6 +51,13 @@
   <div class="max-h-44 overflow-y-auto" data-testid="response-group-scroll">
     <div class="h-20" aria-hidden="true"></div>
     {#each positions as position}
+      {#snippet currentChild()}
+        <div class="py-2" data-response-group-child data-testid="response-group-body-{position}">
+          <button type="button" data-testid="response-group-focus-{position}">
+            Focusable {position} detail for {chunk}
+          </button>
+        </div>
+      {/snippet}
       <div data-testid="response-group-{position}">
         <ResponseGroup
           name={`${position} group`}
@@ -58,6 +65,7 @@
           isTerminal={terminalPosition === position}
           isLastConversationMessage={lastConversationMessage}
           blocks={livePreview && activePosition === undefined ? blocks : []}
+          currentChild={livePreview && activePosition === undefined ? currentChild : undefined}
         >
           <div data-response-group-child data-testid="response-group-child-{position}">
             earlier chunk

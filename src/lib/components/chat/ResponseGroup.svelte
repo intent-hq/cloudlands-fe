@@ -42,6 +42,7 @@
     /** True when the owning message is the conversation's final assistant message. */
     isLastConversationMessage?: boolean;
     children: Snippet;
+    currentChild?: Snippet;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
@@ -58,6 +59,7 @@
     isTerminal = false,
     isLastConversationMessage = false,
     children,
+    currentChild,
     blocks,
     reasoningPhase = false,
     adjacentOperationalRow = false,
@@ -65,7 +67,7 @@
     class: className = '',
   }: Props = $props();
 
-  const hasPreview = $derived((blocks?.length ?? 0) > 0);
+  const hasPreview = $derived(!!currentChild);
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
   let isExpanded = $state(
     saved?.expanded ??
@@ -159,7 +161,8 @@
       if (!prevStreaming && disclosureOverride === 'expanded-completed') {
         disclosureOverride = 'automatic';
       }
-      if (disclosureOverride === 'automatic') setExpanded(!currentlyHasPreview);
+      if (!searchOwnsExpansion && disclosureOverride === 'automatic')
+        setExpanded(!currentlyHasPreview);
       clearCollapseTimer();
     } else if (prevStreaming && !currentlyStreaming) {
       if (currentlyTerminal) {
@@ -292,7 +295,7 @@
         aria-hidden="true"
       ></span>
       {#key childLifetime}
-        {@render children()}
+        {@render currentChild?.()}
       {/key}
     </div>
   </CylinderScroller>

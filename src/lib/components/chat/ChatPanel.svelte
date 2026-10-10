@@ -286,6 +286,7 @@
   import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { getPanelFindOwner } from '$lib/utils/panel-find-owner';
   import Fa from 'svelte-fa';
   import { faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { crispOut, spring, springIn } from '$lib/motion';
@@ -1589,7 +1590,7 @@
               (id) =>
                 operationalPanel.resolveTarget(
                   keepMessageId,
-                  id.replace(/^(?:group|thinking):/, ''),
+                  id.replace(/^(?:group|thinking|reasoning):/, ''),
                 ) === opened.key,
             )
           : keep.has(opened.disclosureId))
@@ -1636,7 +1637,7 @@
     for (const id of match.disclosurePath) {
       const row = await materializeSearchRow(
         match.messageId,
-        id.replace(/^(?:group|thinking):/, ''),
+        id.replace(/^(?:group|thinking|reasoning):/, ''),
         current,
       );
       if (!current()) return;
@@ -1657,7 +1658,7 @@
             disclosureId: id,
             key: operationalPanel.resolveTarget(
               match.messageId,
-              id.replace(/^(?:group|thinking):/, ''),
+              id.replace(/^(?:group|thinking|reasoning):/, ''),
             ),
           });
         await tick();
@@ -1758,7 +1759,7 @@
         query,
         match.occurrenceInBlock,
       );
-      const key = target?.key ?? `${match.messageId}\u0000${match.blockPath}`;
+      const key = `${target?.key ?? match.messageId}\u0000${match.blockPath}`;
       const group = matchesByBlock.get(key) ?? [];
       group.push({
         match: target ? { ...match, occurrenceInBlock: target.occurrenceInRow } : match,
@@ -6137,7 +6138,7 @@
     if (!e.defaultPrevented && matchesShortcut(e, 'mod+f', isMac)) {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
-        isPanelFocused &&
+        getPanelFindOwner(e) === panelElement &&
         isActive &&
         !isFocusInTerminal(document.activeElement as HTMLElement | null)
       ) {
@@ -6184,6 +6185,8 @@
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
+  data-panel-find-shortcut-owner={isActive ? 'true' : undefined}
+  data-panel-find-focused={isPanelFocused ? 'true' : undefined}
   onfocusin={() => {
     isInternallyFocused = true;
   }}

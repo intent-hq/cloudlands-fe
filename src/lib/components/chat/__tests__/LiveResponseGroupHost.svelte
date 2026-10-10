@@ -39,6 +39,20 @@
 </script>
 
 <ResponseGroup name="Working" {isStreaming} {blocks}>
+  {#snippet currentChild()}
+    <div class={OPERATIONAL_GROUP_CHILD_CONTENT_CLASS} data-response-group-child>
+      <div data-testid="live-current-child">
+        {#if editable}
+          <Input aria-label="Live child input" />
+        {/if}
+        {#each Array.from({ length: visibleLineCount }) as _, index}
+          <div data-testid="live-stream-line">
+            {chunk}{visibleLineCount > 1 ? ` ${index + 1}` : ''}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/snippet}
   {#snippet children()}
     <div
       class={OPERATIONAL_GROUP_CHILD_CONTENT_CLASS}
