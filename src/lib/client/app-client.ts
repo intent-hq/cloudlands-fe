@@ -937,6 +937,7 @@ export interface AgentsClient {
     specialist: string | null;
     rememberSpecialist?: boolean;
     model?: string | null;
+    provider?: string;
     systemPrompt?: string | null;
   }): Promise<MutationResult>;
   /**

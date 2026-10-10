@@ -5472,7 +5472,7 @@ describe.each(['workspace-a', 'workspace-b'])(
         id: 'agent-a',
         workspaceId,
         model: 'session-model',
-        codingAgent: 'codex',
+        provider: 'codex',
         metadata,
         messages: [],
         status: 'idle',
