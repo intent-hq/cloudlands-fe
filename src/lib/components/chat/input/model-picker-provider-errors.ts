@@ -6,15 +6,9 @@ import {
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+import type { ProviderLoadError } from './provider-load-error';
 
-export type ProviderLoadError = {
-  providerId: string;
-  providerName: string;
-  message: string;
-  details: string;
-  displayText: string;
-  hint?: string;
-};
+export type { ProviderLoadError } from './provider-load-error';
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
