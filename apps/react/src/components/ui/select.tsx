@@ -158,19 +158,42 @@ export function SelectContent({
   portalProps,
   dropUp = false,
   wrapperClass,
+  wrapperId,
   sideOffset = 4,
   collisionPadding = 8,
+  ref,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content> & {
   portal?: boolean;
   portalProps?: React.ComponentProps<typeof SelectPrimitive.Portal>;
   dropUp?: boolean;
   wrapperClass?: string;
+  wrapperId?: string;
 }) {
   const select = React.useContext(SelectContext);
   const surface = clampSurface(useSurface() + 2);
+  const attachContent = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      const releaseRef = typeof ref === 'function' ? ref(node) : undefined;
+      if (ref && typeof ref !== 'function') ref.current = node;
+      const wrapper = node?.parentElement;
+      const previousId = wrapper?.getAttribute('id');
+      if (wrapper && wrapperId && select.open) wrapper.id = wrapperId;
+      return () => {
+        if (wrapper && wrapperId && select.open && wrapper.id === wrapperId) {
+          if (previousId == null) wrapper.removeAttribute('id');
+          else wrapper.id = previousId;
+        }
+        if (typeof releaseRef === 'function') releaseRef();
+        else if (typeof ref === 'function') ref(null);
+        else if (ref) ref.current = null;
+      };
+    },
+    [ref, wrapperId, select.open],
+  );
   const content = (
     <SelectPrimitive.Content
+      ref={attachContent}
       data-slot="select-content"
       data-surface-level={surface}
       data-static-position={select.staticPosition || undefined}
