@@ -1,5 +1,6 @@
 import type { ContentBlock } from '$shared/types';
-import type { Question } from '$shared/types/question-resource';
+import type { QuestionAnswer } from './question-answer';
+export type { QuestionAnswer } from './question-answer';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
 
@@ -14,19 +15,6 @@ import { formatInteger } from '$lib/i18n/format';
  * is what resolves the pending set, on the daemon and in every FE derivation.
  * Dependency-light on purpose — no stores, no components.
  */
-
-/** One entry per question, in transcript order, handed back by the wizard. */
-export interface QuestionAnswer {
-  question: Question;
-  /** Labels of the selected options (selection order). */
-  selectedLabels: string[];
-  /** Trimmed free-form "Other" text ('' when none). */
-  freeText: string;
-  /** True when the question was explicitly skipped. */
-  skipped: boolean;
-  /** Transient pasted images, in paste order for this question. */
-  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
-}
 
 function formatAnswer(answer: QuestionAnswer): string {
   if (answer.skipped) return '(skipped)';
