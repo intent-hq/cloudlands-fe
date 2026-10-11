@@ -54,6 +54,14 @@ async function openLive(page, slug, query = {}) {
   expect(response?.ok(), `Cannot load live route ${url}`).toBe(true);
   const example = page.locator(`[data-functional-example="live-${slug}"]`);
   await expect(example).toBeVisible({ timeout: 15_000 });
+  // The production socket connects lazily on its first request. Check the real
+  // daemon before expecting a connected health signal; never synthesize health.
+  expect(
+    await page.evaluate(async () => {
+      const { backendRequest } = await import('/src/features/backend/backend-transport.ts');
+      return (await backendRequest('system.status')).running;
+    }),
+  ).toBe(true);
   await expect
     .poll(
       () =>
