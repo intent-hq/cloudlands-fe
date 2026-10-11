@@ -62,6 +62,7 @@ export function RadioGroup({
         value={selected}
         onValueChange={setValue}
         disabled={disabled}
+        aria-disabled={disabled}
         aria-readonly={readOnly || readonly || undefined}
         orientation={layout === 'inline' ? 'horizontal' : 'vertical'}
         data-choice-group="radio"
