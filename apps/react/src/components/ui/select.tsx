@@ -79,25 +79,31 @@ export function SelectValue({
   placeholder,
   children,
   className,
+  style,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Value>) {
   const select = React.useContext(SelectContext);
   return (
-    <SelectPrimitive.Value
-      data-slot="select-value"
-      placeholder={placeholder ?? m.ui_select_value_placeholder()}
+    // Radix Value discards className/style; its inner span still owns the ref and item text portal.
+    <span
       className={cn(
         'min-w-0 flex-1 truncate text-left',
         select.value ? 'text-foreground' : 'text-muted-foreground',
         className,
       )}
-      {...props}
+      style={style}
     >
-      {children ??
-        (select.items.length
-          ? (select.items.find((item) => item.value === select.value)?.label ?? select.value)
-          : undefined)}
-    </SelectPrimitive.Value>
+      <SelectPrimitive.Value
+        data-slot="select-value"
+        placeholder={placeholder ?? m.ui_select_value_placeholder()}
+        {...props}
+      >
+        {children ??
+          (select.items.length
+            ? (select.items.find((item) => item.value === select.value)?.label ?? select.value)
+            : undefined)}
+      </SelectPrimitive.Value>
+    </span>
   );
 }
 export function SelectTrigger({
