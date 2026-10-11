@@ -1,14 +1,14 @@
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import type { IconDefinition } from '$lib/icons/icon-definition';
 import {
-  faCircleCheck,
+  faCheckCircle as faCircleCheck,
   faCircleQuestion,
   faCodeMerge,
   faCodePullRequest,
   faHourglass,
   faHourglassHalf,
-  faTriangleExclamation,
+  faExclamationTriangle as faTriangleExclamation,
   faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+} from '$lib/icons/workspace-status-icons';
 import { m } from '$shared/paraglide/messages.js';
 import {
   isWorkspaceDisplayStatus,

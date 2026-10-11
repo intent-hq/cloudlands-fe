@@ -1,3 +1,24 @@
+import type { IconDefinition } from './icon-definition';
+import {
+  faCheckCircle,
+  faCircleQuestion,
+  faCodeMerge,
+  faCodePullRequest,
+  faExclamationTriangle,
+  faHourglass,
+  faHourglassHalf,
+  faXmark,
+} from './workspace-status-icons';
+export {
+  faCheckCircle,
+  faCircleQuestion,
+  faCodeMerge,
+  faCodePullRequest,
+  faExclamationTriangle,
+  faHourglass,
+  faHourglassHalf,
+  faXmark,
+};
 import type { Component } from 'svelte';
 import type { IconWeight } from 'phosphor-svelte';
 import AppleLogoIcon from 'phosphor-svelte/lib/AppleLogoIcon';
@@ -201,11 +222,7 @@ export {
   RocketIcon,
 };
 
-export interface IconDefinition {
-  iconName: string;
-  prefix?: string;
-  icon?: readonly [number, number, readonly string[], string, string | readonly string[]];
-}
+export type { IconDefinition } from './icon-definition';
 
 const icon = (iconName: string): IconDefinition => ({ iconName });
 
@@ -459,7 +476,6 @@ export const faCamera = icon('camera');
 export const faChalkboardTeacher = icon('chalkboard-user');
 export const faChartLine = icon('chart-line');
 export const faCheck = icon('check');
-export const faCheckCircle = icon('circle-check');
 export const faCheckSquare = icon('square-check');
 export const faChevronDown = icon('chevron-down');
 export const faChevronLeft = icon('chevron-left');
@@ -472,7 +488,6 @@ export const faCircleHalfStroke = icon('circle-half-stroke');
 export const faCircleInfo = icon('circle-info');
 export const faCircleNotch = icon('circle-notch');
 export const faCirclePlus = icon('circle-plus');
-export const faCircleQuestion = icon('circle-question');
 export const faCircleXmark = icon('circle-xmark');
 export const faClipboard = icon('clipboard');
 export const faClipboardCheck = icon('clipboard-check');
@@ -484,8 +499,6 @@ export const faCodeBranch = icon('code-branch');
 export const faCodeCommit = icon('code-commit');
 export const faCodeCompare = icon('code-compare');
 export const faCodeFork = icon('code-fork');
-export const faCodeMerge = icon('code-merge');
-export const faCodePullRequest = icon('code-pull-request');
 export const faCog = icon('gear');
 export const faColumns = icon('columns');
 export const faComment = icon('comment');
@@ -507,7 +520,6 @@ export const faEllipsisV = icon('ellipsis-vertical');
 export const faEllipsisVertical = faEllipsisV;
 export const faEnvelope = icon('envelope');
 export const faExclamationCircle = faCircleExclamation;
-export const faExclamationTriangle = icon('triangle-exclamation');
 export const faExpand = icon('expand');
 export const faExpandAlt = icon('expand-alt');
 export const faExternalLink = icon('arrow-up-right-from-square');
@@ -540,8 +552,6 @@ export const faGripLines = icon('grip-lines');
 export const faHammer = icon('hammer');
 export const faHardDrive = icon('hard-drive');
 export const faHistory = icon('clock-rotate-left');
-export const faHourglass = icon('hourglass');
-export const faHourglassHalf = icon('hourglass-half');
 export const faHouse = icon('house');
 export const faICursor = icon('i-cursor');
 export const faImage = icon('image');
@@ -634,5 +644,4 @@ export const faWaveSquare = icon('wave-square');
 export const faWindowMaximize = icon('window-maximize');
 export const faWindowRestore = icon('window-restore');
 export const faWrench = icon('wrench');
-export const faXmark = icon('xmark');
 export const faXmarkCircle = faCircleXmark;

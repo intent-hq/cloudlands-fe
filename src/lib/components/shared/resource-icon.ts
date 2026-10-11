@@ -1,7 +1,8 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { faAlignLeft, faCode } from '@fortawesome/free-solid-svg-icons';
+import type { ResourceIconKind } from './resource-icon-types';
 
-export type ResourceIconKind = 'note' | 'changes';
+export type { ResourceIconKind } from './resource-icon-types';
 
 export const RESOURCE_ICON_BY_KIND = {
   note: faAlignLeft,

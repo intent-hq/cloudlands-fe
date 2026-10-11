@@ -9,6 +9,9 @@
 @import '../../../../src/lib/styles/tokens.css';
 @import '../../../../src/lib/styles/overlay-surface.css';
 
+@source '../../../../src/lib/components/workspace/utils/workspace-status-presentation.ts';
+@source '../../../../src/lib/components/workspace/utils/task-status-display.ts';
+
 @source not '**/*.test.*';
 @source not '**/*.spec.*';
 @custom-variant dark (&:where(.dark, .dark *));
