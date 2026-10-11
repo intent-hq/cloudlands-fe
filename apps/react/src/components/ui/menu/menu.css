@@ -1,0 +1,19 @@
+.menu-row > :is([data-slot='menu-item-indicator'], [data-slot='menu-sub-chevron']) {
+  margin-block-start: max(0px, calc((1lh - 1rem) / 2));
+}
+[data-slot='menu-list-highlight'] .menu-selection-pressed {
+  box-shadow: inset 0 0 0 1px var(--active);
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-overlay[data-state] {
+    animation: none;
+  }
+}
+
+/* Keep Radix's measured wrapper transform intact while a source-only submenu
+   direction or narrow-viewport fallback temporarily owns placement. */
+[data-radix-popper-content-wrapper][data-menu-position='custom'] {
+  left: var(--menu-placement-x) !important;
+  top: var(--menu-placement-y) !important;
+  transform: none !important;
+}
