@@ -129,7 +129,9 @@ function LightboxSurface({
 
   function handleBackdropClick(event: MouseEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest('[data-media-lightbox-content], [role="toolbar"], button, input')) return;
+    // React portals bubble through the component tree; only DOM descendants are backdrop clicks.
+    if (!target || !event.currentTarget.contains(target)) return;
+    if (target.closest('[data-media-lightbox-content], [role="toolbar"], button, input')) return;
     close();
   }
 
