@@ -135,6 +135,23 @@ test("picker: multi-select toggles one option while preserving the other selecti
   await expect(input).toHaveAttribute("aria-expanded", "false");
 });
 
+test("picker: neighbouring inputs remain accessible and moving focus outside dismisses the popup", async ({
+  page,
+}) => {
+  const fixture = await openFixture(page, "combobox", "combobox-state-matrix");
+  const input = fixture.getByRole("combobox", { name: "Catalog combobox", exact: true });
+  const neighbour = fixture.getByRole("combobox", {
+    name: "Multi-select catalog combobox",
+    exact: true,
+  });
+  await input.click();
+  await expect(input).toHaveAttribute("aria-expanded", "true");
+  await expect(neighbour).toBeVisible();
+  await neighbour.focus();
+  await expect(neighbour).toBeFocused();
+  await expect(input).toHaveAttribute("aria-expanded", "false");
+});
+
 test("select wrapper: public ID locates the popup container in portalled and inline modes", async ({
   page,
 }) => {
