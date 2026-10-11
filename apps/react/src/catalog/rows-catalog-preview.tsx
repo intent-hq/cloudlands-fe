@@ -77,7 +77,7 @@ export function RowsCatalogPreview({ fixture }: { fixture: UiComponentFixture })
         </h3>
         <div className="row-cell" data-row-preview="list-row-compositions">
           <ListRow
-            leading={<FolderIcon className="size-4 text-muted-foreground" />}
+            leading={<FolderIcon className="size-4 text-muted-foreground" aria-hidden="true" />}
             title="Workspace sources"
             description="Leading icon and secondary text"
             meta="2 files"
@@ -86,7 +86,7 @@ export function RowsCatalogPreview({ fixture }: { fixture: UiComponentFixture })
           <ListRow
             leading={
               <Badge className="size-6 rounded-full p-1">
-                <RobotIcon className="size-3" />
+                <RobotIcon className="size-3" aria-hidden="true" />
               </Badge>
             }
             title="Avatar row"
@@ -217,13 +217,13 @@ export function RowsCatalogPreview({ fixture }: { fixture: UiComponentFixture })
                 <Sidebar.MenuButton
                   label="Active catalog implementor"
                   status="active"
-                  icon={<RobotIcon />}
+                  icon={<RobotIcon aria-hidden="true" />}
                 />
               </Sidebar.MenuItem>
               <Sidebar.MenuItem>
                 <Sidebar.MenuButton
                   label="A very long background agent name that must truncate"
-                  icon={<RobotIcon />}
+                  icon={<RobotIcon aria-hidden="true" />}
                 />
               </Sidebar.MenuItem>
             </Sidebar.Menu>
