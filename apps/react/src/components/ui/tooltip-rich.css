@@ -1,0 +1,11 @@
+/* Preserve the source line arrow, including its dimensions on the placed side.
+   Radix owns rotation, collision placement and the measured arrow wrapper. */
+.tooltip-rich .tooltip-rich-arrow {
+  width: 1px;
+  height: 0.5rem;
+}
+
+.tooltip-rich:is([data-side='left'], [data-side='right']) .tooltip-rich-arrow {
+  width: 0.5rem;
+  height: 1px;
+}
