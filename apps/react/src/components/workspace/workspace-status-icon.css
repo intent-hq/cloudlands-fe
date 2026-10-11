@@ -1,0 +1,27 @@
+.workspace-status-color-active {
+  color: hsl(var(--agent-avatar-surface-active));
+}
+
+.workspace-status-color-unread {
+  color: hsl(var(--workspace-status-unread));
+}
+
+.workspace-status-icon .workspace-status-dot {
+  display: block;
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  outline: none;
+  background-color: currentColor;
+  box-shadow: none;
+}
+
+@media (forced-colors: active) {
+  .workspace-status-icon .workspace-status-dot {
+    background-color: CanvasText;
+    box-shadow: none;
+  }
+}

@@ -1,0 +1,34 @@
+[data-task-status-progress].flame-progress-enter {
+  animation: flame-progress-enter var(--motion-slow) var(--ease-emphasized-out) both;
+}
+
+[data-task-status-progress] .flame-status-segment {
+  transition: flex-grow var(--motion-slow) var(--ease-emphasized-out);
+  animation: flame-status-enter var(--motion-standard) var(--ease-standard) both;
+}
+
+@keyframes flame-progress-enter {
+  from {
+    clip-path: inset(0 100% 0 0 round var(--radius-small));
+  }
+  to {
+    clip-path: inset(0 0 0 0 round var(--radius-small));
+  }
+}
+
+@keyframes flame-status-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@container style(--motion-reduced: 1) {
+  [data-task-status-progress].flame-progress-enter,
+  [data-task-status-progress] .flame-status-segment {
+    animation: none;
+    transition: none;
+  }
+}
