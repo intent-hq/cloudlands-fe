@@ -121,6 +121,7 @@ function NestedOptions({
       <Menu.Item
         key={option.value}
         disabled={option.disabled}
+        className={option.className}
         textValue={option.label}
         closeOnSelect={false}
         onSelect={() => onSelect(option)}
@@ -296,6 +297,10 @@ export function Dropdown({
     setNavigation({ inputs: navigationInputs, index: highlight });
   }
   const setHighlight = (index: number) => setNavigation((current) => ({ ...current, index }));
+  React.useLayoutEffect(() => {
+    if (open && highlight >= 0)
+      document.getElementById(`${uid}-option-${highlight}`)?.scrollIntoView({ block: 'nearest' });
+  }, [open, uid, highlight]);
   const focusOption = (index: number) => {
     const shouldFocus = document.activeElement?.getAttribute('role') === 'option';
     setHighlight(index);
@@ -425,6 +430,9 @@ export function Dropdown({
       >
         <Menu.Trigger
           asChild
+          onFocus={() => {
+            if (!option.disabled) setSubmenu(option.value);
+          }}
           onPointerMove={(event) => {
             if (event.pointerType !== 'touch' && !option.disabled) setSubmenu(option.value);
           }}
