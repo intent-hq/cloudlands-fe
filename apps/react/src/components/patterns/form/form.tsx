@@ -45,7 +45,6 @@ export function Form({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLFormElement>) {
-    onKeyDown?.(event);
     if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.defaultPrevented || isBusy)
       return;
     const target = event.target as HTMLElement;
@@ -77,7 +76,7 @@ export function Form({
       aria-busy={isBusy || undefined}
       className={cn('grid gap-4', className)}
       onSubmit={handleSubmit}
-      onKeyDown={handleKeyDown}
+      onKeyDown={onKeyDown ?? handleKeyDown}
       {...props}
     >
       <fieldset className="contents" disabled={isBusy} aria-busy={isBusy || undefined}>
