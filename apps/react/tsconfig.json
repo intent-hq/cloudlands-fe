@@ -20,6 +20,9 @@
       "$store/renderer/slices/guest-sessions/guest-sessions-types": [
         "../../src/store/renderer/slices/guest-sessions/guest-sessions-types.ts"
       ],
+      "$store/renderer/slices/presence/presence-types": [
+        "../../src/store/renderer/slices/presence/presence-types.ts"
+      ],
       "$store/renderer/slices/directory-picker/directory-picker-slice": [
         "../../src/store/renderer/slices/directory-picker/directory-picker-slice.ts"
       ],
