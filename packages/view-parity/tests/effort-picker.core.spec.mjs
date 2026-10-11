@@ -83,6 +83,27 @@ test('effort callback: false completion rolls back the optimistic selection', as
   await expect(readout(host, 'Effort pending count')).toHaveText('0');
 });
 
+test('effort callback: immediate false keeps the persisted value and permits a later choice', async ({
+  page,
+}) => {
+  const host = await openEffort(page);
+  const trigger = picker(host);
+  await externalEffort(host, 'low');
+  await toggle(host, 'Refuse effort callback immediately').click();
+  await choose(page, trigger, 'High');
+  await expectJson(host, 'Effort callbacks', [{ id: 1, effort: 'high', result: false }]);
+  await expectJson(host, 'Effort persisted value', 'low');
+  await expect(trigger).toHaveAccessibleName('Reasoning effort: Low');
+  await expect(readout(host, 'Effort pending count')).toHaveText('0');
+  await toggle(host, 'Refuse effort callback immediately').click();
+  await choose(page, trigger, 'High');
+  await expectJson(host, 'Effort callbacks', [
+    { id: 1, effort: 'high', result: false },
+    { id: 2, effort: 'high', result: true },
+  ]);
+  await expectJson(host, 'Effort persisted value', 'high');
+});
+
 test('effort callback: false completion restores the latest external value', async ({ page }) => {
   const host = await openEffort(page);
   const trigger = picker(host);

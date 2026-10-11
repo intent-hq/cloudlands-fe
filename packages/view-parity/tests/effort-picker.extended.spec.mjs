@@ -146,3 +146,64 @@ test('effort lifecycle: pending refusal after unmount cannot overwrite the remou
     { id: 2, effort: 'medium', result: true },
   ]);
 });
+
+test('effort provider values: explicit none and provider spelling stay distinct from Auto', async ({
+  page,
+}) => {
+  const host = await openEffort(page);
+  const trigger = picker(host);
+  await control(host, 'Provider levels').click();
+  const expected = [];
+  for (const [effort, label] of [
+    ['none', 'Off'],
+    ['HIGH', 'High'],
+    ['provider/Deep-Think', 'provider/Deep-Think'],
+    [null, 'Auto'],
+  ]) {
+    await choose(page, trigger, label);
+    expected.push({ id: expected.length + 1, effort, result: true });
+    await expectJson(host, 'Effort callbacks', expected);
+    await expectJson(host, 'Effort persisted value', effort);
+    await expect(trigger).toHaveAccessibleName(`Reasoning effort: ${label}`);
+  }
+});
+
+test('effort public Select: native arrows skip the disabled item in both directions', async ({
+  page,
+}) => {
+  await openEffort(page);
+  const host = page.locator('[data-functional-example="standalone-select-boundary"]');
+  const trigger = host.getByRole('combobox', { name: 'Standalone Select', exact: true });
+  await trigger.press('Enter');
+  await expect(page.getByRole('option', { name: 'Beta unavailable', exact: true })).toBeDisabled();
+  await pressSequence(page, ['ArrowDown', 'Enter']);
+  await expectJson(host, 'Standalone Select value', 'gamma');
+  await expectJson(host, 'Standalone Select callbacks', ['gamma']);
+  await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await expect(page.getByRole('option', { name: 'Gamma', exact: true })).toBeVisible();
+  await pressSequence(page, ['ArrowUp', 'Enter']);
+  await expectJson(host, 'Standalone Select value', 'alpha');
+  await expectJson(host, 'Standalone Select callbacks', ['gamma', 'alpha']);
+  await expect(trigger).toBeFocused();
+});
+
+test('effort public Select: controlled clear removes selection without inventing a callback', async ({
+  page,
+}) => {
+  await openEffort(page);
+  const host = page.locator('[data-functional-example="standalone-select-boundary"]');
+  const trigger = host.getByRole('combobox', { name: 'Standalone Select', exact: true });
+  await choose(page, trigger, 'Gamma');
+  await expectJson(host, 'Standalone Select callbacks', ['gamma']);
+  await control(host, 'Clear standalone Select').click();
+  await expectJson(host, 'Standalone Select value', '');
+  await expectJson(host, 'Standalone Select callbacks', ['gamma']);
+  await expect(trigger).toHaveText('Choose a standalone value');
+  await trigger.press('Enter');
+  await expect(page.getByRole('option', { selected: true })).toHaveCount(0);
+  await page.getByRole('option', { name: 'Alpha', exact: true }).click();
+  await expectJson(host, 'Standalone Select value', 'alpha');
+  await expectJson(host, 'Standalone Select callbacks', ['gamma', 'alpha']);
+  await expect(trigger).toBeFocused();
+});
