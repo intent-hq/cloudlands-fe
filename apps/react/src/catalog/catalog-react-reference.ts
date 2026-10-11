@@ -1276,11 +1276,28 @@ export function Example() {
         '() => void',
         'Notifies the caller without closing; the owner decides whether to close and persist.',
       ),
+      prop(
+        'ModelSwitchConfirmDialog.isProviderChange',
+        'boolean',
+        'Selects provider-change versus same-provider model wording; the component uses real provider icons and performs no mutation.',
+        'false',
+      ),
+      prop(
+        'SetPrimaryClientConfirmDialog.currentHost',
+        'string | undefined',
+        'Named-host wording when supplied; otherwise unresolved-host wording. No primary client is changed.',
+      ),
+      prop(
+        'ModelSwitchConfirmDialog / SetPrimaryClientConfirmDialog / DismissQuestionsConfirmDialog callbacks',
+        'onConfirm: () => void; onCancel: () => void',
+        'Confirmation stays open until the owner closes it. Cancellation closes through FormDialog; the owner resets open before reopening. DismissQuestions also accepts Promise<void> through its canonical re-export.',
+      ),
     ],
     [
-      'The modal source matrix implements all 15 primitive states and 15 product compositions. Its coverage ledger explicitly lists 23 unsupported source compositions, including archive-warning-dialog which is absent from catalog.ts metadata.',
+      'The modal source matrix implements all 15 primitive states and 18 product compositions. Its coverage ledger explicitly lists 20 unsupported source compositions, including archive-warning-dialog which is absent from catalog.ts metadata.',
       'Matching static fixtures preserve source copy and composition. Browser, geometry and raster acceptance remain pending.',
-      '/sandbox/modals?example=interactive uses native dialogs and controlled callback inputs. Counters and Promise settlement prove only callback contracts, never workspace or proposal persistence.',
+      '/sandbox/modals?example=interactive uses native dialogs and controlled callback inputs, including provider/model and known/unresolved primary-host branches. Counters and Promise settlement prove only callback contracts, never workspace, proposal or question persistence, model switching or primary-client mutations.',
+      'Additional imports: ModelSwitchConfirmDialog from @/components/chat/model-switch-confirm-dialog; SetPrimaryClientConfirmDialog from @/components/workspace/set-primary-client-confirm-dialog; DismissQuestionsConfirmDialog from @/components/chat/questions/dismiss-questions-confirm-dialog (canonical re-export).',
     ],
   ),
   fields: reference(

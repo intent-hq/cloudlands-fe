@@ -9,6 +9,9 @@ import { MessageDialog } from '@/components/modals/message-dialog';
 import { BulkActionConfirmDialog } from '@/components/modals/bulk-action-confirm-dialog';
 import { HarnessFeaturesModal } from '@/components/chat/harness-features-modal';
 import { DismissProposalConfirmDialog } from '@/components/chat/proposals/dismiss-proposal-confirm-dialog';
+import { ModelSwitchConfirmDialog } from '@/components/chat/model-switch-confirm-dialog';
+import { SetPrimaryClientConfirmDialog } from '@/components/workspace/set-primary-client-confirm-dialog';
+import { DismissQuestionsConfirmDialog } from '@/components/chat/questions/dismiss-questions-confirm-dialog';
 import { CatalogLink } from './catalog-link';
 
 interface CallbackDialogControls {
@@ -17,6 +20,9 @@ interface CallbackDialogControls {
   rejectBulk: () => boolean;
   setInputOpen: (open: boolean) => void;
   closeProposal: () => void;
+  closeModelSwitch: () => void;
+  closePrimaryClient: () => void;
+  closeQuestions: () => void;
 }
 
 declare global {
@@ -61,6 +67,17 @@ export function CallbackDialogExamples() {
   const [proposalOpen, setProposalOpen] = useState(false);
   const [proposalConfirmed, setProposalConfirmed] = useState(0);
   const [proposalCancelled, setProposalCancelled] = useState(0);
+  const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
+  const [providerChange, setProviderChange] = useState(true);
+  const [modelSwitchConfirmed, setModelSwitchConfirmed] = useState(0);
+  const [modelSwitchCancelled, setModelSwitchCancelled] = useState(0);
+  const [primaryClientOpen, setPrimaryClientOpen] = useState(false);
+  const [knownHost, setKnownHost] = useState(true);
+  const [primaryClientConfirmed, setPrimaryClientConfirmed] = useState(0);
+  const [primaryClientCancelled, setPrimaryClientCancelled] = useState(0);
+  const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [questionsConfirmed, setQuestionsConfirmed] = useState(0);
+  const [questionsCancelled, setQuestionsCancelled] = useState(0);
 
   function settleBulk(rejected: boolean) {
     const pending = pendingBulk.current;
@@ -78,6 +95,9 @@ export function CallbackDialogExamples() {
       rejectBulk: () => settleBulk(true),
       setInputOpen,
       closeProposal: () => setProposalOpen(false),
+      closeModelSwitch: () => setModelSwitchOpen(false),
+      closePrimaryClient: () => setPrimaryClientOpen(false),
+      closeQuestions: () => setQuestionsOpen(false),
     };
     window.__INTENT_CALLBACK_DIALOGS__ = controls;
     return () => {
@@ -108,8 +128,8 @@ export function CallbackDialogExamples() {
         <h1>Callback dialog exercises</h1>
         <p>
           Real dialogs, native portals and caller-owned callback inputs. These exercises do not
-          save, archive or delete workspaces, or persist proposal decisions. Browser and visual
-          acceptance remain pending.
+          save, archive or delete workspaces, persist proposal or question decisions, switch models,
+          or change the primary client. Browser and visual acceptance remain pending.
         </p>
         <CatalogLink href="/sandbox/modals">Source appearance fixtures and coverage</CatalogLink>
       </header>
@@ -330,6 +350,135 @@ export function CallbackDialogExamples() {
         </output>
         <output aria-label="Proposal dialog open" data-testid="proposal-dialog-is-open">
           {String(proposalOpen)}
+        </output>
+      </section>
+      <section
+        className="grid gap-3"
+        data-dialog-example="model-switch"
+        aria-label="Model switch callback exercise"
+      >
+        <h2>Model and provider confirmation</h2>
+        <p>
+          Confirmation records a callback and leaves the dialog open for its owner. No model or
+          provider change is sent.
+        </p>
+        <Label className="flex items-center gap-2">
+          <Switch
+            aria-label="Change provider"
+            checked={providerChange}
+            onCheckedChange={setProviderChange}
+          />
+          Change provider
+        </Label>
+        <Button data-testid="model-switch-dialog-open" onClick={() => setModelSwitchOpen(true)}>
+          Open model switch confirmation
+        </Button>
+        <ModelSwitchConfirmDialog
+          open={modelSwitchOpen}
+          isProviderChange={providerChange}
+          fromProviderName="Augment"
+          fromProviderId="auggie"
+          fromModelLabel="Claude Sonnet 4.6"
+          toProviderName={providerChange ? 'OpenAI' : 'Augment'}
+          toProviderId={providerChange ? 'codex' : 'auggie'}
+          toModelLabel={providerChange ? 'GPT-5.6' : 'Claude Opus 4.6'}
+          onConfirm={() => setModelSwitchConfirmed((count) => count + 1)}
+          onCancel={() => {
+            setModelSwitchCancelled((count) => count + 1);
+            setModelSwitchOpen(false);
+          }}
+        />
+        <output
+          aria-label="Model switch confirm callbacks"
+          data-testid="model-switch-dialog-confirms"
+        >
+          {modelSwitchConfirmed}
+        </output>
+        <output
+          aria-label="Model switch cancel callbacks"
+          data-testid="model-switch-dialog-cancels"
+        >
+          {modelSwitchCancelled}
+        </output>
+        <output aria-label="Model switch dialog open" data-testid="model-switch-dialog-is-open">
+          {String(modelSwitchOpen)}
+        </output>
+      </section>
+      <section
+        className="grid gap-3"
+        data-dialog-example="primary-client"
+        aria-label="Primary client callback exercise"
+      >
+        <h2>Known and unresolved primary client</h2>
+        <p>
+          Confirmation records a callback and leaves the dialog open. The primary client is not
+          changed.
+        </p>
+        <Label className="flex items-center gap-2">
+          <Switch
+            aria-label="Known current host"
+            checked={knownHost}
+            onCheckedChange={setKnownHost}
+          />
+          Known current host
+        </Label>
+        <Button data-testid="primary-client-dialog-open" onClick={() => setPrimaryClientOpen(true)}>
+          Open primary client confirmation
+        </Button>
+        <SetPrimaryClientConfirmDialog
+          open={primaryClientOpen}
+          currentHost={knownHost ? 'Studio Mac' : undefined}
+          onConfirm={() => setPrimaryClientConfirmed((count) => count + 1)}
+          onCancel={() => {
+            setPrimaryClientCancelled((count) => count + 1);
+            setPrimaryClientOpen(false);
+          }}
+        />
+        <output
+          aria-label="Primary client confirm callbacks"
+          data-testid="primary-client-dialog-confirms"
+        >
+          {primaryClientConfirmed}
+        </output>
+        <output
+          aria-label="Primary client cancel callbacks"
+          data-testid="primary-client-dialog-cancels"
+        >
+          {primaryClientCancelled}
+        </output>
+        <output aria-label="Primary client dialog open" data-testid="primary-client-dialog-is-open">
+          {String(primaryClientOpen)}
+        </output>
+      </section>
+      <section
+        className="grid gap-3"
+        data-dialog-example="questions"
+        aria-label="Questions dismissal callback exercise"
+      >
+        <h2>Question dismissal confirmation</h2>
+        <p>
+          Confirmation records a callback and leaves the dialog open. No questions are dismissed or
+          persisted.
+        </p>
+        <Button data-testid="questions-dialog-open" onClick={() => setQuestionsOpen(true)}>
+          Open questions confirmation
+        </Button>
+        <DismissQuestionsConfirmDialog
+          open={questionsOpen}
+          onConfirm={() => setQuestionsConfirmed((count) => count + 1)}
+          onCancel={() => {
+            setQuestionsCancelled((count) => count + 1);
+            setQuestionsOpen(false);
+          }}
+        />
+        <output aria-label="Questions confirm callbacks" data-testid="questions-dialog-confirms">
+          {questionsConfirmed}
+        </output>
+        <output aria-label="Questions cancel callbacks" data-testid="questions-dialog-cancels">
+          {questionsCancelled}
+        </output>
+        <output aria-label="Questions dialog open" data-testid="questions-dialog-is-open">
+          {String(questionsOpen)}
         </output>
       </section>
     </div>

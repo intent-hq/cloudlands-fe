@@ -22,6 +22,9 @@ import { BulkActionConfirmDialog } from '@/components/modals/bulk-action-confirm
 import { ReplaceAgentModal } from '@/components/modals/replace-agent-modal';
 import { HarnessFeaturesModal } from '@/components/chat/harness-features-modal';
 import { DismissProposalConfirmDialog } from '@/components/chat/proposals/dismiss-proposal-confirm-dialog';
+import { ModelSwitchConfirmDialog } from '@/components/chat/model-switch-confirm-dialog';
+import { SetPrimaryClientConfirmDialog } from '@/components/workspace/set-primary-client-confirm-dialog';
+import { DismissQuestionsConfirmDialog } from '@/components/chat/questions/dismiss-questions-confirm-dialog';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import './modal-catalog-preview.css';
 
@@ -49,6 +52,7 @@ const productStates = [
   ['confirm-host-prompt', 'ConfirmHost — prompt'],
   ['confirm-host-alert', 'ConfirmHost — alert'],
   ['confirm-host-busy', 'ConfirmHost — busy'],
+  ['set-primary-client-confirm-dialog', 'SetPrimaryClientConfirmDialog'],
   ['destructive-confirm-default', 'DestructiveConfirm — default'],
   ['destructive-confirm-busy', 'DestructiveConfirm — busy'],
   ['form-dialog-default', 'FormDialog — default'],
@@ -59,7 +63,9 @@ const productStates = [
   ['bulk-action-confirm-dialog', 'BulkActionConfirmDialog'],
   ['replace-agent-modal', 'ReplaceAgentModal'],
   ['harness-features-modal', 'HarnessFeaturesModal'],
+  ['model-switch-confirm-dialog', 'ModelSwitchConfirmDialog'],
   ['dismiss-proposal-confirm-dialog', 'DismissProposalConfirmDialog'],
+  ['dismiss-questions-confirm-dialog', 'DismissQuestionsConfirmDialog'],
 ] as const;
 type ProductModalState = (typeof productStates)[number][0];
 
@@ -72,10 +78,6 @@ const unsupportedStates = [
     'directory-picker-modal',
     'DirectoryPickerModal exact source catalog composition is not integrated here',
   ],
-  [
-    'set-primary-client-confirm-dialog',
-    'SetPrimaryClientConfirmDialog and primary-client operation',
-  ],
   ['delete-warning-dialog', 'DeleteWarningDialog and workspace safety composition'],
   [
     'archive-warning-dialog',
@@ -87,11 +89,6 @@ const unsupportedStates = [
   ['git-credentials-no-context', 'GitCredentialsModal without workspace context'],
   ['import-workspace-modal', 'ImportWorkspaceModal and import lifecycle'],
   ['transfer-workspace-modal', 'TransferWorkspaceModal and transfer lifecycle'],
-  ['model-switch-confirm-dialog', 'ModelSwitchConfirmDialog and provider/model composition'],
-  [
-    'dismiss-questions-confirm-dialog',
-    'DismissQuestionsConfirmDialog exact source catalog composition is not integrated here',
-  ],
   ['new-space-modal', 'NewSpaceModal and workspace initializer composition'],
   ['setup-script-modal', 'SetupScriptModal and its real editor integration'],
   ['interrupted-agents-modal', 'InterruptedAgentsModal and recovery selection'],
@@ -200,6 +197,24 @@ function PrimitivePreview({ state }: { state: ModalState }) {
 function ProductPreview({ state }: { state: ProductModalState }) {
   const uid = useId();
   switch (state) {
+    case 'set-primary-client-confirm-dialog':
+      return <SetPrimaryClientConfirmDialog open static currentHost="Studio Mac" />;
+    case 'model-switch-confirm-dialog':
+      return (
+        <ModelSwitchConfirmDialog
+          open
+          static
+          isProviderChange
+          fromProviderName="Augment"
+          fromProviderId="auggie"
+          fromModelLabel="Claude Sonnet 4.6"
+          toProviderName="OpenAI"
+          toProviderId="codex"
+          toModelLabel="GPT-5.6"
+        />
+      );
+    case 'dismiss-questions-confirm-dialog':
+      return <DismissQuestionsConfirmDialog open static />;
     case 'confirm-host-confirm':
     case 'confirm-host-busy':
       return (
@@ -414,12 +429,13 @@ export function ModalCatalogPreview({ fixture }: { fixture: UiComponentFixture }
         <summary>
           {primitive
             ? 'Primitive coverage: 15 source states'
-            : 'Product coverage: 15 supported source examples; 23 unsupported'}
+            : 'Product coverage: 18 supported source examples; 20 unsupported'}
         </summary>
         <p className="type-body text-muted-foreground">
           Static source fixtures only. Visual, geometry and native interaction acceptance remain
           pending. The reduced-motion state requires the browser motion preference. Callback
-          exercises do not verify proposal or workspace persistence.
+          exercises do not verify workspace, proposal or question persistence, model changes, or
+          primary-client mutations.
         </p>
         {!primitive && (
           <ul className="grid gap-2">
