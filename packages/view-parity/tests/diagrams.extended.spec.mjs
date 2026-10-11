@@ -131,6 +131,37 @@ test('diagram reduced motion: a keyboard step settles without a running scene an
 test('diagram custom fit: timeline remains reachable after fitting, resizing and remounting', async ({
   page,
 }) => {
+  async function expectReachable(node) {
+    await node.scrollIntoViewIfNeeded();
+    await expect(node).toBeVisible();
+    await expect
+      .poll(() =>
+        node.evaluate((element) => {
+          const scrollport = element.closest('.diagram-scroll-container');
+          if (!scrollport) throw new Error('The native diagram scrollport is missing');
+          const bounds = element.getBoundingClientRect();
+          const frame = scrollport.getBoundingClientRect();
+          const left = Math.max(0, frame.left + scrollport.clientLeft);
+          const top = Math.max(0, frame.top + scrollport.clientTop);
+          const right = Math.min(
+            window.innerWidth,
+            frame.left + scrollport.clientLeft + scrollport.clientWidth,
+          );
+          const bottom = Math.min(
+            window.innerHeight,
+            frame.top + scrollport.clientTop + scrollport.clientHeight,
+          );
+          return {
+            left: Math.max(0, left - bounds.left),
+            top: Math.max(0, top - bounds.top),
+            right: Math.max(0, bounds.right - right),
+            bottom: Math.max(0, bounds.bottom - bottom),
+          };
+        }),
+      )
+      .toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
+  }
+
   await page.setViewportSize({ width: 420, height: 900 });
   const example = await openDiagramExample(page, 'custom-diagram-engine');
   await example.getByRole('combobox', { name: 'Custom diagram fixture', exact: true }).click();
@@ -161,8 +192,7 @@ test('diagram custom fit: timeline remains reachable after fitting, resizing and
     ).toHaveAttribute('aria-pressed', 'true');
     for (const id of ['fixtures', 'handoff']) {
       const node = renderer.locator(`[data-node-id="${id}"]`);
-      await node.scrollIntoViewIfNeeded();
-      await expect(node).toBeInViewport({ ratio: 1 });
+      await expectReachable(node);
     }
   }
 
@@ -175,8 +205,7 @@ test('diagram custom fit: timeline remains reachable after fitting, resizing and
     .poll(() => visibleNodeIds(renderer))
     .toEqual(['browser', 'checks', 'fixtures', 'handoff']);
   const finalNode = renderer.locator('[data-node-id="handoff"]');
-  await finalNode.scrollIntoViewIfNeeded();
-  await expect(finalNode).toBeInViewport({ ratio: 1 });
+  await expectReachable(finalNode);
   await example.getByRole('button', { name: 'Reset custom viewport', exact: true }).click();
   const resetFit = renderer.getByRole('button', { name: 'Fit diagram to width', exact: true });
   await expect(resetFit).toHaveAttribute('aria-pressed', 'false');
