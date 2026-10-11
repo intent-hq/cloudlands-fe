@@ -183,6 +183,7 @@ export function Content({
   onKeyDown,
   onFocus,
   onFocusOutside,
+  onOpenAutoFocus,
   children,
   preventScroll: _preventScroll,
   ...props
@@ -191,8 +192,10 @@ export function Content({
   const isStatic = staticPosition ?? root.staticPosition;
   const surface = clampSurface(useSurface() + 2);
   const onContentNode = root.onContentNode;
+  const contentNode = React.useRef<HTMLDivElement | null>(null);
   const contentRef = React.useCallback(
     (node: HTMLDivElement | null) => {
+      contentNode.current = node;
       onContentNode(node);
       const cleanup = assignRef(ref, node);
       if (node)
@@ -203,9 +206,27 @@ export function Content({
     },
     [ref, onContentNode],
   );
+  function handleOpenAutoFocus(event: Event) {
+    onOpenAutoFocus?.(event);
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    const node = contentNode.current;
+    // Match the source content's deferred entry without resetting in-menu navigation.
+    requestAnimationFrame(() => {
+      if (
+        !node?.isConnected ||
+        contentNode.current !== node ||
+        node.dataset.state !== 'open' ||
+        node.contains(node.ownerDocument.activeElement)
+      )
+        return;
+      node.focus();
+    });
+  }
   const content = (
     <Primitive.Content
       {...props}
+      {...{ onOpenAutoFocus: handleOpenAutoFocus }}
       ref={contentRef}
       data-slot="menu-content"
       data-surface-level={surface}
