@@ -33,6 +33,7 @@ import { AdditionalCatalogPreview } from './additional-catalog-previews';
 import { additionalCatalogEntries } from './additional-catalog-entries';
 import { hasFunctionalExample } from './functional-examples';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
+import { canonicalComponentManifest } from '$lib/components/ui/manifest';
 import './catalog-component-page.css';
 
 export const portedComponentPages = [
@@ -180,6 +181,80 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
   );
 }
 
+// Dedicated fields/rows routes use CatalogFixtureList.svelte in the source app.
+// i18n-ignore (exact internal catalog reference copy)
+function CatalogFixtureList({ entry }: { entry: CatalogEntry }) {
+  const metadata = canonicalComponentManifest.find(({ id }) => id === entry.slug);
+  return (
+    <section className="catalog-detail w-full min-w-0 p-4 sm:p-6 lg:p-10">
+      <header className="entry-header">
+        <div className="min-w-0">
+          <h1>{entry.name}</h1>
+          <p className="entry-purpose">{entry.description}</p>
+        </div>
+        <details className="entry-inspector text-xs text-muted-foreground">
+          <summary>Source</summary>
+          <div className="inspector-popover">
+            <p className="text-foreground">Canonical source</p>
+            <code className="mt-1 block break-all">{entry.source}</code>
+            <dl className="inspector-grid">
+              <div>
+                <dt>Category</dt>
+                <dd className="mt-1 text-foreground">{entry.category}</dd>
+              </div>
+              {metadata && (
+                <div>
+                  <dt>Removal gate</dt>
+                  <dd className="mt-1 text-foreground">{metadata.removalGate}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        </details>
+      </header>
+      <div className="fixture-grid">
+        {entry.fixtures.map((fixture) => (
+          <article key={fixture.id} className="fixture-card" data-catalog-fixture={fixture.id}>
+            <div className="fixture-heading">
+              <h2>{fixture.title}</h2>
+            </div>
+            <div
+              className="fixture-preview min-h-20 rounded-md bg-background"
+              data-catalog-preview={entry.slug}
+              data-catalog-fixture-id={fixture.id}
+            >
+              {entry.slug === 'fields' ? (
+                <FieldsCatalogPreview fixture={fixture} />
+              ) : (
+                <RowsCatalogPreview fixture={fixture} />
+              )}
+            </div>
+            <details className="fixture-inspector text-xs text-muted-foreground">
+              <summary>Fixture details</summary>
+              <dl className="inspector-grid">
+                <div>
+                  <dt>Viewport</dt>
+                  <dd className="mt-1 text-foreground">{fixture.viewport ?? 'responsive'}</dd>
+                </div>
+                <div>
+                  <dt>States</dt>
+                  <dd className="mt-1 text-foreground">{fixture.states.join(', ')}</dd>
+                </div>
+                <div>
+                  <dt>Themes</dt>
+                  <dd className="mt-1 text-foreground">
+                    {fixture.themes?.join(', ') ?? 'inherit'}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
   const [tab, setTab] = useState('preview');
   const componentName = getCatalogComponentName(entry);
@@ -187,6 +262,7 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
   const installCommand = reference.importStatement;
   const usage = reference.usage;
   const pendingReference = `The React reference for ${componentName} is pending.`;
+  if (entry.slug === 'fields' || entry.slug === 'rows') return <CatalogFixtureList entry={entry} />;
   return (
     <article className="component-page" data-testid="catalog-component-page">
       <header className="page-header">
