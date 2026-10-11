@@ -95,6 +95,10 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   const frame = page.locator(captureSelector(entry));
   await expect(frame, `Missing real fixture ${entry.scene}/${entry.fixture}`).toHaveCount(1);
   await expect(frame).toBeVisible();
+  await expect(
+    frame.locator("[data-catalog-unimplemented]"),
+    "Partial fixtures cannot establish visual parity",
+  ).toHaveCount(0);
   const rendered = frame.locator(`[data-catalog-renderer-fixture="${entry.fixture}"]`);
   await expect(rendered).toHaveCount(1);
   const stateTokens = () =>

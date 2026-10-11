@@ -403,6 +403,18 @@
     {
       "scene": "application",
       "reason": "Component catalog journeys do not cover real daemon flows or Electron application behavior. See migration-inventory.json for the full denominator."
+    },
+    {
+      "scene": "pattern-edge-cases",
+      "reason": "Current examples do not expose ignored Enter policies, long-running manual submit completion, autosave save failures/retry, or independent external updates while focused. Core covers native same-turn duplicate submit and focused draft preservation through save acknowledgement only."
+    },
+    {
+      "scene": "wave-two-edge-cases",
+      "reason": "Uncovered: accordion multiple/disabled loop edges, choice-group disabled/readonly/form serialization, slider scaled pointer coordinates, sheet top/bottom/stacked overlays/full-motion reversals, virtualized list removal and focus recovery. Existing fixture labels do not count as executed cases."
+    },
+    {
+      "scene": "new-named-previews",
+      "reason": "select-focus, text-entry-focus, modal-heading-spacing and settings-textarea registered previews are not yet in the checked visual manifest; no image parity acceptance is claimed for them."
     }
   ],
   "functional": [
@@ -495,6 +507,153 @@
         "apps/react/src/catalog/basic-catalog-preview.tsx"
       ],
       "coreTest": "packages/view-parity/tests/controls.core.spec.mjs"
+    },
+    {
+      "component": "form",
+      "route": "/sandbox/form",
+      "query": {
+        "example": "interactive"
+      },
+      "fixture": "form-submit",
+      "referenceSources": [
+        "src/lib/components/patterns/form/Form.svelte",
+        "src/lib/components/patterns/form/FormField.svelte",
+        "src/lib/components/patterns/form/AutoSaveField.svelte",
+        "src/lib/components/patterns/form/create-form.svelte.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/functional-examples.tsx",
+        "apps/react/src/components/patterns/form/form.tsx",
+        "apps/react/src/components/patterns/form/form-field.tsx",
+        "apps/react/src/components/patterns/form/auto-save-field.tsx",
+        "apps/react/src/components/patterns/form/use-form.ts"
+      ],
+      "coreTest": "packages/view-parity/tests/patterns.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/patterns.extended.spec.mjs",
+      "examples": ["form-submit", "autosave"]
+    },
+    {
+      "component": "collection",
+      "route": "/sandbox/collection",
+      "query": {
+        "example": "interactive"
+      },
+      "fixture": "collection-selection",
+      "referenceSources": ["src/lib/components/patterns/collection/ListView.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/functional-examples.tsx",
+        "apps/react/src/components/patterns/collection/list-view.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/patterns.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/patterns.extended.spec.mjs"
+    },
+    {
+      "component": "confirm",
+      "route": "/sandbox/confirm",
+      "query": {
+        "example": "interactive"
+      },
+      "fixture": "confirmation-flow",
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/ConfirmHost.svelte",
+        "src/lib/components/patterns/confirm/FormDialog.svelte",
+        "src/lib/components/patterns/confirm/ConfirmRequestView.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/functional-examples.tsx",
+        "apps/react/src/catalog/confirmation-example.tsx",
+        "apps/react/src/components/patterns/confirm/confirm-host.tsx",
+        "apps/react/src/components/patterns/confirm/form-dialog.tsx",
+        "apps/react/src/components/patterns/confirm/confirm-request-view.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/patterns.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/patterns.extended.spec.mjs"
+    },
+    {
+      "component": "screen",
+      "route": "/sandbox/screen",
+      "query": {
+        "example": "interactive"
+      },
+      "fixture": "takeover",
+      "referenceSources": ["src/lib/components/patterns/screen/TakeoverScreen.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/functional-examples.tsx",
+        "apps/react/src/components/patterns/screen/takeover-screen.tsx"
+      ],
+      "coreTest": null,
+      "extendedTest": "packages/view-parity/tests/patterns.extended.spec.mjs"
+    },
+    {
+      "component": "accordion",
+      "route": "/sandbox/accordion",
+      "fixture": "accordion-state-matrix",
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/NavigationPrimitivesCatalogPreview.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/accordion.tsx",
+        "apps/react/src/catalog/structural-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs"
+    },
+    {
+      "component": "radio-group",
+      "route": "/sandbox/radio-group",
+      "fixture": "radio-group-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/ChoiceGroupCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/radio-group.tsx",
+        "apps/react/src/catalog/structural-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs"
+    },
+    {
+      "component": "checkbox-group",
+      "route": "/sandbox/checkbox-group",
+      "fixture": "checkbox-group-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/ChoiceGroupCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/checkbox-group.tsx",
+        "apps/react/src/catalog/structural-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs"
+    },
+    {
+      "component": "slider",
+      "route": "/sandbox/slider",
+      "fixture": "slider-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/slider.tsx",
+        "apps/react/src/catalog/settings-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/controls.extended.spec.mjs"
+    },
+    {
+      "component": "menu",
+      "route": "/sandbox/menu",
+      "fixture": "menu-command-states",
+      "referenceSources": ["src/lib/component-catalog/renderers/OverlayCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/menu/index.tsx",
+        "apps/react/src/catalog/menu-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/controls.extended.spec.mjs"
+    },
+    {
+      "component": "sheet",
+      "route": "/sandbox/sheet",
+      "fixture": "sheet-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/OverlayCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/sheet.tsx",
+        "apps/react/src/catalog/sheet-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/controls.extended.spec.mjs"
     }
   ]
 }

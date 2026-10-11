@@ -9,6 +9,19 @@ Named-scene comparisons and source catalog fixture comparisons are separate case
 kinds. The manifest lists every checked source and explicitly records gaps;
 migration-inventory.json owns the full migration denominator.
 
+Core includes native form validation and synchronous duplicate submit protection,
+Enter/mod-Enter/multiline behavior, form reset/dirty/errors, autosave debounce/blur/
+save shortcut with focused draft retention, collection keyboard/typeahead/selection
+and nested controls, confirmation/prompt promises, and basic control journeys.
+Extended adds dismissal/focus edges, takeover scroll ownership, slider pointer and
+inline editing, and disabled/invalid paths. Every case uses production components
+and handlers. Native requestSubmit calls exercise the actual pending form handler;
+no dependency, response, clock, or handler is replaced.
+
+The current examples do not expose long-running manual submit completion, ignored
+Enter policies, autosave retry failures or independent external updates while
+focused. These remain explicit gaps, along with real-daemon/Electron journeys.
+
   corepack pnpm --filter @intent/view-parity manifest:check
   corepack pnpm --filter @intent/view-parity browsers:install
   corepack pnpm --filter @intent/view-parity compare --list
@@ -57,7 +70,7 @@ comparison.json, including viewport, browser version, timestamp, source paths,
 available states, active state, URLs, accessibility snapshots and pixel counts.
 
 Both pages use the same browser, viewport, scale 1, en-US locale, UTC timezone,
-explicit light/dark theme, motion setting, scene and state. Captures use
+explicit light/dark theme, motion setting, scene and state. Named-scene captures use
 fit=component and the catalog-scene-focus frame without independently resizing
 the viewport. Dimension differences fail. Ready AND stable markers, the preview
 list/states API, and current slug/state/width/fit must agree. Missing states fail;

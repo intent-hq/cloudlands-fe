@@ -49,5 +49,31 @@ export async function openFixture(page, component, fixtureId) {
     fixture,
     `Missing real ${component} fixture ${fixtureId}; an unported placeholder is not coverage`,
   ).toBeVisible();
+  await expect(
+    fixture.locator("[data-catalog-unimplemented]"),
+    "Partial fixtures are not coverage",
+  ).toHaveCount(0);
   return fixture;
+}
+
+export async function openExample(page, component, exampleId) {
+  const baseUrl = endpoint(process.env.PARITY_CANDIDATE_URL, "PARITY_CANDIDATE_URL");
+  const url = new URL(`${baseUrl}/sandbox/${component}`);
+  url.searchParams.set("example", "interactive");
+  url.searchParams.set("theme", "light");
+  url.searchParams.set("motion", "reduced");
+  url.searchParams.set("width", "420");
+  const response = await page.goto(url.href, { waitUntil: "domcontentloaded" });
+  expect(response?.ok(), `Cannot load actual interactive example ${url}`).toBe(true);
+  const example = page.locator(`[data-functional-example="${exampleId}"]`);
+  await expect(example, "An unavailable pattern must fail, never silently skip").toBeVisible();
+  await expect(
+    example.locator("[data-catalog-unimplemented]"),
+    "Partial examples are not coverage",
+  ).toHaveCount(0);
+  return example;
+}
+
+export async function outputJson(locator) {
+  return JSON.parse(await locator.textContent());
 }
