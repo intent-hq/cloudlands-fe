@@ -9,6 +9,7 @@ import {
   assertModelOutcome,
 } from '../lib/provider-runtime.mjs';
 import { observeErrors } from '../lib/browser.mjs';
+import { screenshotEvidence } from '../lib/live-backend.mjs';
 
 // Optional real service checks. The integration coordinator supplies the clean
 // isolated checkout, frozen dependencies, actual daemon bridge and exact SHA.
@@ -49,6 +50,8 @@ test.describe('provider runtime', () => {
       ),
       contentType: 'application/json',
     });
+    // This records the actual startup surface, not a provider picker or UI-parity claim.
+    await screenshotEvidence(page, testInfo, 'provider-runtime-browser-surface.png');
   });
 
   test('owner settings values and revision agree with independent daemon reads', async ({
