@@ -21,12 +21,14 @@ const names = new Set([
   "reference-url",
   "candidate-url",
   "reference-root",
+  "reference-profile",
   "candidate-root",
   "artifacts",
   "case",
   "grep",
 ]);
 let output;
+let manifest;
 
 try {
   for (let index = 0; index < args.length; index += 1) {
@@ -50,7 +52,9 @@ try {
   if (mode === "help") {
     console.log(await readFile(path.join(packageRoot, "USAGE.txt"), "utf8"));
   } else {
-    const manifest = loadManifest();
+    manifest = loadManifest(
+      options["reference-profile"] || process.env.PARITY_REFERENCE_PROFILE || "default",
+    );
     const candidateRoot = resolveCandidateRoot(
       options["candidate-root"] || process.env.PARITY_CANDIDATE_ROOT || repoRoot,
     );
@@ -58,15 +62,25 @@ try {
       options["reference-root"] || process.env.PARITY_REFERENCE_ROOT || repoRoot,
     );
     if (mode === "reference") {
-      console.log(JSON.stringify(inspectReference(referenceRoot, manifest.reference), null, 2));
       console.log(
-        "Inspection only. Review source and named-state changes before manually editing scene-manifest.json. Nothing was updated.",
+        JSON.stringify(
+          {
+            referenceProfile: manifest.referenceProfile,
+            resolvedReference: manifest.reference,
+            ...inspectReference(referenceRoot, manifest.reference),
+          },
+          null,
+          2,
+        ),
+      );
+      console.log(
+        "Inspection only. Review source and named-state changes before committing a separate reference profile. The default reference and all profiles are unchanged.",
       );
     } else if (mode === "check") {
       assertSourcePointers(referenceRoot, manifest, candidateRoot);
       selectedCases(manifest, options.case);
       console.log(
-        `Manifest valid: ${manifest.parity.length} explicit parity cases, ${manifest.uncovered.length} explicitly uncovered surfaces. Reference source pointers exist at ${manifest.reference.commit}. This does not prove live scene availability or visual parity.`,
+        `Manifest valid: ${manifest.parity.length} explicit parity cases, ${manifest.uncovered.length} explicitly uncovered surfaces. Reference profile ${manifest.referenceProfile.name}: source pointers exist at ${manifest.reference.commit}. This does not prove live scene availability or visual parity.`,
       );
     } else if (["parity", "core", "extended"].includes(mode)) {
       const cases = selectedCases(manifest, options.case || process.env.PARITY_CASE);
@@ -143,6 +157,8 @@ try {
         referenceUrl,
         candidateUrl,
         reference,
+        referenceProfile: manifest.referenceProfile,
+        resolvedReference: manifest.reference,
         candidate,
         harnessRoot: repoRoot,
         serverCheckoutAssociation: "operator-declared for both URLs; no server attestation",
@@ -175,6 +191,7 @@ try {
             ...process.env,
             PARITY_RUN_DIR: output,
             PARITY_REFERENCE_ROOT: referenceRoot,
+            PARITY_REFERENCE_PROFILE: manifest.referenceProfile.name,
             PARITY_CANDIDATE_ROOT: candidateRoot,
             PARITY_REFERENCE_URL: referenceUrl || "",
             PARITY_CANDIDATE_URL: candidateUrl || "",
@@ -196,6 +213,18 @@ try {
       let candidateAfter;
       let referenceAfter;
       let changedCandidatePaths = [];
+      try {
+        const after = loadManifest(manifest.referenceProfile.name);
+        if (
+          JSON.stringify(after.referenceProfile) !== JSON.stringify(manifest.referenceProfile) ||
+          JSON.stringify(after.reference) !== JSON.stringify(manifest.reference)
+        )
+          throw new Error(
+            "The selected reference record changed during this run. No comparison was blessed.",
+          );
+      } catch (error) {
+        drift = error.message;
+      }
       if (!options.list) {
         try {
           candidateAfter = candidateProvenance(candidateRoot);
@@ -220,6 +249,8 @@ try {
             changedCandidatePaths,
             candidateAfter,
             referenceAfter,
+            referenceProfile: manifest.referenceProfile,
+            resolvedReference: manifest.reference,
           },
           null,
           2,
@@ -240,7 +271,16 @@ try {
   if (output)
     await writeFile(
       path.join(output, "failure.json"),
-      JSON.stringify({ at: new Date().toISOString(), error: message }, null, 2),
+      JSON.stringify(
+        {
+          at: new Date().toISOString(),
+          error: message,
+          referenceProfile: manifest?.referenceProfile,
+          resolvedReference: manifest?.reference,
+        },
+        null,
+        2,
+      ),
     );
   process.exitCode = 1;
 }

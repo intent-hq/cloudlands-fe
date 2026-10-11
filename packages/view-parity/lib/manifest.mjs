@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,21 +20,131 @@ function sourcePath(value) {
   );
 }
 
-export function loadManifest() {
-  const manifest = JSON.parse(readFileSync(path.join(packageRoot, "scene-manifest.json"), "utf8"));
-  requireValue(manifest.schemaVersion === 1, "schemaVersion must be 1");
+function validateReference(reference) {
   requireValue(
-    /^[a-f0-9]{40}$/.test(manifest.reference?.commit),
+    typeof reference?.commit === "string" && /^[a-f0-9]{40}$/.test(reference.commit),
     "reference.commit must be a full commit SHA",
   );
   requireValue(
-    /^[a-f0-9]{64}$/.test(manifest.reference?.sourceTreeSha256),
+    typeof reference?.sourceTreeSha256 === "string" &&
+      /^[a-f0-9]{64}$/.test(reference.sourceTreeSha256),
     "reference.sourceTreeSha256 must be SHA-256",
   );
   requireValue(
-    manifest.reference.sourcePaths?.length > 0 && manifest.reference.sourcePaths.every(sourcePath),
+    Array.isArray(reference.sourcePaths) &&
+      reference.sourcePaths.length > 0 &&
+      reference.sourcePaths.every(sourcePath),
     "reference.sourcePaths must be repository-relative",
   );
+}
+
+function selectReference(manifest, name) {
+  requireValue(
+    typeof name === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name),
+    "reference profile name must contain lowercase letters, digits and single hyphens",
+  );
+  const baseCommit = manifest.reference.commit;
+  if (name === "default") {
+    manifest.referenceProfile = {
+      name,
+      file: "packages/view-parity/scene-manifest.json",
+      baseCommit,
+    };
+    return;
+  }
+  const relative = `references/${name}.json`;
+  const file = path.join(packageRoot, relative);
+  let contents;
+  try {
+    contents = readFileSync(file);
+  } catch (error) {
+    throw new Error(
+      `Cannot load reference profile ${name}: ${error.message}. No reference was changed.`,
+    );
+  }
+  requireValue(
+    path.relative(realpathSync(packageRoot), realpathSync(file)) ===
+      path.join("references", `${name}.json`),
+    `reference profile ${name} must be a file within references/, not a symlink elsewhere`,
+  );
+  let profile;
+  try {
+    profile = JSON.parse(contents.toString("utf8"));
+  } catch (error) {
+    throw new Error(`Reference profile ${name} is not valid JSON: ${error.message}`);
+  }
+  requireValue(
+    profile &&
+      typeof profile === "object" &&
+      !Array.isArray(profile) &&
+      Object.keys(profile).every((key) =>
+        ["schemaVersion", "baseCommit", "reviewReason", "reference"].includes(key),
+      ) &&
+      profile.schemaVersion === 1,
+    `reference profile ${name} must use schemaVersion 1 and only the documented fields`,
+  );
+  requireValue(
+    /^[a-f0-9]{40}$/.test(profile.baseCommit) && profile.baseCommit === baseCommit,
+    `reference profile ${name} must identify the original manifest reference as baseCommit`,
+  );
+  requireValue(
+    typeof profile.reviewReason === "string" &&
+      profile.reviewReason.trim().length > 0 &&
+      profile.reviewReason.length <= 500,
+    `reference profile ${name} requires a short reviewReason (1–500 characters)`,
+  );
+  validateReference(profile.reference);
+  requireValue(
+    Object.keys(profile.reference).every((key) =>
+      ["commit", "sourceTreeSha256", "sourcePaths"].includes(key),
+    ),
+    `reference profile ${name} has unknown reference fields`,
+  );
+  const paths = profile.reference.sourcePaths;
+  requireValue(
+    new Set(paths).size === paths.length &&
+      paths.every((value) =>
+        value
+          .split("/")
+          .every(
+            (part) =>
+              /^[a-zA-Z0-9_.-]+$/.test(part) &&
+              part !== "." &&
+              part !== ".." &&
+              !part.startsWith("-"),
+          ),
+      ) &&
+      manifest.reference.sourcePaths.every((value) => paths.includes(value)),
+    `reference profile ${name} must retain every original source path without duplicates, pathspecs or traversal`,
+  );
+  const repoFile = `packages/view-parity/${relative}`;
+  let committed;
+  try {
+    committed = execFileSync("git", ["-C", repoRoot, "show", `HEAD:${repoFile}`], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    throw new Error(`Reference profile ${name} must be reviewed and committed before use.`);
+  }
+  requireValue(
+    contents.equals(committed),
+    `reference profile ${name} differs from its committed record`,
+  );
+  manifest.reference = profile.reference;
+  manifest.referenceProfile = {
+    name,
+    file: repoFile,
+    sha256: createHash("sha256").update(contents).digest("hex"),
+    baseCommit,
+    reviewReason: profile.reviewReason,
+  };
+}
+
+export function loadManifest(referenceProfile = process.env.PARITY_REFERENCE_PROFILE || "default") {
+  const manifest = JSON.parse(readFileSync(path.join(packageRoot, "scene-manifest.json"), "utf8"));
+  requireValue(manifest.schemaVersion === 1, "schemaVersion must be 1");
+  validateReference(manifest.reference);
+  selectReference(manifest, referenceProfile);
   requireValue(
     Array.isArray(manifest.parity) && manifest.parity.length > 0,
     "parity cases are required",

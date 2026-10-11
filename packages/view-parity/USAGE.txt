@@ -60,6 +60,7 @@ Flags also accept environment variables:
   --reference-url   PARITY_REFERENCE_URL
   --candidate-url   PARITY_CANDIDATE_URL
   --reference-root  PARITY_REFERENCE_ROOT
+  --reference-profile PARITY_REFERENCE_PROFILE (default: default)
   --candidate-root  PARITY_CANDIDATE_ROOT
   --artifacts       PARITY_ARTIFACTS
   --case            PARITY_CASE (comma-separated exact case IDs; parity only)
@@ -76,8 +77,10 @@ Every run gets a fresh directory under .demo-artifacts/view-parity (gitignored).
 --artifacts can choose a parent under the owning workspace's
 .demo-artifacts/view-parity only, outside an isolated candidate checkout.
 session.json records the manifest, selected cases, candidate root/commit/dirty
-status and file hashes, and
-reference source fingerprint. results.json and html/ contain Playwright results.
+status and file hashes, and reference source fingerprint. session.json and
+completion.json also record referenceProfile (name, record path/hash, original
+base commit and review reason for named profiles) and resolvedReference.
+results.json and html/ contain Playwright results.
 Each captured case retains reference.png, candidate.png, diff.png and
 comparison.json, including viewport, browser version, timestamp, source paths,
 available states, active state, URLs, accessibility snapshots and pixel counts.
@@ -125,7 +128,14 @@ PARITY_CANDIDATE_ROOT environment variable is equivalent. The harness itself and
 its manifest always come from the owning workspace. Source fingerprints do not
 attest a running server or inspect installed dependency contents.
 
-Refreshing a separately maintained Svelte reference
+Selecting a reviewed Svelte reference version
+
+Omitting --reference-profile keeps the original scene-manifest.json reference
+003bc52c00dcfffe8513cd6be1b8f45011716714. --reference-profile default explicitly
+selects it, including when PARITY_REFERENCE_PROFILE is set. A named profile is a
+separate, reviewed JSON record at packages/view-parity/references/<name>.json.
+Names use lowercase letters, digits and single hyphens; paths are not accepted.
+There is no profile creation, refresh or baseline-blessing command.
 
 The reference must have clean tracked sources at the inspected commit. The
 manifest fingerprints source, fixtures, fonts/assets, styles, messages, build
@@ -143,12 +153,34 @@ dialog with Escape before capture. Open overlays are not covered by that crop.
   corepack pnpm --filter @intent/view-parity reference:inspect \
     --reference-root /absolute/path/to/current-svelte-checkout
 
-This prints commit, source paths, fingerprint and dirty paths without editing
-anything. Review incoming source changes and the live list/states API; update
-reference.commit and reference.sourceTreeSha256 in scene-manifest.json by hand,
-then update affected cases and source pointers. Restart the reference server
-from that checkout and rerun. A reference branch/worktree can track current
-Svelte development independently of the React branch.
+Inspection prints the selected record alongside the checkout's actual commit,
+source paths, fingerprint and dirty paths without editing or accepting anything.
+Review incoming source changes and the live list/states API. After explicit
+review, commit a new named record with exactly these fields:
+  schemaVersion: 1
+  baseCommit: the original full 40-character manifest reference commit
+  reviewReason: a nonempty review rationale, at most 500 characters
+  reference: { commit, sourceTreeSha256, sourcePaths }
+Use the inspected full commit SHA and source fingerprint; retain every original
+source path (additional reviewed paths are allowed). Do not put case overrides,
+thresholds or error exceptions in profiles. Unknown fields, unsafe names/paths,
+missing records, invalid hashes, reduced source coverage and records that differ
+from their committed contents fail. Profile selection never changes scene cases,
+source/dirty checks, readiness, browser-error, pixel or accessibility gates.
+
+Restart the reference server from that clean checkout, then explicitly select
+the reviewed name (substitute an existing committed profile):
+  corepack pnpm --filter @intent/view-parity manifest:check \
+    --reference-profile <reviewed-name> --reference-root /absolute/path/to/svelte
+  corepack pnpm --filter @intent/view-parity compare \
+    --reference-profile <reviewed-name> --reference-root /absolute/path/to/svelte \
+    --reference-url http://127.0.0.1:5173 --candidate-url http://127.0.0.1:5174
+
+The same selection works with reference:inspect and --list, and is propagated to
+Playwright child processes. The selected record is checked again after the run.
+Versioned results remain separate from historical results against the original
+pin; a new profile does not erase or turn an earlier failure into a pass. A
+reference worktree can track current Svelte independently of the React branch.
 
 Provenance limitation: the existing preview API has no server commit endpoint.
 Both URL-to-checkout associations are operator-declared, recorded as such, and
