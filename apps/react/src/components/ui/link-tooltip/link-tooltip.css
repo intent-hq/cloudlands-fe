@@ -1,0 +1,47 @@
+/* Source: LinkTooltip.svelte. Card body styles remain owned by GitHubLinkCard. */
+.link-tooltip {
+  position: fixed;
+  z-index: var(--layer-tooltip);
+  transform: translateX(-50%) translateY(-100%);
+  pointer-events: none;
+  max-width: 400px;
+  padding: 6px 10px 4px;
+  background: var(--color-popover);
+  color: var(--color-popover-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.link-tooltip--card {
+  width: min(360px, calc(100vw - 16px));
+  max-width: none;
+  padding: 8px 10px 5px;
+}
+
+.link-tooltip--card .link-tooltip-hint {
+  margin-top: 4px;
+}
+
+.link-tooltip--below {
+  transform: translateX(-50%);
+}
+
+.link-tooltip-url {
+  font-size: 11px;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-tooltip-hint {
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+@container style(--motion-reduced: 1) {
+  .link-tooltip {
+    animation: none;
+  }
+}
