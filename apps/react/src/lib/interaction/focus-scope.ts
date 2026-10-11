@@ -1,6 +1,7 @@
 // Source: Bits FocusScopeManager and FocusScope's capture-phase focus containment.
 // This coordinates DOM-local scopes; each primitive still owns its focus lifecycle.
 import { useCallback, useRef, type Ref } from 'react';
+import { focusable, isFocusable, tabbable } from 'tabbable';
 
 type Scope = { node: HTMLElement; trapped: boolean; lastFocused: HTMLElement | null };
 type Registry = ReturnType<typeof createRegistry>;
@@ -11,40 +12,14 @@ function assignRef<T>(ref: Ref<T> | undefined, node: T | null) {
   if (ref) ref.current = node;
 }
 
-function canFocus(element: HTMLElement) {
-  return (
-    !element.matches(':disabled, input[type="hidden"]') &&
-    !element.closest('[inert]') &&
-    element.getClientRects().length > 0 &&
-    element.ownerDocument.defaultView?.getComputedStyle(element).visibility === 'visible'
-  );
-}
-
 function focusWithin(scope: Scope) {
   const { node, lastFocused } = scope;
-  const candidates = Array.from(
-    node.querySelectorAll<HTMLElement>(
-      '[tabindex],a[href],area[href],button,input,select,textarea,summary,iframe,audio[controls],video[controls],[contenteditable="true"]',
-    ),
-  ).filter(canFocus);
-  const tabbables = candidates
-    .filter((element) => element.tabIndex >= 0)
-    .sort((a, b) => {
-      // Positive tab indices precede zero; equal indices retain document order.
-      const aIndex = a.tabIndex || Infinity;
-      const bIndex = b.tabIndex || Infinity;
-      return aIndex === bIndex ? 0 : aIndex - bIndex;
-    });
-  const ordered = [
-    ...(lastFocused && node.contains(lastFocused) && canFocus(lastFocused) ? [lastFocused] : []),
-    ...tabbables,
-    ...candidates,
-    node,
-  ];
-  for (const candidate of ordered) {
-    candidate.focus();
-    if (node.ownerDocument.activeElement === candidate) return;
-  }
+  const options = { includeContainer: false, getShadowRoot: true };
+  const target =
+    lastFocused && node.contains(lastFocused) && isFocusable(lastFocused)
+      ? lastFocused
+      : (tabbable(node, options)[0] ?? focusable(node, options)[0] ?? node);
+  target.focus();
 }
 
 function createRegistry(doc: Document) {

@@ -10,6 +10,7 @@ import {
   type IconWeight,
 } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
+import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 import { ShortcutChip } from '@/components/ui/kbd';
 import { clampSurface, SurfaceProvider, useSurface } from '@/components/ui/surface-context';
 import { OPTION_LIST_ROW_CLASS, OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
@@ -23,6 +24,7 @@ import { resolveSubmenuSide } from '$lib/components/ui/menu/submenu-placement';
 import { menuItem, menuOverlay, menuSubmenuAlignOffset } from './menu-recipes';
 import { ListHighlight } from './list-highlight';
 import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
+import { getAdjacentTabStop, getInlineTabStop } from './menu-keyboard';
 export {
   menuItem,
   menuOverlay,
@@ -36,6 +38,9 @@ const RootContext = React.createContext({
   open: false,
   dir: 'ltr' as 'ltr' | 'rtl',
   onContentNode: (_node: HTMLDivElement | null) => {},
+  onTriggerNode: (_node: HTMLButtonElement | null) => {},
+  onTabKeyDown: (_event: React.KeyboardEvent<HTMLDivElement>, _loop: boolean) => {},
+  onCloseAutoFocus: (_event: Event) => {},
 });
 const SubContext = React.createContext<{
   open: boolean;
@@ -101,11 +106,47 @@ export function Root({
 }) {
   const [local, setLocal] = React.useState(defaultOpen);
   const open = controlled ?? local;
+  const closeOnEscape = React.useEffectEvent(() => {
+    setLocal(false);
+    onOpenChange?.(false);
+  });
+  React.useEffect(() => {
+    if (open) return pushEscapeLayer(() => closeOnEscape());
+  }, [open]);
   const contentNode = React.useRef<HTMLDivElement | null>(null);
+  const triggerNode = React.useRef<HTMLButtonElement | null>(null);
+  const tabTarget = React.useRef<HTMLElement | SVGElement | null>(null);
   const previousOpen = React.useRef(open);
   const onContentNode = React.useCallback((node: HTMLDivElement | null) => {
     contentNode.current = node;
   }, []);
+  const onTriggerNode = React.useCallback((node: HTMLButtonElement | null) => {
+    triggerNode.current = node;
+  }, []);
+  React.useLayoutEffect(() => {
+    if (open) tabTarget.current = null;
+    else tabTarget.current?.focus();
+  }, [open]);
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, loop: boolean) => {
+    event.preventDefault();
+    const trigger = triggerNode.current;
+    if (!trigger) {
+      getInlineTabStop(event.currentTarget, event.shiftKey, loop)?.focus();
+      return;
+    }
+    const target = getAdjacentTabStop(trigger, event.shiftKey);
+    if (!target) {
+      trigger.ownerDocument.body.focus();
+      return;
+    }
+    tabTarget.current = target;
+    setLocal(false);
+    onOpenChange?.(false);
+  };
+  const onCloseAutoFocus = (event: Event) => {
+    // Bits ignores close autofocus after Tab so it cannot undo the chosen tab stop.
+    if (tabTarget.current) event.preventDefault();
+  };
   React.useEffect(() => {
     if (previousOpen.current === open) return;
     previousOpen.current = open;
@@ -122,7 +163,17 @@ export function Root({
     };
   }, [open, onOpenChangeComplete]);
   return (
-    <RootContext value={{ staticPosition, open, dir, onContentNode }}>
+    <RootContext
+      value={{
+        staticPosition,
+        open,
+        dir,
+        onContentNode,
+        onTriggerNode,
+        onTabKeyDown,
+        onCloseAutoFocus,
+      }}
+    >
       <Primitive.Root
         {...props}
         modal={modal}
@@ -138,8 +189,28 @@ export function Root({
     </RootContext>
   );
 }
-export function Trigger(props: React.ComponentProps<typeof Primitive.Trigger>) {
-  return <Primitive.Trigger data-slot="menu-trigger" data-dropdown-menu-trigger {...props} />;
+export function Trigger({ ref, ...props }: React.ComponentProps<typeof Primitive.Trigger>) {
+  const onTriggerNode = React.useContext(RootContext).onTriggerNode;
+  const triggerRef = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      onTriggerNode(node);
+      const cleanup = assignRef(ref, node);
+      return () => {
+        onTriggerNode(null);
+        if (typeof cleanup === 'function') cleanup();
+        else assignRef(ref, null);
+      };
+    },
+    [ref, onTriggerNode],
+  );
+  return (
+    <Primitive.Trigger
+      ref={triggerRef}
+      data-slot="menu-trigger"
+      data-dropdown-menu-trigger
+      {...props}
+    />
+  );
 }
 export const Portal = Primitive.Portal;
 export const Group = Primitive.Group;
@@ -155,6 +226,14 @@ export function Sub({
   const [local, setLocal] = React.useState(defaultOpen);
   const open = controlled ?? local;
   const [trigger, setTrigger] = React.useState<HTMLDivElement | null>(null);
+  const closeOnEscape = React.useEffectEvent(() => {
+    setLocal(false);
+    onOpenChange?.(false);
+    trigger?.focus({ preventScroll: true });
+  });
+  React.useEffect(() => {
+    if (open) return pushEscapeLayer(() => closeOnEscape());
+  }, [open]);
   return (
     <SubContext value={{ open, trigger, setTrigger }}>
       <Primitive.Sub
@@ -189,6 +268,7 @@ type ContentExtras = {
 export type ContentProps = React.ComponentProps<typeof Primitive.Content> & ContentExtras;
 export function Content({
   ref,
+  loop = true,
   portal = true,
   portalProps,
   staticPosition,
@@ -203,6 +283,7 @@ export function Content({
   onFocus,
   onFocusOutside,
   onOpenAutoFocus,
+  onCloseAutoFocus,
   children,
   preventScroll: _preventScroll,
   ...props
@@ -264,6 +345,7 @@ export function Content({
   const content = (
     <Primitive.Content
       {...props}
+      loop={loop}
       {...{
         onOpenAutoFocus: (event: Event) => {
           if (isStatic) event.preventDefault();
@@ -289,8 +371,15 @@ export function Content({
           !event.defaultPrevented &&
           event.target instanceof Element &&
           event.target.closest('[role="menu"]') === event.currentTarget
-        )
-          if (handleMenuPageKey(event.currentTarget, event.nativeEvent)) event.preventDefault();
+        ) {
+          if (event.key === 'Tab') root.onTabKeyDown(event, loop);
+          else if (handleMenuPageKey(event.currentTarget, event.nativeEvent))
+            event.preventDefault();
+        }
+      }}
+      onCloseAutoFocus={(event) => {
+        onCloseAutoFocus?.(event);
+        root.onCloseAutoFocus(event);
       }}
       onFocus={(event) => {
         onFocus?.(event);
@@ -329,6 +418,7 @@ export type SubContentProps = Omit<React.ComponentProps<typeof Primitive.SubCont
   };
 export function SubContent({
   ref,
+  loop = true,
   side,
   align = 'start',
   alignOffset,
@@ -468,6 +558,7 @@ export function SubContent({
   const content = (
     <Primitive.SubContent
       {...props}
+      loop={loop}
       ref={scopeRef}
       align={align === 'center' ? 'start' : align}
       alignOffset={alignOffset ?? menuSubmenuAlignOffset}
@@ -486,8 +577,11 @@ export function SubContent({
       style={{ maxHeight, ...style }}
       onKeyDown={(event) => {
         onKeyDown?.(event);
-        if (!event.defaultPrevented && handleMenuPageKey(event.currentTarget, event.nativeEvent))
-          event.preventDefault();
+        if (!event.defaultPrevented) {
+          if (event.key === 'Tab') root.onTabKeyDown(event, loop);
+          else if (handleMenuPageKey(event.currentTarget, event.nativeEvent))
+            event.preventDefault();
+        }
       }}
       onFocus={(event) => {
         onFocus?.(event);
