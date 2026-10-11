@@ -12,6 +12,8 @@ import {
 } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { store } from '@/store';
+import { persistSidebarOpen } from '@/store/sidebar-preferences/sidebar-preferences-slice';
 
 export type SidebarPeek = 'none' | 'hover' | 'click';
 export interface SidebarState {
@@ -44,7 +46,6 @@ export type SidebarProviderProps = ComponentProps<'div'> & {
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
-  /** Product callers route persistence through their Themis preference owner. */
   persist?: boolean;
   onPersistOpen?: (open: boolean) => void;
   peek?: SidebarPeek;
@@ -93,7 +94,10 @@ export function SidebarProvider({
     (value: boolean) => {
       setInternal(value);
       onOpenChange?.(value);
-      if (persist) onPersistOpen?.(value);
+      if (persist) {
+        store.dispatch(persistSidebarOpen(value));
+        onPersistOpen?.(value);
+      }
     },
     [onOpenChange, persist, onPersistOpen],
   );
