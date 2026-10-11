@@ -21,7 +21,7 @@ export const test = base.extend({
   ],
   browserErrors: [
     async ({ page }, use, testInfo) => {
-      const errors = observeErrors(page);
+      const errors = await observeErrors(page);
       await use(errors);
       await testInfo.attach("browser-errors.json", {
         body: JSON.stringify(errors, null, 2),

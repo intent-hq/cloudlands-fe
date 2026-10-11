@@ -16,7 +16,10 @@ function sceneUrl(baseUrl, entry) {
   return url.href;
 }
 
-export function observeErrors(page, { expectedImageUrls = [], resourceEvents = [] } = {}) {
+export async function observeErrors(
+  page,
+  { expectedImageUrls = [], resourceEvents = [], consoleDiagnostics } = {},
+) {
   const errors = [];
   page.on("pageerror", (error) => errors.push(`page: ${error.message}`));
   page.on("console", (message) => {
@@ -24,7 +27,15 @@ export function observeErrors(page, { expectedImageUrls = [], resourceEvents = [
     const url = message.location().url;
     if (expectedImageUrls.includes(url) && message.text().startsWith("Failed to load resource:")) {
       resourceEvents.push({ kind: "console", url, message: message.text() });
-    } else errors.push(`console: ${message.text()}`);
+    } else {
+      const index = errors.push(`console: ${message.text()}`) - 1;
+      if (consoleDiagnostics)
+        consoleDiagnostics.push(
+          Promise.all(message.args().map((argument) => argument.jsonValue()))
+            .then((args) => ({ index, args }))
+            .catch((error) => ({ index, argumentReadError: error.message })),
+        );
+    }
   });
   page.on("requestfailed", (request) => {
     if (request.resourceType() === "image" && expectedImageUrls.includes(request.url()))
@@ -39,6 +50,26 @@ export function observeErrors(page, { expectedImageUrls = [], resourceEvents = [
     if (response.request().resourceType() === "image" && expectedImageUrls.includes(response.url()))
       resourceEvents.push({ kind: "response", url: response.url(), status: response.status() });
     else errors.push(`HTTP ${response.status()}: ${response.url()}`);
+  });
+  // Vite may handle native window errors before Playwright emits pageerror.
+  // Observe before app startup without preventing or changing event handling.
+  await page.exposeBinding("__intentParityWindowError", (_source, message) => {
+    errors.push(message);
+  });
+  await page.addInitScript(() => {
+    window.addEventListener(
+      "error",
+      (event) => {
+        if (event instanceof ErrorEvent)
+          window.__intentParityWindowError(
+            `window error: ${event.message} at ${event.filename}:${event.lineno}:${event.colno}`,
+          );
+      },
+      true,
+    );
+    window.addEventListener("unhandledrejection", (event) => {
+      window.__intentParityWindowError(`window rejection: ${String(event.reason)}`);
+    });
   });
   return errors;
 }

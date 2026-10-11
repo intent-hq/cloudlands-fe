@@ -6,20 +6,23 @@ const source = "flowchart LR\n  A[Missing close --> B[Invalid";
 const diagnostic =
   "Parse error on line 2:\n...[Missing close --> B[Invalid\n-----------------------^\nExpecting 'SQE', 'DOUBLECIRCLEEND', 'PE', '-)', 'STADIUMEND', 'SUBROUTINEEND', 'PIPE', 'CYLINDEREND', 'DIAMOND_STOP', 'TAGEND', 'TRAPEND', 'INVTRAPEND', 'UNICODE_TEXT', 'TEXT', 'TAGSTART', got 'SQS'";
 
-function isFixtureDiagnostic(message) {
-  const match = message.match(
-    /^console: \[[^\]\r\n]+\] \[ERROR\] \[MermaidRenderer\] Failed to render mermaid diagram: (\{"error":.*\}) \{error: Object\}$/,
+function isFixtureDiagnostic(message, record) {
+  if (record?.args?.length !== 2) return false;
+  const [formatted, payload] = record.args;
+  // The logger truncates its formatted string for long stacks. Inspect the real
+  // structured argument, retaining the untouched string and exact error oracle.
+  return (
+    typeof formatted === "string" &&
+    /^\[[^\]\r\n]+\] \[ERROR\] \[MermaidRenderer\] Failed to render mermaid diagram: \{"error":/.test(
+      formatted,
+    ) &&
+    message === `console: ${formatted} {error: Object}` &&
+    payload?.error?.name === "Error" &&
+    payload.error.message === diagnostic
   );
-  if (!match) return false;
-  try {
-    const { error } = JSON.parse(match[1]);
-    return error?.name === "Error" && error.message === diagnostic;
-  } catch {
-    return false;
-  }
 }
 
-export async function inspectWorkbenchError(page, browserErrors) {
+export async function inspectWorkbenchError(page, browserErrors, consoleDiagnostics) {
   const fixture = page.locator('[data-diagram-case="mermaid-invalid-source"]');
   await expect(fixture).toHaveCount(1);
   await fixture.scrollIntoViewIfNeeded();
@@ -46,7 +49,12 @@ export async function inspectWorkbenchError(page, browserErrors) {
   expect(observed.diagnostic).toBe(diagnostic);
 
   const matches = browserErrors.flatMap((message, index) =>
-    isFixtureDiagnostic(message) ? [{ message, index }] : [],
+    isFixtureDiagnostic(
+      message,
+      consoleDiagnostics.find((record) => record.index === index),
+    )
+      ? [{ message, index }]
+      : [],
   );
   expect(matches, "Exactly one log must match this visible invalid source diagnostic").toHaveLength(
     1,
@@ -57,5 +65,6 @@ export async function inspectWorkbenchError(page, browserErrors) {
     observed,
     consumedIndex: matches[0].index,
     originalDiagnostic: matches[0].message,
+    structuredDiagnostic: consoleDiagnostics.find((record) => record.index === matches[0].index),
   };
 }

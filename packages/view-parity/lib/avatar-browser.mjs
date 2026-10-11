@@ -7,7 +7,7 @@ export const test = base.extend({
   browserErrors: [
     async ({ page }, use, testInfo) => {
       const resourceEvents = [];
-      const errors = observeErrors(page, { expectedImageUrls, resourceEvents });
+      const errors = await observeErrors(page, { expectedImageUrls, resourceEvents });
       await use(errors);
       await testInfo.attach("native-avatar-image-failures.json", {
         body: JSON.stringify({ errors, resourceEvents }, null, 2),

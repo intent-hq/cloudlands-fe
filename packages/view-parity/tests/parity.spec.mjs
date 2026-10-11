@@ -38,13 +38,17 @@ for (const entry of selectedCases(manifest)) {
       const candidate = await candidateContext.newPage();
       const referenceResourceEvents = [];
       const candidateResourceEvents = [];
-      const referenceErrors = observeErrors(reference, {
+      const referenceConsoleDiagnostics = [];
+      const candidateConsoleDiagnostics = [];
+      const referenceErrors = await observeErrors(reference, {
         expectedImageUrls: entry.expectedImageUrls,
         resourceEvents: referenceResourceEvents,
+        consoleDiagnostics: entry.expectedWorkbenchError ? referenceConsoleDiagnostics : undefined,
       });
-      const candidateErrors = observeErrors(candidate, {
+      const candidateErrors = await observeErrors(candidate, {
         expectedImageUrls: entry.expectedImageUrls,
         resourceEvents: candidateResourceEvents,
+        consoleDiagnostics: entry.expectedWorkbenchError ? candidateConsoleDiagnostics : undefined,
       });
       const open = entry.kind === "catalog-fixture" ? openCatalogFixture : openScene;
       // Retain ready-state images even when an error fixture logs a real failure.
@@ -97,6 +101,10 @@ for (const entry of selectedCases(manifest)) {
       const { diff, ...comparison } = compareImages(referencePng, candidatePng);
       const after = verifyReference(referenceRoot, manifest.reference);
       const candidateAfter = candidateProvenance(process.env.PARITY_CANDIDATE_ROOT || repoRoot);
+      const consoleDiagnostics = {
+        reference: await Promise.all(referenceConsoleDiagnostics),
+        candidate: await Promise.all(candidateConsoleDiagnostics),
+      };
       const metadata = {
         capturedAt: new Date().toISOString(),
         case: entry,
@@ -133,6 +141,7 @@ for (const entry of selectedCases(manifest)) {
           candidateSha256: createHash("sha256").update(candidatePng).digest("hex"),
         },
         errors: { reference: referenceErrors, candidate: candidateErrors },
+        consoleDiagnostics,
         expectedImageFailureEvidence: {
           reference: referenceResourceEvents,
           candidate: candidateResourceEvents,
@@ -154,8 +163,8 @@ for (const entry of selectedCases(manifest)) {
       let expectedCandidateError;
       if (entry.expectedWorkbenchError) {
         [expectedReferenceError, expectedCandidateError] = await Promise.all([
-          inspectWorkbenchError(reference, referenceErrors),
-          inspectWorkbenchError(candidate, candidateErrors),
+          inspectWorkbenchError(reference, referenceErrors, consoleDiagnostics.reference),
+          inspectWorkbenchError(candidate, candidateErrors, consoleDiagnostics.candidate),
         ]);
         await testInfo.attach("workbench-invalid-source.json", {
           body: JSON.stringify(
