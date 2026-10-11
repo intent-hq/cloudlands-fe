@@ -109,10 +109,8 @@ export function SettingsPreview({
     },
   };
   return (
-    <div data-settings-preview className="flex h-full min-h-0 flex-col gap-3">
-      <div>
-        <Button onClick={() => setShowConditional(true)}>Reveal condition</Button>
-      </div>
+    <>
+      <Button onClick={() => setShowConditional(true)}>Reveal condition</Button>
       {formOnly ? (
         <SettingsForm {...shared} compact={compact} />
       ) : (
@@ -125,6 +123,6 @@ export function SettingsPreview({
           agentsNavigation={<Button>Example specialist</Button>}
         />
       )}
-    </div>
+    </>
   );
 }
