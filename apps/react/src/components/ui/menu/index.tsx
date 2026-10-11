@@ -182,6 +182,7 @@ export function Content({
   style,
   onKeyDown,
   onFocus,
+  onFocusOutside,
   children,
   preventScroll: _preventScroll,
   ...props
@@ -229,6 +230,11 @@ export function Content({
       onFocus={(event) => {
         onFocus?.(event);
         syncMenuTabStopFromFocus(event.currentTarget, event.target);
+      }}
+      onFocusOutside={(event) => {
+        onFocusOutside?.(event);
+        // Bits ContentStatic dismisses on outside pointer interaction, not focus changes.
+        if (isStatic) event.preventDefault();
       }}
     >
       <ListHighlight />
