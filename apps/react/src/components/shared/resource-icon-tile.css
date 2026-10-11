@@ -1,0 +1,42 @@
+.resource-icon-tile.react-resource-icon-tile {
+  --resource-icon-surface-size: var(--agent-avatar-standard-surface-size);
+  --resource-icon-corner-radius: var(--agent-avatar-standard-corner-radius);
+  --resource-icon-glyph-size: 12px;
+  display: inline-flex;
+  box-sizing: border-box;
+  width: var(--resource-icon-surface-size);
+  height: var(--resource-icon-surface-size);
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--resource-icon-corner-radius);
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
+.resource-icon-tile.react-resource-icon-tile[data-resource-icon-variant='emphasized'] {
+  --resource-icon-surface-size: var(--agent-avatar-emphasized-surface-size);
+  --resource-icon-corner-radius: var(--agent-avatar-emphasized-corner-radius);
+  --resource-icon-glyph-size: var(--agent-avatar-standard-art-size);
+}
+
+.react-resource-icon-tile > .resource-icon-glyph {
+  display: inline-flex;
+  width: var(--resource-icon-glyph-size);
+  height: var(--resource-icon-glyph-size);
+  align-items: center;
+  justify-content: center;
+}
+
+.react-resource-icon-tile > .resource-icon-glyph svg {
+  display: block;
+  width: var(--resource-icon-glyph-size);
+  height: var(--resource-icon-glyph-size);
+}
+
+@media (forced-colors: active) {
+  .resource-icon-tile.react-resource-icon-tile {
+    background: Canvas;
+    color: CanvasText;
+  }
+}
