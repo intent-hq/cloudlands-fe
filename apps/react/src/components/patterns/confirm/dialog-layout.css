@@ -1,0 +1,16 @@
+.react-dialog-layout {
+  container-type: inline-size;
+}
+
+@container (max-width: 24rem) {
+  .react-dialog-layout [data-slot='form-actions'] {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .react-dialog-layout [data-slot='form-actions-end'] {
+    flex-wrap: wrap;
+    min-width: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
