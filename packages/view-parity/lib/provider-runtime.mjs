@@ -200,6 +200,11 @@ export async function openProviderRuntime(page) {
     { waitUntil: 'domcontentloaded' },
   );
   expect(response?.ok()).toBe(true);
+  // The catalog installs this API in its real React effect, after client.tsx
+  // initializes the Store. A loaded document alone is not hydrated startup.
+  await page.waitForFunction(() => Boolean(window.__INTENT_PREVIEW__), undefined, {
+    timeout: 20_000,
+  });
   await expect
     .poll(async () => (await runtimeSnapshot(page)).principal !== null, { timeout: 20_000 })
     .toBe(true);
