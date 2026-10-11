@@ -65,10 +65,31 @@ for (const entry of selectedCases(manifest)) {
                 ),
               ].sort()
           : undefined;
-      const [referencePng, candidatePng] = await Promise.all([
-        stableScreenshot(reference, entry),
-        stableScreenshot(candidate, entry),
-      ]);
+      // Preserve both sides' original failed attempts before closing either page.
+      const captures = await Promise.allSettled(
+        [
+          ["reference", reference],
+          ["candidate", candidate],
+        ].map(([side, page]) =>
+          stableScreenshot(page, entry, async (attempts) => {
+            const frames = [];
+            for (const [index, png] of attempts.entries()) {
+              const name = `${side}-unstable-${index + 1}.png`;
+              const file = testInfo.outputPath(name);
+              await writeFile(file, png);
+              await testInfo.attach(name, { path: file, contentType: "image/png" });
+              frames.push({ name, sha256: createHash("sha256").update(png).digest("hex") });
+            }
+            await testInfo.attach(`${side}-unstable.json`, {
+              body: JSON.stringify({ url: page.url(), frames }, null, 2),
+              contentType: "application/json",
+            });
+          }),
+        ),
+      );
+      const failed = captures.find((result) => result.status === "rejected");
+      if (failed) throw failed.reason;
+      const [referencePng, candidatePng] = captures.map((result) => result.value);
       const [referenceAria, candidateAria] = await Promise.all([
         reference.locator(captureSelector(entry)).ariaSnapshot(),
         candidate.locator(captureSelector(entry)).ariaSnapshot(),

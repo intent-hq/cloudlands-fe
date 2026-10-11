@@ -204,9 +204,10 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   };
 }
 
-export async function stableScreenshot(page, entry) {
+export async function stableScreenshot(page, entry, onUnstable) {
   const frame = page.locator(entry ? captureSelector(entry) : frameSelector);
   let previous;
+  const attempts = [];
   // Repeated real captures detect moving content without injecting CSS or freezing clocks.
   for (let attempt = 0; attempt < 6; attempt += 1) {
     if (entry?.kind !== "catalog-fixture")
@@ -217,13 +218,15 @@ export async function stableScreenshot(page, entry) {
       scale: "css",
       timeout: 5_000,
     });
+    attempts.push(png);
     if (previous?.equals(png)) return png;
     previous = png;
     await page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
   }
+  await onUnstable?.(attempts);
   throw new Error(
-    "Capture never produced two identical frames. The scene is still moving; no baseline was accepted.",
+    `Capture never produced two identical frames at ${page.url()}. The scene is still moving; no baseline was accepted.`,
   );
 }
