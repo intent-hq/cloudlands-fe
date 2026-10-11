@@ -14,6 +14,10 @@ async function selectNoteView(
   name: 'Editor' | 'Rendered preview' | 'Raw Markdown',
 ) {
   await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  if (name === 'Raw Markdown') {
+    await page.getByRole('menuitem', { name: 'Edit Raw Markdown', exact: true }).click();
+    return;
+  }
   await page.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
   await page.getByRole('menuitemradio', { name, exact: true }).click();
   await page.keyboard.press('Escape');
@@ -192,8 +196,9 @@ test('Assistant note menus fit a narrow panel and unavailable workspaces stay re
     'aria-disabled',
     'true',
   );
+  await page.keyboard.press('Escape');
   await expect(
-    views.getByRole('menuitemradio', { name: 'Raw Markdown', exact: true }),
+    menu.getByRole('menuitem', { name: 'Edit Raw Markdown', exact: true }),
   ).toHaveAttribute('aria-disabled', 'true');
   await testInfo.attach('unavailable-workspace-note', {
     body: await page.screenshot(),
@@ -391,15 +396,24 @@ for (const raw of [false, true]) {
   });
 }
 
-test('Assistant editor intent uses raw editing above the UTF8 rich editor limit', async ({
-  mount,
-}) => {
+test('Assistant large notes stay read-only until explicit raw editing', async ({ mount, page }) => {
   const content = '世'.repeat(100001);
   expect(content.length).toBeLessThan(300000);
   expect(new TextEncoder().encode(content).length).toBeGreaterThan(300000);
   const component = await mount(Preview, { props: { noteContent: content } });
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
   const panel = component.locator('[data-assistant-content-panel]');
+  await expect(panel.locator('.tiptap[contenteditable="true"]')).toHaveCount(0);
+  await expect(panel.getByTestId('raw-note-view')).toHaveCount(0);
+  await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  await page.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
+  await expect(page.getByRole('menuitemradio', { name: 'Editor', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await selectNoteView(panel, page, 'Raw Markdown');
   await expect(panel.getByTestId('raw-note-view')).toBeVisible();
   await expect(panel.locator('.tiptap[contenteditable="true"]')).toHaveCount(0);
   await expect(panel.getByTestId('rendered-note-preview')).toHaveCount(0);
