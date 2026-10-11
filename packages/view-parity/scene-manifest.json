@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "commit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+    "sourcePaths": [
+      "src",
+      "static",
+      "messages",
+      "project.inlang",
+      "scripts",
+      "package.json",
+      "pnpm-lock.yaml",
+      ".npmrc",
+      "vite.config.mjs",
+      "svelte.config.js",
+      "tailwind.config.js",
+      "postcss.config.mjs",
+      "tsconfig.json",
+      "pnpm-workspace.yaml"
+    ],
+    "sourceTreeSha256": "f0d948e47d2bcb218e263bc60672611fe3fb4713164d696188e3ee3ed883df4f"
+  },
+  "comparison": {
+    "threshold": 0,
+    "maxDiffPixels": 0
+  },
+  "parity": [
+    {
+      "id": "button-default",
+      "scene": "button",
+      "state": "default",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button default state."
+    },
+    {
+      "id": "button-primary",
+      "scene": "button",
+      "state": "primary",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button primary state."
+    },
+    {
+      "id": "button-secondary",
+      "scene": "button",
+      "state": "secondary",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button secondary state."
+    },
+    {
+      "id": "button-ghost",
+      "scene": "button",
+      "state": "ghost",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button ghost state."
+    },
+    {
+      "id": "button-outline",
+      "scene": "button",
+      "state": "outline",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button outline state."
+    },
+    {
+      "id": "button-active",
+      "scene": "button",
+      "state": "active",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button active state."
+    },
+    {
+      "id": "button-icon-weight",
+      "scene": "button",
+      "state": "icon-weight",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button icon-weight state."
+    },
+    {
+      "id": "button-loading",
+      "scene": "button",
+      "state": "loading",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button loading state."
+    },
+    {
+      "id": "button-disabled",
+      "scene": "button",
+      "state": "disabled",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button disabled state."
+    },
+    {
+      "id": "button-destructive",
+      "scene": "button",
+      "state": "destructive",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve the reference button destructive state."
+    },
+    {
+      "id": "button-default-dark",
+      "scene": "button",
+      "state": "default",
+      "theme": "dark",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/button/button.preview.svelte",
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/button.variants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/components/ui/button-variants.ts",
+        "apps/react/src/catalog/preview-discovery.tsx"
+      ],
+      "reason": "Preserve semantic token appearance under the dark theme."
+    }
+  ],
+  "uncovered": [
+    {
+      "scene": "input",
+      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
+    },
+    {
+      "scene": "checkbox",
+      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
+    },
+    {
+      "scene": "switch",
+      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
+    },
+    {
+      "scene": "tabs",
+      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
+    },
+    {
+      "scene": "dialog",
+      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
+    }
+  ],
+  "functional": [
+    {
+      "component": "button",
+      "route": "/sandbox/button",
+      "fixture": "interaction-states",
+      "referenceSources": ["src/lib/component-catalog/renderers/BasicCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/button.tsx",
+        "apps/react/src/catalog/basic-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/core.spec.mjs"
+    },
+    {
+      "component": "checkbox",
+      "route": "/sandbox/checkbox",
+      "fixture": "checkbox-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/BasicCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/checkbox.tsx",
+        "apps/react/src/catalog/basic-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/core.spec.mjs"
+    },
+    {
+      "component": "switch",
+      "route": "/sandbox/switch",
+      "fixture": "switch-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/BasicCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/switch.tsx",
+        "apps/react/src/catalog/basic-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/core.spec.mjs"
+    },
+    {
+      "component": "input",
+      "route": "/sandbox/input",
+      "fixture": "input-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/input.tsx",
+        "apps/react/src/catalog/content-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/core.spec.mjs"
+    },
+    {
+      "component": "tabs",
+      "route": "/sandbox/tabs",
+      "fixture": "tabs-state-matrix",
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/NavigationPrimitivesCatalogPreview.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/tabs.tsx",
+        "apps/react/src/catalog/navigation-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/core.spec.mjs"
+    },
+    {
+      "component": "dialog",
+      "route": "/sandbox/dialog",
+      "fixture": "dialog-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/OverlayCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/dialog.tsx",
+        "apps/react/src/catalog/dialog-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/core.spec.mjs"
+    }
+  ]
+}

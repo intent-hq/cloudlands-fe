@@ -1,0 +1,100 @@
+Independent Svelte / React browser checks
+
+Run from the repository root with corepack pnpm. The foundation workspace install
+owns dependencies and the root lockfile. This package never launches a daemon,
+intercepts a request, fabricates a response, or updates screenshot baselines.
+
+Coverage scope: "core" currently means six foundational controls only: button,
+input, checkbox, switch, tabs and dialog. It is not the application's full core
+journey suite. Form submission/validation, ListView, autosave, real-daemon flows,
+and Electron journeys remain pending. Named screenshot parity currently covers
+button only; migration-inventory.json owns the full migration denominator.
+
+  corepack pnpm --filter @intent/view-parity manifest:check
+  corepack pnpm --filter @intent/view-parity browsers:install
+  corepack pnpm --filter @intent/view-parity compare --list
+  corepack pnpm --filter @intent/view-parity test:core --list
+
+Use two independently running apps. In a clean Svelte checkout, install that
+checkout's locked dependencies and run corepack pnpm run dev:ui. In the candidate
+checkout run corepack pnpm run dev:react (default port 5174). Read the actual
+reference port from its startup output; do not assume a stale server is current.
+
+  corepack pnpm --filter @intent/view-parity compare \
+    --reference-url http://127.0.0.1:5173 \
+    --reference-root /absolute/path/to/clean-svelte-checkout \
+    --candidate-url http://127.0.0.1:5174
+
+  corepack pnpm --filter @intent/view-parity test:core \
+    --candidate-url http://127.0.0.1:5174
+
+  corepack pnpm --filter @intent/view-parity test:extended \
+    --candidate-url http://127.0.0.1:5174
+
+Flags also accept environment variables:
+  --reference-url   PARITY_REFERENCE_URL
+  --candidate-url   PARITY_CANDIDATE_URL
+  --reference-root  PARITY_REFERENCE_ROOT
+  --artifacts       PARITY_ARTIFACTS
+  --case            PARITY_CASE (comma-separated exact case IDs; parity only)
+
+--list enumerates tests without connecting to an app. It is not a test pass.
+Unknown cases and empty test projects fail. Core never runs parity or extended.
+Extended is optional coverage for additional keyboard/dismissal paths, not a
+replacement for core. Playwright retries are disabled and .only is forbidden.
+
+Evidence and comparison
+
+Every run gets a fresh directory under .demo-artifacts/view-parity (gitignored).
+--artifacts can choose another parent outside the checkout, or a parent under
+.demo-artifacts/view-parity. No application source directory is accepted.
+session.json records the manifest, selected cases, candidate file hashes, and
+reference source fingerprint. results.json and html/ contain Playwright results.
+Each captured case retains reference.png, candidate.png, diff.png and
+comparison.json, including viewport, browser version, timestamp, source paths,
+available states, active state, URLs, accessibility snapshots and pixel counts.
+
+Both pages use the same browser, viewport, scale 1, en-US locale, UTC timezone,
+explicit light/dark theme, motion setting, scene and state. Captures use
+fit=component and the catalog-scene-focus frame without independently resizing
+the viewport. Dimension differences fail. Ready AND stable markers, the preview
+list/states API, and current slug/state/width/fit must agree. Missing states fail;
+interactive fallback pages never count as named states. Two consecutive PNGs must
+match before comparison; the harness does not inject CSS or freeze animations.
+Animated full-motion cases may need a reviewed deterministic endpoint state.
+
+The checked comparison is exact, including antialiasing: any differing pixel or
+accessible snapshot fails. This exposes drift; it does not assert that every
+failure is an application bug. Inspect all three images in the report. There is
+no auto-blessing command and no --update-snapshots path. Fix the candidate or
+review an intentional reference change explicitly. A functional pass alone is
+never proof of visual parity. Uncovered surfaces remain in scene-manifest.json.
+
+Refreshing a separately maintained Svelte reference
+
+The reference must have clean tracked sources at the inspected commit. The
+manifest fingerprints source, fixtures, fonts/assets, styles, messages, build
+configuration, scripts and dependency inputs. Unrelated commits may advance
+HEAD if those inputs are identical. Dirty or changed inputs fail before capture;
+inputs are checked again after the run. Candidate edits during a run also fail.
+
+  corepack pnpm --filter @intent/view-parity reference:inspect \
+    --reference-root /absolute/path/to/current-svelte-checkout
+
+This prints commit, source paths, fingerprint and dirty paths without editing
+anything. Review incoming source changes and the live list/states API; update
+reference.commit and reference.sourceTreeSha256 in scene-manifest.json by hand,
+then update affected cases and source pointers. Restart the reference server
+from that checkout and rerun. A reference branch/worktree can track current
+Svelte development independently of the React branch.
+
+Provenance limitation: the existing preview API has no server commit endpoint.
+The URL-to-checkout association is operator-declared, recorded as such, and
+cannot be independently proven by this package. Source fingerprints detect
+checkout drift; they cannot identify an unrelated stale server at the same URL.
+Keep that server attached to the declared checkout and restart it after changes.
+
+Browser API references:
+  https://playwright.dev/docs/test-projects
+  https://playwright.dev/docs/test-assertions
+  https://playwright.dev/docs/api/class-locator#locator-screenshot

@@ -1,0 +1,20 @@
+{
+  "name": "@intent/view-parity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "help": "node scripts/run.mjs help",
+    "manifest:check": "node scripts/run.mjs check",
+    "reference:inspect": "node scripts/run.mjs reference",
+    "compare": "node scripts/run.mjs parity",
+    "test:core": "node scripts/run.mjs core",
+    "test:extended": "node scripts/run.mjs extended",
+    "browsers:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "pixelmatch": "7.1.0",
+    "pngjs": "7.0.0"
+  }
+}
