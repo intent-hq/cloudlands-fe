@@ -8,6 +8,7 @@ import { uiLayoutReducer } from '../../../../src/store/renderer/slices/ui-layout
 import { userPreferencesReducer } from '../../../../src/store/renderer/slices/user-preferences/user-preferences-slice';
 import { daemonHealthReducer } from '../../../../src/store/renderer/slices/daemon-health/daemon-health-slice';
 import { directoryPickerReducer } from '../../../../src/store/renderer/slices/directory-picker/directory-picker-slice';
+import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
 
 export const store = new ReactStore({
   catalog: catalogReducer,
@@ -17,5 +18,6 @@ export const store = new ReactStore({
   userPreferences: userPreferencesReducer,
   daemonHealth: daemonHealthReducer,
   directoryPicker: directoryPickerReducer,
+  linkTooltip: linkTooltipReducer,
 });
 export type AppState = StoreState<typeof store>;
