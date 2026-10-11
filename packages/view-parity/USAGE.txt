@@ -9,18 +9,21 @@ Named-scene comparisons and source catalog fixture comparisons are separate case
 kinds. The manifest lists every checked source and explicitly records gaps;
 migration-inventory.json owns the full migration denominator.
 
-Core includes native form validation and synchronous duplicate submit protection,
-Enter/mod-Enter/multiline behavior, form reset/dirty/errors, autosave debounce/blur/
-save shortcut with focused draft retention, collection keyboard/typeahead/selection
-and nested controls, confirmation/prompt promises, and basic control journeys.
-Extended adds dismissal/focus edges, takeover scroll ownership, slider pointer and
+Core includes native form validation, pending/rejected submission protection,
+Enter/mod-Enter/multiline and caller keyboard policies, form reset/dirty/errors,
+autosave debounce/blur/save shortcut and external updates with focused draft
+retention, collection keyboard/typeahead/selection and nested controls,
+confirmation/prompt promises, and basic control journeys. Extended adds failed-save
+retry, queued/rejected confirmation callbacks, dynamic and virtualized collection
+navigation, dismissal/focus edges, takeover scroll ownership, slider pointer and
 inline editing, and disabled/invalid paths. Every case uses production components
 and handlers. Native requestSubmit calls exercise the actual pending form handler;
 no dependency, response, clock, or handler is replaced.
 
-The current examples do not expose long-running manual submit completion, ignored
-Enter policies, autosave retry failures or independent external updates while
-focused. These remain explicit gaps, along with real-daemon/Electron journeys.
+Test discovery is not a browser pass. New example controls must be committed and
+reported ready by their owner before acceptance runs. Report every failing or
+unrun case separately. Remaining control edges and real-daemon/Electron journeys
+are listed as gaps in the manifest.
 
   corepack pnpm --filter @intent/view-parity manifest:check
   corepack pnpm --filter @intent/view-parity browsers:install

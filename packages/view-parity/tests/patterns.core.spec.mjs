@@ -211,3 +211,106 @@ test("prompt: required input blocks empty acceptance and resolves the edited, tr
     .toBe("Renamed by browser");
   await expect(trigger).toBeFocused();
 });
+
+test("form: pending completion disables editing and rejects repeated native submits", async ({
+  page,
+}) => {
+  const fixture = await openExample(page, "form", "form-submit");
+  const name = fixture.getByRole("textbox", { name: "Project name", exact: true });
+  await fixture.getByRole("switch", { name: "Hold form submission", exact: true }).click();
+  await name.fill("Held project");
+  await name.press("Enter");
+  await expect(output(fixture, "Form submission status")).toHaveText("pending");
+  await expect(output(fixture, "Form hook submitting")).toHaveText("true");
+  await expect(name).toBeDisabled();
+  const form = fixture.getByRole("form", { name: "Project submission form", exact: true });
+  await expect(form).toHaveAttribute("aria-busy", "true");
+  await form.evaluate((element) => {
+    element.requestSubmit();
+    element.requestSubmit();
+  });
+  await expect(output(fixture, "Form submission attempts")).toHaveText("1");
+  await expect(output(fixture, "Form submission count")).toHaveText("0");
+  await fixture.getByRole("button", { name: "Release form submission", exact: true }).click();
+  await expect(output(fixture, "Form submission count")).toHaveText("1");
+  await expect(output(fixture, "Form hook submitting")).toHaveText("false");
+  await expect(form).not.toHaveAttribute("aria-busy", "true");
+  await expect(name).toBeEnabled();
+  await expect
+    .poll(() => outputJson(output(fixture, "Saved project")))
+    .toEqual({ name: "Held project", notes: "" });
+});
+
+test("form: rejected submission restores editing, preserves the draft, and permits a retry", async ({
+  page,
+}) => {
+  const fixture = await openExample(page, "form", "form-submit");
+  const name = fixture.getByRole("textbox", { name: "Project name", exact: true });
+  const hold = fixture.getByRole("switch", { name: "Hold form submission", exact: true });
+  await hold.click();
+  await name.fill("Retry this project");
+  await name.press("Enter");
+  await expect(output(fixture, "Form submission status")).toHaveText("pending");
+  await fixture.getByRole("button", { name: "Reject form submission", exact: true }).click();
+  await expect(output(fixture, "Form submission status")).toHaveText("rejected");
+  await expect(output(fixture, "Form submission error")).not.toBeEmpty();
+  await expect(output(fixture, "Form hook submitting")).toHaveText("false");
+  await expect(output(fixture, "Form submission count")).toHaveText("0");
+  await expect(name).toBeEnabled();
+  await expect(name).toHaveValue("Retry this project");
+  await expect(output(fixture, "Form dirty")).toHaveText("true");
+  await hold.click();
+  await name.press("Enter");
+  await expect(output(fixture, "Form submission attempts")).toHaveText("2");
+  await expect(output(fixture, "Form submission count")).toHaveText("1");
+  await expect(output(fixture, "Form submission error")).toBeEmpty();
+});
+
+for (const [policy, key] of [
+  ["Ignore Enter", "Enter"],
+  ["Ignore modified Enter", "ControlOrMeta+Enter"],
+]) {
+  test(`form: ${policy} prevents keyboard submission but leaves explicit submission usable`, async ({
+    page,
+  }) => {
+    const fixture = await openExample(page, "form", "form-submit");
+    await fixture.getByRole("switch", { name: policy, exact: true }).click();
+    const name = fixture.getByRole("textbox", { name: "Project name", exact: true });
+    await name.fill("Explicit submission");
+    await name.press(key);
+    await expect(output(fixture, "Form submission attempts")).toHaveText("0");
+    await fixture.getByRole("button", { name: "Save project", exact: true }).click();
+    await expect(output(fixture, "Form submission count")).toHaveText("1");
+  });
+}
+
+test("autosave: an independent external update preserves a focused unsaved draft", async ({
+  page,
+}) => {
+  const fixture = await openExample(page, "form", "autosave");
+  const field = fixture.getByRole("textbox", { name: "Autosave workspace name", exact: true });
+  await field.fill("Local draft survives");
+  await fixture.getByRole("button", { name: "Update autosave externally", exact: true }).click();
+  await expect(output(fixture, "Autosave external updates")).toHaveText("1");
+  await expect(output(fixture, "Saved workspace name")).not.toHaveText("Workspace");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("Local draft survives");
+  await field.press("ControlOrMeta+s");
+  await expect(output(fixture, "Saved workspace name")).toHaveText("Local draft survives");
+  await expect(output(fixture, "Autosave count")).toHaveText("1");
+});
+
+test("form: a caller keyboard handler owns modified Enter without accidental submission", async ({
+  page,
+}) => {
+  const fixture = await openExample(page, "form", "form-keyboard-override");
+  const notes = fixture.getByRole("textbox", { name: "Override notes", exact: true });
+  await notes.fill("Caller handles keys");
+  await notes.press("ControlOrMeta+Enter");
+  await expect
+    .poll(() => outputJson(output(fixture, "Override key callbacks")))
+    .toContain("Mod+Enter");
+  await expect(output(fixture, "Override submission count")).toHaveText("0");
+  await fixture.getByRole("button", { name: "Submit override form", exact: true }).click();
+  await expect(output(fixture, "Override submission count")).toHaveText("1");
+});

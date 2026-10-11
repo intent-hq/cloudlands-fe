@@ -405,12 +405,8 @@
       "reason": "Component catalog journeys do not cover real daemon flows or Electron application behavior. See migration-inventory.json for the full denominator."
     },
     {
-      "scene": "pattern-edge-cases",
-      "reason": "Current examples do not expose ignored Enter policies, long-running manual submit completion, autosave save failures/retry, or independent external updates while focused. Core covers native same-turn duplicate submit and focused draft preservation through save acknowledgement only."
-    },
-    {
       "scene": "wave-two-edge-cases",
-      "reason": "Uncovered: accordion multiple/disabled loop edges, choice-group disabled/readonly/form serialization, slider scaled pointer coordinates, sheet top/bottom/stacked overlays/full-motion reversals, virtualized list removal and focus recovery. Existing fixture labels do not count as executed cases."
+      "reason": "Uncovered: accordion multiple/disabled loop edges, choice-group disabled/readonly/form serialization, slider scaled pointer coordinates, sheet top/bottom/stacked overlays/full-motion reversals, list focus recovery after deleting the active nested control. Existing fixture labels do not count as executed cases."
     },
     {
       "scene": "new-named-previews",
@@ -530,7 +526,7 @@
       ],
       "coreTest": "packages/view-parity/tests/patterns.core.spec.mjs",
       "extendedTest": "packages/view-parity/tests/patterns.extended.spec.mjs",
-      "examples": ["form-submit", "autosave"]
+      "examples": ["form-submit", "autosave", "form-keyboard-override"]
     },
     {
       "component": "collection",
@@ -545,7 +541,8 @@
         "apps/react/src/components/patterns/collection/list-view.tsx"
       ],
       "coreTest": "packages/view-parity/tests/patterns.core.spec.mjs",
-      "extendedTest": "packages/view-parity/tests/patterns.extended.spec.mjs"
+      "extendedTest": "packages/view-parity/tests/patterns.extended.spec.mjs",
+      "examples": ["collection-selection", "virtual-collection"]
     },
     {
       "component": "confirm",
