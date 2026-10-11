@@ -164,7 +164,23 @@ export function runSerializedMermaidRender<T>(
     // A task boundary lets pending input run; a resolved Promise only yields a microtask.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     if (!isCurrent()) return;
-    return task();
+    // Mermaid's themeCSS scopes root rules beneath the SVG, so it cannot protect
+    // the root's font size while the engine measures labels. Its initial group
+    // also exists before theme styles and can animate the inherited font size.
+    // Protect both staging elements for this job only; mounted diagrams and the
+    // app's reduced-motion policy retain their own styles.
+    const measurementStyle =
+      typeof document === 'undefined' ? undefined : document.createElement('style');
+    if (measurementStyle) {
+      measurementStyle.textContent =
+        'body > div[id^="dmermaid-"] > svg, body > div[id^="dmermaid-"] > svg > g { transition-property: opacity, color, background-color, fill, stroke !important; }';
+      document.head.appendChild(measurementStyle);
+    }
+    try {
+      return await task();
+    } finally {
+      measurementStyle?.remove();
+    }
   };
   const result = renderQueue.then(run, run);
   renderQueue = result.then(
