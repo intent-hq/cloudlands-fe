@@ -9,6 +9,8 @@ import { DiagramFunctionalExamples } from './diagram-functional-examples';
 import { CallbackDialogExamples } from './callback-dialog-examples';
 import { MenuFocusExamples } from './menu-focus-examples';
 import { EffortPickerExamples } from './effort-picker-examples';
+import { WorkspacePresentationExamples } from './workspace-presentation-examples';
+import { ResourceIconExamples } from './resource-icon-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -453,6 +455,8 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'modals' && <CallbackDialogExamples />}
       {slug === 'menu' && <MenuFocusExamples />}
       {slug === 'effort-picker' && <EffortPickerExamples />}
+      {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
+      {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
       {slug === 'form' && (
         <>
@@ -494,9 +498,19 @@ const nativeExampleSlugs = [
   'recipes',
 ];
 
+const workspacePresentationSlugs = [
+  'workspace-status-icon',
+  'driving-client-indicator',
+  'task-status-progress',
+  'flame-graph',
+];
+const resourceIconSlugs = ['resource-icon-tile', 'browser-favicon'];
+
 export function hasFunctionalExample(slug: string) {
   return [
     ...nativeExampleSlugs,
+    ...workspacePresentationSlugs,
+    ...resourceIconSlugs,
     'settings-textarea',
     'modal-heading-spacing',
     'modals',
