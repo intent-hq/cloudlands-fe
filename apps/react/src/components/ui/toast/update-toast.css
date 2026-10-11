@@ -1,0 +1,91 @@
+.update-toast {
+  width: 100%;
+  min-width: 0;
+  position: relative;
+  overflow: visible;
+}
+
+.update-toast .toast-row {
+  --toast-header-height: 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--space-1) * 2.5);
+}
+
+.update-toast .toast-row:has(.toast-action) {
+  --toast-header-height: var(--toast-action-height, var(--control-height-compact));
+}
+
+.update-toast .toast-row [data-toast-glyph] {
+  margin-top: calc((var(--toast-header-height) - 1rem) / 2);
+}
+
+.update-toast .toast-row .toast-close-btn {
+  margin-top: calc((var(--toast-header-height) - 1.5rem) / 2);
+}
+
+.update-toast .title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  font-size: var(--toast-title-size, 0.8125rem);
+  line-height: 1.4;
+  margin-top: max(
+    0px,
+    calc((var(--toast-header-height) - var(--toast-title-size, 0.8125rem) * 1.4) / 2)
+  );
+  color: hsl(var(--foreground));
+  overflow-wrap: anywhere;
+}
+
+.update-toast .description {
+  font-size: var(--toast-description-size, 0.8125rem);
+  font-weight: 400;
+  line-height: 1.4;
+  color: hsl(var(--muted-foreground));
+  margin-top: 0.25rem;
+  margin-left: 1.625rem;
+  overflow-wrap: anywhere;
+}
+
+.update-toast .progress-bar {
+  height: 4px;
+  background: hsl(var(--muted));
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-left: 1.625rem;
+  margin-top: 0.75rem;
+}
+
+.update-toast .progress-fill {
+  height: 100%;
+  background: hsl(var(--ring));
+  border-radius: var(--radius-full);
+  transition: width var(--spring-moderate) var(--spring-moderate-ease);
+}
+
+.update-toast .toast-progress-label {
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  margin-top: max(0px, calc((var(--toast-header-height) - 0.8125rem * 1.4) / 2));
+}
+
+.update-toast .toast-action {
+  flex-shrink: 0;
+  min-height: var(--toast-action-height, var(--control-height-compact));
+  border-radius: var(--toast-action-radius, var(--radius));
+}
+
+.toast-action:focus-visible {
+  outline: 1px solid hsl(var(--focus-ring));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+@container style(--motion-reduced: 1) {
+  .update-toast .progress-fill {
+    transition: none;
+  }
+}

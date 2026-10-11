@@ -1,0 +1,482 @@
+[data-sonner-toaster] {
+  --toast-radius: var(--radius);
+  --toast-padding: 0.75rem 0.875rem;
+  --toast-min-height: 2.75rem;
+  --toast-max-height: min(16rem, 50dvh, var(--toast-available-height, 100dvh));
+  --toast-title-size: 0.8125rem;
+  --toast-description-size: 0.8125rem;
+  --toast-action-height: var(--control-height-compact);
+  --toast-action-radius: var(--radius);
+  --toast-shadow: var(--elevation-overlay);
+  --width: var(--app-toast-width) !important;
+  width: var(--app-toast-width) !important;
+}
+
+[data-sonner-toaster][data-toast-sized] {
+  --front-toast-height: var(--toast-front-height) !important;
+}
+
+.toast-static {
+  width: min(100%, 22rem);
+  justify-self: start;
+}
+
+.toast-static [data-sonner-toaster] {
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  height: calc(var(--front-toast-height) + 1rem) !important;
+  padding-top: 1rem !important;
+}
+
+.toast-static [data-sonner-toast] {
+  width: 100% !important;
+}
+
+[data-sonner-toast] {
+  /* background-COLOR, not the shorthand: the countdown bar (below) animates
+       background-size on opted-in toasts, and an !important shorthand here
+       would lock every background longhand (CSS animations cannot override
+       !important declarations). */
+  background-color: hsl(var(--toast-surface)) !important;
+  color: hsl(var(--foreground)) !important;
+  /* The wrapper's single neutral border is shared by standard and custom
+       content-only toasts. These :global styles must stay UNLAYERED: moving
+       them into a cascade layer would change the default toast chrome. */
+  border: 1px solid hsl(var(--foreground) / 0.05) !important;
+  border-radius: var(--toast-radius) !important;
+  width: var(--app-toast-width) !important;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--toast-min-height) !important;
+  max-height: var(--toast-max-height) !important;
+  padding: var(--toast-padding) !important;
+  align-items: center !important;
+  gap: 0.625rem !important;
+  box-shadow: var(--toast-shadow) !important;
+}
+
+[data-sonner-toast][data-toast-measuring],
+[data-sonner-toast][data-front='true']:not([data-removed='true']),
+[data-sonner-toast][data-expanded='true']:not([data-removed='true']) {
+  height: auto !important;
+}
+
+[data-sonner-toast][data-expanded='true']:not([data-removed='true']) {
+  --offset: var(--toast-stack-offset, 0px) !important;
+}
+
+[data-sonner-toast][data-swiping='false'] {
+  transition:
+    transform var(--spring-moderate) var(--spring-moderate-ease),
+    opacity var(--spring-moderate) var(--spring-moderate-ease),
+    height var(--spring-moderate) var(--spring-moderate-ease),
+    box-shadow var(--spring-fast) var(--spring-fast-ease) !important;
+}
+
+[data-sonner-toast][data-removed='true'][data-swiping='false'] {
+  transition:
+    transform var(--spring-fast-exit) var(--spring-exit-ease),
+    opacity var(--spring-fast-exit) var(--spring-exit-ease),
+    height var(--spring-fast-exit) var(--spring-exit-ease),
+    box-shadow var(--spring-fast-exit) var(--spring-exit-ease) !important;
+}
+
+[data-sonner-toast] [data-icon] {
+  width: 1rem !important;
+  height: 1rem !important;
+  margin: 0 !important;
+}
+
+[data-sonner-toast] [data-title] {
+  color: hsl(var(--foreground)) !important;
+  font-size: var(--toast-title-size);
+  font-weight: 500 !important;
+  line-height: 1.35 !important;
+}
+
+[data-sonner-toast] [data-description] {
+  color: hsl(var(--muted-foreground)) !important;
+  font-size: var(--toast-description-size);
+  font-weight: 400 !important;
+  line-height: 1.4 !important;
+  margin-top: 0.25rem;
+}
+
+[data-sonner-toast] [data-title],
+[data-sonner-toast] [data-toast-title],
+[data-sonner-toast] [data-description],
+[data-sonner-toast] [data-toast-description] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--toast-title-lines, 2);
+  line-clamp: var(--toast-title-lines, 2);
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+[data-sonner-toast] [data-description],
+[data-sonner-toast] [data-toast-description] {
+  -webkit-line-clamp: var(--toast-description-lines, 3);
+  line-clamp: var(--toast-description-lines, 3);
+}
+
+[data-sonner-toast][data-toast-compact='1'],
+[data-sonner-toast][data-toast-compact='2'],
+[data-sonner-toast][data-toast-compact='3'] {
+  --toast-title-lines: 1;
+  --toast-description-lines: 1;
+}
+
+[data-sonner-toast][data-toast-compact='2'] [data-toast-optional],
+[data-sonner-toast][data-toast-compact='3'] [data-toast-optional],
+[data-sonner-toast][data-toast-compact='3'] [data-description],
+[data-sonner-toast][data-toast-compact='3'] [data-toast-description] {
+  display: none;
+}
+
+[data-sonner-toast][data-toast-compact='3'] {
+  --toast-padding: 0.375rem 0.875rem;
+}
+
+[data-sonner-toast][data-toast-compact='3'] .toast-actions {
+  margin-top: var(--space-1);
+}
+
+/* Standard toasts share one header row, independent of description height.
+     Empty action tracks collapse; margins belong only to controls that exist. */
+[data-sonner-toast][data-styled='true'] {
+  --toast-header-height: 1.5rem;
+  display: grid !important;
+  align-items: start !important;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  column-gap: 0 !important;
+  row-gap: 0 !important;
+}
+
+[data-sonner-toast][data-styled='true']:has([data-button], .toast-undo-action) {
+  --toast-header-height: var(--toast-action-height);
+}
+
+[data-sonner-toast][data-styled='true'] > [data-content] {
+  display: contents !important;
+}
+
+[data-sonner-toast][data-styled='true'] > [data-icon] {
+  grid-area: 1 / 1;
+  margin-top: calc((var(--toast-header-height) - 1rem) / 2) !important;
+  margin-right: calc(var(--space-1) * 2.5) !important;
+}
+
+[data-sonner-toast][data-styled='true'] [data-title] {
+  grid-area: 1 / 2;
+  margin-top: max(0px, calc((var(--toast-header-height) - var(--toast-title-size) * 1.35) / 2));
+}
+
+[data-sonner-toast][data-styled='true'] [data-description] {
+  grid-row: 2;
+  grid-column: 2 / -1;
+}
+
+[data-sonner-toast][data-styled='true'] > button:not([data-close-button]),
+[data-sonner-toast][data-styled='true'] .toast-undo-action {
+  grid-area: 1 / 4;
+  margin-left: calc(var(--space-1) * 2.5) !important;
+}
+
+[data-sonner-toast][data-styled='true'] > button[data-cancel] {
+  grid-column: 3;
+}
+
+[data-sonner-toast][data-styled='true'] > [data-close-button] {
+  grid-area: 1 / 5;
+  position: static !important;
+  transform: none !important;
+  margin-top: calc((var(--toast-header-height) - 1.5rem) / 2) !important;
+  margin-left: var(--space-2);
+}
+
+[data-sonner-toast][data-styled='true'][data-toast-footer] {
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+[data-sonner-toast][data-styled='true'][data-toast-footer] [data-title] {
+  grid-column: 2 / 4;
+}
+
+[data-sonner-toast][data-styled='true'][data-toast-footer] > [data-close-button] {
+  grid-column: 4;
+}
+
+[data-sonner-toast][data-styled='true'][data-toast-footer] > [data-button],
+[data-sonner-toast][data-styled='true'][data-toast-footer] .toast-undo-action {
+  grid-area: 3 / 2 / auto / 4;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: 0 !important;
+  margin-top: var(--space-2);
+}
+
+[data-sonner-toast][data-styled='true'][data-toast-footer]:has([data-cancel]) > [data-button] {
+  grid-column: 3;
+  margin-left: var(--space-2) !important;
+  max-width: calc(100% - var(--space-2));
+}
+
+[data-sonner-toast][data-styled='true'][data-toast-footer] > [data-button][data-cancel] {
+  grid-column: 2;
+  margin-left: 0 !important;
+}
+
+[data-sonner-toast] [data-content],
+[data-sonner-toast] [data-title],
+[data-sonner-toast] [data-description] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Sonner owns this button element, so mirror Button's inset surface recipe. */
+[data-sonner-toast] button[data-button] {
+  display: block !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem !important;
+  line-height: 0.8125rem !important;
+  min-height: var(--toast-action-height) !important;
+  font-weight: 500 !important;
+  padding: 0 0.625rem !important;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--toast-action-radius) !important;
+  transition:
+    color var(--spring-fast) var(--spring-fast-ease),
+    opacity var(--spring-fast) var(--spring-fast-ease) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  background: transparent !important;
+  color: hsl(var(--foreground)) !important;
+  outline: none;
+}
+
+[data-sonner-toast] .toast-actions .toast-action {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-sonner-toast][data-styled='false'] .toast-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+[data-sonner-toast] button[data-button]:focus-visible {
+  outline: 1px solid hsl(var(--focus-ring));
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+[data-sonner-toast] button[data-button]::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: 0 0 0 1px hsl(var(--border));
+  content: '';
+  transition:
+    inset var(--spring-fast) var(--spring-fast-ease),
+    background-color var(--spring-fast) var(--spring-fast-ease),
+    box-shadow var(--spring-fast) var(--spring-fast-ease);
+}
+
+[data-sonner-toast] button[data-button]:hover {
+  background: transparent !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+[data-sonner-toast] button[data-button]:hover::before {
+  background: var(--hover);
+}
+
+[data-sonner-toast] button[data-button]:active::before {
+  inset: var(--press-inset);
+  background: var(--active);
+  box-shadow: 0 0 0 0 hsl(var(--border));
+}
+
+/* Close button styling */
+[data-sonner-toast] [data-close-button] {
+  color: hsl(var(--muted-foreground)) !important;
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  top: 50% !important;
+  right: 0.5rem !important;
+  left: auto !important;
+  border: 0 !important;
+  border-radius: var(--toast-action-radius) !important;
+  background: transparent !important;
+  transform: translateY(-50%) !important;
+}
+
+[data-sonner-toast] [data-close-button] svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background: var(--hover) !important;
+}
+
+[data-sonner-toast] [data-close-button]:focus-visible {
+  outline: 1px solid hsl(var(--focus-ring));
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+[data-sonner-toaster][dir='ltr'] {
+  --toast-close-button-start: unset;
+  --toast-close-button-end: 0;
+  --toast-close-button-transform: translateY(-50%);
+}
+
+[data-sonner-toast][data-expanded='false'][data-front='false'][data-visible='true'] {
+  filter: saturate(0.8) brightness(0.96);
+}
+
+/* Sonner conceals standard children when a rear card takes the front card's
+     height, but custom components opt out of its styled-content selector. Keep
+     their card peek while hiding text/actions until hover or hotkey expansion. */
+[data-sonner-toast][data-styled='false'][data-expanded='false'][data-front='false'] > * {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* display:contents has no box for Sonner's parent opacity rule to conceal. */
+
+[data-sonner-toast][data-styled='true'][data-expanded='false'][data-front='false']
+  [data-content]
+  > *,
+[data-sonner-toast][data-styled='true'][data-expanded='false'][data-front='false']
+  .toast-undo-action {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toast-clear-all {
+  position: fixed;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 1000000000;
+}
+
+.toast-clear-all.toast-clear-all-static {
+  position: relative;
+  inset: auto;
+  margin-top: var(--space-2);
+  margin-right: auto;
+}
+
+.toast-clear-all:focus-visible {
+  outline: 1px solid hsl(var(--focus-ring));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.sonner-loading-bar {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+}
+
+/* Countdown progress bar — opt-in via withToastCountdown() (see
+     toast-countdown.ts). A thin bar along the toast's bottom edge shrinks
+     linearly over --toast-countdown-duration, which the helper derives from
+     the same duration passed to the toast. Drawn as a bottom-anchored
+     background gradient because sonner owns both pseudo-elements (::after is
+     the hover gap-filler between stacked toasts, ::before the swipe
+     hit-area). Excluded during swipe-out so sonner's swipe-out keyframes keep
+     the element's animation slot. */
+[data-sonner-toaster] [data-sonner-toast].toast-countdown:not([data-swipe-out='true']) {
+  --toast-countdown-color: hsl(var(--muted-foreground) / 0.4);
+  background-image: linear-gradient(var(--toast-countdown-color), var(--toast-countdown-color));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  /* Pre-animation value; also the static reduced-motion rendering. */
+  background-size: 100% 3px;
+  animation: toast-countdown-shrink var(--toast-countdown-duration, 10000ms) linear forwards;
+}
+
+/* Undo/warning toasts tint the bar with the same accent as their border.
+     The [data-sonner-toaster] prefix ties specificity (0,4,0) with the base
+     rule above (whose :not() argument counts); later source order wins. */
+[data-sonner-toaster] [data-sonner-toast][data-type='warning'].toast-countdown {
+  --toast-countdown-color: hsl(var(--warning));
+}
+
+[data-sonner-toast][data-type='warning'].toast-countdown button[data-button]::after {
+  padding: 0.125rem 0.375rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-small);
+  margin-left: 0.375rem;
+  background: var(--hover);
+  color: hsl(var(--muted-foreground));
+  content: '⌘Z';
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+/* Sonner pauses its dismiss timer while the toaster is hovered (its
+     expanded/interacting pause states are driven by the <ol>'s
+     mouseenter/mousemove and pointer handlers; focus alone never pauses the
+     timer, so no :focus-within here) — pause the bar in sync so it never
+     empties while the toast lingers. Toasts whose countdown mirrors an
+     independent deadline that keeps running during sonner's pause opt out
+     via withToastCountdown's pauseOnHover: false (the
+     .toast-countdown-no-hover-pause class). */
+
+[data-sonner-toaster]:hover
+  [data-sonner-toast].toast-countdown:not(.toast-countdown-no-hover-pause) {
+  animation-play-state: paused;
+}
+
+@container style(--motion-reduced: 1) {
+  [data-sonner-toast][data-swiping='false'],
+  [data-sonner-toast] button[data-button],
+  [data-sonner-toast] button[data-button]::before {
+    transition: none !important;
+  }
+
+  [data-sonner-toaster] [data-sonner-toast].toast-countdown:not([data-swipe-out='true']) {
+    /* No moving bar — the static full-width bar from background-size stays. */
+    animation: none;
+  }
+}
+
+@keyframes toast-countdown-shrink {
+  from {
+    background-size: 100% 3px;
+  }
+  to {
+    background-size: 0% 3px;
+  }
+}
+
+/* React Sonner wraps custom content in a title. Keep the custom view as the
+   content-only card used by the source; never clamp its actions as title text. */
+[data-sonner-toast][data-styled='false'] {
+  display: flex;
+}
+[data-sonner-toast][data-styled='false'] > [data-content],
+[data-sonner-toast][data-styled='false'] > [data-content] > [data-title] {
+  display: contents !important;
+  font: inherit !important;
+  color: inherit !important;
+}
+
+[data-sonner-toast][data-styled='false'][data-expanded='false'][data-front='false']
+  > [data-content]
+  > [data-title]
+  > * {
+  opacity: 0;
+  pointer-events: none;
+}
