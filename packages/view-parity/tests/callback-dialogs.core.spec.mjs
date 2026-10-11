@@ -61,6 +61,7 @@ test('callback dialog: Input cancellation clears the draft and restores the trig
 
 test('callback dialog: Message exposes its body description and keyboard selects the last index', async ({
   page,
+  browser,
 }, testInfo) => {
   const example = await openDialogs(page);
   const trigger = example.getByRole('button', { name: 'Open message dialog', exact: true });
@@ -71,9 +72,21 @@ test('callback dialog: Message exposes its body description and keyboard selects
     body: await dialog.ariaSnapshot(),
     contentType: 'text/plain',
   });
+  await testInfo.attach('callback-browser.json', {
+    body: JSON.stringify({
+      version: browser.version(),
+      url: page.url(),
+      viewport: page.viewportSize(),
+    }),
+    contentType: 'application/json',
+  });
   await expect(dialog).toHaveAccessibleDescription(
     'The workspace is ready on the selected connection.',
   );
+  await testInfo.attach('message-dialog.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   // The dialog initially focuses its content, outside the nested Form. Native
   // keyboard activation belongs to the focused button; do not invent a root shortcut.
   const last = dialog.getByRole('button', { name: 'Continue', exact: true }).nth(2);
@@ -199,6 +212,10 @@ test('callback dialog: Proposal confirmation leaves closure to its caller and Ca
   await expect(dialog).toHaveAccessibleDescription(
     'The proposal will be discarded without applying it. This cannot be undone.',
   );
+  await testInfo.attach('proposal-dialog.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   await confirm.press('Enter');
   await expect(output(example, 'Proposal confirm callbacks')).toHaveText('1');
   await expect(dialog).toBeVisible();
