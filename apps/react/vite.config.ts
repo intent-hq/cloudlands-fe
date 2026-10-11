@@ -2,10 +2,19 @@ import { fileURLToPath, URL } from 'node:url';
 import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [
+    tanstackStart({
+      spa: {
+        enabled: true,
+        // app://workspaces serves index.html for navigation. Ship dist/client
+        // with the same asset-first, index fallback contract at desktop cutover.
+        prerender: { outputPath: '/index.html' },
+      },
+    }),
     react(),
     babel({ include: /\.tsx?$/, plugins: ['module:@preact/signals-react-transform'] }),
     tailwindcss(),

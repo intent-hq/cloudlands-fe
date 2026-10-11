@@ -9,7 +9,6 @@
     "allowJs": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "types": ["vite/client", "node"],
@@ -19,5 +18,5 @@
       "$lib/*": ["../../src/lib/*"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite*.config.ts"]
 }
