@@ -82,6 +82,13 @@ export function loadManifest() {
         entry.scene === "diagram-workbench" && entry.readinessTimeoutMs === 45_000,
         `${entry.id}: only the source diagram workbench declares the longer readiness budget`,
       );
+    if (entry.expectedWorkbenchError !== undefined)
+      requireValue(
+        entry.scene === "diagram-workbench" &&
+          entry.expectedStateCount === 94 &&
+          entry.expectedWorkbenchError === "mermaid-invalid-source",
+        `${entry.id}: only the pinned workbench invalid-source fixture has a diagnostic contract`,
+      );
     if (entry.kind === "catalog-fixture") {
       requireValue(
         Array.isArray(entry.renderedStates) &&

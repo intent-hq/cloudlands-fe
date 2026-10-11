@@ -12,6 +12,7 @@ import {
   assertImageFailureEvidence,
 } from "../lib/browser.mjs";
 import { compareImages } from "../lib/compare.mjs";
+import { inspectWorkbenchError } from "../lib/workbench-error.mjs";
 
 const manifest = loadManifest();
 
@@ -126,6 +127,24 @@ for (const entry of selectedCases(manifest)) {
         await writeFile(file, buffer);
         await testInfo.attach(name, { path: file, contentType });
       }
+      // Exercise the negative fixture only after preserving the selected graph's
+      // pixels, geometry and accessibility. Keep every raw error in comparison.json.
+      let expectedReferenceError;
+      let expectedCandidateError;
+      if (entry.expectedWorkbenchError) {
+        [expectedReferenceError, expectedCandidateError] = await Promise.all([
+          inspectWorkbenchError(reference, referenceErrors),
+          inspectWorkbenchError(candidate, candidateErrors),
+        ]);
+        await testInfo.attach("workbench-invalid-source.json", {
+          body: JSON.stringify(
+            { reference: expectedReferenceError, candidate: expectedCandidateError },
+            null,
+            2,
+          ),
+          contentType: "application/json",
+        });
+      }
       expect(after.sourceTreeSha256, "Reference sources changed while capturing").toBe(
         before.sourceTreeSha256,
       );
@@ -156,8 +175,18 @@ for (const entry of selectedCases(manifest)) {
           )
           .toEqual(checkedStates);
       }
-      expect.soft(referenceErrors, "Reference browser errors").toEqual([]);
-      expect.soft(candidateErrors, "Candidate browser errors").toEqual([]);
+      expect
+        .soft(
+          referenceErrors.filter((_, index) => index !== expectedReferenceError?.consumedIndex),
+          "Unexpected reference browser errors",
+        )
+        .toEqual([]);
+      expect
+        .soft(
+          candidateErrors.filter((_, index) => index !== expectedCandidateError?.consumedIndex),
+          "Unexpected candidate browser errors",
+        )
+        .toEqual([]);
       assertImageFailureEvidence(referenceResourceEvents);
       assertImageFailureEvidence(candidateResourceEvents);
       expect

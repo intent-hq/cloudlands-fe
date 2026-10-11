@@ -1531,7 +1531,8 @@
         "apps/react/src/components/diagrams/diagram-renderer.tsx"
       ],
       "reason": "Compare grouped custom architecture nodes and event routes after the complete workbench settles. Discovery checks all 94 source state names; this case captures only its named stage.",
-      "captureContent": "svg.diagram-svg-layer"
+      "captureContent": "svg.diagram-svg-layer",
+      "expectedWorkbenchError": "mermaid-invalid-source"
     },
     {
       "id": "diagram-mermaid-flow",
@@ -1559,7 +1560,8 @@
         "apps/react/src/components/markdown/mermaid-renderer.tsx"
       ],
       "reason": "Compare actual Mermaid decision branches, edge labels and the return route after measured SVG layout settles. Discovery checks all 94 source state names; this case captures only its named stage.",
-      "captureContent": "svg[data-layout-settled=\"true\"]"
+      "captureContent": "svg[data-layout-settled=\"true\"]",
+      "expectedWorkbenchError": "mermaid-invalid-source"
     }
   ],
   "uncovered": [

@@ -241,6 +241,11 @@ from the pinned source API. State discovery is not visual acceptance of the othe
 92 states. Source fingerprints and zero-pixel/accessible-state comparisons remain
 unchanged; production diagram journeys are maintained in the separate diagram suites.
 Each sampled stage must contain its visible rendered SVG. Ready-state images are
-retained before browser-error assertions, so an intentional invalid example elsewhere
-in the complete workbench cannot erase useful visual evidence. All observed errors
-remain in the report and fail the run; they are not ignored or reclassified as success.
+retained before browser-error assertions, so a negative example elsewhere in the
+complete workbench cannot erase useful visual evidence. Raw errors remain in the report.
+Only the opted-in mermaid-invalid-source contract may consume one exact diagnostic:
+after the graph capture, both apps must show the settled alert, open its native details,
+and expose the pinned invalid source bytes and exact parser message. Exactly one
+structured MermaidRenderer error must match that message. Missing, duplicate or other
+diagnostics fail; page errors and HTTP failures are never consumed. This negative-case
+evidence is attached separately and does not override any pixel or accessibility failure.
