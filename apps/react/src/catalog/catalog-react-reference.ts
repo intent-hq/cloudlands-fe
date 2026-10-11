@@ -1154,11 +1154,23 @@ export function Example() {
     ],
   ),
   'principal-avatar': reference(
-    "import { PrincipalAvatar } from '@/components/ui/principal-avatar';",
+    `import { PrincipalAvatar } from '@/components/ui/principal-avatar';
+import { PresenceAvatarStack, type PresenceAvatarStackProps } from '@/features/presence/components/presence-avatar-stack';
+import { NotePresenceAvatars, type NotePresenceAvatarsProps } from '@/features/notes/note-presence/note-presence-avatars';`,
     `type Member = { avatarUrl?: string | null; displayName?: string | null; login?: string | null };
 
-export function Example({ member }: { member: Member }) {
-  return <PrincipalAvatar avatarUrl={member.avatarUrl} label={member.displayName ?? member.login ?? ''} size={24} />;
+export function Example({ member, people, viewers }: {
+  member: Member;
+  people: PresenceAvatarStackProps['people'];
+  viewers: NotePresenceAvatarsProps['viewers'];
+}) {
+  return (
+    <div>
+      <PrincipalAvatar avatarUrl={member.avatarUrl} label={member.displayName ?? member.login ?? ''} size={24} />
+      <PresenceAvatarStack people={people} maxVisible={4} size={24} />
+      <NotePresenceAvatars viewers={viewers} maxVisible={3} />
+    </div>
+  );
 }`,
     [
       prop(
@@ -1179,7 +1191,153 @@ export function Example({ member }: { member: Member }) {
         'Fill the containing surface instead of using a fixed size.',
         'false',
       ),
+      prop(
+        'PresenceAvatarStack.people',
+        "PresenceAvatarStackProps['people']",
+        'Caller-ordered identities and presence facts; the view does not fetch them.',
+      ),
+      prop(
+        'PresenceAvatarStack.maxVisible / size',
+        'number',
+        'Visible people before overflow / avatar diameter.',
+        '3 / 16',
+      ),
+      prop(
+        'PresenceAvatarStack.side',
+        "'top' | 'bottom' | 'left' | 'right'",
+        'Tooltip placement.',
+        "'bottom'",
+      ),
+      prop(
+        'PresenceAvatarStack.decorative',
+        'boolean',
+        'Omit per-person tooltip triggers when the parent supplies names.',
+        'false',
+      ),
+      prop(
+        'PresenceAvatarStack.action',
+        "PresenceAvatarStackProps['action']",
+        'Resolve each person to a label and native MouseEvent callback. A null callback stays focusable and aria-disabled; action takes precedence over decorative.',
+      ),
+      prop(
+        'NotePresenceAvatars.viewers',
+        "NotePresenceAvatarsProps['viewers']",
+        'Caller-ordered note viewers; missing images fall back to the displayed name.',
+      ),
+      prop(
+        'NotePresenceAvatars.maxVisible',
+        'number',
+        'Visible note viewers before the overflow count.',
+        '3',
+      ),
       className,
+    ],
+    [
+      'All five source avatar fixtures are implemented. These presentational fixtures do not exercise live presence subscriptions; browser, geometry and pixel acceptance remain separate.',
+    ],
+  ),
+  fields: reference(
+    `import { FormRow, FormField } from '@/components/patterns/form';
+import { SettingsFieldRow } from '@/components/patterns/settings';`,
+    `import { Input } from '@/components/ui/input';
+
+export function Example() {
+  return (
+    <div>
+      <FormRow>
+        <FormField label="Project name" required
+          control={(field) => <Input {...field} defaultValue="Alpha" />} />
+        <FormField label="Description" description="Optional supporting context."
+          control={(field) => <Input {...field} placeholder="Describe the project" />} />
+      </FormRow>
+      <SettingsFieldRow id="workspace-path" label="Workspace path" htmlFor="workspace-path-input"
+        control={({ labelId, descriptionId, errorId, disabled }) => (
+          <Input id="workspace-path-input" defaultValue="/projects" disabled={disabled}
+            aria-labelledby={labelId}
+            aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined} />
+        )} />
+    </div>
+  );
+}`,
+    [
+      prop(
+        'FormField.label / description / error',
+        'string',
+        'Field label, help and validation message.',
+      ),
+      prop(
+        'FormField.control',
+        '(field: FormControlProps) => ReactNode',
+        'Spread the supplied control ID, name, accessibility and required/disabled props onto the input.',
+      ),
+      prop(
+        'FormField.required / disabled',
+        'boolean',
+        'Native constraints passed to the control.',
+        'false',
+      ),
+      prop(
+        'SettingsFieldRow.id / label / htmlFor',
+        'string',
+        'Stable row identity, visible label and optional native control target.',
+      ),
+      prop(
+        'SettingsFieldRow.control',
+        '(context: SettingsFieldContext) => ReactNode',
+        'Use the provided label/description/error IDs and disabled/busy state in the control.',
+      ),
+      ...contentProps,
+    ],
+    [
+      'The catalog composes the source field-state-matrix. Its hover/focus display cells do not establish runtime interaction or visual acceptance.',
+    ],
+  ),
+  rows: reference(
+    "import { ListRow, ListView, type ListKey } from '@/components/patterns/collection';",
+    `import { useState } from 'react';
+
+const items = [{ id: 'sources', title: 'Workspace sources' }, { id: 'notes', title: 'Project notes' }];
+
+export function Example() {
+  const [selectedKeys, setSelectedKeys] = useState<ListKey[]>(['sources']);
+  return (
+    <ListView items={items} getKey={(item) => item.id} getText={(item) => item.title}
+      ariaLabel="Workspace resources" selectable="multi"
+      selectedKeys={selectedKeys} onSelectedKeysChange={setSelectedKeys}
+      row={({ item }) => <ListRow title={item.title} />} />
+  );
+}`,
+    [
+      prop(
+        'ListView.items / getKey / getText',
+        'T[] / key function / text function',
+        'Caller data with stable identities and text for keyboard search.',
+      ),
+      prop(
+        'ListView.row',
+        '(context: ListRowContext<T>) => ReactNode',
+        'Compose a production ListRow for each item.',
+      ),
+      prop(
+        'ListView.selectable',
+        "false | 'single' | 'multi'",
+        'Keyboard and pointer selection mode.',
+        'false',
+      ),
+      prop(
+        'ListView.selectedKeys / onSelectedKeysChange',
+        'ListKey[] / (keys: ListKey[]) => void',
+        'Controlled selection and the callback that updates it.',
+      ),
+      prop(
+        'ListRow.title / description / leading / trailing',
+        'ReactNode',
+        'Compose row identity, supporting text and actions.',
+      ),
+      ...contentProps,
+    ],
+    [
+      'The row-family-matrix includes collection, sidebar, settings, table, menu and tab compositions. Add grid=1 to the catalog URL for the source baseline overlay; geometry and pixel acceptance remain pending.',
     ],
   ),
   'loading-indicator': reference(

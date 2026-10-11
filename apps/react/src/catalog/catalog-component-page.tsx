@@ -11,6 +11,8 @@ import { ContentCatalogPreview } from './content-catalog-preview';
 import { NavigationCatalogPreview } from './navigation-catalog-preview';
 import { PatternCatalogPreview } from './pattern-catalog-preview';
 import { AvatarCatalogPreview } from './avatar-catalog-preview';
+import { FieldsCatalogPreview } from './fields-catalog-preview';
+import { RowsCatalogPreview } from './rows-catalog-preview';
 import { IndicatorCatalogPreview } from './indicator-catalog-preview';
 import { ProximityCatalogPreview } from './proximity-catalog-preview';
 import { DropdownCatalogPreview } from './dropdown-catalog-preview';
@@ -79,6 +81,8 @@ export const portedComponentPages = [
   'dropdown',
   'settings',
   'principal-avatar',
+  'fields',
+  'rows',
   'loading-indicator',
   'ask-user-questions',
   'message-composer',
@@ -119,6 +123,10 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
         <AdditionalCatalogPreview {...props} />
       ) : entry.slug === 'principal-avatar' ? (
         <AvatarCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'fields' ? (
+        <FieldsCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'rows' ? (
+        <RowsCatalogPreview fixture={fixture} />
       ) : entry.slug === 'loading-indicator' ? (
         <IndicatorCatalogPreview fixture={fixture} />
       ) : entry.slug === 'proximity-highlight' ? (

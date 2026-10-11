@@ -6,6 +6,10 @@ import {
   IndicatorExample,
 } from './shared-widget-catalog-preview';
 import type { ComponentType, ReactNode } from 'react';
+import { catalogEntries } from './catalog';
+import { AvatarCatalogPreview } from './avatar-catalog-preview';
+import { FieldsCatalogPreview } from './fields-catalog-preview';
+import { RowsCatalogPreview } from './rows-catalog-preview';
 import { SidebarHarness, type SidebarHarnessProps } from '@/components/ui/sidebar';
 import { askUserQuestionsFixtures } from '$lib/components/ui/ask-user-questions/ask-user-questions.fixtures';
 import { messageComposerFixtures } from '$lib/components/ui/message-composer/message-composer.fixtures';
@@ -126,7 +130,29 @@ const sidebarStates = {
   'reduced-motion': { open: true, fixtureState: 'default' },
 } satisfies Record<string, SidebarHarnessProps>;
 
+const composedPreviews: Record<string, ComponentType<{ fixture: UiComponentFixture }>> = {
+  fields: FieldsCatalogPreview,
+  rows: RowsCatalogPreview,
+  'principal-avatar': AvatarCatalogPreview,
+};
+
 export const additionalPreviews: Record<string, Definition> = {
+  ...Object.fromEntries(
+    catalogEntries
+      .filter((entry) => composedPreviews[entry.slug])
+      .map((entry) => [
+        entry.slug,
+        fixturePreview(
+          entry.slug,
+          entry.name,
+          entry.slug === 'principal-avatar'
+            ? 'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte'
+            : entry.source,
+          entry.fixtures,
+          composedPreviews[entry.slug]!,
+        ),
+      ]),
+  ),
   'editable-text': {
     id: 'editable-text',
     title: 'Editable text (partial)',
