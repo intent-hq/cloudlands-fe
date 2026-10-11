@@ -10,6 +10,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import { SettingsTextareaPreview } from '@/components/patterns/settings';
 import { TextEntryFocusPreview } from './text-entry-focus-preview';
 import { ModalHeadingPreview } from './modal-heading-preview';
+import { SettingsTextareaConsumersPreview } from './settings-textarea-consumers-preview';
 import { SelectFocusPreview } from './select-catalog-preview';
 import { Button } from '@/components/ui/button';
 import { additionalPreviews } from './additional-catalog-previews';
@@ -125,7 +126,10 @@ const previews: Record<string, PreviewDefinition> = {
     title: 'Settings textarea surfaces',
     defaultState: 'controls',
     source: 'src/lib/components/patterns/settings/settings-textarea.preview.svelte',
-    states: { controls: <SettingsTextareaPreview /> },
+    states: {
+      controls: <SettingsTextareaPreview />,
+      consumers: <SettingsTextareaConsumersPreview />,
+    },
   },
   'text-entry-focus': {
     id: 'text-entry-focus',
@@ -139,11 +143,13 @@ const previews: Record<string, PreviewDefinition> = {
     title: 'Modal heading spacing',
     defaultState: 'form',
     source: 'src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte',
+    unportedStates: ['workspace', 'release'],
     states: {
       form: <ModalHeadingPreview kind="form" />,
       confirm: <ModalHeadingPreview kind="confirm" />,
       direct: <ModalHeadingPreview kind="direct" />,
       wrapped: <ModalHeadingPreview kind="wrapped" />,
+      replace: <ModalHeadingPreview kind="replace" inline />,
       stacked: <ModalHeadingPreview kind="stacked" />,
     },
   },

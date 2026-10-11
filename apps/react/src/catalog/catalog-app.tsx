@@ -1,6 +1,7 @@
 import { ToastCatalogPage } from './toast-catalog-page';
 import { useLocation } from '@tanstack/react-router';
 import { FunctionalExamples, hasFunctionalExample } from './functional-examples';
+import { LiveExamples, hasLiveExample } from './live-examples';
 import { CatalogShell } from './catalog-shell';
 import { CatalogIntroduction } from './catalog-introduction';
 import { RecipesPage } from './recipes-page';
@@ -17,15 +18,17 @@ export function CatalogApp() {
   const slug = decodeURIComponent(
     location.pathname.replace(/^\/sandbox\/?/, '').replace(/\/$/, ''),
   );
-  const settings = parseCatalogUrlSettings(new URLSearchParams(location.searchStr));
+  const search = new URLSearchParams(location.searchStr);
+  const settings = parseCatalogUrlSettings(search);
   const systemSlug = getCatalogSystemSlug(slug);
   const entry = getCatalogEntry(slug);
-  const interactive =
-    new URLSearchParams(location.searchStr).get('example') === 'interactive' &&
-    hasFunctionalExample(slug);
+  const interactive = search.get('example') === 'interactive' && hasFunctionalExample(slug);
+  const live = search.get('example') === 'live' && hasLiveExample(slug);
   return (
     <CatalogShell>
-      {interactive ? (
+      {live ? (
+        <LiveExamples key={`${slug}:${location.searchStr}`} slug={slug} search={search} />
+      ) : interactive ? (
         <FunctionalExamples key={slug} slug={slug} />
       ) : !slug ? (
         <CatalogIntroduction />

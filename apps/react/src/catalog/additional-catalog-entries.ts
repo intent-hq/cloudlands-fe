@@ -41,7 +41,7 @@ export const additionalCatalogEntries: CatalogEntry[] = [
     publicImport: '@/components/ui/github-link-card',
     exports: ['GitHubLinkCard'],
     description:
-      'All sixteen source display inputs. Live LinkTooltip, transport, cache and rate-limited hover/actions remain unported; registration is not parity acceptance.',
+      'All sixteen source display inputs. The separate /sandbox/link-tooltip?example=live route exercises the real tooltip and backend; backend and visual acceptance remain pending.',
     fixtures: githubLinkCardStates.map((id) => ({ id, title: id, states: [id] })),
   },
   ...[
@@ -132,7 +132,7 @@ export const additionalCatalogEntries: CatalogEntry[] = [
     publicImport: '@/components/ui/tooltip-rich',
     exports: ['TooltipRich'],
     description:
-      'The five non-product surface cases from TooltipSurfaceHarness. The DrivingClientIndicator case and LinkTooltip remain unported.',
+      'The five non-product surface cases from TooltipSurfaceHarness. DrivingClientIndicator remains unported. Live LinkTooltip has a separate /sandbox/link-tooltip?example=live exercise.',
     fixtures: richTooltipVariants.map((variant) => ({
       id: variant,
       title: `${variant} surface`,

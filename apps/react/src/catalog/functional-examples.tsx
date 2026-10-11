@@ -4,6 +4,7 @@ import { NativeAttachmentExample, NativeLightboxExample } from './native-media-e
 import { EditorNativeExample } from './editor-native-example';
 import { CollapsiblePanelExample } from './collapsible-panel-example';
 import { RecipesPage } from './recipes-page';
+import { ReplaceAgentExample, TextareaConsumerExample } from './callback-consumer-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -442,6 +443,8 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'local-editor' && <EditorNativeExample />}
       {slug === 'collapsible-panel' && <CollapsiblePanelExample />}
       {slug === 'recipes' && <RecipesPage />}
+      {slug === 'settings-textarea' && <TextareaConsumerExample />}
+      {slug === 'modal-heading-spacing' && <ReplaceAgentExample />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
       {slug === 'form' && (
         <>
@@ -486,6 +489,8 @@ const nativeExampleSlugs = [
 export function hasFunctionalExample(slug: string) {
   return [
     ...nativeExampleSlugs,
+    'settings-textarea',
+    'modal-heading-spacing',
     'toast',
     'notify',
     'form',
