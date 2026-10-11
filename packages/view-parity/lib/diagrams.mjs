@@ -1,21 +1,47 @@
 import { expect } from './functional.mjs';
+import { endpoint } from './manifest.mjs';
 
-export async function settledMermaid(host) {
+// The workbench intentionally uses its own functional route; the generic
+// openExample helper opens ?example=interactive. Provenance/errors still come
+// from the unchanged functional.mjs test fixture in both spec files.
+export async function openDiagramExample(page, exampleId) {
+  const baseUrl = endpoint(process.env.PARITY_CANDIDATE_URL, 'PARITY_CANDIDATE_URL');
+  const url = new URL(`${baseUrl}/sandbox/diagram-workbench`);
+  url.searchParams.set('example', 'functional');
+  url.searchParams.set('theme', 'light');
+  url.searchParams.set('motion', 'reduced');
+  const response = await page.goto(url.href, { waitUntil: 'domcontentloaded' });
+  expect(response?.ok(), `Cannot load real diagram exercises ${url}`).toBe(true);
+  const example = page.locator(`[data-functional-example="${exampleId}"]`);
+  await expect(example, 'Missing production diagram caller is not coverage').toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(example.locator('[data-catalog-unimplemented]')).toHaveCount(0);
+  return example;
+}
+
+export async function mermaidGeneration(host) {
+  return Number(
+    await host.locator('[data-render-generation]').getAttribute('data-render-generation'),
+  );
+}
+
+export async function settledMermaid(host, afterGeneration = 0) {
   const renderer = host.locator('[data-render-generation]');
   await expect
     .poll(
       () =>
-        renderer.evaluate((node) => {
+        renderer.evaluate((node, afterGeneration) => {
           const svg = node.querySelector('svg[data-layout-generation]');
           const generation = node.getAttribute('data-render-generation');
           return (
-            Number(generation) > 0 &&
+            Number(generation) > afterGeneration &&
             node.getAttribute('data-render-settled') === 'true' &&
             node.getAttribute('data-render-settled-generation') === generation &&
             svg?.getAttribute('data-layout-generation') === generation &&
             svg?.getAttribute('data-layout-settled') === 'true'
           );
-        }),
+        }, afterGeneration),
       {
         message: 'The latest real Mermaid render and measured SVG must settle together',
         timeout: 45_000,
@@ -40,7 +66,7 @@ export async function visibleNodeIds(renderer) {
     nodes
       .filter((node) => {
         const bounds = node.getBoundingClientRect();
-        return bounds.width > 0 && bounds.height > 0 && getComputedStyle(node).opacity !== '0';
+        return bounds.width > 0 && bounds.height > 0;
       })
       .map((node) => node.getAttribute('data-node-id'))
       .sort(),

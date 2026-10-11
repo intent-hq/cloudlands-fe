@@ -1,19 +1,26 @@
-import { test, expect, openExample } from '../lib/functional.mjs';
-import { settledMermaid, settledCustom, visibleNodeIds } from '../lib/diagrams.mjs';
+import { test, expect } from '../lib/functional.mjs';
+import {
+  openDiagramExample,
+  mermaidGeneration,
+  settledMermaid,
+  settledCustom,
+  visibleNodeIds,
+} from '../lib/diagrams.mjs';
 
 test('diagram independence: editing and unmounting one Mermaid host leaves its neighbour intact', async ({
   page,
 }) => {
-  const example = await openExample(page, 'diagram-workbench', 'mermaid-engine');
+  const example = await openDiagramExample(page, 'mermaid-engine');
   const primary = example.locator('[data-diagram-exercise-renderer="mermaid-primary"]');
   await settledMermaid(primary);
   await example.getByRole('switch', { name: 'Mount second Mermaid renderer', exact: true }).click();
   const secondary = example.locator('[data-diagram-exercise-renderer="mermaid-secondary"]');
   const independent = await settledMermaid(secondary);
+  const previousGeneration = await mermaidGeneration(primary);
   await example
     .getByRole('textbox', { name: 'Mermaid source', exact: true })
     .fill('flowchart LR\n  Changed[Changed first host] --> Result[First host result]');
-  const changed = await settledMermaid(primary);
+  const changed = await settledMermaid(primary, previousGeneration);
   await expect(changed).toContainText('Changed first host');
   await expect(independent).toContainText('Source');
   await expect(independent).toContainText('Target');
@@ -30,7 +37,7 @@ test('diagram independence: editing and unmounting one Mermaid host leaves its n
 test('diagram lifecycle: a remounted streaming renderer uses current source without stale content', async ({
   page,
 }) => {
-  const example = await openExample(page, 'diagram-workbench', 'mermaid-engine');
+  const example = await openDiagramExample(page, 'mermaid-engine');
   const host = example.locator('[data-diagram-exercise-renderer="mermaid-primary"]');
   await settledMermaid(host);
   const source = example.getByRole('textbox', { name: 'Mermaid source', exact: true });
@@ -60,10 +67,12 @@ test('diagram resize: narrow sequence keeps source and fullscreen controls opera
   page,
 }) => {
   await page.setViewportSize({ width: 960, height: 900 });
-  const example = await openExample(page, 'diagram-workbench', 'mermaid-engine');
+  const example = await openDiagramExample(page, 'mermaid-engine');
   const host = example.locator('[data-diagram-exercise-renderer="mermaid-primary"]');
-  await example.getByRole('button', { name: 'Load Mermaid sequence', exact: true }).click();
   await settledMermaid(host);
+  const previousGeneration = await mermaidGeneration(host);
+  await example.getByRole('button', { name: 'Load Mermaid sequence', exact: true }).click();
+  await settledMermaid(host, previousGeneration);
   await page.setViewportSize({ width: 360, height: 900 });
   const svg = await settledMermaid(host);
   await expect(svg).toContainText('Select named state');
@@ -94,7 +103,7 @@ test('diagram reduced motion: a keyboard step settles without a running scene an
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const example = await openExample(page, 'diagram-workbench', 'custom-diagram-engine');
+  const example = await openDiagramExample(page, 'custom-diagram-engine');
   await example.getByRole('combobox', { name: 'Custom diagram fixture', exact: true }).click();
   await page.getByRole('option', { name: 'State ownership walkthrough', exact: true }).click();
   const renderer = await settledCustom(example, 'request');
