@@ -30,6 +30,21 @@ test("fields matrix: zoomed text input remains contained and operable", async ({
   expect(control.y + control.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
 });
 
+test("rows matrix: the initial static menu retains focus until its native dismissal", async ({
+  page,
+}) => {
+  const fixture = await openFixture(page, "rows", "row-family-matrix");
+  const menu = fixture.locator('[data-row-preview="menu-item-states"]').getByRole("menu");
+  const outside = fixture.getByRole("button", { name: "Focused navigation", exact: true });
+  await expect(menu).toBeFocused();
+  await outside.focus();
+  await expect(menu).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await outside.focus();
+  await expect(outside).toBeFocused();
+});
+
 test("rows matrix: the source static menu dismisses after a keyboard selection", async ({
   page,
 }) => {

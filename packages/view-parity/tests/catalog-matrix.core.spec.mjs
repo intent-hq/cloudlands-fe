@@ -69,10 +69,21 @@ test("fields matrix: uncontrolled choice fixtures retain keyboard selection", as
   await expect(readOnly).toHaveAttribute("aria-checked", "true");
 });
 
+async function openRowsAfterMenuDismissal(page) {
+  const fixture = await openFixture(page, "rows", "row-family-matrix");
+  // The source page starts with a focus-owning static menu. Leave it through
+  // its real keyboard dismissal before exercising unrelated row controls.
+  const menu = fixture.locator('[data-row-preview="menu-item-states"]').getByRole("menu");
+  await expect(menu).toBeVisible();
+  await menu.press("Escape");
+  await expect(menu).toHaveCount(0);
+  return fixture;
+}
+
 test("rows matrix: keyboard and pointer selection preserve independent selected rows", async ({
   page,
 }) => {
-  const fixture = await openFixture(page, "rows", "row-family-matrix");
+  const fixture = await openRowsAfterMenuDismissal(page);
   await expect(fixture.locator("[data-row-preview]")).toHaveCount(17);
   const list = fixture.getByRole("listbox", { name: "Collection row states" });
   const first = list.getByRole("option", { name: /Default row/ });
@@ -95,7 +106,7 @@ test("rows matrix: keyboard and pointer selection preserve independent selected 
 });
 
 test("rows matrix: sidebar keyboard navigation skips disabled rows", async ({ page }) => {
-  const fixture = await openFixture(page, "rows", "row-family-matrix");
+  const fixture = await openRowsAfterMenuDismissal(page);
   const menu = fixture.locator('[data-row-preview="sidebar-menu-states"]');
   const first = menu.getByRole("button", { name: "Focused navigation", exact: true });
   const last = menu.getByRole("button", { name: /^Unread navigation/ });
@@ -112,7 +123,7 @@ test("rows matrix: sidebar keyboard navigation skips disabled rows", async ({ pa
 test("rows matrix: nested overflow action dismisses and returns focus without selecting a collection row", async ({
   page,
 }) => {
-  const fixture = await openFixture(page, "rows", "row-family-matrix");
+  const fixture = await openRowsAfterMenuDismissal(page);
   const trigger = fixture.getByRole("button", { name: "More avatar-row actions", exact: true });
   await trigger.click();
   await page.getByRole("menuitem", { name: "Delete row", exact: true }).click();
@@ -125,7 +136,7 @@ test("rows matrix: nested overflow action dismisses and returns focus without se
 });
 
 test("rows matrix: tab keyboard changes skip the disabled workspace", async ({ page }) => {
-  const fixture = await openFixture(page, "rows", "row-family-matrix");
+  const fixture = await openRowsAfterMenuDismissal(page);
   const tabs = fixture.getByRole("tablist", { name: "Workspace tabs", exact: true });
   const active = tabs.getByRole("tab", { name: "Active workspace", exact: true });
   const unread = tabs.getByRole("tab", { name: "Unread workspace", exact: true });
