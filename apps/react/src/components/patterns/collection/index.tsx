@@ -3,6 +3,7 @@ import { useSize } from '@/components/ui/size-context';
 import { CARD_ROW_GUTTER_CLASS } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 export { ListView, type ListViewProps } from './list-view';
+export { RowActions, type RowActionsProps } from './row-actions';
 
 export type {
   DataListItem,
