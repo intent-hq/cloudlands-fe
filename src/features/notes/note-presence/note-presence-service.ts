@@ -31,6 +31,8 @@ import {
   type NoteViewerCursor,
 } from './note-presence.client';
 import { resolveOwnPrincipalId } from './own-principal';
+import type { RemoteNoteViewer } from './note-presence-types';
+export type { RemoteNoteViewer } from './note-presence-types';
 
 export const CURSOR_TTL_MS = 10_000;
 export const CURSOR_HEARTBEAT_MS = 5_000;
@@ -49,12 +51,6 @@ type NoteCursorProvider = () => NoteViewerCursor | undefined;
 
 function retryDelayMs(attempt: number): number {
   return Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS);
-}
-
-/** A peer viewing the note; `cursor` is `null` until seen or once expired. */
-export interface RemoteNoteViewer extends NoteViewer {
-  /** `Date.now()` of the last delta that carried this viewer's cursor. */
-  cursorSeenAt: number | null;
 }
 
 export type NotePresenceListener = (viewers: RemoteNoteViewer[]) => void;

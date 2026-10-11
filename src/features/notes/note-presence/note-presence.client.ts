@@ -13,22 +13,8 @@
  * re-registering for a fresh snapshot rather than by any refetch.
  */
 import { backendRequest } from '$lib/client/live/backend-transport';
-
-export interface NoteViewerCursor {
-  rev: number;
-  anchor: number;
-  head: number;
-}
-
-/** One viewer of a note (snapshot row and delta `viewer`). */
-export interface NoteViewer {
-  principalId: string;
-  login: string | null;
-  displayName: string | null;
-  avatarUrl: string | null;
-  /** `null` until the principal's first `note.presence.update` on the note. */
-  cursor: NoteViewerCursor | null;
-}
+import type { NoteViewer, NoteViewerCursor } from './note-presence-types';
+export type { NoteViewer, NoteViewerCursor } from './note-presence-types';
 
 type NotePresenceDeltaKind = 'joined' | 'updated' | 'left';
 
