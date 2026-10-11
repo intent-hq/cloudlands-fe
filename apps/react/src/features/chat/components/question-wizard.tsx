@@ -23,7 +23,7 @@ import { formatInteger } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { Question } from '$shared/types/question-resource';
-import type { QuestionAnswer } from '$lib/components/chat/questions/answer-message';
+import type { QuestionAnswer } from '$lib/components/chat/questions/question-answer';
 import type { ContextItem } from '$lib/components/chat/input/context-item';
 import type {
   QuestionWizardDraft,
