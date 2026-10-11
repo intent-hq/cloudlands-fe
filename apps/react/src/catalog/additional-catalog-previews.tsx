@@ -10,6 +10,7 @@ import { catalogEntries } from './catalog';
 import { AvatarCatalogPreview } from './avatar-catalog-preview';
 import { FieldsCatalogPreview } from './fields-catalog-preview';
 import { RowsCatalogPreview } from './rows-catalog-preview';
+import { MemoryCatalogPreview, memoryCatalogStates } from './memory-catalog-preview';
 import { SidebarHarness, type SidebarHarnessProps } from '@/components/ui/sidebar';
 import { askUserQuestionsFixtures } from '$lib/components/ui/ask-user-questions/ask-user-questions.fixtures';
 import { messageComposerFixtures } from '$lib/components/ui/message-composer/message-composer.fixtures';
@@ -167,17 +168,17 @@ export const additionalPreviews: Record<string, Definition> = {
     title: 'Diagnostic and specialized modal audit (partial)',
     source: 'src/lib/components/modals/diagnostics-audit.preview.svelte',
     defaultState: 'memory',
-    unportedStates: [
-      'memory',
-      'memory-loading',
-      'memory-empty',
-      'memory-error',
-      'memory-stale',
-      'memory-long',
-      'memory-expanded',
-      'new-workspace',
-    ],
-    states: { media: <MediaCatalogPreview />, 'media-long': <MediaCatalogPreview long /> },
+    unportedStates: ['new-workspace'],
+    states: {
+      ...Object.fromEntries(
+        memoryCatalogStates.map((state) => [
+          state,
+          <MemoryCatalogPreview key={state} state={state} />,
+        ]),
+      ),
+      media: <MediaCatalogPreview />,
+      'media-long': <MediaCatalogPreview long />,
+    },
   },
   'ask-user-questions': fixturePreview(
     'ask-user-questions',

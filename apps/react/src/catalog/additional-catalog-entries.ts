@@ -88,7 +88,7 @@ export const additionalCatalogEntries: CatalogEntry[] = [
     publicImport: '@/components/ui/media-lightbox',
     exports: ['MediaLightbox'],
     description:
-      'Source lightbox interaction harness with the shared Button trigger. Exact open appearance states are diagnostics-audit media and media-long; memory and new-workspace states remain unported.',
+      'Source lightbox interaction harness with the shared Button trigger. Exact open appearance states are diagnostics-audit media and media-long; new-workspace remains unported.',
     fixtures: [interactionFixture],
   },
   {

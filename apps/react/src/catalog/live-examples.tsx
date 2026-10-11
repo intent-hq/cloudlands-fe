@@ -6,6 +6,7 @@ import { LinkTooltip, createLinkTooltipHandler } from '@/components/ui/link-tool
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { MemoryLiveExample } from './memory-live-example';
 
 function DirectoryPickerLiveExample({ search }: { search: URLSearchParams }) {
   const [initialPath, setInitialPath] = useState(() => search.get('initialPath') ?? '');
@@ -112,19 +113,20 @@ function LinkTooltipLiveExample({ search }: { search: URLSearchParams }) {
 }
 
 export function hasLiveExample(slug: string) {
-  return slug === 'directory-picker' || slug === 'link-tooltip';
+  return slug === 'directory-picker' || slug === 'link-tooltip' || slug === 'diagnostics-audit';
 }
 
 export function LiveExamples({ slug, search }: { slug: string; search: URLSearchParams }) {
   return (
     <article className="component-page grid gap-8" data-testid="catalog-live-examples">
       <p className="type-caption text-muted-foreground" data-internal-example>
-        Internal live backend exercise. Supply a daemon-host path or forge URL and workspace
-        context. Uses the application's real connection. Backend, geometry and pixel acceptance
-        remain pending.
+        {slug === 'diagnostics-audit'
+          ? "Internal live memory exercise using the application's real connection. Backend, geometry and pixel acceptance remain pending."
+          : "Internal live backend exercise. Supply a daemon-host path or forge URL and workspace context. Uses the application's real connection. Backend, geometry and pixel acceptance remain pending."}
       </p>
       {slug === 'directory-picker' && <DirectoryPickerLiveExample search={search} />}
       {slug === 'link-tooltip' && <LinkTooltipLiveExample search={search} />}
+      {slug === 'diagnostics-audit' && <MemoryLiveExample />}
     </article>
   );
 }
