@@ -393,6 +393,46 @@
       ],
       "reason": "Compare the actual source catalog fixture at rest; declared fixture labels are readiness metadata, not evidence every interaction state was exercised.",
       "dismissInitialDialog": true
+    },
+    {
+      "id": "ask-user-questions-catalog",
+      "kind": "catalog-fixture",
+      "scene": "ask-user-questions",
+      "fixture": "playground",
+      "renderedStates": ["single-select", "digit-shortcuts"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/AskUserQuestionsCatalogPreview.svelte",
+        "src/lib/components/ui/ask-user-questions/ask-user-questions.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/ask-user-questions/ask-user-questions.tsx",
+        "apps/react/src/catalog/questions-catalog-preview.tsx"
+      ],
+      "reason": "Compare the unchanged initial source fixture; interactive state labels do not establish executed behavior coverage."
+    },
+    {
+      "id": "message-composer-catalog",
+      "kind": "catalog-fixture",
+      "scene": "message-composer",
+      "fixture": "basic",
+      "renderedStates": ["empty", "draft", "history-recall", "auto-resize", "hover", "focus"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/MessageComposerCatalogPreview.svelte",
+        "src/lib/components/ui/message-composer/message-composer.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/message-composer/message-composer.tsx",
+        "apps/react/src/catalog/composer-catalog-preview.tsx"
+      ],
+      "reason": "Compare the unchanged initial source fixture; interactive state labels do not establish executed behavior coverage."
     }
   ],
   "uncovered": [
@@ -411,6 +451,10 @@
     {
       "scene": "new-named-previews",
       "reason": "select-focus, text-entry-focus, modal-heading-spacing and settings-textarea registered previews are not yet in the checked visual manifest; no image parity acceptance is claimed for them."
+    },
+    {
+      "scene": "advanced-interaction-edges",
+      "reason": "Uncovered: question completion callback counts/latest snapshot, back/skip, attachment and shortcut ownership; composer native file acceptance, IME, queue drag/reorder; async picker pending/error/retry/stale results, grouped actions/rename; sidebar mobile/rail/nested focus; relative time, animated numbers, real avatar errors and widget virtual list; clipboard/file-input/settings/native pages. Only explicitly authored journeys are claimed."
     }
   ],
   "functional": [
@@ -651,6 +695,155 @@
       ],
       "coreTest": "packages/view-parity/tests/controls.core.spec.mjs",
       "extendedTest": "packages/view-parity/tests/controls.extended.spec.mjs"
+    },
+    {
+      "component": "ask-user-questions",
+      "route": "/sandbox/ask-user-questions",
+      "fixture": "controlled",
+      "referenceSources": [
+        "src/lib/components/ui/ask-user-questions/ask-user-questions.svelte",
+        "src/lib/component-catalog/renderers/AskUserQuestionsCatalogPreview.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/ask-user-questions/ask-user-questions.tsx",
+        "apps/react/src/components/ui/ask-user-questions/question-step.tsx",
+        "apps/react/src/catalog/questions-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs"
+    },
+    {
+      "component": "message-composer",
+      "route": "/sandbox/message-composer",
+      "fixture": "send-handler",
+      "referenceSources": [
+        "src/lib/components/ui/message-composer/message-composer.svelte",
+        "src/lib/component-catalog/renderers/MessageComposerCatalogPreview.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/message-composer/message-composer.tsx",
+        "apps/react/src/catalog/composer-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
+    },
+    {
+      "component": "combobox",
+      "route": "/sandbox/combobox",
+      "fixture": "combobox-state-matrix",
+      "referenceSources": [
+        "src/lib/components/ui/combobox/combobox.svelte",
+        "src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/combobox/index.tsx",
+        "apps/react/src/catalog/picker-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs"
+    },
+    {
+      "component": "select",
+      "route": "/sandbox/select",
+      "fixture": "select-wrapper",
+      "referenceSources": ["src/lib/components/ui/select/select-content.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/select.tsx",
+        "apps/react/src/catalog/overlay-interaction-examples.tsx"
+      ],
+      "query": {
+        "example": "interactive"
+      },
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs"
+    },
+    {
+      "component": "sidebar",
+      "route": "/sandbox/sidebar",
+      "fixture": "sidebar-persistent",
+      "referenceSources": [
+        "src/lib/components/ui/sidebar/sidebar-provider.svelte",
+        "src/lib/components/ui/sidebar/constants.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/sidebar/context.tsx",
+        "apps/react/src/store/sidebar-preferences/sidebar-preferences-storage.ts",
+        "apps/react/src/store/sidebar-preferences/sagas/sidebar-preferences-saga.ts",
+        "apps/react/src/catalog/sidebar-catalog-preview.tsx"
+      ],
+      "query": {
+        "example": "interactive"
+      },
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs"
+    },
+    {
+      "component": "editable-name",
+      "route": "/sandbox/editable-name",
+      "fixture": "editable-name",
+      "referenceSources": ["src/lib/components/ui/EditableName.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/editable-name/index.tsx",
+        "apps/react/src/catalog/display-widget-examples.tsx"
+      ],
+      "query": {
+        "example": "interactive"
+      },
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
+    },
+    {
+      "component": "portal",
+      "route": "/sandbox/portal",
+      "fixture": "portal",
+      "referenceSources": ["src/lib/components/ui/Portal.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/portal/index.tsx",
+        "apps/react/src/catalog/display-widget-examples.tsx"
+      ],
+      "query": {
+        "example": "interactive"
+      },
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs"
+    },
+    {
+      "component": "hover-card",
+      "route": "/sandbox/hover-card",
+      "fixture": "hover-card",
+      "referenceSources": ["src/lib/components/ui/HoverCard.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/hover-card/index.tsx",
+        "apps/react/src/catalog/display-widget-examples.tsx"
+      ],
+      "query": {
+        "example": "interactive"
+      },
+      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
+    },
+    {
+      "component": "scroll-area",
+      "route": "/sandbox/scroll-area",
+      "fixture": "scroll-area-orientations",
+      "referenceSources": [
+        "src/lib/components/ui/scroll-area/scroll-area.svelte",
+        "src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/scroll-area.tsx",
+        "apps/react/src/catalog/navigation-help-catalog-preview.tsx"
+      ],
+      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
+    },
+    {
+      "component": "tooltip-rich",
+      "route": "/sandbox/tooltip-rich",
+      "fixture": "tooltip-forwarding",
+      "referenceSources": ["src/lib/components/ui/tooltip/TooltipRich.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/tooltip-rich.tsx",
+        "apps/react/src/catalog/overlay-interaction-examples.tsx"
+      ],
+      "query": {
+        "example": "interactive"
+      },
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
     }
   ]
 }

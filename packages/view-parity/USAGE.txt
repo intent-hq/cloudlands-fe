@@ -17,7 +17,12 @@ confirmation/prompt promises, and basic control journeys. Extended adds failed-s
 retry, queued/rejected confirmation callbacks, dynamic and virtualized collection
 navigation, dismissal/focus edges, takeover scroll ownership, slider pointer and
 inline editing, and disabled/invalid paths. Every case uses production components
-and handlers. Native requestSubmit calls exercise the actual pending form handler;
+and handlers. New catalog journeys exercise controlled question navigation and
+validation, composer send/queue/suggestion/history behavior, picker filtering and
+multi-selection, Select wrapper lookup, real sidebar persistence, editable names,
+portals, rich tooltip forwarding, scroll thumbs and catalog keyboard navigation.
+Widget interaction hosts have no source appearance fixture unless explicitly mapped.
+Native requestSubmit calls exercise the actual pending form handler;
 no dependency, response, clock, or handler is replaced.
 
 Test discovery is not a browser pass. New example controls must be committed and
