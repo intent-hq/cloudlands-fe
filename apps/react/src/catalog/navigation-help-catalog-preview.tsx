@@ -4,8 +4,42 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ShortcutChip } from '@/components/ui/kbd';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+import {
+  TooltipRoot,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from '@/components/ui/tooltip';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
+
+// Source ScrollAreaHarness plus the vertical metadata usage, kept separate from appearance fixtures.
+export function ScrollAreaExample() {
+  return (
+    <section className="grid gap-4" data-functional-example="scroll-area">
+      <ScrollArea
+        orientation="both"
+        className="h-32 w-64 rounded-md border border-border"
+        data-testid="overflow-area"
+      >
+        <div className="w-max space-y-2 p-3" data-testid="long-scroll-content">
+          {Array.from({ length: 16 }, (_, index) => (
+            <p key={index}>
+              Scrollable documentation row {index + 1} with deliberately long horizontal content
+            </p>
+          ))}
+        </div>
+      </ScrollArea>
+      <ScrollArea orientation="vertical" className="h-32 w-64" data-testid="no-overflow-area">
+        <p>Short content</p>
+      </ScrollArea>
+      <ScrollArea orientation="vertical" className="h-36" data-testid="vertical-overflow-area">
+        {Array.from({ length: 18 }, (_, index) => (
+          <p key={index}>Documentation row {index + 1}</p>
+        ))}
+      </ScrollArea>
+    </section>
+  );
+}
 
 function TooltipPreview({ fixture }: { fixture: UiComponentFixture }) {
   const [open, setOpen] = useState(false);
@@ -30,7 +64,7 @@ function TooltipPreview({ fixture }: { fixture: UiComponentFixture }) {
         }
       >
         <TooltipProvider delayDuration={0}>
-          <Tooltip
+          <TooltipRoot
             open={open}
             delayDuration={0}
             onOpenChange={(next) => {
@@ -49,20 +83,20 @@ function TooltipPreview({ fixture }: { fixture: UiComponentFixture }) {
             <TooltipContent side="bottom" portalTarget={portal}>
               Press Command K to open navigation.
             </TooltipContent>
-          </Tooltip>
+          </TooltipRoot>
         </TooltipProvider>
       </div>
       {!openState && (
         <div data-catalog-rendered-state="closed hover-delay keyboard-focus escape-dismiss">
           <TooltipProvider delayDuration={300}>
-            <Tooltip delayDuration={300}>
+            <TooltipRoot delayDuration={300}>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="sm">
                   Delayed help
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Focus or pause to show help.</TooltipContent>
-            </Tooltip>
+            </TooltipRoot>
           </TooltipProvider>
         </div>
       )}

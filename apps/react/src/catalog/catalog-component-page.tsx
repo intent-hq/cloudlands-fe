@@ -1,8 +1,9 @@
 // Port of CatalogComponentPage.svelte for the renderer families implemented here.
 import { useState } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { commonProps, type CatalogEntry } from './catalog';
+import type { CatalogEntry } from './catalog';
 import { getCatalogComponentName } from './catalog-export';
+import { getReactCatalogReference } from './catalog-react-reference';
 import { BasicCatalogPreview } from './basic-catalog-preview';
 import { ContentCatalogPreview } from './content-catalog-preview';
 import { NavigationCatalogPreview } from './navigation-catalog-preview';
@@ -20,6 +21,12 @@ import { MenuCatalogPreview } from './menu-catalog-preview';
 import { SelectCatalogPreview } from './select-catalog-preview';
 import { CatalogLink } from './catalog-link';
 import { DialogCatalogPreview } from './dialog-catalog-preview';
+import { QuestionsCatalogPreview } from './questions-catalog-preview';
+import { ComposerCatalogPreview } from './composer-catalog-preview';
+import { PickerCatalogPreview } from './picker-catalog-preview';
+import { ListCatalogPreview, SidebarCatalogPreview } from './sidebar-catalog-preview';
+import { AdditionalCatalogPreview } from './additional-catalog-previews';
+import { additionalCatalogEntries } from './additional-catalog-entries';
 import { hasFunctionalExample } from './functional-examples';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import './catalog-component-page.css';
@@ -69,6 +76,14 @@ export const portedComponentPages = [
   'settings',
   'principal-avatar',
   'loading-indicator',
+  'ask-user-questions',
+  'message-composer',
+  'combobox',
+  'searchable-select',
+  'grouped-combobox',
+  'sidebar',
+  'list',
+  ...additionalCatalogEntries.map((entry) => entry.slug),
 ] as const;
 export function hasComponentPage(slug: string) {
   return portedComponentPages.some((value) => value === slug);
@@ -82,7 +97,19 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
       data-catalog-preview={entry.slug}
       data-catalog-fixture-id={fixture.id}
     >
-      {entry.slug === 'principal-avatar' ? (
+      {entry.slug === 'ask-user-questions' ? (
+        <QuestionsCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'message-composer' ? (
+        <ComposerCatalogPreview fixture={fixture} />
+      ) : ['combobox', 'searchable-select', 'grouped-combobox'].includes(entry.slug) ? (
+        <PickerCatalogPreview {...props} />
+      ) : entry.slug === 'sidebar' ? (
+        <SidebarCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'list' ? (
+        <ListCatalogPreview fixture={fixture} />
+      ) : additionalCatalogEntries.some((entry) => entry.slug === props.componentId) ? (
+        <AdditionalCatalogPreview {...props} />
+      ) : entry.slug === 'principal-avatar' ? (
         <AvatarCatalogPreview fixture={fixture} />
       ) : entry.slug === 'loading-indicator' ? (
         <IndicatorCatalogPreview fixture={fixture} />
@@ -140,11 +167,10 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
 export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
   const [tab, setTab] = useState('preview');
   const componentName = getCatalogComponentName(entry);
-  const installCommand = entry.publicImport
-    ? `import { ${componentName} } from '${entry.publicImport.replace('$lib/components', '@/components')}';`
-    : entry.source;
-  // Only show source snippets that are already valid JSX. Do not teach Svelte syntax in React.
-  const usage = entry.usage?.includes('<script') ? undefined : entry.usage;
+  const reference = getReactCatalogReference(entry);
+  const installCommand = reference.importStatement;
+  const usage = reference.usage;
+  const pendingReference = `The React reference for ${componentName} is pending.`;
   return (
     <article className="component-page" data-testid="catalog-component-page">
       <header className="page-header">
@@ -153,21 +179,32 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
       </header>
       <section aria-labelledby="installation-title">
         <h2 id="installation-title">Installation</h2>
-        <code className="install-command">{installCommand}</code>
+        {reference.status === 'implemented' && installCommand ? (
+          <code className="install-command">{installCommand}</code>
+        ) : (
+          <p className="section-description">{pendingReference}</p>
+        )}
+        {reference.notes.map((note) => (
+          <p key={note} className="section-description">
+            {note}
+          </p>
+        ))}
       </section>
       <section aria-labelledby="playground-title">
         <h2 id="playground-title">Playground</h2>
         <Tabs value={tab} onValueChange={setTab} className="playground">
           <TabsList className="playground-tabs">
             <TabsTrigger value="preview">Preview</TabsTrigger>
-            <TabsTrigger value="code">{usage ? 'Usage' : 'Import'}</TabsTrigger>
+            <TabsTrigger value="code">
+              {usage ? 'Usage' : installCommand ? 'Import' : 'Reference'}
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="preview">
             {entry.fixtures[0] && <Fixture entry={entry} fixture={entry.fixtures[0]} />}
           </TabsContent>
           <TabsContent value="code">
             <pre>
-              <code>{usage ?? installCommand}</code>
+              <code>{usage ?? installCommand ?? pendingReference}</code>
             </pre>
           </TabsContent>
         </Tabs>
@@ -194,11 +231,6 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
       )}
       <section aria-labelledby="api-title">
         <h2 id="api-title">API</h2>
-        {entry.props === commonProps && (
-          <p className="section-description">
-            Reference incomplete: only shared props are documented
-          </p>
-        )}
         <div className="table-scroll">
           <table aria-label={`${entry.name} API reference`}>
             <thead>
@@ -210,13 +242,13 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
               </tr>
             </thead>
             <tbody>
-              {(entry.props ?? []).map((prop) => (
+              {reference.props.map((prop) => (
                 <tr key={prop.name}>
                   <td>
-                    <code>{prop.name === 'class' ? 'className' : prop.name}</code>
+                    <code>{prop.name}</code>
                   </td>
                   <td>
-                    <code>{prop.type === 'Snippet' ? 'ReactNode' : prop.type}</code>
+                    <code>{prop.type}</code>
                   </td>
                   <td>
                     <code>{prop.defaultValue}</code>

@@ -10,6 +10,7 @@ import {
   DIAGRAM_WORKBENCH_MERMAID_CASE_IDS,
 } from '$lib/components/diagrams/diagram-workbench.preview-fixtures';
 import { m } from '$shared/paraglide/messages.js';
+import { additionalCatalogEntries } from './additional-catalog-entries';
 
 export interface CatalogEntry {
   slug: string;
@@ -281,6 +282,7 @@ export function resolveCatalogSlug(slug: string): string {
 export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
   ...patternEntries,
+  ...additionalCatalogEntries,
   {
     slug: 'model-picker',
     name: 'Model picker',

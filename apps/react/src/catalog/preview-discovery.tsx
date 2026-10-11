@@ -5,6 +5,7 @@ import { TextEntryFocusPreview } from './text-entry-focus-preview';
 import { ModalHeadingPreview } from './modal-heading-preview';
 import { SelectFocusPreview } from './select-catalog-preview';
 import { Button } from '@/components/ui/button';
+import { additionalPreviews } from './additional-catalog-previews';
 import {
   collectGeometry,
   type GeometryProbeOptions,
@@ -47,6 +48,7 @@ interface PreviewDefinition {
   states: Record<string, ReactNode>;
 }
 const previews: Record<string, PreviewDefinition> = {
+  ...additionalPreviews,
   button: {
     id: 'button',
     title: 'Button',

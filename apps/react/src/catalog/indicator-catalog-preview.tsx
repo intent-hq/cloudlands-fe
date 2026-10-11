@@ -1,9 +1,9 @@
 // Source: ContentFieldCatalogPreview.svelte, loading-indicator branch.
-// The ListItem consumer is explicitly pending the list family port.
 // i18n-ignore (reference catalog fixture content)
 import { IntentMarkLoader } from '@/components/ui/indicators';
 import { intentMarkVariants } from '$lib/components/ui/indicators/intent-mark-motion';
 import { Button } from '@/components/ui/button';
+import { ListContainer, ListItem } from '@/components/ui/list';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 export function IndicatorCatalogPreview({ fixture }: { fixture: UiComponentFixture }) {
   return (
@@ -43,14 +43,17 @@ export function IndicatorCatalogPreview({ fixture }: { fixture: UiComponentFixtu
           Paused and reduced-motion frames keep the full mark at 16 px.
         </span>
       </div>
-      <div className="grid gap-3" data-catalog-rendered-state="in-button">
+      <div className="grid gap-3" data-catalog-rendered-state="in-button in-list-row">
         <div className="grid gap-1.5" data-loader-context="button">
           <span className="type-caption text-muted-foreground">Button loading</span>
           <Button loading>Button loading</Button>
         </div>
-        <p data-catalog-unimplemented="in-list-row">
-          The loading ListItem reference requires the unported list family.
-        </p>
+        <div className="grid gap-1.5" data-loader-context="list-row">
+          <span className="type-caption text-muted-foreground">ListItem loading</span>
+          <ListContainer>
+            <ListItem title="Loading workspace" loading />
+          </ListContainer>
+        </div>
       </div>
     </div>
   );

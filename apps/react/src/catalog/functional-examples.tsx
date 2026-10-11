@@ -3,6 +3,16 @@
 import { ConfirmationExample } from './confirmation-example';
 import { NativeAvatarExample, NativeClipboardExample, NativeFileExample } from './native-examples';
 import { SettingsHighlightExample } from './settings-highlight-example';
+import { ScrollAreaExample } from './navigation-help-catalog-preview';
+import {
+  PublicTooltipExample,
+  RichTooltipExample,
+  SelectWrapperExample,
+} from './overlay-interaction-examples';
+import { SidebarPersistenceExample } from './sidebar-catalog-preview';
+import { ZoomMediaExample } from './media-catalog-preview';
+import { DisplayWidgetExample } from './display-widget-examples';
+import { displayWidgetSlugs } from './additional-catalog-entries';
 import { useEffect, useRef, useState } from 'react';
 import { TakeoverScreen } from '@/components/patterns/screen';
 import { Button } from '@/components/ui/button';
@@ -433,6 +443,13 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'file-input' && <NativeFileExample />}
       {slug === 'principal-avatar' && <NativeAvatarExample />}
       {slug === 'settings' && <SettingsHighlightExample />}
+      {slug === 'tooltip-rich' && <RichTooltipExample />}
+      {slug === 'tooltip' && <PublicTooltipExample />}
+      {slug === 'select' && <SelectWrapperExample />}
+      {slug === 'sidebar' && <SidebarPersistenceExample />}
+      {slug === 'scroll-area' && <ScrollAreaExample />}
+      {slug === 'zoom-pan-viewport' && <ZoomMediaExample />}
+      {displayWidgetSlugs.some((value) => value === slug) && <DisplayWidgetExample slug={slug} />}
     </article>
   );
 }
@@ -447,5 +464,12 @@ export function hasFunctionalExample(slug: string) {
     'file-input',
     'principal-avatar',
     'settings',
+    'tooltip-rich',
+    'tooltip',
+    'select',
+    'sidebar',
+    'scroll-area',
+    'zoom-pan-viewport',
+    ...displayWidgetSlugs,
   ].includes(slug);
 }
