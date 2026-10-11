@@ -1,0 +1,43 @@
+.catalog-controls {
+  & {
+    display: grid;
+    min-width: 0;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-medium);
+    background: hsl(var(--card));
+    box-shadow: var(--elevation-raised);
+  }
+
+  h2 {
+    margin-bottom: 0.25rem;
+    font-size: var(--text-body-size);
+    font-weight: var(--text-body-strong-weight);
+  }
+
+  .control-set {
+    display: grid;
+    min-width: 0;
+    gap: 0.375rem;
+    justify-items: start;
+  }
+  .control-label {
+    font-size: var(--text-caption-size);
+    color: hsl(var(--muted-foreground));
+  }
+
+  .control-choice {
+    width: auto;
+    padding-inline: calc(var(--control-height-compact) / 3);
+  }
+
+  .color-theme-dropdown {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .color-theme-select {
+    height: var(--control-height-small);
+  }
+}

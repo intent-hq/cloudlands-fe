@@ -1,0 +1,33 @@
+.catalog-scene {
+  width: 100%;
+  min-width: 0;
+}
+.catalog-scene.workbench-scene {
+  gap: 0;
+}
+.preview-frame.workbench-frame {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+.preview-focus.workbench-focus {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.catalog-scene.component-fit {
+  width: max-content;
+  max-width: none;
+  gap: 0;
+  padding: 0;
+}
+
+.component-fit .preview-scene-list,
+.component-fit .preview-article,
+.component-fit .preview-frame {
+  display: contents;
+}
