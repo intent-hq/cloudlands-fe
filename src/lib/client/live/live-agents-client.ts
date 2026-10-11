@@ -1056,6 +1056,6 @@ export class LiveAgentsClient implements AgentsClient {
    * `agentWorkspaceIndex` cache is primed exactly like the list/get paths.
    */
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {
-    return agentReads.subscribeWorkspaces(subscribeWorkspaceIds, handler);
+    return agentReads.subscribeWorkspaces(subscribeWorkspaceIds, (sessions) => handler(sessions));
   }
 }

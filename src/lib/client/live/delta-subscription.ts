@@ -12,9 +12,12 @@ export type {
   DeltaSubscriptionConfig,
 } from './delta-subscription-runtime';
 export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>) {
-  return createDeltaSubscriptionRuntime(config, {
-    backendRequest,
-    onBackendNotification,
-    onBackendReconnected,
-  });
+  return createDeltaSubscriptionRuntime(
+    { ...config, handler: (snapshot) => config.handler(snapshot) },
+    {
+      backendRequest,
+      onBackendNotification,
+      onBackendReconnected,
+    },
+  );
 }
