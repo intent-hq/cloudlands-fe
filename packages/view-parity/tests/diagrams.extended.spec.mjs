@@ -139,7 +139,8 @@ test('diagram custom fit: timeline remains reachable after fitting, resizing and
   await example.getByRole('button', { name: 'Reset custom viewport', exact: true }).click();
   const fit = renderer.getByRole('button', { name: 'Fit diagram to width', exact: true });
   await expect(fit).toHaveAttribute('aria-pressed', 'false');
-  const actualSize = await renderer.locator('svg').first().boundingBox();
+  const drawing = renderer.locator('svg:has([data-node-id="fixtures"])');
+  const actualSize = await drawing.boundingBox();
   expect(actualSize).not.toBeNull();
   await fit.focus();
   await fit.press('Enter');
@@ -147,7 +148,7 @@ test('diagram custom fit: timeline remains reachable after fitting, resizing and
     renderer.getByRole('button', { name: 'Show diagram at actual size', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true');
   await expect
-    .poll(async () => (await renderer.locator('svg').first().boundingBox())?.width ?? Infinity)
+    .poll(async () => (await drawing.boundingBox())?.width ?? Infinity)
     .toBeLessThan(actualSize.width);
 
   // The readable scale floor can preserve horizontal scrolling. Both ends must
