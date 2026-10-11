@@ -32,6 +32,8 @@
 @source not '../cdp-mcp-server';
 @source not '../eslint-rules';
 @source not '../patches';
+@source not '../apps/react';
+@source not '../packages/view-parity';
 @source not '../.agents';
 @source not '../.github';
 @source not '../*.md';

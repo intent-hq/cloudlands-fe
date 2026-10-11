@@ -1,0 +1,17 @@
+.copy-input-draw {
+  stroke-dashoffset: 1;
+  animation: copy-input-draw var(--spring-fast) ease-out forwards;
+}
+
+@keyframes copy-input-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@container style(--motion-reduced: 1) {
+  .copy-input-draw {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
