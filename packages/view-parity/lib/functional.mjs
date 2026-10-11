@@ -1,7 +1,7 @@
 import { test as base, expect } from "@playwright/test";
 import { endpoint, repoRoot } from "./manifest.mjs";
 import { candidateProvenance, changedSources } from "./provenance.mjs";
-import { observeErrors } from "./browser.mjs";
+import { observeErrors, openScene } from "./browser.mjs";
 
 export const test = base.extend({
   sourceProvenance: [
@@ -78,4 +78,16 @@ export async function openExample(page, component, exampleId) {
 
 export async function outputJson(locator) {
   return JSON.parse(await locator.textContent());
+}
+
+export async function openPreview(page, scene, state) {
+  const baseUrl = endpoint(process.env.PARITY_CANDIDATE_URL, "PARITY_CANDIDATE_URL");
+  await openScene(page, baseUrl, {
+    scene,
+    state,
+    width: 420,
+    theme: "light",
+    motion: "reduced",
+  });
+  return page.getByTestId("catalog-scene-focus");
 }

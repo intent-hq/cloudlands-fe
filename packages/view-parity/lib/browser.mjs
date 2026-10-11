@@ -81,9 +81,11 @@ export async function openScene(page, baseUrl, entry, errors = []) {
 }
 
 export function captureSelector(entry) {
-  return entry.kind === "catalog-fixture"
-    ? `[data-catalog-preview="${entry.scene}"][data-catalog-fixture-id="${entry.fixture}"]`
-    : frameSelector;
+  const frame =
+    entry.kind === "catalog-fixture"
+      ? `[data-catalog-preview="${entry.scene}"][data-catalog-fixture-id="${entry.fixture}"]`
+      : frameSelector;
+  return entry.captureTarget ? `${frame} ${entry.captureTarget}` : frame;
 }
 
 export async function openCatalogFixture(page, baseUrl, entry, errors = []) {

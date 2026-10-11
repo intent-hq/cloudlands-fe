@@ -433,6 +433,540 @@
         "apps/react/src/catalog/composer-catalog-preview.tsx"
       ],
       "reason": "Compare the unchanged initial source fixture; interactive state labels do not establish executed behavior coverage."
+    },
+    {
+      "id": "toast-header-downloaded",
+      "scene": "toast-header",
+      "state": "downloaded",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-available",
+      "scene": "toast-header",
+      "state": "available",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-downloading",
+      "scene": "toast-header",
+      "state": "downloading",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-error",
+      "scene": "toast-header",
+      "state": "error",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-standard",
+      "scene": "toast-header",
+      "state": "standard",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-plain",
+      "scene": "toast-header",
+      "state": "plain",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-undo",
+      "scene": "toast-header",
+      "state": "undo",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-stacked",
+      "scene": "toast-header",
+      "state": "stacked",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-multiline-warning",
+      "scene": "toast-header",
+      "state": "multiline-warning",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-details",
+      "scene": "toast-header",
+      "state": "details",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "toast-header-multiline-details",
+      "scene": "toast-header",
+      "state": "multiline-details",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/toast/toast-header.preview.svelte",
+        "src/lib/components/ui/toast/Toast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/toast-header-preview.tsx",
+        "apps/react/src/components/ui/toast/toast.tsx"
+      ],
+      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+    },
+    {
+      "id": "github-link-card-gitlab-com-mr",
+      "scene": "github-link-card",
+      "state": "gitlab-com-mr",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-gitlab-self-managed-mr",
+      "scene": "github-link-card",
+      "state": "gitlab-self-managed-mr",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-gitlab-issue",
+      "scene": "github-link-card",
+      "state": "gitlab-issue",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-gitlab-loading",
+      "scene": "github-link-card",
+      "state": "gitlab-loading",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"loading\"]"
+    },
+    {
+      "id": "github-link-card-gitlab-restricted",
+      "scene": "github-link-card",
+      "state": "gitlab-restricted",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"error\"]"
+    },
+    {
+      "id": "github-link-card-gitlab-unavailable",
+      "scene": "github-link-card",
+      "state": "gitlab-unavailable",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"error\"]"
+    },
+    {
+      "id": "github-link-card-gitlab-rate-limited",
+      "scene": "github-link-card",
+      "state": "gitlab-rate-limited",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"error\"]"
+    },
+    {
+      "id": "github-link-card-gitlab-unknown",
+      "scene": "github-link-card",
+      "state": "gitlab-unknown",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-loading",
+      "scene": "github-link-card",
+      "state": "loading",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"loading\"]"
+    },
+    {
+      "id": "github-link-card-pr-open",
+      "scene": "github-link-card",
+      "state": "pr-open",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-pr-merged",
+      "scene": "github-link-card",
+      "state": "pr-merged",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-pr-queued",
+      "scene": "github-link-card",
+      "state": "pr-queued",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-pr-draft",
+      "scene": "github-link-card",
+      "state": "pr-draft",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-issue-closed",
+      "scene": "github-link-card",
+      "state": "issue-closed",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"ready\"]"
+    },
+    {
+      "id": "github-link-card-error",
+      "scene": "github-link-card",
+      "state": "error",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"error\"]"
+    },
+    {
+      "id": "github-link-card-rate-limited",
+      "scene": "github-link-card",
+      "state": "rate-limited",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 420,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/github-link-card.preview.svelte",
+        "src/lib/components/ui/tooltip/GitHubLinkCard.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/github-link-card/index.tsx",
+        "apps/react/src/components/ui/github-link-card/display-states.ts",
+        "apps/react/src/components/ui/github-link-card/display-preview.tsx"
+      ],
+      "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
+      "captureTarget": ".github-link-card[data-preview-status=\"error\"]"
     }
   ],
   "uncovered": [
@@ -870,6 +1404,195 @@
       ],
       "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs",
       "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
+    },
+    {
+      "component": "notify",
+      "route": "/sandbox/notify",
+      "fixture": "notify",
+      "referenceSources": [
+        "src/lib/components/patterns/notify/notify.ts",
+        "src/lib/components/patterns/notify/NotifyErrorToast.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/notify-catalog-preview.tsx",
+        "apps/react/src/components/patterns/notify/notify.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/native.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/native.extended.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
+    },
+    {
+      "component": "toast-header",
+      "route": "/sandbox/toast-header",
+      "fixture": "standard",
+      "referenceSources": ["src/lib/components/ui/toast/toast-header.preview.svelte"],
+      "candidateSources": ["apps/react/src/catalog/toast-header-preview.tsx"],
+      "coreTest": "packages/view-parity/tests/native.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/native.extended.spec.mjs",
+      "query": {
+        "state": "standard"
+      }
+    },
+    {
+      "component": "content-header",
+      "route": "/sandbox/content-header",
+      "fixture": "interaction-example",
+      "referenceSources": ["src/features/layout/components/content-header/ContentHeader.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/features/layout/components/content-header/index.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/native.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/native.extended.spec.mjs"
+    },
+    {
+      "component": "panel-wrapper",
+      "route": "/sandbox/panel-wrapper",
+      "fixture": "interaction-example",
+      "referenceSources": ["src/lib/components/ui/PanelWrapper.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/panel-wrapper.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/native.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/native.extended.spec.mjs"
+    },
+    {
+      "component": "zoom-pan-viewport",
+      "route": "/sandbox/zoom-pan-viewport",
+      "fixture": "zoom-media",
+      "referenceSources": [
+        "src/lib/components/ui/ZoomPanViewport.svelte",
+        "src/lib/components/ui/MediaLightbox.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/media-catalog-preview.tsx",
+        "apps/react/src/components/ui/zoom-pan-viewport/index.tsx",
+        "apps/react/src/components/ui/media-lightbox/index.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/native.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/native.extended.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
+    },
+    {
+      "component": "recipes",
+      "route": "/sandbox/recipes",
+      "fixture": "Form with validation",
+      "referenceSources": [
+        "src/routes/sandbox/recipes/+page.svelte",
+        "src/routes/sandbox/recipes/RecipeSection.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/recipes-page.tsx",
+        "apps/react/src/catalog/recipe-section.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/recipes.core.spec.mjs"
+    },
+    {
+      "component": "question-wizard",
+      "route": "/sandbox/question-wizard",
+      "fixture": "question-wizard",
+      "referenceSources": ["src/lib/components/chat/questions/QuestionWizard.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/question-wizard-example.tsx",
+        "apps/react/src/features/chat/components/question-wizard.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/local-input.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/local-input.extended.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
+    },
+    {
+      "component": "local-editor",
+      "route": "/sandbox/local-editor",
+      "fixture": "native-editor",
+      "referenceSources": [
+        "src/lib/components/tiptap/PasteChip.ts",
+        "src/lib/components/tiptap/PasteChipNodeView.svelte",
+        "src/lib/components/chat/input/SlashSkillSuggestionList.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/editor-native-example.tsx",
+        "apps/react/src/components/tiptap/paste-chip.ts",
+        "apps/react/src/components/tiptap/paste-chip-node-view.tsx",
+        "apps/react/src/features/chat/components/input/slash-skill-suggestion-list.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/local-input.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/local-input.extended.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
+    },
+    {
+      "component": "collapsible-panel",
+      "route": "/sandbox/collapsible-panel",
+      "fixture": "collapsible-panel",
+      "referenceSources": ["src/lib/components/ui/CollapsiblePanel.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/collapsible-panel-example.tsx",
+        "apps/react/src/components/ui/collapsible-panel.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/local-input.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/local-input.extended.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
+    },
+    {
+      "component": "attachment-preview",
+      "route": "/sandbox/attachment-preview",
+      "fixture": "native-attachments",
+      "referenceSources": ["src/lib/components/chat/AttachmentPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/native-media-examples.tsx",
+        "apps/react/src/features/chat/components/attachment-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/local-input.core.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
+    },
+    {
+      "component": "image-lightbox",
+      "route": "/sandbox/image-lightbox",
+      "fixture": "native-image-lightbox",
+      "referenceSources": [
+        "src/lib/components/ui/ImageLightbox.svelte",
+        "src/lib/components/ui/ImageActionsMenu.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/native-media-examples.tsx",
+        "apps/react/src/components/ui/image-lightbox.tsx",
+        "apps/react/src/components/ui/image-actions-menu.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/local-input.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/local-input.extended.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
+    },
+    {
+      "component": "video-lightbox",
+      "route": "/sandbox/video-lightbox",
+      "fixture": "native-video-lightbox",
+      "referenceSources": [
+        "src/lib/components/ui/VideoLightbox.svelte",
+        "src/lib/components/ui/VideoActionsMenu.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/native-media-examples.tsx",
+        "apps/react/src/components/ui/video-lightbox.tsx",
+        "apps/react/src/components/ui/video-actions-menu.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/local-input.core.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
     }
   ]
 }

@@ -160,3 +160,23 @@ Browser API references:
   https://playwright.dev/docs/test-projects
   https://playwright.dev/docs/test-assertions
   https://playwright.dev/docs/api/class-locator#locator-screenshot
+
+Native component journeys
+
+The native core lane also exercises live notification identity/callbacks, actual
+clipboard writes, editable headers, recipes, real TipTap node transactions,
+QuestionWizard admission and pasted-image FileReader bytes, shared-key panel
+preferences after reload, native attachments and image/video metadata/downloads.
+Images are encoded PNG files; video is a short MP4 recorded from a real canvas
+stream using Chromium MediaRecorder. No media dimensions, duration, preload,
+upload completion, backend response, or transport is replaced. Optional native
+edges cover undo deadlines, dismiss/collapse draft lifetime, nested Escape focus,
+clipboard image decoding, and editor removal/undo and retry/dismissal.
+
+Named repository-card comparisons explicitly crop the production card body via
+captureTarget and wait for its real data-preview-status. The surrounding source
+example prose differs from the candidate display wrapper and is outside that
+crop. These cases prove static display parity only, not live repository transport,
+cache, context-menu or rate-limit actions. All registered toast-header and card
+states are declared so missing source states still fail; declaration alone is
+not a completed capture. Screenshot comparisons remain exact, including edges.

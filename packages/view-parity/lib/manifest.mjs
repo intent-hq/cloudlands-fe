@@ -55,6 +55,14 @@ export function loadManifest() {
       !entry.kind || ["named-scene", "catalog-fixture"].includes(entry.kind),
       `${entry.id}: unknown capture kind`,
     );
+    if (entry.captureTarget !== undefined) {
+      requireValue(
+        entry.kind !== "catalog-fixture" &&
+          typeof entry.captureTarget === "string" &&
+          entry.captureTarget.length > 0,
+        `${entry.id}: a named-scene crop must identify its reviewed component target`,
+      );
+    }
     if (entry.kind === "catalog-fixture") {
       requireValue(
         Array.isArray(entry.renderedStates) &&
