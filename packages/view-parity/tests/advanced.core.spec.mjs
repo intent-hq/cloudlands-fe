@@ -1,4 +1,11 @@
-import { test, expect, openFixture, openExample, outputJson } from "../lib/functional.mjs";
+import {
+  test,
+  expect,
+  openFixture,
+  openExample,
+  openPreview,
+  outputJson,
+} from "../lib/functional.mjs";
 
 test("questions: selection advances and controlled answers select the final question", async ({
   page,
@@ -151,6 +158,30 @@ test("picker: neighbouring inputs remain accessible and Tab dismisses the popup"
   await expect(input).toHaveAttribute("aria-expanded", "false");
   await expect(input).not.toBeFocused();
   await expect(neighbour).toBeVisible();
+});
+
+test("select value: placeholder and keyboard-selected display label remain visible", async ({
+  page,
+}) => {
+  const fields = await openFixture(page, "fields", "field-state-matrix");
+  await expect(
+    fields.locator('[data-field-preview="select-empty-placeholder"]').getByRole("combobox"),
+  ).toHaveText("Choose an option");
+
+  const fixture = await openPreview(page, "select-focus", "inline");
+  const trigger = fixture.getByRole("combobox", { name: "Choose fruit", exact: true });
+  await expect(trigger).toHaveText("Apple");
+  await trigger.focus();
+  await trigger.press("ArrowDown");
+  const apple = page.getByRole("option", { name: "Apple", exact: true });
+  await expect(apple).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  const banana = page.getByRole("option", { name: "Banana", exact: true });
+  await page.keyboard.press("Enter");
+  await expect(fixture.getByTestId("select-value")).toHaveText("banana");
+  await expect(trigger).toHaveText("Banana");
+  await expect(trigger).toBeFocused();
+  await expect(banana).toHaveCount(0);
 });
 
 test("select wrapper: public ID locates the popup container in portalled and inline modes", async ({

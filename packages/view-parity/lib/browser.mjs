@@ -168,7 +168,8 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
   if (!response?.ok())
     throw new Error(`Catalog document returned HTTP ${response?.status()}: ${url}`);
-  const frame = page.locator(captureSelector(entry));
+  // A focused crop still requires the complete source fixture to be ready.
+  const frame = page.locator(captureSelector({ ...entry, captureTarget: undefined }));
   await expect(frame, `Missing real fixture ${entry.scene}/${entry.fixture}`).toHaveCount(1, {
     timeout: 15_000,
   });
@@ -208,7 +209,10 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }
-  await frame.scrollIntoViewIfNeeded();
+  const target = page.locator(captureSelector(entry));
+  await expect(target, "The reviewed capture target must be unique").toHaveCount(1);
+  await expect(target).toBeVisible();
+  await target.scrollIntoViewIfNeeded();
   for (const url of entry.expectedImageUrls ?? [])
     await expect(
       frame.locator(`img[src="${url}"]`),

@@ -1328,6 +1328,49 @@
       "reason": "Compare the complete original fields matrix at one desktop width, including its own compact and zoom cells."
     },
     {
+      "id": "fields-select-placeholder",
+      "kind": "catalog-fixture",
+      "scene": "fields",
+      "fixture": "field-state-matrix",
+      "renderedStates": [
+        "empty-placeholder",
+        "filled",
+        "hover",
+        "focus-visible",
+        "invalid",
+        "disabled",
+        "read-only",
+        "help-text",
+        "required",
+        "long-label",
+        "compact-density",
+        "zoom-200"
+      ],
+      "cellContract": {
+        "selector": "[data-field-preview]",
+        "count": 240
+      },
+      "theme": "light",
+      "motion": "reduced",
+      "width": 1024,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/FieldsCatalogPreview.svelte",
+        "src/lib/component-catalog/renderers/FieldPreviewCell.svelte",
+        "src/lib/component-catalog/renderers/field-controls.ts",
+        "src/lib/components/ui/select/select-value.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/fields-catalog-preview.tsx",
+        "apps/react/src/catalog/field-preview-cell.tsx",
+        "apps/react/src/catalog/field-controls.tsx",
+        "apps/react/src/catalog/fields-catalog-preview.css",
+        "apps/react/src/components/ui/select.tsx"
+      ],
+      "reason": "Compare only the original empty Select cell after full 240-cell matrix readiness; this does not accept the full fields matrix.",
+      "captureTarget": "[data-field-preview=\"select-empty-placeholder\"]"
+    },
+    {
       "id": "rows-catalog",
       "kind": "catalog-fixture",
       "scene": "rows",
