@@ -3,6 +3,7 @@ import { useLocation } from '@tanstack/react-router';
 import { FunctionalExamples, hasFunctionalExample } from './functional-examples';
 import { CatalogShell } from './catalog-shell';
 import { CatalogIntroduction } from './catalog-introduction';
+import { RecipesPage } from './recipes-page';
 import { CatalogSystemPage } from './catalog-system-page';
 import { CatalogScene } from './catalog-scene';
 import { CatalogComponentPage, hasComponentPage } from './catalog-component-page';
@@ -27,6 +28,8 @@ export function CatalogApp() {
         <FunctionalExamples key={slug} slug={slug} />
       ) : !slug ? (
         <CatalogIntroduction />
+      ) : slug === 'recipes' ? (
+        <RecipesPage />
       ) : systemSlug ? (
         <CatalogSystemPage key={slug} slug={systemSlug} />
       ) : !settings.state && entry?.slug === 'toast' ? (
