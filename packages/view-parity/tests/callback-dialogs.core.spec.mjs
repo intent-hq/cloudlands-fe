@@ -227,3 +227,75 @@ test('callback dialog: Proposal confirmation leaves closure to its caller and Ca
   await expect(output(example, 'Proposal confirm callbacks')).toHaveText('1');
   await expect(trigger).toBeFocused();
 });
+
+// Separately runnable extension: these callers record callbacks only. Successful
+// confirmation stays open in each pinned Svelte source until its owner closes it.
+for (const scenario of [
+  {
+    name: 'provider change',
+    trigger: 'Open model switch confirmation',
+    title: 'Switch provider?',
+    submit: 'Switch provider',
+    output: 'Model switch',
+    content: /new provider as plain text/,
+  },
+  {
+    name: 'known primary host',
+    trigger: 'Open primary client confirmation',
+    title: 'Set this client as primary?',
+    submit: 'Set as Primary',
+    output: 'Primary client',
+    content: /currently driven by Studio Mac/,
+  },
+  {
+    name: 'canonical questions dismissal',
+    trigger: 'Open questions confirmation',
+    title: 'Dismiss questions?',
+    submit: 'Dismiss questions',
+    output: 'Questions',
+    description: 'The questions will be dismissed without answers. This cannot be undone.',
+  },
+]) {
+  test(`callback extension: ${scenario.name} focuses confirmation, leaves success open, and cancels once`, async ({
+    page,
+    browser,
+  }, testInfo) => {
+    const example = await openDialogs(page);
+    const trigger = example.getByRole('button', { name: scenario.trigger, exact: true });
+    await trigger.click();
+    const dialog = page.getByRole('dialog', { name: scenario.title, exact: true });
+    const confirm = dialog.getByRole('button', { name: scenario.submit, exact: true });
+    await expect(confirm).toBeFocused();
+    if (scenario.content) await expect(dialog.getByText(scenario.content)).toBeVisible();
+    if (scenario.description)
+      await expect(dialog).toHaveAccessibleDescription(scenario.description);
+    await testInfo.attach('confirmation-accessibility.txt', {
+      body: await dialog.ariaSnapshot(),
+      contentType: 'text/plain',
+    });
+    await testInfo.attach('confirmation-browser.json', {
+      body: JSON.stringify({
+        version: browser.version(),
+        url: page.url(),
+        viewport: page.viewportSize(),
+      }),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('confirmation-dialog.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await confirm.press('Enter');
+    await expect(output(example, `${scenario.output} confirm callbacks`)).toHaveText('1');
+    await expect(output(example, `${scenario.output} cancel callbacks`)).toHaveText('0');
+    await expect(dialog).toBeVisible();
+    const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+    await expect(cancel).toBeEnabled();
+    await cancel.click();
+    await expect(dialog).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(output(example, `${scenario.output} cancel callbacks`)).toHaveText('1');
+    await expect(output(example, `${scenario.output} confirm callbacks`)).toHaveText('1');
+    await expect(trigger).toBeFocused();
+  });
+}

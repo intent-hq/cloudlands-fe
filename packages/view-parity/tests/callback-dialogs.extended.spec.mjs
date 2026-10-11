@@ -129,3 +129,61 @@ for (const dismissal of ['Escape', 'close button', 'backdrop']) {
     await expect(trigger).toBeFocused();
   });
 }
+
+test('callback extension: same-provider model selection changes its warning and Escape never confirms', async ({
+  page,
+}) => {
+  const example = await openDialogs(page);
+  const providerChange = example.getByRole('switch', { name: 'Change provider', exact: true });
+  await expect(providerChange).toBeChecked();
+  await providerChange.click();
+  const trigger = example.getByRole('button', {
+    name: 'Open model switch confirmation',
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Switch model?', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Switch model', exact: true })).toBeFocused();
+  await expect(dialog.getByTestId('model-switch-models')).toContainText('Claude Opus 4.6');
+  await expect(dialog.getByTestId('model-switch-models')).not.toContainText('GPT-5.6');
+  await expect(dialog.getByText(/history is kept, but cached context is lost/)).toBeVisible();
+  await expect(dialog.getByText(/new provider as plain text/)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(output(example, 'Model switch cancel callbacks')).toHaveText('1');
+  await expect(output(example, 'Model switch confirm callbacks')).toHaveText('0');
+  await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await expect(dialog.getByRole('button', { name: 'Switch model', exact: true })).toBeFocused();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(output(example, 'Model switch cancel callbacks')).toHaveText('2');
+  await expect(output(example, 'Model switch confirm callbacks')).toHaveText('0');
+  await expect(trigger).toBeFocused();
+});
+
+test('callback extension: unresolved primary host uses the fallback explanation and Close never confirms', async ({
+  page,
+}) => {
+  const example = await openDialogs(page);
+  const knownHost = example.getByRole('switch', { name: 'Known current host', exact: true });
+  await expect(knownHost).toBeChecked();
+  await knownHost.click();
+  const trigger = example.getByRole('button', {
+    name: 'Open primary client confirmation',
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Set this client as primary?', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Set as Primary', exact: true })).toBeFocused();
+  await expect(
+    dialog.getByText(/^This workspace's browser will be pinned to this client/),
+  ).toBeVisible();
+  await expect(dialog.getByText(/currently driven by|Studio Mac/)).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(output(example, 'Primary client cancel callbacks')).toHaveText('1');
+  await expect(output(example, 'Primary client confirm callbacks')).toHaveText('0');
+  await expect(trigger).toBeFocused();
+});
