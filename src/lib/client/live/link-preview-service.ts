@@ -26,7 +26,7 @@ export type GitHubLinkPreview =
 
 export type GitHubLinkPreviewFailure = 'rate-limited' | 'unavailable';
 
-export interface GitLabLinkPreview {
+interface GitLabLinkPreview {
   provider: 'gitlab';
   resource: RepositoryResourceTarget;
   kind: 'pr' | 'issue';
@@ -99,7 +99,7 @@ export function createPreviewRequest(): {
   };
 }
 
-export interface LinkPreviewDependencies {
+interface LinkPreviewDependencies {
   getClient: () =>
     | Pick<IntegrationsClient, 'githubPullRequest' | 'githubIssue' | 'captureRepositoryResource'>
     | Promise<

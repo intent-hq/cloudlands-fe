@@ -4,21 +4,36 @@
  * lazy AppClient boundary and all existing public imports and injection options.
  */
 import { captureIntegrationContext } from '$features/integrations-request-context';
-import { createLinkPreviewService } from '$lib/client/live/link-preview-service';
+import {
+  createLinkPreviewService,
+  createPreviewRequest as createSharedPreviewRequest,
+  type GitHubLinkPreview,
+  type LoadGitHubLinkPreviewOptions as SharedLoadOptions,
+  type PreviewRequestTicket as SharedPreviewTicket,
+} from '$lib/client/live/link-preview-service';
 
 export {
   classifyGitHubLinkPreviewError,
-  createPreviewRequest,
   type GitHubLinkPreview,
   type GitHubLinkPreviewClient,
   type GitHubLinkPreviewFailure,
   type GitLabPreviewUpdate,
-  type LoadGitHubLinkPreviewOptions,
-  type PreviewRequestTicket,
 } from '$lib/client/live/link-preview-service';
 
-export const { loadGitHubLinkPreview, observeGitLabLinkPreview, clearGitHubLinkPreviewCache } =
-  createLinkPreviewService({
-    getClient: async () => (await import('$lib/client')).appClient.integrations,
-    captureContext: captureIntegrationContext,
-  });
+export type LoadGitHubLinkPreviewOptions = SharedLoadOptions;
+export type PreviewRequestTicket = SharedPreviewTicket;
+
+const service = createLinkPreviewService({
+  getClient: async () => (await import('$lib/client')).appClient.integrations,
+  captureContext: captureIntegrationContext,
+});
+
+export const loadGitHubLinkPreview: (
+  url: string,
+  options?: LoadGitHubLinkPreviewOptions,
+) => Promise<GitHubLinkPreview | null> = service.loadGitHubLinkPreview;
+export const { observeGitLabLinkPreview, clearGitHubLinkPreviewCache } = service;
+export const createPreviewRequest: () => {
+  next(): PreviewRequestTicket;
+  invalidate(): void;
+} = createSharedPreviewRequest;

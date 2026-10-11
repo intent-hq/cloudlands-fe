@@ -8,9 +8,10 @@ import type {
 export type {
   GitHubLinkPreview,
   GitHubLinkPreviewFailure,
-  GitLabLinkPreview,
   GitLabPreviewUpdate,
 } from '$lib/client/live/link-preview-service';
+
+export type GitLabLinkPreview = Extract<GitLabPreviewUpdate, { status: 'ready' }>['data'];
 
 export type LinkTooltipPreview =
   | GitLabPreviewUpdate
