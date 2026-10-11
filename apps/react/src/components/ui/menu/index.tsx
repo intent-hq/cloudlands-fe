@@ -238,7 +238,8 @@ export function Content({
         'relative isolate min-w-40 overflow-y-auto overscroll-contain p-1',
         className,
       )}
-      style={{ maxHeight, ...style }}
+      // Let the canonical focus-visible recipe apply instead of Radix's inline suppression.
+      style={{ outline: undefined, maxHeight, ...style }}
       onKeyDown={(event) => {
         onKeyDown?.(event);
         if (
