@@ -978,6 +978,314 @@
       ],
       "reason": "Compare the settled card body only, excluding differing example-shell prose; no singleton, transport, cache or link-action coverage.",
       "captureTarget": ".github-link-card[data-preview-status=\"error\"]"
+    },
+    {
+      "id": "settings-textarea-controls",
+      "scene": "settings-textarea",
+      "state": "controls",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/settings/settings-textarea.preview.svelte",
+        "src/lib/components/settings/AutoSaveTextarea.svelte",
+        "src/lib/components/settings/mcp/McpJsonImport.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/settings-textarea-consumers-preview.tsx",
+        "apps/react/src/components/settings/auto-save-textarea.tsx",
+        "apps/react/src/components/settings/mcp/mcp-json-import.tsx"
+      ],
+      "reason": "Compare the source settings-textarea/controls scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "settings-textarea-consumers",
+      "scene": "settings-textarea",
+      "state": "consumers",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/settings/settings-textarea.preview.svelte",
+        "src/lib/components/settings/AutoSaveTextarea.svelte",
+        "src/lib/components/settings/mcp/McpJsonImport.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/settings-textarea-consumers-preview.tsx",
+        "apps/react/src/components/settings/auto-save-textarea.tsx",
+        "apps/react/src/components/settings/mcp/mcp-json-import.tsx"
+      ],
+      "reason": "Compare the source settings-textarea/consumers scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-form",
+      "scene": "modal-heading-spacing",
+      "state": "form",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/form scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-confirm",
+      "scene": "modal-heading-spacing",
+      "state": "confirm",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/confirm scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-direct",
+      "scene": "modal-heading-spacing",
+      "state": "direct",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/direct scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-wrapped",
+      "scene": "modal-heading-spacing",
+      "state": "wrapped",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/wrapped scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-workspace",
+      "scene": "modal-heading-spacing",
+      "state": "workspace",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/workspace scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-release",
+      "scene": "modal-heading-spacing",
+      "state": "release",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/release scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-replace",
+      "scene": "modal-heading-spacing",
+      "state": "replace",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/replace scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "modal-heading-spacing-stacked",
+      "scene": "modal-heading-spacing",
+      "state": "stacked",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx"
+      ],
+      "reason": "Compare the source modal-heading-spacing/stacked scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "editable-text-display",
+      "scene": "editable-text",
+      "state": "display",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/editable-text.preview.svelte",
+        "src/lib/components/ui/EditableName.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/editable-name/index.tsx"
+      ],
+      "reason": "Compare the source editable-text/display scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "editable-text-editing",
+      "scene": "editable-text",
+      "state": "editing",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/editable-text.preview.svelte",
+        "src/lib/components/ui/EditableName.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/editable-name/index.tsx"
+      ],
+      "reason": "Compare the source editable-text/editing scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "editable-text-edge-cases",
+      "scene": "editable-text",
+      "state": "edge-cases",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/editable-text.preview.svelte",
+        "src/lib/components/ui/EditableName.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/editable-name/index.tsx"
+      ],
+      "reason": "Compare the source editable-text/edge-cases scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "editable-text-edge-cases-editing",
+      "scene": "editable-text",
+      "state": "edge-cases-editing",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/editable-text.preview.svelte",
+        "src/lib/components/ui/EditableName.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/editable-name/index.tsx"
+      ],
+      "reason": "Compare the source editable-text/edge-cases-editing scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "editable-text-narrow",
+      "scene": "editable-text",
+      "state": "narrow",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/editable-text.preview.svelte",
+        "src/lib/components/ui/EditableName.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/editable-name/index.tsx"
+      ],
+      "reason": "Compare the source editable-text/narrow scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "editable-text-dense-context",
+      "scene": "editable-text",
+      "state": "dense-context",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/ui/editable-text.preview.svelte",
+        "src/lib/components/ui/EditableName.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/shared-widget-catalog-preview.tsx",
+        "apps/react/src/components/ui/editable-name/index.tsx"
+      ],
+      "reason": "Compare the source editable-text/dense-context scene; unavailable or partial source states remain explicit failures."
     }
   ],
   "uncovered": [
@@ -1604,6 +1912,38 @@
       "query": {
         "example": "interactive"
       }
+    },
+    {
+      "component": "settings-textarea",
+      "route": "/sandbox/settings-textarea",
+      "fixture": "?example=interactive; textarea-consumers",
+      "referenceSources": [
+        "src/lib/components/patterns/settings/settings-textarea.preview.svelte",
+        "src/lib/components/settings/AutoSaveTextarea.svelte",
+        "src/lib/components/settings/mcp/McpJsonImport.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/settings-textarea-consumers-preview.tsx",
+        "apps/react/src/components/settings/auto-save-textarea.tsx",
+        "apps/react/src/components/settings/mcp/mcp-json-import.tsx",
+        "apps/react/src/catalog/callback-consumer-examples.tsx"
+      ]
+    },
+    {
+      "component": "modal-heading-spacing",
+      "route": "/sandbox/modal-heading-spacing",
+      "fixture": "?example=interactive; replace-agent-callback",
+      "referenceSources": [
+        "src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte",
+        "src/lib/components/modals/ReplaceAgentModal.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/catalog/modal-heading-preview.tsx",
+        "apps/react/src/components/modals/replace-agent-modal.tsx",
+        "apps/react/src/catalog/callback-consumer-examples.tsx"
+      ]
     }
   ]
 }

@@ -41,23 +41,16 @@ for (const entry of selectedCases(manifest)) {
         open(reference, referenceUrl, entry, referenceErrors),
         open(candidate, candidateUrl, entry, candidateErrors),
       ]);
-      if (entry.kind !== "catalog-fixture") {
-        const checkedStates = [
-          ...new Set(
-            manifest.parity
-              .filter((item) => item.scene === entry.scene && item.kind !== "catalog-fixture")
-              .map((item) => item.state),
-          ),
-        ].sort();
-        expect(
-          referenceState.availableStates.toSorted(),
-          "Reference named states changed: review missing or extra manifest cases",
-        ).toEqual(checkedStates);
-        expect(
-          candidateState.availableStates.toSorted(),
-          "Candidate does not implement the checked named-state contract",
-        ).toEqual(checkedStates);
-      }
+      const checkedStates =
+        entry.kind !== "catalog-fixture"
+          ? [
+              ...new Set(
+                manifest.parity
+                  .filter((item) => item.scene === entry.scene && item.kind !== "catalog-fixture")
+                  .map((item) => item.state),
+              ),
+            ].sort()
+          : undefined;
       const [referencePng, candidatePng] = await Promise.all([
         stableScreenshot(reference, entry),
         stableScreenshot(candidate, entry),
@@ -72,6 +65,7 @@ for (const entry of selectedCases(manifest)) {
       const metadata = {
         capturedAt: new Date().toISOString(),
         case: entry,
+        checkedStates,
         browser: {
           version: browser.version(),
           platform: process.platform,
@@ -122,6 +116,22 @@ for (const entry of selectedCases(manifest)) {
         candidateAfter.sourceTreeSha256,
         "Candidate sources changed while capturing; rerun after edits settle",
       ).toBe(candidateBefore.sourceTreeSha256);
+      // Keep the actual ready state's artifacts even when the wider scene is incomplete.
+      // Missing/extra states still fail; matching pixels cannot override this contract.
+      if (checkedStates) {
+        expect
+          .soft(
+            referenceState.availableStates.toSorted(),
+            "Reference named states changed: review missing or extra manifest cases",
+          )
+          .toEqual(checkedStates);
+        expect
+          .soft(
+            candidateState.availableStates.toSorted(),
+            "Candidate does not implement the checked named-state contract",
+          )
+          .toEqual(checkedStates);
+      }
       expect.soft(referenceErrors, "Reference browser errors").toEqual([]);
       expect.soft(candidateErrors, "Candidate browser errors").toEqual([]);
       expect

@@ -59,6 +59,12 @@ export async function openScene(page, baseUrl, entry, errors = []) {
       .locator('[data-preview-ready="true"][data-preview-stable="true"]')
       .waitFor({ timeout: 15_000 });
     await expect(page.locator(frameSelector), "exactly one capture frame").toHaveCount(1);
+    await expect(
+      page
+        .locator(frameSelector)
+        .locator('[data-catalog-unimplemented], [data-catalog-coverage="partial"]'),
+      "A partial named scene is not visual coverage",
+    ).toHaveCount(0);
     const current = await page.evaluate(() => window.__INTENT_PREVIEW__.current());
     expect(current, `Wrong active scene at ${url}`).toMatchObject({
       slug: entry.scene,

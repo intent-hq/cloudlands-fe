@@ -190,3 +190,17 @@ shared across browser contexts. Editor undo checks start with a fresh editor rat
 than assuming adjacent native transactions create separate history groups. Undoable
 notification expiry is an operation callback; source display lifetime may continue
 while hovered and is tested separately from that deadline.
+
+Callback wrapper journeys
+
+callback.core.spec.mjs checks AutoSaveTextarea raw-length admission before trimming,
+McpJsonImport local validation and exact submitted JSON bytes, and ReplaceAgentModal
+editing, whitespace admission and untrimmed callback payloads. The optional callback
+lane checks held/rejected imports, the source's allowed keyboard reentry while pending,
+usable Cancel, and caller-remounted replacement snapshots. These are component callback
+contracts, not MCP transport, backend settings persistence or actual agent replacement.
+
+Named-scene captures reject explicit partial/unimplemented markers. A ready implemented
+state retains its images, source hashes and geometry even if other states in that scene
+are absent: the strict complete-state comparison still fails. Matching pixels do not
+override missing-state failures. All declared cases require a real run before acceptance.
