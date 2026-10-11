@@ -21,3 +21,30 @@ export interface LinearAuthStatus {
   /** Tool availability status from API */
   availabilityStatus?: number;
 }
+
+/**
+ * Simplified Linear issue result for the UI
+ */
+export interface LinearIssueResult {
+  id: string;
+  identifier: string;
+  title: string;
+  description?: string;
+  url?: string;
+  teamName?: string;
+  teamKey?: string;
+  state?: string;
+  priority?: number;
+  /** Assignee name */
+  assignee?: string;
+  /** Labels as array of names */
+  labels?: string[];
+  /** Project name */
+  project?: string;
+  /** Creator/author name */
+  creator?: string;
+  /** Created timestamp */
+  createdAt?: string;
+  /** Updated timestamp */
+  updatedAt?: string;
+}

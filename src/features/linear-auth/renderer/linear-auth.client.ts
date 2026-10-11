@@ -1,6 +1,8 @@
 import { invoke } from '$lib/electron-bridge';
 import { LINEAR_AUTH_CHANNELS } from '../constants';
-import type { LinearAuthState, LinearAuthStatus } from '../types';
+import type { LinearAuthState, LinearAuthStatus, LinearIssueResult } from '../types';
+// Compatibility type export for existing feature consumers.
+export type { LinearIssueResult } from '../types';
 
 /**
  * Linear Auth Client
@@ -127,31 +129,4 @@ export interface LinearIssuePage {
   issues: LinearIssueResult[];
   /** Opaque cursor for the next page, or `null` when this is the last page. */
   nextToken: string | null;
-}
-
-/**
- * Simplified Linear issue result for the UI
- */
-export interface LinearIssueResult {
-  id: string;
-  identifier: string;
-  title: string;
-  description?: string;
-  url?: string;
-  teamName?: string;
-  teamKey?: string;
-  state?: string;
-  priority?: number;
-  /** Assignee name */
-  assignee?: string;
-  /** Labels as array of names */
-  labels?: string[];
-  /** Project name */
-  project?: string;
-  /** Creator/author name */
-  creator?: string;
-  /** Created timestamp */
-  createdAt?: string;
-  /** Updated timestamp */
-  updatedAt?: string;
 }
