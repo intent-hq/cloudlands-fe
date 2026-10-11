@@ -26,3 +26,57 @@
     color: CanvasText;
   }
 }
+
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  background-color: hsl(var(--muted));
+  border: none;
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
+  animation: badge-scale-in var(--spring-slow) var(--spring-slow-ease);
+  will-change: transform, opacity;
+}
+
+.agent-badge.updating {
+  animation: badge-update var(--spring-slow) var(--spring-slow-ease);
+}
+
+.agent-badge .badge-text {
+  display: block;
+  line-height: 1;
+}
+
+@keyframes badge-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes badge-update {
+  from {
+    transform: scale(0.95);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@container style(--motion-reduced: 1) {
+  .agent-badge,
+  .agent-badge.updating {
+    animation: none;
+  }
+}
