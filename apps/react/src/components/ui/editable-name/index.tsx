@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { m } from '$shared/paraglide/messages.js';
-import './editable-name.css';
 
 export interface EditableNameProps {
   value: string;
