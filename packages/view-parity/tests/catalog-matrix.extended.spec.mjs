@@ -57,3 +57,35 @@ test("rows matrix: the source static menu dismisses after a keyboard selection",
   await page.keyboard.press("Enter");
   await expect(menu.getByRole("menu")).toHaveCount(0);
 });
+
+for (const [key, target] of [
+  ["Tab", "Hover / highlighted"],
+  ["Shift+Tab", "Default item"],
+]) {
+  test(`rows matrix: static menu ${key} from content follows source focus order`, async ({
+    page,
+  }) => {
+    const fixture = await openFixture(page, "rows", "row-family-matrix");
+    const menu = fixture.locator('[data-row-preview="menu-item-states"]').getByRole("menu");
+    await expect(menu).toBeFocused();
+    await page.keyboard.press(key);
+    await expect(menu.getByRole("menuitem", { name: target, exact: true })).toBeFocused();
+    await expect(menu).toBeVisible();
+  });
+}
+
+test("rows matrix: static menu arrows wrap past disabled edges", async ({ page }) => {
+  const fixture = await openFixture(page, "rows", "row-family-matrix");
+  const menu = fixture.locator('[data-row-preview="menu-item-states"]').getByRole("menu");
+  const first = menu.getByRole("menuitem", { name: "Default item", exact: true });
+  const last = menu.getByRole("menuitem", { name: "Active item", exact: true });
+  await expect(menu).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(last).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(first).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(last).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+});
