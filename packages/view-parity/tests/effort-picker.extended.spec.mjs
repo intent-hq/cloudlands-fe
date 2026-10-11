@@ -56,10 +56,10 @@ test('effort visibility: disabled blocks keyboard access and no levels hides the
   await expectJson(host, 'Effort callbacks', []);
   await toggle(host, 'Disable effort picker').click();
   await choose(page, trigger, 'High');
-  await control(host, 'No levels').click();
+  await host.getByRole('radio', { name: 'No levels', exact: true }).click();
   await expect(trigger).toHaveCount(0);
   await expect(page.getByRole('listbox')).toHaveCount(0);
-  await control(host, 'Standard levels').click();
+  await host.getByRole('radio', { name: 'Standard levels', exact: true }).click();
   await expect(trigger).toHaveAccessibleName('Reasoning effort: High');
   await expectJson(host, 'Effort callbacks', [{ id: 1, effort: 'high', result: true }]);
   await choose(page, trigger, 'Auto');
@@ -74,9 +74,9 @@ test('effort visibility: removing a selected level preserves its unavailable dis
 }) => {
   const host = await openEffort(page);
   const trigger = picker(host);
-  await control(host, 'Extended levels').click();
+  await host.getByRole('radio', { name: 'Extended levels', exact: true }).click();
   await choose(page, trigger, 'Extra high');
-  await control(host, 'Standard levels').click();
+  await host.getByRole('radio', { name: 'Standard levels', exact: true }).click();
   await expect(trigger).toHaveAccessibleName(/Extra high.*unavailable/);
   await expectJson(host, 'Effort persisted value', 'xhigh');
   await trigger.press('Enter');
@@ -152,7 +152,7 @@ test('effort provider values: explicit none and provider spelling stay distinct 
 }) => {
   const host = await openEffort(page);
   const trigger = picker(host);
-  await control(host, 'Provider levels').click();
+  await host.getByRole('radio', { name: 'Provider levels', exact: true }).click();
   const expected = [];
   for (const [effort, label] of [
     ['none', 'Off'],
