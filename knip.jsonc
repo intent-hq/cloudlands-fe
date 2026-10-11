@@ -1,5 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The independent React renderer owns its checks; retain this gate's Svelte scope.
+  "ignoreWorkspaces": ["apps/react"],
   // The remaining 20 duplicate-export rows are deliberate KEEPs (triaged): both names in
   // each pair have live importers (icon compat aliases, per-channel schema aliases,
   // mock-module shape, etc.). Consolidation is a rename follow-up, not dead code.

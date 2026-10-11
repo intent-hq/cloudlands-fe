@@ -194,7 +194,17 @@
     "remote-env:start": "./tests/remote-env/start-remote-env.sh",
     "remote-env:start:devpod": "./tests/remote-env/start-remote-env.sh --profile devpod",
     "remote-env:start:all": "./tests/remote-env/start-remote-env.sh --all",
-    "remote-env:stop": "./tests/remote-env/stop-remote-env.sh"
+    "remote-env:stop": "./tests/remote-env/stop-remote-env.sh",
+    "dev:react": "node scripts/run-workspace.mjs apps/react dev",
+    "build:react": "node scripts/run-workspace.mjs apps/react build",
+    "preview:react": "node scripts/run-workspace.mjs apps/react preview",
+    "check:react": "node scripts/run-workspace.mjs apps/react typecheck",
+    "lint:react": "node scripts/run-workspace.mjs apps/react lint",
+    "format:react": "node scripts/run-workspace.mjs apps/react format",
+    "format:check:react": "node scripts/run-workspace.mjs apps/react format:check",
+    "parity:compare": "node scripts/run-workspace.mjs packages/view-parity compare",
+    "parity:core": "node scripts/run-workspace.mjs packages/view-parity test:core",
+    "parity:extended": "node scripts/run-workspace.mjs packages/view-parity test:extended"
   },
   "keywords": [
     "electron",

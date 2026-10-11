@@ -500,6 +500,8 @@ export default [
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
   {
     ignores: [
+      // The independent React renderer uses its own Oxlint configuration.
+      'apps/react/**',
       '**/node_modules/**',
       '**/dist/**',
       '**/build/**',

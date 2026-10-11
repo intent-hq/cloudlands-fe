@@ -1,0 +1,49 @@
+{
+  "name": "@intent/react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node ../../scripts/paraglide-inputs-hash.mjs --if-stale",
+    "dev": "vite",
+    "prebuild": "node ../../scripts/paraglide-inputs-hash.mjs --if-stale",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "pretypecheck": "node ../../scripts/paraglide-inputs-hash.mjs --if-stale"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@phosphor-icons/react": "2.1.10",
+    "@preact/signals-react": "3.12.0",
+    "@tanstack/react-router": "1.170.42",
+    "@themislib/themis": "0.3.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "radix-ui": "1.7.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "typed-redux-saga": "1.5.0"
+  },
+  "devDependencies": {
+    "@babel/core": "8.0.7",
+    "@preact/signals-react-transform": "0.8.3",
+    "@rolldown/plugin-babel": "0.2.4",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.6.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  }
+}

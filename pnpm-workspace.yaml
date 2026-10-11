@@ -1,3 +1,4 @@
-# Empty workspace file to override parent workspace
-# This makes this directory a standalone project
-packages: []
+# This checkout is its own workspace; the root remains the Svelte reference.
+packages:
+  - apps/react
+  - packages/view-parity
