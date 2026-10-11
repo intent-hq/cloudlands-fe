@@ -38,6 +38,8 @@ export type BrowserClientsState = {
   authenticatedClients?: AuthenticatedClientCollection;
   /** The `clientId` this renderer's connection presents on `client.hello`. */
   ownClientId: string | null;
+  /** Identity was confirmed on the current connection; retained IDs still host native tabs. */
+  ownClientIdConfirmed: boolean;
   /** `client.list` snapshot; empty until the first read lands. */
   liveClients: LiveClientCollection;
   /** True once a `client.list` read has completed at least once. */
@@ -67,6 +69,7 @@ export const emptyWorkspaceBrowserClientsState: WorkspaceBrowserClientsState = {
 export const initialState: BrowserClientsState = {
   authenticatedClients: createAuthenticatedClientCollection(),
   ownClientId: null,
+  ownClientIdConfirmed: false,
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,
   byWorkspaceId: {},

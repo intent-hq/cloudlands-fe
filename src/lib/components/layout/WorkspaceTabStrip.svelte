@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -89,6 +91,7 @@
     leadingInsetPx = 28,
     scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
   }: Props = $props();
+  const microConnected$ = microConnectedReadable();
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
@@ -181,6 +184,8 @@
       workspaceId,
       onClose: () => closeWorkspace(workspaceId),
       onCloseTabs: closeWorkspaceTabs,
+      microConnected: $microConnected$,
+      onDismiss: () => (tabContextMenu = null),
     });
   });
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
@@ -1032,6 +1037,7 @@
                   id={`workspace-tab-${workspaceId}`}
                   data-workspace-tab-hover-trigger
                 >
+                  <WorkspaceMicroKeySlot {workspaceId} size="compact" />
                   <span
                     class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
                     data-workspace-tab-title>{workspaceTitle}</span

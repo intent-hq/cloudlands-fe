@@ -991,6 +991,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
   ): void {
     mocks.storeState.browserClients = {
       ownClientId: OWN,
+      ownClientIdConfirmed: true,
       liveClients: createLiveClientCollection(clients),
       liveClientsLoaded: true,
       byWorkspaceId: {

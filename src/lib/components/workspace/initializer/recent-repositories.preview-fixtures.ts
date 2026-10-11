@@ -17,6 +17,7 @@ import {
 import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import { invalidateCowIsolationSetting } from './cow-isolation-setting';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { createRecentRepositoriesClientFixture } from '../../../../test/fixtures/recent-repositories-client';
 import {
   principalContextChanged,
   principalReceived,
@@ -58,7 +59,7 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
   const previousOriginUrl = appClient.git.originUrl;
   const previousGetSetting = appClient.settings.get;
   workspaceClient.list = async () => ({ ok: true, data: [] });
-  appClient.git.originUrl = async () => null;
+  appClient.git.originUrl = createRecentRepositoriesClientFixture().git.originUrl;
   appClient.settings.get = async () => null;
   invalidateCowIsolationSetting();
   appStore.dispatch(setWorkspaceInitializerRecentRepos([]));

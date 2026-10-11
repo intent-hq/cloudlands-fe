@@ -4468,6 +4468,7 @@
   "fileTracking_codeChanges_unknown_fallback": "desconocido",
   "fileExplorer_tree_file_fallback": "archivo",
   "fileExplorer_tree_deleteFailed_error": "No se pudo eliminar el archivo",
+  "fileExplorer_tree_undoUnavailable_error": "Este archivo no se puede eliminar aquí porque Deshacer no puede restaurar su contenido.",
   "editor_fileViewer_unknown_fallback": "Desconocido",
   "fileTracking_startNew_previousWorkspace_fallback": "espacio de trabajo anterior",
   "fileTracking_startNew_thePreviousWorkspace_fallback": "el espacio de trabajo anterior",

@@ -6,7 +6,10 @@
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
   import type { ConnectionsListResult } from '$shared/types/connections';
   import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
-  import { setupApiSettingsPreview } from '../../../test/api-rtk-settings-preview';
+  import {
+    setupApiSettingsPreview,
+    setupConnectionTunnelPreview,
+  } from '../../../test/api-rtk-settings-preview';
   import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
   import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
   import {
@@ -16,7 +19,7 @@
 
   import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
-  function setup(remote = false, multiplayer = false) {
+  function setup(remote = false, multiplayer = false, tunnelEnabled = false) {
     const previousApi = window.electronAPI;
     const previousMultiplayer = appStore.state.userPreferences.labsMultiplayerEnabled;
     const state = appStore.state.connections;
@@ -123,12 +126,27 @@
     }
     const stopPublication = setupUnavailablePublicationPreview();
     const stopApi = setupApiSettingsPreview();
+    const api = window.electronAPI;
+    window.electronAPI = {
+      ...api,
+      invoke: async (channel: string, params?: { id: string; enabled?: boolean }) => {
+        if (channel === 'connections:get-tunnel')
+          return { supported: true, enabled: tunnelEnabled };
+        if (channel === 'connections:set-tunnel') {
+          tunnelEnabled = params?.enabled === true;
+          return { supported: true, enabled: tunnelEnabled };
+        }
+        return api?.invoke(channel, params);
+      },
+    } as typeof window.electronAPI;
+    const stopTunnel = setupConnectionTunnelPreview();
     return () => {
       if (multiplayer) {
         appStore.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
         appStore.dispatch(principalContextChanged(null));
       }
       stopApi();
+      stopTunnel();
       stopPublication();
       window.electronAPI = previousApi;
       appStore.dispatch(connectionsListReceived(previous));
@@ -145,6 +163,11 @@
       'multiplayer-enabled': { props: {}, setup: () => setup(false, true) },
       'local-expanded': { props: { expanded: true }, setup: () => setup() },
       'remote-window': { props: {}, setup: () => setup(true) },
+      'remote-edit': { props: { editedMachine: 'studio' }, setup: () => setup() },
+      'remote-edit-enabled': {
+        props: { editedMachine: 'studio' },
+        setup: () => setup(false, false, true),
+      },
       'remote-expanded': { props: { expanded: true }, setup: () => setup(true) },
       'remote-access-disabled': { props: { accessEnabled: false }, setup: () => setup(true) },
       'access-disabled': { props: { accessEnabled: false }, setup: () => setup() },
@@ -168,7 +191,13 @@
     expanded = false,
     accessEnabled = true,
     mobilePage = false,
-  }: { expanded?: boolean; accessEnabled?: boolean; mobilePage?: boolean } = $props();
+    editedMachine,
+  }: {
+    expanded?: boolean;
+    accessEnabled?: boolean;
+    mobilePage?: boolean;
+    editedMachine?: string;
+  } = $props();
   const previous = {
     list: appClient.settings.list,
     update: appClient.settings.update,
@@ -223,5 +252,7 @@
 
 <div class="bg-background p-4">
   {#if mobilePage}<MobileSettings />
-  {:else}<DevicesSettings initialEditedMachine={expanded ? 'local' : undefined} />{/if}
+  {:else}<DevicesSettings
+      initialEditedMachine={editedMachine ?? (expanded ? 'local' : undefined)}
+    />{/if}
 </div>

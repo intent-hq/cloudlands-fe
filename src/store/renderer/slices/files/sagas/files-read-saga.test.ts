@@ -41,7 +41,13 @@ function deferred<T>() {
 }
 
 function fileResult(content: string): NonNullable<FileReadResult> {
-  return { originalContent: content, localContent: null, isBinary: false, truncated: false };
+  return {
+    kind: 'editable-text',
+    originalContent: content,
+    localContent: content,
+    isBinary: false,
+    truncated: false,
+  };
 }
 
 function startStatefulSaga() {
@@ -147,6 +153,7 @@ describe('filesReadSaga', () => {
     vi.spyOn(appClient.files, 'read').mockResolvedValue({
       path: 'src/a.ts',
       absolutePath: '/repo/src/a.ts',
+      kind: 'restorable-snapshot',
       originalContent: 'hello',
       localContent: 'stale',
       lastUpdated: 99,
@@ -171,7 +178,13 @@ describe('filesReadSaga', () => {
 
     expect(appClient.files.read).toHaveBeenCalledWith('ws-1', 'src/a.ts');
     expect(actions).toEqual([
-      loadFileContentSucceeded('ws-1', 'src/a.ts', '/repo/src/a.ts', 'hello', true, true),
+      loadFileContentSucceeded(
+        'ws-1',
+        'src/a.ts',
+        '/repo/src/a.ts',
+        { kind: 'restorable-snapshot', content: 'hello', isBinary: true },
+        true,
+      ),
     ]);
     expect(backendRequest).not.toHaveBeenCalled();
     task.cancel();
@@ -423,7 +436,13 @@ describe('filesReadSaga', () => {
     expect(appClient.files.read).toHaveBeenNthCalledWith(1, 'ws-1', 'src/a.ts');
     expect(appClient.files.read).toHaveBeenNthCalledWith(2, 'ws-1', 'src/a.ts');
     expect(run.actions).toEqual([
-      loadFileContentSucceeded('ws-1', 'src/a.ts', '/repo/src/a.ts', 'latest', false, false),
+      loadFileContentSucceeded(
+        'ws-1',
+        'src/a.ts',
+        '/repo/src/a.ts',
+        { kind: 'editable-text', content: 'latest' },
+        false,
+      ),
     ]);
     expect(run.entry('ws-1', 'src/a.ts')).toMatchObject({ loading: false, localContent: 'latest' });
     run.task.cancel();
@@ -448,7 +467,13 @@ describe('filesReadSaga', () => {
     expect(appClient.files.read).toHaveBeenNthCalledWith(1, 'ws-1', 'src/a.ts');
     expect(appClient.files.read).toHaveBeenNthCalledWith(2, 'ws-1', 'src/a.ts');
     expect(run.actions).toEqual([
-      loadFileContentSucceeded('ws-1', 'src/a.ts', '/new/src/a.ts', 'new', false, false),
+      loadFileContentSucceeded(
+        'ws-1',
+        'src/a.ts',
+        '/new/src/a.ts',
+        { kind: 'editable-text', content: 'new' },
+        false,
+      ),
     ]);
     expect(run.entry('ws-1', 'src/a.ts')).toMatchObject({
       absolutePath: '/new/src/a.ts',
@@ -478,7 +503,13 @@ describe('filesReadSaga', () => {
     expect(appClient.files.read).toHaveBeenNthCalledWith(1, 'ws-1', 'src/a.ts');
     expect(appClient.files.read).toHaveBeenNthCalledWith(2, 'ws-1', 'src/a.ts');
     expect(run.actions).toEqual([
-      loadFileContentSucceeded('ws-1', 'src/a.ts', '/repo/src/a.ts', 'recovered', false, false),
+      loadFileContentSucceeded(
+        'ws-1',
+        'src/a.ts',
+        '/repo/src/a.ts',
+        { kind: 'editable-text', content: 'recovered' },
+        false,
+      ),
     ]);
     expect(run.entry('ws-1', 'src/a.ts')).toMatchObject({
       loading: false,
@@ -516,8 +547,7 @@ describe('filesReadSaga', () => {
         'ws-1',
         'docs/guide.md',
         '/new/docs/guide.md',
-        'latest',
-        false,
+        { kind: 'editable-text', content: 'latest' },
         false,
       ),
     ]);

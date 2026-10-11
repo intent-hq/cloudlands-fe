@@ -51,6 +51,24 @@ describe('MicroKeySlotBadge exclusive assignment', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
+  it('offers no assignment for an archived workspace even with a stale slot prop', async () => {
+    appStore.dispatch(setWorkspaceEntity(createMockWorkspace({ id: workspaceId, archived: true })));
+    render(MicroKeySlotBadge, { workspaceId, slot: 0 });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(screen.queryAllByRole('menuitemradio')).toHaveLength(0);
+  });
+
+  it('rejects a choice if the workspace was archived while the menu was open', async () => {
+    render(MicroKeySlotBadge, { workspaceId, slot: 0 });
+    await fireEvent.click(screen.getByRole('button'));
+    const choice = screen.getAllByRole('menuitemradio')[1];
+    appStore.dispatch(setWorkspaceEntity(createMockWorkspace({ id: workspaceId, archived: true })));
+    const before = appStore.state.hardwareConsole;
+    await fireEvent.click(choice);
+    expect(appStore.state.hardwareConsole).toBe(before);
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
   it('drops the menu when its workspace changes', async () => {
     const { rerender } = render(MicroKeySlotBadge, { workspaceId, slot: 0 });
     await fireEvent.click(screen.getByRole('button'));

@@ -7,9 +7,11 @@
  * last typed answer hands back the full answers array. Redux-owned draft props
  * drive restoration; edits and successful resolution are reported to the host.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
+import QuestionWizardControlledHost from './QuestionWizardControlledHost.svelte';
+import { flattenAnswersToMessage } from '../answer-message';
 import type { Question } from '$shared/types/question-resource';
 import { REDUCE_MOTION_ATTRIBUTE } from '$lib/utils/reduced-motion';
 
@@ -107,6 +109,86 @@ function deferImageRead() {
       }),
   };
 }
+
+describe('QuestionWizard controlled navigation', () => {
+  beforeEach(() => document.documentElement.setAttribute(REDUCE_MOTION_ATTRIBUTE, ''));
+  afterEach(() => document.documentElement.removeAttribute(REDUCE_MOTION_ATTRIBUTE));
+
+  it.each(['click', 'keyboard'])('preserves every single-choice answer via %s', async (method) => {
+    const questions = [SINGLE, LAST, APPROVAL];
+    const labels = ['OS keychain', 'Force re-login', 'Approve'];
+    const onComplete = vi.fn<(answers: QuestionAnswer[]) => void>();
+    const onDraftChange = vi.fn();
+    render(QuestionWizardControlledHost, { props: { questions, onComplete, onDraftChange } });
+
+    for (const [index, label] of labels.entries()) {
+      if (method === 'click') await fireEvent.click(screen.getByText(label));
+      else await fireEvent.keyDown(document, { key: index === 1 ? '2' : '1' });
+      expect(onDraftChange.mock.lastCall?.[0].answers.slice(0, index + 1)).toEqual(
+        labels.slice(0, index + 1).map((_, answerIndex) => ({
+          sel: [answerIndex === 1 ? 1 : 0],
+          text: '',
+          skipped: false,
+        })),
+      );
+    }
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(flattenAnswersToMessage(onComplete.mock.calls[0][0])).toBe(
+      `Q: ${SINGLE.question}\nA: OS keychain\n\nQ: ${LAST.question}\nA: Force re-login\n\nQ: ${APPROVAL.question}\nA: Approve`,
+    );
+  });
+
+  it('preserves an explicit skip when navigating Back and answering later questions', async () => {
+    const onComplete = vi.fn<(answers: QuestionAnswer[]) => void>();
+    render(QuestionWizardControlledHost, {
+      props: { questions: [SINGLE, LAST], onComplete },
+    });
+
+    await fireEvent.click(screen.getByText('OS keychain'));
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    expect(screen.getByRole('radio', { name: /OS keychain/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    expect(screen.getByRole('radio', { name: /OS keychain/ }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    await fireEvent.click(screen.getByText('Migrate silently'));
+
+    expect(onComplete).toHaveBeenCalledWith([
+      { question: SINGLE, selectedLabels: [], freeText: '', skipped: true },
+      { question: LAST, selectedLabels: ['Migrate silently'], freeText: '', skipped: false },
+    ]);
+  });
+
+  it('keeps a revised choice, typed answer, and multiple selections together', async () => {
+    const onComplete = vi.fn<(answers: QuestionAnswer[]) => void>();
+    render(QuestionWizardControlledHost, {
+      props: { questions: [SINGLE, LAST, MULTI], onComplete },
+    });
+
+    await fireEvent.click(screen.getByText('OS keychain'));
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    await fireEvent.click(screen.getByText('Encrypted file'));
+    await fireEvent.input(currentOtherInput(), { target: { value: '  Ask the user  ' } });
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    expect(currentOtherInput().value).toBe('Ask the user');
+    await fireEvent.keyDown(currentOtherInput(), { key: 'Enter' });
+    await fireEvent.click(screen.getByRole('checkbox', { name: /Desktop app/ }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: /CLI/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    expect(onComplete).toHaveBeenCalledWith([
+      { question: SINGLE, selectedLabels: ['Encrypted file'], freeText: '', skipped: false },
+      { question: LAST, selectedLabels: [], freeText: 'Ask the user', skipped: false },
+      { question: MULTI, selectedLabels: ['Desktop app', 'CLI'], freeText: '', skipped: false },
+    ]);
+  });
+});
 
 describe('QuestionWizard image answers', () => {
   it.each([SINGLE, MULTI])(

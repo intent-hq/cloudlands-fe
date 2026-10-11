@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import type { GitClient } from '$lib/client/app-client';
 import { tick } from 'svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 const mocks = vi.hoisted(() => ({
@@ -18,12 +17,16 @@ const mocks = vi.hoisted(() => ({
   registry: vi.fn(),
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.registry, shell: { open: vi.fn() } }));
-vi.mock('$lib/client', () => ({
-  appClient: {
-    git: { originUrl: vi.fn<GitClient['originUrl']>().mockResolvedValue(null) },
-    workspaces: { recentViews: vi.fn(async () => ({})) },
-  },
-}));
+vi.mock('$lib/client', async () => {
+  const { createRecentRepositoriesClientFixture } =
+    await import('../../../../../test/fixtures/recent-repositories-client');
+  return {
+    appClient: {
+      ...createRecentRepositoriesClientFixture(),
+      workspaces: { recentViews: vi.fn(async () => ({})) },
+    },
+  };
+});
 vi.mock('$store/renderer/slices/workspace-share/sagas/workspace-share-saga', () => ({
   refreshIntegrationAuthAfterReconnect: vi.fn(),
 }));

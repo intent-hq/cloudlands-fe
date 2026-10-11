@@ -18,7 +18,7 @@
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   // eslint-disable-next-line themis/forbidden-component-import -- Isolated fixture runs the production membership lifecycle against a mock transport.
   import { presenceSaga } from '$store/renderer/slices/presence/sagas/presence-saga';
-  // eslint-disable-next-line themis/forbidden-component-import -- Isolated fixture runs the production note-read owner for mention searches.
+  // eslint-disable-next-line themis/forbidden-component-import -- Mention searches await the production note reader, owned by this fixture's mount.
   import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
   import { presenceReset } from '$store/renderer/slices/presence/presence-slice';
   import { selectWorkspaceMentionMembers } from '$store/renderer/slices/presence/presence-selectors';
