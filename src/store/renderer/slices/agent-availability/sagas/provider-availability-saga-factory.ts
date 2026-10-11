@@ -38,6 +38,7 @@ import type { ReadSelector, ProviderReadState } from '../../provider-catalog/pro
 
 export function createProviderAvailabilitySaga<State extends ProviderReadState>({
   selectPrincipalConnectionContext,
+  selectHostRole,
   selectHasCheckedOnce,
   selectProviderCheckEpochMap,
   selectIsAnyProviderLoading,
@@ -52,6 +53,7 @@ export function createProviderAvailabilitySaga<State extends ProviderReadState>(
     typeof projections0.getPrincipalConnectionContext,
     State
   >;
+  selectHostRole: ReadSelector<typeof projections0.getHostRole, State>;
   selectHasCheckedOnce: ReadSelector<typeof projections1.getHasCheckedOnce, State>;
   selectProviderCheckEpochMap: ReadSelector<typeof projections1.getProviderCheckEpochMap, State>;
   selectIsAnyProviderLoading: ReadSelector<typeof projections1.getIsAnyProviderLoading, State>;
@@ -95,7 +97,13 @@ export function createProviderAvailabilitySaga<State extends ProviderReadState>(
     // slow stale probe (e.g. a focus-triggered sweep that started before an
     // install finished) can never overwrite a fresher result.
     const connection = yield* selectPrincipalConnectionContext.effect();
+    const role = yield* selectHostRole.effect();
     const epoch = (yield* selectProviderCheckEpochMap.effect())[providerId] ?? 0;
+    if (!connection || (role !== 'owner' && role !== 'member')) {
+      // A request can precede admission; settle its spinner without claiming a probe ran.
+      yield* put(checkSingleProviderFailure(providerId, epoch));
+      return;
+    }
     try {
       const result: SingleProviderResult = yield* call(readSingleProvider, providerId);
       if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
@@ -155,10 +163,14 @@ export function createProviderAvailabilitySaga<State extends ProviderReadState>(
   }
 
   function* checkAllProvidersWorker(silent = false) {
+    const connection = yield* selectPrincipalConnectionContext.effect();
+    const role = yield* selectHostRole.effect();
+    // Static catalog hydration is allowed before admission; host probes are not.
+    // The authority owner retries discovery when owner/member admission arrives.
+    if (!connection || (role !== 'owner' && role !== 'member')) return;
     yield* put(prepareOnboardingAdaptersRequested());
     const refreshModels = yield* selectProviderModelsRefreshPending.effect();
     const refreshRevision = yield* selectProviderModelsRefreshRevision.effect();
-    const connection = yield* selectPrincipalConnectionContext.effect();
     const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
     yield* put(setAllProvidersLoading(Object.fromEntries(providerIds.map((id) => [id, true]))));
 
@@ -226,7 +238,12 @@ export function createProviderAvailabilitySaga<State extends ProviderReadState>(
   }
 
   function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProviderRequested>) {
-    yield* put(prepareOnboardingAdaptersRequested());
+    const role = yield* selectHostRole.effect();
+    if (
+      (role === 'owner' || role === 'member') &&
+      (yield* selectPrincipalConnectionContext.effect())
+    )
+      yield* put(prepareOnboardingAdaptersRequested());
     yield* call(checkSingleProviderWorker, action.payload[0]);
   }
 

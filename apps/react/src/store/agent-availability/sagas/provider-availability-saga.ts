@@ -1,4 +1,7 @@
-import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import {
+  selectHostRole,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
 import * as availability from '../agent-availability-selectors';
 import {
   providerStatusClient,
@@ -10,6 +13,7 @@ import { createProviderAvailabilitySaga } from '../../../../../../src/store/rend
 export const { providerAvailabilityReadSaga } = createProviderAvailabilitySaga({
   ...availability,
   selectPrincipalConnectionContext,
+  selectHostRole,
   authLifetime: providerAuthStatusClient,
   readAvailability: async () => ({
     success: true,

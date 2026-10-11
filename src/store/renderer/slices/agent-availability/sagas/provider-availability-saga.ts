@@ -1,5 +1,8 @@
 // Svelte binding of the shared read owner; remove this facade when the Svelte renderer retires.
-import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import {
+  selectHostRole,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
 import { invoke } from '$lib/electron-bridge';
 import { providerAuthStatusClient as authLifetime } from '$features/providers/provider-auth-status.client';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -28,6 +31,7 @@ import { createProviderAvailabilitySaga } from './provider-availability-saga-fac
 export const { checkSingleProviderWorker, checkAllProvidersWorker, providerAvailabilityReadSaga } =
   createProviderAvailabilitySaga({
     selectPrincipalConnectionContext,
+    selectHostRole,
     selectHasCheckedOnce,
     selectProviderCheckEpochMap,
     selectIsAnyProviderLoading,
