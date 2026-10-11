@@ -6,6 +6,50 @@ import {
   expectOutsideReleased,
 } from '../lib/overlay-focus.mjs';
 
+test('overlay focus: submenu Escape closes only its own layer and restores parent programmatic focus capture', async ({
+  page,
+}) => {
+  const { example, menu, outside } = await openMenu(page);
+  await page.keyboard.press('Home');
+  await expect(menu.getByRole('menuitem', { name: 'First command', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  const trigger = menu.getByRole('menuitem', { name: 'More focus actions', exact: true });
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  const submenu = page.getByRole('menu', { name: 'Nested focus menu', exact: true });
+  await expect(
+    submenu.getByRole('menuitem', { name: 'Submenu command', exact: true }),
+  ).toBeFocused();
+  // menu-sub.svelte registers its own window-capture Escape layer, above the
+  // root's layer, and explicitly returns focus to its parent sub-trigger.
+  await page.keyboard.press('Escape');
+  await expect(submenu).toHaveCount(0);
+  await expect(example.getByLabel('Static menu open', { exact: true })).toHaveText('true');
+  await expectSynchronousReclaim(outside, trigger);
+});
+
+test('overlay focus: Escape in a nested popover follows the source root menu capture layer', async ({
+  page,
+}) => {
+  const { example, menu, outside } = await openMenu(page);
+  await menu.getByRole('menuitem', { name: 'Open nested popover', exact: true }).click();
+  const field = page.getByRole('textbox', { name: 'Nested popover field' });
+  await expect(field).toBeFocused();
+  await page.keyboard.type('nested input');
+  await expect(field).toHaveValue('nested input');
+  // Unlike menu-sub.svelte, popover-root.svelte registers no canonical Escape
+  // layer. menu.svelte's window capture consumes Escape before Bits' document
+  // listeners; it closes the root, unmounting its child popover too.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(field).toHaveCount(0);
+  await expect(example.getByLabel('Static menu open', { exact: true })).toHaveText('false');
+  await expect(
+    example.getByRole('button', { name: 'Toggle static menu', exact: true }),
+  ).toBeFocused();
+  await expectOutsideReleased(example, outside);
+});
+
 test('overlay focus: Escape closes the root menu, releases public focus capture and permits keyboard reopening', async ({
   page,
 }) => {
