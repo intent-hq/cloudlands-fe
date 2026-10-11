@@ -48,6 +48,7 @@ export function ListHighlight({
       } else instance.measure();
       const nextSelected = items.flatMap((item, i) =>
         item.hasAttribute('data-selected') ||
+        item.getAttribute('data-state') === 'checked' ||
         item.getAttribute('aria-selected') === 'true' ||
         item.getAttribute('aria-checked') === 'true'
           ? [i]
@@ -61,6 +62,12 @@ export function ListHighlight({
       if (keyboard) instance.setActiveIndex(focusedIndex());
       else if (latest.current.activeIndex !== undefined && !instance.pointerPosition)
         instance.setActiveIndex(latest.current.activeIndex);
+      else if (latest.current.activeIndex === undefined) {
+        const highlighted = items.findIndex(
+          (item) => item.hasAttribute('data-highlighted') || item === document.activeElement,
+        );
+        if (highlighted >= 0) instance.setActiveIndex(highlighted);
+      }
     };
     const observer = new MutationObserver((records) => {
       if (
@@ -119,8 +126,9 @@ export function ListHighlight({
       setPressed(false);
       instance.setActiveIndex(focusedIndex());
     };
-    const onFocus = () => {
-      instance.setActiveIndex(focusedIndex());
+    const onFocus = (event: FocusEvent) => {
+      const index = items.indexOf(event.target as HTMLElement);
+      if (index >= 0) instance.setActiveIndex(index);
     };
     const onDown = (event: PointerEvent) => {
       const item = event.target instanceof Element ? event.target.closest(itemSelector) : null;
