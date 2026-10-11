@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { ScrollArea as ScrollAreaPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
+import './scroll-area.css';
 
 export type ScrollAreaProps = React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   orientation?: 'vertical' | 'horizontal' | 'both';
@@ -110,8 +111,12 @@ export function ScrollBar({
       {...props}
     >
       {children}
-      <ScrollAreaPrimitive.Thumb data-slot="scroll-area-thumb" />
+      <ScrollAreaPrimitive.Thumb
+        data-slot="scroll-area-thumb"
+        style={orientation === 'vertical' ? { width: undefined } : { height: undefined }}
+      />
     </ScrollAreaPrimitive.Scrollbar>
   );
 }
-export { ScrollBar as Scrollbar };
+export { ScrollArea as Root, ScrollBar as Scrollbar, ScrollBar as ScrollAreaScrollbar };
+export { scrollAreaMetadata } from '$lib/components/ui/scroll-area/scroll-area.meta';

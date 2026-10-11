@@ -1,0 +1,79 @@
+/* Source: src/app.css custom scrollbars; Radix owns the thumb-size variables. */
+[data-slot='scroll-area-scrollbar'] {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  touch-action: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity var(--spring-fast-exit) var(--spring-exit-ease);
+}
+
+[data-slot='scroll-area-scrollbar'][data-state='visible'] {
+  opacity: 1;
+  transition-duration: var(--spring-fast);
+  transition-timing-function: var(--spring-fast-ease);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical'] {
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal'] {
+  bottom: 0;
+  left: 0;
+  flex-direction: column;
+  width: 100%;
+  height: 10px;
+}
+
+[data-slot='scroll-area-thumb'] {
+  position: relative;
+  margin: auto;
+  border-radius: 9999px;
+  background: hsl(var(--overlay) / 0.08);
+  transition:
+    width var(--spring-fast) var(--spring-fast-ease),
+    height var(--spring-fast) var(--spring-fast-ease),
+    background-color var(--spring-fast) var(--spring-fast-ease);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical'] [data-slot='scroll-area-thumb'] {
+  width: 4px;
+  height: var(--radix-scroll-area-thumb-height);
+  transform: translateX(-2px);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal'] [data-slot='scroll-area-thumb'] {
+  width: var(--radix-scroll-area-thumb-width);
+  height: 4px;
+  transform: translateY(-2px);
+}
+
+[data-slot='scroll-area-scrollbar']:hover [data-slot='scroll-area-thumb'] {
+  background: hsl(var(--overlay) / 0.12);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical']:hover
+  [data-slot='scroll-area-thumb'] {
+  width: 6px;
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal']:hover
+  [data-slot='scroll-area-thumb'] {
+  height: 6px;
+}
+
+[data-slot='scroll-area-thumb']:active {
+  background: hsl(var(--overlay) / 0.16);
+}
+
+@container style(--motion-reduced: 1) {
+  [data-slot='scroll-area-scrollbar'],
+  [data-slot='scroll-area-thumb'] {
+    transition: none;
+  }
+}
