@@ -1,0 +1,17 @@
+.directory-picker {
+  container-type: inline-size;
+}
+
+@container (max-width: 34rem) {
+  .directory-picker .picker-sidebar {
+    display: none;
+  }
+}
+
+.directory-picker footer button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  height: auto;
+  min-height: var(--control-height-small);
+}
