@@ -1286,6 +1286,224 @@
         "apps/react/src/components/ui/editable-name/index.tsx"
       ],
       "reason": "Compare the source editable-text/dense-context scene; unavailable or partial source states remain explicit failures."
+    },
+    {
+      "id": "fields-catalog",
+      "kind": "catalog-fixture",
+      "scene": "fields",
+      "fixture": "field-state-matrix",
+      "renderedStates": [
+        "empty-placeholder",
+        "filled",
+        "hover",
+        "focus-visible",
+        "invalid",
+        "disabled",
+        "read-only",
+        "help-text",
+        "required",
+        "long-label",
+        "compact-density",
+        "zoom-200"
+      ],
+      "cellContract": {
+        "selector": "[data-field-preview]",
+        "count": 240
+      },
+      "theme": "light",
+      "motion": "reduced",
+      "width": 1024,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/FieldsCatalogPreview.svelte",
+        "src/lib/component-catalog/renderers/FieldPreviewCell.svelte",
+        "src/lib/component-catalog/renderers/field-controls.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/fields-catalog-preview.tsx",
+        "apps/react/src/catalog/field-preview-cell.tsx",
+        "apps/react/src/catalog/field-controls.tsx",
+        "apps/react/src/catalog/fields-catalog-preview.css"
+      ],
+      "reason": "Compare the complete original fields matrix at one desktop width, including its own compact and zoom cells."
+    },
+    {
+      "id": "rows-catalog",
+      "kind": "catalog-fixture",
+      "scene": "rows",
+      "fixture": "row-family-matrix",
+      "renderedStates": [
+        "default",
+        "hover",
+        "focus-visible",
+        "selected",
+        "active-current",
+        "disabled",
+        "busy-loading",
+        "unread-attention",
+        "trailing-actions",
+        "dragging-placeholder",
+        "long-content",
+        "compact-density",
+        "zoom-200",
+        "baseline-grid"
+      ],
+      "cellContract": {
+        "selector": "[data-row-preview]",
+        "count": 17
+      },
+      "theme": "light",
+      "motion": "reduced",
+      "width": 1024,
+      "height": 900,
+      "referenceSources": ["src/lib/component-catalog/renderers/RowsCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/rows-catalog-preview.tsx",
+        "apps/react/src/catalog/rows-catalog-preview.css"
+      ],
+      "reason": "Compare the complete original rows matrix at one desktop width, including its own compact and zoom cells."
+    },
+    {
+      "id": "principal-avatar-tile-states",
+      "kind": "catalog-fixture",
+      "scene": "principal-avatar",
+      "fixture": "tile-states",
+      "renderedStates": [
+        "no-url",
+        "failing-url",
+        "size-16",
+        "size-24",
+        "size-32",
+        "empty-label",
+        "fill"
+      ],
+      "expectedImageUrls": ["https://avatar.invalid/missing.png"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte",
+        "src/lib/components/ui/PrincipalAvatar.svelte",
+        "src/features/presence/components/PresenceAvatarStack.svelte",
+        "src/features/notes/note-presence/NotePresenceAvatars.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/avatar-catalog-preview.tsx",
+        "apps/react/src/components/ui/principal-avatar.tsx",
+        "apps/react/src/features/presence/components/presence-avatar-stack.tsx",
+        "apps/react/src/features/notes/note-presence/note-presence-avatars.tsx"
+      ],
+      "reason": "Compare source tile-states fallback display only; source fixture dispatches an error event, while candidate native failure behavior is tested separately."
+    },
+    {
+      "id": "principal-avatar-presence-stack-default",
+      "kind": "catalog-fixture",
+      "scene": "principal-avatar",
+      "fixture": "presence-stack-default",
+      "renderedStates": ["no-url", "failing-url", "self", "owner", "member", "offline", "overflow"],
+      "expectedImageUrls": ["https://avatar.invalid/missing.png"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte",
+        "src/lib/components/ui/PrincipalAvatar.svelte",
+        "src/features/presence/components/PresenceAvatarStack.svelte",
+        "src/features/notes/note-presence/NotePresenceAvatars.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/avatar-catalog-preview.tsx",
+        "apps/react/src/components/ui/principal-avatar.tsx",
+        "apps/react/src/features/presence/components/presence-avatar-stack.tsx",
+        "apps/react/src/features/notes/note-presence/note-presence-avatars.tsx"
+      ],
+      "reason": "Compare source presence-stack-default fallback display only; source fixture dispatches an error event, while candidate native failure behavior is tested separately."
+    },
+    {
+      "id": "principal-avatar-presence-stack-action",
+      "kind": "catalog-fixture",
+      "scene": "principal-avatar",
+      "fixture": "presence-stack-action",
+      "renderedStates": [
+        "no-url",
+        "failing-url",
+        "self",
+        "owner",
+        "member",
+        "offline",
+        "overflow",
+        "aria-disabled"
+      ],
+      "expectedImageUrls": ["https://avatar.invalid/missing.png"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte",
+        "src/lib/components/ui/PrincipalAvatar.svelte",
+        "src/features/presence/components/PresenceAvatarStack.svelte",
+        "src/features/notes/note-presence/NotePresenceAvatars.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/avatar-catalog-preview.tsx",
+        "apps/react/src/components/ui/principal-avatar.tsx",
+        "apps/react/src/features/presence/components/presence-avatar-stack.tsx",
+        "apps/react/src/features/notes/note-presence/note-presence-avatars.tsx"
+      ],
+      "reason": "Compare source presence-stack-action fallback display only; source fixture dispatches an error event, while candidate native failure behavior is tested separately."
+    },
+    {
+      "id": "principal-avatar-presence-stack-decorative",
+      "kind": "catalog-fixture",
+      "scene": "principal-avatar",
+      "fixture": "presence-stack-decorative",
+      "renderedStates": ["no-url", "failing-url", "self", "owner", "member", "offline", "overflow"],
+      "expectedImageUrls": ["https://avatar.invalid/missing.png"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte",
+        "src/lib/components/ui/PrincipalAvatar.svelte",
+        "src/features/presence/components/PresenceAvatarStack.svelte",
+        "src/features/notes/note-presence/NotePresenceAvatars.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/avatar-catalog-preview.tsx",
+        "apps/react/src/components/ui/principal-avatar.tsx",
+        "apps/react/src/features/presence/components/presence-avatar-stack.tsx",
+        "apps/react/src/features/notes/note-presence/note-presence-avatars.tsx"
+      ],
+      "reason": "Compare source presence-stack-decorative fallback display only; source fixture dispatches an error event, while candidate native failure behavior is tested separately."
+    },
+    {
+      "id": "principal-avatar-note-presence-stack",
+      "kind": "catalog-fixture",
+      "scene": "principal-avatar",
+      "fixture": "note-presence-stack",
+      "renderedStates": ["no-url", "failing-url", "overflow"],
+      "expectedImageUrls": ["https://avatar.invalid/missing.png"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte",
+        "src/lib/components/ui/PrincipalAvatar.svelte",
+        "src/features/presence/components/PresenceAvatarStack.svelte",
+        "src/features/notes/note-presence/NotePresenceAvatars.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/avatar-catalog-preview.tsx",
+        "apps/react/src/components/ui/principal-avatar.tsx",
+        "apps/react/src/features/presence/components/presence-avatar-stack.tsx",
+        "apps/react/src/features/notes/note-presence/note-presence-avatars.tsx"
+      ],
+      "reason": "Compare source note-presence-stack fallback display only; source fixture dispatches an error event, while candidate native failure behavior is tested separately."
     }
   ],
   "uncovered": [
@@ -1943,6 +2161,49 @@
         "apps/react/src/catalog/modal-heading-preview.tsx",
         "apps/react/src/components/modals/replace-agent-modal.tsx",
         "apps/react/src/catalog/callback-consumer-examples.tsx"
+      ]
+    },
+    {
+      "component": "fields",
+      "route": "/sandbox/fields",
+      "fixture": "field-state-matrix",
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/FieldsCatalogPreview.svelte",
+        "src/lib/component-catalog/renderers/FieldPreviewCell.svelte",
+        "src/lib/component-catalog/renderers/field-controls.ts"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/fields-catalog-preview.tsx",
+        "apps/react/src/catalog/field-preview-cell.tsx",
+        "apps/react/src/catalog/field-controls.tsx",
+        "apps/react/src/catalog/fields-catalog-preview.css"
+      ]
+    },
+    {
+      "component": "rows",
+      "route": "/sandbox/rows",
+      "fixture": "row-family-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/RowsCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/catalog/rows-catalog-preview.tsx",
+        "apps/react/src/catalog/rows-catalog-preview.css"
+      ]
+    },
+    {
+      "component": "principal-avatar",
+      "route": "/sandbox/principal-avatar",
+      "fixture": "presence-stack-action, note-presence-stack; natural reserved-domain failures",
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte",
+        "src/lib/components/ui/PrincipalAvatar.svelte",
+        "src/features/presence/components/PresenceAvatarStack.svelte",
+        "src/features/notes/note-presence/NotePresenceAvatars.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/avatar-catalog-preview.tsx",
+        "apps/react/src/components/ui/principal-avatar.tsx",
+        "apps/react/src/features/presence/components/presence-avatar-stack.tsx",
+        "apps/react/src/features/notes/note-presence/note-presence-avatars.tsx"
       ]
     }
   ]

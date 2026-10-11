@@ -204,3 +204,28 @@ Named-scene captures reject explicit partial/unimplemented markers. A ready impl
 state retains its images, source hashes and geometry even if other states in that scene
 are absent: the strict complete-state comparison still fails. Matching pixels do not
 override missing-state failures. All declared cases require a real run before acceptance.
+
+Rows, fields and presence catalog coverage
+
+Catalog readiness depends on the real fixture wrapper, renderer/state markers and
+optional matrix cell count, not the outer component-page layout: source rows/fields
+use dedicated routes. Capture waits on the selected fixture's images; offscreen lazy
+images in other examples do not prove or block that fixture. Fields and rows each use
+one desktop capture; their source matrices already contain compact and zoom examples.
+
+Principal-avatar cases declare only https://avatar.invalid/missing.png as an expected
+image failure. Console resource messages must correlate with real image request failure
+evidence, which is attached; unrelated resource/runtime errors still fail. Candidate
+presence journeys additionally require a non-aborted native image failure and observe
+the production fallback. There are no request interceptors or synthetic image events
+in this package. The pinned Svelte avatar catalog itself dispatches synthetic error
+events unconditionally: its images are static fallback display references only, not
+evidence of native Svelte image failure. Empty lists, callback replacement and image URL
+retry need additional sanctioned callers; the static source fixtures cannot prove them.
+
+Read-only migration inventory audit (maintained separately from browser acceptance):
+  node packages/view-parity/scripts/migration-status.mjs \
+    --reference <incoming-Svelte-ref> --candidate <React-ref> --json
+Defaults use the pinned inventory reference and audited React commit. --fail-on-drift
+exits 1 for drift; invalid input exits 2. The command does not fetch, write files, or
+promote planned evidence to browser acceptance.

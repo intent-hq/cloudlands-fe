@@ -71,6 +71,22 @@ export function loadManifest() {
         `${entry.id}: catalog rendered-state readiness contract required`,
       );
     }
+    if (entry.cellContract !== undefined)
+      requireValue(
+        entry.kind === "catalog-fixture" &&
+          ["[data-field-preview]", "[data-row-preview]"].includes(entry.cellContract.selector) &&
+          Number.isInteger(entry.cellContract.count) &&
+          entry.cellContract.count > 0,
+        `${entry.id}: invalid catalog matrix readiness contract`,
+      );
+    if (entry.expectedImageUrls !== undefined)
+      requireValue(
+        entry.scene === "principal-avatar" &&
+          entry.kind === "catalog-fixture" &&
+          JSON.stringify(entry.expectedImageUrls) ===
+            JSON.stringify(["https://avatar.invalid/missing.png"]),
+        `${entry.id}: only the reviewed reserved avatar image failure is expected`,
+      );
     requireValue(
       ["light", "dark"].includes(entry.theme),
       `${entry.id}: explicit light/dark theme required`,

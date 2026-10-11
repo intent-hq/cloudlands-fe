@@ -16,16 +16,42 @@ function sceneUrl(baseUrl, entry) {
   return url.href;
 }
 
-export function observeErrors(page) {
+export function observeErrors(page, { expectedImageUrls = [], resourceEvents = [] } = {}) {
   const errors = [];
   page.on("pageerror", (error) => errors.push(`page: ${error.message}`));
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(`console: ${message.text()}`);
+    if (message.type() !== "error") return;
+    const url = message.location().url;
+    if (expectedImageUrls.includes(url) && message.text().startsWith("Failed to load resource:")) {
+      resourceEvents.push({ kind: "console", url, message: message.text() });
+    } else errors.push(`console: ${message.text()}`);
+  });
+  page.on("requestfailed", (request) => {
+    if (request.resourceType() === "image" && expectedImageUrls.includes(request.url()))
+      resourceEvents.push({
+        kind: "requestfailed",
+        url: request.url(),
+        error: request.failure()?.errorText,
+      });
   });
   page.on("response", (response) => {
-    if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`);
+    if (response.status() < 400) return;
+    if (response.request().resourceType() === "image" && expectedImageUrls.includes(response.url()))
+      resourceEvents.push({ kind: "response", url: response.url(), status: response.status() });
+    else errors.push(`HTTP ${response.status()}: ${response.url()}`);
   });
   return errors;
+}
+
+export function assertImageFailureEvidence(resourceEvents) {
+  for (const event of resourceEvents.filter((item) => item.kind === "console")) {
+    expect(
+      resourceEvents.some(
+        (item) => item.url === event.url && ["requestfailed", "response"].includes(item.kind),
+      ),
+      `Expected image console failure lacks a matching native image request: ${event.url}`,
+    ).toBe(true);
+  }
 }
 
 export async function openScene(page, baseUrl, entry, errors = []) {
@@ -99,9 +125,10 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
   if (!response?.ok())
     throw new Error(`Catalog document returned HTTP ${response?.status()}: ${url}`);
-  await expect(page.getByTestId("catalog-component-page")).toBeVisible({ timeout: 15_000 });
   const frame = page.locator(captureSelector(entry));
-  await expect(frame, `Missing real fixture ${entry.scene}/${entry.fixture}`).toHaveCount(1);
+  await expect(frame, `Missing real fixture ${entry.scene}/${entry.fixture}`).toHaveCount(1, {
+    timeout: 15_000,
+  });
   await expect(frame).toBeVisible();
   await expect(
     frame.locator("[data-catalog-unimplemented]"),
@@ -109,6 +136,11 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   ).toHaveCount(0);
   const rendered = frame.locator(`[data-catalog-renderer-fixture="${entry.fixture}"]`);
   await expect(rendered).toHaveCount(1);
+  if (entry.cellContract)
+    await expect(
+      rendered.locator(entry.cellContract.selector),
+      "Incomplete source fixture matrix",
+    ).toHaveCount(entry.cellContract.count);
   const stateTokens = () =>
     rendered.evaluate((root) => {
       const elements = [...root.querySelectorAll("[data-catalog-rendered-state]")];
@@ -133,13 +165,20 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }
-  await page.evaluate(async () => {
+  await frame.scrollIntoViewIfNeeded();
+  for (const url of entry.expectedImageUrls ?? [])
+    await expect(
+      frame.locator(`img[src="${url}"]`),
+      "The real avatar component must settle to its fallback",
+    ).toHaveCount(0);
+  await frame.evaluate(async (root) => {
     await document.fonts.ready;
     await Promise.all(
-      [...document.images].filter((image) => !image.complete).map((image) => image.decode()),
+      [...root.querySelectorAll("img")]
+        .filter((image) => !image.complete)
+        .map((image) => image.decode()),
     );
   });
-  await frame.scrollIntoViewIfNeeded();
   await page.mouse.move(0, 0);
   if (errors.length) throw new Error(errors.join("\n"));
   return {

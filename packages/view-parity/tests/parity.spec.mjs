@@ -9,6 +9,7 @@ import {
   stableScreenshot,
   captureSelector,
   openCatalogFixture,
+  assertImageFailureEvidence,
 } from "../lib/browser.mjs";
 import { compareImages } from "../lib/compare.mjs";
 
@@ -34,8 +35,16 @@ for (const entry of selectedCases(manifest)) {
     try {
       const reference = await referenceContext.newPage();
       const candidate = await candidateContext.newPage();
-      const referenceErrors = observeErrors(reference);
-      const candidateErrors = observeErrors(candidate);
+      const referenceResourceEvents = [];
+      const candidateResourceEvents = [];
+      const referenceErrors = observeErrors(reference, {
+        expectedImageUrls: entry.expectedImageUrls,
+        resourceEvents: referenceResourceEvents,
+      });
+      const candidateErrors = observeErrors(candidate, {
+        expectedImageUrls: entry.expectedImageUrls,
+        resourceEvents: candidateResourceEvents,
+      });
       const open = entry.kind === "catalog-fixture" ? openCatalogFixture : openScene;
       const [referenceState, candidateState] = await Promise.all([
         open(reference, referenceUrl, entry, referenceErrors),
@@ -98,6 +107,10 @@ for (const entry of selectedCases(manifest)) {
           candidateSha256: createHash("sha256").update(candidatePng).digest("hex"),
         },
         errors: { reference: referenceErrors, candidate: candidateErrors },
+        expectedImageFailureEvidence: {
+          reference: referenceResourceEvents,
+          candidate: candidateResourceEvents,
+        },
       };
       for (const [name, buffer, contentType] of [
         ["reference.png", referencePng, "image/png"],
@@ -134,6 +147,8 @@ for (const entry of selectedCases(manifest)) {
       }
       expect.soft(referenceErrors, "Reference browser errors").toEqual([]);
       expect.soft(candidateErrors, "Candidate browser errors").toEqual([]);
+      assertImageFailureEvidence(referenceResourceEvents);
+      assertImageFailureEvidence(candidateResourceEvents);
       expect
         .soft(candidateAria, "Accessible state differs; inspect comparison.json")
         .toBe(referenceAria);
