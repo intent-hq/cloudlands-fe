@@ -106,7 +106,6 @@ test("picker: filter and Enter commit the selected option then restore the label
   const input = fixture.getByRole("combobox", { name: "Catalog combobox", exact: true });
   await input.click();
   await input.fill("Ada");
-  await input.press("ArrowDown");
   await input.press("Enter");
   await expect
     .poll(() => outputJson(fixture.getByLabel("Combobox value", { exact: true })))
