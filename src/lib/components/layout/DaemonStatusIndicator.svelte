@@ -10,22 +10,9 @@
     return `${percent.toFixed(1)}%`;
   }
 
-  /**
-   * Format a byte count as human-readable MB/GB/TB, e.g. `512.0 MB`,
-   * `1.25 GB` or `1.00 TB`.
-   */
-  export function formatMemory(bytes: number): string {
-    const TB = 1024 ** 4;
-    const GB = 1024 ** 3;
-    const MB = 1024 ** 2;
-    if (bytes >= TB) {
-      return `${(bytes / TB).toFixed(2)} TB`;
-    }
-    if (bytes >= GB) {
-      return `${(bytes / GB).toFixed(2)} GB`;
-    }
-    return `${(bytes / MB).toFixed(1)} MB`;
-  }
+  // Compatibility export for existing consumers until the Svelte renderer retires.
+  import { formatMemory } from '$lib/utils/daemon-status-format';
+  export { formatMemory };
 
   /**
    * Format a disk byte count with decimal (SI) units — TB = 1000^4 — so

@@ -30,3 +30,20 @@ export function formatTransportLabel(transport: {
   // i18n-ignore (transport mode identifier, not translatable UI copy)
   return 'external (WebSocket)';
 }
+
+/**
+ * Format a byte count as human-readable MB/GB/TB, e.g. `512.0 MB`,
+ * `1.25 GB` or `1.00 TB`.
+ */
+export function formatMemory(bytes: number): string {
+  const TB = 1024 ** 4;
+  const GB = 1024 ** 3;
+  const MB = 1024 ** 2;
+  if (bytes >= TB) {
+    return `${(bytes / TB).toFixed(2)} TB`;
+  }
+  if (bytes >= GB) {
+    return `${(bytes / GB).toFixed(2)} GB`;
+  }
+  return `${(bytes / MB).toFixed(1)} MB`;
+}
