@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+  "reviewReason": "Reviewed shared corrections: retain the temporary per-job Mermaid measurement root/immediate-group font-size stabilization, and schedule DiagramRenderer geometry reads/writes outside ResizeObserver delivery with pending readiness and cancellation/disposal. Fit arithmetic and lane-width interruption behavior are unchanged. Historical default and Mermaid-v1 comparisons remain separate.",
+  "reference": {
+    "commit": "d32242ab7b3841ab1423488474170a88b0699c3f",
+    "sourceTreeSha256": "b2ac8fdef1864e08bb08077d914429a99a82a59f0e437a526f115295a168c19e",
+    "sourcePaths": [
+      "src",
+      "static",
+      "messages",
+      "project.inlang",
+      "scripts",
+      "package.json",
+      "pnpm-lock.yaml",
+      ".npmrc",
+      "vite.config.mjs",
+      "svelte.config.js",
+      "tailwind.config.js",
+      "postcss.config.mjs",
+      "tsconfig.json",
+      "pnpm-workspace.yaml"
+    ]
+  }
+}
