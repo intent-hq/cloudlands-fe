@@ -196,6 +196,8 @@
     "remote-env:start:all": "./tests/remote-env/start-remote-env.sh --all",
     "remote-env:stop": "./tests/remote-env/stop-remote-env.sh",
     "dev:react": "node scripts/run-workspace.mjs apps/react dev",
+    "dev:react:electron": "node scripts/dev-launcher.mjs --react",
+    "dev:react:electron:base": "node scripts/pnpm-run.mjs generate:build-config && node scripts/pnpm-run.mjs generate:ipc-channels && node scripts/pnpm-run.mjs generate:i18n && node scripts/build-speech-helper.cjs && node scripts/patch-dev-electron-plist.cjs && node scripts/dev-ready.js clear && node scripts/dev-stack.mjs --build \"node scripts/pnpm-run.mjs build:main:dev\" --build \"node scripts/pnpm-run.mjs build:preload:dev\" --long \"node scripts/pnpm-run.mjs dev:react\" --long \"node scripts/pnpm-run.mjs dev:electron\"",
     "build:react": "node scripts/run-workspace.mjs apps/react build",
     "preview:react": "node scripts/run-workspace.mjs apps/react preview",
     "check:react": "node scripts/run-workspace.mjs apps/react typecheck",

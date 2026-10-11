@@ -19,6 +19,11 @@
  */
 export const GENERATED_CLIENT_PROBE_PATH = '/.svelte-kit/generated/client/nodes/0.js';
 
+// TanStack Start resolves this alias to apps/react/src/client.tsx. Probe the
+// transformed hydration entry as well as the catalog document: a listening
+// server or an HTML response alone does not prove the client can be served.
+const REACT_CLIENT_PROBE_PATH = '/@id/virtual:tanstack-start-client-entry';
+
 /**
  * Build the wait-on target list gating the Electron launch.
  *
@@ -34,12 +39,17 @@ export const GENERATED_CLIENT_PROBE_PATH = '/.svelte-kit/generated/client/nodes/
  *
  * @param {string | number} devPort Vite dev-server port
  * @param {string[]} sentinelFiles absolute paths of the build sentinels
+ * @param {NodeJS.ProcessEnv} env launcher environment; React is development-only
  * @returns {string[]}
  */
-export function buildWaitOnTargets(devPort, sentinelFiles) {
+export function buildWaitOnTargets(devPort, sentinelFiles, env = {}) {
+  const probePaths =
+    env.NODE_ENV === 'development' && env.INTENT_DEV_REACT === '1'
+      ? ['/sandbox', REACT_CLIENT_PROBE_PATH]
+      : [GENERATED_CLIENT_PROBE_PATH];
   return [
     `tcp:127.0.0.1:${devPort}`,
-    `http-get://127.0.0.1:${devPort}${GENERATED_CLIENT_PROBE_PATH}`,
+    ...probePaths.map((probePath) => `http-get://127.0.0.1:${devPort}${probePath}`),
     ...sentinelFiles,
   ];
 }

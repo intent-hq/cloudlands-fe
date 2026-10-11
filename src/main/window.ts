@@ -230,7 +230,9 @@ const DEFAULT_WINDOW_ROUTE = '/workspace/new';
 function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
   if (process.env.NODE_ENV === 'development') {
     const devPort = process.env.DEV_PORT || '5190';
-    return `http://127.0.0.1:${devPort}${route}`;
+    // The internal preview has no workspace routes, including saved sessions.
+    const devRoute = !app.isPackaged && process.env.INTENT_DEV_REACT === '1' ? '/sandbox' : route;
+    return `http://127.0.0.1:${devPort}${devRoute}`;
   }
   return `app://workspaces${route}`;
 }

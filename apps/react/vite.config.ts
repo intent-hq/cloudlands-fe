@@ -66,7 +66,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
     },
     // The reference app's PostCSS configuration must not run in this renderer.
     css: { postcss: { plugins: [] } },
-    server: { host: '127.0.0.1', port: 5174, strictPort: true },
+    server: { host: '127.0.0.1', port: Number(process.env.DEV_PORT || 5174), strictPort: true },
     preview: { host: '127.0.0.1', port: 4174, strictPort: true },
   };
 });

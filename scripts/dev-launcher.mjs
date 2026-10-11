@@ -5,6 +5,7 @@
  * Usage:
  *   node scripts/dev-launcher.mjs                     # Regular dev mode
  *   node scripts/dev-launcher.mjs --cdp               # CDP debug mode
+ *   node scripts/dev-launcher.mjs --react --cdp       # React catalog preview with CDP
  *   node scripts/dev-launcher.mjs --name "Frontend"   # Named instance (shows in title bar)
  */
 
@@ -113,7 +114,7 @@ function getLinuxElectronFlags() {
   return flags;
 }
 
-function runDev(ports, cdpMode = false, devName = '') {
+function runDev(ports, cdpMode = false, devName = '', reactPreview = false) {
   ensureElectronBinary();
   ensureNativeModules();
 
@@ -125,9 +126,13 @@ function runDev(ports, cdpMode = false, devName = '') {
 
   const label = devName || (ports.instanceNum ? `Dev ${ports.instanceNum}` : 'Dev');
 
-  const script = cdpMode ? 'dev:cdp:base' : 'dev:base';
+  const script = reactPreview ? 'dev:react:electron:base' : cdpMode ? 'dev:cdp:base' : 'dev:base';
+  // A normal launch must not inherit the opt-in from another dev shell.
+  process.env.INTENT_DEV_REACT = reactPreview ? '1' : '0';
+  if (reactPreview) process.env.NODE_ENV = 'development';
 
   console.log(`\n🚀 Starting Intent [${label}]...\n`);
+  if (reactPreview) console.log('  React migration preview: opening /sandbox');
 
   // Set environment variables directly on process.env for cross-platform compatibility
   process.env.DEV_PORT = String(ports.devPort);
@@ -291,12 +296,13 @@ function pruneStaleDevInstances(currentDevPort, maxAgeDays = 7) {
 // Main
 const args = process.argv.slice(2);
 const cdpMode = args.includes('--cdp') || args.includes('-c');
+const reactPreview = args.includes('--react');
 const devName = parseNameArg(args) || getCurrentGitBranch();
 
 findAvailablePorts(cdpMode)
   .then((ports) => {
     pruneStaleDevInstances(ports.devPort);
-    runDev(ports, cdpMode, devName);
+    runDev(ports, cdpMode, devName, reactPreview);
   })
   .catch((err) => {
     console.error('❌ Error:', err.message);

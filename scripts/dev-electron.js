@@ -32,10 +32,12 @@ const waitOnTimeoutMs = resolveWaitOnTimeoutMs(process.env);
 // Electron loads the window before Vite can serve the generated client
 // modules, the renderer can stay stuck on a 500 error page that reloads do
 // not recover from (intent-hq/monorepo#3524). See dev-electron-lib.mjs.
-const waitOnTargets = buildWaitOnTargets(devPort, [
-  join(rootDir, 'dist/.dev-ready-main'),
-  join(rootDir, 'dist/.dev-ready-preload'),
-]);
+// The opt-in React preview probes its catalog and TanStack hydration entry.
+const waitOnTargets = buildWaitOnTargets(
+  devPort,
+  [join(rootDir, 'dist/.dev-ready-main'), join(rootDir, 'dist/.dev-ready-preload')],
+  process.env,
+);
 
 // Log the full target list so a stuck wait is self-diagnosing.
 console.log(`Waiting for (timeout ${waitOnTimeoutMs}ms):\n  ${waitOnTargets.join('\n  ')}`);
