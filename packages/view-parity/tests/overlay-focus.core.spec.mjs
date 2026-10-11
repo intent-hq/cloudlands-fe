@@ -116,10 +116,28 @@ test('overlay focus: nested select accepts native keyboard selection and returns
   // Bits holds focus on its trigger and uses active-descendant navigation;
   // Radix moves DOM focus. Selection is the independent shared contract.
   await page.keyboard.press('Home');
+  await expectActiveOption(options.getByRole('option', { name: 'Alpha', exact: true }));
   await page.keyboard.press('ArrowDown');
+  await expectActiveOption(options.getByRole('option', { name: 'Beta', exact: true }));
   await page.keyboard.press('Enter');
   await expect(options).toHaveCount(0);
   await expect(example.getByLabel('Nested select value', { exact: true })).toHaveText('beta');
   await expectSynchronousReclaim(outside, trigger);
   await expect(example.getByLabel('Static menu open', { exact: true })).toHaveText('true');
 });
+
+async function expectActiveOption(option) {
+  // Radix defers keyboard focus with setTimeout; Bits updates aria-activedescendant.
+  // Wait for the observable navigation result before issuing the next key.
+  await expect
+    .poll(() =>
+      option.evaluate((node) => {
+        const active = node.ownerDocument.activeElement;
+        return (
+          active === node ||
+          (Boolean(node.id) && active?.getAttribute('aria-activedescendant') === node.id)
+        );
+      }),
+    )
+    .toBe(true);
+}
