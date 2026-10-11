@@ -128,12 +128,12 @@ export function GitHubLinkCard({ url, preview }: GitHubLinkCardProps) {
         />
         {resource ? (
           <span className="github-link-card-ref">
-            {gitlabBrand} ·{' '}
-            {kind === 'pr'
-              ? m.ui_linkTooltip_resourceMergeRequest_label()
-              : m.ui_linkTooltip_resourceIssue_label()}{' '}
-            {kind === 'pr' ? '!' : '#'}
-            {number}
+            {/* Match the source's single text node to preserve fractional text layout. */}
+            {`${gitlabBrand} · ${
+              kind === 'pr'
+                ? m.ui_linkTooltip_resourceMergeRequest_label()
+                : m.ui_linkTooltip_resourceIssue_label()
+            } ${kind === 'pr' ? '!' : '#'}${number}`}
           </span>
         ) : (
           <span className="github-link-card-ref">
