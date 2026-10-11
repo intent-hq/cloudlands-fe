@@ -1,4 +1,8 @@
 // Source fixtures: PatternCatalogPreview.svelte, ScreenHarness.svelte, FormHarness.svelte.
+import { SettingsPreview } from '@/components/patterns/settings';
+import { ActionMenuHarness } from './menu-catalog-preview';
+import { CollectionCatalogState } from './collection-catalog-preview';
+import { ConfirmCatalogState } from './confirm-catalog-preview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -132,7 +136,18 @@ export function PatternCatalogPreview({
     <div data-pattern-contract={componentId} data-catalog-renderer-fixture={fixture.id}>
       {fixture.states.map((state) => (
         <section key={state} data-catalog-rendered-state={state}>
-          {componentId === 'screen' ? (
+          {componentId === 'settings' ? (
+            <SettingsPreview searchQuery={state === 'filtered' ? 'choice' : ''} />
+          ) : componentId === 'collection' ? (
+            <CollectionCatalogState state={state} />
+          ) : componentId === 'action-menu' ? (
+            <ActionMenuHarness
+              bar={state === 'action-bar' || state === 'overflow'}
+              context={state === 'context-menu'}
+            />
+          ) : componentId === 'confirm' ? (
+            <ConfirmCatalogState state={state} fixture={fixture} />
+          ) : componentId === 'screen' ? (
             <ScreenHarness state={state} />
           ) : (
             <FormHarness error={state === 'error' ? undefined : ''} busy={state === 'submitting'} />

@@ -1,0 +1,16 @@
+/* Source: ChoiceCatalogPreview.svelte. Keep room for its inline open fixtures. */
+.choice-catalog-preview > div {
+  min-width: 0;
+}
+[data-catalog-state='combobox-long-list']:has([data-side='top']) {
+  padding-block-start: calc(var(--control-height-large) * 8 + var(--space-1));
+}
+[data-catalog-state='combobox-long-list']:has([data-side='bottom']) {
+  padding-block-end: calc(var(--control-height-large) * 8 + var(--space-1));
+}
+[data-catalog-state='select-long-list']:has([data-side='top']) {
+  padding-block-start: calc(var(--control-height-large) * 4 + var(--space-1));
+}
+[data-catalog-state='select-long-list']:has([data-side='bottom']) {
+  padding-block-end: calc(var(--control-height-large) * 4 + var(--space-1));
+}

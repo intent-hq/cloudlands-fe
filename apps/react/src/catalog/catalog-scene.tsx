@@ -81,7 +81,6 @@ export function CatalogScene({
     params.set('width', String(nextWidth));
     return `${location.pathname}?${params}`;
   }
-  const Preview = preview?.component;
   return (
     <section
       ref={root}
@@ -150,7 +149,7 @@ export function CatalogScene({
           )}
         </div>
       ) : (
-        Preview && (
+        preview && (
           <div
             className="preview-scene-list grid gap-8"
             data-preview-scene-list={stateName === 'all' ? 'all' : undefined}
@@ -172,7 +171,7 @@ export function CatalogScene({
                     style={{ width: `${width}px` }}
                     data-testid="catalog-scene-focus"
                   >
-                    <Preview {...props} />
+                    {props}
                     <div data-catalog-portal-target="scene" />
                   </div>
                 </div>

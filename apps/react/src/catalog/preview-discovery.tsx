@@ -1,5 +1,9 @@
 // Only executable React scenes are registered. Metadata is not proof of a port.
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
+import { SettingsTextareaPreview } from '@/components/patterns/settings';
+import { TextEntryFocusPreview } from './text-entry-focus-preview';
+import { ModalHeadingPreview } from './modal-heading-preview';
+import { SelectFocusPreview } from './select-catalog-preview';
 import { Button } from '@/components/ui/button';
 import {
   collectGeometry,
@@ -35,18 +39,65 @@ const buttonStates = {
   destructive: { children: 'Delete workspace', variant: 'destructive' },
 } satisfies Record<string, ComponentProps<typeof Button>>;
 
-const previews = {
+interface PreviewDefinition {
+  id: string;
+  title: string;
+  defaultState: string;
+  source: string;
+  states: Record<string, ReactNode>;
+}
+const previews: Record<string, PreviewDefinition> = {
   button: {
     id: 'button',
     title: 'Button',
     defaultState: 'default',
-    states: buttonStates,
-    component: Button,
+    source: 'src/lib/components/ui/button/button.preview.svelte',
+    states: Object.fromEntries(
+      Object.entries(buttonStates).map(([name, props]) => [name, <Button key={name} {...props} />]),
+    ),
+  },
+  'settings-textarea': {
+    id: 'settings-textarea',
+    title: 'Settings textarea surfaces',
+    defaultState: 'controls',
+    source: 'src/lib/components/patterns/settings/settings-textarea.preview.svelte',
+    states: { controls: <SettingsTextareaPreview /> },
+  },
+  'text-entry-focus': {
+    id: 'text-entry-focus',
+    title: 'Caret-only text entry focus',
+    defaultState: 'default',
+    source: 'src/lib/components/ui/text-entry-focus.preview.svelte',
+    states: { default: <TextEntryFocusPreview /> },
+  },
+  'modal-heading-spacing': {
+    id: 'modal-heading-spacing',
+    title: 'Modal heading spacing',
+    defaultState: 'form',
+    source: 'src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte',
+    states: {
+      form: <ModalHeadingPreview kind="form" />,
+      confirm: <ModalHeadingPreview kind="confirm" />,
+      direct: <ModalHeadingPreview kind="direct" />,
+      wrapped: <ModalHeadingPreview kind="wrapped" />,
+      stacked: <ModalHeadingPreview kind="stacked" />,
+    },
+  },
+  'select-focus': {
+    id: 'select-focus',
+    title: 'Select Escape focus restoration',
+    defaultState: 'portalled',
+    source: 'src/lib/components/ui/select/select-focus.preview.svelte',
+    states: {
+      inline: <SelectFocusPreview portal={false} />,
+      portalled: <SelectFocusPreview portal />,
+      static: <SelectFocusPreview staticPosition />,
+    },
   },
 };
 
 export function getPreview(slug: string) {
-  return slug === 'button' ? previews.button : undefined;
+  return previews[slug];
 }
 export function listPreviewIds() {
   return Object.keys(previews).sort();

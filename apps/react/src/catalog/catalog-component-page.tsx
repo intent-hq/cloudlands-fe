@@ -7,6 +7,18 @@ import { BasicCatalogPreview } from './basic-catalog-preview';
 import { ContentCatalogPreview } from './content-catalog-preview';
 import { NavigationCatalogPreview } from './navigation-catalog-preview';
 import { PatternCatalogPreview } from './pattern-catalog-preview';
+import { AvatarCatalogPreview } from './avatar-catalog-preview';
+import { IndicatorCatalogPreview } from './indicator-catalog-preview';
+import { ProximityCatalogPreview } from './proximity-catalog-preview';
+import { DropdownCatalogPreview } from './dropdown-catalog-preview';
+import { SheetCatalogPreview } from './sheet-catalog-preview';
+import { SettingsCatalogPreview } from './settings-catalog-preview';
+import { FieldCatalogPreview } from './field-catalog-preview';
+import { NavigationHelpCatalogPreview } from './navigation-help-catalog-preview';
+import { StructuralCatalogPreview } from './structural-catalog-preview';
+import { MenuCatalogPreview } from './menu-catalog-preview';
+import { SelectCatalogPreview } from './select-catalog-preview';
+import { CatalogLink } from './catalog-link';
 import { DialogCatalogPreview } from './dialog-catalog-preview';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import './catalog-component-page.css';
@@ -28,6 +40,34 @@ export const portedComponentPages = [
   'dialog',
   'screen',
   'form',
+  'select',
+  'menu',
+  'collection',
+  'action-menu',
+  'confirm',
+  'accordion',
+  'card',
+  'breadcrumb',
+  'table',
+  'button-group',
+  'radio-group',
+  'checkbox-group',
+  'kbd',
+  'scroll-area',
+  'tooltip',
+  'copy-input',
+  'input-group',
+  'sheet',
+  'slider',
+  'file-input',
+  'settings-field-row',
+  'settings-section',
+  'settings-page-shell',
+  'proximity-highlight',
+  'dropdown',
+  'settings',
+  'principal-avatar',
+  'loading-indicator',
 ] as const;
 export function hasComponentPage(slug: string) {
   return portedComponentPages.some((value) => value === slug);
@@ -41,9 +81,49 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
       data-catalog-preview={entry.slug}
       data-catalog-fixture-id={fixture.id}
     >
-      {['button', 'badge', 'checkbox', 'switch', 'toggle', 'toggle-group'].includes(entry.slug) ? (
+      {entry.slug === 'principal-avatar' ? (
+        <AvatarCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'loading-indicator' ? (
+        <IndicatorCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'proximity-highlight' ? (
+        <ProximityCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'dropdown' ? (
+        <DropdownCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'sheet' ? (
+        <SheetCatalogPreview fixture={fixture} />
+      ) : [
+          'slider',
+          'file-input',
+          'settings-field-row',
+          'settings-section',
+          'settings-page-shell',
+        ].includes(entry.slug) ? (
+        <SettingsCatalogPreview {...props} />
+      ) : ['copy-input', 'input-group'].includes(entry.slug) ? (
+        <FieldCatalogPreview {...props} />
+      ) : ['kbd', 'scroll-area', 'tooltip'].includes(entry.slug) ? (
+        <NavigationHelpCatalogPreview {...props} />
+      ) : [
+          'accordion',
+          'card',
+          'breadcrumb',
+          'table',
+          'button-group',
+          'radio-group',
+          'checkbox-group',
+        ].includes(entry.slug) ? (
+        <StructuralCatalogPreview {...props} />
+      ) : entry.slug === 'menu' ? (
+        <MenuCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'select' ? (
+        <SelectCatalogPreview fixture={fixture} />
+      ) : ['button', 'badge', 'checkbox', 'switch', 'toggle', 'toggle-group'].includes(
+          entry.slug,
+        ) ? (
         <BasicCatalogPreview {...props} />
-      ) : ['screen', 'form'].includes(entry.slug) ? (
+      ) : ['screen', 'form', 'collection', 'action-menu', 'confirm', 'settings'].includes(
+          entry.slug,
+        ) ? (
         <PatternCatalogPreview {...props} />
       ) : entry.slug === 'tabs' ? (
         <NavigationCatalogPreview {...props} />
@@ -103,6 +183,14 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
           </div>
         </section>
       ))}
+      {['form', 'collection', 'confirm', 'screen'].includes(entry.slug) && (
+        <section>
+          <h2>Interactive example</h2>
+          <CatalogLink href={`/sandbox/${entry.slug}?example=interactive`}>
+            Open interactive example
+          </CatalogLink>
+        </section>
+      )}
       <section aria-labelledby="api-title">
         <h2 id="api-title">API</h2>
         {entry.props === commonProps && (
