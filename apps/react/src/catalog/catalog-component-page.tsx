@@ -13,6 +13,7 @@ import { PatternCatalogPreview } from './pattern-catalog-preview';
 import { AvatarCatalogPreview } from './avatar-catalog-preview';
 import { FieldsCatalogPreview } from './fields-catalog-preview';
 import { RowsCatalogPreview } from './rows-catalog-preview';
+import { ModalCatalogPreview } from './modal-catalog-preview';
 import { ProposalCatalogPreview } from './proposal-catalog-preview';
 import { IndicatorCatalogPreview } from './indicator-catalog-preview';
 import { ProximityCatalogPreview } from './proximity-catalog-preview';
@@ -85,6 +86,7 @@ export const portedComponentPages = [
   'principal-avatar',
   'fields',
   'rows',
+  'modals',
   'proposal-card',
   'loading-indicator',
   'ask-user-questions',
@@ -130,6 +132,8 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
         <FieldsCatalogPreview fixture={fixture} />
       ) : entry.slug === 'rows' ? (
         <RowsCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'modals' ? (
+        <ModalCatalogPreview fixture={fixture} />
       ) : entry.slug === 'proposal-card' ? (
         <ProposalCatalogPreview fixture={fixture} />
       ) : entry.slug === 'loading-indicator' ? (
@@ -185,7 +189,7 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
   );
 }
 
-// Dedicated fields/rows routes use CatalogFixtureList.svelte in the source app.
+// Dedicated fields/rows/modals routes use CatalogFixtureList.svelte in the source app.
 // i18n-ignore (exact internal catalog reference copy)
 function CatalogFixtureList({ entry }: { entry: CatalogEntry }) {
   const metadata = canonicalComponentManifest.find(({ id }) => id === entry.slug);
@@ -229,6 +233,8 @@ function CatalogFixtureList({ entry }: { entry: CatalogEntry }) {
             >
               {entry.slug === 'fields' ? (
                 <FieldsCatalogPreview fixture={fixture} />
+              ) : entry.slug === 'modals' ? (
+                <ModalCatalogPreview fixture={fixture} />
               ) : (
                 <RowsCatalogPreview fixture={fixture} />
               )}
@@ -255,6 +261,11 @@ function CatalogFixtureList({ entry }: { entry: CatalogEntry }) {
           </article>
         ))}
       </div>
+      {entry.slug === 'modals' && (
+        <CatalogLink href="/sandbox/modals?example=interactive">
+          Open callback dialog exercises
+        </CatalogLink>
+      )}
     </section>
   );
 }
@@ -266,7 +277,8 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
   const installCommand = reference.importStatement;
   const usage = reference.usage;
   const pendingReference = `The React reference for ${componentName} is pending.`;
-  if (entry.slug === 'fields' || entry.slug === 'rows') return <CatalogFixtureList entry={entry} />;
+  if (entry.slug === 'fields' || entry.slug === 'rows' || entry.slug === 'modals')
+    return <CatalogFixtureList entry={entry} />;
   return (
     <article className="component-page" data-testid="catalog-component-page">
       <header className="page-header">

@@ -1,0 +1,17 @@
+/* Source: ModalCatalogPreview.svelte. Keep geometry scoped to this matrix. */
+.modal-catalog-preview {
+  .modal-preview-grid {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+    gap: 1rem;
+  }
+
+  .modal-zoom-preview {
+    zoom: 2;
+  }
+
+  [data-modal-preview='zoom-200'] {
+    grid-column: 1 / -1;
+  }
+}

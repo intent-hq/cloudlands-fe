@@ -1236,6 +1236,53 @@ export function Example({ member, people, viewers }: {
       'All five source avatar fixtures are implemented. These presentational fixtures do not exercise live presence subscriptions; browser, geometry and pixel acceptance remain separate.',
     ],
   ),
+  modals: reference(
+    "import { InputDialog } from '@/components/modals/input-dialog';",
+    `import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+
+export function Example() {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  return <><Button onClick={() => setOpen(true)}>Rename</Button>
+    <InputDialog open={open} onOpenChange={setOpen} title="Rename workspace"
+      label="Workspace name" onConfirm={setValue} />
+    <output>{value}</output></>;
+}`,
+    [
+      openChange,
+      prop(
+        'InputDialog.onConfirm',
+        '(value: string) => void',
+        'Receives trimmed nonblank text; component closes and resets.',
+      ),
+      prop(
+        'MessageDialog.onSelect',
+        '(index: number) => void',
+        'Receives the button index, including cancelIndex on dismissal.',
+      ),
+      prop(
+        'BulkActionConfirmDialog.onConfirm',
+        '() => void | Promise<void>',
+        'Awaits the callback; rejects remain open for retry. The caller owns the real operation.',
+      ),
+      prop(
+        'HarnessFeaturesModal.features',
+        'Record<string, boolean> | null',
+        'Read-only feature snapshot; omitted snapshot lists known features off.',
+      ),
+      prop(
+        'DismissProposalConfirmDialog.onConfirm',
+        '() => void',
+        'Notifies the caller without closing; the owner decides whether to close and persist.',
+      ),
+    ],
+    [
+      'The modal source matrix implements all 15 primitive states and 15 product compositions. Its coverage ledger explicitly lists 23 unsupported source compositions, including archive-warning-dialog which is absent from catalog.ts metadata.',
+      'Matching static fixtures preserve source copy and composition. Browser, geometry and raster acceptance remain pending.',
+      '/sandbox/modals?example=interactive uses native dialogs and controlled callback inputs. Counters and Promise settlement prove only callback contracts, never workspace or proposal persistence.',
+    ],
+  ),
   fields: reference(
     `import { FormRow, FormField } from '@/components/patterns/form';
 import { SettingsFieldRow } from '@/components/patterns/settings';`,

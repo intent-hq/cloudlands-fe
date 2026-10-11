@@ -44,7 +44,10 @@ export function CatalogApp() {
       ) : !settings.state && entry?.slug === 'toast' ? (
         <ToastCatalogPage entry={entry} />
       ) : entry &&
-        (!settings.state || entry.slug === 'fields' || entry.slug === 'rows') &&
+        (!settings.state ||
+          entry.slug === 'fields' ||
+          entry.slug === 'rows' ||
+          entry.slug === 'modals') &&
         hasComponentPage(entry.slug) ? (
         <CatalogComponentPage key={entry.slug} entry={entry} />
       ) : (
