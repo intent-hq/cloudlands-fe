@@ -345,6 +345,8 @@ export function Content({
   const content = (
     <Primitive.Content
       {...props}
+      // Bits leaves naming to the caller; do not let Radix's trigger name override aria-label.
+      aria-labelledby={props['aria-labelledby']}
       loop={loop}
       {...{
         onOpenAutoFocus: (event: Event) => {
@@ -558,6 +560,7 @@ export function SubContent({
   const content = (
     <Primitive.SubContent
       {...props}
+      aria-labelledby={props['aria-labelledby']}
       loop={loop}
       ref={scopeRef}
       align={align === 'center' ? 'start' : align}
