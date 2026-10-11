@@ -127,3 +127,58 @@ test('diagram reduced motion: a keyboard step settles without a running scene an
     'Reduced-motion navigation must not leave animated scene work running',
   ).toBe(0);
 });
+
+test('diagram custom fit: timeline remains reachable after fitting, resizing and remounting', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 420, height: 900 });
+  const example = await openDiagramExample(page, 'custom-diagram-engine');
+  await example.getByRole('combobox', { name: 'Custom diagram fixture', exact: true }).click();
+  await page.getByRole('option', { name: 'Verification timeline', exact: true }).click();
+  let renderer = await settledCustom(example);
+  await example.getByRole('button', { name: 'Reset custom viewport', exact: true }).click();
+  const fit = renderer.getByRole('button', { name: 'Fit diagram to width', exact: true });
+  await expect(fit).toHaveAttribute('aria-pressed', 'false');
+  const actualSize = await renderer.locator('svg').first().boundingBox();
+  expect(actualSize).not.toBeNull();
+  await fit.focus();
+  await fit.press('Enter');
+  await expect(
+    renderer.getByRole('button', { name: 'Show diagram at actual size', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect
+    .poll(async () => (await renderer.locator('svg').first().boundingBox())?.width ?? Infinity)
+    .toBeLessThan(actualSize.width);
+
+  // The readable scale floor can preserve horizontal scrolling. Both ends must
+  // remain reachable through native scrolling, including after the host resizes.
+  for (const width of [420, 720]) {
+    if (width !== 420) await page.setViewportSize({ width, height: 900 });
+    await settledCustom(example);
+    await expect(
+      renderer.getByRole('button', { name: 'Show diagram at actual size', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    for (const id of ['fixtures', 'handoff']) {
+      const node = renderer.locator(`[data-node-id="${id}"]`);
+      await node.scrollIntoViewIfNeeded();
+      await expect(node).toBeInViewport({ ratio: 1 });
+    }
+  }
+
+  const mount = example.getByRole('switch', { name: 'Mount custom renderer', exact: true });
+  await mount.click();
+  await expect(example.locator('[data-diagram-settled]')).toHaveCount(0);
+  await mount.click();
+  renderer = await settledCustom(example);
+  await expect
+    .poll(() => visibleNodeIds(renderer))
+    .toEqual(['browser', 'checks', 'fixtures', 'handoff']);
+  const finalNode = renderer.locator('[data-node-id="handoff"]');
+  await finalNode.scrollIntoViewIfNeeded();
+  await expect(finalNode).toBeInViewport({ ratio: 1 });
+  await example.getByRole('button', { name: 'Reset custom viewport', exact: true }).click();
+  const resetFit = renderer.getByRole('button', { name: 'Fit diagram to width', exact: true });
+  await expect(resetFit).toHaveAttribute('aria-pressed', 'false');
+  await resetFit.focus();
+  await expect(resetFit).toBeFocused();
+});
