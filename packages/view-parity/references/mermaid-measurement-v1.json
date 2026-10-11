@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+  "reviewReason": "Reviewed correction for native font-size transitions during Mermaid measurement: a temporary per-job rule stabilizes only the measurement root and its immediate group, then is removed after rendering. The reference changes only the shared Mermaid helper; historical comparisons retain the original reference.",
+  "reference": {
+    "commit": "361acc7f5031e5c4bab6e56703451dd13f206f29",
+    "sourceTreeSha256": "12c7d9804b31c94a4a021f2444b19c6eb7c5f929ece8422b4d469148bf9a1793",
+    "sourcePaths": [
+      "src",
+      "static",
+      "messages",
+      "project.inlang",
+      "scripts",
+      "package.json",
+      "pnpm-lock.yaml",
+      ".npmrc",
+      "vite.config.mjs",
+      "svelte.config.js",
+      "tailwind.config.js",
+      "postcss.config.mjs",
+      "tsconfig.json",
+      "pnpm-workspace.yaml"
+    ]
+  }
+}
