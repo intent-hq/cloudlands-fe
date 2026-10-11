@@ -35,6 +35,7 @@ test('diagram Mermaid: invalid source discloses the parser error and recovers to
   const svg = await settledMermaid(host, failedGeneration);
   await expect(host.getByRole('alert')).toHaveCount(0);
   await expect(svg).toContainText('Process request');
+  await host.locator('.mermaid-svg-container').hover();
   await host.getByRole('button', { name: 'View source', exact: true }).click();
   await expect(host.getByRole('region', { name: 'View source', exact: true })).toHaveText(original);
   await expect(example.getByLabel('Mermaid source visibility', { exact: true })).toHaveText('true');
@@ -220,6 +221,9 @@ for (const kind of ['mermaid', 'custom']) {
     );
     if (kind === 'mermaid') await settledMermaid(host);
     else await settledCustom(host, 'orient');
+    await host
+      .locator(kind === 'mermaid' ? '.mermaid-svg-container' : '[data-diagram-presentation]')
+      .hover();
     await host.getByRole('button', { name: 'Diagram actions', exact: true }).click();
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('menuitem', { name: 'Download SVG', exact: true }).click();
@@ -253,6 +257,7 @@ test('diagram clipboard: Copy SVG writes the actual diagram to the native clipbo
     origin: new URL(page.url()).origin,
   });
   await page.evaluate(() => navigator.clipboard.writeText('Waiting for the real diagram export'));
+  await host.locator('.mermaid-svg-container').hover();
   await host.getByRole('button', { name: 'Diagram actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Copy SVG', exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('<svg');

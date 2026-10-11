@@ -27,6 +27,7 @@ test('diagram independence: editing and unmounting one Mermaid host leaves its n
   await expect(independent).not.toContainText('Changed first host');
   await example.getByRole('switch', { name: 'Mount Mermaid renderer', exact: true }).click();
   await expect(primary.locator('[data-render-generation]')).toHaveCount(0);
+  await secondary.locator('.mermaid-svg-container').hover();
   await secondary.getByRole('button', { name: 'View source', exact: true }).click();
   await expect(secondary.getByRole('region', { name: 'View source', exact: true })).toContainText(
     'Source[Source]',
@@ -76,6 +77,7 @@ test('diagram resize: narrow sequence keeps source and fullscreen controls opera
   await page.setViewportSize({ width: 360, height: 900 });
   const svg = await settledMermaid(host);
   await expect(svg.locator('text').filter({ hasText: /Select\s*named\s*state/ })).toHaveCount(1);
+  await host.locator('.mermaid-svg-container').hover();
   await host.getByRole('button', { name: 'View source', exact: true }).click();
   await expect(host.getByRole('region', { name: 'View source', exact: true })).toContainText(
     'sequenceDiagram',
