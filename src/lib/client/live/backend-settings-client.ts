@@ -1,0 +1,768 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
+import { validateMcpServerIdentities } from '../../../store/renderer/slices/mcp-settings/mcp-settings-normalization';
+/**
+ * Live settings domain backed by the intentd daemon (PROTOCOL §5.12).
+ *
+ * Wraps the four wire methods (`settings.list/get/update/reset`) directly and
+ * also exposes the higher-level domain accessors the renderer's settings panels
+ * already call (`getMcpServers`, `getProviderSettings`, …). The domain
+ * accessors translate FE state shapes ↔ BE setting paths so callers do not
+ * need to know the dotted-path catalog:
+ *
+ *   - `mcp.servers.*` (§5.22)             ↔ `getMcpServers` / `setMcpServers`
+ *   - `mcp.disabledServers` / `mcp.enableUserServers` are surfaced via `list()`.
+ *
+ * MCP note: the `mcp.servers` setting is **sensitive** (§5.12) — `settings.get`
+ * only ever returns the redacted placeholder — and the daemon persists it as an
+ * id→config object owned by the `mcp.servers.*` lifecycle service. The seam's
+ * list-shaped accessors therefore translate to the §5.22 CRUD: `getMcpServers`
+ * reads `mcp.servers.list`, and `setMcpServers` diffs the desired list against
+ * the daemon's and issues `create` / `update` / `delete` / `toggle` calls.
+ * Untouched servers never produce an `update`, so their keychain-held `env` /
+ * `headers` secrets (redacted on the wire) are preserved; an *edited* server is
+ * replaced wholesale per §5.22 semantics.
+ *   - `model.defaultProvider` / `providers.enabled`       ↔ provider settings
+ *   - `quickActions.defaultModel` / `.typeOverrides` /
+ *     `.providerSettings`                                 ↔ quick actions
+ *   - `git.autoCommit`                                    ↔ workspace settings
+ *
+ * Sensitive entries return a redacted placeholder (§5.12); the client surfaces
+ * the raw `value` field verbatim — callers decide how to render the sentinel.
+ * Errors fold to `null` / empty result for reads (so a failed boot read leaves
+ * the slice at its initial state) and to `{ success: false, error }` for the
+ * domain-level mutators.
+ */
+import type {
+  AppliedSettingChange,
+  AppSettingChange,
+  PersistedProviderSettings,
+  SettingDefinitionWithValue,
+  SettingsClient,
+  SettingsSnapshot,
+  SettingsUpdateResult,
+  UserRuleState,
+} from '../settings-types';
+import type {
+  McpServerConfig,
+  McpServerRuntimeStatus,
+} from '../../../store/renderer/slices/mcp-settings/mcp-settings-types';
+import type { SingleWorkspaceSettings } from '../../../store/renderer/slices/workspace-settings/workspace-settings-slice';
+import type { BackgroundAgentSettingsState } from '../../../store/renderer/slices/background-agent-settings/background-agent-settings-slice';
+import type { UserPreferencesState } from '../../../store/renderer/slices/user-preferences/user-preferences-slice';
+import type { BackendTransport } from './backend-transport-types';
+import type { MutationResult, SubscriptionHandler, Unsubscribe } from '../client-types';
+import { createRunMutation } from './backend-mutation';
+
+/** One canonical settings implementation per renderer, with an owned cache/listener lifetime. */
+export function createSettingsClientRuntime({
+  backendRequest: request,
+  onBackendNotification,
+  onBackendReconnected,
+}: {
+  backendRequest: BackendTransport['request'];
+  onBackendNotification: BackendTransport['onNotification'];
+  onBackendReconnected: BackendTransport['onReconnected'];
+}) {
+  const backendRequest: BackendTransport['request'] = async <T>(
+    method: string,
+    params?: unknown,
+    options?: Parameters<BackendTransport['request']>[2],
+  ): Promise<T> => {
+    ensureSettingsLifecycle();
+    const connection = connectionGeneration;
+    const result = await (options !== undefined
+      ? request<T>(method, params, options)
+      : params !== undefined
+        ? request<T>(method, params)
+        : request<T>(method));
+    if (disposed || connection !== connectionGeneration)
+      throw new Error('Settings connection retired');
+    return result;
+  };
+  const runMutation = createRunMutation(backendRequest);
+  type UserPrefsResult = UserPreferencesState | null;
+
+  /**
+   * `rules.get`/`rules.update` (§5.21) require a `workspaceId` on the wire, but
+   * the global settings page edits user-override rules that the daemon stores
+   * globally (endUserRules): `rules_get` ignores the id entirely and
+   * `rules_update` only echoes it back in the returned RuleSet, so a sentinel
+   * satisfies the contract without binding the edit to a real workspace.
+   */
+  const GLOBAL_RULES_WORKSPACE_ID = 'global';
+
+  type PendingSettingRead = {
+    generation: number;
+    promise: Promise<SettingDefinitionWithValue | null>;
+  };
+
+  const settingCache = new Map<string, SettingDefinitionWithValue | null>();
+  const pendingSettingReads = new Map<string, PendingSettingRead>();
+  const trailingSettingReads = new Map<string, Promise<SettingDefinitionWithValue | null>>();
+  let settingsGeneration = 0;
+  let connectionGeneration = 0;
+
+  function settingKey(path: string, workspaceId?: string): string {
+    return JSON.stringify([connectionGeneration, workspaceId ?? null, path]);
+  }
+  let settingsLifecycleInstalled = false;
+  let disposed = false;
+  const disposers: Unsubscribe[] = [];
+
+  function eventType(notification: { method: string; params?: unknown }): string | undefined {
+    if (notification.method !== 'events.event' || !notification.params) return undefined;
+    const params = notification.params as { event?: unknown; type?: unknown };
+    const event = params.event && typeof params.event === 'object' ? params.event : params;
+    return typeof (event as { type?: unknown }).type === 'string'
+      ? (event as { type: string }).type
+      : undefined;
+  }
+
+  function ensureSettingsLifecycle(): void {
+    if (disposed) throw new Error('Settings client has been disposed');
+    if (settingsLifecycleInstalled) return;
+    settingsLifecycleInstalled = true;
+    if (typeof onBackendNotification === 'function') {
+      disposers.push(
+        onBackendNotification((notification) => {
+          if (eventType(notification) === 'settings:changed') invalidateSettingsReadCache();
+        }),
+      );
+    }
+    if (typeof onBackendReconnected === 'function') {
+      disposers.push(onBackendReconnected(resetSettingsConnectionCache));
+    }
+  }
+
+  function invalidateSettingsReadCache(paths?: readonly string[]): void {
+    settingsGeneration += 1;
+    if (!paths) settingCache.clear();
+    else
+      for (const key of settingCache.keys()) {
+        if (paths.includes((JSON.parse(key) as [number, string | null, string])[2]))
+          settingCache.delete(key);
+      }
+  }
+
+  function parseSettingResult(result: {
+    value?: unknown;
+    definition?: Omit<SettingDefinitionWithValue, 'value'>;
+    origin?: SettingDefinitionWithValue['origin'];
+    revision?: unknown;
+  }): SettingDefinitionWithValue | null {
+    if (!result?.definition) return null;
+    return {
+      ...result.definition,
+      value: result.value,
+      ...(result.origin ? { origin: result.origin } : {}),
+      ...(typeof result.revision === 'number' ? { revision: result.revision } : {}),
+    };
+  }
+
+  /** Strict shared settings.get read; transport errors reject and are never cached. */
+  function readSetting(
+    path: string,
+    workspaceId?: string,
+  ): Promise<SettingDefinitionWithValue | null> {
+    ensureSettingsLifecycle();
+    const key = settingKey(path, workspaceId);
+    if (settingCache.has(key)) return Promise.resolve(settingCache.get(key) ?? null);
+
+    const pending = pendingSettingReads.get(key);
+    if (pending?.generation === settingsGeneration) return pending.promise;
+    if (pending) {
+      const trailing = trailingSettingReads.get(key);
+      if (trailing) return trailing;
+      const run = pending.promise
+        .catch(() => null)
+        .then(() => {
+          if (trailingSettingReads.get(key) !== run) return null;
+          trailingSettingReads.delete(key);
+          return readSetting(path, workspaceId);
+        })
+        .finally(() => {
+          if (trailingSettingReads.get(key) === run) trailingSettingReads.delete(key);
+        });
+      trailingSettingReads.set(key, run);
+      return run;
+    }
+
+    const generation = settingsGeneration;
+    const run = backendRequest<{
+      value?: unknown;
+      definition?: Omit<SettingDefinitionWithValue, 'value'>;
+      origin?: SettingDefinitionWithValue['origin'];
+      revision?: unknown;
+    }>('settings.get', { path, ...(workspaceId ? { workspaceId } : {}) })
+      .then(parseSettingResult)
+      .then((setting) => {
+        if (generation === settingsGeneration) settingCache.set(key, setting);
+        return setting;
+      })
+      .finally(() => {
+        if (pendingSettingReads.get(key)?.promise === run) pendingSettingReads.delete(key);
+      });
+    pendingSettingReads.set(key, { generation, promise: run });
+    return run;
+  }
+
+  /** Strict shared settings.update mutation with immediate read-cache invalidation. */
+  async function updateSettings(changes: AppSettingChange[]): Promise<SettingsUpdateResult> {
+    if (changes.length === 0) return { applied: [], revision: 0 };
+    const result = await backendRequest<{
+      applied?: AppliedSettingChange[];
+      revision?: unknown;
+    }>('settings.update', { changes });
+    invalidateSettingsReadCache(changes.map(({ path }) => path));
+    return {
+      applied: Array.isArray(result?.applied) ? result.applied : [],
+      revision: typeof result?.revision === 'number' ? result.revision : 0,
+    };
+  }
+
+  /** A new connection must neither reuse nor wait on the previous host's reads. */
+  function resetSettingsConnectionCache(): void {
+    connectionGeneration += 1;
+    invalidateSettingsReadCache();
+    pendingSettingReads.clear();
+    trailingSettingReads.clear();
+  }
+
+  /** Build a fresh `update` change list, omitting `undefined` values. */
+  function changesFrom(patch: Record<string, unknown>): AppSettingChange[] {
+    const out: AppSettingChange[] = [];
+    for (const [path, value] of Object.entries(patch)) {
+      if (value !== undefined) out.push({ path, value });
+    }
+    return out;
+  }
+
+  class LiveSettingsClient implements SettingsClient {
+    async list(workspaceId?: string): Promise<SettingDefinitionWithValue[]> {
+      return (await this.listSnapshot(workspaceId)).settings;
+    }
+
+    async listSnapshot(workspaceId?: string): Promise<SettingsSnapshot> {
+      ensureSettingsLifecycle();
+      const generation = settingsGeneration;
+      try {
+        const result = await backendRequest<{ settings?: unknown[]; revision?: unknown }>(
+          'settings.list',
+          ...(workspaceId ? [{ workspaceId }] : []),
+        );
+        const snapshot = {
+          settings: Array.isArray(result?.settings)
+            ? (result.settings as SettingDefinitionWithValue[])
+            : [],
+          revision: typeof result?.revision === 'number' ? result.revision : 0,
+        };
+        if (generation === settingsGeneration) {
+          for (const setting of snapshot.settings)
+            settingCache.set(settingKey(setting.path, workspaceId), setting);
+        }
+        return snapshot;
+      } catch {
+        return { settings: [], revision: 0 };
+      }
+    }
+
+    async get(path: string, workspaceId?: string): Promise<SettingDefinitionWithValue | null> {
+      try {
+        return await readSetting(path, workspaceId);
+      } catch {
+        return null;
+      }
+    }
+
+    async update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]> {
+      return (await this.updateSnapshot(changes)).applied;
+    }
+
+    async updateSnapshot(changes: AppSettingChange[]): Promise<SettingsUpdateResult> {
+      return updateSettings(changes);
+    }
+
+    async reset(path: string): Promise<AppliedSettingChange | null> {
+      try {
+        const result = await backendRequest<{ path?: string; value?: unknown }>('settings.reset', {
+          path,
+        });
+        if (typeof result?.path !== 'string') return null;
+        invalidateSettingsReadCache([result.path]);
+        return { path: result.path, value: result.value };
+      } catch {
+        return null;
+      }
+    }
+
+    async getUserRule(ruleType: string, workspaceId?: string): Promise<UserRuleState | null> {
+      try {
+        const result = await backendRequest<{
+          enabled?: boolean;
+          content?: string;
+          updatedAt?: number;
+        }>('rules.get', { workspaceId: workspaceId ?? GLOBAL_RULES_WORKSPACE_ID, ruleType });
+        if (!result || typeof result.content !== 'string') return null;
+        return {
+          enabled: result.enabled === true,
+          content: result.content,
+          updatedAt: typeof result.updatedAt === 'number' ? result.updatedAt : 0,
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    async updateUserRule(
+      ruleType: string,
+      content: string,
+      enabled?: boolean,
+    ): Promise<MutationResult> {
+      return runMutation('rules.update', {
+        workspaceId: GLOBAL_RULES_WORKSPACE_ID,
+        ruleType,
+        content,
+        ...(enabled !== undefined ? { enabled } : {}),
+      });
+    }
+
+    async getUserPreferences(): Promise<UserPrefsResult> {
+      // PROTOCOL §5.12 explicitly classifies UserPreferences entries (spellcheck,
+      // beta updates, fonts, notifications, …) as FE-only — the daemon does not
+      // serve them. Hydration of these continues to come from localStorage via
+      // the existing read services; here we surface `null` so callers that
+      // explicitly probe the seam see "no BE-owned snapshot" rather than the
+      // mock fixture.
+      return null;
+    }
+
+    async setUserPreferences(_prefs: Partial<UserPreferencesState>): Promise<MutationResult> {
+      // FE-only territory — accept as a no-op success so call sites that target
+      // the seam unchanged do not regress. Real persistence happens elsewhere.
+      return { success: true };
+    }
+
+    async getProviderSettings(workspaceId?: string): Promise<PersistedProviderSettings | null> {
+      const settings = await this.list(workspaceId);
+      const activeProviderId = readString(settings, 'model.defaultProvider');
+      const enabledProviders = readObject(settings, 'providers.enabled') as Record<
+        string,
+        boolean
+      > | null;
+      if (activeProviderId === null && enabledProviders === null) return null;
+      return {
+        activeProviderId: activeProviderId ?? '',
+        enabledProviders: enabledProviders ?? {},
+      };
+    }
+
+    async setProviderSettings(
+      settings: Partial<PersistedProviderSettings>,
+    ): Promise<MutationResult> {
+      return runMutation('settings.update', {
+        changes: changesFrom({
+          'model.defaultProvider': settings.activeProviderId,
+          'providers.enabled': settings.enabledProviders,
+        }),
+      });
+    }
+
+    async getMcpServers(workspaceId?: string): Promise<McpServerConfig[]> {
+      const wire = await listWireMcpServers(workspaceId);
+      return wire.flatMap((server) => fromWireMcpConfig(server) ?? []);
+    }
+
+    async getMcpServerStatuses(
+      serverIds: string[],
+      workspaceId?: string,
+    ): Promise<McpServerRuntimeStatus[]> {
+      const statuses = await Promise.all(
+        serverIds.map(async (serverId): Promise<McpServerRuntimeStatus | null> => {
+          try {
+            const result = await backendRequest<{ status?: WireMcpServerStatus }>(
+              'mcp.servers.getStatus',
+              { serverId, ...(workspaceId ? { workspaceId } : {}) },
+            );
+            return fromWireMcpStatus(serverId, result?.status);
+          } catch {
+            return null;
+          }
+        }),
+      );
+      return statuses.filter((status): status is McpServerRuntimeStatus => status !== null);
+    }
+
+    async restartMcpServer(serverId: string): Promise<McpServerRuntimeStatus> {
+      const result = await backendRequest<{ status?: WireMcpServerStatus }>('mcp.servers.restart', {
+        serverId,
+      });
+      const status = fromWireMcpStatus(serverId, result?.status);
+      if (!status) throw new Error('The daemon returned an invalid MCP server status.');
+      return status;
+    }
+
+    async getWorkspaceDisabledMcpServerKeys(workspaceId: string): Promise<string[] | null> {
+      // Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable): every
+      // entry adds `workspaceDisabled: boolean`. Lenient on the wire (an unknown
+      // workspaceId yields all-false, never an error); a transport failure folds
+      // to `null` so callers keep their current state instead of clearing it.
+      try {
+        const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>(
+          'mcp.servers.list',
+          {
+            workspaceId,
+          },
+        );
+        if (!Array.isArray(result?.servers)) return null;
+        return result.servers.flatMap((server) =>
+          server.workspaceDisabled === true && typeof server.name === 'string' && server.name
+            ? [getMcpServerKey({ id: server.id, name: server.name })]
+            : [],
+        );
+      } catch {
+        return null;
+      }
+    }
+
+    async toggleWorkspaceMcpServer(
+      workspaceId: string,
+      serverId: string,
+      enabled: boolean,
+    ): Promise<MutationResult & { workspaceDisabled?: boolean }> {
+      // Workspace-scoped `mcp.servers.toggle` (§5.22 per-workspace disable):
+      // returns `{ status, workspaceDisabled }`; unknown serverId/workspaceId is
+      // a -32602 `not-found` error, folded to `{ success: false }` here.
+      try {
+        const result = await backendRequest<{ workspaceDisabled?: boolean }>('mcp.servers.toggle', {
+          serverId,
+          enabled,
+          workspaceId,
+        });
+        return typeof result?.workspaceDisabled === 'boolean'
+          ? { success: true, workspaceDisabled: result.workspaceDisabled }
+          : { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    async setMcpServers(servers: McpServerConfig[]): Promise<MutationResult> {
+      try {
+        validateMcpServerIdentities(servers);
+        const existing = await listWireMcpServers();
+        const existingById = new Map(existing.map((server) => [server.id, server]));
+        const desired = servers.map((config) => {
+          if (config.id !== undefined) return { config, current: existingById.get(config.id) };
+          const matches = existing.filter((server) => server.name === config.name);
+          if (matches.length > 1) throw new Error(`Ambiguous MCP server name: ${config.name}`);
+          return { config, current: matches[0] };
+        });
+        const desiredIds = new Set<string>();
+        for (const { config, current } of desired) {
+          const id = current?.id ?? config.id;
+          if (!id) continue;
+          if (desiredIds.has(id)) throw new Error(`Duplicate MCP server identity: ${id}`);
+          desiredIds.add(id);
+        }
+        for (const server of existing) {
+          if (server.id && !desiredIds.has(server.id)) {
+            await backendRequest('mcp.servers.delete', { serverId: server.id });
+          }
+        }
+        for (const { config, current } of desired) {
+          if (!current?.id) {
+            await backendRequest('mcp.servers.create', {
+              config: toWireMcpConfig(config, config.id),
+            });
+            continue;
+          }
+          // Redux/export omit credentials. Preserve the selected ID's redacted
+          // fields unless the caller explicitly supplies replacements ({} clears).
+          const desiredConfig = {
+            ...config,
+            env: config.env ?? current.env,
+            headers: config.headers ?? current.headers,
+          };
+          if (!sameMcpConfigBody(current, desiredConfig)) {
+            await backendRequest('mcp.servers.update', {
+              serverId: current.id,
+              config: toWireMcpConfig(desiredConfig, current.id),
+            });
+          }
+          const desiredEnabled = config.disabled !== true;
+          const currentEnabled = current.enabled !== false;
+          if (currentEnabled !== desiredEnabled) {
+            await backendRequest('mcp.servers.toggle', {
+              serverId: current.id,
+              enabled: desiredEnabled,
+            });
+          }
+        }
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    async getWorkspaceSettings(workspaceId: string): Promise<SingleWorkspaceSettings | null> {
+      // Per-workspace persisted override (PROTOCOL §5.1 workspace.getAutoCommit):
+      // the daemon resolves the workspace's own value when set, else the global
+      // `git.autoCommit` (`source: "global"` for pre-migration rows).
+      try {
+        const result = await backendRequest<{
+          autoCommit?: { enabled?: unknown; source?: string };
+        }>('workspace.getAutoCommit', { workspaceId });
+        if (typeof result?.autoCommit?.enabled !== 'boolean') return null;
+        return { autoCommitEnabled: result.autoCommit.enabled };
+      } catch {
+        return null;
+      }
+    }
+
+    async setWorkspaceSettings(
+      workspaceId: string,
+      settings: Partial<SingleWorkspaceSettings>,
+    ): Promise<MutationResult> {
+      if (settings.autoCommitEnabled === undefined) return { success: true };
+      return runMutation('workspace.setAutoCommit', {
+        workspaceId,
+        enabled: settings.autoCommitEnabled,
+      });
+    }
+
+    async getBackgroundAgentSettings(
+      workspaceId?: string,
+    ): Promise<BackgroundAgentSettingsState | null> {
+      const settings = await this.list(workspaceId);
+      const defaultReasoningEffort = readString(settings, 'quickActions.defaultReasoningEffort');
+      const typeReasoningEffortOverrides = readObject(
+        settings,
+        'quickActions.typeReasoningEffortOverrides',
+      ) as BackgroundAgentSettingsState['typeReasoningEffortOverrides'] | null;
+      const defaultModel = readString(settings, 'quickActions.defaultModel');
+      const typeOverrides = readObject(settings, 'quickActions.typeOverrides') as
+        BackgroundAgentSettingsState['typeOverrides'] | null;
+      const providerSettings = readObject(settings, 'quickActions.providerSettings') as
+        BackgroundAgentSettingsState['providerSettings'] | null;
+      if (
+        defaultModel === null &&
+        typeOverrides === null &&
+        providerSettings === null &&
+        defaultReasoningEffort === null &&
+        typeReasoningEffortOverrides === null
+      ) {
+        return null;
+      }
+      return {
+        defaultReasoningEffort: defaultReasoningEffort ?? '',
+        typeReasoningEffortOverrides: typeReasoningEffortOverrides ?? {},
+        defaultModel: defaultModel ?? '',
+        typeOverrides:
+          typeOverrides ??
+          ({
+            commit: '',
+            pr: '',
+            review: '',
+            fast: '',
+          } as BackgroundAgentSettingsState['typeOverrides']),
+        providerSettings: providerSettings ?? {},
+      };
+    }
+
+    async setBackgroundAgentSettings(
+      settings: Partial<BackgroundAgentSettingsState>,
+    ): Promise<MutationResult> {
+      return runMutation('settings.update', {
+        changes: changesFrom({
+          'quickActions.defaultReasoningEffort': settings.defaultReasoningEffort,
+          'quickActions.typeReasoningEffortOverrides': settings.typeReasoningEffortOverrides,
+          'quickActions.defaultModel': settings.defaultModel,
+          'quickActions.typeOverrides': settings.typeOverrides,
+          'quickActions.providerSettings': settings.providerSettings,
+        }),
+      });
+    }
+
+    subscribe(handler: SubscriptionHandler<UserPrefsResult>): Unsubscribe {
+      // Settings panels converge via the boot-hydration middleware and the
+      // `settings:changed` bridge; the legacy slice-wide subscribe stays a
+      // one-shot no-op so existing call sites are unaffected.
+      handler(null);
+      return () => {};
+    }
+  }
+
+  /** Wire `McpServerConfig` (PROTOCOL §5.22) — the daemon's id/transport/enabled shape. */
+  interface WireMcpServerConfig {
+    id?: string;
+    name?: string;
+    transport?: string;
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    url?: string;
+    headers?: Record<string, string>;
+    enabled?: boolean;
+    scope?: string;
+    /** Present only on workspace-scoped `mcp.servers.list` reads (§5.22 per-workspace disable). */
+    workspaceDisabled?: boolean;
+  }
+
+  /** Wire `McpServerStatus` (PROTOCOL §5.22) — the daemon's runtime status shape. */
+  interface WireMcpServerStatus {
+    serverId?: string;
+    state?: string;
+    lastError?: string;
+  }
+
+  /**
+   * Map a wire status (§5.22) to the FE runtime-status shape; `null` when
+   * malformed. Keyed by the *requested* serverId — a conforming daemon echoes
+   * the same id back (§5.22), so correlation must not depend on the echo; a
+   * mismatched echo is dropped rather than mis-correlated.
+   */
+  function fromWireMcpStatus(
+    serverId: string,
+    wire: WireMcpServerStatus | undefined,
+  ): McpServerRuntimeStatus | null {
+    if (typeof wire?.serverId === 'string' && wire.serverId && wire.serverId !== serverId) {
+      return null;
+    }
+    if (
+      wire?.state !== 'stopped' &&
+      wire?.state !== 'starting' &&
+      wire?.state !== 'running' &&
+      wire?.state !== 'error' &&
+      wire?.state !== 'auth_required'
+    ) {
+      return null;
+    }
+    const status: McpServerRuntimeStatus = { serverId, state: wire.state };
+    if (typeof wire.lastError === 'string' && wire.lastError) status.lastError = wire.lastError;
+    return status;
+  }
+
+  /** `mcp.servers.list` (§5.22) — sensitive `env`/`headers` values arrive redacted. */
+  async function listWireMcpServers(workspaceId?: string): Promise<WireMcpServerConfig[]> {
+    try {
+      const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>(
+        'mcp.servers.list',
+        ...(workspaceId ? [{ workspaceId }] : []),
+      );
+      return Array.isArray(result?.servers) ? result.servers : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Map a wire config (§5.22) to the FE `McpServerConfig` shape; `null` when nameless. */
+  function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
+    if (typeof wire?.name !== 'string' || !wire.name) return null;
+    const type = wire.transport === 'http' || wire.transport === 'sse' ? wire.transport : 'stdio';
+    const config: McpServerConfig = { name: wire.name, type };
+    // Carry the daemon-assigned `id` (§5.22) so the events bridge can resolve
+    // `mcp.servers:status-changed` payloads to a stable state key; opaque to
+    // the UI and never authored by callers.
+    if (typeof wire.id === 'string' && wire.id) config.id = wire.id;
+    if (typeof wire.command === 'string' && wire.command) config.command = wire.command;
+    if (Array.isArray(wire.args)) config.args = wire.args;
+    if (wire.env && typeof wire.env === 'object') config.env = wire.env;
+    if (typeof wire.url === 'string' && wire.url) config.url = wire.url;
+    if (wire.headers && typeof wire.headers === 'object') config.headers = wire.headers;
+    if (wire.enabled === false) config.disabled = true;
+    return config;
+  }
+
+  /** Map an FE config to the wire shape (§5.22): `type`→`transport`, `disabled`→`enabled`. */
+  function toWireMcpConfig(config: McpServerConfig, id?: string): Record<string, unknown> {
+    const wire: Record<string, unknown> = {
+      name: config.name,
+      transport: config.type,
+      enabled: config.disabled !== true,
+    };
+    if (id) wire.id = id;
+    if (config.command) wire.command = config.command;
+    if (config.args) wire.args = config.args;
+    if (config.env) wire.env = config.env;
+    if (config.url) wire.url = config.url;
+    if (config.headers) wire.headers = config.headers;
+    return wire;
+  }
+
+  /**
+   * Whether the desired FE config matches the daemon's stored body (enabled flag
+   * excluded — that is `toggle`'s job). Both sides are compared in the mapped FE
+   * shape, so a list that round-tripped through `getMcpServers` unchanged issues
+   * no `update` — keeping the daemon's real (redacted-on-the-wire) secrets intact.
+   */
+  function sameMcpConfigBody(current: WireMcpServerConfig, desired: McpServerConfig): boolean {
+    const mapped = fromWireMcpConfig(current);
+    if (!mapped) return false;
+    const sortedEntries = (record?: Record<string, string>) =>
+      record ? Object.entries(record).sort(([a], [b]) => a.localeCompare(b)) : null;
+    const canonical = (c: McpServerConfig) =>
+      JSON.stringify([
+        c.name,
+        c.type,
+        c.command ?? null,
+        c.args ?? null,
+        sortedEntries(c.env),
+        c.url ?? null,
+        sortedEntries(c.headers),
+      ]);
+    return canonical(mapped) === canonical(desired);
+  }
+
+  /** Find a `SettingDefinitionWithValue` by path; `null` when missing or the daemon redacted it. */
+  function findEntry(
+    settings: readonly SettingDefinitionWithValue[],
+    path: string,
+  ): SettingDefinitionWithValue | null {
+    for (const entry of settings) {
+      if (entry.path === path) return entry;
+    }
+    return null;
+  }
+
+  function readString(
+    settings: readonly SettingDefinitionWithValue[],
+    path: string,
+  ): string | null {
+    const entry = findEntry(settings, path);
+    return entry && typeof entry.value === 'string' ? entry.value : null;
+  }
+
+  function readObject(
+    settings: readonly SettingDefinitionWithValue[],
+    path: string,
+  ): Record<string, unknown> | null {
+    const entry = findEntry(settings, path);
+    if (!entry || entry.value === null || typeof entry.value !== 'object') return null;
+    return entry.value as Record<string, unknown>;
+  }
+
+  return {
+    client: new LiveSettingsClient(),
+    SettingsClient: LiveSettingsClient,
+    start() {
+      disposed = false;
+      ensureSettingsLifecycle();
+    },
+    dispose() {
+      disposed = true;
+      settingsLifecycleInstalled = false;
+      for (const dispose of disposers.splice(0)) dispose();
+      resetSettingsConnectionCache();
+    },
+    readSetting,
+    updateSettings,
+    invalidateSettingsReadCache,
+    resetSettingsConnectionCache,
+  };
+}

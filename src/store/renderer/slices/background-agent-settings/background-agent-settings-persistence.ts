@@ -1,4 +1,4 @@
-import type { AppSettingChange, AppliedSettingChange } from '$lib/client/app-client';
+import type { AppSettingChange, AppliedSettingChange } from '$lib/client/settings-types';
 import {
   backgroundFields,
   type BackgroundAgentSettingsState,

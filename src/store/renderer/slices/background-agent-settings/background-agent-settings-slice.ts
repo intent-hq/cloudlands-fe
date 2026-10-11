@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { m } from '$shared/paraglide/messages.js';
@@ -436,3 +437,6 @@ export function reconcileBackgroundSettings(
 backgroundAgentSettingsReducer.with(backgroundSettingsSaveSettled, (state, { payload: [ack] }) =>
   reconcileBackgroundSettings(state, ack),
 );
+
+// Host changes retire local Quick Action drafts as well as in-flight persistence.
+backgroundAgentSettingsReducer.with(hostExecutionConnectionChanged, () => initialState);

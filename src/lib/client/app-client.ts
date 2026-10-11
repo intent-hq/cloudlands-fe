@@ -6,7 +6,6 @@ export type {
   GitHubRepoConfigResult,
   IntegrationsClient,
 } from './integrations-client-types';
-import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 export type {
   GitHubPullRequestState,
@@ -97,26 +96,7 @@ import type {
   LiveClient,
   WorkspaceBrowserClient,
 } from '$shared/types/browser-clients';
-import type {
-  McpServerConfig,
-  McpServerRuntimeStatus,
-} from '$store/renderer/slices/mcp-settings/mcp-settings-types';
-import type { UserPreferencesState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import type { ProviderSettingsState } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
-/**
- * The daemon-persisted subset of provider settings (`model.defaultProvider` /
- * `providers.enabled`, PROTOCOL §5.12). `activeProviderId` carries the default
- * provider — the provider leg of the default model triple (the deprecated
- * `providers.active` key is no longer read or written). The remaining
- * ProviderSettingsState fields are registry snapshots hydrated from
- * `providers.catalog`, never persisted through this seam.
- */
-export type PersistedProviderSettings = Pick<ProviderSettingsState, 'enabledProviders'> & {
-  activeProviderId: string;
-};
-import type { SingleWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
-import type { BackgroundAgentSettingsState } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import type { ReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-types';
 import type { SystemStatusState } from '$store/renderer/slices/system-status/system-status-slice';
 import type { AutoUpdateState } from '$store/renderer/slices/auto-update/auto-update-types';
@@ -128,76 +108,9 @@ import type {
   FileContentEntry,
 } from '$store/renderer/slices/files/files-types';
 
-/** Disposer returned by every `subscribe()` call. */
-export type Unsubscribe = () => void;
-
-/** Reactive subscription callback invoked with the latest snapshot. */
-export type SubscriptionHandler<T> = (snapshot: T) => void;
-
-/** Uniform result for mutation methods. */
-export interface MutationResult extends SubmissionCorrelation {
-  success: boolean;
-  error?: string;
-  /**
-   * Canonical id of the entity the mutation created/affected, surfaced when the
-   * daemon returns one (e.g. `task.createPrerequisite` returns a WorkspaceTask
-   * per Rev 2 §7.9). Additive and optional: call sites that ignore it are
-   * unaffected, so it stays backward-compatible across all domains.
-   */
-  id?: string;
-  /**
-   * Authoritative note revision echoed by the daemon after a mutation that
-   * rewrites a note's content (e.g. `comment.add`'s anchor insertion, #638).
-   * When present, callers MUST prefer it over inferring `rev + 1` locally.
-   * Additive and optional: older daemons omit it and callers fall back to the
-   * inference, so merge order across FE/BE does not matter.
-   */
-  noteRev?: number;
-  /**
-   * Authoritative post-write note content echoed by `note.setContent`
-   * (`newContent`). The daemon merges a full-content write against concurrent
-   * edits, so the persisted text can differ from what the caller sent; when
-   * present, callers MUST apply it as the local content. Additive and optional.
-   */
-  newContent?: string;
-  /**
-   * Optimistic-concurrency conflict outcome (§11.4-D): present ONLY when the
-   * daemon rejected the mutation with the conflict error (numeric `-32005` AND
-   * `data.code === "conflict"`). Carries the authoritative server entity
-   * (`data.current`, including its advanced `rev`) so the caller can
-   * reload-to-latest. Additive: success and non-conflict error paths never set
-   * it, so existing call sites are unaffected. The live clients normalize
-   * `current` into the domain entity (`Note` / `WorkspaceTask`) before returning.
-   */
-  conflict?: { current: unknown };
-  /**
-   * Queued-message surface returned by `agents.queue` (`agent.queueMessage`,
-   * §5.5). Surfaced on the uniform mutation result so the queue-on-send caller
-   * can seed the local `agent-queue` slice from the server snapshot without an
-   * extra `agent.getQueue` round-trip. Additive and optional: other mutation
-   * paths never set it.
-   */
-  queuedMessage?: QueuedMessage;
-  /** sendQueuedMessageNow may restore the entry instead of delivering it (§5.5). */
-  queued?: boolean;
-  quarantined?: boolean;
-  /** IDs acknowledged by an explicit queued batch send. */
-  messageIds?: string[];
-  /**
-   * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
-   * daemon returns one by the seam mutations that extract it: `queueMessage`
-   * (top-level result `turnId`, falling back to the echoed
-   * `queuedMessage.turnId`) and `sendQueuedMessageNow` (top-level field of
-   * the delivered arm ONLY — no `queuedMessage` fallback, a slot-race restore
-   * is not a delivery). `agent.retry` surfaces the same id on its own
-   * `{ ok, redriven?, turnId? }` result, and the chat send flow bypasses the
-   * `send()` seam, so `sendMessage` does not set it. Callers key retry
-   * records by it for exact lifecycle-event attribution (monorepo#1057).
-   * Additive and optional: older daemons omit it and other mutation paths
-   * never set it.
-   */
-  turnId?: string;
-}
+// Compatibility until all domain clients consume the neutral types directly.
+import type { MutationResult, SubscriptionHandler, Unsubscribe } from './client-types';
+export type { MutationResult, SubscriptionHandler, Unsubscribe } from './client-types';
 
 /**
  * Request shape for creating an agent through the seam (PROTOCOL §5.5). The
@@ -1252,124 +1165,18 @@ export interface TerminalsClient {
   subscribe(handler: SubscriptionHandler<TerminalTab[]>): Unsubscribe;
 }
 
-/**
- * Wire-level setting definition (PROTOCOL §5.12 `SettingDefinition`). The
- * `value` field is appended by `settings.list` / `settings.get` (the spec calls
- * this `SettingDefinitionWithValue`); sensitive entries surface a redacted
- * placeholder rather than the raw secret.
- */
-export interface SettingDefinitionWithValue {
-  path: string;
-  label: string;
-  description: string;
-  category: string;
-  type: 'boolean' | 'number' | 'string' | 'enum' | 'object';
-  enumValues?: string[];
-  min?: number;
-  max?: number;
-  defaultValue?: unknown;
-  sensitive?: boolean;
-  /** Approximate prompt-token cost of the gated feature (e.g. "~620 tokens/session"); absent when unannotated. */
-  tokenImpact?: string;
-  value: unknown;
-  /** Effective source for TOML-backed settings; absent for other stores. */
-  origin?: 'default' | 'file' | 'flag';
-  /** Daemon ordering watermark, present on settings.get results. */
-  revision?: number;
-}
+// Svelte/public client compatibility: remove re-exports after all clients use the domain types.
+export type {
+  SettingDefinitionWithValue,
+  AppSettingChange,
+  AppliedSettingChange,
+  SettingsSnapshot,
+  SettingsUpdateResult,
+  UserRuleState,
+} from './settings-types';
 
-/** Wire-level change entry for `settings.update` (PROTOCOL §5.12 `AppSettingChange`). */
-export interface AppSettingChange {
-  path: string;
-  value: unknown;
-  reason?: string;
-}
-
-/** Applied entry surfaced by `settings.update` / `settings:changed` (§5.12 / §6.5). */
-export interface AppliedSettingChange {
-  path: string;
-  value: unknown;
-  /** Effective source after the commit for TOML-backed settings. */
-  origin?: 'default' | 'file' | 'flag';
-}
-
-export interface SettingsSnapshot {
-  settings: SettingDefinitionWithValue[];
-  revision: number;
-}
-
-export interface SettingsUpdateResult {
-  applied: AppliedSettingChange[];
-  revision: number;
-}
-
-/** One user-override rule as read via `rules.get` (§5.21). */
-export interface UserRuleState {
-  enabled: boolean;
-  content: string;
-  updatedAt: number;
-}
-
-export interface SettingsClient {
-  /** `settings.list` (§5.12). Returns every BE-owned setting with its current value (sensitive values redacted). */
-  list(workspaceId?: string): Promise<SettingDefinitionWithValue[]>;
-  listSnapshot?(workspaceId?: string): Promise<SettingsSnapshot>;
-  /** `settings.get` (§5.12). Returns the single setting + its definition; `null` when the daemon rejects the path. */
-  get(path: string, workspaceId?: string): Promise<SettingDefinitionWithValue | null>;
-  /** `settings.update` (§5.12). Atomic batch update; emits `settings:changed` on success. */
-  update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]>;
-  updateSnapshot?(changes: AppSettingChange[]): Promise<SettingsUpdateResult>;
-  /** `settings.reset` (§5.12). Restores one setting to its `defaultValue`. */
-  reset(path: string): Promise<AppliedSettingChange | null>;
-  /** `rules.get` (§5.21). Reads one global user-override rule type; `null` when the probe fails. */
-  getUserRule(ruleType: string, workspaceId?: string): Promise<UserRuleState | null>;
-  /** `rules.update` (§5.21). Upserts the global user-override body (+ `enabled`) for one rule type. */
-  updateUserRule(ruleType: string, content: string, enabled?: boolean): Promise<MutationResult>;
-  getUserPreferences(): Promise<UserPreferencesState | null>;
-  setUserPreferences(prefs: Partial<UserPreferencesState>): Promise<MutationResult>;
-  getProviderSettings(workspaceId?: string): Promise<PersistedProviderSettings | null>;
-  setProviderSettings(settings: Partial<PersistedProviderSettings>): Promise<MutationResult>;
-  getMcpServers(workspaceId?: string): Promise<McpServerConfig[]>;
-  setMcpServers(servers: McpServerConfig[]): Promise<MutationResult>;
-  /**
-   * `mcp.servers.getStatus` (§5.22) fanned out per server id. Returns the
-   * daemon-reported runtime statuses keyed by `serverId`; ids whose point read
-   * fails are omitted (live updates arrive via `mcp.servers:status-changed`).
-   */
-  getMcpServerStatuses(
-    serverIds: string[],
-    workspaceId?: string,
-  ): Promise<McpServerRuntimeStatus[]>;
-  /** `mcp.servers.restart` (§5.22). Restarts/re-probes one daemon-owned server. */
-  restartMcpServer(serverId: string): Promise<McpServerRuntimeStatus>;
-  /**
-   * Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable). Returns
-   * the identity keys (ID, or legacy name) of servers whose entry carries `workspaceDisabled: true`; `null`
-   * when the read fails (callers keep their current state).
-   */
-  getWorkspaceDisabledMcpServerKeys(workspaceId: string): Promise<string[] | null>;
-  /**
-   * Workspace-scoped `mcp.servers.toggle` (§5.22 per-workspace disable): sets
-   * (`enabled: false`) or clears (`enabled: true`) the per-workspace disabled
-   * marker only — the global config is untouched. Success carries the daemon's
-   * resulting `workspaceDisabled`.
-   */
-  toggleWorkspaceMcpServer(
-    workspaceId: string,
-    serverId: string,
-    enabled: boolean,
-  ): Promise<MutationResult & { workspaceDisabled?: boolean }>;
-  getWorkspaceSettings(workspaceId: string): Promise<SingleWorkspaceSettings | null>;
-  setWorkspaceSettings(
-    workspaceId: string,
-    settings: Partial<SingleWorkspaceSettings>,
-  ): Promise<MutationResult>;
-  getBackgroundAgentSettings(workspaceId?: string): Promise<BackgroundAgentSettingsState | null>;
-  setBackgroundAgentSettings(
-    settings: Partial<BackgroundAgentSettingsState>,
-  ): Promise<MutationResult>;
-  subscribe(handler: SubscriptionHandler<UserPreferencesState | null>): Unsubscribe;
-}
+import type { SettingsClient } from './settings-types';
+export type { SettingsClient, PersistedProviderSettings } from './settings-types';
 
 export interface FilesClient {
   list(workspaceId: string): Promise<FileContentEntry[]>;
@@ -2007,91 +1814,13 @@ export interface SkillsClient {
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe;
 }
 
-/**
- * Wire `SpecialistDef` (`specialist.list`, PROTOCOL §5.11): the resolved view
- * of one definition. `source` is the winning tier (project > user > bundled)
- * and `path` the file it resolved from (omitted for `bundled`). The optional
- * frontmatter scalars (`codingAgent`/`model`/`roleReminder`/
- * `agentType`/`hidden`) are carried through verbatim when present;
- * `behaviorPrompt` mirrors `prompt` (the markdown body). `hidden: true`
- * excludes the specialist from picker surfaces (absent ⇒ not hidden).
- */
-export interface SpecialistDef {
-  runsOn?: AgentPlacement;
-  /** Original Claude definition; read-only in Intent. */
-  importedFrom?: 'claude-code';
-  /** Unsupported settings that prevent launching this imported definition. */
-  unsupportedFields?: string[];
-  requiredSkills?: string[];
-  missingSkills?: string[];
-  id: string;
-  name: string;
-  description: string;
-  codingAgent?: string;
-  model?: string;
-  roleReminder?: string;
-  agentType?: string;
-  hidden?: boolean;
-  /**
-   * Ordered delegation model options (additive, PROTOCOL §5.11): emitted on
-   * `list`/`get` when the resolved list is non-empty, omitted otherwise
-   * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
-   */
-  modelOptions?: { provider?: string; model: string; hint: string; reasoningEffort?: string }[];
-  /**
-   * Reasoning-effort level for the specialist's model (additive, PROTOCOL
-   * §5.11): one of the model's catalog `effortLevels`. Omitted when the
-   * specialist inherits the model default (never `null`/`""` on the wire).
-   */
-  reasoningEffort?: string;
-  /**
-   * Orchestration role (additive, PROTOCOL §5.11): 'orchestrator' powers the
-   * New Workspace modal's team card; 'internal' is excluded from the modal's
-   * single-agent dropdown only. Omitted for standard specialists.
-   */
-  role?: 'orchestrator' | 'internal';
-  /**
-   * Specialist ids the orchestrator delegates to (additive, PROTOCOL §5.11).
-   * Advisory/render-only; omitted when not declared.
-   */
-  teamAgents?: string[];
-  /**
-   * Built-in avatar design id (additive, PROTOCOL §5.11). Free string on the
-   * wire; unknown/absent values degrade to the client's fallback design.
-   */
-  icon?: string;
-  prompt?: string;
-  behaviorPrompt?: string;
-  source: 'project' | 'user' | 'bundled';
-  isCustomized?: boolean;
-  path?: string;
-  /**
-   * Daemon-computed default-model preview (additive, PROTOCOL §5.11): the
-   * model a no-model `agent.create` with this specialist would pin, resolved
-   * by the daemon's single creation-time resolver in the request's `provider`
-   * context. Both fields are omitted when resolution yields the provider CLI
-   * default (clients render "Provider default").
-   */
-  resolvedModel?: string;
-  resolvedProvider?: string;
-  /** Effort from the matching model option or specialist, before Settings fallback. */
-  resolvedReasoningEffort?: string;
-}
-
-export interface SpecialistImportDiagnostic {
-  path: string;
-  isDirectory?: boolean;
-  source: 'user' | 'project';
-  code: 'invalid' | 'unreadable' | 'broken-link' | 'too-large' | 'shadowed' | 'scan-limit';
-  message: string;
-  specialistId?: string;
-  winnerPath?: string;
-}
-
-export interface SpecialistCatalog {
-  specialists: SpecialistDef[];
-  importDiagnostics?: SpecialistImportDiagnostic[];
-}
+// Public compatibility until Svelte cutover; definitions live in the neutral domain module.
+import type { SpecialistDef, SpecialistCatalog } from './specialists-types';
+export type {
+  SpecialistDef,
+  SpecialistImportDiagnostic,
+  SpecialistCatalog,
+} from './specialists-types';
 
 export interface SpecialistsClient {
   /** Additive catalog view; legacy list/subscribe consumers keep their array API. */

@@ -1,85 +1,28 @@
-import { settleBackgroundSettings } from './settle-background-settings';
-import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
-import { readSettingsSnapshot } from '../../settings-events/sagas/read-settings-snapshot';
-import { backgroundSettingsWriteLock } from './background-settings-write-lock';
 import { buffers } from 'redux-saga';
-import { actionChannel, all, call, put, take, takeEvery } from 'typed-redux-saga';
-
+import { actionChannel, call, put, take } from 'typed-redux-saga';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
 import { m } from '$shared/paraglide/messages.js';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import { selectBgSettings } from '../background-agent-settings-selectors';
-import {
-  backgroundSettingsChanges,
-  rebaseBackgroundSettings,
-} from '../background-agent-settings-persistence';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { setLocalStorageItem } from '../../../utils/safe-local-storage-saga';
 import {
-  clearTypeOverride,
-  setDefaultReasoningEffort,
-  setTypeReasoningEffortOverride,
-  setTypeReasoningEffortOverrides,
+  selectHostAdministrationContext,
+  selectCanAdministerHost,
+} from '../../principal/principal-selectors';
+import { selectModelSelectionState } from '../../model/model-selectors';
+import { readSettingsSnapshot } from '../../settings-events/sagas/read-settings-snapshot';
+import { backgroundSettingsWriteLock } from './background-settings-write-lock';
+import { selectBgSettings } from '../background-agent-settings-selectors';
+import {
   backgroundProviderSwitchBlocked,
-  resetTypeOverride,
-  resetSettings,
-  setDefaultModel,
-  setTypeOverride,
-  hydrateSettings,
   backgroundSettingsHydrationRequested,
   backgroundSettingsMigrationRequested,
   backgroundSettingsSaveSettled,
   BG_MODEL_MIGRATION_MARKER_KEY,
 } from '../background-agent-settings-slice';
-
+import { createBackgroundAgentSettingsSaga } from './background-agent-settings-saga-factory';
 const logger = createLogger('BackgroundAgentSettingsSaga');
-
-function* persistBackgroundAgentSettingsWorker() {
-  yield* take(backgroundSettingsWriteLock);
-  const settings = yield* selectBgSettings.effect();
-  try {
-    const snapshot = yield* call(readSettingsSnapshot);
-    const rebased = rebaseBackgroundSettings(snapshot.settings, settings);
-    const changes = backgroundSettingsChanges(rebased);
-    if (rebased.providerId)
-      changes.unshift({ path: 'model.defaultProvider', value: rebased.providerId });
-    const result = appClient.settings.updateSnapshot
-      ? yield* call([appClient.settings, appClient.settings.updateSnapshot], changes)
-      : {
-          applied: yield* call([appClient.settings, appClient.settings.update], changes),
-          revision: 0,
-        };
-    yield* call(
-      settleBackgroundSettings,
-      {
-        revision: result.revision,
-        generation: settings.persistenceGeneration ?? 0,
-        providerId: settings.providerId,
-      },
-      rebased,
-      result.applied,
-    );
-    if (appClient.settings.updateSnapshot)
-      yield* put(
-        settingsChangesReceived(
-          [
-            ...changes.filter((change) => !result.applied.some(({ path }) => path === change.path)),
-            ...result.applied,
-          ].filter(({ path }) => !path.startsWith('model.')),
-          result.revision,
-        ),
-      );
-  } catch (error) {
-    logger.error('Failed to persist background agent settings:', error);
-    yield* call(settleBackgroundSettings, {
-      generation: settings.persistenceGeneration ?? 0,
-      providerId: settings.providerId,
-    });
-  } finally {
-    yield* put(backgroundSettingsWriteLock, true);
-  }
-}
-
 async function showProviderSwitchBlocked(
   action: ReturnType<typeof backgroundProviderSwitchBlocked>,
 ) {
@@ -91,13 +34,12 @@ async function showProviderSwitchBlocked(
   }
 }
 
-function* hydrateBackgroundSettings(
+function* migrateBackgroundSettings(
   action: ReturnType<typeof backgroundSettingsHydrationRequested>,
 ) {
   const [settings] = action.payload;
   // Only the daemon snapshot is authoritative; the migration is local intent
   // until the ordered persistence owner accepts it.
-  yield* put(hydrateSettings(settings));
   const marker = yield* call(
     [safeLocalStorage, safeLocalStorage.getItemWithStatus],
     BG_MODEL_MIGRATION_MARKER_KEY,
@@ -149,35 +91,19 @@ function* hydrateBackgroundSettings(
   }
 }
 
-function* persistLoop() {
-  const channel = yield* actionChannel(
-    [
-      setDefaultModel,
-      setTypeOverride,
-      clearTypeOverride,
-      resetSettings,
-      setDefaultReasoningEffort,
-      setTypeReasoningEffortOverride,
-      setTypeReasoningEffortOverrides,
-      resetTypeOverride,
-      backgroundSettingsMigrationRequested,
-    ],
-    buffers.sliding(1),
-  );
-  try {
-    while (true) {
-      yield* take(channel);
-      yield* call(persistBackgroundAgentSettingsWorker);
-    }
-  } finally {
-    channel.close();
-  }
-}
-
+// Svelte compatibility composition retains its existing migration and notification owners.
+const bound = createBackgroundAgentSettingsSaga({
+  settingsClient: appClient.settings,
+  selectCanAdministerHost,
+  selectModelSelectionState,
+  readSettingsSnapshot,
+  backgroundSettingsWriteLock,
+  selectBgSettings,
+  showProviderSwitchBlocked,
+  migrateBackgroundSettings,
+});
 export function* backgroundAgentSettingsSaga() {
-  yield* all([
-    call(persistLoop),
-    takeEvery(backgroundProviderSwitchBlocked, showProviderSwitchBlocked),
-    takeEvery(backgroundSettingsHydrationRequested, hydrateBackgroundSettings),
-  ]);
+  yield* takeLatestFromSelector(selectHostAdministrationContext, function* ({ payload }) {
+    if (payload) yield* call(bound);
+  });
 }

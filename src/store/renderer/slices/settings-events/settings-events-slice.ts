@@ -8,7 +8,7 @@
  * removes its snapshot and makes late acknowledgements inert.
  */
 import { createAction } from '@themislib/themis/utils/store/create-action';
-import type { AppliedSettingChange } from '$lib/client/app-client';
+import type { AppliedSettingChange } from '$lib/client/settings-types';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,

@@ -1,4 +1,4 @@
-import type { AppSettingChange, AppliedSettingChange } from '$lib/client/app-client';
+import type { AppSettingChange, AppliedSettingChange } from '$lib/client/settings-types';
 import type { ProviderBgSettings } from '../background-agent-settings/background-agent-settings-slice';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 

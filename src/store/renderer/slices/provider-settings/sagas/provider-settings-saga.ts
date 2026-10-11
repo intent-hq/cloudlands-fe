@@ -1,16 +1,9 @@
-import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
-import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
+import { call } from 'typed-redux-saga';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
+import { appClient } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
-import { backgroundProviderSwitchBlocked } from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
-import { buffers, channel, type Channel } from 'redux-saga';
-import { all, call, cancelled, delay, put, take, takeEvery } from 'typed-redux-saga';
-
-import { appClient, type AppSettingChange } from '$lib/client';
-import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
-import { createLogger } from '$lib/utils/client-logger';
-import { resolveProviderEnabled } from '$shared/provider-catalog';
-import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import {
   selectProviderCatalogEntry,
@@ -21,364 +14,36 @@ import {
   selectProviderSettingsSessionActive,
   selectProviderWriteRevision,
 } from '../provider-settings-selectors';
-import type { ProviderSettingsRequestContext } from '../provider-settings-types';
-import { checkAllProvidersRequested } from '../../agent-availability/agent-availability-slice';
-import { setSelectedModel } from '../../model/model-slice';
 import { selectModelSelectionState } from '../../model/model-selectors';
 import { persistSelectedModelsWorker } from '../../model/sagas/model-selection-saga';
-import { m } from '$shared/paraglide/messages.js';
-import { providerSettingsReadSaga } from './provider-settings-read-saga';
 import {
-  enablementPersistRejected,
-  ensureEnabledIfUnset,
-  setActiveProvider,
-  activeProviderAccepted,
-  setProviderEnabled,
-  toggleProvider,
-  providerEnablementSeedRequested,
-  providerPathSaveRequested,
-  providerPathSaved,
-  providerSettingsRequestSettled,
-  providerSettingsStopped,
-  setAtomicDefaultModel,
-  atomicDefaultModelAccepted,
-} from '../provider-settings-slice';
-
+  selectHostAdministrationContext,
+  selectCanAdministerHost,
+} from '../../principal/principal-selectors';
+import { providerSettingsReadSaga } from './provider-settings-read-saga';
 import { providerFastModeSaga } from './provider-fast-mode-saga';
+import { createProviderSettingsSaga } from './provider-settings-saga-factory';
+export { PROVIDER_SETTINGS_RETRY_DELAYS_MS } from './provider-settings-saga-factory';
 
-const logger = createLogger('ProviderSettingsSaga');
-
-type ProviderSettingsUpdate = {
-  connection?: string | null;
-  waitForBackground?: boolean;
-  modelPick?: { providerId: string; model: string; atomic: boolean };
-  request?: ProviderSettingsRequestContext;
-  resource?: string;
-  revision?: number;
-  enabledSeed?: Record<string, boolean>;
-  path?: { providerId: string; value: string };
-  activeProviderId?: string;
-  /**
-   * Enablement is queued as the click's `{providerId, enabled}` delta, not a
-   * map snapshot: `providers.enabled` is written as a full map, so the delta
-   * is merged over the live map at write time. A boot settings hydration that
-   * replaces the map between dispatch and write therefore cannot drop the
-   * click's entry from the persisted value (monorepo#1986).
-   *
-   * This closes the single-window hydration race only. Because the wire value
-   * is still a full map, cross-writer last-writer-wins races remain (and
-   * predate this delta): two windows toggling different providers
-   * concurrently can each persist a map missing the other's entry, and a
-   * delta queued behind a slow prior write can re-impose an older click over
-   * a newer remote change for the same provider once its override was retired
-   * by a confirming hydration. Resolving those needs a per-key wire write,
-   * not a client-side change.
-   */
-  enabledProviderDelta?: { providerId: string; enabled: boolean };
-};
-
-function* queueModelWorker(
-  updates: Channel<ProviderSettingsUpdate>,
-  action: ReturnType<typeof setAtomicDefaultModel> | ReturnType<typeof setSelectedModel>,
-) {
-  const atomic = action.type === setAtomicDefaultModel.type;
-  if (atomic) {
-    const pick = action.payload[0];
-    const background = yield* selectBgSettings.effect();
-    if (isQuickActionProviderSwitchBlocked(background, pick.providerId)) {
-      yield* put(backgroundProviderSwitchBlocked(pick.providerId));
-      return;
-    }
-    yield* put(atomicDefaultModelAccepted(pick));
-  }
-  const selection = yield* selectModelSelectionState.effect();
-  const update: ProviderSettingsUpdate = {
-    modelPick: { ...action.payload[0], atomic },
-    revision: yield* selectProviderWriteRevision.effect('default'),
-    connection: selection.selectionConnection,
-    waitForBackground: (yield* selectBgSettings.effect()).persistencePending,
-  };
-  yield* put(updates, update);
-}
-
-/** Map a queued partial update to its §5.12 wire changes (PROTOCOL paths). */
-function* changesFor(update: ProviderSettingsUpdate) {
-  const changes: AppSettingChange[] = [];
-  if (update.path) {
-    const entry = yield* call([appClient.settings, appClient.settings.get], 'providers.paths');
-    const existing =
-      entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
-        ? entry.value
-        : {};
-    changes.push({
-      path: 'providers.paths',
-      value: { ...existing, [update.path.providerId]: update.path.value },
-    });
-  }
-  if (update.enabledSeed) {
-    if ((yield* selectActiveBackendId()) !== LOCAL_CONNECTION_ID) return changes;
-    const current = yield* selectEnabledProviders.effect();
-    if (Object.keys(update.enabledSeed).every((id) => current[id] !== undefined)) return changes;
-    changes.push({ path: 'providers.enabled', value: { ...update.enabledSeed, ...current } });
-  }
-  if (update.enabledProviderDelta !== undefined) {
-    const { providerId, enabled } = update.enabledProviderDelta;
-    const enabledProviders = yield* selectEnabledProviders.effect();
-    changes.push({
-      path: 'providers.enabled',
-      value: { ...enabledProviders, [providerId]: enabled },
-    });
-  }
-  return changes;
-}
-
-function* queueActiveProviderWorker(
-  updates: Channel<ProviderSettingsUpdate>,
-  action: ReturnType<typeof setActiveProvider>,
-) {
-  const providerId = action.payload[0];
-  if (!providerId) return;
-  const background = yield* selectBgSettings.effect();
-  if (isQuickActionProviderSwitchBlocked(background, providerId)) {
-    yield* put(backgroundProviderSwitchBlocked(providerId));
-    const request = action.payload[1];
-    if (request) yield* put(providerSettingsRequestSettled(request.id, 'failure'));
-    return;
-  }
-  yield* put(activeProviderAccepted(providerId));
-  const selection = yield* selectModelSelectionState.effect();
-  yield* put(updates, {
-    activeProviderId: providerId,
-    request: action.payload[1],
-    resource: 'default',
-    connection: selection.selectionConnection,
-    waitForBackground: background.persistencePending,
-    revision: yield* selectProviderWriteRevision.effect('default'),
-  });
-}
-
-function* queueEnabledProviders(
-  updates: Channel<ProviderSettingsUpdate>,
-  providerId: string,
-  enabled: boolean,
-  request?: ProviderSettingsRequestContext,
-) {
-  const provider = yield* selectProviderCatalogEntry.effect(providerId);
-  if (provider && !provider.canBeDisabled) return;
-  const resource = `enabled:${providerId}`;
-  yield* put(updates, {
-    enabledProviderDelta: { providerId, enabled },
-    request,
-    resource,
-    revision: yield* selectProviderWriteRevision.effect(resource),
-  });
-}
-
-function* queueToggleProviderWorker(
-  updates: Channel<ProviderSettingsUpdate>,
-  action: ReturnType<typeof toggleProvider>,
-) {
-  const providerId = action.payload[0];
-  // The toggle's intent is the post-reducer resolved value.
-  const enabledProviders = yield* selectEnabledProviders.effect();
-  yield* call(
-    queueEnabledProviders,
-    updates,
-    providerId,
-    resolveProviderEnabled(enabledProviders, providerId),
-  );
-}
-
-function* queueSetProviderEnabledWorker(
-  updates: Channel<ProviderSettingsUpdate>,
-  action: ReturnType<typeof setProviderEnabled>,
-) {
-  const { providerId, enabled } = action.payload[0];
-  yield* call(queueEnabledProviders, updates, providerId, enabled, action.payload[1]);
-}
-
-function* queuePathWorker(
-  updates: Channel<ProviderSettingsUpdate>,
-  action: ReturnType<typeof providerPathSaveRequested>,
-) {
-  const [providerId, value, request] = action.payload;
-  const resource = `path:${providerId}`;
-  yield* put(updates, {
-    path: { providerId, value },
-    request,
-    resource,
-    revision: yield* selectProviderWriteRevision.effect(resource),
-  });
-}
-
-function* queueSeedWorker(
-  updates: Channel<ProviderSettingsUpdate>,
-  action: ReturnType<typeof providerEnablementSeedRequested>,
-) {
-  yield* put(updates, { enabledSeed: action.payload[0] });
-}
-
-function* notifyOutcome(update: ProviderSettingsUpdate, success: boolean) {
-  if (
-    !update.request ||
-    !(yield* selectProviderSettingsSessionActive.effect(update.request.sessionId))
-  )
-    return;
-  if (
-    update.resource &&
-    update.revision !== (yield* selectProviderWriteRevision.effect(update.resource))
-  )
-    return;
-  const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
-  if (update.path) {
-    if (success) yield* call(notify.success, m.settings_providerPath_saved());
-    else yield* call(notify.error, m.settings_providerPath_saveError());
-  } else if (success && update.activeProviderId) {
-    const name = yield* selectProviderDisplayName.effect(update.activeProviderId);
-    yield* call(notify.success, m.settings_providers_switchedTo({ name }));
-  }
-}
-
-/**
- * Retry backoff for a provider-settings write that failed in transport.
- * During onboarding on a fresh install the daemon connection may still be
- * cycling, so dropping the write would leave `model.defaultProvider` stale on
- * the daemon — the onboarding model pick then resolves under the wrong provider
- * key after restart (intent-hq/monorepo#1924). Updates are partial patches
- * whose order matters, so the failed write is retried in place (never
- * superseded); the last delay repeats until the write lands.
- *
- * The write goes through `settings.update` directly (like the model-selection
- * saga's `model.providerDefaults` write) because it THROWS on transport
- * failure — `setProviderSettings`'s `runMutation` wrapper folds transport
- * failures into the same `{ success: false }` a daemon-side rejection
- * produces, which would make them indistinguishable here. A structured daemon
- * error response (`isDaemonErrorResponse`) is a rejection of the payload and
- * is not retried; everything else is transient transport failure and is.
- */
-export const PROVIDER_SETTINGS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
-
-function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>) {
-  while (true) {
-    const update = yield* take(updates);
-    if (update.modelPick || update.activeProviderId !== undefined) {
-      if (update.connection !== (yield* selectModelSelectionState.effect()).selectionConnection) {
-        if (update.request)
-          yield* put(providerSettingsRequestSettled(update.request.id, 'cancelled'));
-        continue;
-      }
-      const pick = update.modelPick;
-      const success = yield* call(
-        persistSelectedModelsWorker,
-        pick ? { [pick.providerId]: pick.model } : {},
-        pick?.atomic ? pick.providerId : update.activeProviderId,
-        update.connection,
-        update.waitForBackground,
-      );
-      if (update.connection !== (yield* selectModelSelectionState.effect()).selectionConnection) {
-        if (update.request)
-          yield* put(providerSettingsRequestSettled(update.request.id, 'cancelled'));
-        continue;
-      }
-      if (update.request)
-        yield* put(
-          providerSettingsRequestSettled(update.request.id, success ? 'success' : 'failure'),
-        );
-      yield* call(notifyOutcome, update, success);
-      continue;
-    }
-    yield* take(backgroundSettingsWriteLock);
-    try {
-      const changes = yield* call(changesFor, update);
-      if (changes.length === 0) {
-        if (update.request)
-          yield* put(providerSettingsRequestSettled(update.request.id, 'cancelled'));
-        continue;
-      }
-      let attempt = 0;
-      while (true) {
-        try {
-          const result = appClient.settings.updateSnapshot
-            ? yield* call([appClient.settings, appClient.settings.updateSnapshot], changes)
-            : {
-                applied: yield* call([appClient.settings, appClient.settings.update], changes),
-                revision: 0,
-              };
-          if (appClient.settings.updateSnapshot)
-            yield* put(
-              settingsChangesReceived(
-                [
-                  ...changes.filter(
-                    (change) => !result.applied.some(({ path }) => path === change.path),
-                  ),
-                  ...result.applied,
-                ],
-                result.revision,
-              ),
-            );
-          if (update.enabledSeed) {
-            for (const [providerId, enabled] of Object.entries(update.enabledSeed)) {
-              if (enabled) yield* put(ensureEnabledIfUnset(providerId));
-            }
-          }
-          if (update.path) {
-            yield* put(providerPathSaved(update.path.providerId, update.path.value));
-            yield* put(checkAllProvidersRequested(true));
-          }
-          if (update.request) {
-            const current =
-              !update.resource ||
-              update.revision === (yield* selectProviderWriteRevision.effect(update.resource));
-            yield* put(
-              providerSettingsRequestSettled(update.request.id, current ? 'success' : 'cancelled'),
-            );
-          }
-          yield* call(notifyOutcome, update, true);
-          break;
-        } catch (error) {
-          if (update.path || update.enabledSeed || isDaemonErrorResponse(error)) throw error;
-          logger.error('Failed to persist provider settings; retrying');
-        }
-        yield* delay(
-          PROVIDER_SETTINGS_RETRY_DELAYS_MS[
-            Math.min(attempt, PROVIDER_SETTINGS_RETRY_DELAYS_MS.length - 1)
-          ],
-        );
-        attempt += 1;
-      }
-    } catch {
-      logger.warn('Provider settings write failed');
-      if (update.enabledProviderDelta !== undefined)
-        yield* put(
-          enablementPersistRejected(update.enabledProviderDelta.providerId, update.revision),
-        );
-      if (update.request) yield* put(providerSettingsRequestSettled(update.request.id, 'failure'));
-      yield* call(notifyOutcome, update, false);
-    } finally {
-      yield* put(backgroundSettingsWriteLock, true);
-      if ((yield* cancelled()) && update.request)
-        yield* put(providerSettingsRequestSettled(update.request.id, 'cancelled'));
-    }
-  }
-}
-
-/** Sole ordered owner of provider settings writes, including whole-map migrations. */
+// Svelte compatibility composition keeps settings-panel workflows in their original lifetime.
+const bound = createProviderSettingsSaga({
+  settings: appClient.settings,
+  selectCanAdministerHost,
+  backgroundSettingsWriteLock,
+  selectBgSettings,
+  selectActiveBackendId,
+  selectProviderCatalogEntry,
+  selectProviderDisplayName,
+  selectEnabledProviders,
+  selectProviderSettingsSessionActive,
+  selectProviderWriteRevision,
+  selectModelSelectionState,
+  persistSelectedModelsWorker,
+  notify,
+  additionalSagas: [providerFastModeSaga, providerSettingsReadSaga],
+});
 export function* providerSettingsSaga() {
-  const updates = channel<ProviderSettingsUpdate>(buffers.expanding());
-  try {
-    yield* all([
-      call(persistProviderSettingsQueue, updates),
-      call(providerFastModeSaga),
-      takeEvery([setAtomicDefaultModel, setSelectedModel], queueModelWorker, updates),
-      takeEvery(setActiveProvider, queueActiveProviderWorker, updates),
-      takeEvery(toggleProvider, queueToggleProviderWorker, updates),
-      takeEvery(setProviderEnabled, queueSetProviderEnabledWorker, updates),
-      takeEvery(providerEnablementSeedRequested, queueSeedWorker, updates),
-      takeEvery(providerPathSaveRequested, queuePathWorker, updates),
-      call(providerSettingsReadSaga),
-    ]);
-  } finally {
-    updates.close();
-    yield* put(providerSettingsStopped());
-  }
+  yield* takeLatestFromSelector(selectHostAdministrationContext, function* ({ payload }) {
+    if (payload) yield* call(bound);
+  });
 }
