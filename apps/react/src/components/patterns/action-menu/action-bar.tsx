@@ -53,7 +53,11 @@ export function ActionBar({
             onClick={(event) => onAction?.(action.id, event.nativeEvent)}
             data-action-id={action.id}
           >
-            {IconComponent ? <IconComponent data-icon="inline-start" /> : action.label}
+            {IconComponent ? (
+              <IconComponent data-icon="inline-start" aria-hidden="true" />
+            ) : (
+              action.label
+            )}
           </Button>
         );
       })}
@@ -72,7 +76,7 @@ export function ActionBar({
               iconOnly
               aria-label={overflowLabel}
             >
-              <DotsThreeVerticalIcon data-icon="inline-start" />
+              <DotsThreeVerticalIcon data-icon="inline-start" aria-hidden="true" />
             </Button>
           )}
         />
