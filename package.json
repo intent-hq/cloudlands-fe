@@ -357,6 +357,10 @@
   },
   "pnpm": {
     "overrides": {
+      "@tiptap/react@3.31.3>@tiptap/extension-bubble-menu": "3.31.3",
+      "@tiptap/react@3.31.3>@tiptap/extension-floating-menu": "3.31.3",
+      "svelte-tiptap@3.0.1>@tiptap/extension-bubble-menu": "3.23.6",
+      "svelte-tiptap@3.0.1>@tiptap/extension-floating-menu": "3.23.6",
       "node-gyp": "^13.0.2",
       "entities": "7.0.0",
       "tar@<7.5.19": "^7.5.19",
