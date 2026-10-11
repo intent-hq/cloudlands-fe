@@ -1022,6 +1022,7 @@
   "ui_openCombo_openInApp_tooltip": "打开方式…",
   "ui_openCombo_open_label": "打开",
   "ui_relativeTime_invalid_label": "无效日期",
+  "ui_relativeTime_invalidCompact_label": "无效",
   "ui_saveIndicator_saving_tooltip": "保存中…",
   "ui_saveIndicator_autoSaving_tooltip": "自动保存中…",
   "ui_saveIndicator_clickToSave_tooltip": "点击保存（⌘S）",
