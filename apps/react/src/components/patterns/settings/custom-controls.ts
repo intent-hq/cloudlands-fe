@@ -1,6 +1,7 @@
 /** Source: settings/custom-controls.ts. Primitive bridge for registered custom renderers. */
 export { Button } from '@/components/ui/button';
 export { Checkbox } from '@/components/ui/checkbox';
+export { Combobox } from '@/components/ui/combobox';
 export { CopyButton } from '@/components/ui/copy-button';
 export { FileInput } from '@/components/ui/file-input';
 export { GrokLogo } from '@/components/ui/grok-logo';
