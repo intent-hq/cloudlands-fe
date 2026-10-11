@@ -274,6 +274,7 @@ export async function unsubscribed(wire, subscriptionId) {
   expect(find()).toHaveLength(1);
   expect(find()[0].request.params).toEqual({ subscriptionId });
   expect(find()[0].response.error).toBeUndefined();
+  expect(find()[0].response.result).toEqual({ success: true });
   return find()[0].response.result;
 }
 
