@@ -1,6 +1,6 @@
 // Source: AskUserQuestionsCatalogPreview.svelte. Keep fixture data and initial states identical.
 // i18n-ignore (reference catalog fixture content)
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AskUserQuestions,
   type AskUserAnswer,
@@ -72,7 +72,7 @@ function questionsFor(fixture: string): AskUserQuestion[] {
 export function QuestionsCatalogPreview({ fixture }: { fixture: UiComponentFixture }) {
   const [controlledIndex, setControlledIndex] = useState(0);
   const [controlledAnswers, setControlledAnswers] = useState<Record<string, AskUserAnswer>>({});
-  const [questions] = useState(() => questionsFor(fixture.id));
+  const questions = useMemo(() => questionsFor(fixture.id), [fixture.id]);
   return (
     <div
       className="flex w-full justify-center"
