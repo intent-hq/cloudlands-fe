@@ -117,12 +117,9 @@ test('production note actions preserve selection and keyboard state across both 
     await expect(root).toBeVisible();
     const spellcheck = root.getByRole('menuitemcheckbox', { name: 'Spellcheck', exact: true });
     const previous = await spellcheck.getAttribute('aria-checked');
-    await spellcheck.focus();
-    await page.keyboard.press('Space');
-    await expect(spellcheck).toHaveAttribute(
-      'aria-checked',
-      previous === 'true' ? 'false' : 'true',
-    );
+    await expect(spellcheck).toHaveAttribute('aria-disabled', 'true');
+    await fontTrigger.focus();
+    await expect(spellcheck).toHaveAttribute('aria-checked', previous!);
     await expect(root).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(root).toBeHidden();

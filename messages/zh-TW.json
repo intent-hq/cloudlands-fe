@@ -7533,5 +7533,7 @@
   "notes_delete_registrationPaused_label": "已達到請求上限，刪除狀態檢查已暫停。先前的請求可能仍在執行，因此無法確認結果。保留的草稿仍可匯出或捨棄。可點擊「檢查狀態」重試。",
   "chat_failureRecovery_queued_description": "有一則訊息正在佇列中。請使用下方控制項進行管理。",
   "chat_failureRecovery_action_description": "回覆在完成前停止了。",
-  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低於支援的最低版本 {minimumVersion}。請在守護程序主機上更新 CLI。"
+  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低於支援的最低版本 {minimumVersion}。請在守護程序主機上更新 CLI。",
+  "layout_noteTab_editRawMarkdown_action": "編輯 Markdown 原始碼",
+  "layout_noteTab_pagingUnsupported_error": "此工作區主機不支援檢視大型筆記。請更新主機，或在筆記選單中選擇「編輯 Markdown 原始碼」。"
 }

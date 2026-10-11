@@ -1,8 +1,33 @@
 import { expect, test } from '../../../../test/ct-test';
 import Harness from './mocks/FullNoteTabHarness.svelte';
+import type { Locator, Page } from '@playwright/test';
+
+async function selectMode(
+  component: Locator,
+  page: Page,
+  mode: 'Editor' | 'Rendered preview' | 'Edit Raw Markdown',
+) {
+  await component.getByRole('button', { name: 'Commands', exact: true }).click();
+  if (mode === 'Edit Raw Markdown') {
+    await page.getByRole('menuitem', { name: mode, exact: true }).click();
+    return;
+  }
+  const submenu = page.getByRole('menuitem', { name: /Note view/ });
+  await submenu.focus();
+  await submenu.press('ArrowRight');
+  await page.getByRole('menuitemradio', { name: mode, exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(component.getByRole('button', { name: 'Commands', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+}
 
 test('bounded read failure remains visible inside the note pane', async ({ mount, page }) => {
-  const component = await mount(Harness, { props: { paging: true, failPages: true } });
+  const component = await mount(Harness, {
+    props: { viewMode: 'preview', paging: true, failPages: true },
+  });
   expect(await page.evaluate(() => window.electronAPI?.versions.electron)).toBe('0.0.0-browser');
   const alert = component.getByRole('alert');
   await expect(alert).toBeVisible();
@@ -19,7 +44,9 @@ test('same workspace metadata refresh preserves Find and the admitted reader own
 }) => {
   const source = 'Prefix café 漢字 🙂 suffix';
   const query = 'café 漢字 🙂';
-  const component = await mount(Harness, { props: { paging: true, initialContent: source } });
+  const component = await mount(Harness, {
+    props: { viewMode: 'preview', paging: true, initialContent: source },
+  });
   const wire = component.getByTestId('wire');
   const value = async () => JSON.parse((await wire.textContent())!);
   const viewer = component.locator('.ProseMirror[contenteditable="false"]');
@@ -62,7 +89,7 @@ test('same workspace metadata refresh preserves Find and the admitted reader own
 test('Find selects exact Unicode text in the readonly native view', async ({ mount, page }) => {
   const query = 'café 漢字 🙂';
   const component = await mount(Harness, {
-    props: { paging: true, initialContent: `Prefix ${query} suffix` },
+    props: { viewMode: 'preview', paging: true, initialContent: `Prefix ${query} suffix` },
   });
   const viewer = component.locator('.ProseMirror[contenteditable="false"]');
   await expect(viewer).toHaveText(`Prefix ${query} suffix`);
@@ -88,7 +115,13 @@ test('Find selects exact Unicode text in the readonly native view', async ({ mou
 test('Find navigates to an off-window hit through the bounded reader', async ({ mount, page }) => {
   const source = 'First prefix....Second portion..Third portion...Fourth portion..';
   const component = await mount(Harness, {
-    props: { paging: true, initialContent: source, pageChunk: 16, canonicalPadding: 4500 },
+    props: {
+      viewMode: 'preview',
+      paging: true,
+      initialContent: source,
+      pageChunk: 16,
+      canonicalPadding: 4500,
+    },
   });
   const wire = component.getByTestId('wire');
   const state = async () => JSON.parse((await wire.textContent())!);
@@ -120,21 +153,22 @@ test('Find navigates to an off-window hit through the bounded reader', async ({ 
   expect(after.reads).toBe(0);
 });
 
-test('explicit Edit and Done admit a new window after genuine panel reopening', async ({
+test('preview and editor modes admit a new window after genuine panel reopening', async ({
   mount,
+  page,
 }) => {
   const component = await mount(Harness, {
-    props: { paging: true, initialContent: 'Current note' },
+    props: { viewMode: 'preview', paging: true, initialContent: 'Current note' },
   });
   const wire = component.getByTestId('wire');
   const value = async () => JSON.parse((await wire.textContent())!);
   await expect.poll(async () => (await value()).windows['note-tab']?.loaded).toBe(true);
   const before = await value();
-  await component.getByRole('button', { name: 'Edit', exact: true }).click();
+  await selectMode(component, page, 'Editor');
   await expect(component.locator('.ProseMirror[contenteditable="true"]')).toHaveText(
     'Current note',
   );
-  await component.getByRole('button', { name: 'Done', exact: true }).click();
+  await selectMode(component, page, 'Rendered preview');
   await expect.poll(async () => (await value()).generation).toBeGreaterThan(before.generation);
   await expect.poll(async () => (await value()).windows['note-tab']?.loaded).toBe(true);
   const after = await value();
@@ -146,7 +180,7 @@ test('explicit Edit and Done admit a new window after genuine panel reopening', 
 });
 
 for (const raw of [false, true]) {
-  test(`normal tab explicitly loads and saves complete ${raw ? 'raw' : 'rich'} source`, async ({
+  test(`normal tab loads and saves complete ${raw ? 'raw' : 'rich'} source`, async ({
     mount,
     page,
   }) => {
@@ -154,10 +188,8 @@ for (const raw of [false, true]) {
     const source = raw ? '世'.repeat(180000) : 'Complete note';
     const component = await mount(Harness, { props: { initialContent: source } });
     const wire = component.getByTestId('wire');
-    await expect(wire).toContainText('client.hello');
-    await expect(wire).toContainText('"reads":0');
-    await expect(component.locator('.ProseMirror[contenteditable="true"]')).toHaveCount(0);
-    await component.getByRole('button', { name: 'Edit', exact: true }).click();
+    if (raw) await selectMode(component, page, 'Edit Raw Markdown');
+    await expect(component.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
     const editor = raw
       ? component.locator('.monaco-editor').first()
       : component.locator('.ProseMirror[contenteditable="true"]');
@@ -165,17 +197,17 @@ for (const raw of [false, true]) {
     await editor.click();
     await page.keyboard.press('ControlOrMeta+End');
     await page.keyboard.type(' edited');
-    await component.getByRole('button', { name: 'Done', exact: true }).click();
+    await selectMode(component, page, 'Rendered preview');
     await expect(wire).toContainText('"writes":1');
     await expect(wire).toContainText(' edited');
     await expect(wire).toContainText(`"length":${source.length + 7}`);
-    await expect(component.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
-    await component.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect(component.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+    await selectMode(component, page, raw ? 'Edit Raw Markdown' : 'Editor');
     await expect(editor).toBeVisible();
     await editor.click();
     await page.keyboard.press('ControlOrMeta+End');
     await page.keyboard.type(' twice');
-    await component.getByRole('button', { name: 'Done', exact: true }).click();
+    await selectMode(component, page, 'Rendered preview');
     await expect(wire).toContainText('"writes":2');
     await expect(wire).toContainText(`"length":${source.length + 13}`);
     await expect(wire).toContainText('"reads":2');
@@ -190,7 +222,7 @@ test('normal capable tab admits a bounded viewer and returns to it after complet
   test.setTimeout(90000);
   const source = 'bounded viewing '.repeat(20000);
   const component = await mount(Harness, {
-    props: { initialContent: source, paging: true, nativeClipboard: true },
+    props: { initialContent: source, viewMode: 'preview', paging: true, nativeClipboard: true },
   });
   expect(await page.evaluate(() => window.electronAPI?.versions.electron)).toBe(
     '42.0.0-clipboard-fixture',
@@ -224,13 +256,13 @@ test('normal capable tab admits a bounded viewer and returns to it after complet
   await expect(wire).toContainText('"copyCount":2', { timeout: 30000 });
   await expect(wire).toContainText('"copied":true');
   await expect(wire).toContainText('"reads":0');
-  await component.getByRole('button', { name: 'Edit', exact: true }).click();
+  await selectMode(component, page, 'Edit Raw Markdown');
   const editor = component.locator('.monaco-editor').first();
   await expect(editor).toBeVisible();
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type(' saved');
-  await component.getByRole('button', { name: 'Done', exact: true }).click();
+  await selectMode(component, page, 'Rendered preview');
   await expect(viewer).toBeVisible();
   await expect(wire).toContainText('"reads":1');
   await expect(wire).toContainText('"writes":1');
@@ -243,7 +275,7 @@ test('normal capable tab admits a bounded viewer and returns to it after complet
 test('bounded growth preserves the prefix and stops at its work checkpoint', async ({ mount }) => {
   const source = 'First prefix....Second portion..Third portion...Fourth portion..';
   const component = await mount(Harness, {
-    props: { paging: true, initialContent: source, pageChunk: 16 },
+    props: { viewMode: 'preview', paging: true, initialContent: source, pageChunk: 16 },
   });
   const wire = component.getByTestId('wire');
   const state = async () => JSON.parse((await wire.textContent())!).windows['note-tab'];
@@ -273,6 +305,7 @@ test('paging controls reach the third and fourth parts and return without a scro
   const source = 'First prefix....Second portion..Third portion...Fourth portion..';
   const component = await mount(Harness, {
     props: {
+      viewMode: 'preview',
       paging: true,
       initialContent: source,
       pageChunk: 16,
@@ -329,11 +362,11 @@ test('paging controls reach the third and fourth parts and return without a scro
   await page.getByRole('menuitem', { name: 'Copy full note' }).click();
   await expect(wire).toContainText('"copied":true');
   await expect(wire).toContainText('"reads":0');
-  await component.getByRole('button', { name: 'Edit', exact: true }).click();
+  await selectMode(component, page, 'Editor');
   const editor = component.locator('.ProseMirror[contenteditable="true"]');
   await expect(editor).toContainText('First prefix');
   await expect(editor).toContainText('Fourth portion');
-  await component.getByRole('button', { name: 'Done', exact: true }).click();
+  await selectMode(component, page, 'Rendered preview');
   await settled(0);
   await expect(viewer).toHaveText(source.slice(0, 16));
   await expect(component.getByRole('alert')).toHaveCount(0);

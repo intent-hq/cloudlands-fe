@@ -70,3 +70,54 @@ export async function streamNoteSource(
   check();
   await sink.commit();
 }
+
+/** Count only through the rich-editor cutoff and one complete Unicode scalar.
+ * Retain no source accumulator. The caller supplies the ordinary page cache and
+ * an admitted operation whose lifetime includes every outstanding read. */
+export async function noteSourceFitsByteLimit(
+  snapshot: NoteSourceSnapshot,
+  read: (request: NotePageRequest) => Promise<NoteReadPage>,
+  current: () => boolean,
+  limit: number,
+): Promise<boolean> {
+  let at = 0,
+    bytes = 0;
+  while (at < snapshot.sourceLength) {
+    const check = () => {
+      if (!current() || Date.now() >= Date.parse(snapshot.expiresAt))
+        throw new Error('Note size read expired');
+    };
+    check();
+    // Four bytes guarantee progress for any complete Unicode scalar.
+    const budget = Math.min(4096, Math.max(4, limit - bytes + 1));
+    const page = await read({
+      kind: 'source',
+      at,
+      maxWireBytes: 8192,
+      maxSourceBytes: budget,
+      sourceRevision: snapshot.sourceRevision,
+      snapshotId: snapshot.snapshotId,
+      noteInstanceId: snapshot.scope.noteInstanceId,
+    });
+    check();
+    if (
+      page.kind !== 'noteSourcePage' ||
+      !sameNoteScope(page.scope, snapshot.scope) ||
+      page.sourceRevision !== snapshot.sourceRevision ||
+      page.snapshotId !== snapshot.snapshotId ||
+      page.expiresAt !== snapshot.expiresAt ||
+      page.sourceLength !== snapshot.sourceLength ||
+      page.range.start !== at ||
+      page.range.end !== at + page.text.length ||
+      page.range.end <= at ||
+      page.range.end > snapshot.sourceLength
+    )
+      throw new Error('Note size read changed or made no progress');
+    const count = new TextEncoder().encode(page.text).byteLength;
+    if (count > budget) throw new Error('Note size page exceeded its budget');
+    bytes += count;
+    if (bytes > limit) return false;
+    at = page.range.end;
+  }
+  return true;
+}

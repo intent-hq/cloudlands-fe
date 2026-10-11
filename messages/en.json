@@ -7533,5 +7533,7 @@
   "notes_delete_registrationPaused_label": "Deletion status checks are paused because the request limit was reached. Earlier requests may still be active, so the outcome cannot be verified. Saved drafts can still be exported or discarded. Use Check status to try again.",
   "chat_failureRecovery_queued_description": "A message is queued. Use its controls below to manage it.",
   "chat_failureRecovery_action_description": "The response stopped before it finished.",
-  "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host."
+  "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host.",
+  "layout_noteTab_editRawMarkdown_action": "Edit Raw Markdown",
+  "layout_noteTab_pagingUnsupported_error": "This workspace host does not support large-note viewing. Update the workspace host to view this note, or choose Edit Raw Markdown from the note menu."
 }

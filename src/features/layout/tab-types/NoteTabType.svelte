@@ -40,6 +40,7 @@
     selectNoteWorkspaceRoot,
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { classifyNoteEditSize, RICH_NOTE_EDIT_BYTES } from '$features/notes/note-edit-policy';
   import { beginFullNoteEdit } from '$features/notes/notes-read-service';
   import {
     noteContentViewReleased,
@@ -82,7 +83,7 @@
 
   const logger = createLogger('NoteTabType');
 
-  // Normal note tabs negotiate the read-only capability. Complete source is loaded only by Edit.
+  // Small notes edit directly. Large notes require an explicit raw Markdown choice.
   let {
     tab,
     workspaceId,
@@ -96,7 +97,7 @@
 
   const headerContext = getPanelHeaderContext();
   const assistantLayout = $derived(isAssistantPanelLayout(layoutId ?? ''));
-  let assistantRawView = $state(false);
+  let editorRawView = $state(false);
   const editOwnerIdentity = $derived(JSON.stringify([layoutId, tab.id, workspaceId, tab.noteId]));
   let loadedEditIdentity = $state('');
   let loadedEditNoteInstanceId = $state<string | undefined>();
@@ -128,7 +129,6 @@
   let editState = $state<'view' | 'loading' | 'editing' | 'error'>('view');
   let editLease: ReturnType<typeof beginFullNoteEdit> | undefined;
   let fullEditor = $state<{ finishEditing(): Promise<void> } | null>(null);
-  let leavingEdit = $state(false);
   let showPagedFind = $state(false),
     pagedQuery = $state(''),
     pagedFindError = $state(false);
@@ -170,11 +170,13 @@
       selectedReadingSurface?.cancelRenderedSearch?.();
     };
   });
-  const selectedReadingSurface = $derived(
-    readingSurface ?? (assistantLayout ? undefined : normalReadingSurface),
+  const selectedReadingSurface = $derived.by(
+    () =>
+      readingSurface ??
+      (assistantLayout && noteEditSize === 'small' ? undefined : normalReadingSurface),
   );
-  const pagedSurface = $derived(
-    editState === 'view' && $workspace ? selectedReadingSurface : undefined,
+  const pagedSurface = $derived.by(() =>
+    editState === 'view' && $workspace && !wantsDirectEdit ? selectedReadingSurface : undefined,
   );
   $effect(() => {
     const owned = normalReadingSurface;
@@ -257,7 +259,6 @@
       loadedEditIdentity = '';
       loadedEditNoteInstanceId = undefined;
       pendingFinish = undefined;
-      leavingEdit = false;
     };
   });
 
@@ -341,7 +342,6 @@
               promise: editor.finishEditing(),
             };
       pendingFinish = pending;
-      leavingEdit = true;
       await pending.promise;
       if (
         editLease === lease &&
@@ -355,31 +355,31 @@
     } finally {
       if (pending && pendingFinish === pending) {
         pendingFinish = undefined;
-        leavingEdit = false;
       }
     }
   }
-  // Assistant links are explicit editable-entry intents. Ordinary note tabs
-  // still negotiate bounded reading until the user selects Edit.
+  // Both ordinary and Assistant tabs honor the selected mode without an extra
+  // Edit step. Only complete, revision-checked source may enter the editor.
   $effect(() => {
     const owner = [layoutId, tab.id, workspaceId, tab.noteId];
-    const assistant = assistantLayout,
-      mode = noteViewMode,
-      available = workspacePresent && noteEditable;
+    const mode = noteViewMode,
+      wantsEdit = wantsDirectEdit,
+      available = workspacePresent && noteEditable,
+      readyToLoad =
+        $note?.id === tab.noteId && $note?.workspaceId === workspaceId && isActive && !deletionBusy;
     let current = true;
     untrack(() => {
       void owner;
-      if (!assistant) return;
       if (!available) {
         cancelFullEdit();
         return;
       }
-      if (mode === 'preview') {
+      if (!wantsEdit) {
         if (editState === 'editing') void finishFullEdit(() => current);
         else cancelFullEdit();
       } else {
-        assistantRawView = mode === 'raw';
-        if (editState === 'view') void startFullEdit();
+        editorRawView = mode === 'raw';
+        if (readyToLoad && editState === 'view') void startFullEdit();
       }
     });
     return () => {
@@ -403,6 +403,7 @@
       $deletion?.held ||
       !selectedReadingSurface ||
       editState !== 'view' ||
+      wantsDirectEdit ||
       !workspacePresent ||
       !workspaceId ||
       !tab.noteId
@@ -556,14 +557,66 @@
     (noteViewMode === 'preview' || !$workspace) && !showSpecOnboarding,
   );
 
+  const sizeIdentity = $derived(
+    JSON.stringify([editOwnerIdentity, $note?.rev, $note?.updatedAt, $note?.contentLength]),
+  );
+  let measuredSize = $state<{ identity: string; small: boolean }>();
+  const knownEditSize = $derived(classifyNoteEditSize($note));
+  const noteEditSize = $derived(
+    knownEditSize !== 'unknown'
+      ? knownEditSize
+      : measuredSize?.identity === sizeIdentity
+        ? measuredSize.small
+          ? 'small'
+          : 'large'
+        : 'unknown',
+  );
+  const sizeReadReady = $derived(
+    $pageSession?.status === 'ready' && !!$pageSession?.windows?.[tab.id]?.value,
+  );
+  const sizeReadRevision = $derived(
+    JSON.stringify([$pageSession?.generation, $pageSession?.state?.sourceRevision]),
+  );
+  // Only ambiguous slim metadata needs a capped source scan. Definite large
+  // notes and unsupported hosts never preload source for classification.
+  $effect(() => {
+    const identity = sizeIdentity;
+    const surface = selectedReadingSurface;
+    const ready = sizeReadReady;
+    void sizeReadRevision;
+    if (
+      !isActive ||
+      deletionBusy ||
+      noteViewMode !== 'editor' ||
+      noteEditSize !== 'unknown' ||
+      !ready ||
+      !surface?.fitsEditByteLimit
+    )
+      return;
+    let current = true;
+    void tick().then(async () => {
+      if (!current) return;
+      try {
+        const small = await surface.fitsEditByteLimit!(RICH_NOTE_EDIT_BYTES);
+        if (current) measuredSize = { identity, small };
+      } catch {
+        /* Keep bounded reading when classification is unavailable. */
+      }
+    });
+    return () => {
+      current = false;
+      surface.cancelSizeRead?.();
+    };
+  });
+  const wantsDirectEdit = $derived(
+    workspacePresent &&
+      noteEditable &&
+      (noteViewMode === 'raw' || (noteViewMode === 'editor' && noteEditSize === 'small')),
+  );
   const awaitingEditSource = $derived(
     editState === 'loading' ||
       (editState === 'editing' && loadedEditIdentity !== editOwnerIdentity) ||
-      (assistantLayout &&
-        workspacePresent &&
-        noteEditable &&
-        noteViewMode !== 'preview' &&
-        editState === 'view'),
+      (wantsDirectEdit && editState === 'view'),
   );
   const noteContentState = $derived.by<NoteContentState>(() => {
     if ($deletion?.held) return 'read-only';
@@ -676,6 +729,7 @@
       {workspaceId}
       noteId={tab.noteId}
       canEdit={!!$workspace && noteEditable && !deletionBusy}
+      canRichEdit={noteEditSize === 'small'}
       embedded
     />
   {/if}
@@ -720,23 +774,6 @@
   >
     <NoteContentSurface state={noteContentState}>
       {#if tab.noteId}
-        {#if selectedReadingSurface && $workspace}
-          <div class="flex items-center gap-2 p-2">
-            {#if editState === 'view'}
-              <Button size="sm" onclick={startFullEdit} disabled={!noteEditable || deletionBusy}
-                >{m.menu_edit()}</Button
-              >
-            {:else if editState === 'editing'}
-              <Button size="sm" onclick={() => void finishFullEdit()} disabled={leavingEdit}
-                >{m.settings_devices_done_label()}</Button
-              >
-            {:else}
-              <Button size="sm" variant="outline" onclick={cancelFullEdit}
-                >{m.workspace_modals_cancel_label()}</Button
-              >
-            {/if}
-          </div>
-        {/if}
         {#if pagedSurface && showPagedFind}
           <PanelFindBar
             autofocus
@@ -768,7 +805,7 @@
             <NoteWithComments
               bind:this={fullEditor}
               noteInstanceId={loadedEditNoteInstanceId}
-              rawView={assistantLayout ? assistantRawView : undefined}
+              rawView={editorRawView}
               workspace={$workspace}
               noteId={tab.noteId}
               editable={noteEditable}

@@ -278,6 +278,23 @@ describe('NoteTabType note view modes', () => {
     vi.restoreAllMocks();
   });
 
+  it.each(['editor', 'raw'] as const)(
+    'opens an ordinary note directly in %s with a complete-source lease',
+    async (mode) => {
+      mockState.noteViewMode.set(mode);
+      render(NoteTabTypeHeaderHarness, {
+        props: { tab: { id: 'direct-tab', type: 'note', title: 'Note', noteId: 'note-1' } },
+      });
+      await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
+      expect(await screen.findByTestId('full-note-editor')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Edit', exact: true })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Done', exact: true })).toBeNull();
+      expect(mockState.dispatch.mock.calls.some(([a]) => a.type === 'notePages/panelOpened')).toBe(
+        false,
+      );
+    },
+  );
+
   it('switches mutually exclusive note view modes from the panel action menu', async () => {
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
@@ -308,13 +325,20 @@ describe('NoteTabType note view modes', () => {
       ).toBe('true');
     });
 
-    await fireEvent.click(screen.getByRole('menuitemradio', { name: 'Raw Markdown' }));
+    await fireEvent.keyDown(screen.getByRole('menuitemradio', { name: 'Rendered preview' }), {
+      key: 'Escape',
+    });
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit Raw Markdown' }));
     expect(mockState.dispatch).toHaveBeenCalledWith({
       type: 'transientUi/setNoteViewMode',
       payload: ['ws-1', 'note-1', 'raw'],
     });
 
     mockState.noteViewMode.set('raw');
+    await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
+    await fireEvent.keyDown(screen.getByRole('menuitem', { name: /Note view/ }), {
+      key: 'ArrowRight',
+    });
     await waitFor(() =>
       expect(
         screen.getByRole('menuitemradio', { name: 'Editor' }).getAttribute('aria-checked'),
@@ -367,7 +391,7 @@ $$\frac{1}{2}$$
     mockState.noteViewMode.set('editor');
     mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
     await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
-    expect(screen.getByRole('button', { name: 'Copy selected note text' })).toBeTruthy();
+    expect(await screen.findByTestId('full-note-editor')).toBeTruthy();
   });
 
   it('uses the rendered preview without a workspace while preserving the editor preference', async () => {
@@ -384,7 +408,7 @@ $$\frac{1}{2}$$
     expect(mockState.noteViewMode.get()).toBe('editor');
     mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' });
     await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
-    expect(screen.getByRole('button', { name: 'Copy selected note text' })).toBeTruthy();
+    expect(await screen.findByTestId('full-note-editor')).toBeTruthy();
   });
 
   it('saves preview scroll position to the owning tab when returning to the editor', async () => {
@@ -526,6 +550,7 @@ $$\frac{1}{2}$$
   ])('labels the $state note content surface', async ({ state, note, loading, initialized }) => {
     mockState.note.set(note);
     mockState.notesState.set({ loading, initialized });
+    mockState.noteViewMode.set('preview');
     const { container } = render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
@@ -725,6 +750,7 @@ $$\frac{1}{2}$$
   });
 
   it('an explicitly supplied paged surface never fetches a complete slim-note body', async () => {
+    mockState.noteViewMode.set('preview');
     mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
     const surface = {
       resourceLimits: {
@@ -759,6 +785,7 @@ $$\frac{1}{2}$$
     expect(clipboard.writeText).not.toHaveBeenCalled();
   });
   it('retires an actual staged copy owner on tab unmount while its sink is held', async () => {
+    mockState.noteViewMode.set('preview');
     const a = await import('$store/renderer/slices/note-pages/note-pages-slice');
     const { createNoteDocumentSession } =
       await import('$features/notes/virtualized/editing/note-document-edit-session');
@@ -877,6 +904,7 @@ $$\frac{1}{2}$$
   });
 
   it('missing read capability does not load the complete body merely to view', async () => {
+    mockState.noteViewMode.set('editor');
     mockState.pageSession.set({ status: 'legacy' });
     mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
     const surface = {
@@ -900,6 +928,7 @@ $$\frac{1}{2}$$
     expect(mockState.loadContent).not.toHaveBeenCalled();
   });
   it('keeps the page session owned while a prepared tab uses legacy compatibility', async () => {
+    mockState.noteViewMode.set('preview');
     const { pagePanelOpened, pagePanelClosed } =
       await import('$store/renderer/slices/note-pages/note-pages-slice');
     mockState.pageSession.set({ status: 'legacy' });
@@ -939,6 +968,7 @@ $$\frac{1}{2}$$
 });
 
 describe('paged selection copy callback', () => {
+  beforeEach(() => mockState.noteViewMode.set('preview'));
   it.each(['copied', 'noCopy', 'failure'] as const)(
     'routes selection copy without a source fallback (%s)',
     async (result) => {
@@ -1025,6 +1055,7 @@ describe('explicit full editing from a paginated view', () => {
     mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
     mockState.initialSpecWriteInProgress.set(false);
     mockState.pageSession.set(undefined);
+    mockState.noteViewMode.set('preview');
     mockState.dispatch.mockClear();
     mockState.loadContent.mockClear();
     mockState.loadFullEdit.mockReset().mockResolvedValue(true);
@@ -1087,7 +1118,7 @@ describe('explicit full editing from a paginated view', () => {
         tab: { id: 'edit-instance', type: 'note', noteId: 'note-1' },
         readingSurface: surface(),
       });
-      await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+      mockState.noteViewMode.set('raw');
       await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
       mockState.pageSession.set(undefined);
       loaded(true);
@@ -1096,22 +1127,23 @@ describe('explicit full editing from a paginated view', () => {
     },
   );
 
-  it('retires paged ownership, loads only on Edit, and restores viewing on Done', async () => {
+  it('retires paged ownership, loads on editor mode, and restores viewing on preview mode', async () => {
     const reading = surface();
     const view = render(NoteTabTypeHeaderHarness, {
       tab: { id: 'edit-tab', type: 'note', noteId: 'note-1' },
       readingSurface: reading,
     });
     expect(mockState.loadFullEdit).not.toHaveBeenCalled();
-    await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+    mockState.noteViewMode.set('raw');
     await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
     expect(mockState.dispatch.mock.calls.some(([a]) => a.type === 'notePages/panelClosed')).toBe(
       true,
     );
     expect(reading.cancelCopy).toHaveBeenCalledOnce();
-    await fireEvent.click(await screen.findByRole('button', { name: 'Done', exact: true }));
+    await screen.findByTestId('full-note-editor');
+    mockState.noteViewMode.set('preview');
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Edit', exact: true })).toBeTruthy(),
+      expect(screen.getByRole('button', { name: 'Copy selected note text' })).toBeTruthy(),
     );
     expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
     expect(mockState.loadContent).not.toHaveBeenCalled();
@@ -1130,17 +1162,16 @@ describe('explicit full editing from a paginated view', () => {
         tab: { id: 'edit-tab', type: 'note', noteId: 'note-1' },
         readingSurface: surface(),
       });
-      await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+      mockState.noteViewMode.set('raw');
       await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
-      expect(screen.queryByRole('button', { name: 'Done', exact: true })).toBeNull();
-      if (action === 'cancel')
-        await fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+      expect(screen.queryByTestId('full-note-editor')).toBeNull();
+      if (action === 'cancel') mockState.noteViewMode.set('preview');
       if (action === 'switch')
         await view.rerender({ tab: { id: 'other-tab', type: 'note', noteId: 'other' } });
       if (action === 'unmount') view.unmount();
       resolve(true);
       await new Promise<void>((r) => queueMicrotask(r));
-      expect(screen.queryByRole('button', { name: 'Done', exact: true })).toBeNull();
+      expect(screen.queryByTestId('full-note-editor')).toBeNull();
       expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
     },
   );
@@ -1150,13 +1181,11 @@ describe('explicit full editing from a paginated view', () => {
       tab: { id: 'edit-tab', type: 'note', noteId: 'note-1' },
       readingSurface: surface(),
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+    mockState.noteViewMode.set('raw');
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    expect(screen.queryByRole('button', { name: 'Done', exact: true })).toBeNull();
+    expect(screen.queryByTestId('full-note-editor')).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Done', exact: true })).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('full-note-editor')).toBeTruthy());
   });
   it('does not allow editing while the initial spec writer owns an empty note', async () => {
     mockState.initialSpecWriteInProgress.set(true);
@@ -1165,7 +1194,7 @@ describe('explicit full editing from a paginated view', () => {
       tab: { id: 'spec-tab', type: 'note', noteId: 'spec' },
       readingSurface: surface(),
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
+    mockState.noteViewMode.set('raw');
     expect(mockState.loadFullEdit).not.toHaveBeenCalled();
   });
 });
@@ -1191,7 +1220,7 @@ describe('Assistant full-source entry ownership', () => {
   afterEach(cleanup);
 
   it.each(['editor', 'raw'] as const)(
-    'acquires complete source for Assistant %s intent only',
+    'acquires complete source for Assistant and ordinary %s intent',
     async (mode) => {
       mockState.noteViewMode.set(mode);
       const view = render(NoteTabTypeHeaderHarness, props());
@@ -1208,8 +1237,8 @@ describe('Assistant full-source entry ownership', () => {
       expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
       mockState.loadFullEdit.mockClear();
       render(NoteTabTypeHeaderHarness, { ...props(), layoutId: 'ws-1' });
-      await screen.findByRole('button', { name: 'Edit', exact: true });
-      expect(mockState.loadFullEdit).not.toHaveBeenCalled();
+      await screen.findByTestId('full-note-editor');
+      expect(mockState.loadFullEdit).toHaveBeenCalledOnce();
     },
   );
 
@@ -1281,7 +1310,10 @@ describe('Assistant full-source entry ownership', () => {
       await waitFor(() => expect(mockState.loadFullEdit).toHaveBeenCalledOnce());
       expect(fullEditControl.mounts).toEqual([]);
       if (change === 'preview') mockState.noteViewMode.set('preview');
-      if (change === 'layout') await view.rerender({ ...props(), layoutId: 'ws-1' });
+      if (change === 'layout') {
+        mockState.loadFullEdit.mockImplementationOnce(() => new Promise<boolean>(() => {}));
+        await view.rerender({ ...props(), layoutId: 'ws-1' });
+      }
       if (change === 'unmount') view.unmount();
       await waitFor(() => expect(mockState.releaseFullEdit).toHaveBeenCalledOnce());
       loaded(true);

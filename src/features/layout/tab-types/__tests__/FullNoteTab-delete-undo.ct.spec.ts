@@ -8,7 +8,13 @@ for (const nativeDelete of [false, true]) {
     page,
   }) => {
     const component = await mount(Harness, {
-      props: { paging: true, deleteUndo: true, nativeDelete, initialContent: source },
+      props: {
+        viewMode: 'preview',
+        paging: true,
+        deleteUndo: true,
+        nativeDelete,
+        initialContent: source,
+      },
     });
     const state = async () => JSON.parse((await component.getByTestId('wire').textContent())!);
     expect(await page.evaluate(() => window.electronAPI?.versions?.electron)).toBe(
@@ -67,7 +73,13 @@ test('an older daemon keeps the bounded note without destructive fallback', asyn
   page,
 }) => {
   const component = await mount(Harness, {
-    props: { paging: true, deleteUndo: true, deleteMode: 'unsupported', initialContent: source },
+    props: {
+      viewMode: 'preview',
+      paging: true,
+      deleteUndo: true,
+      deleteMode: 'unsupported',
+      initialContent: source,
+    },
   });
   const state = async () => JSON.parse((await component.getByTestId('wire').textContent())!);
   await expect(component.locator('.ProseMirror[contenteditable="false"]')).toContainText(
@@ -95,7 +107,13 @@ test('sidebar deletion hides only after acknowledgement and Undo reveals the sam
   page,
 }) => {
   const component = await mount(Harness, {
-    props: { paging: true, deleteUndo: true, sidebarDelete: true, initialContent: source },
+    props: {
+      viewMode: 'preview',
+      paging: true,
+      deleteUndo: true,
+      sidebarDelete: true,
+      initialContent: source,
+    },
   });
   const state = async () => JSON.parse((await component.getByTestId('wire').textContent())!);
   const sidebar = component.getByTestId('delete-sidebar');
@@ -121,6 +139,7 @@ test('lost schedule acknowledgement keeps the note visible until Check status co
 }) => {
   const component = await mount(Harness, {
     props: {
+      viewMode: 'preview',
       paging: true,
       deleteUndo: true,
       sidebarDelete: true,

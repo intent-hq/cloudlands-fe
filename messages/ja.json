@@ -7533,5 +7533,7 @@
   "notes_delete_registrationPaused_label": "リクエスト上限に達したため、削除状況の確認を一時停止しています。以前のリクエストがまだ実行中の可能性があり、結果を確認できません。保存済みの下書きは引き続きエクスポートまたは破棄できます。「状態を確認」で再試行できます。",
   "chat_failureRecovery_queued_description": "メッセージが待機中です。下の操作で管理できます。",
   "chat_failureRecovery_action_description": "応答が完了前に停止しました。",
-  "providers_cliVersionWarning_message": "{provider} CLI のバージョン {version} は、サポート対象の最低バージョン {minimumVersion} を下回っています。デーモンのホストで CLI を更新してください。"
+  "providers_cliVersionWarning_message": "{provider} CLI のバージョン {version} は、サポート対象の最低バージョン {minimumVersion} を下回っています。デーモンのホストで CLI を更新してください。",
+  "layout_noteTab_editRawMarkdown_action": "Markdownソースを編集",
+  "layout_noteTab_pagingUnsupported_error": "このワークスペースのホストは大きなノートの表示に対応していません。ホストを更新するか、ノートのメニューから「Markdownソースを編集」を選択してください。"
 }

@@ -200,7 +200,11 @@
 
 <div class="flex h-full min-h-0 flex-col">
   {#if unavailable || current?.error || renderError}
-    <div class="shrink-0" role="alert">{m.layout_noteTab_contentLoadFailed_error()}</div>
+    <div class="shrink-0" role="alert">
+      {$session?.status === 'legacy'
+        ? m.layout_noteTab_pagingUnsupported_error()
+        : m.layout_noteTab_contentLoadFailed_error()}
+    </div>
   {/if}
   {#if current?.value}
     <div class="flex shrink-0 gap-2">

@@ -8,10 +8,15 @@ export function fullNotePageFixture(
 ): unknown {
   if (q.kind === 'source') {
     const start = q.cursor ? Number(q.cursor.slice(1)) : (q.at ?? 0);
-    const end = Math.min(
-      source.length,
-      start + Math.min(q.maxSourceBytes ?? 4096, options.chunk ?? 1024),
-    );
+    const budget = Math.min(q.maxSourceBytes ?? 4096, options.chunk ?? 1024);
+    let end = start,
+      bytes = 0;
+    for (const scalar of source.slice(start)) {
+      const size = new TextEncoder().encode(scalar).length;
+      if (bytes + size > budget) break;
+      bytes += size;
+      end += scalar.length;
+    }
     return {
       ...identity,
       kind: 'noteSourcePage',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldUseRawNoteEditor } from './note-edit-policy';
+import { shouldUseRawNoteEditor, classifyNoteEditSize } from './note-edit-policy';
 describe('full note edit mode', () => {
   it.each([
     ['a'.repeat(299_999), false],
@@ -16,4 +16,23 @@ describe('full note edit mode', () => {
     expect(shouldUseRawNoteEditor('', true)).toBe(true);
     expect(shouldUseRawNoteEditor('small', true)).toBe(true);
   });
+});
+
+it.each([
+  [75000, 'small'],
+  [75001, 'unknown'],
+  [200000, 'unknown'],
+  [300000, 'unknown'],
+  [300001, 'large'],
+])('classifies slim scalar count %s conservatively', (contentLength, expected) => {
+  expect(classifyNoteEditSize({ content: '', contentLength: contentLength as number })).toBe(
+    expected,
+  );
+});
+it('uses exact UTF8 bytes for available source, never preview text', () => {
+  expect(classifyNoteEditSize({ content: 'a'.repeat(200000), contentLength: 200000 })).toBe(
+    'small',
+  );
+  expect(classifyNoteEditSize({ content: '漢'.repeat(100001) })).toBe('large');
+  expect(classifyNoteEditSize(undefined)).toBe('unknown');
 });

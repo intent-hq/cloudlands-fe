@@ -1,5 +1,9 @@
 import { expect, it, vi } from 'vitest';
-import { streamNoteSource, type NoteSourceSnapshot } from './note-source-stream';
+import {
+  streamNoteSource,
+  noteSourceFitsByteLimit,
+  type NoteSourceSnapshot,
+} from './note-source-stream';
 import type { NoteReadPage } from '$lib/client/note-pages';
 const snapshot: NoteSourceSnapshot = {
   scope: { backendId: 'b', workspaceId: 'w', noteId: 'n', noteInstanceId: 'i' },
@@ -76,4 +80,52 @@ it('revokes after a pending read without publishing or another request', async (
   expect(read).toHaveBeenCalledOnce();
   expect(target.write).not.toHaveBeenCalled();
   expect(target.abort).not.toHaveBeenCalled();
+});
+
+it.each(['a'.repeat(200000), '漢'.repeat(100000), '漢'.repeat(100001), '😀'.repeat(75000) + 'a'])(
+  'measures ambiguous sizes with bounded revision-pinned Unicode pages',
+  async (source) => {
+    const pinned = { ...snapshot, sourceLength: source.length };
+    let total = 0;
+    const read = vi.fn(
+      async (request: import('$lib/client/note-pages').NotePageRequest): Promise<NoteReadPage> => {
+        const at = request.at ?? 0;
+        let text = '',
+          bytes = 0;
+        for (const scalar of source.slice(at)) {
+          const size = new TextEncoder().encode(scalar).length;
+          if (bytes + size > (request.maxSourceBytes ?? 0)) break;
+          text += scalar;
+          bytes += size;
+        }
+        total += bytes;
+        return { ...page(text, at, at + text.length < source.length ? 'next' : null), ...pinned };
+      },
+    );
+    expect(await noteSourceFitsByteLimit(pinned, read, () => true, 300000)).toBe(
+      new TextEncoder().encode(source).length <= 300000,
+    );
+    expect(total).toBeLessThanOrEqual(300004);
+    expect(
+      read.mock.calls.every(
+        ([request]) =>
+          request.sourceRevision === pinned.sourceRevision &&
+          request.snapshotId === pinned.snapshotId &&
+          request.maxSourceBytes! <= 4096,
+      ),
+    ).toBe(true);
+  },
+);
+it('rejects changed revisions and revoked size reads', async () => {
+  await expect(
+    noteSourceFitsByteLimit(
+      snapshot,
+      async () => ({ ...page('abcdefg', 0, null), sourceRevision: 'other' }),
+      () => true,
+      300000,
+    ),
+  ).rejects.toThrow();
+  const read = vi.fn();
+  await expect(noteSourceFitsByteLimit(snapshot, read, () => false, 300000)).rejects.toThrow();
+  expect(read).not.toHaveBeenCalled();
 });

@@ -7533,5 +7533,7 @@
   "notes_delete_registrationPaused_label": "Die Prüfung des Löschstatus ist pausiert, da das Anfragelimit erreicht wurde. Frühere Anfragen können noch aktiv sein; das Ergebnis lässt sich daher nicht bestätigen. Gesicherte Entwürfe können weiterhin exportiert oder verworfen werden. Mit „Status prüfen“ können Sie es erneut versuchen.",
   "chat_failureRecovery_queued_description": "Eine Nachricht wartet. Verwalten Sie sie über die Steuerelemente unten.",
   "chat_failureRecovery_action_description": "Die Antwort wurde vorzeitig beendet.",
-  "providers_cliVersionWarning_message": "Die CLI-Version {version} von {provider} liegt unter der unterstützten Mindestversion {minimumVersion}. Aktualisieren Sie die CLI auf dem Daemon-Host."
+  "providers_cliVersionWarning_message": "Die CLI-Version {version} von {provider} liegt unter der unterstützten Mindestversion {minimumVersion}. Aktualisieren Sie die CLI auf dem Daemon-Host.",
+  "layout_noteTab_editRawMarkdown_action": "Markdown-Quelltext bearbeiten",
+  "layout_noteTab_pagingUnsupported_error": "Der Host dieses Arbeitsbereichs unterstützt die Anzeige großer Notizen nicht. Aktualisieren Sie den Host oder wählen Sie im Notizmenü „Markdown-Quelltext bearbeiten“."
 }

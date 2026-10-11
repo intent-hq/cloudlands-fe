@@ -13,7 +13,11 @@ import {
   openNoteSourceClipboardSink,
   SourceClipboardCleanupError,
 } from '$lib/utils/source-clipboard';
-import { streamNoteSource, type NoteSourceSnapshot } from './note-source-stream';
+import {
+  streamNoteSource,
+  noteSourceFitsByteLimit,
+  type NoteSourceSnapshot,
+} from './note-source-stream';
 import { createCanonicalNoteMatcher } from './note-canonical-search';
 import { readNoteWindow, NOTE_WINDOW_LIMITS, type NoteWindow } from './note-window-reader';
 import { noteAssemblyResources } from './note-assembly-reservation';
@@ -59,7 +63,8 @@ export function createNoteReadingSurface(
 ): NoteReadingSurface & { dispose(): void } {
   let live = true,
     copyGeneration = 0,
-    searchGeneration = 0;
+    searchGeneration = 0,
+    sizeGeneration = 0;
   let view: NoteWindowView | undefined;
   let cancelActiveCopy: (() => void) | undefined;
   let cancelSelectedCopy: (() => void) | undefined;
@@ -102,8 +107,13 @@ export function createNoteReadingSurface(
     }
   }
   const session = () => store.state.notePages.byWorkspaceId[workspaceId]?.notes[noteId];
-  function capture(kind: 'copy' | 'search', selectionSensitive = false) {
-    const generation = kind === 'copy' ? ++copyGeneration : ++searchGeneration;
+  function capture(kind: 'copy' | 'search' | 'size', selectionSensitive = false) {
+    const generation =
+      kind === 'copy'
+        ? ++copyGeneration
+        : kind === 'search'
+          ? ++searchGeneration
+          : ++sizeGeneration;
     const capturedView = view,
       selectionGeneration = view?.selectionCaptureGeneration;
     const state = session(),
@@ -132,7 +142,11 @@ export function createNoteReadingSurface(
         live &&
         (!selectionSensitive ||
           (view === capturedView && view?.selectionCaptureGeneration === selectionGeneration)) &&
-        (kind === 'copy' ? copyGeneration : searchGeneration) === generation &&
+        (kind === 'copy'
+          ? copyGeneration
+          : kind === 'search'
+            ? searchGeneration
+            : sizeGeneration) === generation &&
         next?.generation === sessionGeneration &&
         next.status === 'ready' &&
         !!next.panels[panelId] &&
@@ -335,6 +349,22 @@ export function createNoteReadingSurface(
       copyGeneration++;
       searchGeneration++;
       view = undefined;
+    },
+    cancelSizeRead() {
+      sizeGeneration++;
+    },
+    async fitsEditByteLimit(limit: number) {
+      const operation = capture('size');
+      try {
+        return await noteSourceFitsByteLimit(
+          operation.snapshot,
+          operation.read,
+          operation.current,
+          limit,
+        );
+      } finally {
+        operation.release();
+      }
     },
     async copyDocument() {
       await copy(false, async (operation, open) => {

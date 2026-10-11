@@ -8,6 +8,7 @@
   import { fullNotePageFixture } from './full-note-page-fixture';
   import { ContentType, NoteVisibility, WorkspaceStatus, type Note } from '$shared/types';
   import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+  import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import {
@@ -181,6 +182,7 @@
       updatedAt: note.updatedAt,
     }),
   );
+  store.dispatch(setNoteViewMode(workspaceId, note.id, 'preview'));
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: [note] }));
   const tab: PanelTab = {
     id: 'note-menu-tab',

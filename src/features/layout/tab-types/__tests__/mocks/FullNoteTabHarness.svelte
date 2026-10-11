@@ -8,6 +8,10 @@
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { store } from '$store/renderer/store';
+  import {
+    setNoteViewMode,
+    type NoteViewMode,
+  } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
@@ -25,6 +29,7 @@
   import NotesPanel from '$lib/components/workspace/sidebar/NotesPanel.svelte';
   let {
     initialContent = '# Complete note',
+    viewMode = 'editor',
     paging = false,
     failPages = false,
     pageChunk = 1024,
@@ -36,6 +41,7 @@
     nativeDelete = false,
   } = $props<{
     initialContent?: string;
+    viewMode?: NoteViewMode;
     paging?: boolean;
     failPages?: boolean;
     pageChunk?: number;
@@ -94,7 +100,7 @@
     workspaceId: WorkspaceId(workspaceId),
     title: 'Complete note',
     content: '',
-    contentLength: initialContent.length,
+    contentLength: [...initialContent].length,
     rev,
     contentType: ContentType.Markdown,
     visibility: NoteVisibility.Workspace,
@@ -117,8 +123,8 @@
     copied = $state(false),
     copyCount = $state(0);
   let clipboardSource = '';
-  // The default wire fixture is intentionally an older daemon: viewing must refuse paging
-  // without implicitly fetching the full note, while explicit Edit remains usable.
+  // The default wire fixture has no bounded-read capability; direct editing still
+  // uses the ordinary complete-source wire contract.
   const handlers: Record<string, MockBackendMethodHandler> = {
     'client.hello': () => {
       record('client.hello');
@@ -447,6 +453,7 @@
     } as Workspace),
   );
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: [note] }));
+  store.dispatch(setNoteViewMode(workspaceId, noteId, viewMode));
   const header = createPanelHeaderContext();
   onDestroy(dispose);
   onDestroy(() => {
@@ -472,7 +479,7 @@
   >
   <Menu.Root
     ><Menu.Trigger>Commands</Menu.Trigger><Menu.Content
-      >{#if header.actions.current}{@render header.actions.current.actions?.()}{#if deleteUndo}{@render header.actions.current.destructive?.()}{/if}{/if}</Menu.Content
+      >{#if header.actions.current}{@render header.actions.current.display?.()}{@render header.actions.current.actions?.()}{#if deleteUndo}{@render header.actions.current.destructive?.()}{/if}{/if}</Menu.Content
     ></Menu.Root
   >
   <NoteTabType
