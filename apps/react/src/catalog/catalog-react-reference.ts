@@ -1833,8 +1833,9 @@ export function Example() {
     ],
   ),
   'ask-user-questions': reference(
-    "import { AskUserQuestions, type AskUserAnswer, type AskUserQuestion } from '@/components/ui/ask-user-questions';",
+    "import { AskUserQuestions } from '@/components/ui/ask-user-questions';",
     `import { useState } from 'react';
+import type { AskUserAnswer, AskUserQuestion } from '@/components/ui/ask-user-questions';
 
 const questions: AskUserQuestion[] = [
   { id: 'delivery', title: 'How should updates arrive?', options: [
