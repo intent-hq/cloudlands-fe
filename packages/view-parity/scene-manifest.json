@@ -821,16 +821,20 @@
     {
       "component": "scroll-area",
       "route": "/sandbox/scroll-area",
-      "fixture": "scroll-area-orientations",
+      "fixture": "scroll-area",
       "referenceSources": [
         "src/lib/components/ui/scroll-area/scroll-area.svelte",
-        "src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte"
+        "src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte",
+        "src/lib/components/ui/scroll-area/ScrollAreaHarness.svelte"
       ],
       "candidateSources": [
         "apps/react/src/components/ui/scroll-area.tsx",
         "apps/react/src/catalog/navigation-help-catalog-preview.tsx"
       ],
-      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
+      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs",
+      "query": {
+        "example": "interactive"
+      }
     },
     {
       "component": "tooltip-rich",

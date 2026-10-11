@@ -11,9 +11,7 @@ test("questions: selection advances and controlled answers select the final ques
   await expect(fixture.getByRole("radio", { name: "Customers", exact: true })).not.toBeChecked();
 });
 
-test("questions: free-text validation prevents submission and clears on correction", async ({
-  page,
-}) => {
+test("questions: invalid free text shows an error and correction clears it", async ({ page }) => {
   const fixture = await openFixture(page, "ask-user-questions", "free-text-validation");
   const field = fixture.getByRole("textbox", { name: "Name this project" });
   await field.fill("ab");
@@ -74,7 +72,9 @@ test("composer: suggestion keyboard choice fills the draft without sending it", 
   await expect(field).toHaveValue("Summarize the current workspace");
 });
 
-test("composer: streaming queues the draft and stopping drains it once", async ({ page }) => {
+test("composer: streaming queues the draft and stopping drains the queued request", async ({
+  page,
+}) => {
   const fixture = await openFixture(page, "message-composer", "playground");
   await fixture.getByRole("button", { name: "Toggle streaming", exact: true }).click();
   const field = fixture.getByRole("textbox");
@@ -164,13 +164,13 @@ test("sidebar: persistent toggle writes its cookie while an isolated toggle leav
   await expect
     .poll(async () => (await cookies()).map(({ value, path }) => ({ value, path })))
     .toEqual([{ value: "false", path: "/" }]);
+  await persistent.getByRole("button", { name: "Toggle persistent sidebar" }).click();
+  await expect.poll(async () => (await cookies()).map(({ value }) => value)).toEqual(["true"]);
   const saved = await cookies();
   const isolated = page.locator('[data-functional-example="sidebar-isolated"]');
   await isolated.getByRole("button", { name: "Toggle isolated sidebar" }).click();
   await expect(isolated.getByLabel("Isolated sidebar open")).toHaveText("false");
   expect(await cookies()).toEqual(saved);
-  await persistent.getByRole("button", { name: "Toggle persistent sidebar" }).click();
-  await expect.poll(async () => (await cookies()).map(({ value }) => value)).toEqual(["true"]);
 });
 
 test("editable name: Enter saves once and Escape discards a later edit", async ({ page }) => {

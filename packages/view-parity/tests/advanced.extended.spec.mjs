@@ -72,7 +72,8 @@ test("hover surface: caller opens retained content, action works, and close rest
 test("scroll area: real vertical and horizontal thumb drags move overflowing content", async ({
   page,
 }) => {
-  const fixture = await openFixture(page, "scroll-area", "scroll-area-orientations");
+  const example = await openExample(page, "scroll-area", "scroll-area");
+  const fixture = example.getByTestId("overflow-area");
   const viewport = fixture.locator('[data-slot="scroll-area-viewport"]').first();
   await viewport.scrollIntoViewIfNeeded();
   const before = await viewport.evaluate((node) => ({
