@@ -33,9 +33,11 @@ export function CatalogScene({
   const scenes = stateName === 'all' ? states : states.filter(([name]) => name === stateName);
   const error = !preview
     ? `No executable preview is available for “${slug}”.`
-    : !scenes.length
-      ? `Unknown state “${stateName}”.`
-      : undefined;
+    : preview.unportedStates?.includes(stateName)
+      ? m.sandbox_catalogScene_unportedState_error({ state: stateName })
+      : !scenes.length
+        ? `Unknown state “${stateName}”.`
+        : undefined;
   const key = `${slug}:${stateName}:${width}:${location.searchStr}`;
   const ready = !error && stability?.key === key && !stability.error;
   const status = error ? 'error' : ready ? 'ready' : 'loading';

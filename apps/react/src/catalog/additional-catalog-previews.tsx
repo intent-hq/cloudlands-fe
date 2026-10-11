@@ -78,6 +78,7 @@ interface Definition {
   title: string;
   source: string;
   defaultState: string;
+  unportedStates?: readonly string[];
   states: Record<string, ReactNode>;
 }
 function fixturePreview(
@@ -140,6 +141,16 @@ export const additionalPreviews: Record<string, Definition> = {
     title: 'Diagnostic and specialized modal audit (partial)',
     source: 'src/lib/components/modals/diagnostics-audit.preview.svelte',
     defaultState: 'memory',
+    unportedStates: [
+      'memory',
+      'memory-loading',
+      'memory-empty',
+      'memory-error',
+      'memory-stale',
+      'memory-long',
+      'memory-expanded',
+      'new-workspace',
+    ],
     states: { media: <MediaCatalogPreview />, 'media-long': <MediaCatalogPreview long /> },
   },
   'ask-user-questions': fixturePreview(

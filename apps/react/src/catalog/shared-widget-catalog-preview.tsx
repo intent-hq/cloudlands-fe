@@ -56,11 +56,14 @@ export const editableTextStates = [
   'edge-cases',
   'edge-cases-editing',
   'narrow',
+  'dense-context',
 ] as const;
 
 export function EditableTextPreview({ state }: { state: string }) {
   const root = useRef<HTMLDivElement>(null);
-  const editing = state === 'editing' || state === 'edge-cases-editing' || state === 'narrow';
+  const dense = state === 'dense-context';
+  const editing =
+    state === 'editing' || state === 'edge-cases-editing' || state === 'narrow' || dense;
   const edges = state.startsWith('edge-cases');
   const cases = edges ? edgeCases : normalCases;
   const names = edges
@@ -110,58 +113,88 @@ export function EditableTextPreview({ state }: { state: string }) {
       ref={root}
       className={cn('grid max-w-full gap-8 text-foreground', state === 'narrow' && 'w-70')}
       data-editable-text-preview
-      data-catalog-coverage="partial"
-      data-catalog-gap="WorkspaceSidebarHeader dense-context"
+      data-catalog-coverage={dense ? 'implemented' : 'partial'}
+      data-catalog-gap={dense ? undefined : 'WorkspaceSidebarHeader'}
     >
-      <section className="grid gap-3">
-        <h2 className="text-lg font-semibold">EditableName</h2>
-        <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
-          {names.map((example) => (
+      {dense ? (
+        <section className="grid gap-3">
+          <h2 className="text-lg font-semibold">EditableName</h2>
+          {['display', 'editing'].map((mode) => (
             <div
-              key={example.id}
-              className="min-w-0 rounded-md border border-border bg-background p-3"
-              data-edit-target={editing && !example.disabled ? true : undefined}
-              data-edit-value={example.editValue}
+              key={mode}
+              className="grid gap-2 rounded-md border border-border bg-background p-3"
             >
-              <p className="mb-3 text-xs text-muted-foreground">EditableName — {example.label}</p>
-              <EditableName
-                value={example.value}
-                placeholder="Untitled preview"
-                disabled={example.disabled}
-                maxWidth={state === 'narrow' ? 220 : 180}
-                onSave={() => undefined}
-              />
+              <p className="text-xs text-muted-foreground">EditableName — dense context / {mode}</p>
+              <div className="flex min-w-0 items-center gap-2 overflow-hidden rounded border border-border bg-card px-2 py-1.5">
+                <span className="shrink-0 text-xs text-muted-foreground">Overview</span>
+                <span className="h-4 w-px shrink-0 bg-border" />
+                <div data-edit-target={mode === 'editing' ? true : undefined} className="min-w-0">
+                  <EditableName
+                    value="Preview implementation plan"
+                    maxWidth={180}
+                    onSave={() => undefined}
+                  />
+                </div>
+                <span className="h-4 w-px shrink-0 bg-border" />
+                <span className="shrink-0 text-xs text-muted-foreground">Changes</span>
+              </div>
             </div>
           ))}
-        </div>
-      </section>
-      <section className="grid gap-3">
-        <h2 className="text-lg font-semibold">ContentHeader</h2>
-        <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
-          {headers.map((example) => (
-            <div
-              key={example.id}
-              className="min-w-0 overflow-hidden rounded-md border border-border bg-background"
-              data-edit-target={editing && example.editable !== false ? true : undefined}
-              data-edit-value={example.editValue}
-            >
-              <p className="px-3 pt-3 text-xs text-muted-foreground">
-                ContentHeader — {example.label}
-              </p>
-              <ContentHeader
-                title={example.value}
-                editableTitle={example.editable !== false}
-                showClose={false}
-                onTitleChange={() => undefined}
-              />
+        </section>
+      ) : (
+        <>
+          <section className="grid gap-3">
+            <h2 className="text-lg font-semibold">EditableName</h2>
+            <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
+              {names.map((example) => (
+                <div
+                  key={example.id}
+                  className="min-w-0 rounded-md border border-border bg-background p-3"
+                  data-edit-target={editing && !example.disabled ? true : undefined}
+                  data-edit-value={example.editValue}
+                >
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    EditableName — {example.label}
+                  </p>
+                  <EditableName
+                    value={example.value}
+                    placeholder="Untitled preview"
+                    disabled={example.disabled}
+                    maxWidth={state === 'narrow' ? 220 : 180}
+                    onSave={() => undefined}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
-      <p className="text-xs text-muted-foreground">
-        Partial source scene: WorkspaceSidebarHeader is not ported. The dense-context state remains
-        unavailable.
-      </p>
+          </section>
+          <section className="grid gap-3">
+            <h2 className="text-lg font-semibold">ContentHeader</h2>
+            <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
+              {headers.map((example) => (
+                <div
+                  key={example.id}
+                  className="min-w-0 overflow-hidden rounded-md border border-border bg-background"
+                  data-edit-target={editing && example.editable !== false ? true : undefined}
+                  data-edit-value={example.editValue}
+                >
+                  <p className="px-3 pt-3 text-xs text-muted-foreground">
+                    ContentHeader — {example.label}
+                  </p>
+                  <ContentHeader
+                    title={example.value}
+                    editableTitle={example.editable !== false}
+                    showClose={false}
+                    onTitleChange={() => undefined}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+          <p className="text-xs text-muted-foreground">
+            Partial source scene: WorkspaceSidebarHeader is not ported.
+          </p>
+        </>
+      )}
     </div>
   );
 }

@@ -51,6 +51,7 @@ interface PreviewDefinition {
   id: string;
   title: string;
   defaultState: string;
+  unportedStates?: readonly string[];
   source: string;
   states: Record<string, ReactNode>;
 }
