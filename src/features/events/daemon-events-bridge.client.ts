@@ -1,3 +1,10 @@
+import { routeAuthorityEvent } from './daemon-authority-events';
+import {
+  admittedDaemonEvent,
+  routeSettingsChangedEvent,
+  workspaceMembershipInvalidated,
+  isWorkspaceMembershipRemoval,
+} from './daemon-event-admission';
 import {
   observeSubmissionEvidence,
   observeSubmissionLifecycle,
@@ -6,7 +13,6 @@ import {
 import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
-import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import {
   claimAgentReadOwnership,
@@ -151,13 +157,8 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  * daemon-events-saga owns two subscriptions on the socket: the global
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
-import { isHostMembershipChange } from '$shared/types/principal';
-import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { hostMembershipListsChanged } from '$store/renderer/slices/host-membership/host-membership-slice';
-import {
-  hostMembershipChanged,
-  principalIdentityChanged,
-} from '$store/renderer/slices/principal/principal-slice';
+
 import { m } from '$shared/paraglide/messages.js';
 import type {
   AgentSession,
@@ -308,7 +309,6 @@ import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-setti
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { identityChanged } from '$store/renderer/slices/identity/identity-slice';
-import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import {
   browserTabClosed,
@@ -467,26 +467,6 @@ function workspaceIdOf(event: WorkspaceEvent | undefined): string | null {
   // PROTOCOL §7 events are workspace-scoped; if a relay strips workspaceId we
   // bail rather than guessing — the reducer will simply not run.
   return null;
-}
-
-function extractEvent(params: unknown): WorkspaceEvent | null {
-  if (!params || typeof params !== 'object') return null;
-  // The daemon wraps each domain event in `{ event, subscriptionId? }` per the
-  // notification envelope; older paths may send the event flat as `params`.
-  const wrapped = (params as { event?: unknown }).event;
-  if (wrapped && typeof wrapped === 'object') return wrapped as WorkspaceEvent;
-  return params as WorkspaceEvent;
-}
-
-/**
- * Read the wire-level `params.subscriptionId` tag the daemon attaches when
- * fanning a domain event out per matching subscription. Returns `undefined`
- * for flat/legacy envelopes that carry no id (those bypass the scope gate).
- */
-function extractSubscriptionId(params: unknown): string | undefined {
-  if (!params || typeof params !== 'object') return undefined;
-  const id = (params as { subscriptionId?: unknown }).subscriptionId;
-  return typeof id === 'string' ? id : undefined;
 }
 
 function ensureStream(agentId: string, messageId: string, workspaceId: string): StreamState {
@@ -2661,7 +2641,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // client converges without a manual refresh. The row's own membership
   // summary is re-read too — invite deltas carry no `openInviteCount` today,
   // and the single archive/delete warning gates on that stored count.
-  if (raw.members === true || raw.invites === true) {
+  if (workspaceMembershipInvalidated(event)) {
     appStore.dispatch(shareMembershipChanged({ workspaceId }));
     appStore.dispatch(refreshWorkspaceMembershipRequested(workspaceId));
   }
@@ -2760,7 +2740,7 @@ function handleWorkspaceMembershipRemoved(
   const removed = raw.removedPrincipalId;
   if (typeof removed !== 'string' || !removed) return false;
   const session = selectWindowGuestSession.select(appStore.state);
-  if (!session || session.principalId !== removed) return false;
+  if (!session || !isWorkspaceMembershipRemoval(raw, session.principalId)) return false;
   const state = appStore.state as {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
     workspace?: { workspaces: { map: Record<string, { title?: string }> } };
@@ -3117,28 +3097,6 @@ function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: str
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
 }
 
-function handleSettingsChangedEvent(
-  event: WorkspaceEvent,
-  onSettingsChanges?: (changes: AppliedSettingChange[], revision?: number) => void,
-): void {
-  const data = (event as { data?: Record<string, unknown> }).data;
-  if (!data) return;
-  const raw = (data as { changes?: unknown }).changes;
-  if (!Array.isArray(raw)) return;
-  const changes: AppliedSettingChange[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue;
-    const path = (entry as { path?: unknown }).path;
-    if (typeof path !== 'string' || path.length === 0) continue;
-    const value = (entry as { value?: unknown }).value;
-    changes.push({ path, value });
-  }
-  if (changes.length === 0) return;
-  const revision = typeof data.revision === 'number' ? data.revision : undefined;
-  if (onSettingsChanges) onSettingsChanges(changes, revision);
-  else applySettingsChanges(changes);
-}
-
 /**
  * Per-script streaming UTF-8 decoders keyed by `workspaceId:scriptId`.
  * `decode(bytes, { stream: true })` carries a multibyte character split
@@ -3355,34 +3313,6 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  * explicit `identity.provider` change) or unlinked. Global; the identity slice
  * follows the new triple's provider.
  */
-function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
-  const data = (event as { data?: Record<string, unknown> }).data;
-  if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
-  const identity = data?.identity;
-  let triple: PrincipalIdentity | null = null;
-  if (identity !== null) {
-    if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return;
-    const { provider, host, externalUserId } = identity as Record<string, unknown>;
-    if (
-      (provider !== 'github' && provider !== 'gitlab') ||
-      typeof host !== 'string' ||
-      !host.trim() ||
-      typeof externalUserId !== 'string' ||
-      !externalUserId.trim()
-    )
-      return;
-    triple = { provider, host, externalUserId };
-  }
-  const principal = appStore.state.principal;
-  if (
-    principal?.context &&
-    principal.context === selectPrincipalConnectionContext.select(appStore.state) &&
-    principal.boundPrincipalId === data.principalId
-  )
-    appStore.dispatch(principalIdentityChanged(data.principalId));
-  // Keep the legacy primary-identity mirror and its profile refresh, including unlink.
-  appStore.dispatch(identityChanged(triple));
-}
 
 /**
  * `client:connected` / `client:disconnected` (REV-2, §5.17) are global — the
@@ -3655,30 +3585,14 @@ export function routeDaemonEventsNotification(
   expectedSubscriptionIds: string | readonly string[] | undefined = undefined,
   overrides?: DaemonEventsRoutingOverrides,
 ): void {
-  if (method !== 'events.event') return;
-  // Fan-out scope gate (see file header): drop notifications delivered through
-  // a different subscription on the same socket so chunk-append/queue/idle
-  // handlers never apply the same event twice. The saga owns two leases
-  // (firehose + scoped file:*), so the gate accepts a set of expected ids; a
-  // bare string is still accepted for back-compat with older call sites.
-  // Flat/legacy envelopes (no `subscriptionId` on params) always pass.
-  const envelopeSubscriptionId = extractSubscriptionId(params);
-  if (envelopeSubscriptionId !== undefined) {
-    const expected =
-      typeof expectedSubscriptionIds === 'string'
-        ? [expectedSubscriptionIds]
-        : (expectedSubscriptionIds ?? []);
-    if (!expected.includes(envelopeSubscriptionId)) return;
-  }
-  const event = extractEvent(params);
-  if (!event || typeof event !== 'object') return;
-  const type = (event as { type?: unknown }).type;
-  if (typeof type !== 'string') return;
+  const event = admittedDaemonEvent(method, params, expectedSubscriptionIds);
+  if (!event) return;
+  const type = (event as { type: string }).type;
 
   // `settings:changed` (§6.5) is global — no `workspaceId` envelope is
   // expected, so it must be routed BEFORE the workspace-id gate below.
   if (type === 'settings:changed') {
-    handleSettingsChangedEvent(event, overrides?.onSettingsChanges);
+    routeSettingsChangedEvent(event, overrides?.onSettingsChanges ?? applySettingsChanges);
     return;
   }
 
@@ -3740,41 +3654,18 @@ export function routeDaemonEventsNotification(
     handleSourceControlAuthChangedEvent(event);
     return;
   }
-  if (type === 'principal:identity-changed') {
-    handlePrincipalIdentityChangedEvent(event);
+  if (
+    routeAuthorityEvent(event, appStore.state, appStore.dispatch, {
+      identityChanged: (identity) => appStore.dispatch(identityChanged(identity)),
+      membershipListsChanged: () => appStore.dispatch(hostMembershipListsChanged()),
+    })
+  )
     return;
-  }
 
   // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
   // `workspaceId` envelope — so they must also run before the gate below.
   if (type === 'client:connected' || type === 'client:disconnected' || type === 'client:updated') {
     handleClientTransitionEvent(event);
-    return;
-  }
-
-  if (type === 'host:execution-context-changed') {
-    appStore.dispatch(hostExecutionInvalidated());
-    return;
-  }
-  if (type === 'host:invites-changed') {
-    const data = (event as { data?: unknown }).data;
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
-    const { inviteId, action } = data as { inviteId?: unknown; action?: unknown };
-    if (
-      typeof inviteId === 'string' &&
-      inviteId.trim().length > 0 &&
-      typeof action === 'string' &&
-      ['created', 'revoked', 'redeemed'].includes(action)
-    )
-      appStore.dispatch(hostMembershipListsChanged());
-    return;
-  }
-  if (type === 'host:members-changed') {
-    const data = (event as { data?: unknown }).data;
-    if (isHostMembershipChange(data)) {
-      appStore.dispatch(hostMembershipChanged(data));
-      appStore.dispatch(hostMembershipListsChanged());
-    }
     return;
   }
 

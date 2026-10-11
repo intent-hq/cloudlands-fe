@@ -3,7 +3,7 @@ import type {
   EventActor,
   WorkspaceEvent,
   WorkspaceEventType,
-} from '$features/events/types';
+} from '../../../../features/events/types';
 
 const VALID_ACTOR_TYPES = new Set<ActorType>(['user', 'agent', 'system', 'external', 'tool']);
 

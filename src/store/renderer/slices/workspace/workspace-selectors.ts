@@ -1,3 +1,4 @@
+import * as authority from './workspace-authority-projections';
 import { store } from '../../store';
 import {
   PullRequestStatus,
@@ -21,8 +22,6 @@ import {
   selectCollaborationReady,
   selectHostRole,
   selectPrincipalSnapshot,
-  selectPrincipalRevoked,
-  selectPrincipalActionContext,
 } from '../principal/principal-selectors';
 import type {
   WorkflowStage,
@@ -50,30 +49,14 @@ export const selectWorkspaceHasLoaded = store.createSelector((state) => {
  * acting on the loaded list (e.g. first-open layout seeding) must also
  * require the `loadedBackendId` stamp to match.
  */
-export const selectWorkspaceListLoadedForBackend = store.createSelector<
-  [backendId: string],
-  boolean
->((state, backendId) => {
-  if (!state.workspace.hasLoaded || state.workspace.loadedBackendId !== backendId) return false;
-  const context = selectPrincipalActionContext.select(state);
-  if (
-    state.workspace.capabilityContext != null ||
-    selectPrincipalSnapshot.select(state)?.capabilities.hostMembership
-  ) {
-    return context !== null && context === state.workspace.capabilityContext;
-  }
-  return true;
-});
+export const selectWorkspaceListLoadedForBackend = store.createSelector(
+  authority.getWorkspaceListLoadedForBackend,
+);
 
 /** Structural rows/tabs may survive reconnect; their capability projection may not. */
-const selectWorkspaceCapabilitiesReady = store.createSelector((state) => {
-  const context = selectPrincipalActionContext.select(state);
-  return (
-    context !== null &&
-    state.workspace.capabilityContext === context &&
-    selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
-  );
-});
+const selectWorkspaceCapabilitiesReady = store.createSelector(
+  authority.getWorkspaceCapabilitiesReady,
+);
 
 export const selectWorkspaceIsCreating = store.createSelector((state) => {
   return state.workspace.isCreating;
@@ -115,11 +98,7 @@ export const selectWorkspacesSortedByRecency = store.createSelector<
  * Select a workspace entity by ID from Redux.
  * Returns undefined if not stored yet.
  */
-export const selectWorkspaceById = store.createSelector<[wsId: string], Workspace | undefined>(
-  (state, wsId) => {
-    return getItem(state.workspace.workspaces, wsId as Workspace['id']);
-  },
-);
+export const selectWorkspaceById = store.createSelector(authority.getWorkspaceById);
 
 /**
  * Whether the stored row has been hydrated from `workspace.get` (slim
@@ -199,50 +178,21 @@ export const selectCanSetWorkspacePrimaryClient = store.createSelector<[wsId: st
 );
 
 /** Server management authority, independent of owner metadata and experimental visibility. */
-export const selectCanManageWorkspace = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => {
-    const snapshot = selectPrincipalSnapshot.select(state);
-    const role = selectHostRole.select(state);
-    if (!snapshot || role === null) return false;
-    // Virtual host administration never inherits member workspace rights.
-    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role === 'owner';
-    const workspace = selectWorkspaceById.select(state, wsId);
-    if (!workspace) return false;
-    if (snapshot.capabilities.hostMembership) {
-      return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === true;
-    }
-    // A guest may retain ownership of one workspace without owning the host.
-    return (
-      workspace.myRole === 'owner' || (role === 'owner' && workspace.myRole !== 'collaborator')
-    );
-  },
-);
+export const selectCanManageWorkspace = store.createSelector(authority.getCanManageWorkspace);
 
 /** Confirmed denial permits destructive cleanup; unknown authority and lab visibility do not. */
-export const selectWorkspaceManagementDenied = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => {
-    if (selectPrincipalRevoked.select(state)) return true;
-    const role = selectHostRole.select(state);
-    if (role === null) return false;
-    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role !== 'owner';
-    const workspace = selectWorkspaceById.select(state, wsId);
-    if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
-      return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === false;
-    }
-    return workspace?.myRole === 'collaborator';
-  },
+export const selectWorkspaceManagementDenied = store.createSelector(
+  authority.getWorkspaceManagementDenied,
 );
 
 /** Existing owner controls remain ordinary UI; member management is an experimental surface. */
-const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) =>
-    selectCanManageWorkspace.select(state, wsId) &&
-    (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
+const selectWorkspaceManagementVisible = store.createSelector(
+  authority.getWorkspaceManagementVisible,
 );
 
 /** Compatibility name for existing workspace-management consumers. */
-export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => selectWorkspaceActionContext.select(state, wsId) === null,
+export const selectIsWorkspaceCollaborator = store.createSelector(
+  authority.getIsWorkspaceCollaborator,
 );
 
 export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: string], boolean>(
@@ -823,43 +773,18 @@ export const selectWorkspaceProgressActions = store.createSelector<
 });
 
 /** Current workspace management proof; never inferred from an open tab or remembered dialog. */
-export const selectWorkspaceActionContext = store.createSelector<[wsId: string], string | null>(
-  (state, wsId) =>
-    selectHostRole.select(state) !== 'guest' && selectWorkspaceManagementVisible.select(state, wsId)
-      ? selectPrincipalActionContext.select(state)
-      : null,
+export const selectWorkspaceActionContext = store.createSelector(
+  authority.getWorkspaceActionContext,
 );
 
 /** Collaborators retain ordinary chat/permission rights, without management authority. */
-export const selectWorkspaceParticipationContext = store.createSelector<
-  [wsId: string],
-  string | null
->((state, wsId) => {
-  const snapshot = selectPrincipalSnapshot.select(state);
-  if (!snapshot) return null;
-  // Chief is a host-owner surface, without an ordinary workspace membership row.
-  if (wsId === CHIEF_WORKSPACE_ID)
-    return selectCanAdministerHost.select(state)
-      ? selectPrincipalActionContext.select(state)
-      : null;
-  if (snapshot.capabilities.hostMembership && !selectWorkspaceCapabilitiesReady.select(state))
-    return null;
-  if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
-    return null;
-  const row = selectWorkspaceById.select(state, wsId);
-  if (!row || (row.myRole !== 'owner' && row.myRole !== 'collaborator' && row.canManage !== true))
-    return null;
-  return selectPrincipalActionContext.select(state);
-});
+export const selectWorkspaceParticipationContext = store.createSelector(
+  authority.getWorkspaceParticipationContext,
+);
 
 /** Current shared-host prompt service uses canManage; legacy guest prompts keep their wire rights. */
-export const selectWorkspacePermissionContext = store.createSelector<[wsId: string], string | null>(
-  (state, wsId) =>
-    selectPrincipalSnapshot.select(state)?.capabilities.hostMembership
-      ? selectWorkspaceManagementVisible.select(state, wsId)
-        ? selectPrincipalActionContext.select(state)
-        : null
-      : selectWorkspaceParticipationContext.select(state, wsId),
+export const selectWorkspacePermissionContext = store.createSelector(
+  authority.getWorkspacePermissionContext,
 );
 
 /** workspace.update collaborator fields from the frozen daemon capability contract. */
@@ -878,3 +803,7 @@ export const selectWorkspaceUpdateContext = store.createSelector<
     ? context
     : null;
 });
+
+export const selectWorkspaceDeletionTokens = store.createSelector(
+  authority.getWorkspaceDeletionTokens,
+);

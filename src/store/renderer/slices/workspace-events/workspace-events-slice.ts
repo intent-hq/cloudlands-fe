@@ -1,5 +1,5 @@
 import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
-import type { WorkspaceEvent } from '$features/events/types';
+import type { WorkspaceEvent } from '../../../../features/events/types';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';

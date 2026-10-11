@@ -1,28 +1,16 @@
+import { createWorkspaceMembershipSaga } from './workspace-membership-saga-factory';
+import { workspaceAuthoritySaga } from './workspace-authority-saga';
 import { selectAllWorkspaceScriptEntries } from '../../scripts/scripts-selectors';
 import {
   beginScriptRead,
   isScriptReadCurrent,
   reconcileScriptRead,
 } from '../../scripts/utils/script-read-context';
-import { buffers } from 'redux-saga';
-import { store } from '../../../store';
 import { refreshIntegrationAuthAfterReconnect } from '../../workspace-share/sagas/workspace-share-saga';
 import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import type { StoreState } from '../../../types';
 import type { SagaGenerator } from 'typed-redux-saga';
-import {
-  actionChannel,
-  all,
-  call,
-  delay,
-  flush,
-  fork,
-  put,
-  race,
-  select,
-  take,
-  takeEvery,
-} from 'typed-redux-saga';
+import { all, call, fork, put, race, select, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
@@ -32,8 +20,6 @@ import { appClient } from '$lib/client';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/types';
-import { workspaceClient } from '../../workspace/utils/workspace.client';
-import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectHostRole, selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -169,17 +155,7 @@ import {
   selectDemandedTaskWorkspaceIds,
   selectWorkspaceTasksShouldLoad,
 } from '../../workspace-tasks/workspace-tasks-selectors';
-import {
-  bulkUpdateWorkspaceEntities,
-  loadRecencyData,
-  loadWorkspacesRequested,
-  refreshWorkspaceMembershipRequested,
-  replaceWorkspaceList,
-  removeWorkspaceEntity,
-  setWorkspaceEntity,
-  setWorkspaceHasLoaded,
-  updateWorkspaceEntity,
-} from '../../workspace/workspace-slice';
+import { loadWorkspacesRequested, removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
   selectWorkspaceById,
   selectWorkspaceListLoadedForBackend,
@@ -205,21 +181,6 @@ const logger = createLogger('LifecycleReadSaga');
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
 /** Initial/latest page size; pages arrive newest→oldest and are stored oldest→newest. */
 const EVENTS_PAGE_LIMIT = 100;
-/**
- * Backoff for a `workspace.list` that fails before the list has ever loaded
- * for the active backend (e.g. the guest's tailcat tunnel is not up at boot).
- * Later attempts wait `WORKSPACE_LIST_RETRY_CAP_MS`.
- */
-const WORKSPACE_LIST_RETRY_DELAYS_MS = [1_000, 2_000, 5_000];
-const WORKSPACE_LIST_RETRY_CAP_MS = 15_000;
-/**
- * Message of the daemon's `-32003 Forbidden` envelope. The workspace IPC
- * bridge flattens daemon errors to their message string, so this is the only
- * field the renderer can key the refusal off when it arrives via
- * `workspaceClient`.
- */
-const FORBIDDEN_ERROR_MESSAGE = 'Forbidden';
-
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
     action.type === workspaceUnmounted.type &&
@@ -241,75 +202,6 @@ function scriptsReadContext(action: { type: string; payload: [string, ...unknown
   return action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type
     ? { context, cancel: true as const }
     : context;
-}
-
-type WorkspaceProjectionAction = ReturnType<
-  | typeof setWorkspaceEntity
-  | typeof updateWorkspaceEntity
-  | typeof bulkUpdateWorkspaceEntities
-  | typeof removeWorkspaceEntity
-  | typeof workspaceDeleted
->;
-
-function* refreshWorkspaces(): SagaGenerator<void> {
-  const dispatch = store.dispatch;
-  const backendId = yield* selectActiveBackendId();
-  const context = yield* selectPrincipalActionContext.effect();
-  const changes = yield* actionChannel(
-    [
-      setWorkspaceEntity,
-      updateWorkspaceEntity,
-      bulkUpdateWorkspaceEntities,
-      removeWorkspaceEntity,
-      workspaceDeleted,
-    ],
-    buffers.expanding<WorkspaceProjectionAction>(),
-  );
-  try {
-    const deletionTokens = store.state.workspace.deletionTokens;
-    const result = yield* call([workspaceClient, workspaceClient.list], { lite: true });
-    if (
-      store.dispatch !== dispatch ||
-      backendId !== (yield* selectActiveBackendId()) ||
-      context !== (yield* selectPrincipalActionContext.effect())
-    )
-      return;
-    if (!result.ok) throw new Error(result.error);
-    // Replay only fields carried by current events. A title-only event must not
-    // copy a prior admission's capability fields over the fresh list projection.
-    const rows = new Map(result.data.map((row) => [row.id as string, row]));
-    const record = (action: WorkspaceProjectionAction) => {
-      if (action.type === bulkUpdateWorkspaceEntities.type) {
-        for (const nested of action.payload[0] as ReturnType<typeof updateWorkspaceEntity>[])
-          record(nested);
-      } else if (action.type === setWorkspaceEntity.type) {
-        const row = action.payload[0] as Workspace;
-        rows.set(row.id, row);
-      } else if (action.type === updateWorkspaceEntity.type) {
-        const [id, patch] = action.payload as [string, Partial<Workspace>];
-        const row = rows.get(id);
-        if (row) rows.set(id, { ...row, ...patch });
-      } else rows.delete(action.payload[0] as string);
-    };
-    for (const action of yield* flush(changes)) record(action);
-    yield* put(
-      replaceWorkspaceList([...rows.values()], {
-        complete: result.complete === true,
-        deletionTokens,
-      }),
-    );
-    yield* put(setWorkspaceHasLoaded(true, backendId, context));
-    const recentViews = yield* call([appClient.workspaces, appClient.workspaces.recentViews]);
-    if (
-      store.dispatch !== dispatch ||
-      backendId !== (yield* selectActiveBackendId()) ||
-      context !== (yield* selectPrincipalActionContext.effect())
-    )
-      return;
-    yield* put(loadRecencyData({ lastViewedAt: recentViews }));
-  } finally {
-    changes.close();
-  }
 }
 
 function* refreshTasks(workspaceId: string): SagaGenerator<void> {
@@ -338,46 +230,6 @@ function* refreshTokenUsage(workspaceId: string): SagaGenerator<void> {
     yield* put(tokenUsageFetchFailed(workspaceId));
     throw error;
   }
-}
-
-/**
- * Targeted `workspace.get` (§5.1) that merges membership rights and summary
- * onto the stored row. Invite create / revoke deltas carry no counts, and
- * the archive teardown's per-member `memberCount` frames say nothing about
- * the invites it revoked, so the row is re-derived from the daemon instead
- * of patched client-side. Never a per-workspace fan-out: one read per
- * delta-bearing workspace, coalesced by the watcher.
- */
-function* refreshMembershipSummary(
-  workspaceId: string,
-  isLatest: () => boolean,
-): SagaGenerator<void> {
-  const context = yield* selectPrincipalActionContext.effect();
-  const previous = yield* selectWorkspaceById.effect(workspaceId);
-  const workspace: Awaited<ReturnType<typeof appClient.workspaces.get>> = yield* call(
-    [appClient.workspaces, appClient.workspaces.get],
-    workspaceId,
-  );
-  if (!workspace || !isLatest() || context !== (yield* selectPrincipalActionContext.effect()))
-    return;
-  const current = yield* selectWorkspaceById.effect(workspaceId);
-  // Another authoritative hydration must not be overwritten by an older read.
-  if (current?.canManage !== previous?.canManage || current?.myRole !== previous?.myRole) return;
-  const changes: Partial<Workspace> = {};
-  if (context !== null) {
-    if (typeof workspace.canManage === 'boolean') changes.canManage = workspace.canManage;
-    if (workspace.myRole === 'owner' || workspace.myRole === 'collaborator') {
-      changes.myRole = workspace.myRole;
-    }
-  }
-  if (typeof workspace.memberCount === 'number' && Number.isFinite(workspace.memberCount)) {
-    changes.memberCount = workspace.memberCount;
-  }
-  if (typeof workspace.openInviteCount === 'number' && Number.isFinite(workspace.openInviteCount)) {
-    changes.openInviteCount = workspace.openInviteCount;
-  }
-  if (Object.keys(changes).length === 0) return;
-  yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
 }
 
 function* refreshPrStatus(
@@ -1290,47 +1142,6 @@ function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
 }
 
 /**
- * A `-32003 Forbidden` refusal is a stable answer: retrying gets the same
- * response until the client reconnects under a different credential.
- */
-function isStableWorkspaceListFailure(error: unknown): boolean {
-  if (isForbiddenErrorResponse(error)) return true;
-  return error instanceof Error && error.message === FORBIDDEN_ERROR_MESSAGE;
-}
-
-/**
- * Until the list has loaded for the active backend, a failed `workspace.list`
- * is retried with bounded backoff from inside the single-flight worker, so
- * the trailing-coalesce guarantee holds and reads never fan out. A
- * `backendReconnected` during the wait ends the loop early: the reconnect
- * watcher re-puts `loadWorkspacesRequested`, which either queues as this
- * worker's trailing rerun or starts a fresh one — one immediate read either
- * way. Once loaded, a later failure is logged only.
- */
-function* loadWorkspacesWorker() {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      yield* refreshWorkspaces();
-      return;
-    } catch (error) {
-      const backendId = yield* selectActiveBackendId();
-      const loaded = yield* selectWorkspaceListLoadedForBackend.effect(backendId);
-      if (loaded || isStableWorkspaceListFailure(error)) {
-        logger.error('Refresh failed for workspaces', error);
-        return;
-      }
-      const delayMs = WORKSPACE_LIST_RETRY_DELAYS_MS[attempt] ?? WORKSPACE_LIST_RETRY_CAP_MS;
-      logger.warn('Refresh failed for workspaces; retrying', { attempt, delayMs, error });
-      const { reconnected } = yield* race({
-        timeout: delay(delayMs),
-        reconnected: take(backendReconnected),
-      });
-      if (reconnected) return;
-    }
-  }
-}
-
-/**
  * A transport that was down at boot (guest tunnel) or dropped mid-session
  * re-requests the list once it is back; the single-flight worker coalesces it.
  */
@@ -1408,29 +1219,6 @@ function* tokenUsageWorker(
   action: ReturnType<typeof fetchWorkspaceTokenUsage>,
 ) {
   yield* runWorkspaceRead(scheduler, 'tokenUsage', action.payload[0], refreshTokenUsage);
-}
-
-function* membershipSummaryWorker(
-  scheduler: WorkspaceReadScheduler,
-  revisions: Map<string, symbol>,
-  action: ReturnType<typeof refreshWorkspaceMembershipRequested>,
-) {
-  const workspaceId = action.payload[0];
-  const revision = revisions.get(workspaceId);
-  const isLatest = () => revisions.get(workspaceId) === revision;
-  try {
-    yield* runWorkspaceRead(
-      scheduler,
-      'membership',
-      workspaceId,
-      function* (id) {
-        yield* refreshMembershipSummary(id, isLatest);
-      },
-      false,
-    );
-  } finally {
-    if (isLatest()) revisions.delete(workspaceId);
-  }
 }
 
 function* taskAgentLinksWorker(
@@ -1588,12 +1376,19 @@ function* clearUnmountedInitializedContext(
 }
 
 export function* lifecycleReadSaga(): SagaGenerator<void> {
-  const membershipRevisions = new Map<string, symbol>();
   const initializedContexts = new Set<string>();
   const pendingInitialEventReads = new Set<string>();
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
   const scheduler = createWorkspaceReadScheduler();
+  const workspaceMembershipSaga = createWorkspaceMembershipSaga({
+    principalContextEffect: selectPrincipalActionContext.effect,
+    workspaceByIdEffect: selectWorkspaceById.effect,
+    getWorkspace: (id) => appClient.workspaces.get(id),
+    runRead: function* (id, read) {
+      yield* runWorkspaceRead(scheduler, 'membership', id, read, false);
+    },
+  });
   try {
     yield* all([
       // Single-flight + trailing coalesce (AGENTS.md "Event-driven refetches"):
@@ -1601,7 +1396,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // unknown to the collection, so a create arriving while a list read is
       // in flight must queue one trailing refetch — takeLeading would drop it
       // and the fetched snapshot could predate the create.
-      takeSingleFlightInContext(loadWorkspacesRequested, () => 'workspaces', loadWorkspacesWorker),
+      call(workspaceAuthoritySaga),
       // Attention events stay subscribed while unfocused. Reconcile missed
       // events on transport recovery, not focus or console ownership changes.
       fork(backendReconnectWorkspacesWatcher),
@@ -1631,17 +1426,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // per workspace with one trailing re-read so the row converges on the
       // post-burst summary. Invalidate the older reply immediately: applying
       // stale rights before the trailing read could briefly restore management.
-      takeSingleFlightInContext(
-        refreshWorkspaceMembershipRequested,
-        (action) => {
-          const workspaceId = action.payload[0];
-          membershipRevisions.set(workspaceId, Symbol());
-          return workspaceId;
-        },
-        membershipSummaryWorker,
-        scheduler,
-        membershipRevisions,
-      ),
+      call(workspaceMembershipSaga),
       takeLatestByContext(
         initContextForWorkspace,
         (action) => ({

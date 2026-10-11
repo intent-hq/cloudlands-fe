@@ -1,30 +1,11 @@
+// Compatibility binding for Svelte consumers; remove at Svelte cutover.
 import { store } from '../../store';
-import {
-  selectHostRole,
-  selectPrincipalConnectionContext,
-  selectPrincipalSnapshot,
-} from '../principal/principal-selectors';
-
-export const selectHostExecutionReadContext = store.createSelector((state) => {
-  const role = selectHostRole.select(state);
-  const connection = selectPrincipalConnectionContext.select(state);
-  if (state.hostExecution?.connection !== connection) return null;
-  return (role === 'owner' || role === 'member') &&
-    selectPrincipalSnapshot.select(state)?.capabilities.hostMembership
-    ? selectPrincipalConnectionContext.select(state)
-    : null;
-});
-
-export const selectHostExecutionContext = store.createSelector((state) =>
-  state.hostExecution?.connection === selectHostExecutionReadContext.select(state)
-    ? (state.hostExecution?.context ?? null)
-    : null,
+import * as projections from './host-execution-projections';
+export const selectHostExecutionReadContext = store.createSelector(
+  projections.getHostExecutionReadContext,
 );
-
-export const selectIsHostMember = store.createSelector(
-  (state) => selectHostRole.select(state) === 'member',
-);
-
+export const selectHostExecutionContext = store.createSelector(projections.getHostExecutionContext);
+export const selectIsHostMember = store.createSelector(projections.getIsHostMember);
 export const selectHostExecutionGeneration = store.createSelector(
-  (state) => state.hostExecution.generation,
+  projections.getHostExecutionGeneration,
 );

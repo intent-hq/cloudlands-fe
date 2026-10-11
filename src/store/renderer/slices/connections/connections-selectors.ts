@@ -1,3 +1,4 @@
+import { getCurrentConnectionId } from './connections-projections';
 /**
  * Connections Selectors
  */
@@ -54,9 +55,7 @@ export const selectConnectionOpenStatus = store.createSelector(
 );
 
 /** id of the backend bound to this renderer window. */
-export const selectCurrentConnectionId = store.createSelector(
-  (state) => state.connections.windowBackendId,
-);
+export const selectCurrentConnectionId = store.createSelector(getCurrentConnectionId);
 
 /** The connection record bound to this renderer window, or null before list hydration. */
 export const selectCurrentConnection = store.createSelector((state): ConnectionRecord | null => {

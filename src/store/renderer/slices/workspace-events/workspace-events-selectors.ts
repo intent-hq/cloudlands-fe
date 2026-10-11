@@ -1,9 +1,10 @@
+import { getDaemonEventsSubscriptionAttempt } from './workspace-events-projections';
 import { store } from '../../store';
 import type { WorkspaceEvent } from '$features/events/types';
 import { emptyWorkspaceEventsState } from './workspace-events-slice';
 
 export const selectDaemonEventsSubscriptionAttempt = store.createSelector(
-  (state) => state.workspaceEvents.subscriptionAttempt,
+  getDaemonEventsSubscriptionAttempt,
 );
 
 /** `0` until the daemon-events firehose is live; +1 per (re)subscription. */

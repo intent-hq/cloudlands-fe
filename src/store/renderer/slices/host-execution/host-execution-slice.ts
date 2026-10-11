@@ -2,11 +2,9 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { HostExecutionContext } from '$shared/types/host-execution';
 
-export interface HostExecutionState {
-  connection: string | null;
-  generation: number;
-  context: HostExecutionContext | null;
-}
+import type { HostExecutionState } from './host-execution-types';
+// Compatibility type export for existing Svelte consumers until cutover.
+export type { HostExecutionState } from './host-execution-types';
 
 export const hostExecutionConnectionChanged = createAction<[connection: string | null]>(
   'hostExecution/connectionChanged',

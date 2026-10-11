@@ -1,11 +1,8 @@
+import { getMountedWorkspaceIds } from './workspace-lifecycle-projections';
 import { store } from '../../store';
 import type { Workspace } from '$shared/types';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
-import type {
-  WorkspaceLoadError,
-  WorkspaceLoadState,
-  WorkspaceSessionPhase,
-} from './workspace-lifecycle-types';
+import type { WorkspaceLoadError, WorkspaceLoadState } from './workspace-lifecycle-types';
 
 const INITIAL_WORKSPACE_LOAD_STATE: WorkspaceLoadState = {
   status: 'idle',
@@ -35,9 +32,6 @@ const selectWorkspaceSessionPhase = store.createSelector<[wsId: string]>(
   (state, wsId) => state.workspaceLifecycle.sessionPhaseByWorkspaceId[wsId],
 );
 
-const isMountedPhase = (phase: WorkspaceSessionPhase | undefined) =>
-  phase === 'hydrated' || phase === 'live';
-
 export const selectIsWorkspaceHydrated = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => {
     const phase = selectWorkspaceSessionPhase.select(state, wsId);
@@ -49,11 +43,7 @@ export const selectIsWorkspaceHydrated = store.createSelector<[wsId: string], bo
  * Workspaces currently mounted (`workspaceMounted` seen, not yet torn down):
  * the ones whose per-workspace views are on screen.
  */
-export const selectMountedWorkspaceIds = store.createSelector<[], string[]>((state) => {
-  const phases: Record<string, WorkspaceSessionPhase> =
-    state.workspaceLifecycle.sessionPhaseByWorkspaceId;
-  return Object.keys(phases).filter((wsId) => isMountedPhase(phases[wsId]));
-});
+export const selectMountedWorkspaceIds = store.createSelector(getMountedWorkspaceIds);
 
 export const selectIsWorkspaceSessionLive = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => selectWorkspaceSessionPhase.select(state, wsId) === 'live',
