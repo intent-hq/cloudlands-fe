@@ -8,12 +8,71 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const catalogs = {
   standard: ['low', 'medium', 'high'],
   extended: ['low', 'medium', 'high', 'xhigh'],
+  provider: ['none', 'HIGH', 'provider/Deep-Think'],
   empty: [],
 };
+
+const standaloneOptions = [
+  { value: 'alpha', label: 'Alpha', disabled: false },
+  { value: 'beta', label: 'Beta unavailable', disabled: true },
+  { value: 'gamma', label: 'Gamma', disabled: false },
+];
+
+function SelectBoundaryExample() {
+  const [value, setValue] = useState('alpha');
+  const [changes, setChanges] = useState<string[]>([]);
+  return (
+    <section className="grid gap-3" data-functional-example="standalone-select-boundary">
+      <h3>Separate Select callback</h3>
+      <p className="type-caption text-muted-foreground">
+        Public Select disabled-item and controlled-empty-value inputs, separate from effort options.
+        Clearing changes the parent prop; the callback history records user selections.
+      </p>
+      <Select
+        items={standaloneOptions}
+        value={value}
+        onValueChange={(next) => {
+          setValue(next);
+          setChanges((current) => [...current, next]);
+        }}
+      >
+        <SelectTrigger aria-label="Standalone Select" data-testid="standalone-select-trigger">
+          <SelectValue placeholder="Choose a standalone value" />
+        </SelectTrigger>
+        <SelectContent portal>
+          <SelectGroup>
+            {standaloneOptions.map((option) => (
+              <SelectItem key={option.value} {...option}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      <Button onClick={() => setValue('')}>Clear standalone Select</Button>
+      <div>
+        Selected value:{' '}
+        <output aria-label="Standalone Select value">{JSON.stringify(value)}</output>
+      </div>
+      <div>
+        Selection callbacks:{' '}
+        <output aria-label="Standalone Select callbacks">{JSON.stringify(changes)}</output>
+      </div>
+    </section>
+  );
+}
 
 type CallbackRecord = {
   id: number;
@@ -30,6 +89,7 @@ export function EffortPickerExamples() {
   const [mounted, setMounted] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [hold, setHold] = useState(false);
+  const [refuse, setRefuse] = useState(false);
   const [callbacks, setCallbacks] = useState<CallbackRecord[]>([]);
   const nextId = useRef(0);
   const pending = useRef(new Set<(accepted: boolean) => void>());
@@ -44,20 +104,22 @@ export function EffortPickerExamples() {
     };
   }, []);
 
-  async function changeEffort(effort: string | null) {
+  function changeEffort(effort: string | null) {
     const id = ++nextId.current;
     setCallbacks((current) => [...current, { id, effort, result: 'pending' }]);
-    const accepted = hold
-      ? await new Promise<boolean>((resolve) => pending.current.add(resolve))
-      : true;
-    // This is the actual embedded caller boundary: true updates its prop; false leaves it alone.
-    if (accepted) setPersisted(effort);
-    setCallbacks((current) =>
-      current.map((callback) =>
-        callback.id === id ? { ...callback, result: accepted } : callback,
-      ),
-    );
-    return accepted;
+    function finish(accepted: boolean) {
+      // This is the actual embedded caller boundary: true updates its prop; false leaves it alone.
+      if (accepted) setPersisted(effort);
+      setCallbacks((current) =>
+        current.map((callback) =>
+          callback.id === id ? { ...callback, result: accepted } : callback,
+        ),
+      );
+      return accepted;
+    }
+    return hold
+      ? new Promise<boolean>((resolve) => pending.current.add(resolve)).then(finish)
+      : finish(!refuse);
   }
 
   function resolveNext(accepted: boolean) {
@@ -76,14 +138,21 @@ export function EffortPickerExamples() {
             id={field.id}
             type="single"
             aria-label="Effort catalog"
+            className="flex-wrap justify-start"
             value={catalog}
             onValueChange={(value) => {
-              if (value === 'standard' || value === 'extended' || value === 'empty')
+              if (
+                value === 'standard' ||
+                value === 'extended' ||
+                value === 'provider' ||
+                value === 'empty'
+              )
                 setCatalog(value);
             }}
           >
             <ToggleGroupItem value="standard">Standard levels</ToggleGroupItem>
             <ToggleGroupItem value="extended">Extended levels</ToggleGroupItem>
+            <ToggleGroupItem value="provider">Provider levels</ToggleGroupItem>
             <ToggleGroupItem value="empty">No levels</ToggleGroupItem>
           </ToggleGroup>
         )}
@@ -116,6 +185,10 @@ export function EffortPickerExamples() {
         <FormField
           label="Hold effort callback"
           control={(field) => <Switch {...field} checked={hold} onCheckedChange={setHold} />}
+        />
+        <FormField
+          label="Refuse effort callback immediately"
+          control={(field) => <Switch {...field} checked={refuse} onCheckedChange={setRefuse} />}
         />
       </div>
       <div className="flex flex-wrap gap-2">
@@ -192,7 +265,8 @@ export function EffortPickerExamples() {
       <p className="type-caption text-muted-foreground">
         Auto sends null. Held callbacks settle oldest first: true writes the requested value to the
         parent prop; false keeps the current parent value. Pending callbacks announce busy without
-        disabling selection. Unmounting the picker keeps those callbacks available to settle.
+        disabling selection. Unmounting the picker keeps those callbacks available to settle. With
+        Hold off, the refusal switch chooses a synchronous false or true result.
       </p>
       <Button disabled={dialogOpen} onClick={() => setDialogOpen(true)}>
         Open effort parent dialog
@@ -209,6 +283,7 @@ export function EffortPickerExamples() {
       ) : (
         exercise
       )}
+      <SelectBoundaryExample />
     </section>
   );
 }
