@@ -130,3 +130,28 @@ test("rich tooltip: controlled close settles once and disabled replacement resto
     "The original control description remains available.",
   );
 });
+
+test("public tooltip: keep-open click preserves native toggle and disabling closes the surface", async ({
+  page,
+}) => {
+  const example = await openExample(page, "tooltip", "tooltip-public");
+  const control = example.getByRole("button", { name: "Public tooltip control", exact: true });
+  await example.getByRole("switch", { name: "Keep public tooltip open on click" }).click();
+  await control.focus();
+  await control.press("Space");
+  await expect(example.getByLabel("Public tooltip pressed")).toHaveText("true");
+  await expect(example.getByLabel("Public tooltip child clicks")).toHaveText("1");
+  await expect(example.getByLabel("Public tooltip wrapper clicks")).toHaveText("1");
+  await expect(example.getByLabel("Public tooltip open", { exact: true })).toHaveText("true");
+  await example.getByRole("switch", { name: "Disable public tooltip" }).click();
+  await expect(example.getByLabel("Public tooltip open", { exact: true })).toHaveText("false");
+  await expect(control).toHaveAccessibleDescription(
+    "The original public control description remains available.",
+  );
+  const alternate = example.getByRole("button", { name: "Alternate shortcut trigger" });
+  await alternate.focus();
+  await expect(alternate).toHaveAccessibleDescription(/Open navigation/);
+  await alternate.press("Escape");
+  await expect(alternate).toBeFocused();
+  await expect(alternate).not.toHaveAccessibleDescription(/Open navigation/);
+});

@@ -229,19 +229,69 @@ test("catalog navigation: arrows wrap, Home and End move focus, and Enter change
   await openFixture(page, "switch", "switch-state-matrix");
   const navigation = page.getByRole("navigation").first();
   const selected = navigation.locator('a[aria-current="page"]');
+  const menu = selected.locator("xpath=ancestor::ul[1]");
+  const first = menu.getByRole("link").first();
+  const last = menu.getByRole("link").last();
+  const destination = await last.getAttribute("href");
   await expect(selected).toHaveAttribute("href", "/sandbox/switch");
   await selected.focus();
   await page.keyboard.press("ArrowDown");
   await expect(navigation.locator('a[href="/sandbox/table"]')).toBeFocused();
   await page.keyboard.press("Home");
-  await expect(navigation.locator('a[href="/sandbox/accordion"]')).toBeFocused();
+  await expect(first).toBeFocused();
   await page.keyboard.press("ArrowUp");
-  await expect(navigation.locator('a[href="/sandbox/toggle-group"]')).toBeFocused();
+  await expect(last).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(navigation.locator('a[href="/sandbox/accordion"]')).toBeFocused();
+  await expect(first).toBeFocused();
   await page.keyboard.press("End");
-  await expect(navigation.locator('a[href="/sandbox/toggle-group"]')).toBeFocused();
+  await expect(last).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/sandbox\/toggle-group(?:\?|$)/);
-  await expect(selected).toHaveAttribute("href", "/sandbox/toggle-group");
+  await expect.poll(() => new URL(page.url()).pathname).toBe(destination);
+  await expect(selected).toHaveAttribute("href", destination);
+});
+
+test("public tooltip: native activation forwards child and wrapper clicks once and closes help", async ({
+  page,
+}) => {
+  const example = await openExample(page, "tooltip", "tooltip-public");
+  const control = example.getByRole("button", { name: "Public tooltip control", exact: true });
+  const portal = example.getByTestId("public-tooltip-portal");
+  await control.focus();
+  await expect(example.getByLabel("Public tooltip open", { exact: true })).toHaveText("true");
+  await expect(portal.locator("[data-tooltip-content]")).toBeVisible();
+  const descriptions = await control.getAttribute("aria-describedby");
+  const ids = descriptions.split(/\s+/);
+  expect(new Set(ids).size, "Description IDs must not be duplicated by forwarding").toBe(
+    ids.length,
+  );
+  await expect(control).toHaveAccessibleDescription(
+    /The original public control description remains available/,
+  );
+  await control.press("Space");
+  await expect(example.getByLabel("Public tooltip child clicks")).toHaveText("1");
+  await expect(example.getByLabel("Public tooltip wrapper clicks")).toHaveText("1");
+  await expect(example.getByLabel("Public tooltip pressed")).toHaveText("true");
+  await expect(example.getByLabel("Public tooltip open", { exact: true })).toHaveText("false");
+  await expect(control).toHaveAccessibleDescription(
+    "The original public control description remains available.",
+  );
+  await expect(control).toBeFocused();
+});
+
+test("public tooltip: Element and selector targets contain live help and Escape retains focus", async ({
+  page,
+}) => {
+  const example = await openExample(page, "tooltip", "tooltip-public");
+  const control = example.getByRole("button", { name: "Public tooltip control", exact: true });
+  for (const selector of [false, true]) {
+    if (selector)
+      await example.getByRole("switch", { name: "Use selector tooltip target" }).click();
+    await control.focus();
+    const content = example.getByTestId("public-tooltip-portal").locator("[data-tooltip-content]");
+    await expect(content).toBeVisible();
+    await expect(content).toContainText("Wrapped button help");
+    await control.press("Escape");
+    await expect(content).toBeHidden();
+    await expect(control).toBeFocused();
+  }
 });

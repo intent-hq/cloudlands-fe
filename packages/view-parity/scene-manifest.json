@@ -487,7 +487,9 @@
       "referenceSources": ["src/lib/component-catalog/renderers/BasicCatalogPreview.svelte"],
       "candidateSources": [
         "apps/react/src/components/ui/switch.tsx",
-        "apps/react/src/catalog/basic-catalog-preview.tsx"
+        "apps/react/src/catalog/basic-catalog-preview.tsx",
+        "apps/react/src/catalog/catalog-navigation-menu.tsx",
+        "apps/react/src/catalog/catalog-navigation-highlight.tsx"
       ],
       "coreTest": "packages/view-parity/tests/core.spec.mjs"
     },
@@ -842,6 +844,26 @@
       "query": {
         "example": "interactive"
       },
+      "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs",
+      "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
+    },
+    {
+      "component": "tooltip",
+      "route": "/sandbox/tooltip",
+      "fixture": "tooltip-public",
+      "query": {
+        "example": "interactive"
+      },
+      "referenceSources": [
+        "src/lib/components/ui/tooltip/Tooltip.svelte",
+        "src/lib/components/ui/tooltip/TooltipShortcut.svelte",
+        "src/lib/components/ui/tooltip/tooltip-trigger-wrapper.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/tooltip.tsx",
+        "apps/react/src/components/ui/tooltip-trigger-wrapper.tsx",
+        "apps/react/src/catalog/overlay-interaction-examples.tsx"
+      ],
       "coreTest": "packages/view-parity/tests/advanced.core.spec.mjs",
       "extendedTest": "packages/view-parity/tests/advanced.extended.spec.mjs"
     }
