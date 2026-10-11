@@ -1,11 +1,20 @@
 // Source: src/lib/components/ui/radio-group; shadcn Radix semantics with Intent option rows.
-import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react';
 import { RadioGroup as RadioPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import { useChoiceRows, ChoiceRowsHighlight } from './radio-group-rows';
 const RadioContext = createContext<{
   value: string;
   disabled: boolean;
+  setValue: (value: string) => void;
   rows: ReturnType<typeof useChoiceRows>;
 } | null>(null);
 export type RadioGroupProps = ComponentProps<typeof RadioPrimitive.Root> & {
@@ -26,11 +35,23 @@ export function RadioGroup({
   children,
   ...props
 }: RadioGroupProps) {
-  const [internal, setInternal] = useState(defaultValue);
-  const selected = value ?? internal;
+  const [internal, setInternal] = useState({ value: defaultValue });
+  const selected = value ?? internal.value;
+  const currentValue = useRef(selected);
+  useLayoutEffect(() => {
+    currentValue.current = selected;
+  });
   const rows = useChoiceRows();
+  function setValue(next: string) {
+    if (readOnly || readonly || currentValue.current === next) return;
+    // Focus selection and Radix's arrow-triggered click can share one event.
+    // Commit once synchronously, then reconcile with controlled props after render.
+    currentValue.current = next;
+    setInternal({ value: next });
+    onValueChange?.(next);
+  }
   return (
-    <RadioContext value={{ value: selected, disabled, rows }}>
+    <RadioContext value={{ value: selected, disabled, rows, setValue }}>
       <RadioPrimitive.Root
         {...props}
         ref={(node) => {
@@ -39,11 +60,7 @@ export function RadioGroup({
           if (ref) ref.current = node;
         }}
         value={selected}
-        onValueChange={(next) => {
-          if (readOnly || readonly) return;
-          setInternal(next);
-          onValueChange?.(next);
-        }}
+        onValueChange={setValue}
         disabled={disabled}
         aria-readonly={readOnly || readonly || undefined}
         orientation={layout === 'inline' ? 'horizontal' : 'vertical'}
@@ -73,6 +90,7 @@ export function RadioGroupItem({
   disabled = false,
   marker,
   className,
+  onFocus,
   ...props
 }: RadioGroupItemProps) {
   const context = useContext(RadioContext);
@@ -84,6 +102,13 @@ export function RadioGroupItem({
       {...props}
       value={value}
       disabled={disabled || context.disabled}
+      onFocus={(event) => {
+        onFocus?.(event);
+        // Bits UI selects a focused item once the group has a value, independent
+        // of keyup timing; an initially empty group remains unselected on entry.
+        if (!event.defaultPrevented && context.value && !disabled && !context.disabled)
+          context.setValue(value);
+      }}
       data-choice-value={value}
       data-choice-index={index}
       className={cn(
