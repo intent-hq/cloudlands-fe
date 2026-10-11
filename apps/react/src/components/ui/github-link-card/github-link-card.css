@@ -1,0 +1,60 @@
+/* Card body rules from src/lib/components/ui/tooltip/LinkTooltip.svelte. */
+.github-link-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.github-link-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+}
+
+.github-link-card-ref {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-link-card-title {
+  font-weight: 500;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.github-link-card-meta,
+.github-link-card-branches {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+}
+
+.github-link-card-branches {
+  font-family: var(--font-code);
+}
+
+.github-link-card-skeleton {
+  display: grid;
+  gap: 6px;
+  padding: 3px 0 4px;
+}
+
+.github-link-card .link-tooltip-url {
+  font-size: 11px;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

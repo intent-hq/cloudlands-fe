@@ -1,0 +1,18 @@
+/* Inline frame only: LinkTooltip.svelte's card/static geometry, without its live host. */
+.github-link-card-display-preview {
+  pointer-events: none;
+  width: min(360px, calc(100vw - 16px));
+  max-width: none;
+  padding: 8px 10px 5px;
+  background: var(--color-popover);
+  color: var(--color-popover-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.github-link-card-display-preview .link-tooltip-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
