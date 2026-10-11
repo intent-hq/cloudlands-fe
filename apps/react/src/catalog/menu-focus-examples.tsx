@@ -29,9 +29,11 @@ import { CatalogLink } from './catalog-link';
 
 function StaticMenuExample({
   forceMount,
+  useTrigger,
   onUnmount,
 }: {
   forceMount: boolean;
+  useTrigger: boolean;
   onUnmount: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(true);
@@ -46,9 +48,11 @@ function StaticMenuExample({
   return (
     <div className="grid gap-3" data-testid="static-menu-host">
       <Menu.Root staticPosition defaultOpen onOpenChange={setMenuOpen}>
-        <Menu.Trigger asChild>
-          <Button data-testid="static-menu-trigger">Toggle static menu</Button>
-        </Menu.Trigger>
+        {useTrigger && (
+          <Menu.Trigger asChild>
+            <Button data-testid="static-menu-trigger">Toggle static menu</Button>
+          </Menu.Trigger>
+        )}
         <Menu.Content
           aria-label="Static focus menu"
           data-testid="static-focus-menu"
@@ -175,6 +179,7 @@ function StaticMenuExample({
 export function MenuFocusExamples() {
   const [mounted, setMounted] = useState(false);
   const [forceMount, setForceMount] = useState(false);
+  const [useTrigger, setUseTrigger] = useState(true);
   const [outsideClicks, setOutsideClicks] = useState(0);
   return (
     <section
@@ -202,6 +207,14 @@ export function MenuFocusExamples() {
         </Button>
         <Label className="flex items-center gap-2">
           <Switch
+            aria-label="Use menu trigger"
+            checked={useTrigger}
+            onCheckedChange={setUseTrigger}
+          />
+          Use menu trigger
+        </Label>
+        <Label className="flex items-center gap-2">
+          <Switch
             aria-label="Force mount menu content"
             checked={forceMount}
             onCheckedChange={setForceMount}
@@ -220,7 +233,13 @@ export function MenuFocusExamples() {
         {outsideClicks}
       </output>
       <output aria-label="Menu mounted">{String(mounted)}</output>
-      {mounted && <StaticMenuExample forceMount={forceMount} onUnmount={() => setMounted(false)} />}
+      {mounted && (
+        <StaticMenuExample
+          forceMount={forceMount}
+          useTrigger={useTrigger}
+          onUnmount={() => setMounted(false)}
+        />
+      )}
     </section>
   );
 }
