@@ -2,6 +2,13 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // The independent React renderer owns its checks; retain this gate's Svelte scope.
   "ignoreWorkspaces": ["apps/react"],
+  "workspaces": {
+    "packages/view-parity": {
+      // The runner passes this config to Playwright through a computed file path.
+      "entry": ["scripts/run.mjs", "playwright.config.mjs", "tests/**/*.spec.mjs"],
+      "project": ["**/*.mjs"],
+    },
+  },
   // The remaining 20 duplicate-export rows are deliberate KEEPs (triaged): both names in
   // each pair have live importers (icon compat aliases, per-channel schema aliases,
   // mock-module shape, etc.). Consolidation is a rename follow-up, not dead code.
