@@ -15,7 +15,10 @@ function DirectoryPickerLiveExample({ search }: { search: URLSearchParams }) {
   const [selections, setSelections] = useState(0);
   const [closes, setCloses] = useState(0);
   return (
-    <section className="grid gap-4" data-functional-example="live-directory-picker">
+    <section
+      className="grid min-w-0 grid-cols-1 gap-4"
+      data-functional-example="live-directory-picker"
+    >
       <h2>Live directory picker</h2>
       <Input
         aria-label="Initial directory path"
@@ -38,7 +41,9 @@ function DirectoryPickerLiveExample({ search }: { search: URLSearchParams }) {
           setOpen(false);
         }}
       />
-      <output aria-label="Selected live path">{selected}</output>
+      <output className="break-all" aria-label="Selected live path">
+        {selected}
+      </output>
       <output aria-label="Live selection count">{selections}</output>
       <output aria-label="Live picker close count">{closes}</output>
       <output aria-label="Live picker open">{String(open)}</output>
@@ -59,7 +64,7 @@ function LinkTooltipLiveExample({ search }: { search: URLSearchParams }) {
     return createLinkTooltipHandler(container.current);
   }, [hostMounted]);
   return (
-    <section className="grid gap-4" data-functional-example="live-link-tooltip">
+    <section className="grid min-w-0 grid-cols-1 gap-4" data-functional-example="live-link-tooltip">
       <h2>Live link preview</h2>
       <Input
         aria-label="Forge URL"
@@ -98,7 +103,9 @@ function LinkTooltipLiveExample({ search }: { search: URLSearchParams }) {
         )}
       </div>
       {hostMounted && <LinkTooltip />}
-      <output aria-label="Live link context">{JSON.stringify(context)}</output>
+      <output className="break-all" aria-label="Live link context">
+        {JSON.stringify(context)}
+      </output>
       <output aria-label="Tooltip host mounted">{String(hostMounted)}</output>
     </section>
   );
