@@ -9,9 +9,9 @@ export function sceneUrl(baseUrl, entry) {
     width: entry.width,
     theme: entry.theme,
     motion: entry.motion,
-    fit: "component",
+    fit: entry.kind === "catalog-fixture" ? undefined : "component",
   })) {
-    url.searchParams.set(key, String(value));
+    if (value !== undefined) url.searchParams.set(key, String(value));
   }
   return url.href;
 }
@@ -80,12 +80,74 @@ export async function openScene(page, baseUrl, entry, errors = []) {
   }
 }
 
-export async function stableScreenshot(page) {
-  const frame = page.locator(frameSelector);
+export function captureSelector(entry) {
+  return entry.kind === "catalog-fixture"
+    ? `[data-catalog-preview="${entry.scene}"][data-catalog-fixture-id="${entry.fixture}"]`
+    : frameSelector;
+}
+
+export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
+  const url = sceneUrl(baseUrl, entry);
+  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
+  if (!response?.ok())
+    throw new Error(`Catalog document returned HTTP ${response?.status()}: ${url}`);
+  await expect(page.getByTestId("catalog-component-page")).toBeVisible();
+  const frame = page.locator(captureSelector(entry));
+  await expect(frame, `Missing real fixture ${entry.scene}/${entry.fixture}`).toHaveCount(1);
+  await expect(frame).toBeVisible();
+  const rendered = frame.locator(`[data-catalog-renderer-fixture="${entry.fixture}"]`);
+  await expect(rendered).toHaveCount(1);
+  const stateTokens = () =>
+    rendered
+      .locator("[data-catalog-rendered-state]")
+      .evaluateAll((elements) =>
+        [
+          ...new Set(
+            elements.flatMap((element) =>
+              element.getAttribute("data-catalog-rendered-state").split(/\s+/),
+            ),
+          ),
+        ].sort(),
+      );
+  await expect
+    .poll(stateTokens, {
+      message: "Catalog renderer readiness states differ from the reviewed source fixture",
+    })
+    .toEqual([...entry.renderedStates].sort());
+  if (entry.dismissInitialDialog) {
+    await expect(
+      page.getByRole("dialog", { name: "Catalog dialog open state", exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await Promise.all(
+      [...document.images].filter((image) => !image.complete).map((image) => image.decode()),
+    );
+  });
+  await frame.scrollIntoViewIfNeeded();
+  await page.mouse.move(0, 0);
+  if (errors.length) throw new Error(errors.join("\n"));
+  return {
+    requestedUrl: url,
+    url: page.url(),
+    fixture: entry.fixture,
+    renderedStates: await stateTokens(),
+    readiness:
+      "real catalog renderer/state markers, fonts/images loaded; two identical captures required",
+    dismissInitialDialog: Boolean(entry.dismissInitialDialog),
+  };
+}
+
+export async function stableScreenshot(page, entry) {
+  const frame = page.locator(entry ? captureSelector(entry) : frameSelector);
   let previous;
   // Repeated real captures detect moving content without injecting CSS or freezing clocks.
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    await page.locator('[data-preview-ready="true"][data-preview-stable="true"]').waitFor();
+    if (entry?.kind !== "catalog-fixture")
+      await page.locator('[data-preview-ready="true"][data-preview-stable="true"]').waitFor();
     const png = await frame.screenshot({
       animations: "allow",
       caret: "hide",

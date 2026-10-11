@@ -35,7 +35,7 @@ export default defineConfig({
   },
   projects: [
     { name: "parity", testMatch: "parity.spec.mjs" },
-    { name: "core", testMatch: "core.spec.mjs" },
-    { name: "extended", testMatch: "extended.spec.mjs" },
+    { name: "core", testMatch: ["core.spec.mjs", "*.core.spec.mjs"] },
+    { name: "extended", testMatch: ["extended.spec.mjs", "*.extended.spec.mjs"] },
   ],
 });

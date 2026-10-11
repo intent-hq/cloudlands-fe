@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
 function git(root, ...args) {
@@ -69,26 +69,62 @@ export function assertSourcePointers(root, manifest, candidateRoot) {
     throw new Error("The checked manifest fingerprint does not match the pinned reference commit.");
   }
   const sources = new Set();
-  const candidateSources = new Set();
   for (const item of [...manifest.parity, ...manifest.functional]) {
     for (const source of item.referenceSources) sources.add(source);
-    for (const source of item.candidateSources) candidateSources.add(source);
   }
   for (const source of sources) {
     git(root, "cat-file", "-e", `${manifest.reference.commit}:${source}`);
   }
-  if (candidateRoot) {
-    for (const source of candidateSources) {
-      if (!statSync(path.join(candidateRoot, source), { throwIfNoEntry: false })?.isFile()) {
-        throw new Error(
-          `Missing candidate source pointer ${source}; the manifest cannot claim an unavailable component.`,
-        );
-      }
-    }
+  if (candidateRoot) assertCandidatePointers(candidateRoot, manifest);
+}
+
+export function resolveCandidateRoot(root) {
+  const resolved = realpathSync(path.resolve(root));
+  if (realpathSync(git(resolved, "rev-parse", "--show-toplevel")) !== resolved)
+    throw new Error(`Candidate root must be the checkout root: ${resolved}`);
+  return resolved;
+}
+
+export function assertCandidatePointers(root, manifest) {
+  const sources = new Set(
+    [...manifest.parity, ...manifest.functional].flatMap((item) => item.candidateSources),
+  );
+  for (const source of sources) {
+    const absolute = path.join(root, source);
+    if (!statSync(absolute, { throwIfNoEntry: false })?.isFile())
+      throw new Error(
+        `Missing candidate source pointer ${source} in ${root}; the manifest cannot claim an unavailable component.`,
+      );
+    const relative = path.relative(root, realpathSync(absolute));
+    if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+      throw new Error(`Candidate source pointer escapes its declared checkout: ${source}`);
   }
 }
 
+const candidatePaths = [
+  "apps/react",
+  "src",
+  "static",
+  "messages",
+  "project.inlang",
+  "scripts",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  ".npmrc",
+];
+
 export function candidateProvenance(root) {
+  root = resolveCandidateRoot(root);
+  const dirtyPaths = git(root, "status", "--porcelain=v1", "--untracked-files=all");
+  const dirtySources = git(
+    root,
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=all",
+    "--",
+    ...candidatePaths,
+  );
   const files = git(
     root,
     "ls-files",
@@ -97,13 +133,7 @@ export function candidateProvenance(root) {
     "--others",
     "--exclude-standard",
     "--",
-    "apps/react",
-    "src",
-    "static",
-    "messages",
-    "project.inlang",
-    "package.json",
-    "pnpm-lock.yaml",
+    ...candidatePaths,
   )
     .split("\0")
     .filter(Boolean)
@@ -120,7 +150,14 @@ export function candidateProvenance(root) {
     }
   }
   return {
+    root,
     commit: git(root, "rev-parse", "HEAD"),
+    dirty: Boolean(dirtyPaths),
+    dirtyPaths,
+    sourceDirty: Boolean(dirtySources),
+    dirtySources,
+    sourcePaths: candidatePaths,
+    serverCheckoutAssociation: "operator-declared; no server attestation",
     checkout: git(root, "rev-parse", "--show-toplevel"),
     sourceSha256: hashes,
     sourceTreeSha256: createHash("sha256").update(JSON.stringify(hashes)).digest("hex"),

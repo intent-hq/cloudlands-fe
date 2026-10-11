@@ -1,8 +1,24 @@
 import { test as base, expect } from "@playwright/test";
-import { endpoint } from "./manifest.mjs";
+import { endpoint, repoRoot } from "./manifest.mjs";
+import { candidateProvenance, changedSources } from "./provenance.mjs";
 import { observeErrors } from "./browser.mjs";
 
 export const test = base.extend({
+  sourceProvenance: [
+    async ({ browserName }, use, testInfo) => {
+      const root = process.env.PARITY_CANDIDATE_ROOT || repoRoot;
+      const before = candidateProvenance(root);
+      await use();
+      const after = candidateProvenance(root);
+      const changedCandidatePaths = changedSources(before, after);
+      await testInfo.attach("candidate-provenance.json", {
+        body: JSON.stringify({ browserName, before, after, changedCandidatePaths }, null, 2),
+        contentType: "application/json",
+      });
+      expect(changedCandidatePaths, "Candidate sources changed during this journey").toEqual([]);
+    },
+    { auto: true },
+  ],
   browserErrors: [
     async ({ page }, use, testInfo) => {
       const errors = observeErrors(page);

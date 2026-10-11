@@ -10,12 +10,22 @@ import {
   verifyReference,
   candidateProvenance,
   changedSources,
+  assertCandidatePointers,
+  resolveCandidateRoot,
 } from "../lib/provenance.mjs";
 
 const require = createRequire(import.meta.url);
 const [mode = "help", ...args] = process.argv.slice(2);
 const options = {};
-const names = new Set(["reference-url", "candidate-url", "reference-root", "artifacts", "case"]);
+const names = new Set([
+  "reference-url",
+  "candidate-url",
+  "reference-root",
+  "candidate-root",
+  "artifacts",
+  "case",
+  "grep",
+]);
 let output;
 
 try {
@@ -41,6 +51,9 @@ try {
     console.log(await readFile(path.join(packageRoot, "USAGE.txt"), "utf8"));
   } else {
     const manifest = loadManifest();
+    const candidateRoot = resolveCandidateRoot(
+      options["candidate-root"] || process.env.PARITY_CANDIDATE_ROOT || repoRoot,
+    );
     const referenceRoot = path.resolve(
       options["reference-root"] || process.env.PARITY_REFERENCE_ROOT || repoRoot,
     );
@@ -50,7 +63,7 @@ try {
         "Inspection only. Review source and named-state changes before manually editing scene-manifest.json. Nothing was updated.",
       );
     } else if (mode === "check") {
-      assertSourcePointers(referenceRoot, manifest, repoRoot);
+      assertSourcePointers(referenceRoot, manifest, candidateRoot);
       selectedCases(manifest, options.case);
       console.log(
         `Manifest valid: ${manifest.parity.length} explicit parity cases, ${manifest.uncovered.length} explicitly uncovered surfaces. Reference source pointers exist at ${manifest.reference.commit}. This does not prove live scene availability or visual parity.`,
@@ -93,15 +106,22 @@ try {
       );
       const relative = path.relative(repoRoot, artifacts);
       if (
-        !relative.startsWith(`..${path.sep}`) &&
-        relative !== ".." &&
-        !path.isAbsolute(relative) &&
         relative !== ".demo-artifacts/view-parity" &&
         !relative.startsWith(`.demo-artifacts/view-parity${path.sep}`)
       ) {
         throw new Error(
-          "Evidence inside the checkout must go under .demo-artifacts/view-parity; application source directories are not allowed.",
+          "Evidence must remain under the owning workspace's .demo-artifacts/view-parity.",
         );
+      }
+      if (candidateRoot !== repoRoot) {
+        const fromCandidate = path.relative(candidateRoot, artifacts);
+        if (
+          fromCandidate === "" ||
+          (!fromCandidate.startsWith(`..${path.sep}`) &&
+            fromCandidate !== ".." &&
+            !path.isAbsolute(fromCandidate))
+        )
+          throw new Error("Evidence cannot be written inside the isolated candidate checkout.");
       }
       await mkdir(artifacts, { recursive: true });
       output = await mkdtemp(
@@ -110,18 +130,22 @@ try {
       console.log(`Evidence: ${output}`);
       let reference;
       if (mode === "parity" && !options.list) {
-        assertSourcePointers(referenceRoot, manifest, repoRoot);
+        assertSourcePointers(referenceRoot, manifest, candidateRoot);
         reference = verifyReference(referenceRoot, manifest.reference);
       }
-      const candidate = candidateProvenance(repoRoot);
+      assertCandidatePointers(candidateRoot, manifest);
+      const candidate = candidateProvenance(candidateRoot);
       const session = {
         startedAt: new Date().toISOString(),
         mode,
         listOnly: Boolean(options.list),
+        grep: options.grep || process.env.PARITY_GREP,
         referenceUrl,
         candidateUrl,
         reference,
         candidate,
+        harnessRoot: repoRoot,
+        serverCheckoutAssociation: "operator-declared for both URLs; no server attestation",
         selectedCases: mode === "parity" ? cases.map((entry) => entry.id) : undefined,
         uncovered: manifest.uncovered,
         manifest,
@@ -140,6 +164,9 @@ try {
           path.join(packageRoot, "playwright.config.mjs"),
           "--project",
           mode,
+          ...(options.grep || process.env.PARITY_GREP
+            ? ["--grep", options.grep || process.env.PARITY_GREP]
+            : []),
           ...(options.list ? ["--list"] : []),
         ],
         {
@@ -148,6 +175,7 @@ try {
             ...process.env,
             PARITY_RUN_DIR: output,
             PARITY_REFERENCE_ROOT: referenceRoot,
+            PARITY_CANDIDATE_ROOT: candidateRoot,
             PARITY_REFERENCE_URL: referenceUrl || "",
             PARITY_CANDIDATE_URL: candidateUrl || "",
             PARITY_CASE: options.case || process.env.PARITY_CASE || "",
@@ -165,11 +193,13 @@ try {
       process.removeListener("SIGINT", forward);
       process.removeListener("SIGTERM", forward);
       let drift;
+      let candidateAfter;
+      let referenceAfter;
       let changedCandidatePaths = [];
       if (!options.list) {
         try {
-          if (reference) verifyReference(referenceRoot, manifest.reference);
-          const candidateAfter = candidateProvenance(repoRoot);
+          candidateAfter = candidateProvenance(candidateRoot);
+          if (reference) referenceAfter = verifyReference(referenceRoot, manifest.reference);
           changedCandidatePaths = changedSources(candidate, candidateAfter);
           if (candidateAfter.sourceTreeSha256 !== candidate.sourceTreeSha256)
             throw new Error(
@@ -188,6 +218,8 @@ try {
             exitCode,
             sourceDrift: drift,
             changedCandidatePaths,
+            candidateAfter,
+            referenceAfter,
           },
           null,
           2,

@@ -244,28 +244,165 @@
         "apps/react/src/catalog/preview-discovery.tsx"
       ],
       "reason": "Preserve semantic token appearance under the dark theme."
+    },
+    {
+      "id": "checkbox-catalog",
+      "kind": "catalog-fixture",
+      "scene": "checkbox",
+      "fixture": "checkbox-state-matrix",
+      "renderedStates": ["unchecked", "checked", "mixed", "disabled", "required-invalid"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/BasicCatalogPreview.svelte",
+        "src/lib/components/ui/checkbox/checkbox.fixtures.ts",
+        "src/lib/component-catalog/CatalogComponentPage.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/checkbox.tsx",
+        "apps/react/src/catalog/basic-catalog-preview.tsx",
+        "apps/react/src/catalog/catalog-component-page.tsx"
+      ],
+      "reason": "Compare the actual source catalog fixture at rest; declared fixture labels are readiness metadata, not evidence every interaction state was exercised."
+    },
+    {
+      "id": "switch-catalog",
+      "kind": "catalog-fixture",
+      "scene": "switch",
+      "fixture": "switch-state-matrix",
+      "renderedStates": ["off", "on", "disabled", "required-invalid"],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/BasicCatalogPreview.svelte",
+        "src/lib/components/ui/switch/switch.fixtures.ts",
+        "src/lib/component-catalog/CatalogComponentPage.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/switch.tsx",
+        "apps/react/src/catalog/basic-catalog-preview.tsx",
+        "apps/react/src/catalog/catalog-component-page.tsx"
+      ],
+      "reason": "Compare the actual source catalog fixture at rest; declared fixture labels are readiness metadata, not evidence every interaction state was exercised."
+    },
+    {
+      "id": "input-catalog",
+      "kind": "catalog-fixture",
+      "scene": "input",
+      "fixture": "input-state-matrix",
+      "renderedStates": [
+        "default",
+        "rest",
+        "hover",
+        "focus",
+        "empty",
+        "placeholder",
+        "described",
+        "keyboard-focus",
+        "light",
+        "dark",
+        "compact-28",
+        "medium-32",
+        "large-36",
+        "zoom-200",
+        "reduced-motion",
+        "disabled",
+        "read-only",
+        "invalid",
+        "error",
+        "file",
+        "long-content"
+      ],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte",
+        "src/lib/components/ui/input/input.fixtures.ts",
+        "src/lib/component-catalog/CatalogComponentPage.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/input.tsx",
+        "apps/react/src/catalog/content-catalog-preview.tsx",
+        "apps/react/src/catalog/catalog-component-page.tsx"
+      ],
+      "reason": "Compare the actual source catalog fixture at rest; declared fixture labels are readiness metadata, not evidence every interaction state was exercised."
+    },
+    {
+      "id": "tabs-catalog",
+      "kind": "catalog-fixture",
+      "scene": "tabs",
+      "fixture": "tabs-state-matrix",
+      "renderedStates": [
+        "default",
+        "subtle",
+        "selected",
+        "proximity-hover",
+        "keyboard-navigation",
+        "disabled",
+        "compact",
+        "reduced-motion"
+      ],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/NavigationPrimitivesCatalogPreview.svelte",
+        "src/lib/components/ui/tabs/tabs.fixtures.ts",
+        "src/lib/component-catalog/CatalogComponentPage.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/tabs.tsx",
+        "apps/react/src/catalog/navigation-catalog-preview.tsx",
+        "apps/react/src/catalog/catalog-component-page.tsx"
+      ],
+      "reason": "Compare the actual source catalog fixture at rest; declared fixture labels are readiness metadata, not evidence every interaction state was exercised."
+    },
+    {
+      "id": "dialog-catalog",
+      "kind": "catalog-fixture",
+      "scene": "dialog",
+      "fixture": "dialog-state-matrix",
+      "renderedStates": [
+        "closed",
+        "open",
+        "focused",
+        "nested-content",
+        "long-content",
+        "disabled-close"
+      ],
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/component-catalog/renderers/OverlayCatalogPreview.svelte",
+        "src/lib/components/ui/dialog/dialog.fixtures.ts",
+        "src/lib/component-catalog/CatalogComponentPage.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/components/ui/dialog.tsx",
+        "apps/react/src/catalog/dialog-catalog-preview.tsx",
+        "apps/react/src/catalog/catalog-component-page.tsx"
+      ],
+      "reason": "Compare the actual source catalog fixture at rest; declared fixture labels are readiness metadata, not evidence every interaction state was exercised.",
+      "dismissInitialDialog": true
     }
   ],
   "uncovered": [
     {
-      "scene": "input",
-      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
+      "scene": "catalog-fixtures",
+      "reason": "Only the explicitly listed initial fixture views are compared. Interactive states, other themes and widths, open portals, and every unlisted catalog family remain unaccepted; declared fixture state labels are not executed coverage."
     },
     {
-      "scene": "checkbox",
-      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
-    },
-    {
-      "scene": "switch",
-      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
-    },
-    {
-      "scene": "tabs",
-      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
-    },
-    {
-      "scene": "dialog",
-      "reason": "The reference has catalog fixtures but no named preview contract. Candidate functional coverage does not establish Svelte visual parity."
+      "scene": "application",
+      "reason": "Component catalog journeys do not cover real daemon flows or Electron application behavior. See migration-inventory.json for the full denominator."
     }
   ],
   "functional": [
@@ -336,6 +473,28 @@
         "apps/react/src/catalog/dialog-catalog-preview.tsx"
       ],
       "coreTest": "packages/view-parity/tests/core.spec.mjs"
+    },
+    {
+      "component": "toggle",
+      "route": "/sandbox/toggle",
+      "fixture": "toggle-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/BasicCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/toggle.tsx",
+        "apps/react/src/catalog/basic-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs"
+    },
+    {
+      "component": "toggle-group",
+      "route": "/sandbox/toggle-group",
+      "fixture": "toggle-group-state-matrix",
+      "referenceSources": ["src/lib/component-catalog/renderers/BasicCatalogPreview.svelte"],
+      "candidateSources": [
+        "apps/react/src/components/ui/toggle-group.tsx",
+        "apps/react/src/catalog/basic-catalog-preview.tsx"
+      ],
+      "coreTest": "packages/view-parity/tests/controls.core.spec.mjs"
     }
   ]
 }

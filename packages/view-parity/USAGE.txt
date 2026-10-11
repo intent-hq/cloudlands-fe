@@ -4,11 +4,10 @@ Run from the repository root with corepack pnpm. The foundation workspace instal
 owns dependencies and the root lockfile. This package never launches a daemon,
 intercepts a request, fabricates a response, or updates screenshot baselines.
 
-Coverage scope: "core" currently means six foundational controls only: button,
-input, checkbox, switch, tabs and dialog. It is not the application's full core
-journey suite. Form submission/validation, ListView, autosave, real-daemon flows,
-and Electron journeys remain pending. Named screenshot parity currently covers
-button only; migration-inventory.json owns the full migration denominator.
+Coverage scope: component catalog journeys only, never full application coverage.
+Named-scene comparisons and source catalog fixture comparisons are separate case
+kinds. The manifest lists every checked source and explicitly records gaps;
+migration-inventory.json owns the full migration denominator.
 
   corepack pnpm --filter @intent/view-parity manifest:check
   corepack pnpm --filter @intent/view-parity browsers:install
@@ -35,8 +34,10 @@ Flags also accept environment variables:
   --reference-url   PARITY_REFERENCE_URL
   --candidate-url   PARITY_CANDIDATE_URL
   --reference-root  PARITY_REFERENCE_ROOT
+  --candidate-root  PARITY_CANDIDATE_ROOT
   --artifacts       PARITY_ARTIFACTS
   --case            PARITY_CASE (comma-separated exact case IDs; parity only)
+  --grep            PARITY_GREP (test title filter for focused reruns)
 
 --list enumerates tests without connecting to an app. It is not a test pass.
 Unknown cases and empty test projects fail. Core never runs parity or extended.
@@ -46,9 +47,10 @@ replacement for core. Playwright retries are disabled and .only is forbidden.
 Evidence and comparison
 
 Every run gets a fresh directory under .demo-artifacts/view-parity (gitignored).
---artifacts can choose another parent outside the checkout, or a parent under
-.demo-artifacts/view-parity. No application source directory is accepted.
-session.json records the manifest, selected cases, candidate file hashes, and
+--artifacts can choose a parent under the owning workspace's
+.demo-artifacts/view-parity only, outside an isolated candidate checkout.
+session.json records the manifest, selected cases, candidate root/commit/dirty
+status and file hashes, and
 reference source fingerprint. results.json and html/ contain Playwright results.
 Each captured case retains reference.png, candidate.png, diff.png and
 comparison.json, including viewport, browser version, timestamp, source paths,
@@ -70,13 +72,47 @@ no auto-blessing command and no --update-snapshots path. Fix the candidate or
 review an intentional reference change explicitly. A functional pass alone is
 never proof of visual parity. Uncovered surfaces remain in scene-manifest.json.
 
+Isolated candidates while parallel edits continue
+
+--candidate-root defaults to the owning checkout. Set it to the exact Git worktree
+root served by --candidate-url; paths inside a checkout are rejected. All candidate
+source-pointer checks, session/journey/case hashes and completion hashes use that
+root. Evidence still defaults to the owning workspace's .demo-artifacts/view-parity,
+not the candidate checkout. Do not use the candidate as an evidence directory.
+A dirty candidate is recorded honestly; changing content during a run fails.
+
+Example from the owning workspace (substitute the ready commit):
+  git worktree add --detach .demo-artifacts/view-parity/candidate <ready-commit>
+  cd .demo-artifacts/view-parity/candidate
+  corepack pnpm install --frozen-lockfile --ignore-scripts
+  corepack pnpm --filter @intent/react dev --port 5176
+
+Install dependencies in that checkout; shared node_modules symlinks can both
+change during a run and put font URLs outside Vite's file-serving allow list.
+The renderer predev step generates localization inputs. Native Electron install
+scripts are not needed for this browser-only app. In the owning workspace:
+  corepack pnpm --filter @intent/view-parity test:core \
+    --candidate-root /absolute/path/to/candidate --candidate-url http://127.0.0.1:5176
+
+The same option works for check, parity, extended and test discovery, and the
+PARITY_CANDIDATE_ROOT environment variable is equivalent. The harness itself and
+its manifest always come from the owning workspace. Source fingerprints do not
+attest a running server or inspect installed dependency contents.
+
 Refreshing a separately maintained Svelte reference
 
 The reference must have clean tracked sources at the inspected commit. The
 manifest fingerprints source, fixtures, fonts/assets, styles, messages, build
 configuration, scripts and dependency inputs. Unrelated commits may advance
 HEAD if those inputs are identical. Dirty or changed inputs fail before capture;
-inputs are checked again after the run. Candidate edits during a run also fail.
+inputs are checked again after the run. Candidate content edits during a run also fail.
+completion.json retains post-run hashes; each journey attaches its own pre/post
+candidate provenance. Catalog-fixture captures require the exact fixture and
+renderer IDs, the reviewed rendered-state markers, loaded fonts/images and two
+identical PNGs. These markers describe fixture availability, not executed state
+coverage. Catalog captures omit state/fit and crop the actual fixture wrapper.
+The closed-dialog fixture explicitly dismisses the separately mounted initial
+dialog with Escape before capture. Open overlays are not covered by that crop.
 
   corepack pnpm --filter @intent/view-parity reference:inspect \
     --reference-root /absolute/path/to/current-svelte-checkout
@@ -89,7 +125,7 @@ from that checkout and rerun. A reference branch/worktree can track current
 Svelte development independently of the React branch.
 
 Provenance limitation: the existing preview API has no server commit endpoint.
-The URL-to-checkout association is operator-declared, recorded as such, and
+Both URL-to-checkout associations are operator-declared, recorded as such, and
 cannot be independently proven by this package. Source fingerprints detect
 checkout drift; they cannot identify an unrelated stale server at the same URL.
 Keep that server attached to the declared checkout and restart it after changes.

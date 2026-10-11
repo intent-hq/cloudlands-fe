@@ -45,9 +45,24 @@ export function loadManifest() {
     );
     ids.add(entry.id);
     requireValue(
-      /^[a-z0-9-]+$/.test(entry.scene) && /^[a-z0-9-]+$/.test(entry.state),
-      `${entry.id}: scene and state required`,
+      /^[a-z0-9-]+$/.test(entry.scene) &&
+        (entry.kind === "catalog-fixture"
+          ? /^[a-z0-9-]+$/.test(entry.fixture)
+          : /^[a-z0-9-]+$/.test(entry.state)),
+      `${entry.id}: scene and named state or catalog fixture required`,
     );
+    requireValue(
+      !entry.kind || ["named-scene", "catalog-fixture"].includes(entry.kind),
+      `${entry.id}: unknown capture kind`,
+    );
+    if (entry.kind === "catalog-fixture") {
+      requireValue(
+        Array.isArray(entry.renderedStates) &&
+          entry.renderedStates.length > 0 &&
+          entry.renderedStates.every((value) => /^[a-z0-9-]+$/.test(value)),
+        `${entry.id}: catalog rendered-state readiness contract required`,
+      );
+    }
     requireValue(
       ["light", "dark"].includes(entry.theme),
       `${entry.id}: explicit light/dark theme required`,
@@ -78,8 +93,13 @@ export function loadManifest() {
   );
   requireValue(Array.isArray(manifest.uncovered), "uncovered surfaces must be explicit");
   requireValue(
-    Array.isArray(manifest.functional) && manifest.functional.length === 6,
-    "the first six core controls must be mapped",
+    Array.isArray(manifest.functional) && manifest.functional.length >= 6,
+    "functional sources must be mapped",
+  );
+  requireValue(
+    new Set(manifest.functional.map((entry) => entry.component)).size ===
+      manifest.functional.length,
+    "functional components must be unique",
   );
   const components = new Set(manifest.functional.map((entry) => entry.component));
   requireValue(

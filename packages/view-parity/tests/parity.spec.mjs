@@ -3,7 +3,13 @@ import { writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { loadManifest, selectedCases, endpoint, repoRoot } from "../lib/manifest.mjs";
 import { verifyReference, candidateProvenance, changedSources } from "../lib/provenance.mjs";
-import { openScene, observeErrors, stableScreenshot, frameSelector } from "../lib/browser.mjs";
+import {
+  openScene,
+  observeErrors,
+  stableScreenshot,
+  captureSelector,
+  openCatalogFixture,
+} from "../lib/browser.mjs";
 import { compareImages } from "../lib/compare.mjs";
 
 const manifest = loadManifest();
@@ -14,7 +20,7 @@ for (const entry of selectedCases(manifest)) {
     const candidateUrl = endpoint(process.env.PARITY_CANDIDATE_URL, "PARITY_CANDIDATE_URL");
     const referenceRoot = process.env.PARITY_REFERENCE_ROOT;
     const before = verifyReference(referenceRoot, manifest.reference);
-    const candidateBefore = candidateProvenance(repoRoot);
+    const candidateBefore = candidateProvenance(process.env.PARITY_CANDIDATE_ROOT || repoRoot);
     const options = {
       viewport: { width: entry.width, height: entry.height },
       deviceScaleFactor: 1,
@@ -30,34 +36,39 @@ for (const entry of selectedCases(manifest)) {
       const candidate = await candidateContext.newPage();
       const referenceErrors = observeErrors(reference);
       const candidateErrors = observeErrors(candidate);
+      const open = entry.kind === "catalog-fixture" ? openCatalogFixture : openScene;
       const [referenceState, candidateState] = await Promise.all([
-        openScene(reference, referenceUrl, entry, referenceErrors),
-        openScene(candidate, candidateUrl, entry, candidateErrors),
+        open(reference, referenceUrl, entry, referenceErrors),
+        open(candidate, candidateUrl, entry, candidateErrors),
       ]);
-      const checkedStates = [
-        ...new Set(
-          manifest.parity.filter((item) => item.scene === entry.scene).map((item) => item.state),
-        ),
-      ].sort();
-      expect(
-        referenceState.availableStates.toSorted(),
-        "Reference named states changed: review missing or extra manifest cases",
-      ).toEqual(checkedStates);
-      expect(
-        candidateState.availableStates.toSorted(),
-        "Candidate does not implement the checked named-state contract",
-      ).toEqual(checkedStates);
+      if (entry.kind !== "catalog-fixture") {
+        const checkedStates = [
+          ...new Set(
+            manifest.parity
+              .filter((item) => item.scene === entry.scene && item.kind !== "catalog-fixture")
+              .map((item) => item.state),
+          ),
+        ].sort();
+        expect(
+          referenceState.availableStates.toSorted(),
+          "Reference named states changed: review missing or extra manifest cases",
+        ).toEqual(checkedStates);
+        expect(
+          candidateState.availableStates.toSorted(),
+          "Candidate does not implement the checked named-state contract",
+        ).toEqual(checkedStates);
+      }
       const [referencePng, candidatePng] = await Promise.all([
-        stableScreenshot(reference),
-        stableScreenshot(candidate),
+        stableScreenshot(reference, entry),
+        stableScreenshot(candidate, entry),
       ]);
       const [referenceAria, candidateAria] = await Promise.all([
-        reference.locator(frameSelector).ariaSnapshot(),
-        candidate.locator(frameSelector).ariaSnapshot(),
+        reference.locator(captureSelector(entry)).ariaSnapshot(),
+        candidate.locator(captureSelector(entry)).ariaSnapshot(),
       ]);
       const { diff, ...comparison } = compareImages(referencePng, candidatePng);
       const after = verifyReference(referenceRoot, manifest.reference);
-      const candidateAfter = candidateProvenance(repoRoot);
+      const candidateAfter = candidateProvenance(process.env.PARITY_CANDIDATE_ROOT || repoRoot);
       const metadata = {
         capturedAt: new Date().toISOString(),
         case: entry,
@@ -75,8 +86,7 @@ for (const entry of selectedCases(manifest)) {
         candidate: { ...candidateBefore, ...candidateState },
         sourceVerification: {
           referenceAfter: after,
-          candidateAfterCommit: candidateAfter.commit,
-          candidateAfterSha256: candidateAfter.sourceTreeSha256,
+          candidateAfter,
           changedCandidatePaths: changedSources(candidateBefore, candidateAfter),
         },
         comparison,
