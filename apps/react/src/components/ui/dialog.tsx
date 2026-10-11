@@ -1,6 +1,5 @@
 // Based on shadcn/ui dialog; sizes, primary-action focus and containment match dialog-content.svelte.
 import * as React from 'react';
-import { XIcon } from '@phosphor-icons/react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { m } from '$shared/paraglide/messages.js';
 import { cn } from '@/lib/utils';
@@ -177,7 +176,9 @@ export function DialogContent({
               iconOnly
               className="dialog-close-button absolute right-6 -translate-y-1/2 text-muted-foreground"
             >
-              <XIcon aria-hidden="true" />
+              <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+                <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
             </Button>
           </DialogPrimitive.Close>
         )}
@@ -227,6 +228,8 @@ export function DialogTitle({
 }
 export function DialogDescription({
   className,
+  asChild = false,
+  children,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Description>) {
   return (
@@ -234,6 +237,9 @@ export function DialogDescription({
       data-slot="dialog-description"
       className={cn('type-caption break-words text-muted-foreground', className)}
       {...props}
-    />
+      asChild
+    >
+      {asChild ? children : <div>{children}</div>}
+    </DialogPrimitive.Description>
   );
 }
