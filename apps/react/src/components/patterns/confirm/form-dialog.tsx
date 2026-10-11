@@ -94,7 +94,7 @@ export function FormDialog({
   const isBusy = busy || internalBusy;
   const uid = useId();
   const labelledBy = titleId ?? `${uid}-title`;
-  const describedBy = description ? (descriptionId ?? `${uid}-description`) : undefined;
+  const describedBy = descriptionId ?? (description ? `${uid}-description` : undefined);
 
   if (previousOpen !== open) {
     setPreviousOpen(open);
