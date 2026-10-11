@@ -1,0 +1,172 @@
+/* Presentation rules translated from DiagramControls.svelte. */
+
+.diagram-controls {
+  container-type: inline-size;
+  pointer-events: auto;
+  border-top: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-family: var(--font-ui);
+}
+
+.diagram-controls .controls-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: min(100%, var(--diagram-controls-width, 100%));
+  box-sizing: border-box;
+  margin-inline: auto;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.diagram-controls .narrative-region {
+  display: grid;
+  grid-row: 2;
+  min-width: 0;
+}
+
+.diagram-controls .narrative-region:empty {
+  display: none;
+}
+
+.diagram-controls .narrative {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.diagram-controls .narrative-title {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
+  font-weight: var(--text-caption-weight);
+  letter-spacing: var(--text-caption-tracking);
+}
+
+.diagram-controls .narrative-text {
+  color: hsl(var(--muted-foreground));
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
+  letter-spacing: var(--text-caption-tracking);
+}
+
+.diagram-controls .state-navigation,
+.diagram-controls .stepper,
+.diagram-controls .navigation-buttons {
+  display: flex;
+  align-items: center;
+}
+
+.diagram-controls .state-navigation {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  grid-row: 1;
+  min-width: 0;
+  max-width: 100%;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  align-self: start;
+}
+
+@container (min-width: 28rem) {
+  .diagram-controls .controls-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .diagram-controls .narrative-region {
+    grid-row: 1;
+  }
+
+  .diagram-controls .state-navigation {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    grid-column: 2;
+  }
+}
+
+.diagram-controls .stepper {
+  gap: 2px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.diagram-controls .navigation-buttons {
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.diagram-controls .step-counter {
+  flex: none;
+  color: hsl(var(--muted-foreground));
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper-dot {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+  position: relative;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.stepper-dot::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: hsl(var(--border));
+  transition:
+    width var(--motion-standard) var(--ease-standard),
+    background var(--motion-standard) var(--ease-standard);
+}
+
+.stepper-dot:hover {
+  background: hsl(var(--muted) / 0.55);
+}
+
+.stepper-dot:focus-visible {
+  outline: 2px solid hsl(var(--ring) / 0.55);
+  outline-offset: 1px;
+  background: hsl(var(--muted) / 0.55);
+}
+
+.stepper-dot.completed::after {
+  background: hsl(var(--primary) / 0.58);
+}
+
+.stepper-dot.active::after {
+  width: 14px;
+  background: hsl(var(--primary));
+}
+
+.diagram-nav-button {
+  color: hsl(var(--muted-foreground));
+}
+
+.diagram-nav-button:hover {
+  color: hsl(var(--foreground));
+}
+
+.catalog-reduced-motion .stepper-dot,
+.catalog-reduced-motion .stepper-dot::after {
+  transition: none;
+}
+
+@container style(--motion-reduced: 1) {
+  html:not(.catalog-full-motion) .stepper-dot,
+  html:not(.catalog-full-motion) .stepper-dot::after {
+    transition: none;
+  }
+}

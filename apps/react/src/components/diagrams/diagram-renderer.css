@@ -1,0 +1,338 @@
+/* Presentation rules translated from DiagramRenderer.svelte. */
+
+.diagram-renderer {
+  --diagram-camera-duration: 180ms;
+  --diagram-camera-easing: cubic-bezier(0.65, 0, 0.35, 1);
+  --diagram-move-exit-duration: 220ms;
+  --diagram-label-entry-delay: 60ms;
+  --diagram-label-entry-duration: 120ms;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 900px;
+  position: relative;
+  color: hsl(var(--foreground));
+  font-family: var(--font-ui);
+}
+
+.diagram-renderer:is(.compact-diagram, .fitted-diagram) {
+  max-height: none;
+}
+
+.diagram-renderer.has-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.diagram-renderer.stateful-diagram.has-content {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.diagram-actions {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  display: flex;
+  margin: var(--space-2) var(--space-2) var(--space-1);
+  padding: 2px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-small);
+  background: hsl(var(--background));
+  box-shadow: var(--elevation-raised);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-standard) var(--ease-standard);
+}
+
+.diagram-renderer:hover .diagram-actions,
+.diagram-renderer:focus-within .diagram-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.diagram-fit-button {
+  color: hsl(var(--muted-foreground));
+}
+
+.diagram-fit-button:hover,
+.diagram-fit-button:focus-visible {
+  color: hsl(var(--foreground));
+}
+
+.diagram-scroll-container {
+  grid-column: 1;
+  grid-row: 2;
+  overflow: auto;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.stateful-diagram .diagram-scroll-container {
+  overflow: auto;
+  max-height: 90vh;
+}
+
+.stepping-viewport {
+  transition: height var(--diagram-camera-duration) var(--diagram-camera-easing);
+}
+
+.stateful-diagram .diagram-content {
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.resizing * {
+  transition: none !important;
+  animation: none !important;
+}
+
+.stateful-diagram .diagram-svg-layer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+.diagram-content {
+  position: relative;
+  width: fit-content;
+  height: fit-content;
+  margin: 0 auto;
+  overflow: visible;
+  border-radius: var(--radius-medium);
+}
+
+.diagram-renderer .diagram-feedback {
+  display: grid;
+  min-height: 10rem;
+  place-content: center;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
+}
+
+.diagram-renderer .diagram-feedback strong {
+  color: hsl(var(--foreground));
+  font-weight: var(--text-caption-weight);
+}
+
+.diagram-svg-layer {
+  display: block;
+  background: var(--diagram-canvas);
+  transform-origin: top left;
+  transition: transform var(--diagram-camera-duration, 220ms)
+    var(--diagram-camera-easing, cubic-bezier(0.65, 0, 0.35, 1));
+}
+
+.diagram-footer {
+  grid-column: 1;
+  grid-row: 3;
+  min-width: 0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Allow pointer events on nodes */
+.diagram-node-html {
+  pointer-events: auto;
+}
+
+foreignObject[data-node-id] {
+  overflow: visible;
+}
+
+/* Edge labels */
+.edge-label-container {
+  pointer-events: none;
+  overflow: visible;
+  transition: opacity var(--motion-standard) var(--ease-standard);
+  display: block;
+}
+
+.edge-label-tooltip {
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+}
+
+.diagram-geometry-motion {
+  transition:
+    transform var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    x var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    y var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    width var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    height var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms ease-out;
+}
+
+.stateful-diagram.camera-stage .diagram-geometry-motion {
+  transition:
+    transform var(--diagram-camera-duration) var(--diagram-camera-easing),
+    x var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    y var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    width var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    height var(--diagram-move-exit-duration) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms ease-out;
+}
+
+.stateful-diagram.camera-stage .group-bg {
+  transition-delay: 0ms;
+}
+
+.stateful-diagram.camera-stage .group-label {
+  transition-delay: 0ms;
+}
+
+/* The camera animation owns world-pose interpolation, including the origin
+     rebase. Shared node/edge motion remains independently animated below it. */
+.stateful-diagram .diagram-svg-layer,
+.stateful-diagram .diagram-svg-layer > .diagram-geometry-motion {
+  transition: none;
+}
+
+.edge-label-dimmed {
+  opacity: 0.64;
+}
+
+.edge-label-entry {
+  animation: revealLabel var(--diagram-label-entry-duration) var(--diagram-label-entry-delay)
+    cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes revealLabel {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.edge-label-html {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 2px;
+  font-family: var(--font-ui);
+  font-size: var(--diagram-edge-label-font-size);
+  font-weight: var(--text-body-weight);
+  line-height: var(--diagram-edge-label-line-height);
+  letter-spacing: var(--text-caption-tracking);
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  padding: var(--diagram-edge-label-padding-y) var(--diagram-edge-label-padding-x);
+  overflow: hidden;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.edge-label-html::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  content: '';
+  background-color: var(--diagram-label-surface);
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      hsl(var(--foreground)) 6px,
+      hsl(var(--foreground)) calc(100% - 6px),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      hsl(var(--foreground)) 4px,
+      hsl(var(--foreground)) calc(100% - 4px),
+      transparent
+    );
+  -webkit-mask-composite: source-in;
+  -webkit-mask-repeat: no-repeat;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      hsl(var(--foreground)) 6px,
+      hsl(var(--foreground)) calc(100% - 6px),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      hsl(var(--foreground)) 4px,
+      hsl(var(--foreground)) calc(100% - 4px),
+      transparent
+    );
+  mask-composite: intersect;
+  mask-repeat: no-repeat;
+  pointer-events: none;
+  transition: background-color var(--motion-standard) var(--ease-standard);
+}
+
+.edge-label-text {
+  position: relative;
+  z-index: 1;
+  display: -webkit-box;
+  margin-inline: -1px;
+  padding-inline: 1px;
+  overflow: hidden;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.catalog-reduced-motion .edge-label-container,
+.catalog-reduced-motion .edge-label-html::before,
+.catalog-reduced-motion .diagram-geometry-motion,
+.catalog-reduced-motion .diagram-svg-layer,
+.catalog-reduced-motion .diagram-actions {
+  transition: none;
+  animation: none;
+}
+
+.catalog-reduced-motion .diagram-renderer,
+.catalog-reduced-motion .diagram-renderer *,
+.catalog-reduced-motion .diagram-renderer *::before,
+.catalog-reduced-motion .diagram-renderer *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+@container style(--motion-reduced: 1) {
+  html:not(.catalog-full-motion) .edge-label-container,
+  html:not(.catalog-full-motion) .edge-label-html::before,
+  html:not(.catalog-full-motion) .diagram-geometry-motion,
+  html:not(.catalog-full-motion) .diagram-svg-layer,
+  html:not(.catalog-full-motion) .diagram-actions {
+    transition: none;
+    animation: none;
+  }
+
+  html:not(.catalog-full-motion) .diagram-renderer,
+  html:not(.catalog-full-motion) .diagram-renderer *,
+  html:not(.catalog-full-motion) .diagram-renderer *::before,
+  html:not(.catalog-full-motion) .diagram-renderer *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

@@ -1,0 +1,121 @@
+/* Presentation rules translated from DiagramEdge.svelte. */
+
+.edge-path {
+  fill: none;
+  stroke: var(--diagram-connector);
+  stroke-width: var(--diagram-connector-width);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition:
+    stroke var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard),
+    opacity var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard);
+}
+
+.edge-reveal-mask-path {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: calc((1 - var(--edge-reveal-progress, 1)) * 1px);
+}
+
+.diagram-edge:hover .edge-path {
+  stroke: var(--diagram-connector-hover);
+  stroke-width: var(--diagram-connector-width);
+}
+
+.edge-dimmed .edge-path {
+  opacity: 0.5;
+}
+
+/* State-level highlighting (from DiagramState.highlightedEdges) */
+.edge-state-highlighted .edge-path {
+  stroke: var(--diagram-connector-hover);
+  stroke-width: var(--diagram-connector-width);
+}
+
+.edge-highlighted .edge-path {
+  stroke: var(--diagram-connector-hover);
+  stroke-width: var(--diagram-connector-width);
+}
+
+.edge-muted .edge-path {
+  stroke: var(--diagram-connector-muted);
+  stroke-width: 1px;
+}
+
+.edge-danger .edge-path {
+  stroke: var(--diagram-connector-danger);
+  stroke-width: 1px;
+}
+
+.edge-success .edge-path {
+  stroke: var(--diagram-connector-success);
+  stroke-width: 1px;
+}
+
+.edge-warning .edge-path {
+  stroke: var(--diagram-connector-warning);
+  stroke-width: 1px;
+}
+
+.edge-inactive .edge-path {
+  stroke: var(--diagram-connector-inactive);
+  stroke-width: 1px;
+}
+
+.edge-active .edge-path {
+  stroke: var(--diagram-connector-active);
+  stroke-width: 1px;
+}
+
+/* Dashed edge style */
+.edge-dashed .edge-path {
+  stroke-dasharray: 4 4;
+}
+
+/* Animated flow */
+.edge-animated .edge-path {
+  stroke-dasharray: 5 4;
+  animation: dash-flow 1.4s linear infinite;
+}
+
+.edge-origin {
+  fill: var(--diagram-connector);
+  pointer-events: none;
+}
+
+.edge-danger .edge-origin {
+  fill: var(--diagram-connector-danger);
+}
+
+.edge-success .edge-origin {
+  fill: var(--diagram-connector-success);
+}
+
+.edge-warning .edge-origin {
+  fill: var(--diagram-connector-warning);
+}
+
+.edge-highlighted .edge-origin,
+.edge-active .edge-origin,
+.edge-state-highlighted .edge-origin {
+  fill: var(--diagram-connector-active);
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+.catalog-reduced-motion .edge-animated .edge-path {
+  animation: none;
+}
+
+@container style(--motion-reduced: 1) {
+  html:not(.catalog-full-motion) .edge-path {
+    transition: none;
+  }
+
+  html:not(.catalog-full-motion) .edge-animated .edge-path {
+    animation: none;
+  }
+}

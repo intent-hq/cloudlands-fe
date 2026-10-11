@@ -1,0 +1,21 @@
+/* Presentation rules translated from StreamingDiagramRenderer.svelte. */
+
+.streaming-diagram {
+  min-width: 0;
+  width: 100%;
+}
+
+.streaming-diagram .diagram-feedback {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  color: hsl(var(--muted-foreground));
+}
+
+.diagram-source {
+  max-height: 20rem;
+  overflow: auto;
+  padding: var(--space-4);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
