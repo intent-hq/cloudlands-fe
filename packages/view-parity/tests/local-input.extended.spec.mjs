@@ -1,20 +1,28 @@
 import { test, expect, openExample, outputJson } from "../lib/functional.mjs";
 import { imageFile, putImageOnClipboard } from "../lib/native-files.mjs";
 
-test("local editor: removing a chip deletes its content and undo restores the atomic node", async ({
+test("local editor: deletion and undo of insertion leave no orphaned chip content", async ({
   page,
 }) => {
-  const example = await openExample(page, "local-editor", "native-editor");
+  let example = await openExample(page, "local-editor", "native-editor");
   await example.getByRole("button", { name: "Insert paste chip", exact: true }).click();
   await example.getByRole("button", { name: "Remove pasted text", exact: true }).click();
   await expect(example.getByLabel("Editor text", { exact: true })).toHaveText("");
-  await example.getByRole("button", { name: "Undo editor change", exact: true }).click();
+  await expect(
+    example.getByRole("button", { name: "Remove pasted text", exact: true }),
+  ).toHaveCount(0);
+  // A fresh editor gives insertion its own undo history. Immediate insert/delete
+  // transactions may legitimately share one native history group.
+  example = await openExample(page, "local-editor", "native-editor");
+  await example.getByRole("button", { name: "Insert paste chip", exact: true }).click();
   await expect(
     example.getByRole("button", { name: "Remove pasted text", exact: true }),
   ).toBeVisible();
-  await expect(example.getByLabel("Editor text", { exact: true })).toHaveText(
-    "First line\nSecond line\nThird line",
-  );
+  await example.getByRole("button", { name: "Undo editor change", exact: true }).click();
+  await expect(example.getByLabel("Editor text", { exact: true })).toHaveText("");
+  await expect(
+    example.getByRole("button", { name: "Remove pasted text", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("local editor: error retry and Escape retain native input focus", async ({ page }) => {

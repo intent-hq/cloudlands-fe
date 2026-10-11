@@ -30,7 +30,7 @@ reported ready by their owner before acceptance runs. Report every failing or
 unrun case separately. Remaining control edges and real-daemon/Electron journeys
 are listed as gaps in the manifest.
 
-Functional fixture startup allows 15 seconds for the real renderer to mount,
+Catalog and functional fixture startup allow 15 seconds for the real renderer to mount,
 matching preview readiness. This covers a cold dev-server import crawl; ordinary
 behavior assertions retain their five-second budget. Missing or partial fixtures
 still fail, and no retry is enabled.
@@ -180,3 +180,13 @@ crop. These cases prove static display parity only, not live repository transpor
 cache, context-menu or rate-limit actions. All registered toast-header and card
 states are declared so missing source states still fail; declaration alone is
 not a completed capture. Screenshot comparisons remain exact, including edges.
+
+Toast-header captures require the actual front data-sonner-toast surface. Toasts
+are fixed outside the scene frame, so a matching empty frame is not toast evidence.
+Rear-stack and expanded-details behavior are separate contracts. Comparison metadata
+records source and candidate capture rectangles alongside exact image dimensions.
+Run native core and extended lanes sequentially: the operating-system clipboard is
+shared across browser contexts. Editor undo checks start with a fresh editor rather
+than assuming adjacent native transactions create separate history groups. Undoable
+notification expiry is an operation callback; source display lifetime may continue
+while hovered and is tested separately from that deadline.

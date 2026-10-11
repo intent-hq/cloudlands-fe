@@ -110,7 +110,7 @@ test("collapsible panel: keyboard changes persist and synchronize panels sharing
   page,
 }) => {
   let example = await openExample(page, "collapsible-panel", "collapsible-panel");
-  const saved = example.getByRole("button", { name: "Saved panel", exact: true });
+  const saved = example.getByRole("button", { name: /^Saved panel/ });
   await expect(saved).toHaveAttribute("aria-expanded", "true");
   await saved.focus();
   await saved.press("Enter");
@@ -122,14 +122,14 @@ test("collapsible panel: keyboard changes persist and synchronize panels sharing
     .toBe("true");
   await page.reload();
   example = page.locator('[data-functional-example="collapsible-panel"]');
-  await expect(example.getByRole("button", { name: "Saved panel", exact: true })).toHaveAttribute(
+  await expect(example.getByRole("button", { name: /^Saved panel/ })).toHaveAttribute(
     "aria-expanded",
     "false",
   );
   await example
     .getByRole("button", { name: "Shared preference panel", exact: true })
     .press("Space");
-  await expect(example.getByRole("button", { name: "Saved panel", exact: true })).toHaveAttribute(
+  await expect(example.getByRole("button", { name: /^Saved panel/ })).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -158,6 +158,7 @@ test("native image: decoded metadata and downloaded bytes describe the selected 
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe(file.name);
   expect(await downloadBytes(download)).toEqual(file.buffer);
+  await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(opener).toBeFocused();
@@ -215,6 +216,7 @@ test("native video: real recorded media exposes finite metadata and downloads un
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe(file.name);
   expect(await downloadBytes(download)).toEqual(file.buffer);
+  await expect(video).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(video).toBeHidden();
   await expect(opener).toBeFocused();

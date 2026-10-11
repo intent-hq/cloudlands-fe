@@ -90,6 +90,10 @@ for (const entry of selectedCases(manifest)) {
           changedCandidatePaths: changedSources(candidateBefore, candidateAfter),
         },
         comparison,
+        geometry: {
+          reference: await reference.locator(captureSelector(entry)).boundingBox(),
+          candidate: await candidate.locator(captureSelector(entry)).boundingBox(),
+        },
         accessibility: {
           reference: referenceAria,
           candidate: candidateAria,

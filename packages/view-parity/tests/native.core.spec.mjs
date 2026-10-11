@@ -46,7 +46,10 @@ test("notification: failure retry and close route to the actual caller", async (
   await example.getByRole("button", { name: "Agent failure", exact: true }).click();
   await page.getByRole("button", { name: "Retry Implementor", exact: true }).click();
   await expect(example.getByTestId("notify-events")).toHaveText("retry");
-  await page.getByRole("button", { name: "Close notification", exact: true }).click();
+  await page
+    .locator("[data-sonner-toast]")
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
   await expect(example.getByTestId("notify-events")).toContainText("failure-close");
   await expect(page.getByText("Live failure toast", { exact: true })).toBeHidden();
 });
@@ -71,7 +74,10 @@ test("notification: detailed error copies actual diagnostic text through the nat
     origin: new URL(page.url()).origin,
   });
   await example.getByRole("button", { name: "Detailed error", exact: true }).click();
-  await page.getByText("Technical details", { exact: true }).click();
+  await page
+    .locator("[data-sonner-toast] summary")
+    .filter({ hasText: "Technical details" })
+    .click();
   await page.getByRole("button", { name: "Copy", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))

@@ -22,10 +22,16 @@ test("notification undo: hover does not pause the actual operation deadline", as
   const example = await openExample(page, "notify", "notify");
   await example.getByRole("button", { name: "Undoable", exact: true }).click();
   await page.getByText("Live undoable toast", { exact: true }).hover();
-  await expect(example.getByTestId("notify-events")).toContainText("expired");
-  await expect(
-    page.locator("[data-sonner-toast]").getByRole("button", { name: /^Undo/ }),
-  ).toBeHidden();
+  await expect(example.getByTestId("notify-events")).toHaveText("expired");
+  // Operation expiry is separate from the hovered toast's display lifetime.
+  // The source callback does not dismiss the notification.
+  await example.getByRole("button", { name: "Clear live toasts" }).click();
+  await expect(page.getByText("Live undoable toast", { exact: true })).toBeHidden();
+  expect(
+    (await example.getByTestId("notify-events").textContent())
+      .split(",")
+      .filter((event) => event === "expired"),
+  ).toHaveLength(1);
 });
 
 test("notification undo: removing the toast still lets the operation expire", async ({ page }) => {

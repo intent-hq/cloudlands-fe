@@ -93,7 +93,7 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
   if (!response?.ok())
     throw new Error(`Catalog document returned HTTP ${response?.status()}: ${url}`);
-  await expect(page.getByTestId("catalog-component-page")).toBeVisible();
+  await expect(page.getByTestId("catalog-component-page")).toBeVisible({ timeout: 15_000 });
   const frame = page.locator(captureSelector(entry));
   await expect(frame, `Missing real fixture ${entry.scene}/${entry.fixture}`).toHaveCount(1);
   await expect(frame).toBeVisible();

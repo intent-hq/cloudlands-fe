@@ -450,7 +450,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-available",
@@ -468,7 +469,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-downloading",
@@ -486,7 +488,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-error",
@@ -504,7 +507,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-standard",
@@ -522,7 +526,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-plain",
@@ -540,7 +545,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-undo",
@@ -558,7 +564,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-stacked",
@@ -576,7 +583,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-multiline-warning",
@@ -594,7 +602,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-details",
@@ -612,7 +621,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "toast-header-multiline-details",
@@ -630,7 +640,8 @@
         "apps/react/src/catalog/toast-header-preview.tsx",
         "apps/react/src/components/ui/toast/toast.tsx"
       ],
-      "reason": "Compare the source display fixture only; live notification and repository transport behavior require separate journeys."
+      "reason": "Compare the actual front toast surface, including native actions; the fixed-position surface is outside the example frame. Rear-stack behavior requires separate journeys.",
+      "captureTarget": "[data-sonner-toast][data-front=\"true\"]:not([data-removed=\"true\"])"
     },
     {
       "id": "github-link-card-gitlab-com-mr",
