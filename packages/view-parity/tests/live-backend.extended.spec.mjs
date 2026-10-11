@@ -96,15 +96,22 @@ async function assertMemoryPresentation(page, liveTrace, expandedAgentId) {
     const rendered = await page.evaluate(async () => {
       const { store } = await import('/src/store/index.ts');
       const dialog = document.querySelector('[role="dialog"]');
+      // Adjacent spans have visual separation but textContent joins command
+      // suffix digits to the following memory value. Preserve text boundaries.
+      const text = (node) => {
+        if (!node) return '';
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        const chunks = [];
+        while (walker.nextNode()) chunks.push(walker.currentNode.textContent);
+        return chunks.join(' ');
+      };
       return {
         sample: store.state.daemonHealth.agentMemoryUsage,
-        text: dialog?.textContent || '',
-        agents: [...(dialog?.querySelectorAll('button[aria-expanded]') || [])].map(
-          (button) => button.textContent,
-        ),
+        text: text(dialog),
+        agents: [...(dialog?.querySelectorAll('button[aria-expanded]') || [])].map(text),
         lists: [...(dialog?.querySelectorAll('[role="list"]') || [])].map((list) => ({
           label: list.getAttribute('aria-label'),
-          rows: [...list.querySelectorAll('[role="listitem"]')].map((row) => row.textContent),
+          rows: [...list.querySelectorAll('[role="listitem"]')].map(text),
         })),
       };
     });
