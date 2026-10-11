@@ -1,6 +1,6 @@
 // ReactStore binding for the canonical directory-picker slice.
 import { store } from '../index';
-import type { DirectoryPickerListing } from '$store/renderer/slices/directory-picker/directory-picker-slice';
+import type { DirectoryPickerListing } from '../../../../../src/store/renderer/slices/directory-picker/directory-picker-slice';
 
 export const selectDirectoryPickerListing = store.createSelector(
   (state): DirectoryPickerListing | null => state.directoryPicker.listing,

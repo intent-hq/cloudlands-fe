@@ -13,7 +13,7 @@ import {
   navigateToPathRequested,
   resetDirectoryPicker,
   type DirectoryPickerListing,
-} from '$store/renderer/slices/directory-picker/directory-picker-slice';
+} from '../../../../../../src/store/renderer/slices/directory-picker/directory-picker-slice';
 import {
   selectDirectoryPickerCreateError,
   selectDirectoryPickerError,
