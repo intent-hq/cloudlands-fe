@@ -1,0 +1,36 @@
+.menu-overlay {
+  max-width: calc(100dvw - 1rem);
+}
+.menu-overlay[data-state='open'] {
+  animation: react-overlay-enter var(--spring-moderate) var(--spring-moderate-ease) both;
+}
+.menu-overlay[data-state='closed'] {
+  animation: react-overlay-exit var(--spring-moderate-exit) var(--spring-exit-ease) both;
+}
+@keyframes react-overlay-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes react-overlay-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+[data-static-position] > [data-radix-popper-content-wrapper] {
+  position: relative !important;
+  transform: none !important;
+}
+@container style(--motion-reduced: 1) {
+  .menu-overlay[data-state] {
+    animation: none;
+  }
+}

@@ -1,0 +1,27 @@
+.checkbox-mark path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  stroke-dasharray: 12;
+  stroke-dashoffset: 12;
+  transition:
+    stroke-dashoffset var(--spring-fast) var(--spring-fast-ease),
+    stroke-width var(--spring-fast) var(--spring-fast-ease);
+}
+
+.checkbox-mark path.drawn,
+.checkbox-mark path.checkbox-line {
+  stroke-dashoffset: 0;
+}
+
+.checkbox-root:hover .checkbox-mark path {
+  stroke-width: 2;
+}
+
+@container style(--motion-reduced: 1) {
+  .checkbox-mark path {
+    transition: none;
+  }
+}

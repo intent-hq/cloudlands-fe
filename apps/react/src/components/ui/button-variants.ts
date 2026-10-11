@@ -1,0 +1,113 @@
+import { cva, type VariantProps } from 'class-variance-authority';
+
+export const buttonEmphasisLadder = [
+  { value: 'primary', label: 'Primary', guidance: 'One highest-priority action per region.' }, // i18n-ignore (design-system catalog metadata)
+  { value: 'secondary', label: 'Secondary', guidance: 'Supporting actions that remain visible.' }, // i18n-ignore (design-system catalog metadata)
+  { value: 'ghost', label: 'Ghost', guidance: 'Low-emphasis or repeated toolbar actions.' }, // i18n-ignore (design-system catalog metadata)
+  {
+    value: 'destructive',
+    label: 'Destructive',
+    guidance: 'Irreversible or damaging actions only.', // i18n-ignore (design-system catalog metadata)
+  },
+] as const;
+
+export const buttonSizeLadder = [
+  { value: 'sm', iconValue: 'icon-sm', label: 'Small' },
+  { value: 'default', iconValue: 'icon', label: 'Medium' },
+  { value: 'lg', iconValue: 'icon-lg', label: 'Large' },
+] as const;
+
+export const buttonCompatibilityAliases = [
+  { prop: 'variant', alias: 'default', replacement: 'secondary' },
+  { prop: 'variant', alias: 'tertiary', replacement: 'outline' },
+  { prop: 'variant', alias: 'neumorphic', replacement: 'outline' },
+  { prop: 'size', alias: 'xs', replacement: 'compact' },
+  { prop: 'size', alias: 'icon-xs', replacement: 'icon-compact' },
+] as const;
+
+// All sizes and states share the medium radius; surfaces inherit the same curve.
+export const buttonVariants = cva(
+  'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border-0 bg-transparent font-normal transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  {
+    variants: {
+      variant: {
+        primary: 'text-primary-foreground',
+        default: 'text-secondary-foreground',
+        destructive: 'bg-danger text-danger-background',
+        outline: 'border border-border text-foreground',
+        tertiary: 'border border-border text-foreground',
+        secondary: 'text-secondary-foreground',
+        ghost: 'text-foreground',
+        'ghost-light': 'text-muted-foreground hover:text-foreground',
+        underline:
+          'text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground',
+        plain: 'text-inherit font-inherit',
+        link: 'text-primary-ink underline-offset-4 hover:underline',
+        neumorphic: 'border border-border text-foreground',
+      },
+      size: {
+        default: 'h-(--control-height-medium) px-4 [--button-icon-padding:0.75rem]',
+        compact: 'h-(--control-height-compact) gap-1 px-3 [--button-icon-padding:0.375rem]',
+        xs: 'h-(--control-height-compact) gap-1 px-3 [--button-icon-padding:0.375rem]',
+        sm: 'h-(--control-height-small) gap-1 px-3 [--button-icon-padding:0.375rem]',
+        lg: 'h-(--control-height-large) px-4 [--button-icon-padding:0.75rem]',
+        xl: 'h-(--control-height-large) px-5 [--button-icon-padding:1rem]',
+        icon: 'size-(--control-height-medium) p-0 [&_svg]:size-4',
+        'icon-compact': 'size-(--control-height-compact) p-0 [&_svg]:size-3.5',
+        'icon-sm': 'size-(--control-height-small) p-0 [&_svg]:size-4',
+        'icon-xs': 'size-(--control-height-compact) p-0 [&_svg]:size-3',
+        'icon-lg': 'size-(--control-height-large) p-0 [&_svg]:size-4',
+      },
+      leadingIcon: { true: 'pl-[var(--button-icon-padding)]' },
+      trailingIcon: { true: 'pr-[var(--button-icon-padding)]' },
+    },
+    // Apply after size padding, while still allowing caller utilities to override it.
+    compoundVariants: [{ variant: 'plain', class: 'px-0 py-0' }],
+    defaultVariants: {
+      variant: 'secondary',
+      size: 'default',
+    },
+  },
+);
+
+export type ButtonVariant = VariantProps<typeof buttonVariants>['variant'];
+export type ButtonSize = VariantProps<typeof buttonVariants>['size'];
+
+type ConcreteButtonVariant = Exclude<ButtonVariant, null | undefined>;
+
+export const buttonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
+  primary:
+    'bg-primary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  default:
+    'bg-secondary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  secondary:
+    'bg-secondary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  destructive:
+    'bg-danger shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
+  outline: 'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
+  tertiary: 'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
+  neumorphic:
+    'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
+  ghost:
+    'bg-transparent shadow-[0_0_0_1px_transparent] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)]',
+  'ghost-light':
+    'bg-transparent shadow-[0_0_0_1px_transparent] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)]',
+  underline: 'bg-transparent shadow-[0_0_0_1px_transparent]',
+  plain: 'bg-transparent shadow-[0_0_0_1px_transparent]',
+  link: 'bg-transparent shadow-[0_0_0_1px_transparent]',
+};
+
+export const activeButtonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
+  ...buttonSurfaceVariants,
+  primary: 'bg-primary brightness-90 shadow-none',
+  default: 'bg-secondary brightness-90 shadow-none',
+  secondary: 'bg-secondary brightness-90 shadow-none',
+  destructive: 'bg-danger brightness-90 shadow-none',
+  outline: 'bg-active shadow-none',
+  tertiary: 'bg-active shadow-none',
+  neumorphic: 'bg-active shadow-none',
+  ghost:
+    'bg-active shadow-[0_0_0_1px_var(--active)] group-active/button:shadow-[0_0_0_0_var(--active)]',
+  'ghost-light':
+    'bg-active shadow-[0_0_0_1px_var(--active)] group-active/button:shadow-[0_0_0_0_var(--active)]',
+};

@@ -1,0 +1,24 @@
+/* Icons drawn at their own stroke scale opt out with `data-owns-stroke` (#5294). */
+[data-slot='button-content'] svg:not([data-owns-stroke]) {
+  stroke-width: 1.5;
+}
+
+[data-slot='button-label']:has(> *) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: inherit;
+  gap: inherit;
+  text-overflow: clip;
+}
+
+[data-slot='button-label'] > * {
+  min-width: 0;
+}
+
+[data-slot='button-label'] > svg {
+  flex-shrink: 0;
+}
+
+[data-slot='button']:hover [data-slot='button-content'] svg:not([data-owns-stroke]) {
+  stroke-width: 2;
+}

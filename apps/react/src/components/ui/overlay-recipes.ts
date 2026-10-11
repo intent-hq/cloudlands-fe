@@ -1,0 +1,5 @@
+// Recipe from src/lib/components/ui/menu/menu-recipes.ts.
+export const menuOverlayClass =
+  'menu-overlay type-body relative isolate z-(--layer-popover) overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay) focus-visible:border-input focus-visible:outline focus-visible:-outline-offset-1 data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left motion-reduce:animate-none motion-reduce:transition-none';
+export const menuItemClass =
+  'type-caption min-h-(--control-height-small) justify-start rounded-(--radius-row) px-2 py-1 text-left font-normal menu-row group/menu-item relative z-10 flex w-full min-w-0 cursor-default select-none items-start gap-2 border-none bg-transparent transition-colors duration-spring-fast ease-spring-fast focus:text-foreground focus-visible:outline-none data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 motion-reduce:transition-none';

@@ -1,0 +1,28 @@
+.intent-mark-loader {
+  display: inline-block;
+  flex: none;
+  overflow: visible;
+  color: inherit;
+  contain: layout paint style;
+  forced-color-adjust: auto;
+  vertical-align: middle;
+}
+.intent-mark-loader path {
+  pointer-events: none;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  stroke-dasharray: 100 200;
+  stroke-dashoffset: 0;
+  transform-origin: 0 0;
+}
+@container style(--motion-reduced: 1) {
+  .intent-mark-loader,
+  .intent-mark-loader * {
+    transition-property: none;
+  }
+}
+@media (forced-colors: active) {
+  .intent-mark-loader {
+    color: CanvasText;
+  }
+}

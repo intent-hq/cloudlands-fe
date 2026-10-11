@@ -1,0 +1,88 @@
+.dialog-editorial-content {
+  --dialog-content-min-width: 26.25rem;
+  anchor-scope: --dialog-title;
+  width: min(100% - 2rem, 100vw - 2rem);
+  min-width: min(var(--dialog-content-min-width), 100% - 2rem, 100vw - 2rem);
+  max-height: min(80vh, calc(100dvh - 2rem));
+}
+
+.dialog-close-button {
+  top: calc(1.5rem + var(--text-title-line-height) / 2);
+  /* Follow the title's first line, not a padding assumption or a wrapped title's center. */
+  top: calc(anchor(--dialog-title top, 1.5rem) + var(--text-title-line-height) / 2);
+}
+
+.dialog-editorial-content[data-size='sm'] {
+  --dialog-content-min-width: 22.5rem;
+}
+
+.dialog-editorial-content[data-size='lg'] {
+  --dialog-content-min-width: 30rem;
+}
+/* Match the reference scrim using the canonical theme overlay channels. */
+.react-dialog-overlay {
+  background: rgb(var(--theme-light-overlay) / 0.4);
+}
+.dark .react-dialog-overlay {
+  background: rgb(var(--theme-light-overlay) / 0.8);
+}
+.react-dialog-overlay[data-state='open'] {
+  animation: react-dialog-backdrop-in var(--spring-moderate) var(--spring-moderate-ease) both;
+}
+.react-dialog-overlay[data-state='closed'] {
+  animation: react-dialog-out var(--spring-moderate-exit) var(--spring-exit-ease) both;
+}
+.dialog-editorial-content[data-state='open'] {
+  animation: react-dialog-in var(--spring-slow) var(--spring-slow-ease) both;
+}
+.dialog-editorial-content[data-state='closed'] {
+  animation: react-dialog-out var(--spring-slow-exit) var(--spring-exit-ease) both;
+}
+@keyframes react-dialog-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes react-dialog-in {
+  from {
+    opacity: 0;
+    margin-top: 8px;
+    scale: 0.97;
+  }
+  to {
+    opacity: 1;
+    margin-top: 0;
+    scale: 1;
+  }
+}
+@keyframes react-dialog-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.dialog-actions button {
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--control-height-medium);
+  height: auto;
+  padding-block: var(--space-1);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.dialog-actions [data-slot='button-label'] {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+@container style(--motion-reduced: 1) {
+  .react-dialog-overlay[data-state],
+  .dialog-editorial-content[data-state] {
+    animation: none;
+  }
+}
