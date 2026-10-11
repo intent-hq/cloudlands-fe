@@ -1,0 +1,210 @@
+// ReactStore bindings for the canonical userPreferences reducer.
+import { store } from '../index';
+import {
+  SYSTEM_DEFAULT_FONT,
+  type FontOption,
+} from '../../../../../src/store/renderer/slices/user-preferences/user-preferences-slice';
+import { resolvePreferenceToLocale } from '$lib/i18n/locale';
+import { m } from '$shared/paraglide/messages.js';
+
+export const selectAgentRulesEditor = store.createSelector(
+  (state) => state.userPreferences.agentRulesEditor,
+);
+
+export const selectAgentRulesHaveChanges = store.createSelector((state) => {
+  const editor = selectAgentRulesEditor.select(state);
+  return editor.content.trim() !== editor.originalContent.trim();
+});
+
+export const selectAgentFontStyle = store.createSelector((state) => {
+  return state.userPreferences.agentFontStyle;
+});
+
+export const selectAgentFontStyleLabel = store.createSelector((state) => {
+  switch (state.userPreferences.agentFontStyle) {
+    case 'sans':
+      return 'Sans-serif';
+    case 'monospace':
+      return 'Monospace';
+    default:
+      return 'Sans-serif';
+  }
+});
+
+export const selectIsAgentMonospace = store.createSelector((state) => {
+  return state.userPreferences.agentFontStyle === 'monospace';
+});
+
+export const selectUpdateChannel = store.createSelector((state) => {
+  return state.userPreferences.updateChannel;
+});
+
+export const selectSpellcheckEnabled = store.createSelector((state) => {
+  return state.userPreferences.spellcheckEnabled;
+});
+
+export const selectZoomFactor = store.createSelector((state) => {
+  return state.userPreferences.zoomFactor;
+});
+
+export const selectShowArchived = store.createSelector((state) => {
+  return state.userPreferences.showArchived;
+});
+
+export const selectGroupByRepo = store.createSelector((state) => {
+  return state.userPreferences.groupByRepo;
+});
+
+export const selectHasCompletedProviderSetup = store.createSelector((state) => {
+  return state.userPreferences.hasCompletedProviderSetup;
+});
+
+export const selectShowReasoningBlocks = store.createSelector((state) => {
+  return state.userPreferences?.showReasoningBlocks ?? false;
+});
+
+export const selectChatAuroraEnabled = store.createSelector((state) => {
+  return state.userPreferences?.chatAuroraEnabled ?? true;
+});
+
+export const selectShellTransparencyEnabled = store.createSelector((state) => {
+  return state.userPreferences?.shellTransparencyEnabled ?? true;
+});
+
+export const selectReduceMotionOnBattery = store.createSelector((state) => {
+  return state.userPreferences?.reduceMotionOnBattery ?? false;
+});
+
+export const selectLabsSettingsVisible = store.createSelector((state) => {
+  return state.userPreferences?.labsSettingsVisible ?? false;
+});
+
+export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsMultiplayerEnabled ?? false;
+});
+
+export const selectLabsGitLabEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsGitLabEnabled === true;
+});
+
+/**
+ * Entry-point policy for NEW remote setup and placement, not runtime capability.
+ * Subscribe for visibility; re-read `.select(appStore.state)` at submission (and
+ * after awaits) so disabling Labs also rejects stale controls/persisted choices.
+ * Never use this to gate existing-session management, local execution or path/media safety.
+ */
+export const selectLabsRemoteAgentsEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsRemoteAgentsEnabled === true;
+});
+
+export const selectCounterScale = store.createSelector((state) => {
+  return 1 / state.userPreferences.zoomFactor;
+});
+
+export const selectNoteFontStyle = store.createSelector((state) => {
+  return state.userPreferences.noteFontStyle;
+});
+
+export const selectNoteFontStyleLabel = store.createSelector((state) => {
+  switch (state.userPreferences.noteFontStyle) {
+    case 'sans':
+      return 'Sans-serif';
+    case 'serif':
+      return 'Serif';
+    case 'monospace':
+      return 'Monospace';
+    default:
+      return 'Sans-serif';
+  }
+});
+
+export const selectIsNoteMonospace = store.createSelector((state) => {
+  return state.userPreferences.noteFontStyle === 'monospace';
+});
+
+export const selectCodeFontFamily = store.createSelector((state) => {
+  return state.userPreferences.codeFontFamily;
+});
+
+export const selectCodeFontFamilyCSS = store.createSelector((state) => {
+  const { codeFontFamily } = state.userPreferences;
+  if (codeFontFamily === 'system-default') {
+    return SYSTEM_DEFAULT_FONT;
+  }
+  return `'${codeFontFamily}', monospace`;
+});
+
+export const selectCodeFontFamilyLabel = store.createSelector((state) => {
+  const { codeFontFamily } = state.userPreferences;
+  if (codeFontFamily === 'system-default') {
+    return m.settings_fonts_systemDefault_label();
+  }
+  return codeFontFamily;
+});
+
+export const selectCodeFontOptions = store.createSelector((state) => {
+  const { systemFonts } = state.userPreferences;
+  const options: FontOption[] = [
+    {
+      value: 'system-default',
+      get label() {
+        return m.settings_fonts_systemDefault_label();
+      },
+      fontFamily: SYSTEM_DEFAULT_FONT,
+    },
+  ];
+
+  for (const font of systemFonts) {
+    options.push({
+      value: font,
+      label: font,
+      fontFamily: `'${font}', monospace`,
+    });
+  }
+
+  return options;
+});
+
+export const selectNotificationEnabled = store.createSelector((state) => {
+  return state.userPreferences.enabled;
+});
+
+export const selectSoundEnabled = store.createSelector((state) => {
+  return state.userPreferences.soundEnabled;
+});
+
+export const selectSoundOnlyWhenUnfocused = store.createSelector((state) => {
+  return state.userPreferences.soundOnlyWhenUnfocused;
+});
+
+export const selectNotificationVolume = store.createSelector((state) => {
+  return state.userPreferences.volume;
+});
+
+export const selectNotificationVolumeWrite = store.createSelector((state) => {
+  return {
+    editId: state.userPreferences.pendingNotificationVolumeEditId,
+    hydrationEpoch: state.userPreferences.notificationVolumeHydrationEpoch,
+  };
+});
+
+export const selectActivityLogPresets = store.createSelector((state) => {
+  return state.userPreferences.activityLogPresets;
+});
+
+export const selectLanguagePreference = store.createSelector((state) => {
+  return state.userPreferences.languagePreference;
+});
+
+export const selectGithubLinkDefaultAction = store.createSelector((state) => {
+  return state.userPreferences?.githubLinkDefaultAction ?? 'show-choices';
+});
+
+export const selectShortcutOverrides = store.createSelector((state) => {
+  return state.userPreferences.shortcutOverrides;
+});
+
+/** The concrete catalog locale the preference resolves to (explicit → system → en). */
+export const selectResolvedLocale = store.createSelector((state) => {
+  return resolvePreferenceToLocale(state.userPreferences.languagePreference);
+});
