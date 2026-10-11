@@ -1,4 +1,9 @@
 import { NotifyExample } from './notify-catalog-preview';
+import { QuestionWizardExample } from './question-wizard-example';
+import { NativeAttachmentExample, NativeLightboxExample } from './native-media-examples';
+import { EditorNativeExample } from './editor-native-example';
+import { CollapsiblePanelExample } from './collapsible-panel-example';
+import { RecipesPage } from './recipes-page';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -425,6 +430,18 @@ function TakeoverExample() {
 export function FunctionalExamples({ slug }: { slug: string }) {
   return (
     <article className="component-page grid gap-8" data-testid="catalog-functional-examples">
+      {nativeExampleSlugs.includes(slug) && (
+        <p className="type-caption text-muted-foreground" data-internal-example>
+          Internal interaction example. Browser and visual acceptance remain pending.
+        </p>
+      )}
+      {slug === 'question-wizard' && <QuestionWizardExample />}
+      {slug === 'attachment-preview' && <NativeAttachmentExample />}
+      {slug === 'image-lightbox' && <NativeLightboxExample kind="image" />}
+      {slug === 'video-lightbox' && <NativeLightboxExample kind="video" />}
+      {slug === 'local-editor' && <EditorNativeExample />}
+      {slug === 'collapsible-panel' && <CollapsiblePanelExample />}
+      {slug === 'recipes' && <RecipesPage />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
       {slug === 'form' && (
         <>
@@ -456,8 +473,19 @@ export function FunctionalExamples({ slug }: { slug: string }) {
   );
 }
 
+const nativeExampleSlugs = [
+  'question-wizard',
+  'attachment-preview',
+  'image-lightbox',
+  'video-lightbox',
+  'local-editor',
+  'collapsible-panel',
+  'recipes',
+];
+
 export function hasFunctionalExample(slug: string) {
   return [
+    ...nativeExampleSlugs,
     'toast',
     'notify',
     'form',

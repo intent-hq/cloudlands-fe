@@ -4,6 +4,7 @@ import { FunctionalExamples, hasFunctionalExample } from './functional-examples'
 import { CatalogShell } from './catalog-shell';
 import { CatalogIntroduction } from './catalog-introduction';
 import { RecipesPage } from './recipes-page';
+import { QuestionWizardPage } from './question-wizard-page';
 import { CatalogSystemPage } from './catalog-system-page';
 import { CatalogScene } from './catalog-scene';
 import { CatalogComponentPage, hasComponentPage } from './catalog-component-page';
@@ -30,6 +31,8 @@ export function CatalogApp() {
         <CatalogIntroduction />
       ) : slug === 'recipes' ? (
         <RecipesPage />
+      ) : slug === 'question-wizard' ? (
+        <QuestionWizardPage />
       ) : systemSlug ? (
         <CatalogSystemPage key={slug} slug={systemSlug} />
       ) : !settings.state && entry?.slug === 'toast' ? (
