@@ -65,14 +65,6 @@
     left: calc(100% - 0.75rem);
     animation: spring-travel var(--tier) var(--ease);
   }
-  @keyframes spring-travel {
-    from {
-      left: 0;
-    }
-    to {
-      left: calc(100% - 0.75rem);
-    }
-  }
   .reduced-motion-note {
     display: none;
   }
@@ -203,5 +195,14 @@
     .spring-row i {
       grid-column: 1;
     }
+  }
+}
+
+@keyframes spring-travel {
+  from {
+    left: 0;
+  }
+  to {
+    left: calc(100% - 0.75rem);
   }
 }
