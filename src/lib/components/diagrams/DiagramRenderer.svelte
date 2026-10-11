@@ -28,6 +28,11 @@
   import { flushSync, onDestroy, onMount, tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+  import {
+    scheduleLayoutRead,
+    scheduleLayoutWrite,
+    type CancelLayoutTask,
+  } from '$lib/utils/layout-phases';
   import { cameraMotionKeyframes, partitionSceneIds } from './diagram-motion';
   import { freeLabelFractions } from './diagram-label-placement';
   import { equalComputedLayout } from './equal-computed-layout';
@@ -172,6 +177,7 @@
   let diagramSettled = $state(true);
   let settlementRevision = 0;
   let settlementFrame: number | undefined;
+  let resizeWorkPending = false;
   let transitionRevision = 0;
   let motionPhase = $state<'settled' | 'camera' | 'exit' | 'scene'>('settled');
   let cameraAnimations: Animation[] = [];
@@ -350,6 +356,7 @@
       keepStepInView?.();
       const snapshot = motionSnapshot();
       const active =
+        resizeWorkPending ||
         motionPhase === 'camera' ||
         motionPhase === 'exit' ||
         movingEdgeIds.size > 0 ||
@@ -987,49 +994,85 @@
   // Only a lane resize interrupts motion; a step's own width change does not.
   $effect(() => {
     if (!scrollContainerEl) return;
-    const noteLane = scrollContainerEl.closest<HTMLElement>('.node-diagram_block');
-    const resizeLane = noteLane ?? rendererEl ?? scrollContainerEl;
+    const scrollContainer = scrollContainerEl;
+    const noteLane = scrollContainer.closest<HTMLElement>('.node-diagram_block');
+    const resizeLane = noteLane ?? rendererEl ?? scrollContainer;
     let resizeLaneWidth = resizeLane.clientWidth;
+    let cancelRead: CancelLayoutTask | undefined;
+    let cancelWrite: CancelLayoutTask | undefined;
+    let disposed = false;
     untrack(() => {
       noteLaneWidth = noteLane?.clientWidth ?? null;
       scrollContainerWidth = scrollContainerEl!.clientWidth;
       updateFitScale();
     });
     const observer = new ResizeObserver(() => {
-      if (
-        automaticallyFitState &&
-        scrollContainerWidth !== null &&
-        Math.abs(resizeLane.clientWidth - resizeLaneWidth) > 0.5
-      ) {
-        // Old scene coordinates no longer fit after a lane resize. Settle that interruption
-        // immediately; ordinary step changes keep their existing motion schedule.
-        resizing = true;
-        stopStepViewportTracking();
-        transitionRevision += 1;
-        for (const animation of cameraAnimations) animation.cancel();
-        cameraAnimations = [];
-        movingEdgeIds.clear();
-        clearTransitionScene();
-      }
-      resizeLaneWidth = resizeLane.clientWidth;
-      noteLaneWidth = noteLane?.clientWidth ?? null;
-      scrollContainerWidth = scrollContainerEl!.clientWidth;
-      updateFitScale();
-      flushSync();
-      if (resizing) {
-        layoutResizeRevision += 1;
-        flushSync();
-        for (const animation of activeFiniteAnimations()) animation.finish();
-        if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
-        resizeFrame = requestAnimationFrame(() => {
-          resizing = false;
-          resizeFrame = undefined;
+      if (disposed) return;
+      cancelRead?.();
+      cancelWrite?.();
+      resizeWorkPending = true;
+      beginDiagramSettlement();
+      // A resize may change the observed viewport's own height. Publish that
+      // geometry in the layout write phase, outside ResizeObserver delivery.
+      cancelRead = scheduleLayoutRead(() => {
+        cancelRead = undefined;
+        if (disposed) return;
+        const laneWidth = resizeLane.clientWidth;
+        const noteWidth = noteLane?.clientWidth ?? null;
+        const viewport = {
+          width: scrollContainer.clientWidth,
+          height: scrollContainer.clientHeight,
+        };
+        cancelWrite = scheduleLayoutWrite(() => {
+          cancelWrite = undefined;
+          if (disposed) return;
+          if (
+            automaticallyFitState &&
+            scrollContainerWidth !== null &&
+            Math.abs(laneWidth - resizeLaneWidth) > 0.5
+          ) {
+            // A lane resize interrupts the old coordinates; ordinary step changes do not.
+            resizing = true;
+            stopStepViewportTracking();
+            transitionRevision += 1;
+            for (const animation of cameraAnimations) animation.cancel();
+            cameraAnimations = [];
+            movingEdgeIds.clear();
+            clearTransitionScene();
+          }
+          resizeLaneWidth = laneWidth;
+          noteLaneWidth = noteWidth;
+          scrollContainerWidth = viewport.width;
+          updateFitScale(viewport);
+          flushSync();
+          if (disposed) return;
+          if (resizing) {
+            layoutResizeRevision += 1;
+            flushSync();
+            if (disposed) return;
+            for (const animation of activeFiniteAnimations()) animation.finish();
+            if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
+            resizeFrame = requestAnimationFrame(() => {
+              resizing = false;
+              resizeFrame = undefined;
+            });
+          }
+          resizeWorkPending = false;
         });
-      }
+      });
     });
-    observer.observe(scrollContainerEl);
-    if (resizeLane !== scrollContainerEl) observer.observe(resizeLane);
-    return () => observer.disconnect();
+    observer.observe(scrollContainer);
+    if (resizeLane !== scrollContainer) observer.observe(resizeLane);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      cancelRead?.();
+      cancelWrite?.();
+      resizeWorkPending = false;
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
+      resizeFrame = undefined;
+      resizing = false;
+    };
   });
 
   // Apply camera transform (zoom + pan) to the diagram content
@@ -1248,17 +1291,18 @@
     return `translate(${-visibleBounds.minX + canvasPadding}, ${-visibleBounds.minY + canvasPadding})`;
   });
 
-  function updateFitScale() {
+  function updateFitScale(viewport?: { width: number; height: number }) {
     if ((!fitToWidth && !automaticallyFitState) || !scrollContainerEl) {
       fitScale = 1;
       return;
     }
-    const availableWidth = Math.max(1, scrollContainerEl.clientWidth - 16);
-    const layoutAvailableWidth = Math.max(1, (noteLaneWidth ?? scrollContainerEl.clientWidth) - 16);
+    const viewportWidth = viewport?.width ?? scrollContainerEl.clientWidth;
+    const availableWidth = Math.max(1, viewportWidth - 16);
+    const layoutAvailableWidth = Math.max(1, (noteLaneWidth ?? viewportWidth) - 16);
     // A stateful canvas follows its content. Its own height must not feed back into fitting.
     const availableHeight = automaticallyFitState
       ? Number.POSITIVE_INFINITY
-      : Math.max(1, scrollContainerEl.clientHeight - 16);
+      : Math.max(1, (viewport?.height ?? scrollContainerEl.clientHeight) - 16);
     const renderedWidth = Math.max(1, svgWidth * cameraZoom);
     const renderedHeight = Math.max(1, svgHeight * cameraZoom);
     const verticalStateWidthFloor =
