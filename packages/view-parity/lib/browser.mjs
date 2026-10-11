@@ -56,6 +56,7 @@ export function assertImageFailureEvidence(resourceEvents) {
 
 export async function openScene(page, baseUrl, entry, errors = []) {
   const url = sceneUrl(baseUrl, entry);
+  const readinessTimeoutMs = entry.readinessTimeoutMs ?? 15_000;
   try {
     const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
     if (!response?.ok())
@@ -83,7 +84,7 @@ export async function openScene(page, baseUrl, entry, errors = []) {
       );
     await page
       .locator('[data-preview-ready="true"][data-preview-stable="true"]')
-      .waitFor({ timeout: 15_000 });
+      .waitFor({ timeout: readinessTimeoutMs });
     await expect(page.locator(frameSelector), "exactly one capture frame").toHaveCount(1);
     await expect(
       page
@@ -103,8 +104,19 @@ export async function openScene(page, baseUrl, entry, errors = []) {
       await document.fonts.ready;
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
+    if (entry.captureContent) {
+      const content = page.locator(captureSelector(entry)).locator(entry.captureContent);
+      await expect(content, "The named capture must contain its rendered content").toHaveCount(1);
+      await expect(content).toBeVisible();
+    }
     if (errors.length) throw new Error(errors.join("\n"));
-    return { url: page.url(), requestedUrl: url, current, availableStates: available.states };
+    return {
+      url: page.url(),
+      requestedUrl: url,
+      current,
+      availableStates: available.states,
+      readinessTimeoutMs,
+    };
   } catch (error) {
     throw new Error(
       `Scene ${entry.scene}/${entry.state} failed readiness at ${url}: ${error.message}${errors.length ? `\nBrowser errors:\n${errors.join("\n")}` : ""}`,

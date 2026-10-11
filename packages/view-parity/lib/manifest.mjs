@@ -63,6 +63,25 @@ export function loadManifest() {
         `${entry.id}: a named-scene crop must identify its reviewed component target`,
       );
     }
+    if (entry.expectedStateCount !== undefined)
+      requireValue(
+        entry.kind !== "catalog-fixture" &&
+          Number.isInteger(entry.expectedStateCount) &&
+          entry.expectedStateCount > 0,
+        `${entry.id}: sampled named scenes require a reviewed source state count`,
+      );
+    if (entry.captureContent !== undefined)
+      requireValue(
+        entry.captureTarget &&
+          typeof entry.captureContent === "string" &&
+          entry.captureContent.length > 0,
+        `${entry.id}: rendered capture content needs an explicit component crop`,
+      );
+    if (entry.readinessTimeoutMs !== undefined)
+      requireValue(
+        entry.scene === "diagram-workbench" && entry.readinessTimeoutMs === 45_000,
+        `${entry.id}: only the source diagram workbench declares the longer readiness budget`,
+      );
     if (entry.kind === "catalog-fixture") {
       requireValue(
         Array.isArray(entry.renderedStates) &&

@@ -224,8 +224,23 @@ evidence of native Svelte image failure. Empty lists, callback replacement and i
 retry need additional sanctioned callers; the static source fixtures cannot prove them.
 
 Read-only migration inventory audit (maintained separately from browser acceptance):
+  corepack pnpm --dir packages/view-parity migration:status --json
   node packages/view-parity/scripts/migration-status.mjs \
     --reference <incoming-Svelte-ref> --candidate <React-ref> --json
 Defaults use the pinned inventory reference and audited React commit. --fail-on-drift
 exits 1 for drift; invalid input exits 2. The command does not fetch, write files, or
 promote planned evidence to browser acceptance.
+
+Diagram workbench sampling
+
+Two named captures cover custom-architecture and mermaid-flow at one light/reduced
+viewport. Each crops its actual diagram stage after the source-declared 45-second
+workbench readiness contract, then requires two identical real screenshots. Both
+apps must expose the same complete list of 94 named states, obtained independently
+from the pinned source API. State discovery is not visual acceptance of the other
+92 states. Source fingerprints and zero-pixel/accessible-state comparisons remain
+unchanged; production diagram journeys are maintained in the separate diagram suites.
+Each sampled stage must contain its visible rendered SVG. Ready-state images are
+retained before browser-error assertions, so an intentional invalid example elsewhere
+in the complete workbench cannot erase useful visual evidence. All observed errors
+remain in the report and fail the run; they are not ignored or reclassified as success.

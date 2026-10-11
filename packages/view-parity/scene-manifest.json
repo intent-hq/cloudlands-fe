@@ -1504,6 +1504,62 @@
         "apps/react/src/features/notes/note-presence/note-presence-avatars.tsx"
       ],
       "reason": "Compare source note-presence-stack fallback display only; source fixture dispatches an error event, while candidate native failure behavior is tested separately."
+    },
+    {
+      "id": "diagram-custom-architecture",
+      "kind": "named-scene",
+      "scene": "diagram-workbench",
+      "state": "custom-architecture",
+      "expectedStateCount": 94,
+      "readinessTimeoutMs": 45000,
+      "captureTarget": "[data-diagram-case-stage=\"custom-architecture\"]",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/diagrams/diagram-workbench.preview.svelte",
+        "src/lib/components/diagrams/diagram-workbench.preview-fixtures.ts",
+        "src/lib/components/diagrams/diagram-layout-edge-cases.fixtures.ts",
+        "src/lib/components/diagrams/DiagramRenderer.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/diagram-workbench-preview.tsx",
+        "apps/react/src/catalog/diagram-workbench-preview.css",
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/components/diagrams/diagram-renderer.tsx"
+      ],
+      "reason": "Compare grouped custom architecture nodes and event routes after the complete workbench settles. Discovery checks all 94 source state names; this case captures only its named stage.",
+      "captureContent": "svg.diagram-svg-layer"
+    },
+    {
+      "id": "diagram-mermaid-flow",
+      "kind": "named-scene",
+      "scene": "diagram-workbench",
+      "state": "mermaid-flow",
+      "expectedStateCount": 94,
+      "readinessTimeoutMs": 45000,
+      "captureTarget": "[data-diagram-case-stage=\"mermaid-flow\"]",
+      "theme": "light",
+      "motion": "reduced",
+      "width": 720,
+      "height": 900,
+      "referenceSources": [
+        "src/lib/components/diagrams/diagram-workbench.preview.svelte",
+        "src/lib/components/diagrams/diagram-workbench.preview-fixtures.ts",
+        "src/lib/components/diagrams/diagram-layout-edge-cases.fixtures.ts",
+        "src/lib/components/markdown/MermaidRenderer.svelte"
+      ],
+      "candidateSources": [
+        "apps/react/src/catalog/diagram-workbench-preview.tsx",
+        "apps/react/src/catalog/diagram-workbench-preview.css",
+        "apps/react/src/catalog/additional-catalog-previews.tsx",
+        "apps/react/src/catalog/preview-discovery.tsx",
+        "apps/react/src/components/markdown/mermaid-renderer.tsx"
+      ],
+      "reason": "Compare actual Mermaid decision branches, edge labels and the return route after measured SVG layout settles. Discovery checks all 94 source state names; this case captures only its named stage.",
+      "captureContent": "svg[data-layout-settled=\"true\"]"
     }
   ],
   "uncovered": [
@@ -1526,6 +1582,10 @@
     {
       "scene": "advanced-interaction-edges",
       "reason": "Uncovered: question completion callback counts/latest snapshot, back/skip, attachment and shortcut ownership; composer native file acceptance, IME, queue drag/reorder; async picker pending/error/retry/stale results, grouped actions/rename; sidebar mobile/rail/nested focus; relative time, animated numbers, real avatar errors and widget virtual list; clipboard/file-input/settings/native pages. Only explicitly authored journeys are claimed."
+    },
+    {
+      "scene": "diagram-workbench",
+      "reason": "Only custom-architecture and mermaid-flow have declared visual cases. The other 92 states, other themes, responsive layouts, streaming and product embeddings are not visual acceptance; separate diagram journeys own functional evidence."
     }
   ],
   "functional": [

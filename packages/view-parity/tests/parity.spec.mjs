@@ -46,19 +46,23 @@ for (const entry of selectedCases(manifest)) {
         resourceEvents: candidateResourceEvents,
       });
       const open = entry.kind === "catalog-fixture" ? openCatalogFixture : openScene;
+      // Retain ready-state images even when an error fixture logs a real failure.
+      // The observed browser errors still fail the final assertions below.
       const [referenceState, candidateState] = await Promise.all([
-        open(reference, referenceUrl, entry, referenceErrors),
-        open(candidate, candidateUrl, entry, candidateErrors),
+        open(reference, referenceUrl, entry),
+        open(candidate, candidateUrl, entry),
       ]);
       const checkedStates =
         entry.kind !== "catalog-fixture"
-          ? [
-              ...new Set(
-                manifest.parity
-                  .filter((item) => item.scene === entry.scene && item.kind !== "catalog-fixture")
-                  .map((item) => item.state),
-              ),
-            ].sort()
+          ? entry.expectedStateCount
+            ? referenceState.availableStates.toSorted()
+            : [
+                ...new Set(
+                  manifest.parity
+                    .filter((item) => item.scene === entry.scene && item.kind !== "catalog-fixture")
+                    .map((item) => item.state),
+                ),
+              ].sort()
           : undefined;
       const [referencePng, candidatePng] = await Promise.all([
         stableScreenshot(reference, entry),
@@ -132,6 +136,13 @@ for (const entry of selectedCases(manifest)) {
       // Keep the actual ready state's artifacts even when the wider scene is incomplete.
       // Missing/extra states still fail; matching pixels cannot override this contract.
       if (checkedStates) {
+        if (entry.expectedStateCount)
+          expect
+            .soft(
+              referenceState.availableStates,
+              "The independently served source scene must expose its reviewed state count",
+            )
+            .toHaveLength(entry.expectedStateCount);
         expect
           .soft(
             referenceState.availableStates.toSorted(),
