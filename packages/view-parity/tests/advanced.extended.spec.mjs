@@ -1,4 +1,38 @@
-import { test, expect, openFixture, openExample } from "../lib/functional.mjs";
+import { test, expect, openFixture, openExample, openPreview } from "../lib/functional.mjs";
+
+test("select navigation: Home and End select the first and last real options", async ({ page }) => {
+  const fixture = await openPreview(page, "select-focus", "inline");
+  const trigger = fixture.getByRole("combobox", { name: "Choose fruit", exact: true });
+  for (const [key, value, label] of [
+    ["End", "cherry", "A very long cherry option label used to verify truncation"],
+    ["Home", "apple", "Apple"],
+  ]) {
+    await trigger.press("ArrowDown");
+    await expect(page.getByRole("option", { name: "Apple", exact: true })).toBeVisible();
+    await page.keyboard.press(key);
+    await page.keyboard.press("Enter");
+    await expect(fixture.getByTestId("select-value")).toHaveText(value);
+    await expect(trigger).toHaveText(label);
+    await expect(trigger).toBeFocused();
+  }
+});
+
+for (const [edge, arrow, value] of [
+  ["End", "ArrowDown", "apple"],
+  ["Home", "ArrowUp", "cherry"],
+]) {
+  test(`select navigation: ${arrow} wraps from ${edge} before Enter`, async ({ page }) => {
+    const fixture = await openPreview(page, "select-focus", "inline");
+    const trigger = fixture.getByRole("combobox", { name: "Choose fruit", exact: true });
+    await trigger.press("ArrowDown");
+    await expect(page.getByRole("option", { name: "Apple", exact: true })).toBeVisible();
+    await page.keyboard.press(edge);
+    await page.keyboard.press(arrow);
+    await page.keyboard.press("Enter");
+    await expect(fixture.getByTestId("select-value")).toHaveText(value);
+    await expect(trigger).toBeFocused();
+  });
+}
 
 test("composer history: Arrow Down restores the draft after browsing earlier messages", async ({
   page,
