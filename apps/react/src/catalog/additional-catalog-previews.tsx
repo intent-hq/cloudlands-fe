@@ -11,6 +11,13 @@ import { AvatarCatalogPreview } from './avatar-catalog-preview';
 import { FieldsCatalogPreview } from './fields-catalog-preview';
 import { RowsCatalogPreview } from './rows-catalog-preview';
 import { MemoryCatalogPreview, memoryCatalogStates } from './memory-catalog-preview';
+import {
+  DiagramWorkbenchPreview,
+  diagramWorkbenchStates,
+  diagramWorkbenchCaptureReadiness,
+} from './diagram-workbench-preview';
+import type { PreviewCaptureReadiness } from '$lib/component-catalog/preview-definition';
+import { m } from '$shared/paraglide/messages.js';
 import { SidebarHarness, type SidebarHarnessProps } from '@/components/ui/sidebar';
 import { askUserQuestionsFixtures } from '$lib/components/ui/ask-user-questions/ask-user-questions.fixtures';
 import { messageComposerFixtures } from '$lib/components/ui/message-composer/message-composer.fixtures';
@@ -84,6 +91,7 @@ interface Definition {
   source: string;
   defaultState: string;
   unportedStates?: readonly string[];
+  captureReadiness?: PreviewCaptureReadiness;
   states: Record<string, ReactNode>;
 }
 function fixturePreview(
@@ -138,6 +146,21 @@ const composedPreviews: Record<string, ComponentType<{ fixture: UiComponentFixtu
 };
 
 export const additionalPreviews: Record<string, Definition> = {
+  'diagram-workbench': {
+    id: 'diagram-workbench',
+    get title() {
+      return m.sandbox_diagramWorkbench_title();
+    },
+    source: 'src/lib/components/diagrams/diagram-workbench.preview.svelte',
+    defaultState: 'mermaid-flow',
+    captureReadiness: diagramWorkbenchCaptureReadiness,
+    states: Object.fromEntries(
+      diagramWorkbenchStates.map((state) => [
+        state,
+        <DiagramWorkbenchPreview key={state} state={state} />,
+      ]),
+    ),
+  },
   ...Object.fromEntries(
     catalogEntries
       .filter((entry) => composedPreviews[entry.slug])

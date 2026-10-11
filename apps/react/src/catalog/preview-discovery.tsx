@@ -7,6 +7,7 @@ import { toastFixtures } from '$lib/components/ui/toast/toast.fixtures';
 import { notifyFixtures } from '$lib/components/patterns/notify/notify.fixtures';
 // Only executable React scenes are registered. Metadata is not proof of a port.
 import type { ComponentProps, ReactNode } from 'react';
+import type { PreviewCaptureReadiness } from '$lib/component-catalog/preview-definition';
 import { SettingsTextareaPreview } from '@/components/patterns/settings';
 import { TextEntryFocusPreview } from './text-entry-focus-preview';
 import { ModalHeadingPreview } from './modal-heading-preview';
@@ -53,6 +54,7 @@ interface PreviewDefinition {
   title: string;
   defaultState: string;
   unportedStates?: readonly string[];
+  captureReadiness?: PreviewCaptureReadiness;
   source: string;
   states: Record<string, ReactNode>;
 }

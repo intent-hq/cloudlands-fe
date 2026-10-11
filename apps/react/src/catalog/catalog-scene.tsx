@@ -2,7 +2,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocation } from '@tanstack/react-router';
 import { m } from '$shared/paraglide/messages.js';
-import { waitForCaptureStability } from '../../../../src/lib/component-catalog/capture-stability';
+import { watchCaptureStability } from '../../../../src/lib/component-catalog/capture-stability';
 import { CatalogLink } from './catalog-link';
 import { getPreview, setActivePreview } from './preview-discovery';
 import './catalog-scene.css';
@@ -25,8 +25,12 @@ export function CatalogScene({
     error?: string;
     reduced: boolean;
     generation: number;
+    stabilityGeneration: number;
+    stable: boolean;
   } | null>(null);
   const preview = getPreview(slug);
+  const isDiagramWorkbench = slug === 'diagram-workbench';
+  const captureReadiness = preview?.captureReadiness;
   const stateName = requestedState ?? preview?.defaultState ?? '';
   const width = requestedWidth ?? 720;
   const states = Object.entries(preview?.states ?? {});
@@ -39,7 +43,7 @@ export function CatalogScene({
         ? `Unknown state “${stateName}”.`
         : undefined;
   const key = `${slug}:${stateName}:${width}:${location.searchStr}`;
-  const ready = !error && stability?.key === key && !stability.error;
+  const ready = !error && stability?.key === key && stability.stable && !stability.error;
   const status = error ? 'error' : ready ? 'ready' : 'loading';
   const stableError = stability?.key === key ? stability.error : undefined;
   const generation = useRef(0);
@@ -47,35 +51,63 @@ export function CatalogScene({
   useLayoutEffect(() => {
     const controller = new AbortController();
     generation.current += 1;
+    const previewGeneration = generation.current;
     setActivePreview(null);
     if (!error && root.current) {
-      void waitForCaptureStability(root.current, { signal: controller.signal })
-        .then((result) => {
-          if (controller.signal.aborted) return;
-          setStability({ key, generation: generation.current, reduced: result.reducedMotion });
-          setActivePreview({
-            slug,
-            state: stateName,
-            width,
-            status: 'ready',
-            ...(requestedFit ? { fit: requestedFit } : {}),
-          });
-        })
-        .catch((cause: unknown) => {
-          if (!controller.signal.aborted)
+      void watchCaptureStability(
+        root.current,
+        {
+          readiness: captureReadiness,
+          readinessTimeoutMs: captureReadiness?.readinessTimeoutMs,
+          signal: controller.signal,
+        },
+        {
+          onWaiting: (stabilityGeneration) => {
+            if (controller.signal.aborted) return;
             setStability({
               key,
-              generation: generation.current,
+              generation: previewGeneration,
+              stabilityGeneration,
+              stable: false,
               reduced: false,
-              error: `Preview capture preparation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
             });
-        });
+            setActivePreview(null);
+          },
+          onStable: (result, stabilityGeneration) => {
+            if (controller.signal.aborted) return;
+            setStability({
+              key,
+              generation: previewGeneration,
+              stabilityGeneration,
+              stable: true,
+              reduced: result.reducedMotion,
+            });
+            setActivePreview({
+              slug,
+              state: stateName,
+              width,
+              status: 'ready',
+              ...(requestedFit ? { fit: requestedFit } : {}),
+            });
+          },
+        },
+      ).catch((cause: unknown) => {
+        if (!controller.signal.aborted)
+          setStability({
+            key,
+            generation: previewGeneration,
+            stabilityGeneration: 0,
+            stable: false,
+            reduced: false,
+            error: `Preview capture preparation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          });
+      });
     }
     return () => {
       controller.abort();
       setActivePreview(null);
     };
-  }, [key, slug, stateName, width, error, requestedFit]);
+  }, [key, slug, stateName, width, error, requestedFit, captureReadiness]);
 
   function previewUrl(nextState: string, nextWidth = width) {
     const params = new URLSearchParams(location.searchStr);
@@ -86,7 +118,7 @@ export function CatalogScene({
   return (
     <section
       ref={root}
-      className={`catalog-scene mx-auto grid max-w-full gap-4 p-4 sm:p-6 lg:p-10${requestedFit === 'component' ? ' component-fit' : ''}`}
+      className={`catalog-scene mx-auto grid max-w-full gap-4 p-4 sm:p-6 lg:p-10${requestedFit === 'component' ? ' component-fit' : ''}${isDiagramWorkbench ? ' workbench-scene' : ''}`}
       data-testid="catalog-scene"
       data-preview-slug={slug}
       data-preview-state={stateName}
@@ -97,10 +129,10 @@ export function CatalogScene({
       data-preview-stable={String(ready)}
       data-preview-capture-motion={stability?.reduced ? 'reduced' : 'full'}
       data-preview-generation={stability?.key === key ? stability.generation : 0}
-      data-preview-stability-generation={ready ? 1 : 0}
+      data-preview-stability-generation={stability?.key === key ? stability.stabilityGeneration : 0}
       data-preview-fit={requestedFit}
     >
-      {requestedFit !== 'component' && (
+      {!isDiagramWorkbench && requestedFit !== 'component' && (
         <header className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs font-medium text-muted-foreground">Named preview</p>
           <h1 className="mt-1 text-2xl font-medium tracking-tight">{preview?.title ?? slug}</h1>
@@ -141,7 +173,7 @@ export function CatalogScene({
           )}
         </header>
       )}
-      {error || stableError ? (
+      {(error || stableError) && (
         <div className="rounded-lg border border-danger bg-card p-4" role="alert">
           <p className="font-medium">{error ?? stableError}</p>
           {states.length > 0 && (
@@ -150,37 +182,38 @@ export function CatalogScene({
             </p>
           )}
         </div>
-      ) : (
-        preview && (
-          <div
-            className="preview-scene-list grid gap-8"
-            data-preview-scene-list={stateName === 'all' ? 'all' : undefined}
-          >
-            {scenes.map(([name, props]) => (
-              <article
-                key={name}
-                className="preview-article grid gap-3"
-                data-preview-rendered-state={name}
+      )}
+      {!error && preview && (
+        <div
+          className="preview-scene-list grid gap-8"
+          data-preview-scene-list={stateName === 'all' ? 'all' : undefined}
+        >
+          {scenes.map(([name, props]) => (
+            <article
+              key={name}
+              className="preview-article grid gap-3"
+              data-preview-rendered-state={name}
+            >
+              {stateName === 'all' && requestedFit !== 'component' && (
+                <h2 className="text-lg font-medium">
+                  {m.sandbox_catalogScene_stateHeading_title({ state: name })}
+                </h2>
+              )}
+              <div
+                className={`preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6${isDiagramWorkbench ? ' workbench-frame' : ''}`}
               >
-                {stateName === 'all' && requestedFit !== 'component' && (
-                  <h2 className="text-lg font-medium">
-                    {m.sandbox_catalogScene_stateHeading_title({ state: name })}
-                  </h2>
-                )}
-                <div className="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6">
-                  <div
-                    className="preview-focus mx-auto max-w-full p-6"
-                    style={{ width: `${width}px` }}
-                    data-testid="catalog-scene-focus"
-                  >
-                    {props}
-                    <div data-catalog-portal-target="scene" />
-                  </div>
+                <div
+                  className={`preview-focus mx-auto max-w-full p-6${isDiagramWorkbench ? ' workbench-focus' : ''}`}
+                  style={{ width: isDiagramWorkbench ? `min(100%, ${width}px)` : `${width}px` }}
+                  data-testid="catalog-scene-focus"
+                >
+                  {props}
+                  <div data-catalog-portal-target="scene" />
                 </div>
-              </article>
-            ))}
-          </div>
-        )
+              </div>
+            </article>
+          ))}
+        </div>
       )}
     </section>
   );

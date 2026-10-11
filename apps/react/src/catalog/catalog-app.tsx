@@ -22,7 +22,10 @@ export function CatalogApp() {
   const settings = parseCatalogUrlSettings(search);
   const systemSlug = getCatalogSystemSlug(slug);
   const entry = getCatalogEntry(slug);
-  const interactive = search.get('example') === 'interactive' && hasFunctionalExample(slug);
+  const interactive =
+    (search.get('example') === 'interactive' ||
+      (slug === 'diagram-workbench' && search.get('example') === 'functional')) &&
+    hasFunctionalExample(slug);
   const live = search.get('example') === 'live' && hasLiveExample(slug);
   return (
     <CatalogShell>

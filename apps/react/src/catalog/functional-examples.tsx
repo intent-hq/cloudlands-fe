@@ -5,6 +5,7 @@ import { EditorNativeExample } from './editor-native-example';
 import { CollapsiblePanelExample } from './collapsible-panel-example';
 import { RecipesPage } from './recipes-page';
 import { ReplaceAgentExample, TextareaConsumerExample } from './callback-consumer-examples';
+import { DiagramFunctionalExamples } from './diagram-functional-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -445,6 +446,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'recipes' && <RecipesPage />}
       {slug === 'settings-textarea' && <TextareaConsumerExample />}
       {slug === 'modal-heading-spacing' && <ReplaceAgentExample />}
+      {slug === 'diagram-workbench' && <DiagramFunctionalExamples />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
       {slug === 'form' && (
         <>
@@ -491,6 +493,7 @@ export function hasFunctionalExample(slug: string) {
     ...nativeExampleSlugs,
     'settings-textarea',
     'modal-heading-spacing',
+    'diagram-workbench',
     'toast',
     'notify',
     'form',
