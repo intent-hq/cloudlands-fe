@@ -1,0 +1,3 @@
+input.content-header-edit-input::selection {
+  background: hsl(var(--ring) / 0.3);
+}
