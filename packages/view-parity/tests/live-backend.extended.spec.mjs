@@ -15,7 +15,7 @@ import {
 // with configured daemon GitHub access and independently authenticated gh CLI.
 const test = liveTest.extend({
   directoryRoot: async ({ browserName }, use, testInfo) => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'intent-live-picker-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), `intent-live-${browserName}-picker-`));
     try {
       await Promise.all([
         mkdir(path.join(root, 'alpha', 'child'), { recursive: true }),
