@@ -216,16 +216,13 @@ export function Combobox({
     const outside = (event: PointerEvent) => {
       if (staticPosition && !contains(event.target)) changeOpen(false);
     };
-    const focusOutside = (event: FocusEvent) => {
-      if (!contains(event.target)) changeOpen(false);
-    };
+    // Source floating and static content dismiss on outside pointer or explicit
+    // keyboard actions, not programmatic focus changes to another control.
     window.addEventListener('keydown', escape, true);
     document.addEventListener('pointerdown', outside);
-    document.addEventListener('focusin', focusOutside);
     return () => {
       window.removeEventListener('keydown', escape, true);
       document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('focusin', focusOutside);
     };
   });
 
@@ -521,7 +518,7 @@ export function Combobox({
       {/* The source popup is nonmodal. Base UI Popup hides outside content from
           assistive technology whenever its input is outside the popup, even
           with modal=false. Positioner and List provide the floating/ARIA parts;
-          the picker owns focus-out dismissal alongside its static variant. */}
+          keyboard and outside-pointer actions own dismissal. */}
       <div
         ref={content}
         role="presentation"
