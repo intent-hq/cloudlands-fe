@@ -21,6 +21,9 @@ import {
 } from '@/lib/interaction/proximity-hover';
 import { usePresenceTransition } from '@/lib/motion';
 import { cn } from '@/lib/utils';
+import { m } from '$shared/paraglide/messages.js';
+import { getLocale } from '$shared/paraglide/runtime.js';
+import { createFormatters } from '$shared/i18n/formatters';
 import { QuestionAction, QuestionError, stepTransition } from './question-motion';
 import type { AskUserAnswer, AskUserQuestion, AskUserQuestionsProps } from './types';
 
@@ -66,12 +69,7 @@ export interface QuestionStepProps extends Pick<
   onExit: () => void;
 }
 
-// i18n-ignore (public primitive defaults retained from the Svelte reference)
-const DEFAULT_FREE_TEXT_PLACEHOLDER = 'Type your answer…';
-// i18n-ignore (public primitive defaults retained from the Svelte reference)
-const DEFAULT_OTHER_PLACEHOLDER = 'Describe in your own words…';
-// i18n-ignore (public primitive defaults retained from the Svelte reference)
-const DEFAULT_OTHER_ARIA_LABEL = 'Describe in your own words';
+const { formatInteger } = createFormatters(getLocale);
 
 function ArrowLeft() {
   return (
@@ -153,11 +151,9 @@ export function QuestionStep({
   present,
   onExit,
   onSkip,
-  // i18n-ignore (public primitive navigation default)
-  skipLabel = 'Skip',
+  skipLabel = m.chat_questionWizard_skip_label(),
   showBack = false,
-  // i18n-ignore (public primitive navigation default)
-  backLabel = 'Back',
+  backLabel = m.chat_questionWizard_back_label(),
   headerActions,
   footerActions,
   onOtherPaste,
@@ -556,7 +552,9 @@ export function QuestionStep({
             ref={otherInput}
             rows={1}
             value={otherText}
-            placeholder={question.freeTextPlaceholder ?? DEFAULT_FREE_TEXT_PLACEHOLDER}
+            placeholder={
+              question.freeTextPlaceholder ?? m.ui_askUserQuestions_freeText_placeholder()
+            }
             aria-labelledby={titleId}
             aria-describedby={freeTextError ? errorId : undefined}
             aria-invalid={freeTextError ? 'true' : undefined}
@@ -648,7 +646,7 @@ export function QuestionStep({
                       'group-hover/question-row:opacity-0 group-focus/question-row:opacity-0',
                   )}
                 >
-                  {optionIndex + 1}
+                  {formatInteger(optionIndex + 1)}
                 </span>
                 {chipPosition === 'right' && !isMulti && actionArrow}
               </span>
@@ -787,9 +785,11 @@ export function QuestionStep({
                 noFocusStyle
                 rows={1}
                 value={otherText}
-                placeholder={question.otherPlaceholder ?? DEFAULT_OTHER_PLACEHOLDER}
+                placeholder={question.otherPlaceholder ?? m.ui_askUserQuestions_other_placeholder()}
                 aria-label={
-                  question.otherAriaLabel ?? question.otherPlaceholder ?? DEFAULT_OTHER_ARIA_LABEL
+                  question.otherAriaLabel ??
+                  question.otherPlaceholder ??
+                  m.ui_askUserQuestions_other_ariaLabel()
                 }
                 disabled={disabled}
                 onPaste={(event) => {
@@ -892,8 +892,10 @@ export function QuestionStep({
                   disabled={!canSubmit}
                   onClick={isFreeText ? submitOther : finishMulti}
                 >
-                  {/* i18n-ignore (reference primitive action defaults) */}
-                  {question.nextLabel ?? (safeIndex >= questionCount - 1 ? 'Finish' : 'Continue')}
+                  {question.nextLabel ??
+                    (safeIndex >= questionCount - 1
+                      ? m.ui_askUserQuestions_finish_label()
+                      : m.chat_questionWizard_next_label())}
                 </Button>
               </QuestionAction>
             </div>

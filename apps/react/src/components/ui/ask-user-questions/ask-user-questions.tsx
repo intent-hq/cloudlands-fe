@@ -5,11 +5,15 @@ import { SizeProvider, useSize } from '@/components/ui/size-context';
 import { clampSurface, surfaceClasses, useSurface } from '@/components/ui/surface-context';
 import { useAnimatedHeight, usePresence } from '@/lib/motion';
 import { cn } from '@/lib/utils';
+import { m } from '$shared/paraglide/messages.js';
+import { getLocale } from '$shared/paraglide/runtime.js';
+import { createFormatters } from '$shared/i18n/formatters';
 import { QuestionStep, type QuestionStepHandle, type QuestionStepProps } from './question-step';
 import type { AskUserAnswer, AskUserQuestionsProps } from './types';
 
 type Answers = Record<string, AskUserAnswer>;
 const mountedInstances: HTMLElement[] = [];
+const { formatInteger } = createFormatters(getLocale);
 
 export function AskUserQuestions({
   questions,
@@ -160,8 +164,9 @@ export function AskUserQuestions({
         }}
       >
         {!question ? (
-          // i18n-ignore (reference primitive empty-state default)
-          <p className="p-5 text-[13px] text-muted-foreground">No questions.</p>
+          <p className="p-5 text-[13px] text-muted-foreground">
+            {m.ui_askUserQuestions_empty_label()}
+          </p>
         ) : (
           showCounter && (
             <div
@@ -172,9 +177,11 @@ export function AskUserQuestions({
                 compact ? 'px-5 pt-2.5 pb-1.5' : 'px-5 pt-3.5 pb-2 sm:pt-4',
               )}
             >
-              {/* i18n-ignore (reference primitive progress label) */}
               <span className="shrink-0 tabular-nums">
-                Question {safeIndex + 1} of {questions.length}
+                {m.chat_questionWizard_stepCounter_label({
+                  current: formatInteger(safeIndex + 1),
+                  total: formatInteger(questions.length),
+                })}
               </span>
             </div>
           )
