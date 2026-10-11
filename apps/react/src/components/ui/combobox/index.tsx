@@ -95,6 +95,11 @@ export function Combobox({
   const [labels, setLabels] = React.useState(() => new Map<string, string>());
   const input = React.useRef<HTMLInputElement>(null);
   const root = React.useRef<HTMLDivElement>(null);
+  const [inlinePortalTarget, setInlinePortalTarget] = React.useState<HTMLDivElement | null>(null);
+  const setRootNode = React.useCallback((node: HTMLDivElement | null) => {
+    root.current = node;
+    setInlinePortalTarget(node);
+  }, []);
   const content = React.useRef<HTMLDivElement>(null);
   const viewport = React.useRef<HTMLDivElement>(null);
   const retry = React.useRef<HTMLButtonElement>(null);
@@ -533,7 +538,7 @@ export function Combobox({
 
   return (
     <SurfaceProvider level={surface}>
-      <div ref={root} data-combobox-owner={uid} className={cn('relative w-full', className)}>
+      <div ref={setRootNode} data-combobox-owner={uid} className={cn('relative w-full', className)}>
         <span id={labelId} className="sr-only">
           {ariaLabel}
         </span>
@@ -632,10 +637,13 @@ export function Combobox({
                 {body}
               </div>
             )
-          ) : portal ? (
-            <Primitive.Portal container={dialogPortalTarget}>{popup}</Primitive.Portal>
           ) : (
-            popup
+            // Base UI requires Portal context even when the popup stays inside this control.
+            <Primitive.Portal
+              container={portal ? (dialogPortalTarget ?? undefined) : inlinePortalTarget}
+            >
+              {popup}
+            </Primitive.Portal>
           )}
         </Primitive.Root>
       </div>
