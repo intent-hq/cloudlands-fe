@@ -22,6 +22,7 @@ import {
 import { resolveSubmenuSide } from '$lib/components/ui/menu/submenu-placement';
 import { menuItem, menuOverlay, menuSubmenuAlignOffset } from './menu-recipes';
 import { ListHighlight } from './list-highlight';
+import { mountStaticMenuFocus } from './static-focus-scope';
 export {
   menuItem,
   menuOverlay,
@@ -193,21 +194,32 @@ export function Content({
   const surface = clampSurface(useSurface() + 2);
   const onContentNode = root.onContentNode;
   const contentNode = React.useRef<HTMLDivElement | null>(null);
+  const openAutoFocus = React.useRef(onOpenAutoFocus);
+  openAutoFocus.current = onOpenAutoFocus;
   const contentRef = React.useCallback(
     (node: HTMLDivElement | null) => {
       contentNode.current = node;
       onContentNode(node);
       const cleanup = assignRef(ref, node);
+      const cleanupScope = node && isStatic && root.open ? mountStaticMenuFocus(node) : undefined;
       if (node)
         queueMicrotask(() => {
           if (node.isConnected) setMenuTabStop(node);
         });
-      return cleanup;
+      if (cleanupScope)
+        handleOpenAutoFocus(new CustomEvent('focusScope.onOpenAutoFocus', { cancelable: true }));
+      return () => {
+        cleanupScope?.();
+        contentNode.current = null;
+        onContentNode(null);
+        if (typeof cleanup === 'function') cleanup();
+        else assignRef(ref, null);
+      };
     },
-    [ref, onContentNode],
+    [ref, onContentNode, isStatic, root.open],
   );
   function handleOpenAutoFocus(event: Event) {
-    onOpenAutoFocus?.(event);
+    openAutoFocus.current?.(event);
     if (event.defaultPrevented) return;
     event.preventDefault();
     const node = contentNode.current;
@@ -226,7 +238,12 @@ export function Content({
   const content = (
     <Primitive.Content
       {...props}
-      {...{ onOpenAutoFocus: handleOpenAutoFocus }}
+      {...{
+        onOpenAutoFocus: (event: Event) => {
+          if (isStatic) event.preventDefault();
+          else handleOpenAutoFocus(event);
+        },
+      }}
       ref={contentRef}
       data-slot="menu-content"
       data-surface-level={surface}
