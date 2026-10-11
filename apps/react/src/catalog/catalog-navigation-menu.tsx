@@ -31,9 +31,9 @@ export function CatalogNavigationMenu({
     const node = root.current;
     if (!node) return;
     const instance = createProximityHover(node);
-    Array.from(node.querySelectorAll<HTMLElement>('[data-sidebar="menu-button"]')).forEach(
-      (item, index) => instance.registerItem(index, item),
-    );
+    // CatalogShell's source MenuButton child anchors do not bind the button ref,
+    // so they do not register row geometry or render proximity overlays. Keep
+    // the menu's focus bookkeeping without adding overlays absent from that path.
     setHover(instance);
     return () => instance.destroy();
   }, [entries, density]);
