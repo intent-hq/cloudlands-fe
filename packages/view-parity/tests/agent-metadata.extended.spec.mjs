@@ -107,7 +107,7 @@ test.describe('agent metadata runtime', () => {
         ),
       ).toEqual([]);
       await release(consumers, 1);
-      const unsubscribeResult = await unsubscribed(metadataWire, firstLease);
+      const unsubscribeResult = await unsubscribed(metadataWire, firstLease, workspaceId);
       const restart = metadataWire.exchanges.length;
       const reacquired = await acquire(page, workspaceId, agentId);
       try {
@@ -123,7 +123,7 @@ test.describe('agent metadata runtime', () => {
           .toBe(true);
       } finally {
         await release(reacquired);
-        if (secondLease) await unsubscribed(metadataWire, secondLease);
+        if (secondLease) await unsubscribed(metadataWire, secondLease, workspaceId);
         await reacquired.dispose();
       }
       await testInfo.attach('metadata-lease-lifecycle.json', {
@@ -151,7 +151,7 @@ test.describe('agent metadata runtime', () => {
       });
     } finally {
       await release(consumers);
-      if (firstLease) await unsubscribed(metadataWire, firstLease);
+      if (firstLease) await unsubscribed(metadataWire, firstLease, workspaceId);
       await consumers.dispose();
     }
   });
@@ -191,7 +191,7 @@ test.describe('agent metadata runtime', () => {
       expect((await snapshot(page, emptyId)).workspace.agentIds).toEqual([]);
       expect((await snapshot(page, workspaceId, agentId)).workspace.agentIds).toContain(agentId);
       await release(empty);
-      await unsubscribed(metadataWire, emptyLease);
+      await unsubscribed(metadataWire, emptyLease, emptyId);
       expect((await snapshot(page, workspaceId, agentId)).workspace.agentIds).toContain(agentId);
       await testInfo.attach('metadata-empty-workspace.json', {
         body: JSON.stringify(
@@ -204,11 +204,11 @@ test.describe('agent metadata runtime', () => {
     } finally {
       if (empty) {
         await release(empty);
-        if (emptyLease) await unsubscribed(metadataWire, emptyLease);
+        if (emptyLease) await unsubscribed(metadataWire, emptyLease, emptyId);
         await empty.dispose();
       }
       await release(nonempty);
-      if (nonemptyLease) await unsubscribed(metadataWire, nonemptyLease);
+      if (nonemptyLease) await unsubscribed(metadataWire, nonemptyLease, workspaceId);
       await nonempty.dispose();
     }
   });

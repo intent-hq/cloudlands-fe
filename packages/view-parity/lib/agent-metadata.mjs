@@ -265,14 +265,14 @@ export async function lease(wire, workspaceId, after = 0) {
   return id;
 }
 
-export async function unsubscribed(wire, subscriptionId) {
+export async function unsubscribed(wire, subscriptionId, workspaceId) {
   const find = () =>
     requests(wire, 'events.unsubscribe').filter(
       (e) => e.request.params?.subscriptionId === subscriptionId,
     );
   await expect.poll(() => find().filter((e) => e.response).length, { timeout: 15_000 }).toBe(1);
   expect(find()).toHaveLength(1);
-  expect(find()[0].request.params).toEqual({ subscriptionId });
+  expect(find()[0].request.params).toEqual({ subscriptionId, workspaceId });
   expect(find()[0].response.error).toBeUndefined();
   expect(find()[0].response.result).toEqual({ success: true });
   return find()[0].response.result;
