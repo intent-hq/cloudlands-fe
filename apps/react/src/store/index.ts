@@ -20,6 +20,9 @@ import { modelReducer } from '../../../../src/store/renderer/slices/model/model-
 import { providerSettingsReducer } from '../../../../src/store/renderer/slices/provider-settings/provider-settings-slice';
 import { agentAvailabilityReducer } from '../../../../src/store/renderer/slices/agent-availability/agent-availability-slice';
 import { backgroundAgentSettingsReducer } from '../../../../src/store/renderer/slices/background-agent-settings/background-agent-settings-slice';
+import { agentSessionReducer } from '../../../../src/store/renderer/slices/agent-session/agent-session-slice';
+import { agentModelReducer } from '../../../../src/store/renderer/slices/agent-model/agent-model-slice';
+import { workspaceAgentsReducer } from '../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
 
 export const store = new ReactStore({
@@ -43,5 +46,8 @@ export const store = new ReactStore({
   providerSettings: providerSettingsReducer,
   agentAvailability: agentAvailabilityReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,
+  agentSessions: agentSessionReducer,
+  agentModel: agentModelReducer,
+  workspaceAgents: workspaceAgentsReducer,
 });
 export type AppState = StoreState<typeof store>;
