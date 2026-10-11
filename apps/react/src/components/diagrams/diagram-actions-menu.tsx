@@ -1,6 +1,6 @@
 // Source: DiagramActionsMenu.svelte. Export algorithms remain shared with the reference.
 import * as Menu from '@/components/ui/menu';
-import { notify } from '@/components/patterns/notify';
+import { toast } from '@/components/ui/toast';
 import { writeTextToClipboard } from '@/lib/clipboard';
 import { createDiagramExport } from '$lib/components/diagrams/diagram-export-core';
 import { m } from '$shared/paraglide/messages.js';
@@ -23,7 +23,7 @@ export function DiagramActionsMenu({
       if (action === 'image') await copyDiagramImage(container);
       else if (action === 'svg') await copyDiagramSvg(container);
       else await downloadDiagramSvg(container, fileName);
-      notify.success(
+      toast.success(
         action === 'image'
           ? m.diagram_actions_imageCopied_label()
           : action === 'svg'
@@ -31,7 +31,7 @@ export function DiagramActionsMenu({
             : m.diagram_actions_svgDownloaded_label(),
       );
     } catch {
-      notify.error(
+      toast.error(
         action === 'download'
           ? m.diagram_actions_downloadFailed_error()
           : m.diagram_actions_copyFailed_error(),
