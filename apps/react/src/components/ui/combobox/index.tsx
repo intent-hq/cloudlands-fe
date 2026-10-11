@@ -217,7 +217,7 @@ export function Combobox({
       if (staticPosition && !contains(event.target)) changeOpen(false);
     };
     const focusOutside = (event: FocusEvent) => {
-      if (staticPosition && !contains(event.target)) changeOpen(false);
+      if (!contains(event.target)) changeOpen(false);
     };
     window.addEventListener('keydown', escape, true);
     document.addEventListener('pointerdown', outside);
@@ -518,11 +518,14 @@ export function Combobox({
       align="start"
       collisionPadding={OVERLAY_VIEWPORT_GUTTER}
     >
-      <Primitive.Popup
+      {/* The source popup is nonmodal. Base UI Popup hides outside content from
+          assistive technology whenever its input is outside the popup, even
+          with modal=false. Positioner and List provide the floating/ARIA parts;
+          the picker owns focus-out dismissal alongside its static variant. */}
+      <div
         ref={content}
+        role="presentation"
         data-combobox-owner={uid}
-        initialFocus={false}
-        finalFocus={false}
         data-surface-level={surface}
         data-state={open ? 'open' : 'closed'}
         className={cn(
@@ -532,7 +535,7 @@ export function Combobox({
         )}
       >
         {body}
-      </Primitive.Popup>
+      </div>
     </Primitive.Positioner>
   );
 
@@ -552,6 +555,7 @@ export function Combobox({
                 : null
           }
           open={open}
+          modal={false}
           inline={staticPosition}
           items={itemValues}
           filter={null}
