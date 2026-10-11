@@ -7503,5 +7503,12 @@
   "chat_failureRecovery_action_description": "The response stopped before it finished.",
   "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host.",
   "ui_dropdown_selected_one": "1 selected",
-  "ui_dropdown_selected_many": "{count} selected"
+  "ui_dropdown_selected_many": "{count} selected",
+  "ui_messageComposer_placeholder": "Ask me anything…",
+  "ui_messageComposer_suggestions_ariaLabel": "Suggested prompts",
+  "ui_messageComposer_suggestionHint_description": "Suggested prompt: {suggestion}. Press Tab to fill the composer with it.",
+  "ui_messageComposer_sent_label": "Message sent.",
+  "ui_messageComposer_sentQueued_label": "Message sent. {count} still queued.",
+  "ui_messageComposer_attachments_one": "{count} attachment",
+  "ui_messageComposer_attachments_many": "{count} attachments"
 }

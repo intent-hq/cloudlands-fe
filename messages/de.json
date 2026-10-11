@@ -7503,5 +7503,12 @@
   "chat_failureRecovery_action_description": "Die Antwort wurde vorzeitig beendet.",
   "providers_cliVersionWarning_message": "Die CLI-Version {version} von {provider} liegt unter der unterstützten Mindestversion {minimumVersion}. Aktualisieren Sie die CLI auf dem Daemon-Host.",
   "ui_dropdown_selected_one": "1 ausgewählt",
-  "ui_dropdown_selected_many": "{count} ausgewählt"
+  "ui_dropdown_selected_many": "{count} ausgewählt",
+  "ui_messageComposer_placeholder": "Frag mich, was du möchtest…",
+  "ui_messageComposer_suggestions_ariaLabel": "Vorgeschlagene Eingaben",
+  "ui_messageComposer_suggestionHint_description": "Vorgeschlagene Eingabe: {suggestion}. Drücke die Tabulatortaste, um sie in das Eingabefeld zu übernehmen.",
+  "ui_messageComposer_sent_label": "Nachricht gesendet.",
+  "ui_messageComposer_sentQueued_label": "Nachricht gesendet. Noch {count} in der Warteschlange.",
+  "ui_messageComposer_attachments_one": "{count} Anhang",
+  "ui_messageComposer_attachments_many": "{count} Anhänge"
 }

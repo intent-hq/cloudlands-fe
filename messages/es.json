@@ -7503,5 +7503,12 @@
   "chat_failureRecovery_action_description": "La respuesta se detuvo antes de terminar.",
   "providers_cliVersionWarning_message": "La versión {version} de la CLI de {provider} es anterior a la mínima compatible {minimumVersion}. Actualiza la CLI en el equipo del daemon.",
   "ui_dropdown_selected_one": "1 seleccionado",
-  "ui_dropdown_selected_many": "{count} seleccionados"
+  "ui_dropdown_selected_many": "{count} seleccionados",
+  "ui_messageComposer_placeholder": "Pregúntame lo que quieras…",
+  "ui_messageComposer_suggestions_ariaLabel": "Sugerencias",
+  "ui_messageComposer_suggestionHint_description": "Sugerencia: {suggestion}. Pulsa Tab para insertarla en el campo de mensaje.",
+  "ui_messageComposer_sent_label": "Mensaje enviado.",
+  "ui_messageComposer_sentQueued_label": "Mensaje enviado. Quedan {count} en la cola.",
+  "ui_messageComposer_attachments_one": "{count} archivo adjunto",
+  "ui_messageComposer_attachments_many": "{count} archivos adjuntos"
 }

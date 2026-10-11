@@ -7503,5 +7503,12 @@
   "chat_failureRecovery_action_description": "応答が完了前に停止しました。",
   "providers_cliVersionWarning_message": "{provider} CLI のバージョン {version} は、サポート対象の最低バージョン {minimumVersion} を下回っています。デーモンのホストで CLI を更新してください。",
   "ui_dropdown_selected_one": "1 件選択済み",
-  "ui_dropdown_selected_many": "{count} 件選択済み"
+  "ui_dropdown_selected_many": "{count} 件選択済み",
+  "ui_messageComposer_placeholder": "何でも聞いてください…",
+  "ui_messageComposer_suggestions_ariaLabel": "入力候補",
+  "ui_messageComposer_suggestionHint_description": "入力候補: {suggestion}。Tab キーを押すとメッセージ欄に入力されます。",
+  "ui_messageComposer_sent_label": "メッセージを送信しました。",
+  "ui_messageComposer_sentQueued_label": "メッセージを送信しました。残り {count} 件が送信待ちです。",
+  "ui_messageComposer_attachments_one": "{count} 件の添付ファイル",
+  "ui_messageComposer_attachments_many": "{count} 件の添付ファイル"
 }

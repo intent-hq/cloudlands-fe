@@ -7503,5 +7503,12 @@
   "chat_failureRecovery_action_description": "回复在完成前停止了。",
   "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低于支持的最低版本 {minimumVersion}。请在守护进程主机上更新 CLI。",
   "ui_dropdown_selected_one": "已选择 1 项",
-  "ui_dropdown_selected_many": "已选择 {count} 项"
+  "ui_dropdown_selected_many": "已选择 {count} 项",
+  "ui_messageComposer_placeholder": "有什么想问的…",
+  "ui_messageComposer_suggestions_ariaLabel": "建议提示",
+  "ui_messageComposer_suggestionHint_description": "建议提示：{suggestion}。按 Tab 键将其填入消息输入框。",
+  "ui_messageComposer_sent_label": "消息已发送。",
+  "ui_messageComposer_sentQueued_label": "消息已发送。还有 {count} 条在队列中。",
+  "ui_messageComposer_attachments_one": "{count} 个附件",
+  "ui_messageComposer_attachments_many": "{count} 个附件"
 }
