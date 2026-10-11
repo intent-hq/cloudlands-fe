@@ -1,26 +1,17 @@
 <script module lang="ts">
-  import { selectResolvedProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { store as appStore } from '$store/renderer/store';
+  import { createProviderWarningNotice as projectProviderWarningNotice } from './model-picker-provider-projections';
+  import { getModelPickerProviderContext } from './model-picker-provider-context';
+  import type { ProviderWarningNotice } from './model-picker-projection-types';
 
-  export type ProviderWarningNotice = {
-    providerId: string;
-    providerName: string;
-    message: string;
-    docsUrl?: string;
-  };
+  export type { ProviderWarningNotice } from './model-picker-projection-types';
 
+  /** Compatibility API for Svelte callers; remove at Svelte picker retirement. */
   export function createProviderWarningNotice(
     providerId: string,
     warning: string | undefined,
   ): ProviderWarningNotice | null {
-    if (!warning) return null;
-    const provider = selectResolvedProviderCatalogEntry.select(appStore.state, providerId);
-    return {
-      providerId: provider?.id ?? providerId,
-      providerName: provider?.displayName ?? providerId,
-      message: warning,
-      docsUrl: provider?.loginDocsUrl,
-    };
+    // The source notice resolves from the GLOBAL catalog, independent of workspace reads.
+    return projectProviderWarningNotice(providerId, warning, getModelPickerProviderContext());
   }
 </script>
 
