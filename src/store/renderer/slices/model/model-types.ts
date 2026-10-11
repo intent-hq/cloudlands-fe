@@ -1,4 +1,4 @@
-import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ProviderModelInfo as AuggieModel } from '$shared/models/wire-model-info';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type ModelLoadingStatus = 'success' | 'loading' | 'error';

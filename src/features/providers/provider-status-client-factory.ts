@@ -1,0 +1,428 @@
+import type { BackendTransport } from '$lib/client/live/backend-transport-types';
+import type { ProviderCatalogEntry } from '$shared/provider-catalog';
+import type { HostRole } from '$shared/types/principal';
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
+import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import type { ProviderAuthStatusParams, ProviderAuthVerdict } from '$shared/provider-auth-status';
+import {
+  PROVIDER_AVAILABILITY_KEY_TO_ID,
+  type NpxStatus,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
+} from '$shared/types/provider-availability';
+
+/** Daemon `host.checkAuggie` / `host.findBinary` shape. */
+export interface HostCheckResult {
+  available: boolean;
+  version?: string;
+  path?: string;
+}
+
+/** Daemon `host.toolAvailability` result shape (host_ops.rs §host). */
+interface HostToolAvailabilityResult {
+  tools?: Record<string, HostCheckResult>;
+}
+
+/**
+ * Availability binary per provider (mirrors the main-process resolvers).
+ * codex keys off the real `codex` CLI — the codex-acp adapter is a
+ * launch-time detail (local binary or pinned npx fallback), not the
+ * "is codex installed" signal (mirrors isCodexInstalled in codex-resolver).
+ */
+export const PROVIDER_BINARIES: Record<string, string> = {
+  codex: 'codex',
+  cortex: 'cortex',
+  opencode: 'opencode',
+  pi: 'pi',
+  droid: 'droid',
+  grok: 'grok',
+  unsloth: 'unsloth',
+};
+
+/** The codex ACP adapter binary — only consulted for the codex warning. */
+const CODEX_ACP_BINARY = 'codex-acp';
+
+/** Daemon `host.providerDiscovery` provider entry (PROTOCOL §5.14). */
+export interface ProviderDiscoveryEntry {
+  id: string;
+  installed: boolean;
+  gatedOff?: string;
+  resolvedPath?: string | null;
+  npxOnly?: boolean;
+  npxPackage?: string;
+  secondaryCommand?: string;
+  secondaryResolved?: boolean;
+  secondaryResolvedPath?: string;
+}
+
+/** Admitted provider reads shared by both renderers; source IPC is a compatibility binding. */
+export function createProviderStatusClient({
+  backendRequest,
+  getProviderAuthVerdicts,
+  hostRole,
+  connectionContext,
+  catalogEntries,
+}: {
+  backendRequest: BackendTransport['request'];
+  getProviderAuthVerdicts: (
+    options?: ProviderAuthStatusParams,
+  ) => Promise<Record<string, ProviderAuthVerdict>>;
+  hostRole: () => HostRole | null;
+  connectionContext: () => string | null;
+  catalogEntries: () => ProviderCatalogEntry[];
+}) {
+  /**
+   * Auth verdicts from the daemon's `host.providerAuthStatus`
+   * (intent-hq/intentd#339) as an id → verdict map. The daemon owns the
+   * CLI/ACP probes and their caching; the wire `null` (unknown) folds to
+   * undefined and an RPC failure folds to an empty map (every provider reads
+   * as unknown, no indicator — honest degradation). Each verdict also carries
+   * the rendered identity line (`authDetails`) when the daemon sent one
+   * (the verdict `identity` field, intent-hq/intentd#1685).
+   */
+  async function getAuthVerdicts(
+    options: ProviderAuthStatusParams = {},
+  ): Promise<Record<string, ProviderAuthVerdict>> {
+    try {
+      return await getProviderAuthVerdicts(options);
+    } catch {
+      return {};
+    }
+  }
+
+  /** Daemon `host.checkAuggie` — `available:false` on RPC failure is NOT folded
+   * here; callers decide between degrading (availability aggregate) and
+   * surfacing the error. */
+  async function checkAuggie(): Promise<HostCheckResult> {
+    const result = await backendRequest<HostCheckResult>('host.checkAuggie');
+    return result ?? { available: false };
+  }
+
+  /**
+   * Providers gated behind an env var or feature code the renderer cannot
+   * verify (featureCodesService / process.env are main-side) stay hidden —
+   * matching the main service's default-deny gating.
+   */
+  function computeHiddenProviders(): string[] {
+    return catalogEntries()
+      .filter((entry) => entry.requiresEnvVar || entry.requiresFeatureCode)
+      .map((entry) => entry.id);
+  }
+
+  /** Attach an auth verdict (and its identity line) only when the provider is
+   * actually available. */
+  function withAuth(
+    status: ProviderStatus,
+    verdict: ProviderAuthVerdict | undefined,
+  ): ProviderStatus {
+    if (!status.available || verdict === undefined) return status;
+    if (verdict.authenticated !== undefined) {
+      status.authenticated = verdict.authenticated;
+    }
+    if (verdict.authDetails !== undefined) {
+      status.authDetails = verdict.authDetails;
+    }
+    return status;
+  }
+
+  /**
+   * Aggregate availability for all providers — the daemon resolves every binary
+   * in one `host.toolAvailability` round-trip and the auth verdicts arrive in
+   * one `host.providerAuthStatus` sweep.
+   *
+   * `checkAuggie()` and `host.toolAvailability` are NOT caught here: a daemon-
+   * RPC failure on either means we cannot honestly answer "is it installed",
+   * so it propagates to the `GET_AVAILABILITY` handler's catch below, which
+   * returns an explicit `{ success: false }` instead of a fabricated
+   * all-unavailable result (auth verdicts are a separate, best-effort axis and
+   * still degrade to unknown via `getAuthVerdicts()`).
+   */
+  async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
+    if (hostRole() === 'member') {
+      const [discovery, auth] = await Promise.all([fetchProviderDiscovery(), getAuthVerdicts()]);
+      const statuses = Object.fromEntries(
+        Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
+          key,
+          withAuth(providerStatusFromDiscovery(discovery, id), auth[id]),
+        ]),
+      ) as ProviderAvailabilityResult['providers'];
+      return {
+        providers: statuses,
+        hasAnyProvider: Object.values(statuses).some((status) => status.available),
+        hiddenProviders: discovery.providers.filter((row) => row.gatedOff).map((row) => row.id),
+      };
+    }
+    const [auggieCheck, toolsResult, authVerdicts, discovery, mock] = await Promise.all([
+      checkAuggie(),
+      backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
+        // `codex-acp` (the adapter) rides along for the codex warning —
+        // availability itself keys off the real `codex` CLI. `npx` rides
+        // along as the codex adapter's pinned fallback runner.
+        tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, 'npx'],
+      }),
+      getAuthVerdicts(),
+      // Serves Antigravity and Claude availability. A
+      // successful discovery can omit a provider; a failed discovery is unknown
+      // and must reach the existing failure envelope.
+      fetchProviderDiscovery(),
+      // Main-side env gating via the preload bridge (packaged app only).
+      checkMockProvider(),
+    ]);
+    const tools = toolsResult?.tools ?? {};
+    const tool = (name: string): HostCheckResult => tools[name] ?? { available: false };
+    // Main forces mock to `{ available: false }` whenever its env gate is
+    // closed, so an available verdict means main's gate is open — mirror
+    // main's aggregate and stop listing mock as hidden.
+    const hiddenProviders = computeHiddenProviders().filter(
+      (id) => !(id === 'mock' && mock.available),
+    );
+
+    const auggie: ProviderStatus = { available: auggieCheck.available === true };
+    const claudeCode = claudeCodeStatusFromDiscovery(discovery);
+    const antigravity = antigravityFromDiscovery(discovery);
+    const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
+    // cortex: presence of the `cortex` CLI; no auth surface probed (the
+    // daemon's providerAuthStatus sweep does not cover cortex).
+    const cortex: ProviderStatus = { available: tool(PROVIDER_BINARIES.cortex).available === true };
+    // codex's ACP adapter is a local codex-acp binary or the pinned npx
+    // fallback — warn when the CLI is present but neither can run.
+    if (
+      codex.available &&
+      tool(CODEX_ACP_BINARY).available !== true &&
+      tool('npx').available !== true
+    ) {
+      codex.warning = CODEX_ADAPTER_MISSING_WARNING;
+    }
+    const opencode: ProviderStatus = {
+      available: tool(PROVIDER_BINARIES.opencode).available === true,
+    };
+    const pi: ProviderStatus = { available: tool(PROVIDER_BINARIES.pi).available === true };
+    const droid: ProviderStatus = { available: tool(PROVIDER_BINARIES.droid).available === true };
+    const grok: ProviderStatus = { available: tool(PROVIDER_BINARIES.grok).available === true };
+    // unsloth rides the opencode binary AND requires the unsloth CLI itself
+    // (the daemon-managed server lifecycle shells out to `unsloth run`
+    // directly); local-only, so available ⇒ authenticated (the daemon's
+    // managed server injects its own API key).
+    const unsloth: ProviderStatus = {
+      available: opencode.available && tool(PROVIDER_BINARIES.unsloth).available === true,
+    };
+    if (unsloth.available) unsloth.authenticated = true;
+
+    withAuth(auggie, authVerdicts['auggie']);
+    withAuth(claudeCode, authVerdicts['claude-code']);
+    withAuth(codex, authVerdicts['codex']);
+    withAuth(opencode, authVerdicts['opencode']);
+    withAuth(pi, authVerdicts['pi']);
+    withAuth(droid, authVerdicts['droid']);
+    withAuth(grok, authVerdicts['grok']);
+    withAuth(antigravity, authVerdicts['antigravity']);
+
+    return {
+      hasAnyProvider:
+        auggie.available ||
+        claudeCode.available ||
+        codex.available ||
+        cortex.available ||
+        mock.available ||
+        opencode.available ||
+        pi.available ||
+        droid.available ||
+        grok.available ||
+        unsloth.available ||
+        antigravity.available,
+      providers: {
+        auggie,
+        claudeCode,
+        codex,
+        cortex,
+        mock,
+        opencode,
+        pi,
+        droid,
+        grok,
+        unsloth,
+        antigravity,
+      },
+      hiddenProviders,
+    };
+  }
+
+  type ProviderDiscoverySnapshot = { providers: ProviderDiscoveryEntry[]; npx?: NpxStatus };
+
+  function providerStatusFromDiscovery(
+    discovery: ProviderDiscoverySnapshot,
+    providerId: string,
+  ): ProviderStatus {
+    const row = discovery.providers.find((provider) => provider.id === providerId);
+    return { available: row?.installed === true && !row.gatedOff };
+  }
+
+  /** Preserve missing-runner guidance only when discovery confirms the cause. */
+  function claudeCodeStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
+    const row = discovery.providers.find((provider) => provider.id === 'claude-code');
+    const status = providerStatusFromDiscovery(discovery, 'claude-code');
+    if (row && !row.installed && !row.gatedOff && discovery.npx?.resolvedPath === null) {
+      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+    }
+    return status;
+  }
+
+  /** Every legacy IPC caller shares the admitted window's authority and reply fence. */
+  async function readProviderStatus<T>(read: () => Promise<T>): Promise<T> {
+    const role = hostRole();
+    const connection = connectionContext();
+    if (!connection || (role !== 'owner' && role !== 'member')) {
+      throw new Error('Provider discovery requires an admitted host owner or member');
+    }
+    const result = await read();
+    if (connection !== connectionContext() || role !== hostRole()) {
+      throw new Error('Provider discovery connection changed');
+    }
+    return result;
+  }
+
+  function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
+    return backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
+  }
+
+  function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
+    return {
+      available: discovery.providers.some((row) => row.id === 'antigravity' && row.installed),
+      hasNpxFallback: false,
+    };
+  }
+
+  async function checkAntigravityAvailability(): Promise<ProviderStatus> {
+    return antigravityFromDiscovery(await fetchProviderDiscovery());
+  }
+
+  /** Main's `providers:check-single` envelope (provider-availability.service.ts). */
+  interface CheckSingleEnvelope {
+    success?: boolean;
+    data?: ProviderStatus;
+  }
+
+  /**
+   * Mock provider — env-gated in main (`TESTING=true` + `MOCK_AGENT_SCRIPT_PATH`,
+   * `checkMockAvailability`), which the renderer cannot read. Forward the probe
+   * to the real preload bridge (packaged app) and unwrap main's
+   * `{ success, data }` envelope; otherwise keep main's default-deny
+   * `{ available: false }`. The gate is `isElectronPlatform()`, not bridge
+   * presence: the dev browser mock and the CT host bridge both install a
+   * `window.electronAPI` carrying the sentinel electron version — the CT
+   * bridge's `invoke` routes back into this mock router (so forwarding would
+   * recurse) and the dev mock's private router never reaches main. A rejected
+   * invoke is also a deny — the aggregate must not lose the other providers'
+   * verdicts over the mock slot.
+   */
+  async function checkMockProvider(): Promise<ProviderStatus> {
+    if (!isElectronPlatform()) return { available: false };
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (!bridge || typeof bridge.invoke !== 'function') return { available: false };
+    try {
+      const response = (await bridge.invoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock')) as
+        CheckSingleEnvelope | undefined;
+      return response?.success === true && response.data ? response.data : { available: false };
+    } catch {
+      return { available: false };
+    }
+  }
+
+  /** Single-provider recheck (AgentGrid card refresh) — same verdicts as
+   * above, defaulting to `force: true` so a login that just completed bypasses
+   * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
+   * the daemon's cache instead. */
+  async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
+    const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
+      (await getAuthVerdicts({ providerId, force }))[providerId];
+
+    if (hostRole() === 'member') {
+      const status = providerStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
+      return status.available ? withAuth(status, await checkAuth()) : status;
+    }
+
+    if (providerId === 'claude-code') {
+      const status = claudeCodeStatusFromDiscovery(await fetchProviderDiscovery());
+      return status.available ? withAuth(status, await checkAuth()) : status;
+    }
+
+    if (providerId === 'antigravity') {
+      const status = await checkAntigravityAvailability();
+      return status.available ? withAuth(status, await checkAuth()) : status;
+    }
+
+    if (providerId === 'auggie') {
+      const check = await checkAuggie();
+      const status: ProviderStatus = { available: check.available === true };
+      if (status.available) {
+        return withAuth(status, await checkAuth());
+      }
+      return status;
+    }
+    if (providerId === 'mock') {
+      return checkMockProvider();
+    }
+    if (providerId === 'unsloth') {
+      // Rides the opencode binary AND requires the unsloth CLI itself;
+      // local-only so available ⇒ authenticated.
+      const [opencodeFound, unslothFound] = await Promise.all([
+        backendRequest<HostCheckResult>('host.findBinary', { name: PROVIDER_BINARIES.opencode }),
+        backendRequest<HostCheckResult>('host.findBinary', { name: PROVIDER_BINARIES.unsloth }),
+      ]);
+      const status: ProviderStatus = {
+        available: opencodeFound?.available === true && unslothFound?.available === true,
+      };
+      if (status.available) status.authenticated = true;
+      return status;
+    }
+
+    const binary = PROVIDER_BINARIES[providerId];
+    const found = await backendRequest<HostCheckResult>('host.findBinary', { name: binary });
+    const status: ProviderStatus = { available: found?.available === true };
+    if (providerId === 'codex') {
+      // Static registry fact (intent-providers' `fallback_npx_package` is set
+      // only for codex) — mirrors the aggregate path's `hasNpxFallback` so the
+      // npx-missing/too-old guidance still renders when codex is unavailable
+      // (the UI gates that guidance on `hasNpxFallback && !available`).
+      status.hasNpxFallback = true;
+    }
+    if (!status.available) return status;
+
+    if (providerId === 'cortex') {
+      // No auth surface — the daemon's providerAuthStatus sweep does not
+      // cover cortex, so return presence alone.
+      return status;
+    }
+    if (providerId === 'codex') {
+      // Availability (and auth) key off the real `codex` CLI; the codex-acp
+      // adapter (local binary or pinned npx fallback) is only probed for the
+      // warning. Failed probes are unknowns, not confirmed absences — no
+      // warning then.
+      const [acp, npx] = await Promise.all([
+        backendRequest<HostCheckResult>('host.findBinary', { name: CODEX_ACP_BINARY }).catch(
+          () => undefined,
+        ),
+        backendRequest<HostCheckResult>('host.findBinary', { name: 'npx' }).catch(() => undefined),
+      ]);
+      if (acp && acp.available !== true && npx && npx.available !== true) {
+        status.warning = CODEX_ADAPTER_MISSING_WARNING;
+      }
+      return withAuth(status, await checkAuth());
+    }
+    // opencode / pi / droid / grok: presence via host.findBinary, auth from
+    // the daemon's providerAuthStatus verdict.
+    return withAuth(status, await checkAuth());
+  }
+
+  return {
+    getProviderAvailability,
+    checkSingleProvider,
+    readProviderStatus,
+    fetchProviderDiscovery,
+    providerStatusFromDiscovery,
+    checkAuggie,
+    getAuthVerdicts,
+  };
+}

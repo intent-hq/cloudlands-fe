@@ -29,11 +29,21 @@ export interface ProviderCatalogState {
 }
 
 export interface WorkspaceCatalogSnapshot {
-  importDiagnostics?: import('$lib/client/app-client').SpecialistImportDiagnostic[];
+  importDiagnostics?: import('$lib/client/specialists-types').SpecialistImportDiagnostic[];
   mcpServers?: import('../mcp-settings/mcp-settings-types').McpServerConfig[];
   mcpStatuses?: import('../mcp-settings/mcp-settings-types').McpServerRuntimeStatus[];
   readiness: Record<string, import('$shared/types/provider-availability').ProviderStatus>;
   catalog: import('$shared/provider-catalog').ProviderCatalogResult;
-  settings: import('$lib/client/app-client').SettingDefinitionWithValue[];
-  specialists: import('$lib/client/app-client').SpecialistDef[];
+  settings: import('$lib/client/settings-types').SettingDefinitionWithValue[];
+  specialists: import('$lib/client/specialists-types').SpecialistDef[];
+}
+
+/** Login guidance for a provider authentication failure. */
+export interface ProviderAuthFailureGuidance {
+  /** Canonical id of the provider whose auth failed (refresh target). */
+  providerId: string;
+  /** Login command to surface (catalog hint, else `<command> login`). */
+  loginCommandHint: string;
+  /** claude-code only: desktop-app sign-in does not carry over to the CLI. */
+  showClaudeDesktopNote: boolean;
 }

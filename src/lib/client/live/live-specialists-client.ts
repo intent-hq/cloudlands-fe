@@ -30,6 +30,9 @@ import {
   onBackendReconnected,
 } from './backend-transport';
 
+import { createSpecialistCatalogRead } from './specialist-catalog-read';
+const readSpecialistCatalog = createSpecialistCatalogRead(backendRequest);
+
 const logger = createLogger('LiveSpecialistsClient');
 
 /**
@@ -48,25 +51,13 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * transient failure keeps the last known-good view instead of wiping the
    * store (#610).
    */
-  async listCatalog(
+  /** Compatibility method for source consumers; retire with the Svelte AppClient. */
+  listCatalog(
     provider?: string,
     workspaceId?: string,
     options?: { includeProject?: boolean },
   ): Promise<SpecialistCatalog> {
-    // Preview context belongs to this request; global subscriptions keep
-    // using the daemon's default context rather than the last picker choice.
-    const result =
-      provider === undefined && workspaceId === undefined && !options?.includeProject
-        ? await backendRequest<SpecialistCatalog>('specialist.list')
-        : await backendRequest<SpecialistCatalog>('specialist.list', {
-            ...(provider ? { provider } : {}),
-            ...(workspaceId ? { workspaceId } : {}),
-            ...(options?.includeProject ? { includeProject: true } : {}),
-          });
-    return {
-      specialists: Array.isArray(result?.specialists) ? result.specialists : [],
-      importDiagnostics: result?.importDiagnostics,
-    };
+    return readSpecialistCatalog(provider, workspaceId, options);
   }
 
   async list(provider?: string, workspaceId?: string): Promise<SpecialistDef[]> {

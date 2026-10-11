@@ -31,23 +31,11 @@ import {
   PI_CHANNELS,
   UNSLOTH_CHANNELS,
 } from '$shared/ipc/channels';
-import {
-  wireModelsToProviderModels,
-  type ProviderModelInfo,
-  type WireModelsListResult,
-} from '$shared/models/wire-model-info';
+
 import { backendRequest } from '$lib/client/live/backend-transport';
 
-type GetModelsEnvelope = {
-  success: boolean;
-  data?: ProviderModelInfo[];
-  warning?: string;
-  stale?: boolean;
-  error?: string;
-};
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+import { createProviderModelCatalogRead } from '$lib/client/live/provider-model-catalog-read';
+const readProviderModelCatalog = createProviderModelCatalogRead(backendRequest);
 
 const PROVIDER_MODEL_CHANNELS: Array<[string, string]> = [
   ['antigravity', ANTIGRAVITY_CHANNELS.GET_MODELS],
@@ -62,27 +50,12 @@ const PROVIDER_MODEL_CHANNELS: Array<[string, string]> = [
   ['unsloth', UNSLOTH_CHANNELS.GET_MODELS],
 ];
 
+// Source IPC compatibility binding; remove when legacy IPC catalog consumers retire.
 for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {
-  registerMockIpcHandler(channel, async (data?: unknown): Promise<GetModelsEnvelope> => {
-    try {
-      const forceRefresh = (data as { forceRefresh?: boolean } | undefined)?.forceRefresh === true;
-      const workspaceId = (data as { workspaceId?: string } | undefined)?.workspaceId;
-      const result = await backendRequest<WireModelsListResult>('models.list', {
-        providerId,
-        ...(workspaceId ? { workspaceId } : {}),
-        ...(forceRefresh ? { forceRefresh: true } : {}),
-      });
-      const envelope: GetModelsEnvelope = {
-        success: true,
-        data: wireModelsToProviderModels(result),
-      };
-      if (typeof result?.warning === 'string' && result.warning) {
-        envelope.warning = result.warning;
-      }
-      if (result?.stale === true) envelope.stale = true;
-      return envelope;
-    } catch (error) {
-      return { success: false, error: errorMessage(error) };
-    }
-  });
+  registerMockIpcHandler(channel, (data?: unknown) =>
+    readProviderModelCatalog(providerId, {
+      forceRefresh: (data as { forceRefresh?: boolean } | undefined)?.forceRefresh === true,
+      workspaceId: (data as { workspaceId?: string } | undefined)?.workspaceId,
+    }),
+  );
 }

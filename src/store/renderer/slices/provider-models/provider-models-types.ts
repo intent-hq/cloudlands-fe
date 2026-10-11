@@ -4,7 +4,7 @@
  * Session-lifetime cache of per-provider model catalogs (`models.list`,
  * PROTOCOL §6.7) as already shaped for the picker by
  * `getModelsForProviderForLoadingState` (dropdown-ready `AuggieModel` rows,
- * compound-prefixed for non-default providers). Keyed by NORMALIZED provider
+ * with bare model ids and explicit provider provenance). Keyed by NORMALIZED provider
  * id — dispatchers normalize via `selectNormalizedProviderId` before writing;
  * the reducer stores keys verbatim.
  *
@@ -14,7 +14,7 @@
  * different adapters/catalogs.
  */
 import type { LearnedModelNames } from './model-name-cache';
-import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ProviderModelInfo as AuggieModel } from '$shared/models/wire-model-info';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type ProviderModelsRequestMode = 'background' | 'refresh' | 'retry' | 'silentRetry';
@@ -38,7 +38,7 @@ export interface ProviderModelsObserver {
 
 /** Successful `getModelsForProviderForLoadingState`-shaped fetch result. */
 export interface ProviderModelsFetchResult {
-  /** Dropdown-ready rows (compound-prefixed for non-default providers). */
+  /** Dropdown-ready rows (with bare model ids and explicit provider provenance). */
   models: AuggieModel[];
   /** Daemon-provided reason for fallback/stale/empty data (PROTOCOL §6.7). */
   warning?: string;

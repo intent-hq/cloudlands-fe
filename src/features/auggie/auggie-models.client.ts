@@ -6,32 +6,7 @@
  * (`$features/providers/provider-models.client`).
  */
 
-interface AuggieModelBadge {
-  color: string;
-  label: string;
-  variant?: string;
-}
-
-export interface AuggieModel {
-  value: string;
-  label: string;
-  description?: string;
-  /** Ordering priority within the model list. Lower = higher priority. Models with priority 1 are primary, 2 are secondary. */
-  modelGroupPriority?: number;
-  /** Whether Auggie reports this as a legacy model. */
-  isLegacyModel?: boolean;
-  /** Cost tier: 1 = cheap ($), 2 = moderate ($$), 3 = expensive ($$$) */
-  costTier?: number;
-  /** Badges to display next to the model name (e.g., "Auto", "Free") */
-  badges?: AuggieModelBadge[];
-  /** Supported effort levels for this model */
-  effortLevels?: string[];
-
-  /** Whether this is the default model */
-  isDefault?: boolean;
-  /** Within-group ordering priority. Lower = higher in the list. */
-  priority?: number;
-}
+export type { ProviderModelInfo as AuggieModel } from '$shared/models/wire-model-info';
 
 /**
  * Map model value to emoji icon

@@ -1,0 +1,130 @@
+/**
+ * Provider Models Client
+ *
+ * Single renderer-side client for every provider's `<provider>:get-models`
+ * IPC channel. The main-process handlers (and the daemon-build mock-router
+ * bridge in `model-catalog-bridge-seeder.ts`) are uniform thin calls to the
+ * daemon's per-provider catalog (`models.list { providerId, forceRefresh }`,
+ * PROTOCOL §6.7), so one client covers all supported providers.
+ *
+ * `forceRefresh: true` makes the daemon skip its cache read and await a fresh
+ * probe — the returned promise resolves only when the probe completes, so
+ * callers (the picker's per-group ↻ button) get honest spinner semantics.
+ * Since the daemon serves its cached catalog indefinitely (re-probing only on
+ * a cache miss or an adapter version-key change), this is the only
+ * client-driven way to re-probe a cached provider.
+ *
+ * An empty `data` with a `warning` is an honest terminal state (e.g. droid
+ * not signed in) and resolves to `{ models: [], warning }`;
+ * only `success: false` (daemon unreachable) or transport failure throws.
+ */
+
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
+
+const logger = createLogger('ProviderModelsClient');
+
+import type { ProviderModelsEnvelope, ProviderModelsResult } from './provider-models-types';
+export type { ProviderModelEntry, ProviderModelsResult } from './provider-models-types';
+
+/**
+ * The uniform `<provider>:get-models` channels. Recorded in
+ * `DYNAMIC_INVOKE_CALL_SITES` (ipc-channel-reconciliation.test.ts) because the
+ * concrete channel is selected at runtime.
+ */
+export const PROVIDER_MODEL_CHANNELS: Record<string, string> = {
+  antigravity: 'antigravity:get-models',
+  auggie: 'auggie:get-models',
+  'claude-code': 'claude-code:get-models',
+  codex: 'codex:get-models',
+  cortex: 'cortex:get-models',
+  droid: 'droid:get-models',
+  grok: 'grok:get-models',
+  opencode: 'opencode:get-models',
+  pi: 'pi:get-models',
+  unsloth: 'unsloth:get-models',
+};
+
+export function createProviderModelsClient({
+  readModels,
+  displayName,
+}: {
+  readModels: (
+    providerId: string,
+    options: import('./provider-models-types').ProviderModelsOptions,
+  ) => Promise<ProviderModelsEnvelope>;
+  displayName: (providerId: string, workspaceId?: string) => string;
+}) {
+  function toErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message;
+    if (typeof error === 'string' && error) return error;
+    return m.providers_modelsClient_unknown_error();
+  }
+
+  function toProviderError(providerId: string, message: string): Error {
+    // Only prefix with the display name for known providers — the catalog
+    // lookup falls back to the default provider for unknown IDs, which would
+    // mislabel the error with a different provider's name.
+    const providerName =
+      providerId in PROVIDER_MODEL_CHANNELS ? displayName(providerId) || providerId : providerId;
+    return new Error(
+      message.startsWith(`${providerName}:`) ? message : `${providerName}: ${message}`,
+    );
+  }
+
+  /**
+   * Get available models for a provider from the daemon-owned catalog.
+   */
+  async function getProviderModels(
+    providerId: string,
+    options: { forceRefresh?: boolean; workspaceId?: string } = {},
+  ): Promise<ProviderModelsResult> {
+    // Skip in Node.js environment (backend)
+    if (typeof window === 'undefined') {
+      logger.debug('Skipping provider models fetch - not in browser environment', { providerId });
+      return { models: [] };
+    }
+
+    const channel = PROVIDER_MODEL_CHANNELS[providerId];
+    if (!channel) {
+      throw toProviderError(
+        providerId,
+        m.providers_modelsClient_unsupportedProvider_error({ id: providerId }),
+      );
+    }
+
+    try {
+      logger.debug('Getting models for provider', {
+        providerId,
+        forceRefresh: options.forceRefresh === true,
+      });
+      const result = await readModels(providerId, options);
+
+      if (!result?.success) {
+        throw toProviderError(
+          providerId,
+          result?.error || result?.warning || m.providers_modelsClient_noResponse_error(),
+        );
+      }
+
+      if (result.warning) {
+        logger.warn('Provider models returned with warning', {
+          providerId,
+          warning: result.warning,
+          stale: result.stale === true,
+        });
+      }
+
+      const models = Array.isArray(result.data) ? result.data : [];
+      const outcome: ProviderModelsResult = { models };
+      if (result.warning) outcome.warning = result.warning;
+      if (result.stale === true) outcome.stale = true;
+      return outcome;
+    } catch (error) {
+      logger.warn('Failed to get provider models', { providerId, error });
+      throw toProviderError(providerId, toErrorMessage(error));
+    }
+  }
+
+  return { getProviderModels };
+}

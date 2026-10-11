@@ -1,0 +1,31 @@
+/**
+ * Live providers domain backed by the intentd daemon (PROTOCOL §5.38).
+ *
+ * `providers.catalog` is daemon-owned (optional `workspaceId` routing context) and
+ * returns the full static provider registry — every registered row (gated-off
+ * included, `visible` carries the daemon-evaluated verdict) in registry
+ * order. The data is compiled into the daemon, so the result only changes
+ * when the daemon binary does.
+ *
+ * The response is validated against the §5.38 Zod schema at the wire
+ * boundary; a divergent payload THROWS (never silently absorbed — the BE or
+ * PROTOCOL.md is the fix-site). Transport failures also THROW so the seeder
+ * decides the fallback (keep the last hydrated catalog).
+ */
+import {
+  PROVIDERS_CATALOG_METHOD,
+  ProviderCatalogRequestSchema,
+  ProviderCatalogResponseSchema,
+  type ProviderCatalogResult,
+} from '$shared/provider-catalog';
+import type { BackendTransport } from './backend-transport-types';
+
+export class BackendProvidersClient {
+  constructor(private readonly backendRequest: BackendTransport['request']) {}
+
+  async catalog(workspaceId?: string): Promise<ProviderCatalogResult> {
+    const params = ProviderCatalogRequestSchema.parse(workspaceId ? { workspaceId } : {});
+    const result = await this.backendRequest<unknown>(PROVIDERS_CATALOG_METHOD, params);
+    return ProviderCatalogResponseSchema.parse(result);
+  }
+}

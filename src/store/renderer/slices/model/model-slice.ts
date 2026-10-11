@@ -2,7 +2,7 @@ import { hostExecutionConnectionChanged } from '../host-execution/host-execution
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
-import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ProviderModelInfo as AuggieModel } from '$shared/models/wire-model-info';
 import { toBareProviderModels } from './model-selection-utils';
 import type {
   ModelFallbackInfo,

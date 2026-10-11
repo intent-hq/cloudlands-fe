@@ -1,67 +1,10 @@
-/**
- * Live models domain backed by the intentd daemon (PROTOCOL §5.30).
- *
- * Unscoped `models.list` is global (no `workspaceId`) and returns the daemon-resolved
- * rich model catalog — `{ models: ModelInfo[], source: "auggie" | "static" }`.
- * The daemon does auggie CLI discovery (JSON → plain-text fallback), catalog
- * caching (served indefinitely; it re-probes only on a cache miss, an adapter
- * version-key change, or `forceRefresh: true`), legacy-model filtering, and
- * priority sorting server-side and
- * degrades to the static tier catalog when the CLI is unavailable, so the
- * result is never empty (§5.30).
- *
- * Pass `providerId` to load a provider-specific catalog; omitting it retains
- * the legacy Auggie catalog for existing unscoped consumers.
- *
- * Wire-boundary rename: the FE's `AuggieModel` keeps the historical
- * `value`/`label` names; the documented `id`→`value` / `name`→`label` mapping
- * lives in `$shared/models/wire-model-info.ts` (shared with the main-process
- * per-provider handlers).
- *
- * Failures fold to an empty list so a boot-time transport hiccup leaves the
- * model picker with the seeder/static fallback rather than a broken state.
- */
-import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import {
-  wireModelsToProviderModels,
-  type WireModelsListResult,
-} from '$shared/models/wire-model-info';
-import type { AppClient, ModelsClient, SubscriptionHandler, Unsubscribe } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { BackendModelsClient } from './backend-models-client';
+import type { ModelsClient } from '../app-client';
 
-export class LiveModelsClient implements ModelsClient {
-  async list(providerId?: string, workspaceId?: string): Promise<AuggieModel[]> {
-    try {
-      const result =
-        providerId || workspaceId
-          ? await backendRequest<WireModelsListResult>('models.list', {
-              ...(providerId ? { providerId } : {}),
-              ...(workspaceId ? { workspaceId } : {}),
-            })
-          : await backendRequest<WireModelsListResult>('models.list');
-      // Scoped replies identify their provider. Never attribute legacy unscoped
-      // Auggie rows (or another provider's rows) to the requested provider.
-      if (providerId && result.providerId !== providerId) return [];
-      return wireModelsToProviderModels(result);
-    } catch {
-      return [];
-    }
-  }
-
-  subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe {
-    // No `models:*` change events exist on the wire yet (PROTOCOL §6); the
-    // subscription surfaces a one-shot snapshot so call sites that opt into
-    // the seam do not stall.
-    let cancelled = false;
-    void this.list().then((models) => {
-      if (!cancelled) handler(models);
-    });
-    return () => {
-      cancelled = true;
-    };
+/** Svelte transport binding; remove when the Svelte AppClient retires. */
+export class LiveModelsClient extends BackendModelsClient implements ModelsClient {
+  constructor() {
+    super(backendRequest);
   }
 }
-
-// Tied to AppClient["models"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient['models'] | undefined = undefined as LiveModelsClient | undefined;
-void _interfaceCheck;
