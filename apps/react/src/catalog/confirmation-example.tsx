@@ -20,6 +20,9 @@ export function ConfirmationExample() {
   const [accepted, setAccepted] = useState(0);
   const [cancelled, setCancelled] = useState(0);
   const [result, setResult] = useState('none');
+  const [queueResults, setQueueResults] = useState<string[]>([]);
+  const [retryAttempts, setRetryAttempts] = useState(0);
+  const [retryResult, setRetryResult] = useState('none');
   return (
     <section
       className="grid gap-4"
@@ -79,6 +82,52 @@ export function ConfirmationExample() {
         >
           Show acknowledgement
         </Button>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            setQueueResults([]);
+            // Both invocations enqueue immediately, before either promise settles.
+            const first = confirm({
+              title: 'Queued confirmation 1',
+              confirmLabel: 'Accept first',
+              cancelLabel: 'Cancel first',
+            });
+            const second = confirm({
+              title: 'Queued confirmation 2',
+              confirmLabel: 'Accept second',
+              cancelLabel: 'Cancel second',
+            });
+            await Promise.all([
+              first.then((value) => setQueueResults((current) => [...current, `first:${value}`])),
+              second.then((value) => setQueueResults((current) => [...current, `second:${value}`])),
+            ]);
+          }}
+        >
+          Queue confirmations
+        </Button>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            let attempts = 0;
+            setRetryAttempts(0);
+            setRetryResult('pending');
+            const accepted = await confirm({
+              title: 'Confirmation retry example',
+              description: 'The first callback rejects. Accept again to retry.',
+              confirmLabel: 'Accept retry example',
+              cancelLabel: 'Cancel retry example',
+              onConfirm: async () => {
+                attempts += 1;
+                setRetryAttempts(attempts);
+                await Promise.resolve();
+                if (attempts === 1) throw new Error('Example confirmation rejected');
+              },
+            });
+            setRetryResult(String(accepted));
+          }}
+        >
+          Confirm with retry
+        </Button>
       </div>
       <FormDialog
         open={formOpen}
@@ -119,6 +168,9 @@ export function ConfirmationExample() {
       <output aria-label="Confirmation cancelled count">{cancelled}</output>
       <output aria-label="Confirmed workspace name">{savedName}</output>
       <output aria-label="Confirmation service result">{result}</output>
+      <output aria-label="Confirmation queue results">{JSON.stringify(queueResults)}</output>
+      <output aria-label="Confirmation retry attempts">{retryAttempts}</output>
+      <output aria-label="Confirmation retry result">{retryResult}</output>
     </section>
   );
 }

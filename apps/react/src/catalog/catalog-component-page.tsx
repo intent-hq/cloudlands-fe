@@ -20,6 +20,7 @@ import { MenuCatalogPreview } from './menu-catalog-preview';
 import { SelectCatalogPreview } from './select-catalog-preview';
 import { CatalogLink } from './catalog-link';
 import { DialogCatalogPreview } from './dialog-catalog-preview';
+import { hasFunctionalExample } from './functional-examples';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import './catalog-component-page.css';
 
@@ -183,7 +184,7 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
           </div>
         </section>
       ))}
-      {['form', 'collection', 'confirm', 'screen'].includes(entry.slug) && (
+      {hasFunctionalExample(entry.slug) && (
         <section>
           <h2>Interactive example</h2>
           <CatalogLink href={`/sandbox/${entry.slug}?example=interactive`}>

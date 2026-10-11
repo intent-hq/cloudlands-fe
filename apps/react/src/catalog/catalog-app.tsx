@@ -1,5 +1,5 @@
 import { useLocation } from '@tanstack/react-router';
-import { FunctionalExamples } from './functional-examples';
+import { FunctionalExamples, hasFunctionalExample } from './functional-examples';
 import { CatalogShell } from './catalog-shell';
 import { CatalogIntroduction } from './catalog-introduction';
 import { CatalogSystemPage } from './catalog-system-page';
@@ -19,7 +19,7 @@ export function CatalogApp() {
   const entry = getCatalogEntry(slug);
   const interactive =
     new URLSearchParams(location.searchStr).get('example') === 'interactive' &&
-    ['form', 'collection', 'confirm', 'screen'].includes(slug);
+    hasFunctionalExample(slug);
   return (
     <CatalogShell>
       {interactive ? (
