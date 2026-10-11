@@ -102,17 +102,17 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   const rendered = frame.locator(`[data-catalog-renderer-fixture="${entry.fixture}"]`);
   await expect(rendered).toHaveCount(1);
   const stateTokens = () =>
-    rendered
-      .locator("[data-catalog-rendered-state]")
-      .evaluateAll((elements) =>
-        [
-          ...new Set(
-            elements.flatMap((element) =>
-              element.getAttribute("data-catalog-rendered-state").split(/\s+/),
-            ),
+    rendered.evaluate((root) => {
+      const elements = [...root.querySelectorAll("[data-catalog-rendered-state]")];
+      if (root.hasAttribute("data-catalog-rendered-state")) elements.unshift(root);
+      return [
+        ...new Set(
+          elements.flatMap((element) =>
+            element.getAttribute("data-catalog-rendered-state").split(/\s+/),
           ),
-        ].sort(),
-      );
+        ),
+      ].sort();
+    });
   await expect
     .poll(stateTokens, {
       message: "Catalog renderer readiness states differ from the reviewed source fixture",

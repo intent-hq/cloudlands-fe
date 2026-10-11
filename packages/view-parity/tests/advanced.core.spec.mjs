@@ -52,7 +52,9 @@ test("composer: Shift Enter retains multiline draft and Enter delivers trimmed t
   await field.pressSequentially("Second line  ");
   await expect(field).toHaveValue("  First line\nSecond line  ");
   await field.press("Enter");
-  await expect(fixture.locator("output")).toHaveText("Sent: First line\nSecond line");
+  await expect(fixture.locator("[data-catalog-renderer-fixture] > output")).toHaveText(
+    "Sent: First line\nSecond line",
+  );
   await expect(field).toHaveValue("");
   await expect(fixture.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
 });
@@ -85,12 +87,16 @@ test("composer: streaming queues the draft and stopping drains the queued reques
     fixture.getByRole("button", { name: "First queued request", exact: true }),
   ).toBeVisible();
   await fixture.getByRole("button", { name: "Stop", exact: true }).click();
-  await expect(fixture.locator("output")).toHaveText("Sent: First queued request");
+  await expect(fixture.locator("[data-catalog-renderer-fixture] > output")).toHaveText(
+    "Sent: First queued request",
+  );
   await expect(
     fixture.getByRole("button", { name: "First queued request", exact: true }),
   ).toHaveCount(0);
   await fixture.getByRole("button", { name: "Stop", exact: true }).click();
-  await expect(fixture.locator("output")).toHaveText("Stopped response");
+  await expect(fixture.locator("[data-catalog-renderer-fixture] > output")).toHaveText(
+    "Stopped response",
+  );
 });
 
 test("picker: filter and Enter commit the selected option then restore the label", async ({
