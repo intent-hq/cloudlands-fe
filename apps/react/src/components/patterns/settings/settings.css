@@ -1,0 +1,44 @@
+/* Source: SettingsFieldRow.svelte and SettingsPage.svelte. */
+@container settings-form (width < 32rem) {
+  [data-slot='settings-field-row'][data-orientation='responsive'] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  [data-slot='settings-field-row'][data-orientation='responsive'] [data-field-label] {
+    padding-block: 0;
+  }
+  [data-slot='settings-field-row'] [data-field-control][data-orientation='responsive'] {
+    width: 100%;
+    min-height: 0;
+    justify-self: stretch;
+    justify-items: start;
+  }
+}
+[data-slot='settings-page'] [data-slot='settings-section-body'],
+[data-slot='settings-page'] [data-slot='settings-section-content'] {
+  padding: var(--space-4) var(--space-5);
+}
+[data-slot='settings-page']
+  [data-slot='settings-section-body']
+  > [data-slot='settings-field-row']:first-child,
+[data-slot='settings-page']
+  [data-slot='settings-section-body']
+  > [data-slot='settings-form']
+  > [data-slot='settings-field-row']:first-child,
+[data-slot='settings-page']
+  [data-slot='settings-section-content']
+  > [data-slot='settings-field-row']:first-child {
+  padding-top: 0;
+}
+[data-slot='settings-page']
+  [data-slot='settings-section-body']
+  > [data-slot='settings-field-row']:last-child,
+[data-slot='settings-page']
+  [data-slot='settings-section-body']
+  > [data-slot='settings-form']
+  > [data-slot='settings-field-row']:last-child,
+[data-slot='settings-page']
+  [data-slot='settings-section-content']
+  > [data-slot='settings-field-row']:last-child {
+  padding-bottom: 0;
+}
