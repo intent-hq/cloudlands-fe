@@ -23,7 +23,7 @@
  * session payload — no stores, services, or side effects.
  */
 import type { AgentSession } from '$shared/types';
-import type { BulkUpsertSessionsOptions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { BulkUpsertSessionsOptions } from '../../../store/renderer/slices/agent-session/agent-session-slice';
 
 /**
  * Daemon-reported turn liveness on a freshly fetched session (PROTOCOL §5.5

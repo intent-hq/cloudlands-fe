@@ -1,4 +1,4 @@
-import type { LastAttemptedMessage } from '$store/renderer/slices/chat-state/chat-state-types';
+import type { LastAttemptedMessage } from '../../../store/renderer/slices/chat-state/chat-state-types';
 import type { QueuedMessage } from '$shared/types';
 
 /** A queue append can retain an older ID and accumulate text and attachments. */
@@ -63,7 +63,7 @@ export function buildProcessedRecordedAttempt(
 export function buildRecordedAttempt(
   text: string,
   options: {
-    submission?: import('$store/renderer/slices/pending-submissions/pending-submissions-types').SubmissionReference;
+    submission?: import('../../../store/renderer/slices/pending-submissions/pending-submissions-types').SubmissionReference;
     noteIds?: string[];
     model?: string;
     imageBlocks?: Array<{

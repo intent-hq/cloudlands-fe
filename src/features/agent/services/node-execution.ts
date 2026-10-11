@@ -6,11 +6,8 @@ import {
   type AgentPlacementRequest,
 } from '$shared/types/agent-node';
 
-export interface NodeCapabilities {
-  agentNodes: boolean;
-  localNodeIsolation: boolean;
-  agentPlatformRouting?: boolean;
-}
+import type { NodeCapabilities } from './node-execution-types';
+export type { NodeCapabilities } from './node-execution-types';
 export function assertPlacementSupported(
   placement: AgentPlacementRequest,
   capabilities: NodeCapabilities,

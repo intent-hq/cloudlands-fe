@@ -1,10 +1,10 @@
-import type { InitialChatHistory } from '$lib/client/app-client';
+import type { InitialChatHistory } from '$lib/client/chat-history-types';
 import { pendingSubmissionSettled } from '../pending-submissions/pending-submissions-slice';
 import { sameSubmissionScope } from '../pending-submissions/pending-submissions-model';
 import {
   buildQueuedRecordedAttempt,
   buildProcessedRecordedAttempt,
-} from '$features/agent/utils/build-recorded-attempt';
+} from '../../../../features/agent/utils/build-recorded-attempt';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {

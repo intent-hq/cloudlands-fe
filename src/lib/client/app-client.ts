@@ -980,11 +980,8 @@ export interface AgentsClient {
  * synthetic in-flight message / activity flags and the delta stream's
  * terminal `streamingComplete` frames.
  */
-export interface InitialChatHistory {
-  target: number;
-  received: number;
-  complete: boolean;
-}
+export type { InitialChatHistory } from './chat-history-types';
+import type { InitialChatHistory } from './chat-history-types';
 
 export interface ChatTranscript {
   initialHistory?: InitialChatHistory;

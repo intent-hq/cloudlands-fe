@@ -2285,3 +2285,11 @@ agentSessionReducer.with(
     return removeHistorySegment(next, agentId);
   },
 );
+
+/** Metadata consumers acquire a shared workspace subscription and an optional detail read. */
+export const agentMetadataAcquired = createAction<
+  [consumerId: string, workspaceId: string, agentId?: string]
+>('agentSessions/metadataAcquired');
+export const agentMetadataReleased = createAction<[consumerId: string]>(
+  'agentSessions/metadataReleased',
+);

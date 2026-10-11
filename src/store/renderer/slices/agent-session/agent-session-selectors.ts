@@ -6,7 +6,7 @@ import {
   type QueuedMessage,
   type ToolUseBlock,
 } from '$shared/types';
-import { AgentActivationState, getAgentProvider } from '$shared/types/agent-session';
+import { AgentActivationState } from '$shared/types/agent-session';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
   getAgentAttentionRequest,
@@ -20,10 +20,7 @@ import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text
 import type { StoredAgentSession } from './agent-session-types';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import { selectChatReceivedFirstChunk } from '../chat-state/chat-state-selectors';
-import {
-  selectEffectiveDefaultProviderId,
-  selectNormalizedProviderId,
-} from '../provider-catalog/provider-catalog-selectors';
+import * as projections from './agent-session-projections';
 
 export const selectAgentBackgroundPending = store.createSelector(
   (state, agentId: string) => state.agentSessions.backgroundModePending?.[agentId] === true,
@@ -151,12 +148,7 @@ function isActiveAgentThread(stored: StoredAgentSession): boolean {
 // ============================================================================
 
 /** Select a single agent session by agentId (stored shape: wire fields + FE-owned fields) */
-export const selectAgentSession = store.createSelector(
-  (state, agentId?: string): StoredAgentSession | undefined => {
-    if (!agentId) return undefined;
-    return materializeSession(state.agentSessions?.byAgentId[agentId]);
-  },
-);
+export const selectAgentSession = store.createSelector(projections.getAgentSession);
 
 /**
  * True once `agentId`'s detail projection (`agent.get` / `agent.getSession`)
@@ -164,9 +156,7 @@ export const selectAgentSession = store.createSelector(
  * a stored row seeded from the `agent.list` projection (PROTOCOL §5.5) has
  * ambiguous detail-only fields: absent may mean "not loaded yet".
  */
-export const selectAgentDetailHydrated = store.createSelector((state, agentId?: string): boolean =>
-  Boolean(agentId && state.agentSessions?.detailHydrated?.[agentId]),
-);
+export const selectAgentDetailHydrated = store.createSelector(projections.getAgentDetailHydrated);
 
 /**
  * FE-owned `tailCapPruned` latch (see StoredAgentSession): true once the
@@ -180,16 +170,7 @@ export const selectAgentTailCapPruned = store.createSelector((state, agentId?: s
 });
 
 /** Select the resolved provider for a given agent without materializing messages. */
-export const selectAgentProvider = store.createSelector(
-  (state, agentId?: string): string | undefined => {
-    if (!agentId) return undefined;
-    const stored = state.agentSessions?.byAgentId[agentId];
-    const raw = stored
-      ? getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state, stored.workspaceId))
-      : undefined;
-    return raw ? selectNormalizedProviderId.select(state, raw, stored?.workspaceId) : undefined;
-  },
-);
+export const selectAgentProvider = store.createSelector(projections.getAgentSessionProvider);
 
 /** Select specific agent sessions by agent IDs. */
 export const selectAgentSessionsByIds = store.createSelector(
@@ -348,8 +329,7 @@ export const selectAgentSessionHasStreamingTailMessage = store.createSelector(
 
 /** Select the workspace ID for a given agent session. */
 export const selectAgentSessionWorkspaceId = store.createSelector(
-  (state, agentId: string): AgentSession['workspaceId'] | undefined =>
-    state.agentSessions?.byAgentId[agentId]?.workspaceId,
+  projections.getAgentSessionWorkspaceId,
 );
 
 /**
@@ -365,31 +345,7 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
  * known codex effort level AND the session must show codex evidence, so
  * slash-bearing non-codex ids (HuggingFace-style `org/model`) are never split.
  */
-const LEGACY_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
-const LEGACY_CODEX_EFFORT_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
-
-export const selectAgentReasoningEffort = store.createSelector(
-  (state, agentId: string): string | undefined => {
-    const stored = state.agentSessions?.byAgentId[agentId];
-    if (!stored) return undefined;
-    if (typeof stored.reasoningEffort === 'string' && stored.reasoningEffort.length > 0) {
-      return stored.reasoningEffort;
-    }
-    if (stored.reasoningEffort === null) return undefined;
-    const model = stored.model;
-    if (typeof model !== 'string') return undefined;
-    const slashIndex = model.indexOf('/');
-    if (slashIndex <= 0 || slashIndex >= model.length - 1) return undefined;
-    const suffix = model.slice(slashIndex + 1);
-    if (!LEGACY_CODEX_EFFORTS.has(suffix)) return undefined;
-    const base = model.slice(0, slashIndex);
-    const isCodex =
-      selectAgentProvider.select(state, agentId) === 'codex' ||
-      base.startsWith('codex:') ||
-      LEGACY_CODEX_EFFORT_MODELS.has(base);
-    return isCodex ? suffix : undefined;
-  },
-);
+export const selectAgentReasoningEffort = store.createSelector(projections.getAgentReasoningEffort);
 
 /** Select whether a session exists for a given agent. */
 export const selectAgentSessionExists = store.createSelector(

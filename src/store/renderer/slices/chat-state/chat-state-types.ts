@@ -1,4 +1,4 @@
-import type { InitialChatHistory } from '$lib/client/app-client';
+import type { InitialChatHistory } from '$lib/client/chat-history-types';
 import type { QueuedMessage } from '$shared/types';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -436,8 +436,8 @@ export interface InitializeChatOptions {
   isInitialWorkspaceAgent?: boolean;
 }
 
-import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/input/context-api';
-import type { ContextReference } from '$features/agent/agent-context';
+import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/input/context-item';
+import type { ContextReference } from '../../../../features/agent/agent-context';
 import type { ContentBlock } from '$shared/types';
 import type { Question } from '$shared/types/question-resource';
 import type { Proposal } from '$shared/types/proposal';

@@ -1,4 +1,4 @@
-import type { NodeCapabilities } from '$features/agent/services/node-execution';
+import type { NodeCapabilities } from '../../../../features/agent/services/node-execution-types';
 import type {
   AgentSession,
   AgentMessage,

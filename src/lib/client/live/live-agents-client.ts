@@ -9,9 +9,16 @@ import { CHAT_PAGE_SIZE } from '$shared/constants';
  * events-driven `agent.list` refetch.
  */
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
-import { AgentStatus, isContentBlock } from '$shared/types';
-import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
-import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
+import { isContentBlock } from '$shared/types';
+import { normalizeAgent, getKnownAgentWorkspace } from './agent-normalization';
+import { createBackendAgentClient } from './backend-agent-client';
+import { onBackendNotification, onBackendReconnected } from './backend-transport';
+export { normalizeAgent } from './agent-normalization';
+const agentReads = createBackendAgentClient({
+  backendRequest,
+  onBackendNotification,
+  onBackendReconnected,
+});
 import type {
   AgentDelegatedCounts,
   AgentDelegatedParentCounts,
@@ -41,7 +48,6 @@ import type {
 } from '../app-client';
 import { backendRequest } from './backend-transport';
 import { isForbiddenErrorResponse } from './backend-transport-types';
-import { createDeltaSubscription } from './delta-subscription';
 import {
   mutationErrorMessage,
   newIdempotencyKey,
@@ -56,7 +62,6 @@ import {
  * carry it — this index lets us recover it without changing the public method
  * signature. Miss → fall back to a fresh `agent.get`.
  */
-const agentWorkspaceIndex = new Map<string, string>();
 
 const MAX_OUTBOUND_FRAME_BYTES = 41_943_040;
 const OVERSIZED_CONVERSATION_RESPONSE =
@@ -68,57 +73,6 @@ function isOversizedConversationResponse(error: unknown): boolean {
   if (candidate.name !== 'BackendError' || typeof candidate.message !== 'string') return false;
   const match = OVERSIZED_CONVERSATION_RESPONSE.exec(candidate.message);
   return match !== null && Number(match[1]) > MAX_OUTBOUND_FRAME_BYTES;
-}
-
-function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
-  if (agentId && workspaceId) agentWorkspaceIndex.set(agentId, workspaceId);
-}
-
-/** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
-export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
-  const now = new Date().toISOString();
-  const id = String(raw.id ?? '');
-  const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;
-  const workspaceId = String(raw.workspaceId ?? '');
-  rememberAgentWorkspace(id, workspaceId);
-  const session = {
-    ...(raw as Partial<AgentSession>),
-    id: AgentId(id),
-    backendSessionId: acpSessionId ? AgentId(acpSessionId) : null,
-    workspaceId: WorkspaceId(workspaceId),
-    name: String(raw.name ?? id),
-    status: (typeof raw.status === 'string' ? raw.status : AgentStatus.Pending) as AgentStatus,
-    // The list/get payloads carry message COUNTS, not transcripts; chat history
-    // is served by the (still-mock) chat domain, so messages start empty here.
-    messages: Array.isArray(raw.messages) ? (raw.messages as AgentSession['messages']) : [],
-    createdAt: String(raw.createdAt ?? now),
-    updatedAt: String(raw.updatedAt ?? now),
-  } as AgentSession;
-  // `retiredAt` (§5.5 soft retire) is presence-detected on the wire:
-  // set on retired rows, omitted (never null) on active ones. Pure presence
-  // pass-through — assign only when a non-empty string is present; a
-  // divergent shape (null, empty string) is not healed away client-side.
-  if (typeof raw.retiredAt === 'string' && raw.retiredAt.length > 0) {
-    session.retiredAt = raw.retiredAt;
-  }
-  // `parentAgentId` (§5.5 row scope — the daemon's bin partition key) is
-  // presence-detected the same way: set on delegated rows, omitted on
-  // top-level ones. Both the list and detail projections serve it.
-  if (typeof raw.parentAgentId === 'string' && raw.parentAgentId.length > 0) {
-    session.parentAgentId = AgentId(raw.parentAgentId);
-  }
-  // Canonical booleans override stale metadata, including a persisted false.
-  if (typeof raw.isBackground === 'boolean') {
-    session.metadata = { ...session.metadata, isBackground: raw.isBackground };
-    if (session.agentMetadata) {
-      session.agentMetadata = { ...session.agentMetadata, isBackground: raw.isBackground };
-    }
-  }
-  // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
-  // path — list/get reads, new-message pushes, and the agent:updated marker
-  // convergence after agent.markSeen — recomputes it through one seam.
-  session.hasUnread = deriveAgentHasUnread(session);
-  return session;
 }
 
 /**
@@ -237,17 +191,8 @@ export class LiveAgentsClient implements AgentsClient {
     };
   }
 
-  async get(agentId: string, workspaceId?: string): Promise<AgentSession | null> {
-    const result = await backendRequest<{ agent?: unknown } | unknown>('agent.get', {
-      agentId,
-      ...(workspaceId !== undefined ? { workspaceId } : {}),
-    });
-    const raw =
-      result && typeof result === 'object' && 'agent' in result
-        ? (result as { agent?: unknown }).agent
-        : result;
-    if (!raw || typeof raw !== 'object') return null;
-    return normalizeAgent(raw as Record<string, unknown>);
+  get(agentId: string, workspaceId?: string): Promise<AgentSession | null> {
+    return agentReads.get(agentId, workspaceId);
   }
 
   // The list/get payloads carry message COUNTS only; the real transcript comes
@@ -792,22 +737,12 @@ export class LiveAgentsClient implements AgentsClient {
       messageId: params.messageId,
     });
   }
-  async setReasoningEffort(params: {
+  setReasoningEffort(params: {
     agentId: string;
     workspaceId: string;
     reasoningEffort: string | null;
   }): Promise<MutationResult> {
-    // `agent.update` (§5.5) is the partial-mutation writer; `reasoningEffort`
-    // rides the `changes` object (Option B session field). Optional-string
-    // fields accept an explicit JSON `null` to clear, so `null` is forwarded
-    // verbatim — it means "reset to provider default", not "omit". The daemon
-    // persists the field and emits `agent:updated`, which reconciles other
-    // windows; the effort applies on the next prompt send.
-    return runMutation('agent.update', {
-      agentId: params.agentId,
-      workspaceId: params.workspaceId,
-      changes: { reasoningEffort: params.reasoningEffort },
-    });
+    return agentReads.setReasoningEffort(params);
   }
   async setNotificationsMuted(params: {
     agentId: string;
@@ -1097,7 +1032,7 @@ export class LiveAgentsClient implements AgentsClient {
    * sending a malformed `agent.sendMessage` request.
    */
   private async resolveAgentWorkspaceId(agentId: string): Promise<string | null> {
-    const cached = agentWorkspaceIndex.get(agentId);
+    const cached = getKnownAgentWorkspace(agentId);
     if (cached) return cached;
     const agent = await this.get(agentId);
     if (!agent) return null;
@@ -1121,18 +1056,6 @@ export class LiveAgentsClient implements AgentsClient {
    * `agentWorkspaceIndex` cache is primed exactly like the list/get paths.
    */
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {
-    return createDeltaSubscription<AgentSession>({
-      channel: {
-        subscribeMethod: 'agent.subscribe',
-        unsubscribeMethod: 'events.unsubscribe',
-        dynamic: {
-          subscribeIds: subscribeWorkspaceIds,
-          paramsForId: (id) => ({ workspaceId: id }),
-        },
-      },
-      getId: (raw) => String(raw.id ?? ''),
-      normalize: (raw) => normalizeAgent(raw),
-      handler,
-    });
+    return agentReads.subscribeWorkspaces(subscribeWorkspaceIds, handler);
   }
 }
