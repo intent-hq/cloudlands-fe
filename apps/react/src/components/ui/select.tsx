@@ -169,6 +169,7 @@ export function SelectContent({
   sideOffset = 4,
   collisionPadding = 8,
   ref,
+  onKeyDown,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content> & {
   portal?: boolean;
@@ -199,6 +200,34 @@ export function SelectContent({
     [ref, wrapperId, select.open],
   );
   const scopeRef = useFocusScopeRef({ enabled: select.open }, attachContent);
+  const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (event) => {
+    onKeyDown?.(event);
+    if (event.defaultPrevented || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key))
+      return;
+
+    // Bits advances its active option synchronously. Radix defers focus, so a following
+    // Enter can select the previous option. Keep its navigation order without the delay.
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[data-slot="select-item"]'),
+    ).filter((item) => item.closest('[data-slot="select-content"]') === event.currentTarget);
+    let candidates = items.filter((item) => !item.hasAttribute('data-disabled'));
+    if (event.key === 'ArrowUp' || event.key === 'End') candidates.reverse();
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const index = candidates.findIndex((item) => item === event.target);
+      candidates = candidates.slice(index + 1);
+    }
+    event.preventDefault();
+    const viewport = event.currentTarget.querySelector<HTMLElement>('[data-radix-select-viewport]');
+    const previouslyFocused = event.currentTarget.ownerDocument.activeElement;
+    for (const candidate of candidates) {
+      if (candidate === previouslyFocused) break;
+      candidate.scrollIntoView({ block: 'nearest' });
+      if (viewport && candidate === items[0]) viewport.scrollTop = 0;
+      if (viewport && candidate === items.at(-1)) viewport.scrollTop = viewport.scrollHeight;
+      candidate.focus();
+      if (candidate.ownerDocument.activeElement !== previouslyFocused) break;
+    }
+  };
   const content = (
     <SelectPrimitive.Content
       ref={scopeRef}
@@ -217,6 +246,7 @@ export function SelectContent({
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       {...props}
+      onKeyDown={handleKeyDown}
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
