@@ -192,14 +192,15 @@ test('workspace flame fallback: absent spec links retain root peer ordering and 
   await expect(tasks.getByRole('button')).toBeDisabled();
 });
 
-test('workspace flame lifecycle: loading reserves bounds and same-key data refresh retains the bar', async ({
+test('workspace flame lifecycle: loading reserves progress-bar bounds and same-key data refresh retains the bar', async ({
   page,
 }, info) => {
   const host = await openLeaf(page, 'flame-graph');
   const target = host.getByTestId('flame-graph-target');
   const bar = target.getByRole('progressbar');
   const original = await bar.elementHandle();
-  const before = await captureLeaf(page, target, 'flame-ready-before', info);
+  await captureLeaf(page, target, 'flame-ready-before', info);
+  const before = await bar.boundingBox();
   await toggle(host, 'Complete Build locally').click();
   expect(await original.evaluate((node) => node.isConnected)).toBe(true);
   await expect(bar).toHaveAttribute(
@@ -213,9 +214,18 @@ test('workspace flame lifecycle: loading reserves bounds and same-key data refre
   await toggle(host, 'Flame loading').click();
   await expect(bar).toHaveCount(0);
   await expect(target.getByRole('button')).toHaveCount(0);
-  const loading = await captureLeaf(page, target, 'flame-loading-after', info);
-  expect(Math.abs(before.root.width - loading.root.width)).toBeLessThanOrEqual(1);
-  expect(Math.abs(before.root.height - loading.root.height)).toBeLessThanOrEqual(1);
+  await captureLeaf(page, target, 'flame-loading-after', info);
+  const loading = await target.locator('[data-task-status-progress]').boundingBox();
+  // Source ready content has an inline Tooltip wrapper; loading has no wrapper.
+  // Keep both outer probes above, but the shared bar owns loading-slot stability.
+  await info.attach('flame-progress-slot-bounds.json', {
+    body: JSON.stringify({ before, loading }, null, 2),
+    contentType: 'application/json',
+  });
+  expect(before).not.toBeNull();
+  expect(loading).not.toBeNull();
+  expect(Math.abs(before.width - loading.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(before.height - loading.height)).toBeLessThanOrEqual(1);
   await toggle(host, 'Flame loading').click();
   await expect(bar).toHaveAttribute('aria-valuenow', '25');
   await host.getByRole('textbox', { name: 'Flame canonical progress', exact: true }).fill('');
