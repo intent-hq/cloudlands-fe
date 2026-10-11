@@ -192,7 +192,7 @@ export function Example() {
   return (
     <>
       <Button variant="primary" onClick={() => setSaved(true)}>Save</Button>
-      <p role="status">{saved ? 'Saved' : 'Unsaved changes'}</p>
+      <output className="block">{saved ? 'Saved' : 'Unsaved changes'}</output>
     </>
   );
 }`,
@@ -230,7 +230,7 @@ export function Example() {
         <Button onClick={() => setAction('Opened')}>Open</Button>
         <Button onClick={() => setAction('Archived')}>Archive</Button>
       </ButtonGroup>
-      <p role="status">{action}</p>
+      <output className="block">{action}</output>
     </>
   );
 }`,
@@ -461,7 +461,7 @@ export function Example() {
           </Menu.Group>
         </Menu.Content>
       </Menu.Root>
-      <p role="status">{selected}</p>
+      <output className="block">{selected}</output>
     </>
   );
 }`,
@@ -722,7 +722,7 @@ export function Example() {
       <InputGroup trailing={<InputGroupButton onClick={() => setSubmitted(query)}>Search</InputGroupButton>}>
         <InputGroupInput aria-label="Search workspaces" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
       </InputGroup>
-      <p role="status">{submitted}</p>
+      <output className="block">{submitted}</output>
     </>
   );
 }`,
@@ -743,7 +743,7 @@ export function Example() {
   return (
     <>
       <CopyInput value="https://example.com/workspace" label="Workspace URL" onCopy={() => setCopied(true)} />
-      <p role="status">{copied ? 'Copied workspace URL' : ''}</p>
+      <output className="block">{copied ? 'Copied workspace URL' : ''}</output>
     </>
   );
 }`,
@@ -1013,7 +1013,7 @@ export function Example({ member }: { member: Member }) {
     `export function Example() {
   return (
     <div>
-      <div role="status"><IntentMarkLoader size={24} aria-hidden="true" /> Loading workspace</div>
+      <output className="block"><IntentMarkLoader size={24} aria-hidden="true" /> Loading workspace</output>
       <AgentBadge count={3} />
       <UnsavedIndicator visible />
     </div>
@@ -1071,7 +1071,7 @@ export function Example() {
     <>
       <Combobox ariaLabel="Workspace" value={value} options={options} onChange={setValue}
         onCommit={(_, option) => setAccepted(option.label)} />
-      <p role="status">{accepted ? 'Opened ' + accepted : ''}</p>
+      <output className="block">{accepted ? 'Opened ' + accepted : ''}</output>
     </>
   );
 }`,
@@ -1303,7 +1303,7 @@ export function Example() {
         <FormActions secondary={<Button onClick={form.reset}>Reset</Button>}
           primary={<Button type="submit" variant="primary" loading={form.submitting}>Save</Button>} />
       </Form>
-      <p role="status">{saved ? 'Saved ' + saved : ''}</p>
+      <output className="block">{saved ? 'Saved ' + saved : ''}</output>
     </>
   );
 }`,
@@ -1351,7 +1351,7 @@ export function Example() {
       <ListView items={items} getKey={(item) => item.id} getText={(item) => item.name}
         ariaLabel="Workspaces" onActivate={(item) => setActive(item.name)}
         row={({ item }) => <ListRow title={item.name} />} />
-      <p role="status">{active}</p>
+      <output className="block">{active}</output>
     </>
   );
 }`,
@@ -1406,7 +1406,7 @@ export function Example() {
   return (
     <>
       <ActionBar actions={actions} visibleCount={1} overflowLabel="More actions" onAction={(id) => setSelected(id)} />
-      <p role="status">{selected}</p>
+      <output className="block">{selected}</output>
     </>
   );
 }`,
@@ -1459,7 +1459,7 @@ export function Example() {
     <>
       <ConfirmHost />
       <Button onClick={() => void askName()}>Choose name</Button>
-      <p role="status">{name}</p>
+      <output className="block">{name}</output>
     </>
   );
 }`,
@@ -1511,7 +1511,7 @@ export function Example() {
   return (
     <TakeoverScreen title={<h1>Connect account</h1>}
       primary={<Button disabled={!account.trim()} onClick={() => setConnected(true)}>Continue</Button>}>
-      {connected ? <p role="status">Account connected</p> : (
+      {connected ? <output className="block">Account connected</output> : (
         <FormField label="Account" control={(props) => <Input {...props} value={account} onChange={(event) => setAccount(event.currentTarget.value)} />} />
       )}
     </TakeoverScreen>
@@ -1779,7 +1779,7 @@ export function Example() {
     <>
       <Button onClick={() => setVisible((value) => !value)}>Toggle portal content</Button>
       <div ref={setTarget} aria-label="Portal destination" />
-      {target && visible && <Portal target={target}><p role="status">Rendered in the portal destination</p></Portal>}
+      {target && visible && <Portal target={target}><output className="block">Rendered in the portal destination</output></Portal>}
     </>
   );
 }`,
@@ -1997,7 +1997,7 @@ export function Example() {
       }}>Workspace</Button>
       <SidebarOverflowMenu items={items} ariaLabel="Workspace actions" />
       {position && <SidebarContextMenu {...position} items={items} onClickOutside={() => setPosition(null)} />}
-      <p role="status">{selected}</p>
+      <output className="block">{selected}</output>
     </>
   );
 }`,
@@ -2051,7 +2051,7 @@ export function Example() {
       {open && <PanelFindBar layout="inline" query={query} currentMatchIndex={index} totalMatches={matches.length}
         onQueryChange={(value) => { setQuery(value); setIndex(0); }}
         onPrevious={() => move(-1)} onNext={() => move(1)} onClose={() => setOpen(false)} />}
-      <p role="status">{matches[index] ?? ''}</p>
+      <output className="block">{matches[index] ?? ''}</output>
     </>
   );
 }`,
