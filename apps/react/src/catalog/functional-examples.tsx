@@ -8,6 +8,7 @@ import { ReplaceAgentExample, TextareaConsumerExample } from './callback-consume
 import { DiagramFunctionalExamples } from './diagram-functional-examples';
 import { CallbackDialogExamples } from './callback-dialog-examples';
 import { MenuFocusExamples } from './menu-focus-examples';
+import { EffortPickerExamples } from './effort-picker-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -451,6 +452,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'diagram-workbench' && <DiagramFunctionalExamples />}
       {slug === 'modals' && <CallbackDialogExamples />}
       {slug === 'menu' && <MenuFocusExamples />}
+      {slug === 'effort-picker' && <EffortPickerExamples />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
       {slug === 'form' && (
         <>
@@ -499,6 +501,7 @@ export function hasFunctionalExample(slug: string) {
     'modal-heading-spacing',
     'modals',
     'menu',
+    'effort-picker',
     'diagram-workbench',
     'toast',
     'notify',
