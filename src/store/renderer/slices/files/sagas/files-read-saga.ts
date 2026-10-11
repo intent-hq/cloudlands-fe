@@ -1,3 +1,5 @@
+import type { FileContent } from '../files-types';
+import { editableText } from '$features/file/utils/file-content';
 import { buffers, channel, type Channel } from 'redux-saga';
 import { call, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
@@ -23,7 +25,7 @@ export const MAX_CONCURRENT_FILE_READS = 4;
 
 type ReadAction = ReturnType<typeof loadFileContentRequested>;
 type ReadResult =
-  | { kind: 'success'; content: string | null; isBinary?: boolean; truncated?: boolean }
+  | { kind: 'success'; content: FileContent; truncated?: boolean }
   | { kind: 'failure'; message: string; candidates?: string[] }
   | { kind: 'retarget'; path: string };
 
@@ -60,8 +62,12 @@ function* loadFileContentWorker(
     }
     return {
       kind: 'success',
-      content: entry.originalContent ?? entry.localContent,
-      isBinary: entry.isBinary,
+      content:
+        entry.kind === 'editable-text'
+          ? editableText(entry.originalContent)
+          : entry.kind === 'restorable-snapshot'
+            ? { kind: 'restorable-snapshot', content: entry.originalContent, isBinary: true }
+            : { kind: 'preview-only', isBinary: entry.isBinary },
       truncated: entry.truncated,
     };
   } catch (error) {
@@ -82,14 +88,7 @@ function* applyReadResult(action: ReadAction, result: ReadResult): SagaGenerator
     );
   } else {
     yield* put(
-      loadFileContentSucceeded(
-        workspaceId,
-        path,
-        absolutePath,
-        result.content,
-        result.isBinary,
-        result.truncated,
-      ),
+      loadFileContentSucceeded(workspaceId, path, absolutePath, result.content, result.truncated),
     );
   }
 }

@@ -1,3 +1,5 @@
+import { editableText, fileSnapshot } from '$features/file/utils/file-content';
+import type { EditableText, RestorableSnapshot } from '../files-types';
 import {
   call,
   cancelled,
@@ -88,7 +90,7 @@ type SaveRequest = {
   workspaceId: string;
   path: string;
   absolutePath: string;
-  content: string;
+  content: EditableText;
 };
 type ObservedAction = { type: string; payload?: unknown };
 
@@ -152,7 +154,8 @@ function* saveFileContentWorker(request: SaveRequest) {
       ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
         if (
           payload[0] === workspaceId &&
-          payload[4] &&
+          (payload[3].kind === 'restorable-snapshot' || payload[3].kind === 'preview-only') &&
+          payload[3].isBinary &&
           (payload[1] === path || payload[2] === absolutePath)
         )
           becameBinary = true;
@@ -188,7 +191,7 @@ function* createFileWorker(workspaceId: string, folderPath: string, fileName: st
       serializeFileMutation<MutationResult>,
       workspaceId,
       relativePath,
-      (mutationPath: string) => appClient.files.write(workspaceId, mutationPath, ''),
+      (mutationPath: string) => appClient.files.write(workspaceId, mutationPath, editableText('')),
     );
     if (!result.success) return;
     yield* put(refreshDirectoryRequested(workspaceId, absoluteFilePath));
@@ -223,7 +226,7 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
   if (action.payload[3]?.autoSave === false) return;
   const [workspaceId, path] = action.payload;
   const entry = yield* selectFileContentEntry.effect(workspaceId, path);
-  if (!entry?.absolutePath || entry.isBinary) return;
+  if (!entry?.absolutePath || entry.kind !== 'editable-text') return;
   const absolutePath = entry.absolutePath;
   const { elapsed } = yield* race({
     elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
@@ -235,13 +238,17 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
   const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
   if (
     !latestEntry?.absolutePath ||
-    latestEntry.isBinary ||
-    latestEntry.localContent === null ||
+    latestEntry.kind !== 'editable-text' ||
     latestEntry.localContent === latestEntry.originalContent
   )
     return;
   yield* put(
-    saveFileContentRequested(workspaceId, path, latestEntry.absolutePath, latestEntry.localContent),
+    saveFileContentRequested(
+      workspaceId,
+      path,
+      latestEntry.absolutePath,
+      editableText(latestEntry.localContent),
+    ),
   );
 }
 
@@ -255,8 +262,8 @@ function* saveFileContentActionWorker(action: ReturnType<typeof saveFileContentR
 
 function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   const [workspaceId, path, options] = action.payload;
-  const cannotRestore = (content: string | null) =>
-    content === null || (options.content !== undefined && options.content !== content);
+  const cannotRestore = (snapshot: RestorableSnapshot | undefined) =>
+    !snapshot || (options.snapshot !== undefined && options.snapshot.content !== snapshot.content);
   // Like a queued save, a queued deletion outlives cache cleanup. Retain any
   // observation that invalidates its Undo snapshot until the transport settles.
   let unsafeSnapshot = selectAllFileContentEntries
@@ -265,15 +272,15 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
       (entry) =>
         entry.isBinary &&
         (entry.path === path || entry.absolutePath === options.absolutePath) &&
-        cannotRestore(entry.originalContent),
+        cannotRestore(fileSnapshot(entry)),
     );
   let requestCancelled = false;
   const assertActive = () => {
     if (requestCancelled) throw new Error(m.ui_reversibleActions_cancelled_message());
   };
   try {
-    const { content, relativePath } = yield* call(
-      serializeFileMutation<{ content: string; relativePath: string }>,
+    const { snapshot, relativePath } = yield* call(
+      serializeFileMutation<{ snapshot: RestorableSnapshot; relativePath: string }>,
       workspaceId,
       path,
       async (relativePath: string) => {
@@ -281,30 +288,32 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         const binaryEntry = [path, options.absolutePath, relativePath]
           .map((alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias))
           .find((entry) => entry?.isBinary);
-        if (unsafeSnapshot || (binaryEntry && cannotRestore(binaryEntry.originalContent)))
+        if (unsafeSnapshot || (binaryEntry && cannotRestore(fileSnapshot(binaryEntry))))
           throw new Error(m.fileExplorer_tree_undoUnavailable_error());
         // Delete only when Undo has real contents. null is unavailable, never
         // a zero-byte file; an omitted panel draft means read the disk first.
         const entry =
-          options.content === undefined
+          options.snapshot === undefined
             ? await appClient.files.read(workspaceId, relativePath)
             : null;
         assertActive();
-        const savedContent = options.content === undefined ? entry?.localContent : options.content;
-        if (unsafeSnapshot || savedContent == null || entry?.truncated)
+        const snapshot = options.snapshot ?? fileSnapshot(entry ?? undefined);
+        if (unsafeSnapshot || !snapshot)
           throw new Error(m.fileExplorer_tree_undoUnavailable_error());
         const result = await appClient.files.delete(workspaceId, relativePath);
         if (!result.success)
           throw new Error(result.error ?? m.fileExplorer_tree_deleteFailed_error());
-        return { content: savedContent, relativePath };
+        return { snapshot, relativePath };
       },
       ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
         if (
           payload[0] === workspaceId &&
-          payload[4] &&
+          (payload[3].kind === 'restorable-snapshot' || payload[3].kind === 'preview-only') &&
+          payload[3].isBinary &&
           (payload[1] === path || payload[2] === options.absolutePath) &&
           // A concurrent binary observation invalidates a pending tree snapshot.
-          (options.content === undefined || cannotRestore(payload[3]))
+          (options.snapshot === undefined ||
+            cannotRestore(payload[3].kind === 'restorable-snapshot' ? payload[3] : undefined))
         )
           unsafeSnapshot = true;
       },
@@ -327,7 +336,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         filePath: options.absolutePath,
       }),
     );
-    yield* put(action.success(content));
+    yield* put(action.success(snapshot));
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   } finally {
@@ -346,16 +355,16 @@ function* deleteFileActionWorker(action: ReturnType<typeof deleteFileRequested>)
 }
 
 function* restoreFileWorker(action: ReturnType<typeof restoreFileContentRequested>) {
-  const [workspaceId, path, absolutePath, content] = action.payload;
+  const [workspaceId, path, absolutePath, snapshot] = action.payload;
   try {
     const result = yield* call(
       serializeFileMutation<MutationResult>,
       workspaceId,
       path,
-      (relativePath: string) => appClient.files.write(workspaceId, relativePath, content),
+      (relativePath: string) => appClient.files.write(workspaceId, relativePath, snapshot),
     );
     if (!result.success) throw new Error(result.error ?? m.fileExplorer_layout_saveFailed_error());
-    yield* put(saveFileContentSucceeded(workspaceId, path, content));
+    yield* put(saveFileContentSucceeded(workspaceId, path, snapshot));
     yield* call(() =>
       dispatchWindowEvent('file:changed', {
         workspaceId,
@@ -381,17 +390,23 @@ function* restoreFileActionWorker(action: ReturnType<typeof restoreFileContentRe
 
 function* deleteFileWithUndoWorker(action: ReturnType<typeof deleteFileWithUndoRequested>) {
   const [workspaceId, path, options] = action.payload;
-  let content = '';
+  let snapshot: RestorableSnapshot | undefined;
   yield* call(
     deleteWithUndo,
     `"${path.split('/').pop()}"`,
     async () => {
       const request = deleteFileRequested(workspaceId, path, options);
       appStore.dispatch(request);
-      content = await request.promise;
+      snapshot = await request.promise;
     },
     async () => {
-      const request = restoreFileContentRequested(workspaceId, path, options.absolutePath, content);
+      if (!snapshot) throw new Error(m.fileExplorer_tree_undoUnavailable_error());
+      const request = restoreFileContentRequested(
+        workspaceId,
+        path,
+        options.absolutePath,
+        snapshot,
+      );
       appStore.dispatch(request);
       await request.promise;
     },

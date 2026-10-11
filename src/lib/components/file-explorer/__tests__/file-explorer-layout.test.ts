@@ -115,6 +115,7 @@ describe('standalone file explorer uses canonical file operations', () => {
     appStore.dispatch(loadFileContentRequested('ws-1', 'a.ts', '/repo/a.ts'));
     await screen.findByText(m.editor_fileViewer_binary_label());
     expect(selectFileContentEntry.select(appStore.state, 'ws-1', 'a.ts')).toMatchObject({
+      kind: 'preview-only',
       originalContent: null,
       localContent: null,
       isBinary: true,
@@ -130,14 +131,18 @@ describe('standalone file explorer uses canonical file operations', () => {
     const read = vi
       .spyOn(appClient.files, 'read')
       .mockReturnValueOnce(old.promise)
-      .mockResolvedValue({ originalContent: 'current', localContent: 'current' });
+      .mockResolvedValue({
+        kind: 'editable-text',
+        originalContent: 'current',
+        localContent: 'current',
+      });
     const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
     const view = render(FileExplorerLayout, { workspaceId: 'ws-1', initialFile: '/repo/old.ts' });
     await waitFor(() => expect(read).toHaveBeenCalledWith('ws-1', 'old.ts'));
     await view.rerender({ workspaceId: 'ws-1', initialFile: '/repo/current.ts' });
     const editor = (await screen.findByTestId('code-editor')) as HTMLTextAreaElement;
     await waitFor(() => expect(editor.value).toBe('current'));
-    old.resolve({ originalContent: 'late old', localContent: 'late old' });
+    old.resolve({ kind: 'editable-text', originalContent: 'late old', localContent: 'late old' });
     await waitFor(() =>
       expect(selectFileContentEntry.select(appStore.state, 'ws-1', 'old.ts')?.originalContent).toBe(
         'late old',
@@ -150,7 +155,12 @@ describe('standalone file explorer uses canonical file operations', () => {
     );
     expect(write).not.toHaveBeenCalled();
     await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
-    await waitFor(() => expect(write).toHaveBeenCalledWith('ws-1', 'current.ts', 'explicit draft'));
+    await waitFor(() =>
+      expect(write).toHaveBeenCalledWith('ws-1', 'current.ts', {
+        kind: 'editable-text',
+        content: 'explicit draft',
+      }),
+    );
     expect(
       selectFileContentEntry.select(appStore.state, 'ws-1', 'current.ts')?.originalContent,
     ).toBe('explicit draft');
@@ -158,6 +168,7 @@ describe('standalone file explorer uses canonical file operations', () => {
 
   it('isolates the same path across workspaces and does not flush manual drafts on teardown', async () => {
     vi.spyOn(appClient.files, 'read').mockImplementation(async (workspaceId) => ({
+      kind: 'editable-text',
       originalContent: workspaceId,
       localContent: workspaceId,
     }));

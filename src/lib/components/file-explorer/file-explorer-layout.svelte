@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editableText } from '$features/file/utils/file-content';
   import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -87,19 +88,14 @@
   // Save file
   function saveFile(filePath: string) {
     const entry = selectFileContentEntry.select(appStore.state, workspaceId, filePath);
-    if (
-      !entry ||
-      entry.isBinary ||
-      entry.localContent === null ||
-      entry.localContent === entry.originalContent
-    )
+    if (!entry || entry.kind !== 'editable-text' || entry.localContent === entry.originalContent)
       return;
     appStore.dispatch(
       saveFileContentRequested(
         workspaceId,
         filePath,
         entry.absolutePath ?? filePath,
-        entry.localContent,
+        editableText(entry.localContent),
       ),
     );
   }
@@ -127,7 +123,7 @@
   function handleContentChange(newContent: string) {
     if (selectedFile && !isBinary) {
       appStore.dispatch(
-        updateFileContent(workspaceId, selectedFile, newContent, { autoSave: false }),
+        updateFileContent(workspaceId, selectedFile, editableText(newContent), { autoSave: false }),
       );
     }
   }

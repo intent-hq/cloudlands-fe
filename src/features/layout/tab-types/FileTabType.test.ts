@@ -1,3 +1,5 @@
+import { fileContentData } from '$features/file/utils/file-content';
+import type { FileContent, EditableText } from '$store/renderer/slices/files/files-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -29,6 +31,7 @@ const {
   resetMockReduxState,
 } = vi.hoisted(() => {
   type FileEntry = {
+    kind: 'preview-only' | 'editable-text' | 'restorable-snapshot';
     localContent: string | null;
     originalContent: string | null;
     loading: boolean;
@@ -70,6 +73,7 @@ const {
     };
     mockReduxState.files = {
       'src/main.ts': {
+        kind: 'editable-text',
         localContent: 'console.log("loaded");',
         originalContent: 'console.log("loaded");',
         loading: false,
@@ -93,6 +97,7 @@ const {
     mockReduxState.files[path] = {
       ...entry,
       localContent: hasPendingEdits ? entry.localContent : content,
+      kind: 'editable-text',
       originalContent: content,
       lastUpdated: entry.lastUpdated + 1,
     };
@@ -176,20 +181,12 @@ const {
       flushMockSelectors();
     }
     if (action.type === 'files/loadFileContentSucceeded') {
-      const [, path, , content, isBinary] = action.payload as [
-        string,
-        string,
-        string,
-        string,
-        boolean,
-      ];
+      const [, path, , content] = action.payload as [string, string, string, FileContent];
       mockReduxState.files[path] = {
-        localContent: content,
-        originalContent: content,
+        ...fileContentData(content),
         loading: false,
         saving: false,
         error: null,
-        isBinary,
         lastUpdated: 1,
       };
       flushMockSelectors();
@@ -197,6 +194,7 @@ const {
     if (action.type === 'files/loadFileContentFailed') {
       const [, path, , error] = action.payload as [string, string, string, string];
       mockReduxState.files[path] = {
+        kind: 'preview-only',
         localContent: null,
         originalContent: null,
         loading: false,
@@ -208,10 +206,10 @@ const {
       flushMockSelectors();
     }
     if (action.type === 'files/updateFileContent') {
-      const [, path, content] = action.payload as [string, string, string];
+      const [, path, content] = action.payload as [string, string, EditableText];
       mockReduxState.files[path] = {
         ...mockReduxState.files[path],
-        localContent: content,
+        localContent: content.content,
       };
       flushMockSelectors();
     }
@@ -259,6 +257,9 @@ vi.mock('$store/renderer/slices/pdf-preview/pdf-preview-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/files/files-selectors', () => ({
+  selectFileContentEntry: createMockSelector(
+    (_wsId: string, path: string) => mockReduxState.files[path],
+  ),
   selectFileContent: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.localContent ?? null) : null,
   ),
@@ -500,6 +501,7 @@ describe('FileTabType Redux integration', () => {
     const path = '.intent/artifacts/report.xlsx';
     mockReduxState.files[path] = {
       localContent: '',
+      kind: 'restorable-snapshot',
       originalContent: '',
       loading: false,
       saving: false,
@@ -647,8 +649,7 @@ describe('FileTabType Redux integration', () => {
             'ws-1',
             fileContentKey(`${parentPath}/a/new.md`, 'root-a'),
             `${parentPath}/a/new.md`,
-            '# Secondary root A',
-            false,
+            { kind: 'editable-text', content: '# Secondary root A' },
             false,
           ),
         );
@@ -751,11 +752,13 @@ describe('FileTabType Redux integration', () => {
     const entry = { loading: false, saving: false, error: null, isBinary: false, lastUpdated: 1 };
     mockReduxState.files[path] = {
       ...entry,
+      kind: 'editable-text',
       originalContent: 'disk',
       localContent: 'workspace draft',
     };
     mockReduxState.files[key] = {
       ...entry,
+      kind: 'editable-text',
       originalContent: 'root content',
       localContent: 'root content',
     };
@@ -804,12 +807,12 @@ describe('FileTabType Redux integration', () => {
     expect(actionMocks.deleteFileWithUndoRequested).toHaveBeenCalledWith('ws-1', 'src/main.ts', {
       absolutePath: '/repo/src/main.ts',
       tabId: 'tab-1',
-      content: 'unsaved draft',
+      snapshot: { kind: 'restorable-snapshot', content: 'unsaved draft', isBinary: false },
     });
   });
 
   it.each(['valid', 'invalid'] as const)(
-    'preserves the %s binary snapshot in panel delete intent',
+    'only sends restorable %s binary snapshots in panel delete intent',
     async (kind) => {
       const content = kind === 'valid' ? '\b\u0001' : null;
       if (kind === 'valid') vi.mocked(backendRequest).mockResolvedValue(content);
@@ -830,15 +833,24 @@ describe('FileTabType Redux integration', () => {
         await fireEvent.click(
           screen.getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
         );
-        expect(actionMocks.deleteFileWithUndoRequested).toHaveBeenCalledWith(
-          'ws-1',
-          'src/main.ts',
-          {
-            absolutePath: '/repo/src/main.ts',
-            tabId: 'tab-1',
-            content,
-          },
-        );
+        if (kind === 'valid') {
+          expect(actionMocks.deleteFileWithUndoRequested).toHaveBeenCalledWith(
+            'ws-1',
+            'src/main.ts',
+            {
+              absolutePath: '/repo/src/main.ts',
+              tabId: 'tab-1',
+              snapshot: { kind: 'restorable-snapshot', content, isBinary: true },
+            },
+          );
+        } else {
+          expect(actionMocks.deleteFileWithUndoRequested).not.toHaveBeenCalled();
+          expect(notify.error).toHaveBeenCalledWith(
+            m.ui_reversibleActions_failed_error({
+              message: m.fileExplorer_tree_undoUnavailable_error(),
+            }),
+          );
+        }
       } finally {
         await stop();
       }
@@ -861,7 +873,7 @@ describe('FileTabType Redux integration', () => {
       'ws-1',
       'src/main.ts',
       '/repo/src/main.ts',
-      'old workspace draft',
+      { kind: 'editable-text', content: 'old workspace draft' },
     );
   });
   const directoryNode = (name: string): FileNode => ({ name, path: name, type: 'directory' });
@@ -1036,6 +1048,7 @@ describe('FileTabType Redux integration', () => {
     async (filePath, title, expectedLanguage) => {
       mockReduxState.files[filePath] = {
         localContent: 'export const loaded = true;',
+        kind: 'editable-text',
         originalContent: 'export const loaded = true;',
         loading: false,
         saving: false,
@@ -1077,6 +1090,7 @@ describe('FileTabType Redux integration', () => {
   it('renders markdown files in a read-only preview by default', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
+      kind: 'editable-text',
       originalContent: '# Project',
       loading: false,
       saving: false,
@@ -1112,6 +1126,7 @@ describe('FileTabType Redux integration', () => {
   it('opens markdown line targets in the source editor', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
+      kind: 'editable-text',
       originalContent: '# Project',
       loading: false,
       saving: false,
@@ -1136,6 +1151,7 @@ describe('FileTabType Redux integration', () => {
   it('switches an open markdown preview to source for a new jump request', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
+      kind: 'editable-text',
       originalContent: '# Project',
       loading: false,
       saving: false,
@@ -1167,6 +1183,7 @@ describe('FileTabType Redux integration', () => {
   it('updates the read-only markdown preview for repeated external content while clean', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
+      kind: 'editable-text',
       originalContent: '# Project',
       loading: false,
       saving: false,
@@ -1194,6 +1211,7 @@ describe('FileTabType Redux integration', () => {
   it('switches markdown preview off for editing and back on without preview updates', async () => {
     mockReduxState.files['README.md'] = {
       localContent: '# Project',
+      kind: 'editable-text',
       originalContent: '# Project',
       loading: false,
       saving: false,
@@ -1212,7 +1230,7 @@ describe('FileTabType Redux integration', () => {
     await fireEvent.input(editor, { target: { value: '# Local draft' } });
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'files/updateFileContent',
-      payload: ['ws-1', 'README.md', '# Local draft'],
+      payload: ['ws-1', 'README.md', { kind: 'editable-text', content: '# Local draft' }],
     });
 
     await fireEvent.click(
@@ -1229,6 +1247,7 @@ describe('FileTabType Redux integration', () => {
   it('keeps SVG files in FileViewer while preserving the XML language mapping', async () => {
     mockReduxState.files['public/icon.svg'] = {
       localContent: '<svg viewBox="0 0 1 1" />',
+      kind: 'editable-text',
       originalContent: '<svg viewBox="0 0 1 1" />',
       loading: false,
       saving: false,
@@ -1289,6 +1308,7 @@ describe('FileTabType Redux integration', () => {
   it('keeps allowlisted binary images in FileViewer without a text read', async () => {
     mockReduxState.files['assets/logo.png'] = {
       localContent: '',
+      kind: 'restorable-snapshot',
       originalContent: '',
       loading: false,
       saving: false,
@@ -1549,7 +1569,11 @@ describe('FileTabType Redux integration', () => {
 
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'files/updateFileContent',
-      payload: ['ws-1', 'src/main.ts', 'console.log("edited");'],
+      payload: [
+        'ws-1',
+        'src/main.ts',
+        { kind: 'editable-text', content: 'console.log("edited");' },
+      ],
     });
 
     const headerState = await screen.findByTestId('header-state');
@@ -1566,7 +1590,12 @@ describe('FileTabType Redux integration', () => {
 
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'files/saveFileContentRequested',
-      payload: ['ws-1', 'src/main.ts', '/repo/src/main.ts', 'console.log("edited");'],
+      payload: [
+        'ws-1',
+        'src/main.ts',
+        '/repo/src/main.ts',
+        { kind: 'editable-text', content: 'console.log("edited");' },
+      ],
     });
   });
 
@@ -1593,6 +1622,7 @@ describe('FileTabType Redux integration', () => {
     await waitFor(() => expect(editor.value).toBe('console.log("local draft");'));
     expect(mockReduxState.files['src/main.ts']).toMatchObject({
       localContent: 'console.log("local draft");',
+      kind: 'editable-text',
       originalContent: 'console.log("external");',
     });
   });
@@ -1646,6 +1676,7 @@ describe('FileTabType Redux integration', () => {
   it('loads absolute paths under the workspace root normally', async () => {
     mockReduxState.files['/repo/src/inside.ts'] = {
       localContent: 'export const inside = true;',
+      kind: 'editable-text',
       originalContent: 'export const inside = true;',
       loading: false,
       saving: false,
@@ -1679,6 +1710,7 @@ describe('FileTabType Redux integration', () => {
     };
     mockReduxState.files['//server/share/repo/src/main.ts'] = {
       localContent: 'export const unc = true;',
+      kind: 'editable-text',
       originalContent: 'export const unc = true;',
       loading: false,
       saving: false,
@@ -1712,6 +1744,7 @@ describe('FileTabType Redux integration', () => {
     };
     mockReduxState.files['C:/repo/src/x.ts'] = {
       localContent: 'export const win = true;',
+      kind: 'editable-text',
       originalContent: 'export const win = true;',
       loading: false,
       saving: false,
@@ -1762,6 +1795,7 @@ describe('FileTabType Redux integration', () => {
   it('loads a tilde-prefixed filename in the workspace root as an ordinary file', async () => {
     mockReduxState.files['~$report.docx'] = {
       localContent: 'lock',
+      kind: 'editable-text',
       originalContent: 'lock',
       loading: false,
       saving: false,
@@ -1823,6 +1857,7 @@ describe('FileTabType Redux integration', () => {
   function errorFileEntry(overrides: Partial<(typeof mockReduxState.files)[string]> = {}) {
     return {
       localContent: null,
+      kind: 'preview-only',
       originalContent: null,
       loading: false,
       saving: false,
@@ -1892,11 +1927,10 @@ describe('FileTabType Redux integration', () => {
     try {
       dispatchMock.mockClear();
       await fireEvent.input(editor, { target: { value: 'console.log("edited");' } });
-      expect(actionMocks.updateFileContent).toHaveBeenCalledWith(
-        'ws-1',
-        'src/main.ts',
-        'console.log("edited");',
-      );
+      expect(actionMocks.updateFileContent).toHaveBeenCalledWith('ws-1', 'src/main.ts', {
+        kind: 'editable-text',
+        content: 'console.log("edited");',
+      });
 
       await vi.advanceTimersByTimeAsync(60_000);
       expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
@@ -1922,7 +1956,12 @@ describe('FileTabType Redux integration', () => {
     expect(saveDispatches).toEqual([
       {
         type: 'files/saveFileContentRequested',
-        payload: ['ws-1', 'src/main.ts', '/repo/src/main.ts', 'console.log("edited");'],
+        payload: [
+          'ws-1',
+          'src/main.ts',
+          '/repo/src/main.ts',
+          { kind: 'editable-text', content: 'console.log("edited");' },
+        ],
       },
     ]);
   });
