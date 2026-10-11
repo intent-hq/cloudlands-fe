@@ -48,7 +48,7 @@ export async function openFixture(page, component, fixtureId) {
   await expect(
     fixture,
     `Missing real ${component} fixture ${fixtureId}; an unported placeholder is not coverage`,
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await expect(
     fixture.locator("[data-catalog-unimplemented]"),
     "Partial fixtures are not coverage",
@@ -66,7 +66,9 @@ export async function openExample(page, component, exampleId) {
   const response = await page.goto(url.href, { waitUntil: "domcontentloaded" });
   expect(response?.ok(), `Cannot load actual interactive example ${url}`).toBe(true);
   const example = page.locator(`[data-functional-example="${exampleId}"]`);
-  await expect(example, "An unavailable pattern must fail, never silently skip").toBeVisible();
+  await expect(example, "An unavailable pattern must fail, never silently skip").toBeVisible({
+    timeout: 15_000,
+  });
   await expect(
     example.locator("[data-catalog-unimplemented]"),
     "Partial examples are not coverage",

@@ -30,6 +30,11 @@ reported ready by their owner before acceptance runs. Report every failing or
 unrun case separately. Remaining control edges and real-daemon/Electron journeys
 are listed as gaps in the manifest.
 
+Functional fixture startup allows 15 seconds for the real renderer to mount,
+matching preview readiness. This covers a cold dev-server import crawl; ordinary
+behavior assertions retain their five-second budget. Missing or partial fixtures
+still fail, and no retry is enabled.
+
   corepack pnpm --filter @intent/view-parity manifest:check
   corepack pnpm --filter @intent/view-parity browsers:install
   corepack pnpm --filter @intent/view-parity compare --list
