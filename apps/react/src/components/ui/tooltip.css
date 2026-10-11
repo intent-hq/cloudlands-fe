@@ -4,6 +4,11 @@
   transform-origin: var(--radix-tooltip-content-transform-origin, center);
 }
 
+[data-tooltip-static-position] > [data-radix-popper-content-wrapper] {
+  position: relative !important;
+  transform: none !important;
+}
+
 .tooltip-motion[data-side='top'] {
   --tooltip-enter-y: 4px;
 }

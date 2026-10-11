@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type HTMLAttributes } from 'react';
 import { Button } from '@/components/ui/button';
 import { CopyFeedback } from '@/components/ui/copy-feedback';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipRoot, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSize, type UiSize } from '@/components/ui/size-context';
 import { cn } from '@/lib/utils';
 import { m } from '$shared/paraglide/messages.js';
@@ -232,7 +232,7 @@ export function CopyInput({
         </span>
       )}
       {variant === 'icon' ? (
-        <Tooltip
+        <TooltipRoot
           delayDuration={500}
           disableHoverableContent
           open={!disabled && resolvedTooltipOpen}
@@ -246,7 +246,7 @@ export function CopyInput({
               {statusLabel}
             </TooltipContent>
           )}
-        </Tooltip>
+        </TooltipRoot>
       ) : (
         button
       )}

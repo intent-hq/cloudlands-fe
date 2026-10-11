@@ -3,7 +3,7 @@ import * as React from 'react';
 import { m } from '$shared/paraglide/messages.js';
 import { Combobox, type ComboboxProps } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipRoot, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { ItemActionContext, Option } from './types';
 
@@ -183,14 +183,14 @@ export function SearchableCombobox({
   );
 
   return tooltip ? (
-    <Tooltip delayDuration={tooltipDelayDuration}>
+    <TooltipRoot delayDuration={tooltipDelayDuration}>
       <TooltipTrigger asChild>
         <div className="w-full">{picker}</div>
       </TooltipTrigger>
       <TooltipContent side={tooltipSide} align={tooltipAlign}>
         {tooltip}
       </TooltipContent>
-    </Tooltip>
+    </TooltipRoot>
   ) : (
     picker
   );

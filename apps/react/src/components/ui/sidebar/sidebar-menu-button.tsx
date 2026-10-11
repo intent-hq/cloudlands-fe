@@ -12,7 +12,7 @@ import { Slot } from 'radix-ui';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Button } from '@/components/ui/button';
 import {
-  Tooltip,
+  TooltipRoot,
   TooltipTrigger,
   TooltipContent,
   type TooltipContentProps,
@@ -272,7 +272,7 @@ export function SidebarMenuButton({
     </Button>
   );
   return tooltipContent ? (
-    <Tooltip>
+    <TooltipRoot>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent
         side="right"
@@ -282,7 +282,7 @@ export function SidebarMenuButton({
       >
         {tooltipContent}
       </TooltipContent>
-    </Tooltip>
+    </TooltipRoot>
   ) : (
     button
   );

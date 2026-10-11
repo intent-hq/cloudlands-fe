@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipRoot, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { sharedTimeManager } from '$lib/utils/shared-time-manager.svelte';
 import { createFormatters } from '$shared/i18n/formatters';
 import { getLocale } from '$shared/paraglide/runtime.js';
@@ -35,11 +35,11 @@ export function RelativeTime({ date, compact = false, className = '', title }: R
     (Number.isNaN(timestamp) ? m.ui_relativeTime_invalid_label() : formatFullDateTime(timestamp));
 
   return (
-    <Tooltip>
+    <TooltipRoot>
       <TooltipTrigger asChild>
         <span className={className}>{relativeTime}</span>
       </TooltipTrigger>
       <TooltipContent>{fullTimestamp}</TooltipContent>
-    </Tooltip>
+    </TooltipRoot>
   );
 }

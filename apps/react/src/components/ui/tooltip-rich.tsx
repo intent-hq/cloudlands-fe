@@ -84,7 +84,7 @@ type RichTriggerProps = TooltipTriggerWrapperProps & {
   onTriggerClick?: TooltipRichProps['onClick'];
 };
 
-function RichTrigger({
+export function RichTrigger({
   disabled,
   disableCloseOnTriggerClick,
   onTriggerClick,

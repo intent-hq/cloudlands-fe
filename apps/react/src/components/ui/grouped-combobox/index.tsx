@@ -3,7 +3,7 @@ import * as React from 'react';
 import { m } from '$shared/paraglide/messages.js';
 import { Combobox, type ComboboxProps } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipRoot, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { GroupedOption, OptionGroup } from './types';
 
 export type { GroupedOption, OptionGroup } from './types';
@@ -131,12 +131,12 @@ export function GroupedCombobox({
     />
   );
   return tooltip ? (
-    <Tooltip>
+    <TooltipRoot>
       <TooltipTrigger asChild>
         <div className="w-full">{picker}</div>
       </TooltipTrigger>
       <TooltipContent side={tooltipSide}>{tooltip}</TooltipContent>
-    </Tooltip>
+    </TooltipRoot>
   ) : (
     picker
   );
