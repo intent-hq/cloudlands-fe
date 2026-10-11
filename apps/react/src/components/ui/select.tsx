@@ -3,11 +3,13 @@ import * as React from 'react';
 import { CheckIcon, CaretDownIcon, CaretUpIcon } from '@phosphor-icons/react';
 import { Select as SelectPrimitive } from 'radix-ui';
 import { m } from '$shared/paraglide/messages.js';
+import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
 import { cn } from '@/lib/utils';
 import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
 import { Button } from '@/components/ui/button';
+import { ListHighlight, menuItem } from '@/components/ui/menu';
 import { clampSurface, SurfaceProvider, useSurface } from '@/components/ui/surface-context';
-import { menuItemClass, menuOverlayClass } from './overlay-recipes';
+import { menuOverlayClass } from './overlay-recipes';
 import './overlays.css';
 
 type SelectItemData = { value: string; label: string; disabled?: boolean };
@@ -17,11 +19,13 @@ const SelectContext = React.createContext({
   items: [] as SelectItemData[],
   value: '',
   open: false,
+  loop: true,
 });
 export type SelectProps = React.ComponentProps<typeof SelectPrimitive.Root> & {
   invalid?: boolean;
   items?: SelectItemData[];
   staticPosition?: boolean;
+  loop?: boolean;
 };
 export function Select({
   invalid = false,
@@ -31,6 +35,7 @@ export function Select({
   defaultValue = '',
   open,
   defaultOpen = false,
+  loop = true,
   onValueChange,
   onOpenChange,
   children,
@@ -46,6 +51,7 @@ export function Select({
         items,
         value: value ?? localValue,
         open: open ?? localOpen,
+        loop,
       }}
     >
       <div
@@ -206,7 +212,7 @@ export function SelectContent({
       return;
 
     // Bits advances its active option synchronously. Radix defers focus, so a following
-    // Enter can select the previous option. Keep its navigation order without the delay.
+    // Enter can select the previous option. Preserve source looping without the delay.
     const items = Array.from(
       event.currentTarget.querySelectorAll<HTMLElement>('[data-slot="select-item"]'),
     ).filter((item) => item.closest('[data-slot="select-content"]') === event.currentTarget);
@@ -214,7 +220,9 @@ export function SelectContent({
     if (event.key === 'ArrowUp' || event.key === 'End') candidates.reverse();
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       const index = candidates.findIndex((item) => item === event.target);
-      candidates = candidates.slice(index + 1);
+      candidates = select.loop
+        ? [...candidates.slice(index + 1), ...candidates.slice(0, index + 1)]
+        : candidates.slice(index + 1);
     }
     event.preventDefault();
     const viewport = event.currentTarget.querySelector<HTMLElement>('[data-radix-select-viewport]');
@@ -250,8 +258,9 @@ export function SelectContent({
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
-        className={cn('relative min-h-0 flex-1 overflow-y-auto p-1', wrapperClass)}
+        className={cn('relative isolate min-h-0 flex-1 overflow-y-auto p-1', wrapperClass)}
       >
+        <ListHighlight />
         {children}
       </SelectPrimitive.Viewport>
       <SelectScrollDownButton />
@@ -277,16 +286,17 @@ export function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       data-menu-item
-      className={cn(menuItemClass, className)}
+      className={cn(menuItem(), className)}
       textValue={label}
       {...props}
     >
-      <SelectPrimitive.ItemText className="min-w-0 flex-1 truncate">
-        {children ?? label}
-      </SelectPrimitive.ItemText>
+      <div className="min-w-0 flex-1 truncate">
+        <SelectPrimitive.ItemText>{children ?? label}</SelectPrimitive.ItemText>
+      </div>
       <span
         data-slot="select-item-check"
-        className="ml-auto flex size-4 shrink-0 items-center justify-center"
+        className={cn(OPTION_LIST_END_SLOT_CLASS, 'text-primary-ink')}
+        aria-hidden="true"
       >
         <SelectPrimitive.ItemIndicator>
           <CheckIcon aria-hidden="true" className="size-4" />
