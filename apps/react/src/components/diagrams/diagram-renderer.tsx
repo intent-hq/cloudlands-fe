@@ -61,6 +61,8 @@ export function DiagramRenderer(props: DiagramRendererProps) {
     layoutError: model.layoutError.value,
     contentWidth: model.contentWidth.value,
     contentHeight: model.contentHeight.value,
+    cameraZoom: model.cameraZoom.value,
+    noteLaneWidth: model.noteLaneWidth.value,
     svgWidth: model.svgWidth.value,
     svgHeight: model.svgHeight.value,
     destinationFrameHeight: model.destinationFrameHeight.value,
@@ -77,6 +79,21 @@ export function DiagramRenderer(props: DiagramRendererProps) {
     renderStyleConfig: model.renderStyleConfig.value,
     onBindingClick: model.onBindingClick.value,
   };
+  useLayoutEffect(() => {
+    if (view.layout) model.measureFitAfterCommit();
+  }, [
+    model,
+    view.layout,
+    view.svgWidth,
+    view.svgHeight,
+    view.cameraZoom,
+    view.contentWidth,
+    view.contentHeight,
+    view.fitToWidth,
+    view.automaticallyFitState,
+    view.noteLaneWidth,
+    view.renderStyleConfig,
+  ]);
   void view.revision;
   const diagram = view.diagram;
   const autoFit = view.automaticallyFitState;

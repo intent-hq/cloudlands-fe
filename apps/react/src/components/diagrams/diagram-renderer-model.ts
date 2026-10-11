@@ -1385,13 +1385,10 @@ export function createDiagramRenderer(initial: DiagramRendererProps) {
       });
     });
   }
-  effects.push(() => {
-    void svgWidth.value;
-    void svgHeight.value;
-    void cameraZoom.value;
+  // Svelte's fit effects read the committed drawing. Signal effects run before
+  // React publishes that drawing, so the component invokes this after commit.
+  function measureFitAfterCommit() {
     if (fitToWidth.value || automaticallyFitState.value) updateFitScale();
-  });
-  effects.push(() => {
     if (initialFitResolved.value || !layout.value || !scrollContainerEl.value) return;
     const availableWidth = scrollContainerEl.value.clientWidth - 16;
     if (availableWidth <= 0) return;
@@ -1400,7 +1397,7 @@ export function createDiagramRenderer(initial: DiagramRendererProps) {
       updateFitScale();
     }
     initialFitResolved.value = true;
-  });
+  }
   let previousViewResetKey = signal<string | undefined>();
   let viewResetInitialized = signal(false);
   effects.push(() => {
@@ -1595,6 +1592,9 @@ export function createDiagramRenderer(initial: DiagramRendererProps) {
     svgTransform,
     svgTransformAttribute,
     toggleFitToWidth,
+    measureFitAfterCommit,
+    cameraZoom,
+    noteLaneWidth,
     changeState,
     handleEdgeMotion,
     handleNodeMove,
