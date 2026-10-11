@@ -83,6 +83,9 @@ function Leading({ children }: { children?: React.ReactNode }) {
 }
 export function Root({
   staticPosition = false,
+  // Bits ContentStatic leaves sibling content exposed and disables scroll locking.
+  // Radix's modal branch hides siblings, so inline menus use its non-modal branch.
+  modal = !staticPosition,
   open: controlled,
   defaultOpen = false,
   onOpenChange,
@@ -120,6 +123,7 @@ export function Root({
     <RootContext value={{ staticPosition, open, dir, onContentNode }}>
       <Primitive.Root
         {...props}
+        modal={modal}
         dir={dir}
         open={open}
         onOpenChange={(value) => {
