@@ -15,7 +15,7 @@ function git(root, ...args) {
   }
 }
 
-export function sourceTree(root, commit, sourcePaths) {
+function sourceTree(root, commit, sourcePaths) {
   const tree = git(root, "ls-tree", "-r", commit, "--", ...sourcePaths);
   if (!tree) throw new Error(`No reference sources at ${commit} in ${root}.`);
   return createHash("sha256").update(tree).digest("hex");

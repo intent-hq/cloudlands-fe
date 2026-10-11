@@ -1,8 +1,8 @@
 import { expect } from "@playwright/test";
 
-export const frameSelector = '[data-testid="catalog-scene-focus"]';
+const frameSelector = '[data-testid="catalog-scene-focus"]';
 
-export function sceneUrl(baseUrl, entry) {
+function sceneUrl(baseUrl, entry) {
   const url = new URL(`${baseUrl}/sandbox/${encodeURIComponent(entry.scene)}`);
   for (const [key, value] of Object.entries({
     state: entry.state,
