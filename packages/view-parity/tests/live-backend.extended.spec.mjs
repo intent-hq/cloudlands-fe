@@ -61,7 +61,9 @@ async function openLive(page, slug, query = {}, exampleId = `live-${slug}`) {
   // daemon before expecting a connected health signal; never synthesize health.
   expect(
     await page.evaluate(async () => {
-      const { backendRequest } = await import('/src/features/backend/backend-transport.ts');
+      const { backendRequest } = await import(
+        new URL('/src/features/backend/backend-transport.ts', location.href).href
+      );
       return (await backendRequest('system.status')).running;
     }),
   ).toBe(true);
@@ -69,7 +71,7 @@ async function openLive(page, slug, query = {}, exampleId = `live-${slug}`) {
     .poll(
       () =>
         page.evaluate(async () => {
-          const { store } = await import('/src/store/index.ts');
+          const { store } = await import(new URL('/src/store/index.ts', location.href).href);
           return store.state.daemonHealth.health;
         }),
       { message: 'Start the candidate with the real same-origin daemon bridge', timeout: 15_000 },
@@ -94,7 +96,7 @@ async function assertMemoryPresentation(page, liveTrace, expandedAgentId) {
   // DOM in one browser turn, then require that exact payload in the real trace.
   await expect(async () => {
     const rendered = await page.evaluate(async () => {
-      const { store } = await import('/src/store/index.ts');
+      const { store } = await import(new URL('/src/store/index.ts', location.href).href);
       const dialog = document.querySelector('[role="dialog"]');
       // Adjacent spans have visual separation but textContent joins command
       // suffix digits to the following memory value. Preserve text boundaries.
@@ -440,9 +442,12 @@ test.describe('live backend', () => {
     // intent through its canonical action, without injecting state or transport.
     const beforeManual = liveTrace.exchanges.length;
     await page.evaluate(async (root) => {
-      const { store } = await import('/src/store/index.ts');
+      const { store } = await import(new URL('/src/store/index.ts', location.href).href);
       const { agentMemoryUsageRequested } = await import(
-        `/@fs${root}/src/store/renderer/slices/daemon-health/daemon-health-slice.ts`
+        new URL(
+          `/@fs${root}/src/store/renderer/slices/daemon-health/daemon-health-slice.ts`,
+          location.href,
+        ).href
       );
       store.dispatch(agentMemoryUsageRequested());
     }, process.env.PARITY_CANDIDATE_ROOT);
@@ -458,7 +463,7 @@ test.describe('live backend', () => {
       await expect(example.getByLabel('Live memory open', { exact: true })).toHaveText('false');
       expect(
         await page.evaluate(async () => {
-          const { store } = await import('/src/store/index.ts');
+          const { store } = await import(new URL('/src/store/index.ts', location.href).href);
           return store.state.daemonHealth.agentMemoryUsage;
         }),
       ).toBeNull();
