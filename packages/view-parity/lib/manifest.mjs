@@ -169,10 +169,16 @@ export function loadManifest(referenceProfile = process.env.PARITY_REFERENCE_PRO
     );
     if (entry.captureTarget !== undefined) {
       requireValue(
-        entry.kind !== "catalog-fixture" &&
-          typeof entry.captureTarget === "string" &&
-          entry.captureTarget.length > 0,
-        `${entry.id}: a named-scene crop must identify its reviewed component target`,
+        typeof entry.captureTarget === "string" &&
+          entry.captureTarget.length > 0 &&
+          (entry.kind !== "catalog-fixture" ||
+            (entry.id === "fields-select-placeholder" &&
+              entry.scene === "fields" &&
+              entry.fixture === "field-state-matrix" &&
+              entry.captureTarget === '[data-field-preview="select-empty-placeholder"]' &&
+              entry.cellContract?.selector === "[data-field-preview]" &&
+              entry.cellContract.count === 240)),
+        `${entry.id}: crop must identify a named-scene target or the reviewed Select placeholder in the complete 240-cell fields matrix`,
       );
     }
     if (entry.expectedStateCount !== undefined)
