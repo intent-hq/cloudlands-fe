@@ -1,10 +1,13 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { expect } from '../lib/functional.mjs';
 import {
   test as liveTest,
   assertDiskListing,
+  assertMemorySample,
+  assertDisplayedMemory,
   githubOracle,
   screenshotEvidence,
 } from '../lib/live-backend.mjs';
@@ -41,7 +44,7 @@ const test = liveTest.extend({
   },
 });
 
-async function openLive(page, slug, query = {}) {
+async function openLive(page, slug, query = {}, exampleId = `live-${slug}`) {
   const url = new URL(`/sandbox/${slug}`, process.env.PARITY_CANDIDATE_URL);
   for (const [key, value] of Object.entries({
     example: 'live',
@@ -52,7 +55,7 @@ async function openLive(page, slug, query = {}) {
     url.searchParams.set(key, value);
   const response = await page.goto(url.href, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `Cannot load live route ${url}`).toBe(true);
-  const example = page.locator(`[data-functional-example="live-${slug}"]`);
+  const example = page.locator(`[data-functional-example="${exampleId}"]`);
   await expect(example).toBeVisible({ timeout: 15_000 });
   // The production socket connects lazily on its first request. Check the real
   // daemon before expecting a connected health signal; never synthesize health.
@@ -83,6 +86,68 @@ async function openPicker(page, example) {
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   return dialog;
+}
+
+async function assertMemoryPresentation(page, liveTrace, expandedAgentId) {
+  let sample;
+  // Polling can replace the sample while the assertion runs. Read the store and
+  // DOM in one browser turn, then require that exact payload in the real trace.
+  await expect(async () => {
+    const rendered = await page.evaluate(async () => {
+      const { store } = await import('/src/store/index.ts');
+      const dialog = document.querySelector('[role="dialog"]');
+      return {
+        sample: store.state.daemonHealth.agentMemoryUsage,
+        text: dialog?.textContent || '',
+        agents: [...(dialog?.querySelectorAll('button[aria-expanded]') || [])].map(
+          (button) => button.textContent,
+        ),
+        lists: [...(dialog?.querySelectorAll('[role="list"]') || [])].map((list) => ({
+          label: list.getAttribute('aria-label'),
+          rows: [...list.querySelectorAll('[role="listitem"]')].map((row) => row.textContent),
+        })),
+      };
+    });
+    const exchange = liveTrace.exchanges.find(
+      (entry) =>
+        entry.request.method === 'agent.memoryUsage' &&
+        entry.response &&
+        isDeepStrictEqual(entry.response.result, rendered.sample),
+    );
+    expect(exchange, 'Rendered state must come from an observed daemon response').toBeDefined();
+    sample = assertMemorySample(exchange.response);
+    const total = rendered.text.match(/Total\s+([^]*?)(?:Sampled|No agent|$)/)?.[1];
+    expect(total).toBeDefined();
+    assertDisplayedMemory(total, sample.totalBytes);
+    expect(rendered.agents).toHaveLength(sample.agents.length);
+    sample.agents.forEach((agent, index) => {
+      const row = rendered.agents[index];
+      for (const value of [agent.agentName, agent.workspaceId, agent.provider])
+        expect(row).toContain(value);
+      if (agent.model) expect(row).toContain(agent.model);
+      expect(row).toContain(`${new Intl.NumberFormat('en-US').format(agent.processCount)} process`);
+      assertDisplayedMemory(row, agent.memoryBytes);
+    });
+    if (expandedAgentId) {
+      const agent = sample.agents.find((entry) => entry.agentId === expandedAgentId);
+      expect(agent, 'Expanded live agent must still be present in this sample').toBeDefined();
+      const list = rendered.lists.find(
+        (entry) => entry.label === `Processes of ${agent.agentName}`,
+      );
+      expect(list).toBeDefined();
+      expect(list.rows).toHaveLength(agent.processes.length);
+      agent.processes.forEach((proc, index) => {
+        const row = list.rows[index];
+        for (const value of [`PID ${proc.pid}`, proc.name, proc.cmdline])
+          expect(row).toContain(value);
+        // The command itself can contain a quantity, so use the final displayed value.
+        const memory = [...row.matchAll(/\d+(?:\.\d+)?\s+(?:MB|GB|TB)/g)].at(-1)?.[0];
+        expect(memory).toBeDefined();
+        assertDisplayedMemory(memory, proc.memoryBytes);
+      });
+    }
+  }).toPass({ timeout: 15_000 });
+  return sample;
 }
 
 test.describe('live backend', () => {
@@ -336,6 +401,102 @@ test.describe('live backend', () => {
     await example.getByRole('button', { name: 'Unmount tooltip host' }).focus();
     await page.keyboard.press('Space');
     await expect(tooltip).toHaveCount(0);
+  });
+
+  test('memory: real sample, refresh, polling, close cleanup and reopen', async ({
+    page,
+    liveTrace,
+  }, testInfo) => {
+    test.setTimeout(60_000);
+    const example = await openLive(page, 'diagnostics-audit', {}, 'live-agent-memory');
+    const method = 'agent.memoryUsage';
+    const requests = () => liveTrace.exchanges.filter((entry) => entry.request.method === method);
+    expect(requests()).toHaveLength(0);
+    const open = example.getByRole('button', { name: 'Open live agent memory', exact: true });
+    await open.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    assertMemorySample(await liveTrace.response(method, undefined));
+    const initial = await assertMemoryPresentation(page, liveTrace);
+    if (initial.agents.length > 0) {
+      await dialog.locator('button[aria-expanded]').first().click();
+      await assertMemoryPresentation(page, liveTrace, initial.agents[0].agentId);
+    } else {
+      testInfo.annotations.push({
+        type: 'unrun',
+        description: 'Process rows unavailable: the actual daemon sample has no attributed agents.',
+      });
+    }
+    await screenshotEvidence(page, testInfo, 'memory-live-sample.png');
+
+    // There is no refresh button in the source dialog. Exercise the real manual
+    // intent through its canonical action, without injecting state or transport.
+    const beforeManual = liveTrace.exchanges.length;
+    await page.evaluate(async (root) => {
+      const { store } = await import('/src/store/index.ts');
+      const { agentMemoryUsageRequested } = await import(
+        `/@fs${root}/src/store/renderer/slices/daemon-health/daemon-health-slice.ts`
+      );
+      store.dispatch(agentMemoryUsageRequested());
+    }, process.env.PARITY_CANDIDATE_ROOT);
+    assertMemorySample(await liveTrace.response(method, undefined, beforeManual));
+    await assertMemoryPresentation(page, liveTrace);
+    const beforeAutomatic = liveTrace.exchanges.length;
+    assertMemorySample(await liveTrace.response(method, undefined, beforeAutomatic));
+    await assertMemoryPresentation(page, liveTrace);
+
+    const closedWindows = [];
+    const assertClosed = async () => {
+      await expect(dialog).toHaveCount(0);
+      await expect(example.getByLabel('Live memory open', { exact: true })).toHaveText('false');
+      expect(
+        await page.evaluate(async () => {
+          const { store } = await import('/src/store/index.ts');
+          return store.state.daemonHealth.agentMemoryUsage;
+        }),
+      ).toBeNull();
+      const count = requests().length;
+      // A real observation window longer than the canonical 5s poll interval;
+      // no fake clock, intercepted request, or simulated late response.
+      await new Promise((resolve) => setTimeout(resolve, 5_500));
+      expect(requests(), 'Closed memory dialog must stop polling').toHaveLength(count);
+      closedWindows.push({
+        observationMs: 5_500,
+        requestsBefore: count,
+        requestsAfter: requests().length,
+      });
+    };
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await assertClosed();
+    const beforeReopen = liveTrace.exchanges.length;
+    await open.click();
+    assertMemorySample(await liveTrace.response(method, undefined, beforeReopen));
+    await assertMemoryPresentation(page, liveTrace);
+    await expect(example.getByLabel('Live memory open count')).toHaveText('2');
+    await page.keyboard.press('Escape');
+    await assertClosed();
+    await expect(example.getByLabel('Live memory close count')).toHaveText('2');
+    for (const entry of requests()) {
+      expect(entry.request).toEqual({ jsonrpc: '2.0', id: expect.any(Number), method });
+      expect(Object.hasOwn(entry.request, 'params')).toBe(false);
+      assertMemorySample(entry.response);
+    }
+    await testInfo.attach('memory-lifecycle.json', {
+      body: JSON.stringify(
+        {
+          initialSampledAt: initial.sampledAt,
+          initialAgentCount: initial.agents.length,
+          initialProcessCount: initial.agents.reduce((sum, agent) => sum + agent.processCount, 0),
+          manualRefresh: 'canonical production action; source has no refresh button',
+          automaticRefreshObserved: true,
+          closedWindows,
+          unrun: ['artificial error/stale responses', 'late in-flight cancellation race'],
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
   });
 
   test.skip('GitLab admitted resource lifecycle', () => {

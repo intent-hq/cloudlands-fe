@@ -9,6 +9,7 @@ const liveMethods = new Set([
   'host.createDirectory',
   'github.pulls.get',
   'github.issues.get',
+  'agent.memoryUsage',
 ]);
 
 // Observe real frames without wrapping WebSocket, intercepting routes or supplying responses.
@@ -68,8 +69,9 @@ export const test = base.extend({
           jsonrpc: '2.0',
           id: expect.any(Number),
           method,
-          params,
+          ...(params === undefined ? {} : { params }),
         });
+        if (params === undefined) expect(Object.hasOwn(exchange.request, 'params')).toBe(false);
         expect(exchange.response).toMatchObject({
           jsonrpc: '2.0',
           id: exchange.request.id,
@@ -101,6 +103,73 @@ export const test = base.extend({
     expect(parseErrors, 'The observed daemon frames must be valid JSON').toEqual([]);
   },
 });
+
+// PROTOCOL §5.5: a point-in-time daemon sample, independently checked for
+// shape, attribution sums and ordering. A later OS RSS read is not the same sample.
+export function assertMemorySample(response) {
+  expect(response.error).toBeUndefined();
+  const sample = response.result;
+  expect(sample).toMatchObject({ agents: expect.any(Array) });
+  if (sample.sampledAt === null) {
+    expect(sample).toEqual({ sampledAt: null, totalBytes: null, agents: [] });
+    return sample;
+  }
+  expect(sample.sampledAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*(?:Z|\+00:00)$/);
+  expect(Number.isFinite(Date.parse(sample.sampledAt))).toBe(true);
+  const integer = (value) => {
+    expect(Number.isSafeInteger(value)).toBe(true);
+    expect(value).toBeGreaterThanOrEqual(0);
+  };
+  integer(sample.totalBytes);
+  expect(new Set(sample.agents.map((agent) => agent.agentId)).size).toBe(sample.agents.length);
+  for (const [index, agent] of sample.agents.entries()) {
+    expect(agent).toMatchObject({
+      agentId: expect.any(String),
+      agentName: expect.any(String),
+      workspaceId: expect.any(String),
+      provider: expect.any(String),
+      processes: expect.any(Array),
+    });
+    if (Object.hasOwn(agent, 'model')) expect(typeof agent.model).toBe('string');
+    integer(agent.rootPid);
+    integer(agent.memoryBytes);
+    expect(agent.processCount).toBe(agent.processes.length);
+    expect(agent.memoryBytes).toBe(
+      agent.processes.reduce((sum, proc) => sum + proc.memoryBytes, 0),
+    );
+    if (index > 0) {
+      const previous = sample.agents[index - 1];
+      expect(previous.memoryBytes).toBeGreaterThanOrEqual(agent.memoryBytes);
+      if (previous.memoryBytes === agent.memoryBytes)
+        expect(previous.agentId < agent.agentId).toBe(true);
+    }
+    expect(new Set(agent.processes.map((proc) => proc.pid)).size).toBe(agent.processes.length);
+    for (const [processIndex, proc] of agent.processes.entries()) {
+      expect(proc).toMatchObject({ name: expect.any(String), cmdline: expect.any(String) });
+      for (const value of [proc.pid, proc.parentPid, proc.memoryBytes]) integer(value);
+      if (processIndex > 0)
+        expect(agent.processes[processIndex - 1].memoryBytes).toBeGreaterThanOrEqual(
+          proc.memoryBytes,
+        );
+    }
+  }
+  expect(sample.totalBytes).toBe(sample.agents.reduce((sum, agent) => sum + agent.memoryBytes, 0));
+  return sample;
+}
+
+// Compare displayed byte quantities numerically at their displayed precision;
+// this does not import the app formatter or pin its choice of unit/decimals.
+export function assertDisplayedMemory(text, bytes) {
+  if (bytes === null) {
+    expect(text).toContain('—');
+    return;
+  }
+  const match = text.match(/(\d+(?:\.\d+)?)\s+(MB|GB|TB)/);
+  expect(match, 'Rendered memory must include a readable byte quantity').not.toBeNull();
+  const scale = { MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 }[match[2]];
+  const precision = (match[1].split('.')[1] || '').length;
+  expect(Math.abs(Number(match[1]) - bytes / scale)).toBeLessThanOrEqual(0.5 * 10 ** -precision);
+}
 
 // Independent oracle: the actual host filesystem, not the picker helper or reducer.
 export async function assertDiskListing(response, directory) {
