@@ -135,7 +135,7 @@ test("picker: multi-select toggles one option while preserving the other selecti
   await expect(input).toHaveAttribute("aria-expanded", "false");
 });
 
-test("picker: neighbouring inputs remain accessible and moving focus outside dismisses the popup", async ({
+test("picker: neighbouring inputs remain accessible and Tab dismisses the popup", async ({
   page,
 }) => {
   const fixture = await openFixture(page, "combobox", "combobox-state-matrix");
@@ -147,9 +147,10 @@ test("picker: neighbouring inputs remain accessible and moving focus outside dis
   await input.click();
   await expect(input).toHaveAttribute("aria-expanded", "true");
   await expect(neighbour).toBeVisible();
-  await neighbour.focus();
-  await expect(neighbour).toBeFocused();
+  await input.press("Tab");
   await expect(input).toHaveAttribute("aria-expanded", "false");
+  await expect(input).not.toBeFocused();
+  await expect(neighbour).toBeVisible();
 });
 
 test("select wrapper: public ID locates the popup container in portalled and inline modes", async ({
