@@ -1,0 +1,27 @@
+/* Header/footer own their inset; cancel only the surrounding body padding. */
+[data-slot='sheet-body'] > [data-slot='sheet-header'] {
+  margin-inline: -1.5rem;
+}
+
+[data-slot='sheet-body'] > [data-slot='sheet-header']:first-child {
+  margin-top: -1rem;
+}
+
+[data-slot='sheet-body'] > [data-slot='sheet-footer'] {
+  margin-inline: -1.5rem;
+}
+
+[data-slot='sheet-body'] > [data-slot='sheet-footer']:last-child {
+  margin-bottom: -1rem;
+}
+
+.sheet-editorial-content[data-side='left'],
+.sheet-editorial-content[data-side='right'] {
+  width: min(26rem, calc(100% - 0.5rem));
+  height: calc(100% - 1rem);
+}
+
+.sheet-editorial-content[data-side='top'],
+.sheet-editorial-content[data-side='bottom'] {
+  max-height: calc(100dvh - 0.5rem);
+}

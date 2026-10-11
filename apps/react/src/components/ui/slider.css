@@ -1,0 +1,16 @@
+.slider-value-input {
+  appearance: textfield;
+}
+
+.slider-value-input::-webkit-inner-spin-button,
+.slider-value-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.slider-hit-area::before {
+  position: absolute;
+  inset: 0 -8px;
+  content: '';
+  cursor: ew-resize;
+}

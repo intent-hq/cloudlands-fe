@@ -1,0 +1,7 @@
+/* Source: card-group.svelte divider contract. */
+[data-slot='card-group'][data-divided] > [data-slot='card'] {
+  border-radius: 0;
+  box-shadow:
+    1px 0 0 hsl(var(--border)),
+    0 1px 0 hsl(var(--border));
+}

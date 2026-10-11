@@ -1,0 +1,28 @@
+/* Source: button-group.svelte. React buttons can be direct children or tooltip-wrapped. */
+[data-slot='button-group'] > [data-slot='button']:not(:last-child)::after,
+[data-slot='button-group'] > :not(:last-child) [data-slot='button']::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  background: var(--color-border);
+}
+[data-slot='button-group'][data-orientation='horizontal']
+  > [data-slot='button']:not(:last-child)::after,
+[data-slot='button-group'][data-orientation='horizontal']
+  > :not(:last-child)
+  [data-slot='button']::after {
+  right: -1px;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 1px;
+}
+[data-slot='button-group'][data-orientation='vertical']
+  > [data-slot='button']:not(:last-child)::after,
+[data-slot='button-group'][data-orientation='vertical']
+  > :not(:last-child)
+  [data-slot='button']::after {
+  bottom: -1px;
+  left: 0.5rem;
+  right: 0.5rem;
+  height: 1px;
+}
