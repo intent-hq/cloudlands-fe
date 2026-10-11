@@ -39,6 +39,7 @@ const RootContext = React.createContext({
   dir: 'ltr' as 'ltr' | 'rtl',
   onContentNode: (_node: HTMLDivElement | null) => {},
   onTriggerNode: (_node: HTMLButtonElement | null) => {},
+  isTriggerTarget: (_target: EventTarget | null): boolean => false,
   onTabKeyDown: (_event: React.KeyboardEvent<HTMLDivElement>, _loop: boolean) => {},
   onCloseAutoFocus: (_event: Event) => {},
 });
@@ -123,6 +124,11 @@ export function Root({
   const onTriggerNode = React.useCallback((node: HTMLButtonElement | null) => {
     triggerNode.current = node;
   }, []);
+  const isTriggerTarget = React.useCallback(
+    (target: EventTarget | null) =>
+      target instanceof Node && Boolean(triggerNode.current?.contains(target)),
+    [],
+  );
   React.useLayoutEffect(() => {
     if (open) tabTarget.current = null;
     else tabTarget.current?.focus();
@@ -170,6 +176,7 @@ export function Root({
         dir,
         onContentNode,
         onTriggerNode,
+        isTriggerTarget,
         onTabKeyDown,
         onCloseAutoFocus,
       }}
@@ -282,6 +289,7 @@ export function Content({
   onKeyDown,
   onFocus,
   onFocusOutside,
+  onInteractOutside,
   onOpenAutoFocus,
   onCloseAutoFocus,
   children,
@@ -391,6 +399,14 @@ export function Content({
         onFocusOutside?.(event);
         // Bits ContentStatic dismisses on outside pointer interaction, not focus changes.
         if (isStatic) event.preventDefault();
+      }}
+      onInteractOutside={(event) => {
+        // Bits disables the outside layer while closed and excludes its own trigger.
+        if (!root.open || root.isTriggerTarget(event.target)) {
+          event.preventDefault();
+          return;
+        }
+        onInteractOutside?.(event);
       }}
     >
       <ListHighlight />
