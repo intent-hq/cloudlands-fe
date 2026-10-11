@@ -12,6 +12,8 @@ import { backendConnectionSaga } from './features/backend/sagas/backend-connecti
 import { directoryPickerSaga } from './store/directory-picker/sagas/directory-picker-saga';
 import { linkTooltipSaga } from './store/link-tooltip/sagas/link-tooltip-saga';
 import { agentMemorySaga } from './store/daemon-health/sagas/agent-memory-saga';
+import { agentMetadataSaga } from './store/agent-session/sagas/agent-metadata-saga';
+import { agentModelSaga } from './store/agent-model/sagas/agent-model-saga';
 import { hasAutoUpdatePreload } from './features/auto-update/auto-update.client';
 import { initAutoUpdate } from '../../../src/store/renderer/slices/auto-update/auto-update-slice';
 // This entry runs only in the browser, before Start loads selector consumers.
@@ -22,6 +24,8 @@ const cancelAutoUpdateSaga = store.runSaga(autoUpdateSaga);
 const cancelUiLayoutPersistenceSaga = store.runSaga(uiLayoutPersistenceSaga);
 const cancelBackendConnectionSaga = store.runSaga(backendConnectionSaga);
 const disposeProviderRuntime = startProviderRuntime();
+const cancelAgentMetadataSaga = store.runSaga(agentMetadataSaga);
+const cancelAgentModelSaga = store.runSaga(agentModelSaga);
 const cancelDirectoryPickerSaga = store.runSaga(directoryPickerSaga);
 const cancelLinkTooltipSaga = store.runSaga(linkTooltipSaga);
 const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
@@ -45,6 +49,8 @@ function dispose() {
   cancelDirectoryPickerSaga();
   cancelLinkTooltipSaga();
   cancelAgentMemorySaga();
+  cancelAgentModelSaga();
+  cancelAgentMetadataSaga();
   disposeProviderRuntime();
   cancelBackendConnectionSaga();
   disposeStore();
