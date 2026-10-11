@@ -10,6 +10,7 @@ import { uiLayoutPersistenceSaga } from './store/ui-layout/sagas/ui-layout-persi
 import { backendConnectionSaga } from './features/backend/sagas/backend-connection-saga';
 import { directoryPickerSaga } from './store/directory-picker/sagas/directory-picker-saga';
 import { linkTooltipSaga } from './store/link-tooltip/sagas/link-tooltip-saga';
+import { agentMemorySaga } from './store/daemon-health/sagas/agent-memory-saga';
 import { hasAutoUpdatePreload } from './features/auto-update/auto-update.client';
 import { initAutoUpdate } from '../../../src/store/renderer/slices/auto-update/auto-update-slice';
 // This entry runs only in the browser, before Start loads selector consumers.
@@ -21,6 +22,7 @@ const cancelUiLayoutPersistenceSaga = store.runSaga(uiLayoutPersistenceSaga);
 const cancelBackendConnectionSaga = store.runSaga(backendConnectionSaga);
 const cancelDirectoryPickerSaga = store.runSaga(directoryPickerSaga);
 const cancelLinkTooltipSaga = store.runSaga(linkTooltipSaga);
+const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
 if (hasAutoUpdatePreload()) store.dispatch(initAutoUpdate());
 let root: ReturnType<typeof hydrateRoot>;
 startTransition(() => {
@@ -40,6 +42,7 @@ function dispose() {
   cancelUiLayoutPersistenceSaga();
   cancelDirectoryPickerSaga();
   cancelLinkTooltipSaga();
+  cancelAgentMemorySaga();
   cancelBackendConnectionSaga();
   disposeStore();
 }
