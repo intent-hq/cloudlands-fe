@@ -1,6 +1,6 @@
 // Source: patterns/action-menu/ActionBar.svelte.
 import * as React from 'react';
-import { DotsThreeVerticalIcon } from '@phosphor-icons/react';
+import { KebabIcon } from '@/components/icons/kebab-icon';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ActionMenu } from './action-menu';
@@ -76,7 +76,7 @@ export function ActionBar({
               iconOnly
               aria-label={overflowLabel}
             >
-              <DotsThreeVerticalIcon data-icon="inline-start" aria-hidden="true" />
+              <KebabIcon className="size-3.5" />
             </Button>
           )}
         />
