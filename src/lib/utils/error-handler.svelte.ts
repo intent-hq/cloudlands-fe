@@ -8,6 +8,8 @@ import {
   type SvelteErrorInfo,
 } from './svelte-error-resolver';
 import { staleWebviewGuestId } from './webview-error-suppression';
+import type { AppError } from './app-error-types';
+export type { AppError } from './app-error-types';
 
 const logger = new Logger('ErrorHandler');
 
@@ -60,25 +62,6 @@ const SUPPRESSED_RESULT: Record<BenignErrorKind, string> = {
   'bits-ui-cleanup': 'suppressed-bits-ui-cleanup-error',
   'svelte-transition-reset': 'suppressed-svelte-transition-error',
 };
-
-export interface AppError {
-  id: string;
-  type: 'error' | 'warning' | 'info';
-  title: string;
-  message: string;
-  timestamp: Date;
-  context?: Record<string, any>;
-  stack?: string;
-  recoverable: boolean;
-  action?: {
-    label: string;
-    handler: () => void | Promise<void>;
-  };
-  // Enhanced Svelte error information
-  svelteError?: SvelteErrorInfo;
-  // Human-readable formatted message (includes debugging tips for Svelte errors)
-  formattedMessage?: string;
-}
 
 class ErrorHandler {
   // NOTE: No $state runes in this class to avoid creating reactive dependencies
