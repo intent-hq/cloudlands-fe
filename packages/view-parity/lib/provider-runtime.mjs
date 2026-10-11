@@ -76,11 +76,17 @@ export const test = base.extend({
         }
       });
     };
-    page.on('websocket', attach);
+    const observedPages = new Set();
+    const observePage = (target) => {
+      if (observedPages.has(target)) return;
+      observedPages.add(target);
+      target.on('websocket', attach);
+    };
+    observePage(page);
     try {
-      await use({ exchanges, sockets });
+      await use({ exchanges, sockets, observePage });
     } finally {
-      page.off('websocket', attach);
+      for (const target of observedPages) target.off('websocket', attach);
       // Keep ordering, wire errors and provider results. Avoid persisting the
       // unrelated settings catalog, workspace listings or hello identity bag.
       await testInfo.attach('provider-wire.json', {

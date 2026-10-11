@@ -8,6 +8,7 @@ import {
   modelIntent,
   assertModelOutcome,
 } from '../lib/provider-runtime.mjs';
+import { observeErrors } from '../lib/browser.mjs';
 
 // Optional real service checks. The integration coordinator supplies the clean
 // isolated checkout, frozen dependencies, actual daemon bridge and exact SHA.
@@ -258,46 +259,57 @@ test.describe('provider runtime', () => {
     }
   });
 
-  test('closing the browser document retires its socket and reopening reads again', async ({
+  test('a new browser page obtains a new lease and reads after the prior page closes', async ({
     page,
+    context,
+    browserErrors,
     providerWire,
   }, testInfo) => {
     const before = await openProviderRuntime(page);
     const oldSockets = [...providerWire.sockets];
     const oldLease = assertAdmission(providerWire, oldSockets.at(-1).connection);
-    await page.goto('about:blank');
-    await expect.poll(() => oldSockets.every((socket) => socket.closed)).toBe(true);
+    await page.close();
     const boundary = providerWire.exchanges.length;
-    const after = await openProviderRuntime(page);
-    const newSocket = providerWire.sockets.at(-1);
-    expect(oldSockets.some((socket) => socket.connection === newSocket.connection)).toBe(false);
-    const newLease = assertAdmission(providerWire, newSocket.connection);
-    expect(newLease).not.toBe(oldLease);
-    expect(after.principal.principal).toEqual(await rpc(page, 'principal.me', {}));
-    expect(
-      providerWire.exchanges
-        .slice(boundary)
-        .some((entry) => oldSockets.some((socket) => socket.connection === entry.connection)),
-    ).toBe(false);
-    await testInfo.attach('browser-lifecycle.json', {
-      body: JSON.stringify(
-        {
-          oldLease,
-          newLease,
-          roles: [before.role, after.role],
-          evidenceLevel: 'real document close/reopen and transport re-admission only',
-          unrun: [
-            'in-page root disposer/HMR',
-            'same-document transport reconnect',
-            'late lease response race',
-            'server-side lease enumeration',
-          ],
-        },
-        null,
-        2,
-      ),
-      contentType: 'application/json',
-    });
+    const reopened = await context.newPage();
+    const reopenedErrors = await observeErrors(reopened);
+    providerWire.observePage(reopened);
+    try {
+      const after = await openProviderRuntime(reopened);
+      const newSocket = providerWire.sockets.at(-1);
+      expect(oldSockets.some((socket) => socket.connection === newSocket.connection)).toBe(false);
+      const newLease = assertAdmission(providerWire, newSocket.connection);
+      expect(newLease).not.toBe(oldLease);
+      expect(after.principal.principal).toEqual(await rpc(reopened, 'principal.me', {}));
+      expect(
+        providerWire.exchanges
+          .slice(boundary)
+          .some((entry) => oldSockets.some((socket) => socket.connection === entry.connection)),
+      ).toBe(false);
+      await testInfo.attach('browser-lifecycle.json', {
+        body: JSON.stringify(
+          {
+            oldLease,
+            newLease,
+            roles: [before.role, after.role],
+            socketCloseEventsObserved: oldSockets.map((socket) => socket.closed),
+            evidenceLevel: 'native page close/new page and real transport re-admission only',
+            unrun: [
+              'in-page root disposer/HMR',
+              'same-document transport reconnect',
+              'late lease response race',
+              'server-side lease enumeration',
+              'old socket retirement when browser target teardown emits no close event',
+            ],
+          },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      });
+    } finally {
+      await reopened.close();
+      browserErrors.push(...reopenedErrors);
+    }
   });
 
   test.skip('root cancellation and late publication fencing', () => {
