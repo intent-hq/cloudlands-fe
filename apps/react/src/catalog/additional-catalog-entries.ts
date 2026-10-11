@@ -1,6 +1,7 @@
 // Supplemental public ports without canonical catalog metadata. Descriptions distinguish
 // translated source harnesses from new interaction callers; none claims accepted parity.
 // i18n-ignore (internal catalog reference descriptions)
+import { githubLinkCardStates } from './shared-widget-catalog-preview';
 import type { CatalogEntry } from './catalog';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 
@@ -32,6 +33,53 @@ export const interactionFixture: UiComponentFixture = {
   reducedMotion: true,
 };
 export const additionalCatalogEntries: CatalogEntry[] = [
+  {
+    slug: 'github-link-card',
+    name: 'GitHubLinkCard',
+    category: 'primitive',
+    source: 'src/lib/components/ui/tooltip/github-link-card.preview.svelte',
+    publicImport: '@/components/ui/github-link-card',
+    exports: ['GitHubLinkCard'],
+    description:
+      'All sixteen source display inputs. Live LinkTooltip, transport, cache and rate-limited hover/actions remain unported; registration is not parity acceptance.',
+    fixtures: githubLinkCardStates.map((id) => ({ id, title: id, states: [id] })),
+  },
+  ...[
+    [
+      'content-header',
+      'ContentHeader',
+      'src/features/layout/components/content-header/ContentHeader.svelte',
+      '@/features/layout/components/content-header',
+    ],
+    [
+      'panel-wrapper',
+      'PanelWrapper',
+      'src/lib/components/ui/PanelWrapper.svelte',
+      '@/components/ui/panel-wrapper',
+    ],
+    [
+      'agent-badge',
+      'AgentBadge',
+      'src/lib/components/ui/indicators/AgentBadge.svelte',
+      '@/components/ui/indicators',
+    ],
+    [
+      'unsaved-indicator',
+      'UnsavedIndicator',
+      'src/lib/components/ui/indicators/UnsavedIndicator.svelte',
+      '@/components/ui/indicators',
+    ],
+  ].map(([slug, name, source, publicImport]): CatalogEntry => ({
+    slug: slug!,
+    name: name!,
+    source: source!,
+    publicImport: publicImport!,
+    exports: [name!],
+    category: 'primitive',
+    description:
+      'Additional observable interaction caller using the real source port. No complete source scene or accepted visual parity is claimed.',
+    fixtures: [interactionFixture],
+  })),
   {
     slug: 'media-lightbox',
     name: 'MediaLightbox',

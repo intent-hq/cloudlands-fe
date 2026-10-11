@@ -1,3 +1,4 @@
+import { ToastCatalogPage } from './toast-catalog-page';
 import { useLocation } from '@tanstack/react-router';
 import { FunctionalExamples, hasFunctionalExample } from './functional-examples';
 import { CatalogShell } from './catalog-shell';
@@ -28,6 +29,8 @@ export function CatalogApp() {
         <CatalogIntroduction />
       ) : systemSlug ? (
         <CatalogSystemPage key={slug} slug={systemSlug} />
+      ) : !settings.state && entry?.slug === 'toast' ? (
+        <ToastCatalogPage entry={entry} />
       ) : !settings.state && entry && hasComponentPage(entry.slug) ? (
         <CatalogComponentPage key={entry.slug} entry={entry} />
       ) : (

@@ -282,7 +282,6 @@ export function resolveCatalogSlug(slug: string): string {
 export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
   ...patternEntries,
-  ...additionalCatalogEntries,
   {
     slug: 'model-picker',
     name: 'Model picker',
@@ -649,5 +648,8 @@ export const catalogEntries: CatalogEntry[] = [
 
 export function getCatalogEntry(slug: string): CatalogEntry | undefined {
   const canonicalSlug = resolveCatalogSlug(slug);
-  return catalogEntries.find((entry) => entry.slug === canonicalSlug);
+  return (
+    catalogEntries.find((entry) => entry.slug === canonicalSlug) ??
+    additionalCatalogEntries.find((entry) => entry.slug === canonicalSlug)
+  );
 }

@@ -107,6 +107,180 @@ function reference(
 
 // i18n-ignore (copyable developer documentation preserves reference example text; product callers localize labels)
 const references: Record<string, Reference> = {
+  toast: reference(
+    "import { Toast, toast } from '@/components/ui/toast';",
+    `import { Button } from '@/components/ui/button';
+
+export function Example() {
+  return <><Button onClick={() => toast.success('Workspace saved', { toasterId: 'example' })}>Save</Button><Toast toasterId="example" regionId="example-toasts" /></>;
+}`,
+    [
+      prop('toasterId / regionId', 'string', 'Isolate a Sonner host and its DOM region.'),
+      prop(
+        'staticPosition',
+        'boolean',
+        'Render the real host inline for source catalog display.',
+        'false',
+      ),
+      prop(
+        'staticToastCount / onClearAll',
+        'number / () => void',
+        'Supply source static-stack count and cleanup.',
+      ),
+      prop(
+        'toast.custom',
+        '(render: (id: string | number) => ReactElement, options?) => string | number',
+        'Native React Sonner custom render callback; unlike Svelte, no componentProps option.',
+      ),
+    ],
+    [
+      'Mount one live host for the application. These catalog hosts and static update previewState are display scaffolding; native updater acceptance is separate.',
+    ],
+  ),
+  notify: reference(
+    "import { notify } from '@/components/patterns/notify';",
+    `import { Button } from '@/components/ui/button';
+import { Toast } from '@/components/ui/toast';
+
+export function Example() {
+  return <><Button onClick={() => notify.undoable('Workspace archived', { undoLabel: 'Undo', onUndo: () => { console.info('Restore workspace'); } })}>Archive</Button><Toast /></>;
+}`,
+    [
+      prop(
+        'success / info / warning / error',
+        '(message, options?) => NotifyId',
+        'Apply source notification duration policy; errors may carry diagnostic details.',
+      ),
+      prop(
+        'progress',
+        '(message, options?) => ProgressHandle',
+        'Returns stable id plus update, success, error and dismiss operations.',
+      ),
+      prop('key', 'string', 'Replace the notification with the same key.'),
+      prop(
+        'undoable',
+        '(message, { undoLabel, onUndo, onExpire?, ...options }) => NotifyId',
+        'Expiry belongs to the operation and continues after UI dismissal; Undo cancels it.',
+      ),
+      prop(
+        'custom',
+        '(Component, { componentProps?, ...options }) => NotifyId',
+        'React component with an injected closeToast callback.',
+      ),
+      prop(
+        'agentFailure / appError / update',
+        '(props, options?) => NotifyId',
+        'Lazy custom surfaces; update without previewState uses the real native adapter.',
+      ),
+      prop(
+        'dismiss',
+        '(id?: NotifyId | ProgressHandle) => void',
+        'Dismiss one notification or all notifications.',
+      ),
+    ],
+    [
+      'The source notify catalog cells all display NotifyErrorToast with the state name. Use the interactive example for actual policies, timers and callbacks.',
+    ],
+  ),
+  'github-link-card': reference(
+    "import { GitHubLinkCard, type GitHubLinkCardProps } from '@/components/ui/github-link-card';",
+    `export function Example(props: GitHubLinkCardProps) {
+  return <GitHubLinkCard {...props} />;
+}`,
+    [
+      prop('url', 'string', 'Original repository resource URL.'),
+      prop(
+        'preview',
+        'GitHubLinkCardProps["preview"]',
+        'Display state from the canonical link-preview owner: loading, ready or error.',
+      ),
+    ],
+    [
+      'Sixteen source display states are available. LinkTooltip singleton, cache, connection ownership and rate-limited hover/actions are not exercised by these static inputs.',
+    ],
+  ),
+  'content-header': reference(
+    "import { ContentHeader } from '@/features/layout/components/content-header';",
+    `import { useState } from 'react';
+
+export function Example() {
+  const [title, setTitle] = useState('Preview implementation plan');
+  return <ContentHeader title={title} editableTitle onTitleChange={setTitle} showClose={false} />;
+}`,
+    [
+      prop('title / subtitle', 'string', 'Content heading and supporting text.'),
+      prop(
+        'editableTitle / onTitleChange',
+        'boolean / (title: string) => void',
+        'Commit a nonempty trimmed title; Escape cancels.',
+      ),
+      prop('breadcrumbs', 'BreadcrumbItem[]', 'Category labels with optional icons and callbacks.'),
+      prop('canGoBack / canGoForward', 'boolean', 'Navigation availability.'),
+      prop(
+        'onNavigateBack / onNavigateForward / onClose',
+        '() => void',
+        'Panel navigation and dismissal callbacks.',
+      ),
+      prop('actions', 'ReactNode', 'Trailing controls.'),
+      className,
+    ],
+    [
+      'Editable-text scenes include this header and EditableName only. WorkspaceSidebarHeader and dense-context remain pending.',
+    ],
+  ),
+  'panel-wrapper': reference(
+    "import { PanelWrapper } from '@/components/ui/panel-wrapper';",
+    `import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+
+export function Example() {
+  const [open, setOpen] = useState(true);
+  return <><Button onClick={() => setOpen(true)}>Open panel</Button><PanelWrapper open={open} title="Details" showClose onClose={() => setOpen(false)}><p>Panel content</p></PanelWrapper></>;
+}`,
+    [
+      prop(
+        'open',
+        'boolean',
+        'Keep mounted and toggle open to retain the exit transition.',
+        'true',
+      ),
+      prop(
+        'title / editableTitle / onTitleChange',
+        'ContentHeaderProps',
+        'Source header behavior forwarded to ContentHeader.',
+      ),
+      prop('faIcon', 'Icon', 'Source title icon alias.'),
+      prop('contentClass / headerClass', 'string', 'Classes for panel body and header.'),
+      children,
+      className,
+    ],
+  ),
+  'agent-badge': reference(
+    "import { AgentBadge } from '@/components/ui/indicators';",
+    `export function Example({ unread }: { unread: number }) {
+  return <AgentBadge count={unread} />;
+}`,
+    [
+      prop(
+        'count',
+        'number',
+        'Unread count; zero hides the badge. Changes use the source update animation.',
+      ),
+      className,
+    ],
+  ),
+  'unsaved-indicator': reference(
+    "import { UnsavedIndicator } from '@/components/ui/indicators';",
+    `export function Example({ dirty }: { dirty: boolean }) {
+  return <UnsavedIndicator visible={dirty} />;
+}`,
+    [
+      prop('visible', 'boolean', 'Show the source unsaved dot with presence transitions.', 'false'),
+      className,
+    ],
+    ['This boolean UI indicator differs from the status-based form UnsavedIndicator.'],
+  ),
+
   accordion: reference(
     "import * as Accordion from '@/components/ui/accordion';",
     `export function Example() {

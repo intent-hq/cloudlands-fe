@@ -1,3 +1,5 @@
+import { ToastCatalogPreview } from './toast-catalog-preview';
+import { NotifyCatalogPreview } from './notify-catalog-preview';
 // Port of CatalogComponentPage.svelte for the renderer families implemented here.
 import { useState } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -32,6 +34,8 @@ import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import './catalog-component-page.css';
 
 export const portedComponentPages = [
+  'toast',
+  'notify',
   'button',
   'badge',
   'checkbox',
@@ -97,7 +101,11 @@ function Fixture({ entry, fixture }: { entry: CatalogEntry; fixture: UiComponent
       data-catalog-preview={entry.slug}
       data-catalog-fixture-id={fixture.id}
     >
-      {entry.slug === 'ask-user-questions' ? (
+      {entry.slug === 'toast' ? (
+        <ToastCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'notify' ? (
+        <NotifyCatalogPreview fixture={fixture} />
+      ) : entry.slug === 'ask-user-questions' ? (
         <QuestionsCatalogPreview fixture={fixture} />
       ) : entry.slug === 'message-composer' ? (
         <ComposerCatalogPreview fixture={fixture} />
@@ -184,11 +192,6 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
         ) : (
           <p className="section-description">{pendingReference}</p>
         )}
-        {reference.notes.map((note) => (
-          <p key={note} className="section-description">
-            {note}
-          </p>
-        ))}
       </section>
       <section aria-labelledby="playground-title">
         <h2 id="playground-title">Playground</h2>
@@ -203,6 +206,12 @@ export function CatalogComponentPage({ entry }: { entry: CatalogEntry }) {
             {entry.fixtures[0] && <Fixture entry={entry} fixture={entry.fixtures[0]} />}
           </TabsContent>
           <TabsContent value="code">
+            {reference.notes.map((note) => (
+              <p key={note} className="section-description">
+                {note}
+              </p>
+            ))}
+
             <pre>
               <code>{usage ?? installCommand ?? pendingReference}</code>
             </pre>

@@ -1,3 +1,10 @@
+import {
+  EditableTextPreview,
+  editableTextStates,
+  GitHubLinkCardPreview,
+  HeaderExample,
+  IndicatorExample,
+} from './shared-widget-catalog-preview';
 import type { ComponentType, ReactNode } from 'react';
 import { SidebarHarness, type SidebarHarnessProps } from '@/components/ui/sidebar';
 import { askUserQuestionsFixtures } from '$lib/components/ui/ask-user-questions/ask-user-questions.fixtures';
@@ -38,6 +45,11 @@ export function AdditionalCatalogPreview({
   componentId: string;
   fixture: UiComponentFixture;
 }) {
+  if (componentId === 'github-link-card') return <GitHubLinkCardPreview state={fixture.id} />;
+  if (componentId === 'content-header' || componentId === 'panel-wrapper')
+    return <HeaderExample panel={componentId === 'panel-wrapper'} />;
+  if (componentId === 'agent-badge' || componentId === 'unsaved-indicator')
+    return <IndicatorExample unsaved={componentId === 'unsaved-indicator'} />;
   if (componentId === 'media-lightbox') return <MediaHostExample />;
   if (componentId === 'zoom-pan-viewport') return <ZoomMediaExample />;
   if (componentId === 'shimmer-overlay') return <ShimmerCatalogPreview />;
@@ -114,6 +126,15 @@ const sidebarStates = {
 } satisfies Record<string, SidebarHarnessProps>;
 
 export const additionalPreviews: Record<string, Definition> = {
+  'editable-text': {
+    id: 'editable-text',
+    title: 'Editable text (partial)',
+    source: 'src/lib/components/ui/editable-text.preview.svelte',
+    defaultState: 'display',
+    states: Object.fromEntries(
+      editableTextStates.map((state) => [state, <EditableTextPreview key={state} state={state} />]),
+    ),
+  },
   'diagnostics-audit': {
     id: 'diagnostics-audit',
     title: 'Diagnostic and specialized modal audit (partial)',
@@ -182,7 +203,7 @@ export const additionalPreviews: Record<string, Definition> = {
         id: entry.slug,
         title: entry.name,
         source: entry.source,
-        defaultState: entry.fixtures[0]!.id,
+        defaultState: entry.slug === 'github-link-card' ? 'pr-open' : entry.fixtures[0]!.id,
         states: Object.fromEntries(
           entry.fixtures.map((fixture) => [
             fixture.id,

@@ -1,3 +1,4 @@
+import { NotifyExample } from './notify-catalog-preview';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -424,6 +425,7 @@ function TakeoverExample() {
 export function FunctionalExamples({ slug }: { slug: string }) {
   return (
     <article className="component-page grid gap-8" data-testid="catalog-functional-examples">
+      {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
       {slug === 'form' && (
         <>
           <FormExample />
@@ -456,6 +458,8 @@ export function FunctionalExamples({ slug }: { slug: string }) {
 
 export function hasFunctionalExample(slug: string) {
   return [
+    'toast',
+    'notify',
     'form',
     'collection',
     'confirm',
