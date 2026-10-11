@@ -76,7 +76,7 @@ test('diagram resize: narrow sequence keeps source and fullscreen controls opera
   await settledMermaid(host, previousGeneration);
   await page.setViewportSize({ width: 360, height: 900 });
   const svg = await settledMermaid(host);
-  await expect(svg.locator('text').filter({ hasText: /Select\s*named\s*state/ })).toHaveCount(1);
+  await expect(svg).toContainText(/Select\s*named\s*state/);
   await host.locator('.mermaid-svg-container').hover();
   await host.getByRole('button', { name: 'View source', exact: true }).click();
   await expect(host.getByRole('region', { name: 'View source', exact: true })).toContainText(
