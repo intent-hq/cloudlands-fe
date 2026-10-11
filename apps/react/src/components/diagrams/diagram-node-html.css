@@ -29,6 +29,11 @@
   cursor: pointer;
 }
 
+/* Source nodes own their surface without the shared button's extra paint layer. */
+.diagram-node-html > [data-slot='button-surface'] {
+  display: none;
+}
+
 .diagram-node-html.node-clickable:hover {
   background: var(--diagram-node-hover-surface);
 }
