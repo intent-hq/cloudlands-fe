@@ -15,6 +15,8 @@ export async function choose(page, host, name, value) {
 }
 
 export async function openTasks(page, target) {
+  // Clicking the source trigger dismisses its tooltip until a real pointer re-entry.
+  await page.mouse.move(0, 0);
   await target.getByRole('progressbar').hover();
   await expect(popup(page)).toBeVisible();
   return popup(page);
