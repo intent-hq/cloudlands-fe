@@ -185,6 +185,7 @@ export function AutoSaveField<T>({
 
   return (
     <div data-slot="auto-save-field" data-state={status} className={cn('relative', className)}>
+      {/* oxlint-disable-next-line react/refs -- The render prop receives callbacks; only those event handlers access refs. */}
       {children({
         value: localValue,
         update,

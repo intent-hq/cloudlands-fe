@@ -70,6 +70,7 @@ export function Form({
   }
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Form-level shortcuts handle bubbled events from native controls.
     <form
       ref={form}
       data-slot="form"

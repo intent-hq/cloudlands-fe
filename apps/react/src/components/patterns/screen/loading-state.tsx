@@ -36,6 +36,7 @@ export function LoadingState({
       data-recipe={recipe}
       data-density={density}
       data-inset={inset ? 'card' : undefined}
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Loading announces status and retains the source block layout for every recipe.
       role="status"
       aria-label={label}
       style={recipe === 'list' ? style : undefined}
