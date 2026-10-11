@@ -15,7 +15,7 @@ for (const dismissal of ['close button', 'backdrop']) {
     const input = dialog.getByRole('textbox', { name: 'Workspace name', exact: true });
     await input.fill('Abandoned draft');
     if (dismissal === 'close button') {
-      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Close dialog', exact: true }).click();
     } else {
       await page.mouse.click(2, 2);
     }
@@ -40,7 +40,7 @@ test('callback dialog: Message rejects backdrop dismissal and Close selects canc
   await page.mouse.click(2, 2);
   await expect(dialog).toBeVisible();
   await expect.poll(() => outputJson(output(example, 'Message selected indices'))).toEqual([]);
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect.poll(() => outputJson(output(example, 'Message selected indices'))).toEqual([1]);
@@ -94,7 +94,7 @@ for (const dismissal of ['close button', 'backdrop']) {
     const dialog = page.getByRole('dialog', { name: 'Harness vcallback exercise', exact: true });
     await expect(dialog).toBeVisible();
     if (dismissal === 'close button') {
-      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Close dialog', exact: true }).click();
     } else {
       await page.mouse.click(2, 2);
     }

@@ -164,7 +164,7 @@ test('callback dialog: Bulk pending callback prevents duplicate submission and d
   await expect(output(example, 'Bulk callback status')).toHaveText('pending');
   await expect(confirm).toBeDisabled();
   await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
-  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Close dialog', exact: true })).toBeDisabled();
   await dialog.locator('form').evaluate((form) => {
     form.requestSubmit();
     form.requestSubmit();
