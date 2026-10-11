@@ -1,0 +1,8 @@
+.paste-chip-wrapper {
+  cursor: default;
+}
+
+.paste-chip-pill {
+  vertical-align: baseline;
+  line-height: 1.4;
+}

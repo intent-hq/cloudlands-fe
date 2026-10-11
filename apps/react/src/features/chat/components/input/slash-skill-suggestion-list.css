@@ -1,0 +1,22 @@
+.slash-skill-options {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.slash-skill-option:hover,
+.slash-skill-option.active {
+  background: hsl(var(--primary) / 0.12);
+}
+
+.slash-skill-option:focus-visible {
+  outline: 1px solid hsl(var(--primary-ink));
+  outline-offset: -2px;
+}
+
+.slash-skill-state {
+  padding: 12px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  text-align: center;
+}
