@@ -1,0 +1,11 @@
+[data-sidebar='menu-button'] > svg,
+.sidebar-menu-icon svg,
+.sidebar-menu-sub-icon svg {
+  stroke-width: 1.5;
+}
+[data-sidebar='menu-button'][data-active='true'] > svg,
+[data-sidebar='menu-button'][data-proximity-active='true'] > svg,
+.sidebar-menu-icon.text-foreground svg,
+.sidebar-menu-sub-icon.text-foreground svg {
+  stroke-width: 2;
+}
