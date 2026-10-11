@@ -13,6 +13,19 @@ let baseUrl: string;
 const virtualPrefix = '\0workspace-tab-strip:';
 const virtualModules: Record<string, string> = {
   '$app/navigation': 'export const goto = async () => {};',
+  // These status/drag scenarios have no connected Micro; connected assignments use the Micro CT fixture.
+  '$features/hardware-console/device/connection-status': `
+    export const microConnectedReadable = () => ({
+      subscribe(run) { run(false); return () => {}; },
+    });`,
+  '$store/renderer/slices/hardware-console/hardware-console-selectors': `
+    const emptySlot = Object.assign(
+      () => ({ subscribe(run) { run(null); return () => {}; } }),
+      { select: () => null },
+    );
+    export const selectWorkspaceResolvedKeySlot = emptySlot;
+    export const selectWorkspacePinnedKeySlot = emptySlot;
+    export const selectHardwareConsoleKeySlots = { select: () => [] };`,
   '$features/agent/services/active-streams-tracker': `
     export const activeStreamsTracker = {
       startPolling() {}, subscribe() { return () => {}; },
@@ -67,6 +80,11 @@ const virtualModules: Record<string, string> = {
     );`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
+    const workspaceById = (id) => globalThis.__workspaceTabScenario.workspaces.find((item) => item.id === id);
+    export const selectWorkspaceById = Object.assign(
+      (id) => readable(() => workspaceById(id)),
+      { select: (_state, id) => workspaceById(id) },
+    );
     export const selectWorkspaceItems = Object.assign(
       () => readable(() => globalThis.__workspaceTabScenario.workspaces),
       { select: () => globalThis.__workspaceTabScenario.workspaces },
