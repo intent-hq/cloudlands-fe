@@ -7,6 +7,7 @@ import { RecipesPage } from './recipes-page';
 import { ReplaceAgentExample, TextareaConsumerExample } from './callback-consumer-examples';
 import { DiagramFunctionalExamples } from './diagram-functional-examples';
 import { CallbackDialogExamples } from './callback-dialog-examples';
+import { MenuFocusExamples } from './menu-focus-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -449,6 +450,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'modal-heading-spacing' && <ReplaceAgentExample />}
       {slug === 'diagram-workbench' && <DiagramFunctionalExamples />}
       {slug === 'modals' && <CallbackDialogExamples />}
+      {slug === 'menu' && <MenuFocusExamples />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
       {slug === 'form' && (
         <>
@@ -496,6 +498,7 @@ export function hasFunctionalExample(slug: string) {
     'settings-textarea',
     'modal-heading-spacing',
     'modals',
+    'menu',
     'diagram-workbench',
     'toast',
     'notify',

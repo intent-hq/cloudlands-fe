@@ -24,6 +24,7 @@ export function CatalogApp() {
   const entry = getCatalogEntry(slug);
   const interactive =
     (search.get('example') === 'interactive' ||
+      (slug === 'menu' && search.get('example') === 'focus') ||
       (slug === 'diagram-workbench' && search.get('example') === 'functional')) &&
     hasFunctionalExample(slug);
   const live = search.get('example') === 'live' && hasLiveExample(slug);
