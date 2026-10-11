@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { m } from '$shared/paraglide/messages.js';
 import { cn } from '@/lib/utils';
+import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
 import { Button } from '@/components/ui/button';
 import { useSize } from '@/components/ui/size-context';
 import {
@@ -14,6 +15,7 @@ import {
 import './dialog.css';
 
 const StaticDialog = React.createContext(false);
+const DialogOpen = React.createContext(false);
 const DialogPortalTarget = React.createContext<HTMLElement | null>(null);
 export function useDialogPortalTarget() {
   return React.useContext(DialogPortalTarget);
@@ -21,14 +23,29 @@ export function useDialogPortalTarget() {
 export function Dialog({
   staticPosition = false,
   children,
+  open: controlled,
+  defaultOpen = false,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root> & { staticPosition?: boolean }) {
+  const [local, setLocal] = React.useState(defaultOpen);
+  const open = controlled ?? local;
   return (
-    <StaticDialog value={staticPosition}>
-      <DialogPrimitive.Root {...props} modal={staticPosition ? false : props.modal}>
-        {children}
-      </DialogPrimitive.Root>
-    </StaticDialog>
+    <DialogOpen value={open}>
+      <StaticDialog value={staticPosition}>
+        <DialogPrimitive.Root
+          {...props}
+          open={open}
+          onOpenChange={(value) => {
+            setLocal(value);
+            onOpenChange?.(value);
+          }}
+          modal={staticPosition ? false : props.modal}
+        >
+          {children}
+        </DialogPrimitive.Root>
+      </StaticDialog>
+    </DialogOpen>
   );
 }
 export function DialogTrigger(props: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
@@ -99,6 +116,7 @@ export function DialogContent({
     },
     [ref],
   );
+  const scopeRef = useFocusScopeRef({ enabled: React.useContext(DialogOpen) }, assignRef);
   const handleOpenAutoFocus = (event: Event) => {
     if (isStatic) {
       event.preventDefault();
@@ -135,7 +153,7 @@ export function DialogContent({
       <DialogOverlay contained={Boolean(container)} staticPosition={isStatic} />
       <DialogPrimitive.Content
         {...props}
-        ref={assignRef}
+        ref={scopeRef}
         role={role}
         data-slot="dialog-content"
         data-overlay-surface

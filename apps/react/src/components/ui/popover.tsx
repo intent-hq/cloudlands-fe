@@ -2,20 +2,38 @@
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
+import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
 import { clampSurface, SurfaceProvider, useSurface } from '@/components/ui/surface-context';
 import { menuOverlayClass } from './overlay-recipes';
 import './overlays.css';
 
 const StaticPopover = React.createContext(false);
+const PopoverOpen = React.createContext(false);
 export function Popover({
   staticPosition = false,
   children,
+  open: controlled,
+  defaultOpen = false,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Root> & { staticPosition?: boolean }) {
+  const [local, setLocal] = React.useState(defaultOpen);
+  const open = controlled ?? local;
   return (
-    <StaticPopover value={staticPosition}>
-      <PopoverPrimitive.Root {...props}>{children}</PopoverPrimitive.Root>
-    </StaticPopover>
+    <PopoverOpen value={open}>
+      <StaticPopover value={staticPosition}>
+        <PopoverPrimitive.Root
+          {...props}
+          open={open}
+          onOpenChange={(value) => {
+            setLocal(value);
+            onOpenChange?.(value);
+          }}
+        >
+          {children}
+        </PopoverPrimitive.Root>
+      </StaticPopover>
+    </PopoverOpen>
   );
 }
 export function PopoverTrigger(props: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
@@ -28,6 +46,7 @@ export function PopoverClose(props: React.ComponentProps<typeof PopoverPrimitive
   return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
 }
 export function PopoverContent({
+  ref,
   className,
   portal = true,
   portalProps,
@@ -45,8 +64,10 @@ export function PopoverContent({
   const rootStatic = React.useContext(StaticPopover);
   const isStatic = staticPosition ?? rootStatic;
   const surface = clampSurface(useSurface() + 2);
+  const scopeRef = useFocusScopeRef({ enabled: React.useContext(PopoverOpen) }, ref);
   const content = (
     <PopoverPrimitive.Content
+      ref={scopeRef}
       data-slot="popover-content"
       data-static-position={isStatic || undefined}
       data-surface-level={surface}

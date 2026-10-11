@@ -22,7 +22,7 @@ import {
 import { resolveSubmenuSide } from '$lib/components/ui/menu/submenu-placement';
 import { menuItem, menuOverlay, menuSubmenuAlignOffset } from './menu-recipes';
 import { ListHighlight } from './list-highlight';
-import { mountStaticMenuFocus } from './static-focus-scope';
+import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
 export {
   menuItem,
   menuOverlay,
@@ -38,6 +38,7 @@ const RootContext = React.createContext({
   onContentNode: (_node: HTMLDivElement | null) => {},
 });
 const SubContext = React.createContext<{
+  open: boolean;
   trigger: HTMLDivElement | null;
   setTrigger: React.Dispatch<React.SetStateAction<HTMLDivElement | null>>;
 } | null>(null);
@@ -144,11 +145,28 @@ export const Portal = Primitive.Portal;
 export const Group = Primitive.Group;
 export const GroupHeading = Primitive.Label;
 export const RadioGroup = Primitive.RadioGroup;
-export function Sub({ children, ...props }: React.ComponentProps<typeof Primitive.Sub>) {
+export function Sub({
+  children,
+  open: controlled,
+  defaultOpen = false,
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof Primitive.Sub>) {
+  const [local, setLocal] = React.useState(defaultOpen);
+  const open = controlled ?? local;
   const [trigger, setTrigger] = React.useState<HTMLDivElement | null>(null);
   return (
-    <SubContext value={{ trigger, setTrigger }}>
-      <Primitive.Sub {...props}>{children}</Primitive.Sub>
+    <SubContext value={{ open, trigger, setTrigger }}>
+      <Primitive.Sub
+        {...props}
+        open={open}
+        onOpenChange={(value) => {
+          setLocal(value);
+          onOpenChange?.(value);
+        }}
+      >
+        {children}
+      </Primitive.Sub>
     </SubContext>
   );
 }
@@ -195,28 +213,25 @@ export function Content({
   const onContentNode = root.onContentNode;
   const contentNode = React.useRef<HTMLDivElement | null>(null);
   const openAutoFocus = React.useRef(onOpenAutoFocus);
+  // oxlint-disable-next-line react/refs -- Autofocus runs during scope attachment; changing the callback must not detach an open scope.
   openAutoFocus.current = onOpenAutoFocus;
   const contentRef = React.useCallback(
     (node: HTMLDivElement | null) => {
       contentNode.current = node;
       onContentNode(node);
       const cleanup = assignRef(ref, node);
-      const cleanupScope = node && isStatic && root.open ? mountStaticMenuFocus(node) : undefined;
       if (node)
         queueMicrotask(() => {
           if (node.isConnected) setMenuTabStop(node);
         });
-      if (cleanupScope)
-        handleOpenAutoFocus(new CustomEvent('focusScope.onOpenAutoFocus', { cancelable: true }));
       return () => {
-        cleanupScope?.();
         contentNode.current = null;
         onContentNode(null);
         if (typeof cleanup === 'function') cleanup();
         else assignRef(ref, null);
       };
     },
-    [ref, onContentNode, isStatic, root.open],
+    [ref, onContentNode],
   );
   function handleOpenAutoFocus(event: Event) {
     openAutoFocus.current?.(event);
@@ -235,6 +250,17 @@ export function Content({
       node.focus();
     });
   }
+  const scopeRef = useFocusScopeRef(
+    {
+      enabled: root.open,
+      trapped: isStatic,
+      onMount: isStatic
+        ? () =>
+            handleOpenAutoFocus(new CustomEvent('focusScope.onOpenAutoFocus', { cancelable: true }))
+        : undefined,
+    },
+    contentRef,
+  );
   const content = (
     <Primitive.Content
       {...props}
@@ -244,7 +270,7 @@ export function Content({
           else handleOpenAutoFocus(event);
         },
       }}
-      ref={contentRef}
+      ref={scopeRef}
       data-slot="menu-content"
       data-surface-level={surface}
       data-static-position={isStatic || undefined}
@@ -438,10 +464,11 @@ export function SubContent({
     align,
     alignOffset,
   ]);
+  const scopeRef = useFocusScopeRef({ enabled: trigger?.open ?? false }, contentRef);
   const content = (
     <Primitive.SubContent
       {...props}
-      ref={contentRef}
+      ref={scopeRef}
       align={align === 'center' ? 'start' : align}
       alignOffset={alignOffset ?? menuSubmenuAlignOffset}
       sideOffset={sideOffset}

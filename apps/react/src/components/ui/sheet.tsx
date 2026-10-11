@@ -11,6 +11,7 @@ import {
 import { Dialog as SheetPrimitive } from 'radix-ui';
 import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
 import { m } from '$shared/paraglide/messages.js';
 import {
   springIn,
@@ -171,6 +172,7 @@ function MountedSheet({
     },
     [ref],
   );
+  const scopeRef = useFocusScopeRef({ enabled: useContext(SheetOpen) }, assignRef);
   const transition = useMemo<TransitionFactory>(
     () =>
       (node) =>
@@ -188,7 +190,7 @@ function MountedSheet({
         <SheetPrimitive.Content
           {...props}
           forceMount
-          ref={assignRef}
+          ref={scopeRef}
           data-slot="sheet-content"
           data-side={side}
           data-surface-level={surface}

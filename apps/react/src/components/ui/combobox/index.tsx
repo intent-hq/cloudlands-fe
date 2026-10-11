@@ -18,6 +18,7 @@ import { clampSurface, SurfaceProvider, useSurface } from '@/components/ui/surfa
 import { useSize } from '@/components/ui/size-context';
 import { textEntryControlClasses, textEntryHeight } from '@/components/ui/text-entry';
 import { cn } from '@/lib/utils';
+import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
 import type { ComboboxGroup, ComboboxOption, ComboboxProps } from './types';
 
 export type { ComboboxGroup, ComboboxOption, ComboboxProps } from './types';
@@ -101,6 +102,7 @@ export function Combobox({
     setInlinePortalTarget(node);
   }, []);
   const content = React.useRef<HTMLDivElement>(null);
+  const scopeRef = useFocusScopeRef({ enabled: open }, content);
   const viewport = React.useRef<HTMLDivElement>(null);
   const retry = React.useRef<HTMLButtonElement>(null);
   const suppressFocusOpen = React.useRef(false);
@@ -520,7 +522,7 @@ export function Combobox({
           with modal=false. Positioner and List provide the floating/ARIA parts;
           keyboard and outside-pointer actions own dismissal. */}
       <div
-        ref={content}
+        ref={scopeRef}
         role="presentation"
         data-combobox-owner={uid}
         data-surface-level={surface}
@@ -624,7 +626,7 @@ export function Combobox({
           {staticPosition ? (
             open && (
               <div
-                ref={content}
+                ref={scopeRef}
                 data-combobox-owner={uid}
                 data-static-position
                 data-surface-level={surface}

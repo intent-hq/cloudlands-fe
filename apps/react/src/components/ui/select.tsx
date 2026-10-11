@@ -4,6 +4,7 @@ import { CheckIcon, CaretDownIcon, CaretUpIcon } from '@phosphor-icons/react';
 import { Select as SelectPrimitive } from 'radix-ui';
 import { m } from '$shared/paraglide/messages.js';
 import { cn } from '@/lib/utils';
+import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
 import { Button } from '@/components/ui/button';
 import { clampSurface, SurfaceProvider, useSurface } from '@/components/ui/surface-context';
 import { menuItemClass, menuOverlayClass } from './overlay-recipes';
@@ -191,9 +192,10 @@ export function SelectContent({
     },
     [ref, wrapperId, select.open],
   );
+  const scopeRef = useFocusScopeRef({ enabled: select.open }, attachContent);
   const content = (
     <SelectPrimitive.Content
-      ref={attachContent}
+      ref={scopeRef}
       data-slot="select-content"
       data-surface-level={surface}
       data-static-position={select.staticPosition || undefined}
