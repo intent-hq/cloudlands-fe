@@ -7,6 +7,7 @@ import { autoUpdateReducer } from '../../../../src/store/renderer/slices/auto-up
 import { uiLayoutReducer } from '../../../../src/store/renderer/slices/ui-layout/ui-layout-slice';
 import { userPreferencesReducer } from '../../../../src/store/renderer/slices/user-preferences/user-preferences-slice';
 import { daemonHealthReducer } from '../../../../src/store/renderer/slices/daemon-health/daemon-health-slice';
+import { directoryPickerReducer } from '../../../../src/store/renderer/slices/directory-picker/directory-picker-slice';
 
 export const store = new ReactStore({
   catalog: catalogReducer,
@@ -15,5 +16,6 @@ export const store = new ReactStore({
   uiLayout: uiLayoutReducer,
   userPreferences: userPreferencesReducer,
   daemonHealth: daemonHealthReducer,
+  directoryPicker: directoryPickerReducer,
 });
 export type AppState = StoreState<typeof store>;
