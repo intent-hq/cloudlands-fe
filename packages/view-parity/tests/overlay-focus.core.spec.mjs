@@ -39,7 +39,7 @@ test('overlay focus: submenu keyboard ownership returns with ArrowLeft and resum
   const trigger = menu.getByRole('menuitem', { name: 'More focus actions', exact: true });
   await expect(trigger).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  const submenu = page.getByRole('menu', { name: 'Nested focus menu', exact: true });
+  const submenu = page.getByRole('menu').and(page.getByTestId('nested-focus-menu'));
   await expect(
     submenu.getByRole('menuitem', { name: 'Submenu command', exact: true }),
   ).toBeFocused();

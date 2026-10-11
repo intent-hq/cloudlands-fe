@@ -26,7 +26,10 @@ export async function openMenu(page, { forceMount = false, trigger = true } = {}
   if (!trigger)
     await example.getByRole('switch', { name: 'Use menu trigger', exact: true }).uncheck();
   await example.getByRole('button', { name: 'Mount static menu', exact: true }).click();
-  const menu = example.getByRole('menu', { name: 'Static focus menu', exact: true });
+  // Bits keeps the caller label; Radix also supplies trigger aria-labelledby.
+  // Exercise focus through the fixture identity and exposed native role,
+  // without turning either primitive's accessible naming into this contract.
+  const menu = example.getByRole('menu').and(example.getByTestId('static-focus-menu'));
   await expect(menu).toBeVisible();
   await expect(example.getByLabel('Static menu open', { exact: true })).toHaveText('true');
   await expect
