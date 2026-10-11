@@ -316,6 +316,7 @@ export function DiagramRenderer(props: DiagramRendererProps) {
                   {(node, present, onExit) => (
                     <DiagramPaint
                       as="foreignObject"
+                      easeEntry
                       data-node-id={node.id}
                       x={node.x}
                       y={node.y}

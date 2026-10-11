@@ -34,15 +34,19 @@ function Narrative({
   onExit: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const latestDirection = useRef(direction);
+  useLayoutEffect(() => {
+    latestDirection.current = direction;
+  }, [direction]);
   const transition = useMemo(
     () =>
       (node: HTMLElement) =>
       ({ direction: phase = 'in' }: { direction?: 'in' | 'out' } = {}) => {
-        const distance = (direction === 'left' ? 8 : -8) * (phase === 'out' ? -1 : 1);
+        const distance = (latestDirection.current === 'left' ? 8 : -8) * (phase === 'out' ? -1 : 1);
         const recipe = fly(node, { axis: 'x', distance, tier: 'fast' }, { direction: phase });
         return typeof recipe === 'function' ? recipe({ direction: phase }) : recipe;
       },
-    [direction],
+    [],
   );
   usePresenceTransition(ref, present, onExit, transition);
   return (

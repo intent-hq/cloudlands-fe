@@ -31,6 +31,7 @@ export function DiagramPaint({
   enterDuration,
   exitDuration,
   reveal = false,
+  easeEntry = false,
   children,
   ...props
 }: {
@@ -40,6 +41,7 @@ export function DiagramPaint({
   enterDuration: number;
   exitDuration: number;
   reveal?: boolean;
+  easeEntry?: boolean;
   children: ReactNode;
 } & Omit<SVGProps<SVGElement>, 'ref'>) {
   const ref = useRef<SVGElement | null>(null);
@@ -68,9 +70,10 @@ export function DiagramPaint({
     // Animate the mask's real stroke offset. This remains observable by getAnimations,
     // so scene settlement cannot race a requestAnimationFrame-only reveal.
     const paint = reveal ? (element.querySelector('.edge-reveal-mask-path') ?? element) : element;
+    const ease = reveal || (present && easeEntry) ? spring.fast.easing : (value: number) => value;
     const frames = Array.from({ length: 61 }, (_, index) => {
       const offset = index / 60;
-      const value = from + (target - from) * spring.fast.easing(offset);
+      const value = from + (target - from) * ease(offset);
       return reveal ? { offset, strokeDashoffset: `${1 - value}px` } : { offset, opacity: value };
     });
     animation = paint.animate(frames, { duration, fill: 'both' });
@@ -80,12 +83,11 @@ export function DiagramPaint({
     }, element.ownerDocument);
     return () => {
       const current = Number(animation?.effect?.getComputedTiming().progress);
-      if (Number.isFinite(current))
-        progress.current = from + (target - from) * spring.fast.easing(current);
+      if (Number.isFinite(current)) progress.current = from + (target - from) * ease(current);
       animation?.cancel();
       stop();
     };
-  }, [present, enterDuration, exitDuration, reveal]);
+  }, [present, enterDuration, exitDuration, reveal, easeEntry]);
   const Element = as;
   return (
     <Element
