@@ -25,7 +25,6 @@ export function startProviderRuntime() {
   const cancelOwners = [
     store.runSaga(modelNameCacheSaga),
     store.runSaga(daemonEventsSaga),
-    store.runSaga(connectionsIdentitySaga),
     store.runSaga(principalSaga),
     store.runSaga(hostExecutionSaga),
     store.runSaga(settingsSaga),
@@ -34,6 +33,7 @@ export function startProviderRuntime() {
     store.runSaga(modelReloadSaga),
     store.runSaga(providerAvailabilityReadSaga),
     store.runSaga(workspaceCatalogSaga),
+    store.runSaga(connectionsIdentitySaga),
   ];
   let disposed = false;
   return () => {
