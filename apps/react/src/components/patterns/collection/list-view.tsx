@@ -221,7 +221,11 @@ function ReadyList<T>({
     focusFrame.current = requestAnimationFrame(() => {
       focusFrame.current = undefined;
       if (alive.current)
-        content.current?.querySelector<HTMLElement>(`[data-list-index="${next}"]`)?.focus();
+        // The virtualizer has already scrolled; native focus scrolling must not
+        // resolve against recycled rows or an ancestor's transient geometry.
+        content.current
+          ?.querySelector<HTMLElement>(`[data-list-index="${next}"]`)
+          ?.focus({ preventScroll: isVirtualized });
     });
   }
   function handleKeydown(event: KeyboardEvent<HTMLDivElement>, item: T, index: number) {
@@ -292,6 +296,9 @@ function ReadyList<T>({
         <div
           style={{
             transform: isVirtualized ? `translateY(${startIndex * rowHeight}px)` : undefined,
+            // This offset is layout, not motion. The global reduced-motion
+            // duration can otherwise create a one-frame CSS transition here.
+            transitionProperty: isVirtualized ? 'none' : undefined,
           }}
         >
           {presence.entries.map(({ key, value: { item, index }, present }) => (
