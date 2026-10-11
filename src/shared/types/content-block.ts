@@ -1,6 +1,8 @@
 import type { Proposal } from './proposal';
 import { isProposalKind } from './proposal';
 import type { MessageRole } from './agent-message';
+import type { VideoSource } from './video-source';
+export type { VideoSource } from './video-source';
 
 export const PLAN_ENTRY_PRIORITIES = ['high', 'medium', 'low'] as const;
 export const PLAN_ENTRY_STATUSES = ['pending', 'in_progress', 'completed'] as const;
@@ -14,11 +16,6 @@ export interface PlanEntry {
   priority: PlanEntryPriority;
   status: PlanEntryStatus;
 }
-
-export type VideoSource =
-  | { kind: 'inline'; data: string; mimeType: string }
-  | { kind: 'remote'; url: string; mimeType?: string }
-  | { kind: 'workspace'; url: string; mimeType: 'video/mp4' | 'video/webm' };
 
 /**
  * Text-block image dimension sidecar (PROTOCOL §7.1): intrinsic pixel
