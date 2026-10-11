@@ -1,0 +1,61 @@
+/* Source: RowsCatalogPreview.svelte; scoped to the rows renderer. */
+.rows-matrix {
+  & {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    align-items: start;
+    gap: var(--catalog-row-gap);
+  }
+
+  .baseline-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .baseline-overlay i {
+    flex: 0 0 4px;
+    border-bottom: 1px solid hsl(var(--foreground) / 0.08);
+  }
+
+  .row-family {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: var(--space-2);
+  }
+
+  .family-title {
+    font-size: var(--text-caption-size);
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .row-cell {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-large);
+    background-color: hsl(var(--background));
+  }
+
+  .zoom-preview {
+    width: 50%;
+    zoom: 2;
+  }
+
+  .tabs-family {
+    grid-column: 1 / -1;
+  }
+
+  .drag-placeholder {
+    height: var(--control-height-medium);
+    border: 1px dashed hsl(var(--border));
+    background: hsl(var(--muted) / 0.4);
+  }
+}
