@@ -39,7 +39,8 @@ export const sidebarMenuButtonVariants = cva(
           'border border-border bg-background shadow-(--elevation-raised) data-[proximity-active=true]:border-sidebar-accent',
       },
       size: {
-        default: OPTION_LIST_ROW_CLASS,
+        // Keep the source row content-sized instead of inheriting Button's fixed height.
+        default: [OPTION_LIST_ROW_CLASS, 'h-auto'],
         sm: 'type-caption h-(--control-height-compact)',
         lg: 'type-body group-data-[collapsible=icon]:p-0! h-12',
       },
