@@ -206,7 +206,7 @@ export function DiagramControls({ states, currentStateId, onStateChange }: Diagr
                 disabled={currentIndex <= 0}
                 aria-label={m.diagram_controls_previousStep_ariaLabel()}
               >
-                <CaretLeftIcon className="text-ui" />
+                <CaretLeftIcon className="text-ui" aria-hidden="true" />
               </Button>
               <Button
                 variant="ghost"
@@ -220,7 +220,7 @@ export function DiagramControls({ states, currentStateId, onStateChange }: Diagr
                 disabled={currentIndex >= states.length - 1}
                 aria-label={m.diagram_controls_nextStep_ariaLabel()}
               >
-                <CaretRightIcon className="text-ui" />
+                <CaretRightIcon className="text-ui" aria-hidden="true" />
               </Button>
             </div>
           )}

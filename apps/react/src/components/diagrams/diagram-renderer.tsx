@@ -154,7 +154,11 @@ export function DiagramRenderer(props: DiagramRendererProps) {
                 : m.diagram_renderer_fitToWidth_ariaLabel()
             }
           >
-            {view.fitToWidth ? <CornersOutIcon size={14} /> : <CornersInIcon size={14} />}
+            {view.fitToWidth ? (
+              <CornersOutIcon size={14} aria-hidden="true" />
+            ) : (
+              <CornersInIcon size={14} aria-hidden="true" />
+            )}
           </Button>
         </div>
       )}
