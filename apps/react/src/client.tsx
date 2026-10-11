@@ -2,6 +2,7 @@ import { StartClient } from '@tanstack/react-start/client';
 import { StrictMode, startTransition } from 'react';
 import { hydrateRoot } from 'react-dom/client';
 import { store } from './store';
+import { startProviderRuntime } from './store/provider-runtime';
 // eslint-disable-next-line themis/react-forbidden-component-import -- Browser bootstrap is the explicit saga startup and teardown owner.
 import { catalogSaga } from './store/catalog/sagas/catalog-saga';
 import { sidebarPreferencesSaga } from './store/sidebar-preferences/sagas/sidebar-preferences-saga';
@@ -20,6 +21,7 @@ const cancelSidebarPreferencesSaga = store.runSaga(sidebarPreferencesSaga);
 const cancelAutoUpdateSaga = store.runSaga(autoUpdateSaga);
 const cancelUiLayoutPersistenceSaga = store.runSaga(uiLayoutPersistenceSaga);
 const cancelBackendConnectionSaga = store.runSaga(backendConnectionSaga);
+const disposeProviderRuntime = startProviderRuntime();
 const cancelDirectoryPickerSaga = store.runSaga(directoryPickerSaga);
 const cancelLinkTooltipSaga = store.runSaga(linkTooltipSaga);
 const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
@@ -43,6 +45,7 @@ function dispose() {
   cancelDirectoryPickerSaga();
   cancelLinkTooltipSaga();
   cancelAgentMemorySaga();
+  disposeProviderRuntime();
   cancelBackendConnectionSaga();
   disposeStore();
 }
