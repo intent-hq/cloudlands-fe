@@ -15,16 +15,7 @@ import { isProjectionRejected } from '$shared/utils/note-content';
 import type { MutationResult, Unsubscribe } from '../app-client';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 
-/**
- * Generate an idempotency key for create/commit/merge mutations (§5.6): a UUID
- * when the platform exposes `crypto.randomUUID`, otherwise a best-effort unique
- * string. The server dedupes retried requests by this key.
- */
-export function newIdempotencyKey(): string {
-  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-  if (typeof cryptoObj?.randomUUID === 'function') return cryptoObj.randomUUID();
-  return `idk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
+export { newIdempotencyKey } from './idempotency-key';
 
 // Svelte compatibility binding; remove at the renderer cutover.
 import { createRunMutation, extractConflict, mutationErrorMessage } from './backend-mutation';
