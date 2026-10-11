@@ -1,0 +1,6 @@
+/* Source: AutoSaveTextarea.svelte. Fill the container and scroll internally. */
+.auto-save-textarea-editor textarea {
+  height: 100%;
+  resize: none;
+  overflow-y: auto;
+}
