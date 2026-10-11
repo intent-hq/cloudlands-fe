@@ -6,6 +6,31 @@ import {
   expectOutsideReleased,
 } from '../lib/overlay-focus.mjs';
 
+test('overlay focus: explicit root and submenu names survive native keyboard navigation', async ({
+  page,
+}) => {
+  const { example, menu } = await openMenu(page);
+  // Bits merges caller naming into ContentStatic/SubContent without supplying
+  // aria-labelledby from their triggers. Check the resulting accessible names.
+  await expect(menu).toHaveAccessibleName('Static focus menu');
+  await page.keyboard.press('Home');
+  await expect(menu.getByRole('menuitem', { name: 'First command', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  const trigger = menu.getByRole('menuitem', { name: 'More focus actions', exact: true });
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  const submenu = page.getByRole('menu').and(page.getByTestId('nested-focus-menu'));
+  await expect(submenu).toHaveAccessibleName('Nested focus menu');
+  await expect(
+    submenu.getByRole('menuitem', { name: 'Submenu command', exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(example.getByLabel('Menu commands', { exact: true })).toHaveText('["submenu"]');
+  await page.keyboard.press('ArrowLeft');
+  await expect(submenu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
 test('overlay focus: submenu Escape closes only its own layer and restores parent programmatic focus capture', async ({
   page,
 }) => {
