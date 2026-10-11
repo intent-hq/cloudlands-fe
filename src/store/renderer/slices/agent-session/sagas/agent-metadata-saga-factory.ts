@@ -11,7 +11,7 @@ import {
   removeSession,
   pendingQuestionMarkersFromWorkspaceEvent,
 } from '../agent-session-slice';
-import { setAgents } from '../../workspace-agents/workspace-agents-slice';
+import { setAgents, setAgentsLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { eventReceived } from '../../workspace-events/workspace-events-slice';
 
 type Lease = { workspaceId: string; agentId?: string };
@@ -140,6 +140,7 @@ export function createAgentMetadataSaga<State>({
                 }
                 previousIds.set(workspaceId, ids);
                 yield* put(setAgents(workspaceId, accepted));
+                yield* put(setAgentsLoaded(workspaceId, true));
               }
             }
           } finally {
