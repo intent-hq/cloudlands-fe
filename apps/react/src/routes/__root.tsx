@@ -21,6 +21,7 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <script src="/runtime-config.js" />
       </head>
       <body>
         <div id="root">{children}</div>

@@ -16,8 +16,22 @@
       "@/*": ["./src/*"],
       "$shared/*": ["../../src/shared/*"],
       "$features/auto-update/types": ["../../src/features/auto-update/types.ts"],
+      "$features/workspace-sharing/types": ["../../src/features/workspace-sharing/types.ts"],
+      "$store/renderer/slices/guest-sessions/guest-sessions-types": [
+        "../../src/store/renderer/slices/guest-sessions/guest-sessions-types.ts"
+      ],
+      "$store/renderer/slices/directory-picker/directory-picker-slice": [
+        "../../src/store/renderer/slices/directory-picker/directory-picker-slice.ts"
+      ],
+      "@fortawesome/fontawesome-common-types": ["../../src/lib/icons/phosphor-icons.ts"],
+      "$features/providers/host-execution-errors": [
+        "../../src/features/providers/host-execution-errors.ts"
+      ],
+      "$features/agent/services/node-execution": [
+        "../../src/features/agent/services/node-execution.ts"
+      ],
       "$lib/*": ["../../src/lib/*"]
     }
   },
-  "include": ["src", "vite*.config.ts"]
+  "include": ["src", "vite*.config.ts", "../../src/types/electron.d.ts"]
 }
