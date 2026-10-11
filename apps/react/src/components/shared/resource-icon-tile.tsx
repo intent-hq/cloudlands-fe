@@ -1,6 +1,6 @@
 // Source: src/lib/components/shared/ResourceIconTile.svelte.
 import { CodeIcon, TextAlignLeftIcon, type Icon } from '@phosphor-icons/react';
-import type { ResourceIconKind } from '$lib/components/shared/resource-icon';
+import type { ResourceIconKind } from '$lib/components/shared/resource-icon-types';
 import './resource-icon-tile.css';
 
 export interface ResourceIconTileProps {
