@@ -1,3 +1,30 @@
+// Existing AppClient imports remain compatible until the Svelte renderer cutover.
+import type {
+  AgentsReadClient,
+  TasksReadClient,
+  EventsReadClient,
+  GitReadClient,
+  ScriptsReadClient,
+  SkillsReadClient,
+  TerminalsReadClient,
+  EventQueryOptions,
+} from './lifecycle-read-client-types';
+export type {
+  AgentsReadClient,
+  TasksReadClient,
+  EventsReadClient,
+  GitReadClient,
+  ScriptsReadClient,
+  SkillsReadClient,
+  TerminalsReadClient,
+  PrRefreshResult,
+  AgentListOptions,
+  AgentListResult,
+  TerminalListResult,
+  EventQueryOptions,
+  EventQueryPageOptions,
+  EventQueryPage,
+} from './lifecycle-read-client-types';
 import type { PermissionResponder } from './permission-client-types';
 // Compatibility exports for existing permission consumers until the legacy renderer retires.
 export type { PermissionOutcome, RespondPermissionResult } from './permission-client-types';
@@ -26,11 +53,7 @@ export type {
   GitHubPullRequestDetails,
   GitHubIssueDetails,
 } from '$shared/types/github-link-preview';
-import type {
-  ScriptArchiveFilter,
-  ScriptArchiveResult,
-  ScriptRestoreResult,
-} from '../../features/scripts/types';
+import type { ScriptArchiveResult, ScriptRestoreResult } from '../../features/scripts/types';
 /**
  * AppClient — the single boundary the renderer uses to reach "the backend".
  *
@@ -44,10 +67,7 @@ import type {
  * stays aligned with the live store shape.
  */
 import type {
-  AgentDelegatedCounts,
-  AgentListScope,
   AgentMessage,
-  AgentScopeCounts,
   AgentSession,
   ContentBlock,
   CreateNoteRequest,
@@ -57,19 +77,13 @@ import type {
   GitStatus,
   Note,
   NoteVersion,
-  PullRequestInfo,
-  PullRequestStatus,
   QueuedMessage,
   TaskStatus,
   WorkspaceTask,
-  WorkspaceTaskStats,
 } from '$shared/types';
-import type { CommitInfo, TrackedChange } from '../../features/file-tracking/types';
+import type { CommitInfo } from '../../features/file-tracking/types';
 import type { WorkspaceEvent } from '$features/events/types';
-import type {
-  TaskAgentAssociation,
-  TaskAgentAssociationsByTaskKey,
-} from '../../store/renderer/slices/task-agent-associations/task-agent-associations-types';
+import type { TaskAgentAssociation } from '../../store/renderer/slices/task-agent-associations/task-agent-associations-types';
 import type { TerminalTab } from '../../store/renderer/slices/terminals/terminals-slice';
 import type {
   ScriptRuntimeState,
@@ -196,20 +210,6 @@ export type UserMessageIndexResult =
   | { ok: false; unsupported: boolean; error: string };
 
 /**
- * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
- * extension). `prNumber`/`prUrl`/`prStatus` are absent when no PR is linked
- * after the refresh; `pullRequests` is always an array (possibly empty) —
- * the daemon-owned per-branch PR list.
- */
-export interface PrRefreshResult {
-  outcome: 'skipped' | 'unchanged' | 'linked' | 'updated' | 'unlinked';
-  prNumber?: number;
-  prUrl?: string;
-  prStatus?: PullRequestStatus;
-  pullRequests: PullRequestInfo[];
-}
-
-/**
  * Branch listing for an arbitrary repo path (`git.getBranches`, §5.6). Mirrors
  * the daemon `GitBranches` shape: `branches` is the local branch list,
  * `remoteBranches` is the remote-only list (only populated when
@@ -299,65 +299,10 @@ export interface AgentCancelDeleteResult extends MutationResult {
   cancelled?: boolean;
 }
 
-/**
- * `agent.list` read options (§5.5). `retiredOnly` and a bin `scope` are
- * mutually exclusive daemon-side (retired sessions are their own bin).
- */
-export interface AgentListOptions {
-  retiredOnly?: boolean;
-  /** Row scope (intent-hq/intent#5383): one bin of the non-retired sessions; `all` / absent is the default read. */
-  scope?: AgentListScope;
-  /**
-   * Narrows a `scope: "delegated"` read to that parent's DIRECT sub-agents
-   * (§5.5; the daemon rejects it with any other scope).
-   */
-  parentAgentId?: string;
-  /**
-   * Narrows a `scope: "delegated"` read to the ORPHANED delegated rows —
-   * those whose parent is no longer a non-retired session of the workspace
-   * (§5.5; the daemon rejects it with any other scope or alongside
-   * `parentAgentId`). Older daemons ignore it, so callers gate on
-   * `delegatedCounts.orphaned` presence.
-   */
-  orphanedOnly?: boolean;
-}
-
-export interface AgentListResult {
-  agents: AgentSession[];
-  retiredCount: number;
-  /**
-   * Per-bin counts (`scopeCounts`, §5.5 row scope) — present only when the
-   * daemon serves them. An older daemon ignores `scope` and answers the
-   * default (all-rows) read without this field.
-   */
-  scopeCounts?: AgentScopeCounts;
-  /**
-   * Per-parent delegated counts (`delegatedCounts`, §5.5) — present only when
-   * the daemon serves them; workspace-wide even on a narrowed read.
-   */
-  delegatedCounts?: AgentDelegatedCounts;
-}
-
 export type AgentRetireResult =
   { success: true; retiredAt: string; alreadyRetired?: true } | { success: false; error: string };
 
-export interface AgentsClient extends PermissionResponder {
-  /**
-   * Agents of one workspace (`agent.list`, §5.5). Soft-retired sessions
-   * (`retiredAt` set) are excluded from the default read daemon-side;
-   * `options.retiredOnly: true` serves ONLY retired rows, each
-   * carrying the presence-detected `retiredAt` ISO timestamp. `options.scope`
-   * narrows the read to one bin of the non-retired sessions (§5.5 row scope).
-   * Flags only ride the wire when supplied so the default read carries none.
-   */
-  list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]>;
-  /**
-   * Same read as `list` plus response metadata: `retiredCount` (§5.5 soft retire) is the
-   * number of soft-retired sessions in the workspace, served on every
-   * `agent.list` variant (defaults to 0 if the field is absent); `scopeCounts`
-   * is the per-bin count triple, absent on daemons predating `scope`.
-   */
-  listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult>;
+export interface AgentsClient extends PermissionResponder, AgentsReadClient {
   get(agentId: string, workspaceId?: string): Promise<AgentSession | null>;
   /**
    * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
@@ -890,21 +835,7 @@ export interface TerminalEventHandlers {
   onTitle?(event: TerminalTitleEvent): void;
 }
 
-/**
- * `terminal.list` result envelope (PROTOCOL §5.13). `daemonBootId` identifies
- * the daemon boot that produced the snapshot, letting the store distinguish an
- * authoritative same-boot empty list (every PTY genuinely gone — converge to
- * zero tabs) from a post-restart empty (PTYs respawn via auto-reconnect —
- * preserve tabs). Absent when a legacy pre-envelope daemon returned a bare
- * array.
- */
-export interface TerminalListResult {
-  terminals: TerminalTab[];
-  daemonBootId?: string;
-}
-
-export interface TerminalsClient {
-  list(workspaceId: string): Promise<TerminalListResult>;
+export interface TerminalsClient extends TerminalsReadClient {
   /**
    * `terminal.create` (PROTOCOL §5.13). On success the daemon-assigned
    * terminalId is surfaced as `MutationResult.id`.
@@ -1040,11 +971,9 @@ export interface GitDiffsOptions {
   gitRootId?: string;
 }
 
-export interface GitClient {
+export interface GitClient extends GitReadClient {
   /** Read the local origin only; no fetch or provider request. Null means no usable observation. */
   originUrl(repoPath: string): Promise<string | null>;
-  /** `forceRefresh` bypasses client and daemon status caches for post-mutation reconciliation. */
-  status(workspaceId: string, options?: { forceRefresh?: boolean }): Promise<GitStatus | null>;
   changes(workspaceId: string): Promise<GitStatus | null>;
   /**
    * `git.diffs` — per-file hunks. Defaults to the index→workdir (unstaged)
@@ -1052,22 +981,11 @@ export interface GitClient {
    * commit's own changes against its first parent (`<commitHash>^..<commitHash>`).
    */
   diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]>;
-  /** Returns `null` when the tracked-change read fails; an empty array is a successful empty result. */
-  trackedChanges(workspaceId: string): Promise<TrackedChange[] | null>;
   /**
    * `file-tracking.loadCommits` — workspace commits with agent attribution.
    * When `includeOlder` is true, fetches commits before and including the workspace boundary.
    */
   commits(workspaceId: string, includeOlder?: boolean): Promise<CommitInfo[]>;
-  /**
-   * `file-tracking.loadCommits` with full envelope — returns commits, boundarySha, and nextToken.
-   * The `boundarySha` is the workspace boundary commit SHA or null when no boundary exists.
-   * When `includeOlder` is true, fetches commits before and including the workspace boundary.
-   */
-  commitsWithBoundary(
-    workspaceId: string,
-    includeOlder?: boolean,
-  ): Promise<{ commits: CommitInfo[]; boundarySha: string | null; nextToken: string | null }>;
   /**
    * `git.commitDetails` — metadata + per-file `(additions, deletions)` for one
    * commit. Returns `null` on transport failure so callers degrade gracefully.
@@ -1079,14 +997,6 @@ export interface GitClient {
     commitHash: string,
     opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null>;
-  /**
-   * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
-   * relink-after-merge, stale-link clearing) for one workspace on demand and
-   * returns the post-refresh linkage state. An active PR is not required.
-   * Automatic callers opt into daemon idle admission; omitted options preserve
-   * explicit refresh semantics. Errors fold to `null`.
-   */
-  prRefresh(workspaceId: string, options?: { automatic: boolean }): Promise<PrRefreshResult | null>;
   /**
    * Path-based branch listing (`git.getBranches`, §5.6). Used by the
    * workspace initializer to populate the branch picker against an arbitrary
@@ -1349,14 +1259,7 @@ export interface CreatePrerequisiteOptions {
   status?: string;
 }
 
-export interface TasksClient {
-  /**
-   * `task.list` (PROTOCOL §5.4) → `{ tasks, stats }`. `stats` is the workspace-wide
-   * rollup the BE owns (excludes `cancelled`; `complete` counts toward `completed`;
-   * `in_progress` + `review_required` count toward `inProgress`). The FE renders
-   * `stats` verbatim and never re-derives task progress from `note.list`.
-   */
-  list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }>;
+export interface TasksClient extends TasksReadClient {
   get(taskId: string): Promise<WorkspaceTask | null>;
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe;
   /** Toggle a single checkbox by its task text (`task.updateStatus`). `expectedVersion` is optional (§11.4-D). */
@@ -1401,14 +1304,6 @@ export interface TasksClient {
     title: string,
     options?: CreatePrerequisiteOptions,
   ): Promise<MutationResult>;
-  /**
-   * `task.listAgentLinks` (PROTOCOL §5.4): daemon-owned `byNoteId → byTaskKey`
-   * map answering "which agent is working on this checkbox?". Returns the map
-   * already grouped so the FE can dispatch it straight into
-   * `hydrateTaskAgentAssociations`. `task:agent-linked` /
-   * `task:agent-unlinked` events (§6.5) drive incremental updates.
-   */
-  listAgentLinks(workspaceId: string): Promise<Record<string, TaskAgentAssociationsByTaskKey>>;
   /**
    * `task.linkAgent` (PROTOCOL §5.4): persist a task↔agent linkage row. The
    * daemon uses `taskKey ?? taskText` as the association key and echoes the
@@ -1528,8 +1423,7 @@ export interface ScriptRunResult {
   warning?: string;
 }
 
-export interface ScriptsClient {
-  supportsLifecycle?(): Promise<boolean>;
+export interface ScriptsClient extends ScriptsReadClient {
   /** capabilityVerified is only for a caller that just negotiated and revalidated its connection/authority. */
   archive?(
     workspaceId: string,
@@ -1541,11 +1435,6 @@ export interface ScriptsClient {
     scriptIds: string[],
     options?: { capabilityVerified: true },
   ): Promise<ScriptRestoreResult>;
-  /** `script.list` — definitions with merged runtime state. */
-  list(
-    workspaceId: string,
-    options?: { archive?: ScriptArchiveFilter },
-  ): Promise<ScriptWithState[]>;
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.start`. */
@@ -1586,8 +1475,7 @@ export interface SetupScriptsClient {
   generate(workspaceId: string): Promise<WorkspaceSetupScript | null>;
 }
 
-export interface SkillsClient {
-  list(workspaceId: string): Promise<SkillInfo[]>;
+export interface SkillsClient extends SkillsReadClient {
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe;
 }
 
@@ -1876,28 +1764,7 @@ export interface ServerClient {
   rotateToken(): Promise<{ token: string }>;
 }
 
-/** Filter options for `event.query` (PROTOCOL §5.10); all optional. */
-export interface EventQueryOptions {
-  eventType?: string;
-  actorType?: string;
-  actorId?: string;
-  path?: string;
-  minutesAgo?: number;
-  limit?: number;
-}
-
-/** Cursor options for the opt-in paginated `event.query` envelope. */
-export interface EventQueryPageOptions extends EventQueryOptions {
-  nextToken?: string;
-}
-
-/** One newest→oldest page returned by paginated `event.query`. */
-export interface EventQueryPage {
-  items: WorkspaceEvent[];
-  nextToken: string | null;
-}
-
-export interface EventsClient {
+export interface EventsClient extends EventsReadClient {
   /** Boot snapshot of the workspace event stream, oldest→newest. */
   list(workspaceId: string): Promise<WorkspaceEvent[]>;
   /**
@@ -1905,8 +1772,6 @@ export interface EventsClient {
    * wire order (newest→oldest); the daemon defaults `limit` to 50.
    */
   query(workspaceId: string, options?: EventQueryOptions): Promise<WorkspaceEvent[]>;
-  /** Paginated historical read; `nextToken` continues toward older events. */
-  queryPage(workspaceId: string, options?: EventQueryPageOptions): Promise<EventQueryPage>;
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 

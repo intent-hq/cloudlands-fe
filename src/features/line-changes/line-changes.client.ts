@@ -6,14 +6,9 @@
  */
 
 import { backendRequest } from '$lib/client/live/backend-transport';
-
-/** §5.20 `Metrics` — workspace-level stats include `byAgent`; per-agent stats omit it. */
-export interface Metrics {
-  additions: number;
-  deletions: number;
-  filesChanged: number;
-  byAgent?: Record<string, { additions: number; deletions: number; filesChanged: number }>;
-}
+// Public compatibility for line-stat consumers until the Svelte renderer retires.
+import type { Metrics } from '../../lib/client/lifecycle-read-client-types';
+export type { Metrics } from '../../lib/client/lifecycle-read-client-types';
 
 /** Coerce a raw daemon `Metrics` payload; `null` when the daemon has no stats. */
 function toMetrics(raw: unknown): Metrics | null {
