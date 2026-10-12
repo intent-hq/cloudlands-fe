@@ -35,6 +35,7 @@ import { ReasoningExamples } from './reasoning-examples';
 import { ChatImageExamples } from './chat-image-examples';
 import { MessageActionExamples } from './message-action-examples';
 import { TranscriptCardExamples } from './transcript-card-examples';
+import { ScriptActionExamples } from './script-action-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -503,6 +504,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'chat-image' && <ChatImageExamples />}
       {slug === 'message-actions' && <MessageActionExamples />}
       {slug === 'transcript-cards' && <TranscriptCardExamples />}
+      {slug === 'script-actions' && <ScriptActionExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -588,6 +590,7 @@ export function hasFunctionalExample(slug: string) {
     'chat-image',
     'message-actions',
     'transcript-cards',
+    'script-actions',
     'diagram-workbench',
     'toast',
     'notify',
