@@ -134,6 +134,7 @@ test('script actions D1: portaled edit confirmation restores opener after native
 }, info) => {
   const item = await openActions(page);
   const initial = await item.edits();
+  const state = await item.editState();
   await capture(item, 'edit-opener-before', info, opener(item));
   await openDialog(item, 'Enter');
   await expect(
@@ -141,7 +142,6 @@ test('script actions D1: portaled edit confirmation restores opener after native
   ).toBeVisible();
   await reachable(item, dialog(item), 'edit-confirm', info);
   await capture(item, 'edit-confirm-open', info, dialog(item));
-  const state = await item.editState();
   await page.keyboard.press('Enter');
   await expectClosed(item);
   await expectEdit(item, 'onConfirm', initial, state);
