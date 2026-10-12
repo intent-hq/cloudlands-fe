@@ -16,7 +16,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, onMount, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import HomePreview from './home.preview.svelte';
   import { startHomePreview } from './home-preview-lifecycle';
   import { setupHomeMicroPreview } from './home-micro-preview-fixture';
@@ -26,10 +26,16 @@
   const fixture = setupHomeMicroPreview(untrack(() => scenario !== 'disconnected'));
   $effect(() => fixture.setConnected(scenario !== 'disconnected'));
   onMount(() => {
-    void tick().then(() => {
-      // Load fixture avatars even when wrapped columns put them below the scroll viewport.
-      previewRoot?.querySelectorAll('img').forEach((image) => (image.loading = 'eager'));
-    });
+    const root = previewRoot;
+    if (!root) return;
+    const loadImages = () => {
+      // Home transitions can add avatars after the preview mounts.
+      root.querySelectorAll('img').forEach((image) => (image.loading = 'eager'));
+    };
+    const observer = new MutationObserver(loadImages);
+    observer.observe(root, { childList: true, subtree: true });
+    loadImages();
+    return () => observer.disconnect();
   });
   onDestroy(() => {
     fixture.dispose();
