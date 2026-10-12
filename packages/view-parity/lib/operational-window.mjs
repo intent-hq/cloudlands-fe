@@ -316,6 +316,243 @@ export async function wheel(page, scroll, delta) {
   await page.mouse.move(box.x + box.width / 2, Math.max(1, box.y) + Math.min(box.height / 2, 80));
   await page.mouse.wheel(0, delta);
 }
+export async function revealNewOperationalRowOnce(page, item, excludedKeys, info) {
+  const observation = await item.inner(0).evaluateHandle((node, excluded) => {
+    const outer = node.closest('[data-testid="operational-panel-scroll"]');
+    if (!outer) throw new Error('The first inner scrollport must have its actual outer root');
+    const rect = (element) => {
+      const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+      return { left, top, right, bottom, width, height };
+    };
+    const clientClip = (element) => {
+      const box = rect(element);
+      const scaleX = box.width / element.offsetWidth;
+      const scaleY = box.height / element.offsetHeight;
+      const left = box.left + element.clientLeft * scaleX;
+      const top = box.top + element.clientTop * scaleY;
+      const width = element.clientWidth * scaleX;
+      const height = element.clientHeight * scaleY;
+      return {
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+        width,
+        height,
+        scaleX,
+        scaleY,
+      };
+    };
+    const clipping = () => {
+      const inner = clientClip(node);
+      const parent = clientClip(outer);
+      const left = Math.max(0, inner.left, parent.left);
+      const top = Math.max(0, inner.top, parent.top);
+      const right = Math.min(innerWidth, inner.right, parent.right);
+      const bottom = Math.min(innerHeight, inner.bottom, parent.bottom);
+      return { left, top, right, bottom, width: right - left, height: bottom - top, inner, parent };
+    };
+    const focused = document.activeElement;
+    const focus = () =>
+      document.activeElement instanceof Element
+        ? {
+            tag: document.activeElement.localName,
+            testId: document.activeElement.getAttribute('data-testid'),
+            rowKey:
+              document.activeElement
+                .closest('[data-caller-row-key]')
+                ?.getAttribute('data-caller-row-key') ?? null,
+          }
+        : null;
+    const measure = () => ({
+      inner: { top: node.scrollTop, height: node.clientHeight, total: node.scrollHeight },
+      outer: { top: outer.scrollTop, height: outer.clientHeight, total: outer.scrollHeight },
+      document: { x: scrollX, y: scrollY },
+    });
+    const hittable = (control) => {
+      if (!control?.isConnected) return false;
+      const box = rect(control);
+      const clip = clipping();
+      const hit = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2);
+      return (
+        box.width > 0 &&
+        box.height > 0 &&
+        box.left >= clip.left &&
+        box.right <= clip.right &&
+        box.top >= clip.top &&
+        box.bottom <= clip.bottom &&
+        !!hit &&
+        control.contains(hit)
+      );
+    };
+    const candidates = [...node.querySelectorAll('[data-caller-row-key]')].flatMap((row) => {
+      const key = row.getAttribute('data-caller-row-key');
+      const kind = row.getAttribute('data-item-kind');
+      const admitted = row.getAttribute('data-admitted') === 'true';
+      const control = row.querySelector('button');
+      if (!key || excluded.includes(key) || kind === 'content' || !admitted || !control) return [];
+      return [{ key, kind, admitted, control, bounds: rect(control) }];
+    });
+    const clip = clipping();
+    const alreadyVisibleKey = candidates.find(({ control }) => hittable(control))?.key ?? null;
+    const selected = candidates
+      .filter(
+        ({ bounds }) =>
+          bounds.width > 0 &&
+          bounds.height > 0 &&
+          bounds.left >= clip.left &&
+          bounds.right <= clip.right &&
+          bounds.top >= clip.bottom,
+      )
+      .sort((a, b) => a.bounds.top - b.bounds.top)[0];
+    const point = { x: (clip.left + clip.right) / 2, y: (clip.top + clip.bottom) / 2 };
+    const hitInside = () => {
+      const hit = document.elementFromPoint(point.x, point.y);
+      return (
+        !!hit && node.contains(hit) && hit.closest('[data-testid^="operational-scroll-"]') === node
+      );
+    };
+    const plan = {
+      at: performance.now(),
+      alreadyVisibleKey,
+      clip,
+      point,
+      target: selected
+        ? {
+            key: selected.key,
+            kind: selected.kind,
+            admitted: selected.admitted,
+            bounds: selected.bounds,
+          }
+        : null,
+      delta: selected ? (selected.bounds.top + selected.bounds.bottom) / 2 - point.y : null,
+      scrolls: measure(),
+      focus: focus(),
+    };
+    const events = [];
+    const onWheel = (event) =>
+      events.push({
+        at: performance.now(),
+        eventTimeStamp: event.timeStamp,
+        trusted: event.isTrusted,
+        target:
+          event.target instanceof Element
+            ? {
+                tag: event.target.localName,
+                rowKey:
+                  event.target
+                    .closest('[data-caller-row-key]')
+                    ?.getAttribute('data-caller-row-key') ?? null,
+              }
+            : null,
+        targetInside: event.target instanceof Element && node.contains(event.target),
+        sameCurrentTarget: event.currentTarget === node,
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        deltaMode: event.deltaMode,
+        scrolls: measure(),
+      });
+    node.addEventListener('wheel', onWheel, { passive: true });
+    return {
+      read: () => ({
+        plan,
+        events: [...events],
+        current: {
+          clip: clipping(),
+          scrolls: measure(),
+          hitInside: hitInside(),
+          targetBounds: selected?.control.isConnected ? rect(selected.control) : null,
+          targetHittable: selected ? hittable(selected.control) : false,
+          focus: focus(),
+          sameFocusedNode: document.activeElement === focused,
+        },
+      }),
+      dispose: () => node.removeEventListener('wheel', onWheel),
+    };
+  }, excludedKeys);
+  try {
+    const before = await observation.evaluate((observer) => observer.read());
+    const { plan } = before;
+    expect(plan.clip.width).toBeGreaterThan(0);
+    expect(plan.clip.height).toBeGreaterThan(0);
+    if (plan.alreadyVisibleKey) {
+      expect(before.events).toHaveLength(0);
+      return;
+    }
+    expect(
+      plan.target,
+      'A mounted new operational control below the clip is required',
+    ).not.toBeNull();
+    expect(plan.target.kind).not.toBe('content');
+    expect(plan.target.admitted).toBe(true);
+    expect(excludedKeys).not.toContain(plan.target.key);
+    expect(Number.isFinite(plan.delta)).toBe(true);
+    expect(plan.delta).toBeGreaterThan(0);
+    expect(
+      plan.delta,
+      'One native reveal is bounded by one actual clip height',
+    ).toBeLessThanOrEqual(plan.clip.height);
+    expect(before.current.hitInside, 'The wheel point must hit the first inner scrollport').toBe(
+      true,
+    );
+    await page.mouse.move(plan.point.x, plan.point.y);
+    const ready = await observation.evaluate((observer) => observer.read());
+    expect(ready.current.clip).toEqual(plan.clip);
+    expect(ready.current.scrolls).toEqual(plan.scrolls);
+    expect(ready.current.targetBounds).toEqual(plan.target.bounds);
+    expect(ready.current.hitInside).toBe(true);
+    expect(ready.current.sameFocusedNode).toBe(true);
+    await page.mouse.wheel(0, plan.delta);
+    await expect
+      .poll(
+        async () => {
+          const receipt = await observation.evaluate((observer) => observer.read());
+          return receipt.events.some(
+            (event) =>
+              event.trusted &&
+              event.targetInside &&
+              event.sameCurrentTarget &&
+              event.deltaX === 0 &&
+              event.deltaY > 0 &&
+              event.deltaMode === 0,
+          );
+        },
+        { timeout: 5000 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        async () => {
+          const receipt = await observation.evaluate((observer) => observer.read());
+          return receipt.current.targetHittable;
+        },
+        { timeout: 5000 },
+      )
+      .toBe(true);
+    const after = await observation.evaluate((observer) => observer.read());
+    expect(after.events).toHaveLength(1);
+    expect(after.current.scrolls.inner.top).toBeGreaterThan(plan.scrolls.inner.top);
+    expect(after.current.scrolls.outer.top).toBe(plan.scrolls.outer.top);
+    expect(after.current.scrolls.document).toEqual(plan.scrolls.document);
+    expect(after.current.sameFocusedNode).toBe(true);
+    expect(after.current.focus).toEqual(plan.focus);
+  } finally {
+    try {
+      const receipt = await observation.evaluate((observer) => observer.read());
+      await info.attach('OW4-native-reveal.json', {
+        body: JSON.stringify(receipt, null, 2),
+        contentType: 'application/json',
+      });
+    } finally {
+      try {
+        await observation.evaluate((observer) => observer.dispose());
+      } finally {
+        await observation.dispose();
+      }
+    }
+  }
+}
+
 export async function visibleRows(item) {
   return item.rows.evaluateAll((nodes) =>
     nodes.flatMap((node) => {

@@ -8,6 +8,7 @@ import {
   focusScroll,
   scrollState,
   wheel,
+  revealNewOperationalRowOnce,
   visibleRow,
   visibleRows,
   activate,
@@ -36,6 +37,7 @@ test('operational-window OW4 native nested scrolling respects outer clipping', a
   await expect
     .poll(async () => (await scrollState(primary.inner(0))).top)
     .toBeGreaterThan(beforeInner.top);
+  await revealNewOperationalRowOnce(page, primary, oldKeys, info);
   const next = await visibleRow(primary, oldKeys);
   expect(JSON.parse(next.key)[1]).toBe('scope-a:first');
   expect((await scrollState(primary.scroll)).top).toBe(beforeOuter.top);
