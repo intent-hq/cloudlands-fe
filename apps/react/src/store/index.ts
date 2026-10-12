@@ -1,3 +1,5 @@
+import { githubReposReducer } from '../../../../src/store/renderer/slices/github-repos/github-repos-slice';
+import { knownReposReducer } from '../../../../src/store/renderer/slices/known-repos/known-repos-slice';
 import { scriptsReducer } from '../../../../src/store/renderer/slices/scripts/scripts-slice';
 import { fileTrackingReducer } from '../../../../src/store/renderer/slices/changes/changes-slice';
 import { prStatusReducer } from '../../../../src/store/renderer/slices/pr-status/pr-status-slice';
@@ -29,12 +31,16 @@ import { agentSessionReducer } from '../../../../src/store/renderer/slices/agent
 import { agentModelReducer } from '../../../../src/store/renderer/slices/agent-model/agent-model-slice';
 import { workspaceAgentsReducer } from '../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { panelLayoutReducer } from '../../../../src/store/renderer/slices/panel-layout/panel-layout-slice';
+import { externalEditorsReducer } from '../../../../src/store/renderer/slices/external-editors/external-editors-slice';
+import { sidebarNavReducer } from '../../../../src/store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { acquiredTabStateReducer } from '../../../../src/store/renderer/slices/tab-state/tab-state-acquisition-reducer';
 import { workspaceNavigationReducer } from '../../../../src/store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { permissionReducer } from '../../../../src/store/renderer/slices/permission/permission-slice';
 import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
 
 export const store = new ReactStore({
+  githubRepos: githubReposReducer,
+  knownRepos: knownReposReducer,
   catalog: catalogReducer,
   scripts: scriptsReducer,
   changes: fileTrackingReducer,
@@ -64,6 +70,8 @@ export const store = new ReactStore({
   agentModel: agentModelReducer,
   workspaceAgents: workspaceAgentsReducer,
   panelLayout: panelLayoutReducer,
+  externalEditors: externalEditorsReducer,
+  sidebarNav: sidebarNavReducer,
   tabState: acquiredTabStateReducer,
   workspaceNavigation: workspaceNavigationReducer,
   permission: permissionReducer,

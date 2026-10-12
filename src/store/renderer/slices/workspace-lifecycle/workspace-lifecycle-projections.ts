@@ -27,6 +27,16 @@ export function createIsWorkspaceSessionLiveProjection<State>(selectWorkspaceSes
   return (state: State, wsId: string) => selectWorkspaceSessionPhase.select(state, wsId) === 'live';
 }
 
+/** Preserve hydration composition through each renderer's private phase selector. */
+export function createIsWorkspaceHydratedProjection<State>(selectWorkspaceSessionPhase: {
+  select: StoreSelectorSelect<unknown, [wsId: string], State>;
+}) {
+  return (state: State, wsId: string) => {
+    const phase = selectWorkspaceSessionPhase.select(state, wsId);
+    return phase === 'hydrated' || phase === 'live';
+  };
+}
+
 const INITIAL_WORKSPACE_LOAD_STATE: WorkspaceLoadState = {
   status: 'idle',
   error: null,

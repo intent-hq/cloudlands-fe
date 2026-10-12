@@ -1,4 +1,5 @@
 import {
+  createIsWorkspaceHydratedProjection,
   createIsWorkspaceSessionLiveProjection,
   getMountedWorkspaceIds,
   getWorkspaceLoadState,
@@ -31,10 +32,7 @@ export const selectWorkspaceLoadResult = store.createSelector<
 const selectWorkspaceSessionPhase = store.createSelector<[wsId: string]>(getWorkspaceSessionPhase);
 
 export const selectIsWorkspaceHydrated = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => {
-    const phase = selectWorkspaceSessionPhase.select(state, wsId);
-    return phase === 'hydrated' || phase === 'live';
-  },
+  createIsWorkspaceHydratedProjection(selectWorkspaceSessionPhase),
 );
 
 /**

@@ -7,6 +7,7 @@ import { fileContentKey } from '$features/file/utils/file-content-key';
 
 import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
+import { getPanels } from './panel-layout-projections';
 import { emptyWorkspaceState, isRecentlyClosedPanelColumnRestorable } from './panel-layout-slice';
 import {
   countHorizontalPanelColumns,
@@ -114,7 +115,7 @@ export const selectExpandedPanelId = store.createSelector<[wsId: string], string
 
 /** Select all panels */
 export const selectPanels = store.createSelector<[wsId: string], Record<string, PanelState>>(
-  (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).panels,
+  getPanels,
 );
 
 /** Select a specific panel by ID */

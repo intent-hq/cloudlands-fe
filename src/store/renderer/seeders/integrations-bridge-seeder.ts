@@ -1,3 +1,11 @@
+import {
+  asRecord,
+  workspaceParams,
+  errorMessage,
+  toLegacyRepo,
+  type GithubRepoWire,
+} from '../../../features/github-auth/renderer/integration-read-utils';
+import { createGithubRepositoryReadHandler } from '../../../features/github-auth/renderer/github-repository-read-factory';
 import { normalizeGitLabInstanceUrl } from '$lib/utils/gitlab-host';
 /**
  * Integrations IPC bridge — routes the legacy renderer→main GitHub / Linear /
@@ -24,7 +32,6 @@ import { GITHUB_AUTH_CHANNELS } from '$features/github-auth/constants';
 import type {
   GitHubAuthState,
   GitHubAuthStatus,
-  GithubRepo,
   GithubUserSearchHit,
   StartAuthResult,
 } from '$features/github-auth/types';
@@ -59,21 +66,6 @@ const logger = createLogger('IntegrationsBridgeSeeder');
 
 /** Single mapping point for `github.getUser` → FE `GitHubUser`. */
 const liveIntegrations = new LiveIntegrationsClient();
-
-/** Coerce a possibly-unknown argument into a plain object record. */
-function asRecord(arg: unknown): Record<string, unknown> {
-  return arg && typeof arg === 'object' ? (arg as Record<string, unknown>) : {};
-}
-
-/** Explicit routing metadata on approved integration variants only. */
-function workspaceParams(arg: unknown): { workspaceId?: string } {
-  const { workspaceId } = asRecord(arg);
-  return typeof workspaceId === 'string' ? { workspaceId } : {};
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 // ── GitHub auth & identity (PROTOCOL §5.27) ──
 
@@ -435,42 +427,15 @@ registerMockIpcHandler(FORGE_AUTH_CHANNELS.REVOKE, async (arg): Promise<ForgeAut
 
 // ── GitHub repos (PROTOCOL §5.27 repos & branches) ──
 
-/** Daemon `GithubRepo` — camelCase on the wire (§5.27 field naming). */
-interface GithubRepoWire {
-  owner: string;
-  name: string;
-  htmlUrl?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  defaultBranch?: string;
-}
-
-/** Map the wire repo to the FE's legacy snake_case `GithubRepo`. */
-function toLegacyRepo(repo: GithubRepoWire): GithubRepo {
-  return {
-    owner: repo.owner,
-    name: repo.name,
-    html_url: repo.htmlUrl,
-    created_at: repo.createdAt,
-    updated_at: repo.updatedAt,
-    default_branch: repo.defaultBranch,
-  };
-}
-
 // The legacy channel pages with `{ page }`; the daemon paginates with an
 // opaque `nextToken` cursor, so the first daemon page (default limit 50)
 // serves every legacy page request.
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LIST_REPOS, async (arg) => {
-  try {
-    const result = await backendRequest<{ repos?: GithubRepoWire[] }>(
-      'github.repos.list',
-      ...(workspaceParams(arg).workspaceId === undefined ? [] : [workspaceParams(arg)]),
-    );
-    return { success: true, data: (result?.repos ?? []).map(toLegacyRepo) };
-  } catch (error) {
-    return { success: false, error: errorMessage(error) };
-  }
-});
+registerMockIpcHandler(
+  GITHUB_AUTH_CHANNELS.LIST_REPOS,
+  createGithubRepositoryReadHandler({
+    backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+  }),
+);
 
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, async (arg) => {
   const query = asRecord(arg).query;

@@ -18,7 +18,6 @@ import type { GithubRepo } from '../../../../../features/github-auth/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { CHIEF_WORKSPACE_ID, ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
-import type { KnownRepo } from '$shared/types/known-repo';
 import { loadWorkspaceDataRequested, setHasLoadedInitialData } from '../../changes/changes-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { hydrateContextItems, initContextForWorkspace } from '../../context/context-slice';
@@ -84,7 +83,7 @@ import {
   type WorkspaceHydrationConsumers,
   type WorkspaceHydrationTierScheduler,
 } from './workspace-read-scheduler';
-import type { LifecycleIpcReadDependencies } from '../lifecycle-ipc-read-types';
+import type { LifecycleIpcReadDependencies, KnownReposResponse } from '../lifecycle-ipc-read-types';
 
 export function createLifecycleIpcReadSaga(
   dependencies: LifecycleIpcReadDependencies,
@@ -104,8 +103,6 @@ export function createLifecycleIpcReadSaga(
   } = dependencies;
 
   const logger = createLogger('LifecycleIpcReadSaga');
-
-  type KnownReposResponse = { success: boolean; data?: KnownRepo[] };
 
   function normalizeRepo(repo: GithubRepo): GithubRepoItem {
     return {
@@ -161,7 +158,7 @@ export function createLifecycleIpcReadSaga(
     const connection = yield* selectPrincipalConnectionContext.effect();
     try {
       const result: KnownReposResponse = yield* call(
-        invoke<KnownReposResponse>,
+        invoke,
         IPC_CHANNELS.WORKSPACE.GET_RECENT_REPOSITORIES,
         {},
       );

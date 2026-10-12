@@ -1,5 +1,10 @@
 import { store } from '../../store';
-import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  createInstalledEditorsProjection,
+  getInstalledEditorsCollection,
+  getInstalledEditorsLoading,
+  getLastFetched,
+} from './external-editors-projections';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectIsWorkspaceHostLocal } from '../workspace/workspace-selectors';
 import type { InstalledEditor, OpenAction } from './external-editors-slice';
@@ -10,39 +15,22 @@ export const selectOpenAction = store.createSelector((state): OpenAction => {
 });
 
 /** Select installed editors collection */
-const selectInstalledEditorsCollection = store.createSelector(
-  (state): Collection<InstalledEditor, 'id'> => {
-    return state.externalEditors.editors;
-  },
-);
+const selectInstalledEditorsCollection = store.createSelector(getInstalledEditorsCollection);
 
 /** Select all installed editors */
-export const selectInstalledEditors = store.createSelector((state): InstalledEditor[] => {
-  const editors = getItems(selectInstalledEditorsCollection.select(state));
-  const order = state.externalEditors.editorOrder ?? [];
-  if (!order.length) return editors;
-  const byId = new Map(editors.map((editor) => [editor.id, editor]));
-  const ordered = order.flatMap((id) => {
-    const editor = byId.get(id);
-    return editor ? [editor] : [];
-  });
-  const orderedIds = new Set(order);
-  return [...ordered, ...editors.filter(({ id }) => !orderedIds.has(id))];
-});
+export const selectInstalledEditors = store.createSelector(
+  createInstalledEditorsProjection(selectInstalledEditorsCollection),
+);
 
 export const selectEditorOrder = store.createSelector(
   (state): string[] => state.externalEditors.editorOrder ?? [],
 );
 
 /** Select loading state */
-export const selectInstalledEditorsLoading = store.createSelector((state): boolean => {
-  return state.externalEditors.loading;
-});
+export const selectInstalledEditorsLoading = store.createSelector(getInstalledEditorsLoading);
 
 /** Select the last fetched timestamp */
-export const selectLastFetched = store.createSelector((state): number => {
-  return state.externalEditors.lastFetched;
-});
+export const selectLastFetched = store.createSelector(getLastFetched);
 
 /** Select editor IDs hidden from Open In menus */
 export const selectHiddenEditorIds = store.createSelector((state): string[] => {

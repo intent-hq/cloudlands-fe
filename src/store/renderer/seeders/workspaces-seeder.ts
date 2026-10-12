@@ -33,8 +33,10 @@ import { appClient } from '$lib/client';
 import { workspaceClient } from '../slices/workspace/utils/workspace.client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
-import type { KnownRepo } from '$shared/types/known-repo';
-import { isDaemonManagedCheckoutPath } from '$shared/utils/daemon-managed-checkout';
+import {
+  createKnownRepositoriesReader,
+  REPOS_KNOWN_SETTING,
+} from '../slices/known-repos/known-repositories-read-factory';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 import { registerMockSeeder } from '../mock-bootstrap';
@@ -110,18 +112,15 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
 // `repo.list` registry is keyed on local paths, so these entries live beside
 // it and are merged into the recents read below. Mirrors the legacy
 // main-process repo-registry, which persists through the same setting.
-const REPOS_KNOWN_SETTING = 'repos.known';
-
-async function readReposKnownSetting(): Promise<KnownRepo[]> {
-  if (!selectCanAdministerHost.select(appStore.state)) return [];
-  try {
-    const setting = await readSetting(REPOS_KNOWN_SETTING);
-    return Array.isArray(setting?.value) ? (setting.value as KnownRepo[]) : [];
-  } catch {
-    // Non-fatal: recents still serve the daemon repo.list registry.
-    return [];
-  }
-}
+// One source instance also supplies the unchanged Add/Remove handlers below.
+// Resolve source transport/settings exports at call time, without another async adoption.
+const { readReposKnownSetting, readKnownRepositories } = createKnownRepositoriesReader({
+  backendRequest: <T>(...args: Parameters<typeof backendRequest>): Promise<T> =>
+    backendRequest<T>(...args),
+  readSetting: (...args: Parameters<typeof readSetting>) => readSetting(...args),
+  currentConnection: () => selectPrincipalConnectionContext.select(appStore.state),
+  canAdministerHost: () => selectCanAdministerHost.select(appStore.state),
+});
 
 // `workspace:get-recent-repositories` — LifecycleIpcReadService's known-repos
 // hydration, fired unconditionally on every app load. Bridges to the daemon's
@@ -132,21 +131,7 @@ async function readReposKnownSetting(): Promise<KnownRepo[]> {
 // user-pickable repos — they are excluded from the list. Failures of the
 // `repo.list` read propagate as rejections — the caller keeps the prior
 // known-repos list on error (mirrors the legacy safe-handler contract).
-registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
-  const connection = selectPrincipalConnectionContext.select(appStore.state);
-  const result = await backendRequest<{ repos: KnownRepo[] }>('repo.list');
-  if (connection !== selectPrincipalConnectionContext.select(appStore.state))
-    return { success: true, data: [] };
-  const repos = (result.repos ?? []).filter((repo) => !isDaemonManagedCheckoutPath(repo.path));
-  const githubPicks = (await readReposKnownSetting()).filter((repo) => !!repo.githubUrl);
-  if (connection !== selectPrincipalConnectionContext.select(appStore.state))
-    return { success: true, data: [] };
-  const merged = [
-    ...githubPicks,
-    ...repos.filter((repo) => !githubPicks.some((pick) => pick.path === repo.path)),
-  ].sort((a, b) => (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? ''));
-  return { success: true, data: merged };
-});
+registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, readKnownRepositories);
 
 // `workspace:add-recent-repository` — registers a repo as recently used.
 // Path-less GitHub picks (the Pick-a-repo flow) carry a `githubUrl` and use

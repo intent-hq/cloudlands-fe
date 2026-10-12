@@ -1,3 +1,4 @@
+import { createGithubRepositoryClient } from './github-repository-read-factory';
 import { invoke } from '$lib/electron-bridge';
 import { GITHUB_AUTH_CHANNELS } from '../constants';
 import type {
@@ -10,6 +11,11 @@ import type {
   StartAuthOptions,
   StartAuthResult,
 } from '../types';
+
+const repositoryClient = createGithubRepositoryClient({
+  invoke: (channel, params) =>
+    invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(channel, params),
+});
 
 export const githubAuthClient = {
   /**
@@ -121,14 +127,7 @@ export const githubAuthClient = {
   /**
    * List GitHub repositories for the authenticated user
    */
-  async listRepos(page?: number, workspaceId?: string): Promise<GithubRepo[]> {
-    const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
-      GITHUB_AUTH_CHANNELS.LIST_REPOS,
-      { page, ...(workspaceId === undefined ? {} : { workspaceId }) },
-    );
-    if (!result.success) throw new Error(result.error || 'Repository discovery failed'); // i18n-ignore (wire-error fallback)
-    return result.data ?? [];
-  },
+  listRepos: repositoryClient.listRepos,
 
   /**
    * Global GitHub repository search. Returns the seam envelope so the caller

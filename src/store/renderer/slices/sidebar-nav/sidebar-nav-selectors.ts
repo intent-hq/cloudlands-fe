@@ -3,6 +3,7 @@
  */
 
 import { store } from '../../store';
+import { getMultiSelectSidebarSelectedTabIds } from './sidebar-nav-projections';
 import type { StoreState } from '../../types';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { CHIEF_WORKSPACE_ID, type ChiefThreadSummary } from './sidebar-nav-types';
@@ -97,8 +98,7 @@ export const selectPinnedWorkspaceIds = store.createSelector(
 );
 
 export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
-  (state, workspaceId: string): string[] =>
-    state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ['overview'],
+  getMultiSelectSidebarSelectedTabIds,
 );
 
 export const selectWorkspaceNoteOrder = store.createSelector(

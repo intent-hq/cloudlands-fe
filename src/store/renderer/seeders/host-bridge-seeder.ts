@@ -36,8 +36,7 @@ import {
 } from '../slices/principal/principal-selectors';
 import { mockUserPreferences } from '$lib/client/mock/fixtures';
 import { openExternalUrl } from '$lib/utils/open-external';
-import { EDITOR_REGISTRY } from '$shared/editors/editor-registry';
-import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
+import { createExternalEditorReadRuntime } from '../../../features/external-editors/external-editor-read';
 
 /** Daemon `host.checkGit` response shape (intent-transport host_ops.rs §host). */
 interface HostCheckGitResult {
@@ -245,28 +244,11 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.LIST_FONTS, async () => {
 // visibly (toast/log) instead of a silent no-op.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Daemon `host.listInstalledEditors` entry shape (PROTOCOL §5.14). */
-interface HostInstalledEditorEntry {
-  id: string;
-  installed: boolean;
-  path?: string;
-  source?: string;
-  flatpakId?: string;
-}
-
-/** Daemon `host.listInstalledEditors` result shape (PROTOCOL §5.14). */
-interface HostListInstalledEditorsResult {
-  editors: HostInstalledEditorEntry[];
-}
-
-/** Fetch the daemon-host editor catalog (detection runs on the daemon host). */
-async function listInstalledEditors(): Promise<HostInstalledEditorEntry[]> {
-  const context = selectHostAdministrationContext.select(appStore.state);
-  if (!context) return [];
-  const result = await backendRequest<HostListInstalledEditorsResult>('host.listInstalledEditors');
-  if (context !== selectHostAdministrationContext.select(appStore.state)) return [];
-  return Array.isArray(result?.editors) ? result.editors : [];
-}
+// Both registered detection and JetBrains opening retain this same canonical raw read.
+const { listInstalledEditors, detectInstalledEditors } = createExternalEditorReadRuntime({
+  backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+  getHostAdministrationContext: () => selectHostAdministrationContext.select(appStore.state),
+});
 
 /**
  * Launch an editor on `path` via `host.openInEditor` (PROTOCOL §5.14). Throws
@@ -539,39 +521,4 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
  * `{ success, data }` envelope; failures fold to `{ success:false, error }` so
  * `fetchEditorsFailure` carries the daemon message.
  */
-registerMockIpcHandler(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED, async () => {
-  try {
-    const entries = await listInstalledEditors();
-    const data: InstalledEditor[] = [];
-    for (const entry of entries) {
-      const def = EDITOR_REGISTRY.find((candidate) => candidate.id === entry.id);
-      if (!def) continue;
-      data.push({
-        id: def.id,
-        name: def.name,
-        shortLabel: def.shortLabel,
-        appName: def.appName,
-        category: def.category,
-        handlerType: def.handlerType,
-        bundleId: def.bundleId,
-        shortcut: def.shortcut,
-        priority: def.priority,
-        // The file manager is always present: the daemon's macOS bundle probe
-        // looks for /Applications/Finder.app, which never exists (Finder lives
-        // in /System/Library/CoreServices), so `finder` came back
-        // installed:false and the "Reveal in Finder" row vanished from every
-        // Open-In menu. The reveal launches via `host.exec` (shell-reveal-
-        // bridge-seeder), not the bundle path, and the legacy Electron handler
-        // (external-editors.ipc.ts) hard-coded finder as installed — mirror
-        // that here; locality gating still hides it on remote daemons.
-        installed: entry.installed === true || def.handlerType === 'finder',
-      });
-    }
-    return { success: true, data };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-});
+registerMockIpcHandler(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED, detectInstalledEditors);
