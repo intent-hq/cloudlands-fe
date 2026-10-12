@@ -679,7 +679,7 @@
   function autofocusAction(node: HTMLTextAreaElement) {
     // Use requestAnimationFrame to ensure the element is fully rendered
     const frame = requestAnimationFrame(() => {
-      // A user may already have focused and selected text before this frame.
+      // Preserve selection if the user reached the editor before this frame.
       if (document.activeElement === node) return;
       node.focus({ preventScroll: true });
       // Move cursor to end

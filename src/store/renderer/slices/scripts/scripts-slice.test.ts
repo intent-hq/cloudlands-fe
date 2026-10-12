@@ -313,7 +313,7 @@ describe('archive lifecycle reconciliation', () => {
     scripts = scriptsReducer(scripts, activeRefresh);
     terminals = terminalsReducer(terminals, activeRefresh);
     expect(selectWorkspaceScriptEntries.select({ scripts } as never, WS)).toEqual([]);
-    expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(1);
+    expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(0);
     scripts = scriptsReducer(
       scripts,
       updateRuntimeState(WS, active.id, { status: 'exited', exitCode: 2 }),
@@ -326,7 +326,7 @@ describe('archive lifecycle reconciliation', () => {
     expect(selectWorkspaceScriptEntries.select({ scripts: legacyList } as never, WS)).toEqual([
       active,
     ]);
-    expect(selectAllWorkspaceScriptEntries.select(root, WS)[0].runtime.exitCode).toBe(2);
+    expect(selectAllWorkspaceScriptEntries.select(root, WS)).toEqual([]);
     expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks[0].text).toBe(
       'retained output',
     );

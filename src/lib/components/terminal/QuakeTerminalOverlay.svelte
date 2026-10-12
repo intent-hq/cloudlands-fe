@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { selectScriptListPageState } from '$store/renderer/slices/scripts/scripts-selectors';
+  import { loadMoreScripts } from '$store/renderer/slices/scripts/scripts-slice';
+  import { scriptCommandLabel } from '$features/scripts/types';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -70,7 +73,7 @@
   import { confirmScriptDeletion } from '$features/scripts/confirm-script-deletion';
   import { selectCanDeleteScript } from '$store/renderer/slices/scripts/scripts-selectors';
   import { scriptsClient } from '$features/scripts/scripts.client';
-  import type { ScriptWithState } from '$features/scripts/types';
+  import type { ScriptListEntry } from '$features/scripts/types';
   import {
     getScriptStatusKind,
     isLiveScriptStatus,
@@ -168,6 +171,7 @@
   let showScriptEditPanel = $state(false);
   let editScriptCommandTextarea: HTMLInputElement | undefined = $state();
   let editedScriptCommand = $state('');
+  let originalScriptCommand = '';
 
   let isDetectingScripts = $state(false);
   let terminalPanel: HTMLDivElement | undefined = $state();
@@ -255,7 +259,7 @@
   const STATUS_CONFIG: Record<
     ScriptStatusKind,
     {
-      label: (script: ScriptWithState) => string;
+      label: (script: ScriptListEntry) => string;
       dotClass: string;
       textClass: string;
     }
@@ -301,7 +305,7 @@
     },
   };
 
-  function getStatusInfo(script: ScriptWithState) {
+  function getStatusInfo(script: ScriptListEntry) {
     const config = STATUS_CONFIG[getScriptStatusKind(script.runtime)];
     return {
       dotClass: config.dotClass,
@@ -312,7 +316,7 @@
     };
   }
 
-  function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
+  function sortScripts(scripts: ScriptListEntry[]): ScriptListEntry[] {
     return [...scripts].sort((a, b) => {
       // Priority: live (starting/running/restarting) > exited > idle
       const statusPriority = { starting: 0, running: 0, restarting: 0, exited: 1, idle: 2 };
@@ -326,7 +330,7 @@
     });
   }
 
-  function getScriptActions(script: ScriptWithState) {
+  function getScriptActions(script: ScriptListEntry) {
     const actions: Array<{
       icon: any;
       label: string;
@@ -415,6 +419,8 @@
       ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
+  const commandEditScope = $derived({ owner: workspaceOwnership, script: selectedScript });
+  let commandEditRequest = 0;
   const selectedScriptIdStore = writable('');
   $effect(() => selectedScriptIdStore.set(selectedScriptId ?? ''));
   const canDeleteScript$ = selectCanDeleteScript(workspaceIdStore, selectedScriptIdStore);
@@ -496,9 +502,22 @@
     }
   }
 
-  function startEditingScriptCommand(): void {
-    if (!selectedScript) return;
-    editedScriptCommand = selectedScript.command;
+  async function startEditingScriptCommand(): Promise<void> {
+    if (!selectedScript || !workspaceId) return;
+    const id = selectedScript.id;
+    const scope = commandEditScope;
+    const request = ++commandEditRequest;
+    const isCurrent = () => mounted && commandEditScope === scope && commandEditRequest === request;
+    try {
+      const full = await appClient.scripts.get(workspaceId, id);
+      // A newer row snapshot or edit request invalidates this selected detail read.
+      if (!isCurrent()) return;
+      editedScriptCommand = full.command;
+      originalScriptCommand = full.command;
+    } catch {
+      if (isCurrent()) notify.error(m.terminal_quakeOverlay_updateCommandFailed_error());
+      return;
+    }
     showScriptEditPanel = true;
     requestAnimationFrame(() => {
       editScriptCommandTextarea?.focus();
@@ -506,6 +525,7 @@
   }
 
   function cancelEditingScriptCommand(): void {
+    commandEditRequest++;
     showScriptEditPanel = false;
   }
 
@@ -516,7 +536,7 @@
     const mutationValue = editedScriptCommand;
     if (selectedScript && mutationScriptId && mutationWorkspaceId) {
       const updates: Record<string, any> = {};
-      if (mutationValue !== selectedScript.command) updates.command = mutationValue;
+      if (mutationValue !== originalScriptCommand) updates.command = mutationValue;
       if (Object.keys(updates).length > 0) {
         const succeeded = await runScriptMutation(
           () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
@@ -835,7 +855,6 @@
     const createWorkspaceId = workspaceId;
     isCreatingTerminal = true;
     try {
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- mutation must return the daemon-assigned PTY id before the Redux tab is created
       const result = await appClient.terminals.create({
         workspaceId: createWorkspaceId,
         cols: 80,
@@ -980,6 +999,7 @@
     }
     stopResize();
   });
+  const scriptPage$ = selectScriptListPageState(workspaceIdStore);
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -1092,7 +1112,7 @@
                     title={m.terminal_quakeOverlay_editCommand_tooltip()}
                   >
                     <span class="flex-shrink-0 font-semibold text-green-500">$</span>
-                    <span class="truncate">{selectedScript.command}</span>
+                    <span class="truncate">{scriptCommandLabel(selectedScript)}</span>
                   </span>
                 {/if}
                 <span
@@ -1217,6 +1237,16 @@
                 <Fa icon={faChevronDown} size="xs" />
               </Button>
             </div>
+          {:else if selectedScriptId}
+            <span class="truncate">{selectedScriptId}</span>
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              onclick={handleClose}
+              aria-label={m.terminal_quakeOverlay_collapse_ariaLabel()}
+            >
+              <Fa icon={faChevronDown} size="xs" />
+            </Button>
           {:else}
             <!-- Terminal Header Content (original) -->
             <div class="flex items-center gap-2">
@@ -1603,7 +1633,7 @@
                     {#if $scriptEntries$.length > 0}
                       <span
                         class="text-xs bg-muted-foreground/20 text-foreground px-1 py-0.5 rounded leading-none"
-                        >{$scriptEntries$.length}</span
+                        >{$scriptEntries$.length}{$scriptPage$.nextCursor ? '+' : ''}</span
                       >
                     {/if}
                   </div>
@@ -1613,6 +1643,15 @@
               {#snippet content()}
                 <div class="flex flex-col min-w-[200px] max-h-[300px] overflow-y-auto p-2 pt-2.5">
                   <Header size={6} class="px-1">{m.terminal_quakeOverlay_scripts_title()}</Header>
+                  {#if $scriptPage$.nextCursor && workspaceId}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={$scriptPage$.loading}
+                      onclick={() => workspaceId && appStore.dispatch(loadMoreScripts(workspaceId))}
+                      >{m.gitlabCheckout_loadMore_label()}</Button
+                    >
+                  {/if}
                   {#if $scriptEntries$.length > 0}
                     <ListContainer spacing="compact" class="py-0! px-0">
                       {#each sortScripts($scriptEntries$) as script (script.id)}
@@ -1621,7 +1660,7 @@
                           size="sm"
                           class="gap-0.5!"
                           title={script.name}
-                          subtitle={script.command}
+                          subtitle={scriptCommandLabel(script)}
                           subtitleClass="leading-none"
                           active={selectedScriptId === script.id}
                           onclick={() => {

@@ -50,14 +50,15 @@ export type ScriptMonitor = ScriptMonitorIdentity &
 export interface ScriptMonitorEvent {
   monitor: ScriptMonitor;
 }
-export type ScriptMonitorEventType =
-  | 'scriptMonitor:registered'
-  | 'scriptMonitor:completed'
-  | 'scriptMonitor:expired'
-  | 'scriptMonitor:triggered'
-  | 'scriptMonitor:cancelled';
 export type ScriptMonitorMutationResult = {
   ok: true;
-  monitor: ScriptMonitor;
+  monitorId: string;
   runStopped?: boolean;
 };
+
+export type ScriptMonitorSummary = Omit<ScriptMonitorIdentity, 'outputPattern'> & {
+  state: 'active';
+  outputPatternPreview?: string;
+  outputPatternTruncated?: boolean;
+};
+export type ActiveScriptMonitor = Extract<ScriptMonitor, { state: 'active' }>;

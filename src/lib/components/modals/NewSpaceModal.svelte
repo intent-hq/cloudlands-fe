@@ -91,6 +91,7 @@
         bind:this={initializerRef}
         bind:isExpanded
         autoFocus={false}
+        defaultToSidebarRepository
         oncreate={close}
       />
     {/if}
