@@ -235,6 +235,11 @@ test('operational-window E1 qualified End follows actual content growth and shri
   expect(beforeBody).not.toBeNull();
   await capture(page, primary, 'E1-followed', info);
   await toggle(host, 'Expanded row content', true);
+  // Global controls can move the panel outside the document viewport. Check
+  // following before revealing it; measure row content after re-admission.
+  const expandedBeforeReveal = await expectFollowingBottom(primary.scroll);
+  await focusScroll(primary.scroll);
+  const expandedAfterReveal = await expectFollowingBottom(primary.scroll);
   await expect
     .poll(async () => (await body.boundingBox()).height)
     .toBeGreaterThan(beforeBody.height);
@@ -243,12 +248,11 @@ test('operational-window E1 qualified End follows actual content growth and shri
     .toBeGreaterThan(followed.maximum);
   const expanded = await expectFollowingBottom(primary.scroll);
   const expandedBody = await body.boundingBox();
-  // Global caller controls can move document/focus. Observe the root outcome
-  // before revealing it for evidence; this does not prove reader retention.
-  await focusScroll(primary.scroll);
-  await expectFollowingBottom(primary.scroll);
   await capture(page, primary, 'E1-expanded', info);
   await toggle(host, 'Expanded row content', false);
+  const shrunkBeforeReveal = await expectFollowingBottom(primary.scroll);
+  await focusScroll(primary.scroll);
+  const shrunkAfterReveal = await expectFollowingBottom(primary.scroll);
   await expect
     .poll(async () => (await body.boundingBox()).height)
     .toBeLessThan(expandedBody.height);
@@ -262,6 +266,8 @@ test('operational-window E1 qualified End follows actual content growth and shri
         followed,
         expanded,
         shrunk,
+        beforeReveal: { expanded: expandedBeforeReveal, shrunk: shrunkBeforeReveal },
+        afterReveal: { expanded: expandedAfterReveal, shrunk: shrunkAfterReveal },
         body: { before: beforeBody, expanded: expandedBody, shrunk: await body.boundingBox() },
       },
       null,
@@ -269,8 +275,6 @@ test('operational-window E1 qualified End follows actual content growth and shri
     ),
     contentType: 'application/json',
   });
-  await focusScroll(primary.scroll);
-  await expectFollowingBottom(primary.scroll);
   await capture(page, primary, 'E1-after', info);
 });
 
