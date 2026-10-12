@@ -18,6 +18,7 @@ import {
   assertPastedPng,
   mention,
   insertImage,
+  imageActions,
   label,
   tabTo,
   capture,
@@ -319,6 +320,32 @@ test('markdown viewer MV10: file image admission and real embedded bytes are ind
   const { image } = await insertImage(page, host);
   await expect(image).toHaveAttribute('role', 'button');
   await expect(viewer(host).getByTestId('media-unavailable')).toHaveCount(1);
+  // Establish the source's hovered image state before the strict capture probe.
+  await image.hover();
+  const options = imageActions(host);
+  await expect(options).toBeVisible();
+  await expect(options).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(options).toHaveAttribute('aria-expanded', 'false');
+  const hovered = {
+    aria: await frame(host).ariaSnapshot(),
+    image: await image.boundingBox(),
+    options: await options.boundingBox(),
+  };
+  await info.attach('mv10-hover-setup.json', {
+    body: JSON.stringify(hovered, null, 2),
+    contentType: 'application/json',
+  });
+  // The source positions image actions inside the image; keep the control usable there.
+  expect(hovered.image).not.toBeNull();
+  expect(hovered.options).not.toBeNull();
+  expect(hovered.options.x).toBeGreaterThanOrEqual(hovered.image.x);
+  expect(hovered.options.y).toBeGreaterThanOrEqual(hovered.image.y);
+  expect(hovered.options.x + hovered.options.width).toBeLessThanOrEqual(
+    hovered.image.x + hovered.image.width,
+  );
+  expect(hovered.options.y + hovered.options.height).toBeLessThanOrEqual(
+    hovered.image.y + hovered.image.height,
+  );
   await capture(page, frame(host), 'mv10-file-denied-bytes-admitted', info);
   const previous = await image.elementHandle();
   await apply(host, '**Removed media**');
