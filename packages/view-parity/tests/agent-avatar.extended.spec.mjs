@@ -11,6 +11,7 @@ import {
   nativeArt,
   captureAvatar,
   settleAvatarMotion,
+  compareAvatarSourcePair,
 } from '../lib/agent-avatar.mjs';
 
 test('agent avatar extended: unmount detaches old nodes and remount responds to new widths', async ({
@@ -54,6 +55,18 @@ test('agent avatar extended: unmount detaches old nodes and remount responds to 
   }
   // Recovery and detached DOM are native evidence. Exact observer disconnect
   // and pending-frame cancellation remain static-only; no instrumentation mocks.
+});
+
+test.describe('optional agent avatar source comparison', () => {
+  test.use({ viewport: { width: 1024, height: 900 } });
+
+  test('agent avatar paired: original waiting host matches in light reduced motion at zoom one', async ({
+    page,
+    browser,
+    browserErrors,
+  }, info) => {
+    await compareAvatarSourcePair(page, browser, browserErrors, info);
+  });
 });
 
 test('agent avatar extended: named and legacy sizing transitions retain accessible artwork', async ({

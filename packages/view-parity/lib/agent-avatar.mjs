@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { test as base, expect, openExample, outputJson } from './functional.mjs';
+import { repoRoot } from './manifest.mjs';
+import { verifyReference, candidateProvenance, changedSources } from './provenance.mjs';
+import { observeErrors, stableLocatorScreenshot } from './browser.mjs';
+import { compareImages } from './compare.mjs';
 
 // Display-prop evidence only. Source oracle: the four avatar leaves at 003bc52.
 // No Store, transport, observer replacement, CSS assertions or reference mount.
@@ -234,4 +240,277 @@ export async function captureAvatar(page, target, name, info) {
   });
   expect(after, 'The screenshot must not change the observed capture geometry').toEqual(before);
   return after;
+}
+
+export function avatarSourceFreeze() {
+  const plan = JSON.parse(readFileSync(process.env.PARITY_AGENT_AVATAR_SOURCE_PLAN, 'utf8'));
+  const digest = (value) => createHash('sha256').update(value).digest('hex');
+  expect(plan.inputSha256).toBe('097ea6ee94b1ede00e00adcf263852f188c3aacdecc1008f2bf395927d431b03');
+  expect(digest(JSON.stringify(plan.input))).toBe(plan.inputSha256);
+  const source = verifyReference(plan.input.reference.root, plan.input.reference);
+  expect(source.commit).toBe('003bc52c00dcfffe8513cd6be1b8f45011716714');
+  const inputs = [
+    [plan.input.reference.root, { ...plan.input.closure.hashes, ...plan.input.auxiliarySha256 }],
+    [repoRoot, plan.input.setupSha256],
+  ];
+  const hashes = {};
+  for (const [root, expected] of inputs) {
+    for (const [file, hash] of Object.entries(expected)) {
+      const actual = digest(readFileSync(path.join(root, file)));
+      hashes[path.join(root, file)] = actual;
+      expect(actual, `Reviewed source input changed: ${file}`).toBe(hash);
+    }
+  }
+  return { plan, source, hashes };
+}
+
+export function observeAvatarPairNetwork(page) {
+  const evidence = { requests: [], sockets: [], frames: [], failures: [], rpc: [] };
+  const publicUrl = (value) => {
+    const url = new URL(value);
+    for (const key of ['token', 'auth', 'key']) {
+      if (url.searchParams.has(key)) url.searchParams.set(key, '[redacted]');
+    }
+    return url.href;
+  };
+  page.on('request', (request) => {
+    evidence.requests.push({ method: request.method(), url: publicUrl(request.url()) });
+  });
+  page.on('requestfailed', (request) => {
+    evidence.failures.push({ url: publicUrl(request.url()), error: request.failure()?.errorText });
+  });
+  page.on('websocket', (socket) => {
+    const url = publicUrl(socket.url());
+    evidence.sockets.push(url);
+    for (const direction of ['framesent', 'framereceived']) {
+      socket.on(direction, ({ payload }) => {
+        const raw = String(payload);
+        evidence.frames.push({ url, direction, raw });
+        try {
+          const frame = JSON.parse(raw);
+          if (typeof frame.method === 'string')
+            evidence.rpc.push({ direction, method: frame.method });
+        } catch {
+          // Preserve every raw frame, including non-JSON development messages.
+        }
+      });
+    }
+  });
+  return evidence;
+}
+
+export function assertAvatarPairNetwork(evidence, origin) {
+  const allowedOrigin = new URL(origin);
+  expect(
+    evidence.sockets.filter((value) => {
+      const url = new URL(value);
+      return url.host !== allowedOrigin.host || url.pathname !== '/';
+    }),
+    'Only this page’s same-origin Vite HMR socket is permitted',
+  ).toEqual([]);
+  expect(evidence.rpc, 'A pure avatar comparison must not communicate with a daemon').toEqual([]);
+  expect(evidence.failures, 'Every failed request remains fatal').toEqual([]);
+  expect(
+    evidence.requests.filter(
+      ({ method, url }) =>
+        !['GET', 'HEAD'].includes(method) ||
+        new URL(url).origin !== allowedOrigin.origin ||
+        new URL(url).pathname.startsWith('/intentd/'),
+    ),
+  ).toEqual([]);
+}
+
+export async function inspectAvatarPairHost(page) {
+  await page.evaluate(async () => {
+    await Promise.all(
+      [400, 500, 600].map((weight) => document.fonts.load(`${weight} 12px 'Inter Variable'`)),
+    );
+    await document.fonts.ready;
+  });
+  const target = page.getByTestId('source-avatar-waiting-host');
+  await expect(target).toHaveCount(1);
+  await expect(target).toBeVisible();
+  await expect(target.getByTestId('reactive-waiting-avatar').getByRole('img')).toHaveAccessibleName(
+    'Waiting',
+  );
+  await target.scrollIntoViewIfNeeded();
+  await page.mouse.move(0, 0);
+  const evidence = await target.evaluate((root) => {
+    const base = root.getBoundingClientRect();
+    const fonts = Array.from(document.fonts)
+      .filter((face) => face.family.replaceAll(/['"]/g, '').trim() === 'Inter Variable')
+      .map((face) => ({
+        family: face.family,
+        weight: face.weight,
+        style: face.style,
+        status: face.status,
+      }));
+    const nodes = [
+      ...root.querySelectorAll(
+        '[data-agent-avatar-catalog], [data-agent-avatar], [data-agent-avatar-with-state], [data-agent-avatar-overflow]',
+      ),
+    ].map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        state: node.getAttribute('data-avatar-state'),
+        design: node.getAttribute('data-avatar-design'),
+        bounds: { x: rect.x - base.x, y: rect.y - base.y, width: rect.width, height: rect.height },
+      };
+    });
+    return {
+      fonts,
+      environment: {
+        width: innerWidth,
+        height: innerHeight,
+        deviceScaleFactor: devicePixelRatio,
+        locale: navigator.language,
+        timezoneId: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      geometry: { width: base.width, height: base.height, nodes },
+      svgCount: root.querySelectorAll('svg[data-agent-avatar]').length,
+      preload: typeof window.electronAPI,
+      daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
+    };
+  });
+  expect(evidence.fonts.some((font) => font.status === 'loaded')).toBe(true);
+  expect(evidence.environment).toEqual({
+    width: 1024,
+    height: 900,
+    deviceScaleFactor: 1,
+    locale: 'en-US',
+    timezoneId: 'UTC',
+  });
+  expect(evidence.preload).toBe('undefined');
+  expect(evidence.daemonUrl).toBeNull();
+  return evidence;
+}
+
+export async function compareAvatarSourcePair(candidate, browser, candidateErrors, info) {
+  expect(
+    process.env.PARITY_AGENT_AVATAR_PAIR_APPROVED,
+    'The exact pair needs a separate review',
+  ).toBe('1');
+  const before = avatarSourceFreeze();
+  const candidateRoot = process.env.PARITY_CANDIDATE_ROOT;
+  const candidateBefore = candidateProvenance(candidateRoot);
+  expect(candidateBefore.commit).toBe('c6da68fc53cde59998a1f17cc77f5ff58d133b44');
+  expect(candidateBefore.sourceDirty).toBe(false);
+  const options = {
+    viewport: { width: 1024, height: 900 },
+    deviceScaleFactor: 1,
+    locale: 'en-US',
+    timezoneId: 'UTC',
+    colorScheme: 'light',
+    reducedMotion: 'reduce',
+  };
+  const sourceContext = await browser.newContext(options);
+  const source = await sourceContext.newPage();
+  const sourceErrors = await observeErrors(source);
+  const network = {
+    source: observeAvatarPairNetwork(source),
+    candidate: observeAvatarPairNetwork(candidate),
+  };
+  const metadata = { before, candidateBefore, options, browserVersion: browser.version(), network };
+  try {
+    const response = await source.goto(before.plan.url, { waitUntil: 'domcontentloaded' });
+    expect(response?.ok()).toBe(true);
+    await expect(source.locator('[data-avatar-source-ready="true"]')).toHaveCount(1, {
+      timeout: 15_000,
+    });
+    const ready = await source.evaluate(() => window.__INTENT_AVATAR_SOURCE__);
+    metadata.sourceReady = ready;
+    expect(ready.status).toBe('ready');
+    expect(ready.props).toEqual({ theme: 'light', motionReduced: true, state: 'waiting', zoom: 1 });
+    expect(ready.provenance.planSha256).toBe(before.plan.inputSha256);
+    expect(ready.provenance.commit).toBe(before.source.commit);
+    expect(ready.provenance.sourceTreeSha256).toBe(before.source.sourceTreeSha256);
+    expect(ready.provenance.sourcePins).toEqual(before.plan.input.sourcePins);
+    expect(sourceErrors).toEqual([]);
+
+    const url = new URL('/sandbox/agent-avatar', process.env.PARITY_CANDIDATE_URL);
+    url.search = new URLSearchParams({
+      example: 'interactive',
+      theme: 'light',
+      motion: 'reduced',
+      width: '1024',
+    });
+    expect((await candidate.goto(url.href, { waitUntil: 'domcontentloaded' }))?.ok()).toBe(true);
+    const host = candidate.locator('[data-functional-example="agent-avatar"]');
+    await expect(host).toBeVisible({ timeout: 15_000 });
+    await expect(host.locator('[data-catalog-unimplemented]')).toHaveCount(0);
+    await choose(candidate, host, 'Display mode', 'source waiting host');
+    await choose(candidate, host, 'Avatar state', 'waiting');
+    await expect(host.getByRole('combobox', { name: 'Source host zoom', exact: true })).toHaveText(
+      '1',
+    );
+    expect(candidateErrors).toEqual([]);
+
+    const pages = [
+      ['source', source],
+      ['candidate', candidate],
+    ];
+    metadata.hosts = {};
+    const captures = {};
+    for (const [side, page] of pages) {
+      metadata.hosts[side] = await inspectAvatarPairHost(page);
+      const target = page.getByTestId('source-avatar-waiting-host');
+      captures[side] = await stableLocatorScreenshot(page, target, async ({ png, ...attempt }) => {
+        if (png)
+          await info.attach(`${side}-avatar-attempt-${attempt.attempt}.png`, {
+            body: png,
+            contentType: 'image/png',
+          });
+        await info.attach(`${side}-avatar-attempt-${attempt.attempt}.json`, {
+          body: JSON.stringify(
+            { ...attempt, sha256: png ? createHash('sha256').update(png).digest('hex') : null },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        });
+      });
+      metadata.hosts[side].aria = await target.ariaSnapshot();
+    }
+    const { diff, ...comparison } = compareImages(captures.source, captures.candidate);
+    metadata.comparison = comparison;
+    metadata.images = {};
+    for (const [name, png] of Object.entries({
+      source: captures.source,
+      candidate: captures.candidate,
+      diff,
+    })) {
+      metadata.images[name] = createHash('sha256').update(png).digest('hex');
+      await info.attach(`${name}-avatar.png`, { body: png, contentType: 'image/png' });
+    }
+    // Native source measurements are the oracle; no copied sizes or tolerances.
+    expect(metadata.hosts.candidate.geometry).toEqual(metadata.hosts.source.geometry);
+    expect(metadata.hosts.candidate.svgCount).toBe(metadata.hosts.source.svgCount);
+    expect(metadata.hosts.candidate.aria).toBe(metadata.hosts.source.aria);
+    expect(comparison.dimensionsMatch).toBe(true);
+    expect(comparison.diffPixels, 'The complete reviewed source host must match every pixel').toBe(
+      0,
+    );
+  } finally {
+    await sourceContext.close();
+    metadata.sourceContextClosed = true;
+    metadata.errors = { source: sourceErrors, candidate: candidateErrors };
+    try {
+      metadata.after = avatarSourceFreeze();
+      metadata.candidateAfter = candidateProvenance(candidateRoot);
+      metadata.changedCandidatePaths = changedSources(candidateBefore, metadata.candidateAfter);
+    } catch (error) {
+      metadata.provenanceError = String(error);
+    }
+    await info.attach('avatar-source-comparison.json', {
+      body: JSON.stringify(metadata, null, 2),
+      contentType: 'application/json',
+    });
+    expect(metadata.provenanceError).toBeUndefined();
+    expect(metadata.after.hashes).toEqual(before.hashes);
+    expect(metadata.changedCandidatePaths).toEqual([]);
+    expect(sourceErrors).toEqual([]);
+    expect(candidateErrors).toEqual([]);
+    assertAvatarPairNetwork(network.source, before.plan.url);
+    assertAvatarPairNetwork(network.candidate, process.env.PARITY_CANDIDATE_URL);
+  }
 }
