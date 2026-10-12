@@ -25,6 +25,7 @@ import { ChatPreviewExamples } from './chat-preview-examples';
 import { QueuedAttachmentExamples } from './queued-attachment-examples';
 import { StreamingStatusExamples } from './streaming-status-examples';
 import { SuggestedPromptExamples } from './suggested-prompt-examples';
+import { AutomatedWakeExamples } from './automated-wake-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -483,6 +484,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'queued-attachments' && <QueuedAttachmentExamples />}
       {slug === 'streaming-status' && <StreamingStatusExamples />}
       {slug === 'suggested-prompts' && <SuggestedPromptExamples />}
+      {slug === 'automated-wake' && <AutomatedWakeExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -558,6 +560,7 @@ export function hasFunctionalExample(slug: string) {
     'queued-attachments',
     'streaming-status',
     'suggested-prompts',
+    'automated-wake',
     'diagram-workbench',
     'toast',
     'notify',
