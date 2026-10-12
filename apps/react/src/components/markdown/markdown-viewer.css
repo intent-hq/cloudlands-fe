@@ -1,0 +1,584 @@
+/* Compiled selector scope from MarkdownViewer.svelte; syntax colors remain local to this adapter. */
+
+.markdown-viewer.react-markdown-viewer-scope {
+  position: relative;
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+  color: hsl(var(--foreground));
+}
+
+/* Isolate layout and style work for each Markdown surface. */
+.streaming-content.react-markdown-viewer-scope,
+.simple-content.react-markdown-viewer-scope,
+.static-content.react-markdown-viewer-scope {
+  contain: layout style;
+}
+
+.simple-content.react-markdown-viewer-scope p:where(.react-markdown-viewer-scope) {
+  margin: 0;
+}
+
+/* Paragraph spacing must not offset the positioned image controls. */
+.markdown-viewer.static-content.react-markdown-viewer-scope > * + :not(.image-actions-overlay),
+.markdown-viewer.streaming-content.react-markdown-viewer-scope > * + :not(.image-actions-overlay) {
+  margin-top: 0.75rem;
+}
+
+/* Typography */
+.markdown-viewer.react-markdown-viewer-scope p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-wrap: pretty;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .markdown-video {
+  display: block;
+  width: 100%;
+  max-width: 42rem;
+  aspect-ratio: 16 / 9;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  background: black;
+  object-fit: contain;
+}
+
+.markdown-viewer.chat-image-thumbnails.react-markdown-viewer-scope .markdown-video {
+  cursor: pointer;
+}
+
+.markdown-viewer.react-markdown-viewer-scope strong {
+  font-weight: var(--text-body-strong-weight);
+}
+
+.markdown-viewer.react-markdown-viewer-scope h1,
+.markdown-viewer.react-markdown-viewer-scope h2,
+.markdown-viewer.react-markdown-viewer-scope h3,
+.markdown-viewer.react-markdown-viewer-scope h4,
+.markdown-viewer.react-markdown-viewer-scope h5,
+.markdown-viewer.react-markdown-viewer-scope h6 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: hsl(var(--foreground));
+  font-weight: var(--text-title-weight);
+  text-wrap: balance;
+}
+
+.markdown-viewer.react-markdown-viewer-scope h1 {
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line-height);
+  letter-spacing: var(--text-display-tracking);
+}
+
+.markdown-viewer.react-markdown-viewer-scope h2 {
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line-height);
+  letter-spacing: var(--text-title-tracking);
+}
+
+.markdown-viewer.react-markdown-viewer-scope h3,
+.markdown-viewer.react-markdown-viewer-scope h4,
+.markdown-viewer.react-markdown-viewer-scope h5,
+.markdown-viewer.react-markdown-viewer-scope h6 {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  letter-spacing: var(--text-body-tracking);
+}
+
+.markdown-viewer.react-markdown-viewer-scope h1:first-child,
+.markdown-viewer.react-markdown-viewer-scope h2:first-child,
+.markdown-viewer.react-markdown-viewer-scope h3:first-child,
+.markdown-viewer.react-markdown-viewer-scope h4:first-child,
+.markdown-viewer.react-markdown-viewer-scope h5:first-child,
+.markdown-viewer.react-markdown-viewer-scope h6:first-child {
+  margin-top: 0;
+}
+
+/* Lists */
+.markdown-viewer.react-markdown-viewer-scope ul,
+.markdown-viewer.react-markdown-viewer-scope ol {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope ul {
+  list-style: disc;
+}
+.markdown-viewer.react-markdown-viewer-scope ol {
+  list-style: decimal;
+}
+
+.markdown-viewer.react-markdown-viewer-scope li {
+  margin: 0.25rem 0;
+}
+
+/* Task lists */
+.markdown-viewer.react-markdown-viewer-scope .task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .task-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 0.125rem 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .task-item input[type='checkbox'] {
+  appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-right: 0.5rem;
+  margin-top: 0.125rem;
+  border: none;
+  border-radius: 0.3125rem;
+  background: hsl(var(--muted));
+  cursor: default;
+  pointer-events: none; /* Read-only */
+  position: relative;
+  flex-shrink: 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .task-item input[type='checkbox']:checked {
+  background: hsl(var(--foreground));
+}
+
+.markdown-viewer.react-markdown-viewer-scope .task-item input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.3rem;
+  height: 0.5rem;
+  border: solid hsl(var(--background));
+  border-width: 0 2px 2px 0;
+  transform: translate(-45%, -60%) rotate(45deg);
+}
+
+/* Code */
+.markdown-viewer.react-markdown-viewer-scope code:not(.code-block code) {
+  background: hsl(var(--muted) / 0.4);
+  color: hsl(var(--muted-foreground));
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+  font-family: var(--font-code);
+}
+
+/* Code blocks */
+.markdown-viewer.react-markdown-viewer-scope .code-block {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-line-height);
+  letter-spacing: var(--text-code-tracking);
+  position: relative;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .code-block code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+/* Syntax highlighting - Dark mode (default) */
+.markdown-viewer.react-markdown-viewer-scope .hljs-comment,
+.markdown-viewer.react-markdown-viewer-scope .hljs-quote {
+  color: #6b7280 !important;
+  font-style: italic;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-keyword,
+.markdown-viewer.react-markdown-viewer-scope .hljs-selector-tag,
+.markdown-viewer.react-markdown-viewer-scope .hljs-subst {
+  color: #c084fc !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-number,
+.markdown-viewer.react-markdown-viewer-scope .hljs-literal,
+.markdown-viewer.react-markdown-viewer-scope .hljs-variable,
+.markdown-viewer.react-markdown-viewer-scope .hljs-template-variable,
+.markdown-viewer.react-markdown-viewer-scope .hljs-tag .hljs-attr {
+  color: #fbbf24 !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-string,
+.markdown-viewer.react-markdown-viewer-scope .hljs-doctag {
+  color: #86efac !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-title,
+.markdown-viewer.react-markdown-viewer-scope .hljs-section,
+.markdown-viewer.react-markdown-viewer-scope .hljs-selector-id {
+  color: #60a5fa !important;
+  font-weight: bold;
+}
+
+/* Light mode syntax highlighting */
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-comment,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-quote {
+  color: #374151 !important;
+  font-style: italic;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-keyword,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-selector-tag,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-subst {
+  color: #5b21b6 !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-number,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-literal,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-variable,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-template-variable,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-tag .hljs-attr {
+  color: #92400e !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-string,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-doctag {
+  color: #047857 !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-title,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-section,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-selector-id {
+  color: #1e40af !important;
+  font-weight: bold;
+}
+
+/* Additional token types for completeness */
+.markdown-viewer.react-markdown-viewer-scope .hljs-attr,
+.markdown-viewer.react-markdown-viewer-scope .hljs-attribute {
+  color: #c084fc !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-built_in {
+  color: #60a5fa !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-class {
+  color: #fde047 !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-function {
+  color: #60a5fa !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-params {
+  color: #fca5a5 !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-type {
+  color: #60a5fa !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-meta {
+  color: #6b7280 !important;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .hljs-symbol,
+.markdown-viewer.react-markdown-viewer-scope .hljs-bullet {
+  color: #fbbf24 !important;
+}
+
+/* Light mode additional tokens */
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-attr,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-attribute {
+  color: #5b21b6 !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-built_in {
+  color: #1e40af !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-class {
+  color: #92400e !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-function {
+  color: #1e40af !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-params {
+  color: #b91c1c !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-type {
+  color: #1e40af !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-meta {
+  color: #374151 !important;
+}
+
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-symbol,
+.light .markdown-viewer.react-markdown-viewer-scope .hljs-bullet {
+  color: #92400e !important;
+}
+
+/* Links */
+.markdown-viewer.react-markdown-viewer-scope a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .markdown-link {
+  color: hsl(var(--primary-ink));
+}
+
+.markdown-viewer.react-markdown-viewer-scope a:hover,
+.markdown-viewer.react-markdown-viewer-scope a:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .markdown-link:hover {
+  opacity: 0.8;
+}
+
+/* Keep sentence punctuation visually attached to inline intent-link pills. */
+.markdown-viewer.react-markdown-viewer-scope .mention-chip {
+  margin-inline: 0;
+  padding-inline: 0.25rem;
+}
+
+/* Blockquotes */
+.markdown-viewer.react-markdown-viewer-scope blockquote {
+  border-left: 1px solid hsl(var(--border));
+  padding-left: 1rem;
+  margin: 0.75rem 0;
+  color: hsl(var(--muted-foreground));
+  font-style: normal;
+}
+
+/* Tables */
+.markdown-viewer.react-markdown-viewer-scope table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  overflow: auto;
+  display: block;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line-height);
+  letter-spacing: var(--text-caption-tracking);
+}
+
+.markdown-viewer.react-markdown-viewer-scope th,
+.markdown-viewer.react-markdown-viewer-scope td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.5rem;
+  text-align: left;
+  word-break: auto-phrase;
+  white-space: normal;
+}
+
+.markdown-viewer.react-markdown-viewer-scope th {
+  background: hsl(var(--muted) / 0.3);
+  font-weight: var(--text-body-strong-weight);
+}
+
+.markdown-viewer.react-markdown-viewer-scope tr:hover {
+  background: hsl(var(--muted));
+}
+
+/* Horizontal rule */
+.markdown-viewer.react-markdown-viewer-scope hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1.5rem 0;
+}
+
+/* Images */
+.markdown-viewer.react-markdown-viewer-scope img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.375rem;
+}
+
+/* Only unlinked, supported images open in the lightbox. */
+.markdown-viewer.react-markdown-viewer-scope img[role='button'] {
+  cursor: zoom-in;
+}
+
+/* Chat transcript: inline workspace file images render as fixed square
+     bordered thumbnails (cropped), matching ChatImageBlock. Images sized from
+     the text block's media sidecar keep their own frame instead. */
+.markdown-viewer.chat-image-thumbnails.react-markdown-viewer-scope
+  img[src^='workspace-file://']:not([data-image-sized]) {
+  width: 10rem;
+  height: 10rem;
+  object-fit: cover;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+}
+
+/* Reserved box for images with daemon-probed dimensions: the frame takes
+     the final layout size (aspect-ratio + width set inline from width/height
+     attrs) before any bytes arrive, showing a bordered icon + path placeholder
+     until the image loads. */
+.markdown-viewer.react-markdown-viewer-scope .markdown-image-frame {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .markdown-image-frame[data-loaded='false'] {
+  border: 1px dashed hsl(var(--border));
+  background: hsl(var(--muted) / 0.3);
+}
+
+.markdown-viewer.react-markdown-viewer-scope .markdown-image-frame > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: contain;
+  border-radius: 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .markdown-image-frame[data-loaded='false'] > img {
+  opacity: 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .markdown-image-frame-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+/* Task Block - Skeleton loader styled like final checkbox state */
+.markdown-viewer.react-markdown-viewer-scope .task-block-pending {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+  padding: 0.25rem 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .task-block-checkbox {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 2px solid hsl(var(--muted-foreground));
+  opacity: 0.3;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.markdown-viewer.react-markdown-viewer-scope .task-block-title-skeleton {
+  height: 1rem;
+  width: 60%;
+  max-width: 200px;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 25%,
+    transparent 50%,
+    hsl(var(--muted-foreground)) 75%
+  );
+  background-size: 200% 100%;
+  opacity: 0.15;
+  border-radius: 0.25rem;
+  animation: react-markdown-viewer-scope-task-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes react-markdown-viewer-scope-task-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes react-markdown-viewer-scope-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/*
+   * NOTE: Removed streaming animation that was causing flickering.
+   * The animation was re-triggering on every content update during streaming,
+   * causing the text to flash/flicker repeatedly.
+   */
+
+/* Dark mode adjustments (uses .dark class on html element) */
+.dark .markdown-viewer.react-markdown-viewer-scope code:not(.code-block code) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dark .markdown-viewer.react-markdown-viewer-scope .code-block {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Monospace mode: Headings same size as body text (mimics monospace notes) */
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h1,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h2,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h3,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h4,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h5,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h6 {
+  font-size: 0.92rem;
+  font-weight: 500;
+  margin: 1em 0 0 0;
+  color: hsl(var(--muted-foreground) / 0.6);
+  letter-spacing: normal;
+}
+
+/* Monospace mode: First heading has no top margin */
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h1:first-child,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h2:first-child,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h3:first-child,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h4:first-child,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h5:first-child,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope h6:first-child {
+  margin-top: 0;
+}
+
+/* Monospace mode: Lists with tighter spacing */
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope ul,
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope ol {
+  margin: 0;
+  padding: 0;
+  margin-block: 0;
+}
+
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope li {
+  margin: 0;
+  padding: 0;
+  margin-block: 0;
+  margin-left: 1rem;
+}
+
+/* Monospace mode: Inline code same size as body, minimal styling */
+.agent-font-monospace .markdown-viewer.react-markdown-viewer-scope code:not(.code-block code) {
+  font-size: 0.92rem;
+  font-family: inherit;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: hsl(var(--accent-foreground));
+}
