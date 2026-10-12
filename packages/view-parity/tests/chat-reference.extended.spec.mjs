@@ -41,11 +41,16 @@ test('chat reference R3: numbered and highlighted lines stay readable across act
   await toggle(item.section, 'Show line numbers', true);
   await toggle(item.section, 'No border', true);
   await toggle(item.section, 'No margin', true);
+  const customize = page.getByRole('button', { name: 'Customize preview', exact: true });
+  await customize.click();
+  await expect(customize).toHaveAttribute('aria-expanded', 'true');
   await page
     .getByTestId('catalog-theme-control')
     .getByRole('radio', { name: 'Dark', exact: true })
     .click();
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-theme', 'dark');
+  await customize.click();
+  await expect(customize).toHaveAttribute('aria-expanded', 'false');
   await expectNumberedRows(item.leaf, [7, 8, 9], info, 'dark-highlight');
   await expectCode(item.leaf, text);
   await captureReference(page, item.frame, 'dark-highlight', info);
