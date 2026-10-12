@@ -1,4 +1,4 @@
-/* Compiled selector scope from MarkdownViewer.svelte; syntax colors remain local to this adapter. */
+/* Compiled scope from MarkdownViewer.svelte; media uses its canonical token, syntax colors stay local. */
 
 .markdown-viewer.react-markdown-viewer-scope {
   position: relative;
@@ -43,7 +43,7 @@
   aspect-ratio: 16 / 9;
   border: 1px solid hsl(var(--border));
   border-radius: 0.5rem;
-  background: black;
+  background: var(--color-media-scrim);
   object-fit: contain;
 }
 
