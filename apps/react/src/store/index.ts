@@ -23,6 +23,7 @@ import { backgroundAgentSettingsReducer } from '../../../../src/store/renderer/s
 import { agentSessionReducer } from '../../../../src/store/renderer/slices/agent-session/agent-session-slice';
 import { agentModelReducer } from '../../../../src/store/renderer/slices/agent-model/agent-model-slice';
 import { workspaceAgentsReducer } from '../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { panelLayoutReducer } from '../../../../src/store/renderer/slices/panel-layout/panel-layout-slice';
 import { tabStateReducer } from '../../../../src/store/renderer/slices/tab-state/tab-state-slice';
 import { permissionReducer } from '../../../../src/store/renderer/slices/permission/permission-slice';
 import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
@@ -51,6 +52,7 @@ export const store = new ReactStore({
   agentSessions: agentSessionReducer,
   agentModel: agentModelReducer,
   workspaceAgents: workspaceAgentsReducer,
+  panelLayout: panelLayoutReducer,
   tabState: tabStateReducer,
   permission: permissionReducer,
 });
