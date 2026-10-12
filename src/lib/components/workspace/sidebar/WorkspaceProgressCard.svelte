@@ -89,7 +89,7 @@
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
     selectWorkspaceDrivingClient,
-    selectWorkspaceBrowserClient,
+    selectWorkspaceBrowserSelectionKnown,
     selectOwnClientIdConfirmed,
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
@@ -567,21 +567,23 @@
   // indicator renders only when the workspace has a browser tab and another
   // eligible client could take over (or the pin is offline).
   const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
-  const browserResolution$ = selectWorkspaceBrowserClient(workspaceIdStore);
+  const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
   const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
   const principalActionContext$ = selectPrincipalActionContext();
   const primaryAlreadySelected = $derived(
     Boolean(
-      $drivingClient$.ownClientId && $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
+      $ownClientIdConfirmed$ &&
+      $drivingClient$.ownClientId &&
+      $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
     ),
   );
   const canSetPrimaryClient = $derived(
     Boolean(
       workspaceId &&
       $canSetPrimaryClient$ &&
-      $browserResolution$ !== null &&
+      $browserSelectionKnown$ &&
       $ownClientIdConfirmed$ &&
       !primaryAlreadySelected &&
       $drivingClient$.eligibleClients.some(
