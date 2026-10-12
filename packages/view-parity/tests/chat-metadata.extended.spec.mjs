@@ -271,41 +271,74 @@ test.describe('discussion native outro lifetime', () => {
     const host = await openMetadata(page, 'full');
     const exercise = host.getByTestId('metadata-discussion');
     const display = frame(exercise, 'metadata-discussion');
-    const banner = display.getByRole('alert');
+    const banner = display.getByTestId('chat-notice-banner');
     const present = toggle(exercise, 'Discussion present');
     const state = () => outputJson(exercise.getByTestId('metadata-discussion-state'));
     await captureMetadata(page, display, 'discussion-full-before', info);
     const node = await banner.elementHandle();
-    const observation = await observeNativeLifetime(exercise, '[data-chat-notice]');
-    const accessibility = {};
+    const accessibility = [];
+    let cdp;
+    let observation;
     let evidence;
     try {
+      // Playwright's role selector is not Chromium's accessibility tree and does
+      // not account for inert in this pinned runner. Keep one DOM backend identity
+      // throughout this actual retained notice's exit and re-entry.
+      cdp = await page.context().newCDPSession(page);
+      const { root } = await cdp.send('DOM.getDocument');
+      const { nodeId } = await cdp.send('DOM.querySelector', {
+        nodeId: root.nodeId,
+        selector: '[data-testid="metadata-discussion-frame"] [data-testid="chat-notice-banner"]',
+      });
+      expect(nodeId).toBeGreaterThan(0);
+      const { node: described } = await cdp.send('DOM.describeNode', { nodeId });
+      const backendNodeId = described.backendNodeId;
+      const retainedState = () =>
+        node.evaluate((element) => ({
+          connected: element.isConnected,
+          inert: element.inert,
+          height: element.getBoundingClientRect().height,
+        }));
+      const readAX = async (phase) => {
+        const before = await retainedState();
+        const tree = await cdp.send('Accessibility.getPartialAXTree', {
+          backendNodeId,
+          fetchRelatives: false,
+        });
+        const after = await retainedState();
+        const result = { phase, backendNodeId, before, tree, after };
+        accessibility.push(result);
+        return result;
+      };
+      const initial = await readAX('present');
+      expect(
+        initial.tree.nodes.find((value) => value.backendDOMNodeId === backendNodeId),
+      ).toMatchObject({ ignored: false, role: { value: 'alert' } });
+      observation = await observeNativeLifetime(exercise, '[data-chat-notice]');
       await present.press('Enter');
       expect(
         await observation.waitForShrink(),
         'The actual outgoing notice must shrink while retained',
       ).toBe(true);
-      const outgoing = await node.evaluate((element) => ({
-        connected: element.isConnected,
-        inert: element.inert,
-      }));
-      const outgoingAlerts = await banner.count();
-      accessibility.outgoing = { ...outgoing, alerts: outgoingAlerts };
-      expect(outgoing).toEqual({ connected: true, inert: true });
+      const outgoing = await readAX('outgoing');
+      expect(outgoing.before).toMatchObject({ connected: true, inert: true });
+      expect(outgoing.after).toMatchObject({ connected: true, inert: true });
+      expect(outgoing.before.height).toBeGreaterThan(0);
+      expect(outgoing.after.height).toBeGreaterThan(0);
       expect(
-        outgoingAlerts,
-        'The retained outgoing alert must be excluded from accessibility',
-      ).toBe(0);
+        outgoing.tree.nodes.find((value) => value.backendDOMNodeId === backendNodeId),
+      ).toMatchObject({ ignored: true });
+      expect(
+        outgoing.tree.nodes.filter((value) => !value.ignored && value.role?.value === 'alert'),
+      ).toEqual([]);
       await present.press('Enter');
       await expect(banner).toBeVisible();
-      const reentered = await node.evaluate((element) => ({
-        connected: element.isConnected,
-        inert: element.inert,
-      }));
-      const reenteredAlerts = await banner.count();
-      accessibility.reentered = { ...reentered, alerts: reenteredAlerts };
-      expect(reentered).toEqual({ connected: true, inert: false });
-      expect(reenteredAlerts, 'Re-entry restores the same notice to accessibility').toBe(1);
+      const reentered = await readAX('reentered');
+      expect(reentered.before).toMatchObject({ connected: true, inert: false });
+      expect(reentered.after).toMatchObject({ connected: true, inert: false });
+      expect(
+        reentered.tree.nodes.find((value) => value.backendDOMNodeId === backendNodeId),
+      ).toMatchObject({ ignored: false, role: { value: 'alert' } });
       await captureMetadata(page, display, 'discussion-full-reversed', info);
       expect((await state()).observations.exitCount).toBe(0);
       await present.press('Enter');
@@ -323,12 +356,26 @@ test.describe('discussion native outro lifetime', () => {
         'Owner teardown cannot emit another completed-exit callback',
       ).toBe(1);
     } finally {
-      evidence = await observation.finish('discussion-reversal', info);
-      await node.dispose();
-      await info.attach('discussion-accessibility.json', {
-        body: JSON.stringify(accessibility, null, 2),
-        contentType: 'application/json',
-      });
+      try {
+        if (observation) evidence = await observation.finish('discussion-reversal', info);
+        await info.attach('discussion-accessibility.json', {
+          body: JSON.stringify(
+            {
+              phases: accessibility,
+              childFocusExclusion: 'Not claimed: this real notice has no focusable descendant.',
+            },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        });
+      } finally {
+        try {
+          await cdp?.detach();
+        } finally {
+          await node.dispose();
+        }
+      }
     }
     const first = evidence.samples.find(({ nodes }) => nodes.length).nodes[0];
     const removed = evidence.samples.findIndex(({ nodes }) => !nodes.length);
