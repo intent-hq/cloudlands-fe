@@ -1,3 +1,5 @@
+// Source compatibility bindings remain until the Svelte renderer cutover.
+import { getAgentLineStats, getShouldRequestAgentLineStats } from './changes-projections';
 /**
  * Changes Redux Slice — Selectors
  *
@@ -5,7 +7,7 @@
  */
 
 import { store } from '../../store';
-import { emptyAgentLineStatsRequestState, emptyWorkspaceState } from './changes-slice';
+import { emptyWorkspaceState } from './changes-slice';
 import { ChangeStage } from '$features/file-tracking/types';
 import type { AppSelector, StoreState } from '$store/renderer/types';
 import type {
@@ -16,7 +18,6 @@ import type {
   CommitInfo,
   FileLineChange,
   LineChangeStats,
-  AgentLineStatsRequestState,
 } from './changes-types';
 
 // ---------------------------------------------------------------------------
@@ -148,28 +149,16 @@ function mapStatusToAction(status?: string): 'create' | 'modify' | 'delete' {
 
 /** Select agent stats by agent ID */
 export const selectAgentLineStats: AppSelector<LineChangeStats | undefined, [agentId: string]> =
-  store.createSelector(
-    (state, agentId: string): LineChangeStats | undefined => state.changes.agentStats[agentId],
-  );
+  store.createSelector(getAgentLineStats);
 
 /** Select the full agent stats record */
 export const selectAllAgentStats: AppSelector<Record<string, LineChangeStats>> =
   store.createSelector((state): Record<string, LineChangeStats> => state.changes.agentStats);
 
-const selectAgentLineStatsRequest = store.createSelector(
-  (state, agentId: string): AgentLineStatsRequestState =>
-    state.changes.agentLineStatsRequests[agentId] ?? emptyAgentLineStatsRequestState,
-);
-
 export const selectShouldRequestAgentLineStats: AppSelector<
   boolean,
   [agentId: string, forceRefresh?: boolean]
-> = store.createSelector((state, agentId: string, forceRefresh = false): boolean => {
-  const requestState = selectAgentLineStatsRequest.select(state, agentId);
-  if (requestState.isLoading) return false;
-  if (!forceRefresh && selectAgentLineStats.select(state, agentId)) return false;
-  return true;
-});
+> = store.createSelector(getShouldRequestAgentLineStats);
 
 // ---------------------------------------------------------------------------
 // Accept changes selectors (moved from transient-ui slice)

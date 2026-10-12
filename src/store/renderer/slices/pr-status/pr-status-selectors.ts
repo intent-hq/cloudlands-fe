@@ -1,3 +1,5 @@
+// Source compatibility bindings remain until the Svelte renderer cutover.
+import { getPRStatusLastRefreshTime } from './pr-status-projections';
 /**
  * PR Status Selectors
  *
@@ -5,8 +7,5 @@
  */
 
 import { store } from '../../store';
-import { getPRStatusWorkspaceState } from './pr-status-slice';
 
-export const selectPRStatusLastRefreshTime = store.createSelector(
-  (state, wsId: string) => getPRStatusWorkspaceState(state.prStatus, wsId).lastRefreshTime,
-);
+export const selectPRStatusLastRefreshTime = store.createSelector(getPRStatusLastRefreshTime);

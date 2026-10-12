@@ -1,3 +1,8 @@
+// Source compatibility bindings remain until the Svelte renderer cutover.
+import {
+  getTerminalWorkspaceState as getWsById,
+  getTerminalsForWorkspace,
+} from './terminals-projections';
 import { store } from '../../store';
 import { type StoreState } from '$store/renderer/types';
 import {
@@ -11,10 +16,6 @@ import { terminalDisplayName } from '$lib/utils/terminal-display-name';
 
 function getActiveWs(state: StoreState, wsId: string | null | undefined) {
   if (!wsId) return emptyWorkspaceState;
-  return state.terminals.workspaces[wsId] || emptyWorkspaceState;
-}
-
-function getWsById(state: StoreState, wsId: string) {
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;
 }
 
@@ -61,9 +62,7 @@ export const selectActiveTerminalIdForWorkspace = store.createSelector((state, w
   return getWsById(state, wsId).activeTerminalId;
 });
 
-export const selectTerminalsForWorkspace = store.createSelector((state, wsId: string) => {
-  return getItems(getWsById(state, wsId).terminals);
-});
+export const selectTerminalsForWorkspace = store.createSelector(getTerminalsForWorkspace);
 
 export const selectWorkspaceSetupTerminal = store.createSelector((state, wsId: string) => {
   return getItems(getWsById(state, wsId).terminals).find(isSetupTerminal);

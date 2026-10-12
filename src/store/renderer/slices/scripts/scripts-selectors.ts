@@ -1,3 +1,8 @@
+// Source compatibility bindings remain until the Svelte renderer cutover.
+import {
+  getScriptsWorkspaceState as getWs,
+  getAllWorkspaceScriptEntries,
+} from './scripts-projections';
 /**
  * Scripts selectors — workspace-scoped.
  */
@@ -6,13 +11,7 @@ import { store } from '../../store';
 import { createDefaultRuntimeState } from '$features/scripts/types';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import type { ScriptOperationState, ScriptWithState } from './scripts-types';
-import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
-import type { StoreState } from '$store/renderer/types';
-
-function getWs(state: StoreState, wsId: string | null | undefined) {
-  if (!wsId) return emptyWorkspaceState;
-  return state.scripts.byWorkspaceId[wsId] ?? emptyWorkspaceState;
-}
+import { emptyOutputBuffer } from './scripts-slice';
 
 /** Scripts initialized state (active workspace). */
 export const selectScriptsInitialized = store.createSelector(
@@ -118,9 +117,7 @@ export const selectWorkspaceScriptRuntime = store.createSelector(
 );
 
 /** Includes history: retained definitions keep open output views alive. */
-export const selectAllWorkspaceScriptEntries = store.createSelector(
-  (state, wsId: string): ScriptWithState[] => Object.values(getWs(state, wsId).scripts),
-);
+export const selectAllWorkspaceScriptEntries = store.createSelector(getAllWorkspaceScriptEntries);
 
 /** Request-owned event journal; absence means the request was invalidated. */
 export const selectScriptReadJournal = store.createSelector(

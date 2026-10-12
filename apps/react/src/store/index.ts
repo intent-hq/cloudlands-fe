@@ -1,3 +1,8 @@
+import { scriptsReducer } from '../../../../src/store/renderer/slices/scripts/scripts-slice';
+import { fileTrackingReducer } from '../../../../src/store/renderer/slices/changes/changes-slice';
+import { prStatusReducer } from '../../../../src/store/renderer/slices/pr-status/pr-status-slice';
+import { terminalsReducer } from '../../../../src/store/renderer/slices/terminals/terminals-slice';
+import { workspaceTasksReducer } from '../../../../src/store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import '@tanstack/react-start/client-only';
 import { ReactStore } from '@themislib/themis/react-store';
 import type { StoreState } from '@themislib/themis/types';
@@ -24,12 +29,18 @@ import { agentSessionReducer } from '../../../../src/store/renderer/slices/agent
 import { agentModelReducer } from '../../../../src/store/renderer/slices/agent-model/agent-model-slice';
 import { workspaceAgentsReducer } from '../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { panelLayoutReducer } from '../../../../src/store/renderer/slices/panel-layout/panel-layout-slice';
-import { tabStateReducer } from '../../../../src/store/renderer/slices/tab-state/tab-state-slice';
+import { acquiredTabStateReducer } from '../../../../src/store/renderer/slices/tab-state/tab-state-acquisition-reducer';
+import { workspaceNavigationReducer } from '../../../../src/store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { permissionReducer } from '../../../../src/store/renderer/slices/permission/permission-slice';
 import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
 
 export const store = new ReactStore({
   catalog: catalogReducer,
+  scripts: scriptsReducer,
+  changes: fileTrackingReducer,
+  prStatus: prStatusReducer,
+  terminals: terminalsReducer,
+  workspaceTasks: workspaceTasksReducer,
   uiHighlight: uiHighlightReducer,
   autoUpdate: autoUpdateReducer,
   uiLayout: uiLayoutReducer,
@@ -53,7 +64,8 @@ export const store = new ReactStore({
   agentModel: agentModelReducer,
   workspaceAgents: workspaceAgentsReducer,
   panelLayout: panelLayoutReducer,
-  tabState: tabStateReducer,
+  tabState: acquiredTabStateReducer,
+  workspaceNavigation: workspaceNavigationReducer,
   permission: permissionReducer,
 });
 export type AppState = StoreState<typeof store>;
