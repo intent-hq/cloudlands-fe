@@ -20,6 +20,7 @@ import {
   followingState,
   expectFollowingBottom,
   pressObservedEnd,
+  observeNativeScroll,
 } from '../lib/operational-window.mjs';
 
 test('operational-window OW4 native nested scrolling respects outer clipping', async ({
@@ -143,17 +144,237 @@ test('operational-window OW9 actual content growth reflows at fixed width', asyn
   const { host, primary } = await openOperational(page);
   await choice(host, 'Items per window', '8');
   await focusScroll(primary.scroll);
-  await page.keyboard.press('Home');
+  expect((await scrollState(primary.scroll)).top).toBe(0);
+  // Keep the actual expansion control and selected row together before retaining
+  // the row. A Home key at the already-top root can scroll its document ancestor.
+  const expansion = host.getByRole('switch', { name: 'Expanded row content', exact: true });
+  const expansionHandle = await expansion.elementHandle();
+  expect(expansionHandle).not.toBeNull();
+  let framed;
+  try {
+    const readFrame = () =>
+      primary.scroll.evaluate((root, control) => {
+        const rect = (node) => {
+          const { left, top, right, bottom, width, height } = node.getBoundingClientRect();
+          return { left, top, right, bottom, width, height };
+        };
+        const row = root.querySelector('[data-caller-row-key][data-admitted="true"]');
+        if (!row) throw new Error('A real admitted first row is required before framing');
+        const port = rect(root);
+        const selected = rect(row);
+        const switchBox = rect(control);
+        const scaleX = port.width / root.offsetWidth;
+        const scaleY = port.height / root.offsetHeight;
+        const left = Math.max(0, port.left + root.clientLeft * scaleX);
+        const top = Math.max(0, port.top + root.clientTop * scaleY);
+        const right = Math.min(
+          innerWidth,
+          port.left + (root.clientLeft + root.clientWidth) * scaleX,
+        );
+        const bottom = Math.min(
+          innerHeight,
+          port.top + (root.clientTop + root.clientHeight) * scaleY,
+        );
+        const clip = { left, top, right, bottom };
+        const inside = (box, bounds) =>
+          box.width > 0 &&
+          box.height > 0 &&
+          box.left >= bounds.left &&
+          box.top >= bounds.top &&
+          box.right <= bounds.right &&
+          box.bottom <= bounds.bottom;
+        const viewport = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+        const hit = document.elementFromPoint(
+          (switchBox.left + switchBox.right) / 2,
+          (switchBox.top + switchBox.bottom) / 2,
+        );
+        const point = { x: port.left / 2, y: innerHeight / 2 };
+        const wheelHit = document.elementFromPoint(point.x, point.y);
+        let documentWheel = Boolean(wheelHit && point.x > 0 && !root.contains(wheelHit));
+        for (
+          let node = wheelHit;
+          node && node !== document.documentElement;
+          node = node.parentElement
+        ) {
+          const style = getComputedStyle(node);
+          if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight)
+            documentWheel = false;
+        }
+        const spanTop = Math.min(switchBox.top, selected.top);
+        const spanBottom = Math.max(switchBox.bottom, selected.bottom);
+        return {
+          document: { x: scrollX, y: scrollY },
+          rootTop: root.scrollTop,
+          viewport,
+          port,
+          selected,
+          switchBox,
+          clip,
+          point,
+          documentWheel,
+          span: spanBottom - spanTop,
+          delta: (spanTop + spanBottom - innerHeight) / 2,
+          coFramed: inside(switchBox, viewport) && control.contains(hit) && inside(selected, clip),
+        };
+      }, expansionHandle);
+    await expect(primary.windows.first().locator('[data-caller-row-key]').first()).toHaveAttribute(
+      'data-admitted',
+      'true',
+    );
+    const before = await readFrame();
+    await info.attach('OW9-framing-plan.json', {
+      body: JSON.stringify(before, null, 2),
+      contentType: 'application/json',
+    });
+    expect(before.span).toBeLessThan(before.viewport.bottom);
+    expect(before.documentWheel).toBe(true);
+    expect(Math.abs(before.delta)).toBeGreaterThan(0);
+    expect(Math.abs(before.delta)).toBeLessThanOrEqual(before.viewport.bottom);
+    await observeNativeScroll(
+      page.locator('html'),
+      primary.scroll,
+      info,
+      'OW9-framing',
+      async (read) => {
+        await page.mouse.move(before.point.x, before.point.y);
+        await page.mouse.wheel(0, before.delta);
+        await expect.poll(async () => (await readFrame()).coFramed).toBe(true);
+        framed = await readFrame();
+        const receipt = await read();
+        const wheels = receipt.events.filter((event) => event.type === 'wheel');
+        expect(wheels).toHaveLength(1);
+        expect(wheels[0]).toMatchObject({
+          trusted: true,
+          targetInside: true,
+          sameCurrentTarget: true,
+          delta: { x: 0, y: before.delta, mode: 0 },
+        });
+        expect(framed.document.y).not.toBe(before.document.y);
+        expect(framed.document.x).toBe(before.document.x);
+        expect(framed.rootTop).toBe(before.rootTop);
+        expect(receipt.current.active).toEqual(receipt.armed.state.active);
+      },
+    );
+    await info.attach('OW9-framing-geometry.json', {
+      body: JSON.stringify({ before, after: framed }, null, 2),
+      contentType: 'application/json',
+    });
+  } finally {
+    await expansionHandle.dispose();
+  }
   const row = await visibleRow(primary);
   const old = await row.node.elementHandle();
   const text = row.node.locator('p').nth(1);
   const beforeText = await text.boundingBox();
   const beforeScroll = await scrollState(primary.scroll);
+  let continuity;
   try {
-    await capture(page, primary, 'OW9-before', info);
+    continuity = await old.evaluateHandle((node) => {
+      const root = node.closest('[data-testid="operational-panel-scroll"]');
+      const key = node.getAttribute('data-caller-row-key');
+      const observations = [];
+      const violations = [];
+      const sample = (phase) => {
+        const box = root.getBoundingClientRect();
+        const scaleX = box.width / root.offsetWidth;
+        const scaleY = box.height / root.offsetHeight;
+        const clip = {
+          left: Math.max(0, box.left + root.clientLeft * scaleX),
+          top: Math.max(0, box.top + root.clientTop * scaleY),
+          right: Math.min(innerWidth, box.left + (root.clientLeft + root.clientWidth) * scaleX),
+          bottom: Math.min(innerHeight, box.top + (root.clientTop + root.clientHeight) * scaleY),
+        };
+        const entry = {
+          phase,
+          at: performance.now(),
+          connected: node.isConnected,
+          admitted: node.getAttribute('data-admitted'),
+          key: node.getAttribute('data-caller-row-key'),
+          clip,
+          positiveClip: clip.bottom > clip.top && clip.right > clip.left,
+          document: { x: scrollX, y: scrollY },
+        };
+        observations.push(entry);
+        if (
+          !entry.connected ||
+          entry.admitted !== 'true' ||
+          entry.key !== key ||
+          !entry.positiveClip
+        )
+          violations.push(entry);
+        return entry;
+      };
+      sample('armed');
+      const observer = new MutationObserver((records) => {
+        for (const record of records)
+          if (
+            record.target === node &&
+            record.attributeName === 'data-admitted' &&
+            record.oldValue === 'false'
+          )
+            violations.push({ phase: 'admission-transition', oldValue: record.oldValue });
+        sample('native-mutation');
+      });
+      observer.observe(root, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['data-admitted'],
+        attributeOldValue: true,
+      });
+      return {
+        read: () => ({
+          current: sample('read'),
+          observations: [...observations],
+          violations: [...violations],
+        }),
+        dispose: () => observer.disconnect(),
+      };
+    });
+    const assertRetained = async () => {
+      const receipt = await continuity.evaluate((observer) => observer.read());
+      expect(receipt.current).toMatchObject({
+        connected: true,
+        admitted: 'true',
+        key: row.key,
+        positiveClip: true,
+      });
+      expect(receipt.violations).toEqual([]);
+    };
+    await assertRetained();
+    await capture(page, primary, 'OW9-before', info, button(row.node, `Observe ${row.label}`));
+    const beforeExpansion = await expansion.evaluate((control) => {
+      const { left, top, right, bottom, width, height } = control.getBoundingClientRect();
+      const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+      return {
+        document: { x: scrollX, y: scrollY },
+        bounds: { left, top, right, bottom, width, height },
+        hittable:
+          width > 0 &&
+          height > 0 &&
+          left >= 0 &&
+          top >= 0 &&
+          right <= innerWidth &&
+          bottom <= innerHeight &&
+          control.contains(hit),
+      };
+    });
+    expect(beforeExpansion.hittable).toBe(true);
     await toggle(host, 'Expanded row content', true);
+    const afterExpansionDocument = await page.evaluate(() => ({ x: scrollX, y: scrollY }));
+    await info.attach('OW9-expansion-action.json', {
+      body: JSON.stringify(
+        { before: beforeExpansion, afterDocument: afterExpansionDocument },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+    expect(afterExpansionDocument).toEqual(beforeExpansion.document);
+    await assertRetained();
     await focusScroll(primary.scroll);
     await sameNode(row.node, old);
+    await assertRetained();
     await expect
       .poll(async () => (await text.boundingBox()).height)
       .toBeGreaterThan(beforeText.height);
@@ -161,13 +382,43 @@ test('operational-window OW9 actual content growth reflows at fixed width', asyn
       .poll(async () => (await scrollState(primary.scroll)).total)
       .toBeGreaterThan(beforeScroll.total);
     expect(await page.evaluate(() => innerWidth)).toBe(420);
+    await info.attach('OW9-growth.json', {
+      body: JSON.stringify(
+        {
+          before: { text: beforeText, scroll: beforeScroll },
+          after: { text: await text.boundingBox(), scroll: await scrollState(primary.scroll) },
+          width: await page.evaluate(() => innerWidth),
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
     await activate(primary, row);
+    await assertRetained();
     await capture(page, primary, 'OW9-after', info);
-    // Fixed-width content growth is the entire claim. Width-cache invalidation
-    // and scroll-anchor correction during uninterrupted viewport retention are
-    // not established by a caller toggle that may reveal controls elsewhere.
+    // Fixed-width growth and an admitted physical row are the complete claim.
+    // This does not establish width-cache invalidation or uninterrupted reader
+    // anchoring through the global caller control and genuine root reveal.
   } finally {
-    await old.dispose();
+    try {
+      if (continuity) {
+        try {
+          await info.attach('OW9-admission-continuity.json', {
+            body: JSON.stringify(await continuity.evaluate((observer) => observer.read()), null, 2),
+            contentType: 'application/json',
+          });
+        } finally {
+          try {
+            await continuity.evaluate((observer) => observer.dispose());
+          } finally {
+            await continuity.dispose();
+          }
+        }
+      }
+    } finally {
+      await old.dispose();
+    }
   }
 });
 
