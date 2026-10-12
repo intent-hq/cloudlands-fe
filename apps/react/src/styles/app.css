@@ -14,6 +14,7 @@
 @source '../../../../src/lib/components/workspace/utils/task-status-display.ts';
 @source '../../../../src/lib/components/chat/operational-disclosure-classes.ts';
 @source '../../../../src/lib/components/chat/subscription-disclosure-classes.ts';
+@source '../../../../src/lib/components/chat/user-message-surface.ts';
 
 @source not '**/*.test.*';
 @source not '**/*.spec.*';
