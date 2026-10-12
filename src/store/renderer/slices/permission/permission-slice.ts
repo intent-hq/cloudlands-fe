@@ -5,34 +5,15 @@ import {
   addItems,
   createCollection,
   removeItem,
-  type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
+import type { PermissionRequest, PermissionState } from './permission-types';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface PermissionRequest {
-  requestId: string;
-  workspaceId?: string;
-  sessionId: string;
-  title: string;
-  description?: string | null;
-  options: Array<{
-    id: string;
-    label: string;
-    description?: string;
-    destructive?: boolean;
-  }>;
-  agentName?: string;
-  riskLevel?: 'low' | 'medium' | 'high';
-  timestamp: number;
-}
-
-export type PermissionState = {
-  /** All pending permission requests */
-  requests: Collection<PermissionRequest, 'requestId'>;
-};
+// Compatibility for existing source-renderer consumers until that renderer is retired.
+export type { PermissionRequest, PermissionState } from './permission-types';
 
 // ============================================================================
 // Initial State

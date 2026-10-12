@@ -24,6 +24,7 @@ import { agentSessionReducer } from '../../../../src/store/renderer/slices/agent
 import { agentModelReducer } from '../../../../src/store/renderer/slices/agent-model/agent-model-slice';
 import { workspaceAgentsReducer } from '../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { tabStateReducer } from '../../../../src/store/renderer/slices/tab-state/tab-state-slice';
+import { permissionReducer } from '../../../../src/store/renderer/slices/permission/permission-slice';
 import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
 
 export const store = new ReactStore({
@@ -51,5 +52,6 @@ export const store = new ReactStore({
   agentModel: agentModelReducer,
   workspaceAgents: workspaceAgentsReducer,
   tabState: tabStateReducer,
+  permission: permissionReducer,
 });
 export type AppState = StoreState<typeof store>;
