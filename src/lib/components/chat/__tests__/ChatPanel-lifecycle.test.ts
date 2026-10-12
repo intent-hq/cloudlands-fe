@@ -5512,6 +5512,7 @@ describe.each(['workspace-a', 'workspace-b'])(
             specialistName: selected ? `Specialist ${workspaceId}` : '',
           },
         },
+        { projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'] },
       ]);
       expect(save.payload).toEqual([
         workspaceId,

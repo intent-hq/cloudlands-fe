@@ -137,6 +137,34 @@ afterEach(() => {
 });
 
 describe('registered model and effort mutation owner', () => {
+  it('preserves only provider metadata over a held detail read during a real provider switch', async () => {
+    const { ensureAgentSession } = await import('$features/agent/agent-read-service');
+    store.dispatch(
+      updateSession(agentId, { metadata: { provider: 'codex', specialist: 'before' } }),
+    );
+    const prior = session();
+    const held = deferred<unknown>();
+    const original = request.getMockImplementation()!;
+    request.mockImplementation((method, params) =>
+      method === 'agent.get' ? held.promise : original(method, params),
+    );
+    const read = ensureAgentSession(agentId, workspaceId);
+    await expect(pick().selectModel(agentId, 'next', workspaceId, 'claude')).resolves.toMatchObject(
+      { status: 'success' },
+    );
+    held.resolve({
+      ...prior,
+      metadata: { provider: 'codex', specialist: 'fetched', taskNoteId: 'new-detail' },
+    });
+    await read;
+    expect(session()).toMatchObject({
+      model: 'next',
+      provider: 'claude',
+      metadata: { provider: 'claude', specialist: 'fetched', taskNoteId: 'new-detail' },
+    });
+    expect(request.mock.calls.filter(([method]) => method === 'agent.get')).toHaveLength(1);
+  });
+
   it('keeps bare model/provider identity and reconciles effort through the exact wire', async () => {
     await expect(pick().selectModel(agentId, 'next', workspaceId, 'codex')).resolves.toMatchObject({
       status: 'success',
