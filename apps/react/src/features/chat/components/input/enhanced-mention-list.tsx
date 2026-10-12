@@ -65,7 +65,7 @@ import { getIconForType, type IconName } from '$lib/services/mentions/icon-map';
 import { memberMentionLabel } from '$lib/utils/member-mention-token';
 import { m } from '$shared/paraglide/messages.js';
 import { Button } from '@/components/ui/button';
-import { menuItem } from '@/components/ui/menu/menu-recipes';
+import { menuItem } from '@/components/ui/menu';
 import { PrincipalAvatar } from '@/components/ui/principal-avatar';
 import { cn } from '@/lib/utils';
 import { MentionAgentAvatar } from './mention-agent-avatar';
