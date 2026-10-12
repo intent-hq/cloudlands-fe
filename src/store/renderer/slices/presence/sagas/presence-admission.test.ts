@@ -475,6 +475,86 @@ describe('presence admission and avatar policy', () => {
     expect(wire.capabilities).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['initial', 'before'],
+    ['initial', 'after'],
+    ['refresh', 'before'],
+    ['refresh', 'after'],
+  ] as const)(
+    'preserves newer profiles across a held %s read when offline %s its reply',
+    async (phase, offline) => {
+      let release!: (value: unknown) => void;
+      const held = new Promise((resolve) => {
+        release = resolve;
+      });
+      if (phase === 'initial') {
+        wire.request.mockImplementation(async (method: string) =>
+          method === 'workspace.members.list' ? held : roster(),
+        );
+        start();
+        await settle();
+      } else {
+        start();
+        await settle();
+        wire.request.mockClear().mockImplementationOnce(() => held);
+        store.dispatch(presenceMembershipChanged('ws'));
+        await vi.advanceTimersByTimeAsync(300);
+      }
+      store.dispatch(
+        presenceRosterReceived({
+          workspaceId: 'ws',
+          members: [
+            {
+              ...member('guest', 'guest'),
+              login: 'new-handle',
+              displayName: 'New name',
+              focus: [],
+              typing: [],
+            },
+            { ...member('removed', 'guest'), login: 'not-a-member', focus: [], typing: [] },
+          ],
+        }),
+      );
+      if (offline === 'before')
+        store.dispatch(presenceRosterReceived({ workspaceId: 'ws', members: [] }));
+      release({
+        members: accepted().map((p) =>
+          p.principalId === 'guest' ? { ...p, role: 'owner', addedAt: 'new-membership' } : p,
+        ),
+      });
+      await settle();
+      expect(getItem(store.state.presence.members.ws, 'guest')).toMatchObject({
+        login: 'new-handle',
+        displayName: 'New name',
+        role: 'owner',
+        addedAt: 'new-membership',
+      });
+      expect(getItem(store.state.presence.members.ws, 'removed')).toBeUndefined();
+      if (offline === 'after')
+        store.dispatch(presenceRosterReceived({ workspaceId: 'ws', members: [] }));
+      expect(
+        selectWorkspacePresencePeople
+          .select(store.state, 'ws')
+          .find((person) => person.principalId === 'guest'),
+      ).toMatchObject({ login: 'new-handle', displayName: 'New name', online: false });
+      expect(await new MemberProvider().search('new-handle', { workspaceId: 'ws' })).toHaveLength(
+        1,
+      );
+      expect(
+        wire.request.mock.calls.filter(([method]) => method === 'workspace.members.list'),
+      ).toHaveLength(1);
+      // A subsequent read is newer than the cached profile and remains authoritative.
+      wire.request.mockResolvedValue({
+        members: accepted().map((p) =>
+          p.principalId === 'guest' ? { ...p, login: 'authoritative' } : p,
+        ),
+      });
+      store.dispatch(presenceMembershipChanged('ws'));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(getItem(store.state.presence.members.ws, 'guest')?.login).toBe('authoritative');
+    },
+  );
+
   it('reads once when explicit membership invalidation also changes the member count', async () => {
     start();
     await settle();

@@ -104,6 +104,7 @@ import {
   selectOwnPresenceReportKey,
   selectPresenceLiveTyping,
   selectPresenceMembershipKeys,
+  selectPresenceProfileRevision,
 } from '../presence-selectors';
 import { PRESENCE_TYPING_EXPIRY_MS, type LiveTypingEntry } from '../presence-types';
 
@@ -357,12 +358,13 @@ function supersedesMembership(action: ObservedAction, workspaceId: string): bool
 function* hydrateMembership(reads: RosterReads, workspaceId: string): SagaGenerator<void> {
   const ordinal = (reads.get(workspaceId) ?? 0) + 1;
   reads.set(workspaceId, ordinal);
+  const startedProfileRevision = yield* select(selectPresenceProfileRevision.select);
   const { membership } = yield* race({
     membership: call(readMembership, workspaceId),
     superseded: take((action: ObservedAction) => supersedesMembership(action, workspaceId)),
   });
   if (membership && reads.get(workspaceId) === ordinal)
-    yield* put(presenceMembersReceived(workspaceId, membership.members));
+    yield* put(presenceMembersReceived(workspaceId, membership.members, startedProfileRevision));
 }
 
 /** A membership key is `${workspaceId}:${memberCount}`; the count only makes the key change. */
