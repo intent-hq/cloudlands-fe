@@ -264,6 +264,14 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     document.body.style.userSelect = '';
   });
 
+  it('keeps a known off-page selection visible without loading its definition', async () => {
+    selectedScript.id = 'off-page-script';
+    scriptEntries.value = [];
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    expect(await screen.findByText('off-page-script')).toBeTruthy();
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
   it('reads the selected full command only when opening its editor', async () => {
     selectedScript.id = 'script-1';
     const { command: _command, ...summary } = runningScript;

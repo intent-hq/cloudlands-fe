@@ -1062,8 +1062,6 @@
                     class="inline-edit-input relative z-10 w-40 border-0 bg-transparent hover:bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
                     placeholder={m.terminal_quakeOverlay_scriptName_placeholder()}
                   />
-                {:else if selectedScriptId}
-                  <span class="truncate">{selectedScriptId}</span>
                 {:else}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1231,6 +1229,16 @@
                 <Fa icon={faChevronDown} size="xs" />
               </Button>
             </div>
+          {:else if selectedScriptId}
+            <span class="truncate">{selectedScriptId}</span>
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              onclick={handleClose}
+              aria-label={m.terminal_quakeOverlay_collapse_ariaLabel()}
+            >
+              <Fa icon={faChevronDown} size="xs" />
+            </Button>
           {:else}
             <!-- Terminal Header Content (original) -->
             <div class="flex items-center gap-2">
