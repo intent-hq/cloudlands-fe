@@ -1,0 +1,4 @@
+/* Source: ChatOperationalRow.svelte's component-scoped containment. */
+[data-operational-row-container].tool-call-container {
+  contain: layout style;
+}
