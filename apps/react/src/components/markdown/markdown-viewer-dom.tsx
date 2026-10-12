@@ -77,6 +77,17 @@ export function MarkdownViewerDom({
   const getWorkspaceId = useEffectEvent(() => workspaceId);
   const mediaRemoved = useEffectEvent(onMediaRemoved);
 
+  function removePublishedContent(contents: Range, owner: HTMLElement) {
+    const images = [...owner.querySelectorAll<HTMLImageElement>('img')].filter((image) =>
+      contents.intersectsNode(image),
+    );
+    contents.deleteContents();
+    // Framing can reparent an image inside this viewer; only actual removal ends ownership.
+    for (const image of images) {
+      if (!owner.contains(image)) mediaRemoved(image);
+    }
+  }
+
   useLayoutEffect(() => {
     if (!node) return;
     const start = document.createComment('markdown-start');
@@ -88,7 +99,7 @@ export function MarkdownViewerDom({
       const contents = document.createRange();
       contents.setStartAfter(start);
       contents.setEndBefore(end);
-      contents.deleteContents();
+      removePublishedContent(contents, node);
       start.remove();
       end.remove();
       range.current = null;
@@ -107,7 +118,7 @@ export function MarkdownViewerDom({
     const contents = document.createRange();
     contents.setStartAfter(target.start);
     contents.setEndBefore(target.end);
-    contents.deleteContents();
+    removePublishedContent(contents, node);
     target.end.before(template.content);
     target.html = admitted;
   });

@@ -434,7 +434,9 @@ export function MarkdownViewer({
           onOpenFile={onOpenFile}
           onElement={setContentElement}
           onMediaRemoved={(image) => {
-            if (hoveredImage === image) setHoveredImage(null);
+            if (hoveredImage !== image) return;
+            setHoveredImage(null);
+            setImageActionsOpen(false);
           }}
           overlay={overlay}
         />
