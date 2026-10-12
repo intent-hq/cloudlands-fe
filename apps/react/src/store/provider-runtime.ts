@@ -1,5 +1,6 @@
 import { settingsClient, settingsRuntime } from '@/features/settings/settings-client';
 import { hasBackendRuntimeTarget } from '@/features/backend/backend-availability';
+import { permissionClient } from '@/features/permission/permission-client';
 import { store } from './index';
 import { connectionsIdentitySaga } from './connections/sagas/connections-identity-saga';
 import { daemonEventsSaga } from './workspace-events/sagas/daemon-events-saga';
@@ -13,8 +14,10 @@ import { modelReloadSaga } from './model/sagas/model-reload-saga';
 import { providerAvailabilityReadSaga } from './agent-availability/sagas/provider-availability-saga';
 import { createReactWorkspaceCatalogSaga } from './provider-catalog/workspace-catalog-saga';
 import { settingsSaga } from './settings/sagas/settings-saga';
+import { createPermissionResponseSaga } from './permission/sagas/permission-response-saga';
 
 const modelBootSaga = createReactModelBootSaga(settingsClient);
+const permissionResponseSaga = createPermissionResponseSaga({ agents: permissionClient });
 const workspaceCatalogSaga = createReactWorkspaceCatalogSaga({
   settings: settingsClient,
   selectMountedWorkspaceIds,
@@ -34,6 +37,7 @@ export function startProviderRuntime() {
     store.runSaga(modelReloadSaga),
     store.runSaga(providerAvailabilityReadSaga),
     store.runSaga(workspaceCatalogSaga),
+    store.runSaga(permissionResponseSaga),
     store.runSaga(connectionsIdentitySaga),
   ];
   let disposed = false;
