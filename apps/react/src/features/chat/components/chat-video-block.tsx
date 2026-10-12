@@ -91,6 +91,7 @@ export function ChatVideoBlock({
               type="button"
               variant="ghost"
               size="default"
+              wrapContent={false}
               className="relative block size-full cursor-pointer overflow-hidden rounded-lg border border-border bg-muted/40 p-0 shadow-(--elevation-raised) focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 forced-colors:border"
               aria-label={m.chat_videoBlock_play_ariaLabel({ name })}
               data-testid="chat-video-snapshot"
