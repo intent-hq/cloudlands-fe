@@ -1,3 +1,4 @@
+import { workspaceCatalogEventReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import {
   observeSubmissionEvidence,
@@ -3700,6 +3701,18 @@ export function routeDaemonEventsNotification(
   if (!event || typeof event !== 'object') return;
   const type = (event as { type?: unknown }).type;
   if (typeof type !== 'string') return;
+
+  if (
+    [
+      'settings:changed',
+      'specialists:changed',
+      'skills:changed',
+      'mcp.servers:status-changed',
+      'workspace:updated',
+    ].includes(type)
+  ) {
+    appStore.dispatch(workspaceCatalogEventReceived(event));
+  }
 
   // `settings:changed` (§6.5) is global — no `workspaceId` envelope is
   // expected, so it must be routed BEFORE the workspace-id gate below.

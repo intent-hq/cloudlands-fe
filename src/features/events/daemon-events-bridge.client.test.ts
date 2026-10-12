@@ -4321,6 +4321,29 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     expect(readAssistantMessages()).toHaveLength(0);
   });
 
+  it.each([
+    'settings:changed',
+    'specialists:changed',
+    'skills:changed',
+    'mcp.servers:status-changed',
+    'workspace:updated',
+  ])('forwards only admitted %s events to the catalog owner', async (type) => {
+    const { workspaceCatalogEventReceived } =
+      await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    handler(notificationWithSub(type, {}, 'sub-foreign'));
+    expect(
+      dispatch.mock.calls.filter(([action]) => action.type === workspaceCatalogEventReceived.type),
+    ).toHaveLength(0);
+    handler(notificationWithSub(type, {}, 'sub-1'));
+    expect(
+      dispatch.mock.calls.filter(([action]) => action.type === workspaceCatalogEventReceived.type),
+    ).toHaveLength(1);
+    dispatch.mockRestore();
+  });
+
   it('still applies legacy/flat envelopes with no subscriptionId (back-compat)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -9428,6 +9451,15 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     const ws = await readWorkspace();
     // The wire null must drop the stale asset reference rather than retain it.
     expect(ws.statusImageAssetId).toBeUndefined();
+  });
+
+  it('dispatches explicit membership invalidation without a count or principal', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    capturedHandlers[0]!(updatedNotification({ members: true }));
+    expect(dispatch).toHaveBeenCalledWith(presenceMembershipChanged('ws-updated-1'));
+    dispatch.mockRestore();
   });
 
   it('merges the memberCount carried by a membership-changing delta (multiplayer w4)', async () => {
