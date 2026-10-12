@@ -231,10 +231,10 @@ export async function clipboardPermission(context) {
 export async function nativeCopy(page, leaf, paste, text, key) {
   // Hover exposes the source control; no force click, clipboard seeding or shim.
   await leaf.hover();
-  const copy = leaf.getByRole('button', { name: /^(Copy|Copied)$/ });
+  const copy = leaf.getByRole('button', { name: /^(Copy|Copied!)$/ });
   if (key) await copy.press(key);
   else await copy.click();
-  await expect(copy).toHaveAccessibleName('Copied');
+  await expect(copy).toHaveAccessibleName('Copied!');
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text);
   await paste.fill('');
   await paste.press('ControlOrMeta+V');

@@ -99,7 +99,7 @@ test('chat reference R4: native scrolling and code unmount remount preserve curr
     // Real pending feedback is disposed with the owner; no timer manipulation.
     await item.leaf.hover();
     await item.leaf.getByRole('button', { name: 'Copy', exact: true }).click();
-    await expect(item.leaf.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
+    await expect(item.leaf.getByRole('button', { name: 'Copied!', exact: true })).toBeVisible();
     await field(item.section, 'Code').fill('const departing = "new input before unmount";');
     await toggle(item.section, 'Mount Code block', false);
     await expect(item.leaf).toHaveCount(0);
