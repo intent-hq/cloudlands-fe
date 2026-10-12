@@ -449,7 +449,7 @@ function MediaStatusExample() {
 
   return (
     <section
-      className="grid min-w-0 gap-4"
+      className="grid min-w-0 grid-cols-1 gap-4"
       aria-label="Media status exercise"
       data-functional-example={id}
       data-testid={`${id}-section`}
@@ -551,7 +551,7 @@ function MarkdownDiagramExample() {
 
   return (
     <section
-      className="grid min-w-0 gap-4"
+      className="grid min-w-0 grid-cols-1 gap-4"
       aria-label="Markdown diagram exercise"
       data-functional-example={id}
       data-testid={`${id}-section`}
@@ -665,7 +665,7 @@ function MarkdownDiagramExample() {
 
 export function MarkdownCompositionExamples() {
   return (
-    <div className="grid min-w-0 gap-8">
+    <div className="grid min-w-0 grid-cols-1 gap-8">
       <p className="type-caption text-muted-foreground">
         Internal component exercises. Navigation requests are recorded at the host boundary.
         Clipboard copy and paste use the real browser. Native, motion and visual acceptance remain
