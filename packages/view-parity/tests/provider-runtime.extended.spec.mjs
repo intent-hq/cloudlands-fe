@@ -315,6 +315,111 @@ test.describe('provider runtime', () => {
     }
   });
 
+  test('private empty provider catalog preserves its warning without forced refresh', async ({
+    page,
+    providerWire,
+  }, testInfo) => {
+    test.skip(
+      process.env.PARITY_PROVIDER_PRIVATE_EMPTY !== '1',
+      'Requires separate approval of the audited private daemon and its empty namespace',
+    );
+    test.setTimeout(45_000);
+    const initial = await openProviderRuntime(page);
+    expect(initial.role).toBe('owner');
+    await expect
+      .poll(async () => {
+        const state = await runtimeSnapshot(page);
+        return state.catalogLoaded && !state.readinessPending && state.host !== null;
+      })
+      .toBe(true);
+    const registry = await rpc(page, 'providers.catalog', {});
+    // Codex is the only provider approved by the installed-daemon audit. Select
+    // its real registry row; do not invent a default, model or capability tuple.
+    const provider = registry.providers.find((row) => row.id === 'codex');
+    expect(provider).toBeTruthy();
+    const providerId = provider.id;
+    const discoveries = providerWire.exchanges.filter(
+      (entry) => entry.request.method === 'host.providerDiscovery' && entry.response?.result,
+    );
+    expect(
+      discoveries.length,
+      'Bootstrap must observe the real empty provider namespace',
+    ).toBeGreaterThan(0);
+    for (const { response } of discoveries) {
+      expect(response.result.providers).toBeInstanceOf(Array);
+      for (const row of response.result.providers) expect(row.installed).toBe(false);
+    }
+    const before = await runtimeSnapshot(page, providerId);
+    expect(before.providers.find((row) => row.id === providerId)).toEqual(provider);
+    expect(
+      before.defaultProviderId,
+      'The private daemon must have no configured default',
+    ).toBeFalsy();
+    expect(before.cache, 'A fresh unobserved provider must require a real read').toBeUndefined();
+    const modelReads = () =>
+      providerWire.exchanges.filter((entry) => entry.request.method === 'models.list');
+    expect(modelReads()).toHaveLength(0);
+    const id = 'parity-private-empty-provider';
+    expect(before.observerIds).not.toContain(id);
+    try {
+      await modelIntent(page, 'observe', { id, providerId });
+      await expect
+        .poll(async () => (await runtimeSnapshot(page, providerId)).request?.status, {
+          timeout: 15_000,
+        })
+        .toMatch(/^(success|error)$/);
+      expect(modelReads(), 'Exactly one unforced real model read is approved').toHaveLength(1);
+      const exchange = modelReads()[0];
+      expect(exchange.request.params).toEqual({ providerId });
+      expect(exchange.response?.error).toBeUndefined();
+      const wire = exchange.response?.result;
+      expect(wire).toMatchObject({ providerId, models: [], source: 'static' });
+      expect(typeof wire.warning).toBe('string');
+      expect(wire.warning.trim().length).toBeGreaterThan(0);
+      const settled = await runtimeSnapshot(page, providerId);
+      expect(settled.observerIds).toContain(id);
+      expect(assertModelOutcome(settled, exchange, providerId)).toBe('empty');
+      expect(settled.request.error).toBeUndefined();
+      expect(settled.cache.warning).toBe(wire.warning);
+      expect(settled.epoch).toBe(before.epoch);
+      expect(settled.defaultProviderId).toBe(before.defaultProviderId);
+      await modelIntent(page, 'release', { id });
+      await expect
+        .poll(async () => (await runtimeSnapshot(page)).observerIds)
+        .toEqual(before.observerIds);
+      expect((await runtimeSnapshot(page, providerId)).cache).toEqual(settled.cache);
+      expect(modelReads()).toHaveLength(1);
+      assertAdmission(providerWire, providerWire.sockets.at(-1).connection);
+      await testInfo.attach('private-empty-provider.json', {
+        body: JSON.stringify(
+          {
+            providerId,
+            source: wire.source,
+            outcome: 'empty-with-warning',
+            warning: wire.warning,
+            stale: wire.stale === true,
+            epoch: settled.epoch,
+            modelReadCount: modelReads().length,
+            evidenceLevel:
+              'canonical observe/read/release compared with passive real daemon reply; no picker UI claim',
+            unrun: [
+              'transport error',
+              'stale model data',
+              'forced refresh',
+              'available model tuple',
+            ],
+          },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      });
+      await screenshotEvidence(page, testInfo, 'private-empty-provider-browser-surface.png');
+    } finally {
+      await modelIntent(page, 'release', { id });
+    }
+  });
+
   test.skip('root cancellation and late publication fencing', () => {
     // UNRUN: the actual disposer is privately owned by client HMR. No test-only
     // export, duplicate start, fake notifications or injected state is allowed.

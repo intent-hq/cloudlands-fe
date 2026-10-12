@@ -21,6 +21,16 @@ const readMethods = new Set([
 const prohibited =
   /^(settings\.(update|reset)|agent\.(create|update|setModel|delete)|host\.prepareProviderAdapters|providers?\..*(install|login|prepare))/i;
 
+function browserSourceRoot() {
+  const mapped = process.env.PARITY_PROVIDER_BROWSER_SOURCE_ROOT;
+  if (!mapped) return process.env.PARITY_CANDIDATE_ROOT;
+  // The audited private frontend mounts the host-fingerprinted checkout here.
+  // This affects only the action import URL, never the provenance/dependency root.
+  if (mapped !== '/candidate' || process.env.PARITY_PROVIDER_PRIVATE_EMPTY !== '1')
+    throw new Error('Browser source-root mapping requires the audited private-empty namespace');
+  return mapped;
+}
+
 // The common fixtures own source hashing, native ErrorEvent/unhandled-rejection
 // observation and real backend evidence. This adds only provider-domain frames.
 export const test = base.extend({
@@ -37,6 +47,7 @@ export const test = base.extend({
     );
     const dependencies = realpathSync(path.join(root, 'node_modules/.pnpm'));
     expect(path.relative(root, dependencies).startsWith('..')).toBe(false);
+    const actionSourceRoot = browserSourceRoot();
 
     const exchanges = [];
     const sockets = [];
@@ -92,6 +103,8 @@ export const test = base.extend({
       await testInfo.attach('provider-wire.json', {
         body: JSON.stringify(
           {
+            hostFingerprintRoot: root,
+            browserSourceRoot: actionSourceRoot,
             sockets,
             parseErrors,
             exchanges: exchanges.map((entry) => ({
@@ -288,7 +301,7 @@ export async function modelIntent(page, kind, { id, providerId, workspaceId }) {
         store.dispatch(actions.providerModelsRequested(providerId, 'refresh', workspaceId));
       } else throw new Error(`Unknown model intent: ${kind}`);
     },
-    { root: process.env.PARITY_CANDIDATE_ROOT, kind, id, providerId, workspaceId },
+    { root: browserSourceRoot(), kind, id, providerId, workspaceId },
   );
 }
 
