@@ -121,6 +121,10 @@ async function mountControls(
       }),
     )
     .toBeCloseTo(1 / zoom, 5);
+  // Also retain the upstream rendered-control readiness before geometry baselines.
+  await expect
+    .poll(async () => (await page.locator('[data-titlebar-spaces-control]').boundingBox())?.width)
+    .toBeCloseTo(48, 0);
 }
 
 async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linux') {
@@ -449,6 +453,7 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         return { panelItem: state.panelItem, divider: state.divider, requests: state.requests };
       })
       .toEqual({
+        // Home remembers Assistant selection independently of its reading session.
         panelItem: 'chief',
         divider: null,
         requests: [
@@ -473,11 +478,9 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         : `/workspace/${destination === 'current workspace' ? 'titlebar-test' : 'titlebar-other'}`,
     );
     await page.evaluate(async () => {
-      const [{ store }, { bulkUpsertSessions }, unread, { goto }] = await Promise.all([
+      const [{ store }, { bulkUpsertSessions }] = await Promise.all([
         import('/src/store/renderer/store.ts'),
         import('/src/store/renderer/slices/agent-session/agent-session-slice.ts'),
-        import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts'),
-        import('/test/fixtures/titlebar-navigation.svelte.ts'),
       ]);
       const session = store.state.agentSessions.byAgentId['assistant-route-thread'];
       store.dispatch(
@@ -496,13 +499,20 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
           },
         ] as never),
       );
-      // Returning must restore the remembered Assistant without selecting it again.
-      await goto('/');
+    });
+    await page.locator('[data-titlebar-spaces-control]').click();
+    await expect(page.locator('[data-home-assistant]')).toBeVisible();
+    await expect(page.getByTestId('mock-chat-panel')).toContainText('assistant-route-thread');
+    // The mocked ChatPanel does not start divider sessions; model that boundary
+    // only after real Home navigation has restored the remembered Assistant.
+    await page.evaluate(async () => {
+      const { store } = await import('/src/store/renderer/store.ts');
+      const unread =
+        await import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts');
       store.dispatch(
         unread.startDividerSession('assistant-route-thread', 'assistant-message-arrived-away'),
       );
     });
-    await expect(page.locator('[data-home-assistant]')).toBeVisible();
     const returned = await assistantBoundaryState(page);
     expect(returned.divider).toEqual({ anchorId: 'assistant-message-arrived-away' });
     expect(returned.selectedThread).toBe('assistant-route-thread');

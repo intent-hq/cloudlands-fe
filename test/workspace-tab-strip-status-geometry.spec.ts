@@ -18,14 +18,6 @@ const virtualModules: Record<string, string> = {
     export const microConnectedReadable = () => ({
       subscribe(run) { run(false); return () => {}; },
     });`,
-  '$store/renderer/slices/hardware-console/hardware-console-selectors': `
-    const emptySlot = Object.assign(
-      () => ({ subscribe(run) { run(null); return () => {}; } }),
-      { select: () => null },
-    );
-    export const selectWorkspaceResolvedKeySlot = emptySlot;
-    export const selectWorkspacePinnedKeySlot = emptySlot;
-    export const selectHardwareConsoleKeySlots = { select: () => [] };`,
   '$features/agent/services/active-streams-tracker': `
     export const activeStreamsTracker = {
       startPolling() {}, subscribe() { return () => {}; },
@@ -80,15 +72,21 @@ const virtualModules: Record<string, string> = {
     );`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
-    const workspaceById = (id) => globalThis.__workspaceTabScenario.workspaces.find((item) => item.id === id);
-    export const selectWorkspaceById = Object.assign(
-      (id) => readable(() => workspaceById(id)),
-      { select: (_state, id) => workspaceById(id) },
-    );
     export const selectWorkspaceItems = Object.assign(
       () => readable(() => globalThis.__workspaceTabScenario.workspaces),
       { select: () => globalThis.__workspaceTabScenario.workspaces },
-    );`,
+    );
+    export const selectWorkspaceById = {
+      select: (_state, workspaceId) =>
+        globalThis.__workspaceTabScenario.workspaces.find((workspace) => workspace.id === workspaceId),
+    };`,
+  '$store/renderer/slices/hardware-console/hardware-console-selectors': `
+    const readable = (value) => ({ subscribe(run) { run(value); return () => {}; } });
+    export const selectWorkspaceResolvedKeySlot = Object.assign(
+      () => readable(null), { select: () => null },
+    );
+    export const selectWorkspacePinnedKeySlot = { select: () => null };
+    export const selectHardwareConsoleKeySlots = { select: () => [] };`,
   '$store/renderer/slices/presence/presence-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectPresenceRosters = () => readable(() => ({}));
