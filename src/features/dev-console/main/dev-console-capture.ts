@@ -100,11 +100,23 @@ export class DevConsoleCaptureService {
   }
 
   /** Register each managed client once; call the disposer when that client is removed. */
-  registerClient(backendId: string, connectionId: string, source: RpcTrafficSource): () => void {
+  registerClient(
+    backendId: string,
+    connectionId: string,
+    source: RpcTrafficSource,
+    options?: Readonly<{ preserveReplacement: true }>,
+  ): () => void {
     let clients = this.clients.get(backendId);
     if (!clients) this.clients.set(backendId, (clients = new Map()));
     const previous = clients.get(connectionId);
     if (previous) this.detachClient(previous);
+    // Only enrolled callers opt in. Detach observers may already have replaced
+    // the nested Map or its original slot before this registration is installed.
+    if (
+      options?.preserveReplacement &&
+      (this.clients.get(backendId) !== clients || clients.get(connectionId) !== previous)
+    )
+      return () => {};
     const registration = { id: randomUUID(), backendId, connectionId, source };
     clients.set(connectionId, registration);
     const session = this.sessions.get(backendId);
@@ -112,8 +124,17 @@ export class DevConsoleCaptureService {
     return () => {
       if (clients.get(connectionId) !== registration) return;
       this.detachClient(registration);
+      if (
+        options?.preserveReplacement &&
+        (this.clients.get(backendId) !== clients || clients.get(connectionId) !== registration)
+      )
+        return;
       clients.delete(connectionId);
-      if (clients.size === 0) this.clients.delete(backendId);
+      if (
+        clients.size === 0 &&
+        (!options?.preserveReplacement || this.clients.get(backendId) === clients)
+      )
+        this.clients.delete(backendId);
     };
   }
 

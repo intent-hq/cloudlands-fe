@@ -18,6 +18,7 @@ interface Frame {
 }
 const edge = vi.hoisted(() => ({
   sockets: [] as ControlledSocket[],
+  beforeSocketReturn: undefined as undefined | ((socket: ControlledSocket) => void),
   respond: undefined as undefined | ((socket: ControlledSocket, frame: Frame) => unknown),
   list: undefined as undefined | (() => Promise<unknown[]>),
   findGuest: undefined as undefined | ((id: string) => Promise<unknown>),
@@ -113,6 +114,7 @@ vi.mock('../backend-connection', async (original) => ({
   createBackendSocket(config: { transport: string; host?: string }) {
     const socket = new ControlledSocket(config.transport === 'uds' ? 'local' : config.host!);
     edge.sockets.push(socket);
+    edge.beforeSocketReturn?.(socket);
     queueMicrotask(() => socket.emit('connect'));
     return socket;
   },
@@ -251,6 +253,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.stubEnv('INTENTD_SOCKET', '/controlled-lifecycle.sock');
   edge.sockets = [];
+  edge.beforeSocketReturn = undefined;
   edge.respond = undefined;
   edge.list = undefined;
   edge.findGuest = undefined;
@@ -2408,5 +2411,364 @@ describe('M original admission races', () => {
     expect(final.failures.map((f) => ({ kind: f.kind, error: f.error }))).toEqual([]);
     expect(final.outcome).toBe('clean');
     expect((await member).outcome).toBe('clean');
+  });
+});
+
+/** Actual pool/client owners with optional capture and controlled transport/desktop edges. */
+describe('P optional original connection capture', () => {
+  async function capturedPool(enrolled = false) {
+    const module = await import('../backend.ipc');
+    const origins = module.enrollBackendConnectionOrigins();
+    return { ...(await load(enrolled)), origins };
+  }
+
+  it('P01 exposes the original pending dial inside the actual factory before public insertion', async () => {
+    const { pool, origins } = await capturedPool();
+    expect(origins.capture('local')).toBeNull();
+    expect(edge.sockets).toHaveLength(0);
+    let original: ReturnType<typeof origins.capture> = null;
+    edge.beforeSocketReturn = () => {
+      original = origins.capture('local');
+      expect(original?.read()).toMatchObject({ state: 'pending', incarnation: null, hello: null });
+      expect(pool.getBackendClientForConnection('local')).toBeUndefined();
+    };
+    const client = pool.getLocalBackendClient();
+    expect(original).toMatchObject({ client });
+    expect(origins.capture('local')).toBe(original);
+    await connection(client);
+    expect((original as ReturnType<typeof origins.capture>)!.read().state).toBe('ready');
+    expect(edge.sockets).toHaveLength(1);
+    expect(edge.sockets[0]!.frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(
+      1,
+    );
+  });
+
+  it('P02 a global subscriber reentering the local accessor cannot construct recursively', async () => {
+    const { pool, origins } = await capturedPool();
+    let armed = false;
+    const seen: JsonRpcClient[] = [];
+    let request: Promise<unknown> | undefined;
+    const stop = origins.subscribeChanged(() => {
+      if (!armed) return;
+      const actual = pool.getLocalBackendClient();
+      seen.push(actual);
+      request ??= actual.request('controlled.global-listener');
+    });
+    armed = true;
+    const actual = pool.getLocalBackendClient();
+    await connection(actual);
+    await request;
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((client) => client === actual)).toBe(true);
+    expect(edge.sockets).toHaveLength(1);
+    expect(edge.sockets[0]!.frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(
+      1,
+    );
+    expect(
+      edge.sockets[0]!.frames.filter((frame) => frame.method === 'controlled.global-listener'),
+    ).toHaveLength(1);
+    expect(origins.capture('local')?.client).toBe(actual);
+    stop();
+  });
+
+  it('P03 the actual nested factory winner survives the obsolete outer insertion', async () => {
+    const { pool, origins } = await capturedPool();
+    let oldOrigin: ReturnType<typeof origins.capture> = null;
+    let successor: JsonRpcClient | undefined;
+    let entered = false;
+    edge.beforeSocketReturn = () => {
+      if (entered) return;
+      entered = true;
+      oldOrigin = origins.capture('local');
+      successor = pool.getLocalBackendClient();
+    };
+    const obsolete = pool.getLocalBackendClient();
+    expect(obsolete).not.toBe(successor);
+    expect(pool.getLocalBackendClient()).toBe(successor);
+    expect((oldOrigin as ReturnType<typeof origins.capture>)!.read()).toEqual({ state: 'retired' });
+    expect(origins.capture('local')?.client).toBe(successor);
+    await connection(successor!);
+    expect(edge.sockets).toHaveLength(2);
+    expect(edge.sockets[0]!.destroyed).toBe(true);
+    expect(edge.sockets[0]!.frames).toHaveLength(0);
+    expect(edge.sockets[1]!.frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(
+      1,
+    );
+  });
+
+  it('P04 retirement listeners can insert a same-ID successor only after old detach finishes', async () => {
+    const { pool, origins } = await capturedPool();
+    const original = pool.getLocalBackendClient();
+    await connection(original);
+    const oldOrigin = origins.capture('local')!;
+    let successor: JsonRpcClient | undefined;
+    let destroyedBeforeNotice = false;
+    const stop = oldOrigin.subscribeChanged(() => {
+      if (oldOrigin.read().state !== 'retired' || successor) return;
+      destroyedBeforeNotice = edge.sockets[0]!.destroyed;
+      successor = pool.getLocalBackendClient();
+    });
+    pool.disconnectBackendClient('local');
+    expect(destroyedBeforeNotice).toBe(true);
+    expect(successor).not.toBe(original);
+    expect(pool.getLocalBackendClient()).toBe(successor);
+    await connection(successor!);
+    const next = origins.capture('local')!;
+    expect(next.member).not.toBe(oldOrigin.member);
+    expect(next.read().state).toBe('ready');
+    expect(oldOrigin.read()).toEqual({ state: 'retired' });
+    stop();
+  });
+
+  it('P05 console disconnected callbacks cannot remove a listener-created replacement registration', async () => {
+    const { pool, origins } = await capturedPool();
+    const { devConsoleCapture } = await import('../../../dev-console/main/dev-console-service');
+    const original = pool.getLocalBackendClient();
+    await connection(original);
+    const oldOrigin = origins.capture('local')!;
+    const session = devConsoleCapture.openSession('local');
+    const pendingReply = deferred<unknown>();
+    edge.respond = (_socket, frame) =>
+      frame.method === 'controlled.pending' ? pendingReply.promise : defaultReply(frame);
+    const reached = nextFrame('controlled.pending');
+    const pending = original.request('controlled.pending').catch((error: unknown) => error);
+    await reached;
+    let successor: JsonRpcClient | undefined;
+    const seen: string[] = [];
+    const stop = devConsoleCapture.subscribe('local', session.sessionId, () => {
+      if (successor) return;
+      seen.push(oldOrigin.read().state);
+      successor = pool.getLocalBackendClient();
+    });
+    pool.disconnectBackendClient('local');
+    stop();
+    expect(seen).toEqual(['retired']);
+    expect(successor).not.toBe(original);
+    expect(pool.getLocalBackendClient()).toBe(successor);
+    await pending;
+    pendingReply.resolve({ old: true });
+    await connection(successor!);
+    await successor!.request('controlled.successor');
+    expect(
+      devConsoleCapture
+        .getSnapshot('local', session.sessionId)
+        ?.records.some((record) => record.rpcMethod === 'controlled.successor'),
+    ).toBe(true);
+    expect(origins.capture('local')?.client).toBe(successor);
+  });
+
+  it('P06 closed capture refuses later legacy construction without keeping a live origin feed', async () => {
+    const { pool, origins } = await capturedPool();
+    const original = pool.getLocalBackendClient();
+    await connection(original);
+    const receipt = origins.capture('local')!;
+    pool.disposeAllBackendClients();
+    expect(receipt.read()).toEqual({ state: 'retired' });
+    const wakes: unknown[] = [];
+    const stop = origins.subscribeChanged(() => {
+      wakes.push(origins.capture('local'));
+    });
+    const refused = pool.getLocalBackendClient();
+    expect(refused).not.toBe(original);
+    expect(pool.getBackendClientForConnection('local')).toBeUndefined();
+    expect(origins.capture('local')).toBeNull();
+    expect(edge.sockets).toHaveLength(2);
+    expect(edge.sockets[1]!.destroyed).toBe(true);
+    expect(wakes).toEqual([null]);
+    await expect(refused.request('controlled.refused')).rejects.toThrow();
+    stop();
+  });
+
+  it('P07 member and global retirement latch capture before their existing joined close', async () => {
+    const { pool, origins, lifecycle } = await capturedPool(true);
+    const local = pool.getLocalBackendClient();
+    const remote = await pool.connectBackendClient('remote-A');
+    await Promise.all([connection(local), connection(remote)]);
+    const first = origins.capture('local')!;
+    const second = origins.capture('remote-A')!;
+    const boundary = fence(false);
+    const member = lifecycle.retireMember(local, boundary);
+    expect(first.read()).toEqual({ state: 'retired' });
+    expect(second.read().state).toBe('ready');
+    expect(edge.sockets[0]!.destroyed).toBe(false);
+    const all = lifecycle.retire(boundary);
+    expect(second.read()).toEqual({ state: 'retired' });
+    expect(origins.capture('remote-A')).toBeNull();
+    boundary.set(true);
+    expect((await member).outcome).toBe('clean');
+    expect((await all).outcome).toBe('clean');
+    expect(edge.sockets.every((socket) => socket.destroyed)).toBe(true);
+  });
+
+  it('P08 config waiting creates no synthetic connection; exact pending callers still share the actual result', async () => {
+    const listed = deferred<unknown[]>();
+    edge.list = () => listed.promise;
+    const { pool, origins } = await capturedPool();
+    const first = pool.connectBackendClient('remote-A');
+    const second = pool.connectBackendClient('remote-A');
+    expect(origins.capture('remote-A')).toBeNull();
+    expect(edge.sockets).toHaveLength(0);
+    listed.resolve([
+      {
+        id: 'remote-A',
+        host: 'remote-A.test',
+        hosts: ['remote-A.test'],
+        port: 443,
+        fingerprint: 'ab'.repeat(32),
+      },
+    ]);
+    const [client, same] = await Promise.all([first, second]);
+    expect(same).toBe(client);
+    await connection(client);
+    expect(origins.capture('remote-A')?.client).toBe(client);
+    expect(edge.sockets.filter((socket) => socket.owner === 'remote-A.test')).toHaveLength(1);
+  });
+
+  it('P09 actual authority read and release remain joined after their capture has retired', async () => {
+    const root = { kind: 'primary' as const, workspaceId: 'workspace-1' };
+    const read = deferred<unknown>();
+    const release = deferred<unknown>();
+    edge.respond = (_socket, frame) =>
+      frame.method === 'workspace.repositoryContext.capture'
+        ? {
+            lifetimeId: 'original-authority',
+            scope: { daemonId: 'controlled', authorityScopeId: 'native', authorityGeneration: '1' },
+            coverage: { kind: 'workspaceInventory', workspaceId: root.workspaceId },
+            retirementSequence: '0',
+            expiresAfterMs: 300000,
+          }
+        : frame.method === 'workspace.repositoryContext'
+          ? read.promise
+          : frame.method === 'workspace.repositoryContext.release'
+            ? release.promise
+            : defaultReply(frame);
+    const { createRepositoryAuthorityFeed } = await import('../repository-authority-feed');
+    const module = await import('../backend.ipc');
+    const origins = module.enrollBackendConnectionOrigins();
+    let feed: ReturnType<typeof createRepositoryAuthorityFeed> | undefined;
+    const lifecycle = module.enrollBackendClientLifecycle((event) => {
+      if (event.phase === 'member' && !feed) feed = createRepositoryAuthorityFeed(event.client);
+    });
+    const { pool } = await load(false);
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    const origin = origins.capture('local')!;
+    const op = await feed!.capture(client.getRepositoryConnection()!, root);
+    const operation = op.request('workspace.repositoryContext', { workspaceId: root.workspaceId });
+    const observed = operation.catch((error: unknown) => error);
+    op.dispose();
+    const joined = lifecycle.retireMember(client, fence());
+    expect(origin.read()).toEqual({ state: 'retired' });
+    release.resolve({ released: true });
+    await settledTurn();
+    expect(edge.sockets[0]!.destroyed).toBe(false);
+    const context = (await import('$shared/types/__fixtures__/repository-context.json')).default;
+    read.resolve({
+      ...context,
+      scope: { daemonId: 'controlled', authorityScopeId: 'native', authorityGeneration: '1' },
+      revision: { epoch: 'original-authority', sequence: '1' },
+    });
+    await observed;
+    feed!.dispose();
+    expect((await joined).outcome).toBe('clean');
+    expect(
+      edge.sockets[0]!.frames.filter(
+        (frame) => frame.method === 'workspace.repositoryContext.release',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('P10 nested console registration keeps the callback winner instead of the stale outer client', async () => {
+    const { pool, lifecycle } = await capturedPool(true);
+    const reply = deferred<unknown>();
+    let retired: Awaited<ReturnType<typeof lifecycle.retire>> | undefined;
+    try {
+      const { DevConsoleCaptureService } =
+        await import('../../../dev-console/main/dev-console-capture');
+      const [original, stale, winner] = [
+        pool.getLocalBackendClient(),
+        await pool.connectBackendClient('remote-A'),
+        await pool.connectBackendClient('remote-B'),
+      ];
+      await Promise.all([connection(original), connection(stale), connection(winner)]);
+      const recorder = new DevConsoleCaptureService();
+      const firstStop = recorder.registerClient('slot', 'same', original, {
+        preserveReplacement: true,
+      });
+      const session = recorder.openSession('slot');
+      edge.respond = (_socket, frame) =>
+        frame.method === 'controlled.console-pending' ? reply.promise : defaultReply(frame);
+      const reached = nextFrame('controlled.console-pending');
+      const pending = original.request('controlled.console-pending');
+      await reached;
+      let reentered = false;
+      let winnerStop: (() => void) | undefined;
+      const stop = recorder.subscribe('slot', session.sessionId, () => {
+        if (reentered) return;
+        reentered = true;
+        winnerStop = recorder.registerClient('slot', 'same', winner, { preserveReplacement: true });
+      });
+      const staleStop = recorder.registerClient('slot', 'same', stale, {
+        preserveReplacement: true,
+      });
+      stop();
+      firstStop();
+      staleStop();
+      await stale.request('controlled.stale-registration');
+      await winner.request('controlled.winner-registration');
+      const records = recorder.getSnapshot('slot', session.sessionId)!.records;
+      expect(records.some((record) => record.rpcMethod === 'controlled.winner-registration')).toBe(
+        true,
+      );
+      expect(records.some((record) => record.rpcMethod === 'controlled.stale-registration')).toBe(
+        false,
+      );
+      reply.resolve({ old: true });
+      await pending;
+      winnerStop?.();
+    } finally {
+      reply.resolve({ old: true });
+      retired = await lifecycle.retire(fence());
+    }
+    expect(retired.outcome).toBe('clean');
+  });
+
+  it('P11 actual reconnect keeps the member but produces a distinct dial and composite', async () => {
+    const { pool, origins } = await capturedPool();
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    const old = origins.capture('local')!;
+    const oldReady = old.read();
+    if (oldReady.state !== 'ready') throw new Error('Expected original acknowledgement');
+    vi.useFakeTimers();
+    edge.sockets[0]!.emit('error', new Error('controlled original socket failure'));
+    expect(old.read()).toEqual({ state: 'retired' });
+    expect(origins.capture('local')).toBeNull();
+    await vi.advanceTimersByTimeAsync(1000);
+    await connection(client);
+    const next = origins.capture('local')!;
+    const nextReady = next.read();
+    expect(next).not.toBe(old);
+    expect(next.member).toBe(old.member);
+    expect(next.client).toBe(client);
+    expect(nextReady.state).toBe('ready');
+    if (nextReady.state !== 'ready') throw new Error('Expected reconnect acknowledgement');
+    expect(nextReady.dial).not.toBe(oldReady.dial);
+    expect(nextReady.incarnation).not.toBe(oldReady.incarnation);
+    expect(old.read()).toEqual({ state: 'retired' });
+    expect(edge.sockets).toHaveLength(2);
+    expect(edge.sockets[1]!.frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(
+      1,
+    );
+  });
+
+  it('P12 late enrollment cannot reconstruct an already active default owner', async () => {
+    const { pool } = await load(false);
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    expect(client.captureConnectionOrigin()).toBeNull();
+    expect(() => pool.enrollBackendConnectionOrigins()).toThrow();
+    expect(pool.getLocalBackendClient()).toBe(client);
+    expect(edge.sockets).toHaveLength(1);
   });
 });

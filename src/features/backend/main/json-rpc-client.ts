@@ -86,7 +86,44 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout>;
 }
 
+export type ClientConnectionOriginState =
+  | Readonly<{ state: 'pending'; dial: object; incarnation: object | null; hello: object | null }>
+  | Readonly<{
+      state: 'ready';
+      dial: object;
+      incarnation: object;
+      hello: object;
+      connection: RepositoryConnection;
+    }>
+  | Readonly<{ state: 'retired' }>;
+
+/** Main-private receipt from one actual dial and one actual hello. */
+export interface ClientConnectionOrigin {
+  read(): ClientConnectionOriginState;
+  subscribeChanged(wake: () => void): () => void;
+}
+
+interface ConnectionDial {
+  identity: object;
+  socket: Duplex | null;
+  incarnation: object | null;
+  retired: boolean;
+  firstHello: boolean;
+}
+interface ConnectionOriginRecord {
+  dial: ConnectionDial;
+  hello: object | null;
+  bindingHello: boolean;
+  connection: RepositoryConnection | null;
+  ready: boolean;
+  retired: boolean;
+  listeners: Set<() => void>;
+  handle: ClientConnectionOrigin;
+}
+
 export interface JsonRpcClientOptions {
+  /** Optional observation of actual main owners; never starts a transport. */
+  captureConnectionOrigins?: true;
   /** Main-private opt-in ownership. No wire or renderer authority is conveyed. */
   lifecycle?: Readonly<{ scope: symbol; generation: number }>;
   config?: BackendConnectionConfig;
@@ -168,6 +205,16 @@ export interface JsonRpcRetirement {
  * informative only, never treated as a connection failure).
  */
 export class JsonRpcClient extends EventEmitter {
+  private readonly connectionOrigins?: {
+    dial: ConnectionDial | null;
+    current: ConnectionOriginRecord | null;
+    listeners: Set<() => void>;
+    ownerFeeds: Set<() => void>;
+    hellos: WeakMap<object, ConnectionOriginRecord>;
+    changed: Set<ConnectionOriginRecord>;
+    depth: number;
+    notifying: boolean;
+  };
   private connectionOwner?: object;
   private readonly lifecycle?: {
     identity: RetirementIdentity;
@@ -239,6 +286,18 @@ export class JsonRpcClient extends EventEmitter {
 
   constructor(options: JsonRpcClientOptions = {}) {
     super();
+    if (options.captureConnectionOrigins) {
+      this.connectionOrigins = {
+        dial: null,
+        current: null,
+        listeners: new Set(),
+        ownerFeeds: new Set(),
+        hellos: new WeakMap(),
+        changed: new Set(),
+        depth: 0,
+        notifying: false,
+      };
+    }
     if (options.lifecycle) {
       this.lifecycle = {
         identity: Object.freeze({ ...options.lifecycle, instance: Symbol('JsonRpcClient') }),
@@ -471,6 +530,272 @@ export class JsonRpcClient extends EventEmitter {
     return owned.finish;
   }
 
+  /** Passive capture: only the real owner transitions create receipts. */
+  captureConnectionOrigin(): ClientConnectionOrigin | null {
+    const origin = this.connectionOrigins?.current;
+    if (!origin || this.readConnectionOrigin(origin).state === 'retired') return null;
+    return origin.handle;
+  }
+
+  /** Install before start; an initial wake reads existing owner state atomically. */
+  onConnectionOriginChanged(wake: () => void, options?: Readonly<{ ownerFeed: true }>): () => void {
+    const owned = this.connectionOrigins;
+    if (!owned) return () => {};
+    // The pool-only owner feed updates private references; it must not publish or start work.
+    const listeners = options?.ownerFeed ? owned.ownerFeeds : owned.listeners;
+    if (!this.disposed) listeners.add(wake);
+    this.wakeConnectionOrigin(wake);
+    return () => {
+      listeners.delete(wake);
+    };
+  }
+
+  private wakeConnectionOrigin(wake: () => void): void {
+    try {
+      wake();
+    } catch {
+      /* Passive observations cannot replace source results. */
+    }
+  }
+
+  private holdConnectionOriginNotifications(): (() => void) | undefined {
+    const owned = this.connectionOrigins;
+    if (!owned) return undefined;
+    owned.depth++;
+    return () => {
+      owned.depth--;
+      this.flushConnectionOriginNotifications();
+    };
+  }
+
+  private flushConnectionOriginNotifications(): void {
+    const owned = this.connectionOrigins;
+    if (!owned || owned.depth || owned.notifying) return;
+    owned.notifying = true;
+    try {
+      while (owned.changed.size) {
+        const changed = [...owned.changed];
+        owned.changed.clear();
+        for (const origin of changed) {
+          for (const wake of [...origin.listeners]) this.wakeConnectionOrigin(wake);
+          if (origin.retired) origin.listeners.clear();
+        }
+        for (const wake of [...owned.listeners]) this.wakeConnectionOrigin(wake);
+      }
+    } finally {
+      owned.notifying = false;
+    }
+  }
+
+  private changeConnectionOrigin(origin: ConnectionOriginRecord): void {
+    const owned = this.connectionOrigins;
+    if (!owned) return;
+    owned.changed.add(origin);
+    for (const wake of [...owned.ownerFeeds]) this.wakeConnectionOrigin(wake);
+    this.flushConnectionOriginNotifications();
+  }
+
+  private retireConnectionOrigin(origin: ConnectionOriginRecord | null | undefined): void {
+    if (!origin || origin.retired) return;
+    origin.retired = true;
+    origin.ready = false;
+    this.changeConnectionOrigin(origin);
+  }
+
+  private retireConnectionDial(): void {
+    const owned = this.connectionOrigins;
+    if (!owned) return;
+    if (owned.dial) owned.dial.retired = true;
+    this.retireConnectionOrigin(owned.current);
+  }
+
+  private createConnectionOrigin(dial: ConnectionDial): ConnectionOriginRecord {
+    const origin: ConnectionOriginRecord = {
+      dial,
+      hello: null,
+      bindingHello: false,
+      connection: null,
+      ready: false,
+      retired: false,
+      listeners: new Set(),
+      handle: undefined!,
+    };
+    origin.handle = Object.freeze({
+      read: () => this.readConnectionOrigin(origin),
+      subscribeChanged: (wake: () => void) => {
+        if (!origin.retired) origin.listeners.add(wake);
+        this.wakeConnectionOrigin(wake);
+        if (origin.retired) origin.listeners.delete(wake);
+        return () => {
+          origin.listeners.delete(wake);
+        };
+      },
+    });
+    return origin;
+  }
+
+  private beginConnectionDial(): ConnectionDial | undefined {
+    const owned = this.connectionOrigins;
+    if (!owned) return undefined;
+    const release = this.holdConnectionOriginNotifications();
+    try {
+      this.retireConnectionDial();
+      const dial: ConnectionDial = {
+        identity: Object.freeze({}),
+        socket: null,
+        incarnation: null,
+        retired: false,
+        firstHello: false,
+      };
+      owned.dial = dial;
+      owned.current = this.createConnectionOrigin(dial);
+      this.changeConnectionOrigin(owned.current);
+      return dial;
+    } finally {
+      release?.();
+    }
+  }
+
+  private bindConnectionSocket(
+    dial: ConnectionDial | undefined,
+    socket: Duplex,
+    incarnation: object,
+  ): void {
+    const owned = this.connectionOrigins;
+    if (!dial || !owned) return;
+    if (dial.retired || owned.dial !== dial || this.disposed || dial.socket) return;
+    dial.socket = socket;
+    dial.incarnation = incarnation;
+    if (owned.current) this.changeConnectionOrigin(owned.current);
+  }
+
+  private ownsConnectionDial(dial: ConnectionDial | undefined): boolean {
+    return !dial || (!this.disposed && !dial.retired && this.connectionOrigins?.dial === dial);
+  }
+
+  /** A factory can return after its caller was disposed. Own only that late socket. */
+  private discardConnectionSocket(socket: Duplex): void {
+    const owned = this.lifecycle;
+    const row = { incarnation: Object.freeze({}), destroyRequested: true, closeObserved: false };
+    if (owned) {
+      owned.closes.set(socket, row);
+      socket.once('close', () => {
+        row.closeObserved = true;
+        this.lifecycleChanged();
+      });
+    }
+    // Capture can be enabled without diagnostic lifecycle tracking. A discarded
+    // stream still needs its error listener installed before destroy enters user code.
+    socket.on('error', (error) => {
+      owned?.failures.push({ owner: null, kind: 'close', error });
+      this.lifecycleChanged();
+    });
+    try {
+      socket.destroy();
+    } catch (error) {
+      owned?.failures.push({ owner: null, kind: 'close', error });
+      this.lifecycleChanged();
+    }
+  }
+
+  private beginConnectionHello(): ConnectionOriginRecord | undefined {
+    const owned = this.connectionOrigins;
+    const dial = owned?.dial;
+    if (!owned || !dial || dial.retired || this.disposed) return undefined;
+    let origin = owned.current;
+    if (dial.firstHello || !origin || origin.retired) {
+      this.retireConnectionOrigin(origin);
+      origin = this.createConnectionOrigin(dial);
+      owned.current = origin;
+    }
+    dial.firstHello = true;
+    origin.bindingHello = true;
+    this.changeConnectionOrigin(origin);
+    return origin;
+  }
+
+  private bindConnectionHello(origin: ConnectionOriginRecord | undefined, hello: object): void {
+    if (!origin || origin.retired || this.connectionOrigins?.current !== origin) return;
+    origin.bindingHello = false;
+    origin.hello = hello;
+    this.connectionOrigins!.hellos.set(hello, origin);
+    this.changeConnectionOrigin(origin);
+  }
+
+  private readConnectionOrigin(origin: ConnectionOriginRecord): ClientConnectionOriginState {
+    const owned = this.connectionOrigins;
+    const dial = origin.dial;
+    // A custom Duplex getter can reenter; all exact owner checks follow it.
+    let destroyed = false;
+    try {
+      destroyed = dial.socket?.destroyed ?? false;
+    } catch {
+      destroyed = true;
+    }
+    if (
+      destroyed ||
+      this.disposed ||
+      origin.retired ||
+      dial.retired ||
+      owned?.dial !== dial ||
+      owned.current !== origin ||
+      (dial.socket !== null &&
+        (this.socket !== dial.socket || this.socketIncarnation !== dial.incarnation)) ||
+      (!origin.bindingHello && origin.hello !== null && this.helloAttempt !== origin.hello) ||
+      (origin.connection !== null && this.repositoryConnection !== origin.connection)
+    ) {
+      this.retireConnectionOrigin(origin);
+      return { state: 'retired' };
+    }
+    if (
+      origin.ready &&
+      this.status === 'connected' &&
+      dial.incarnation &&
+      origin.hello &&
+      origin.connection
+    ) {
+      return {
+        state: 'ready',
+        dial: dial.identity,
+        incarnation: dial.incarnation,
+        hello: origin.hello,
+        connection: origin.connection,
+      };
+    }
+    return {
+      state: 'pending',
+      dial: dial.identity,
+      incarnation: dial.incarnation,
+      hello: origin.hello,
+    };
+  }
+
+  private confirmConnectionOrigin(
+    origin: ConnectionOriginRecord | undefined,
+    attempt: object,
+    connection: RepositoryConnection | null,
+  ): void {
+    if (!origin) return;
+    if (
+      !connection ||
+      origin.hello !== attempt ||
+      this.helloAttempt !== attempt ||
+      this.repositoryConnection !== connection ||
+      this.readConnectionOrigin(origin).state === 'retired'
+    ) {
+      this.retireConnectionOrigin(origin);
+      return;
+    }
+    origin.connection = connection;
+  }
+
+  private readyConnectionOrigin(origin: ConnectionOriginRecord | null | undefined): void {
+    if (!origin || !origin.connection || this.status !== 'connected') return;
+    if (this.readConnectionOrigin(origin).state === 'retired') return;
+    origin.ready = true;
+    this.changeConnectionOrigin(origin);
+  }
+
   /** Current connection status. */
   getStatus(): ConnectionStatus {
     return this.status;
@@ -564,56 +889,73 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private beginHello(): object {
-    this.retireRepositoryIdentity();
-    this.helloAttempt = Object.freeze({});
-    return this.helloAttempt;
+    const release = this.holdConnectionOriginNotifications();
+    const origin = this.beginConnectionHello();
+    try {
+      this.retireRepositoryIdentity();
+      this.helloAttempt = Object.freeze({});
+      this.bindConnectionHello(origin, this.helloAttempt);
+      return this.helloAttempt;
+    } finally {
+      release?.();
+    }
   }
 
   private confirmHello(attempt: object, result: unknown): void {
-    if (this.helloAttempt !== attempt || !this.socketIncarnation || this.disposed) return;
-    if (
-      !result ||
-      typeof result !== 'object' ||
-      !('clientId' in result) ||
-      typeof result.clientId !== 'string' ||
-      result.clientId.length === 0
-    )
-      return;
-    const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
-      ?.capabilities;
-    this.nodeCapabilities = Object.freeze({
-      agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
-      localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
-      agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
-    });
-    this.repositoryConnection = Object.freeze({
-      incarnation: this.socketIncarnation,
-      identity: Object.freeze({}),
-      repositorySelection:
-        (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
-          ?.capabilities?.repositorySelection === 1,
-      nativeReview:
-        (result as { server?: { capabilities?: { nativeReview?: unknown } } }).server?.capabilities
-          ?.nativeReview === 1,
-      nativeReviewCompanion:
-        (result as { server?: { capabilities?: { nativeReviewCompanion?: unknown } } }).server
-          ?.capabilities?.nativeReviewCompanion === 1,
-      repositoryResourceRead:
-        (result as { server?: { capabilities?: { repositoryResourceRead?: unknown } } }).server
-          ?.capabilities?.repositoryResourceRead === 1,
-      gitlabCheckout:
-        (result as { server?: { capabilities?: { gitlabCheckout?: unknown } } }).server
-          ?.capabilities?.gitlabCheckout === 1,
-      gitlabCheckoutRepoConfig:
-        (result as { server?: { capabilities?: { gitlabCheckoutRepoConfig?: unknown } } }).server
-          ?.capabilities?.gitlabCheckoutRepoConfig === 1,
-      gitlabCheckoutOwnerAvatar:
-        (result as { server?: { capabilities?: { gitlabCheckoutOwnerAvatar?: unknown } } }).server
-          ?.capabilities?.gitlabCheckoutOwnerAvatar === 1,
-      repositoryContext:
-        (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
-          ?.capabilities?.repositoryContext === 1,
-    });
+    const origin = this.connectionOrigins?.hellos.get(attempt);
+    const previous = this.repositoryConnection;
+    try {
+      if (this.helloAttempt !== attempt || !this.socketIncarnation || this.disposed) return;
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        !('clientId' in result) ||
+        typeof result.clientId !== 'string' ||
+        result.clientId.length === 0
+      )
+        return;
+      const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } })
+        .server?.capabilities;
+      this.nodeCapabilities = Object.freeze({
+        agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
+        localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
+        agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
+      });
+      this.repositoryConnection = Object.freeze({
+        incarnation: this.socketIncarnation,
+        identity: Object.freeze({}),
+        repositorySelection:
+          (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
+            ?.capabilities?.repositorySelection === 1,
+        nativeReview:
+          (result as { server?: { capabilities?: { nativeReview?: unknown } } }).server
+            ?.capabilities?.nativeReview === 1,
+        nativeReviewCompanion:
+          (result as { server?: { capabilities?: { nativeReviewCompanion?: unknown } } }).server
+            ?.capabilities?.nativeReviewCompanion === 1,
+        repositoryResourceRead:
+          (result as { server?: { capabilities?: { repositoryResourceRead?: unknown } } }).server
+            ?.capabilities?.repositoryResourceRead === 1,
+        gitlabCheckout:
+          (result as { server?: { capabilities?: { gitlabCheckout?: unknown } } }).server
+            ?.capabilities?.gitlabCheckout === 1,
+        gitlabCheckoutRepoConfig:
+          (result as { server?: { capabilities?: { gitlabCheckoutRepoConfig?: unknown } } }).server
+            ?.capabilities?.gitlabCheckoutRepoConfig === 1,
+        gitlabCheckoutOwnerAvatar:
+          (result as { server?: { capabilities?: { gitlabCheckoutOwnerAvatar?: unknown } } }).server
+            ?.capabilities?.gitlabCheckoutOwnerAvatar === 1,
+        repositoryContext:
+          (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
+            ?.capabilities?.repositoryContext === 1,
+      });
+    } finally {
+      this.confirmConnectionOrigin(
+        origin,
+        attempt,
+        this.repositoryConnection === previous ? null : this.repositoryConnection,
+      );
+    }
   }
 
   /**
@@ -709,27 +1051,35 @@ export class JsonRpcClient extends EventEmitter {
   /** Tear down the client: close the socket, clear timers, reject pending. */
   dispose(): void {
     if (this.disposed) return;
-    if (this.lifecycle && !this.lifecycle.finishing) {
-      this.lifecycle.stopping = true;
-      this.lifecycle.failures.push({
-        owner: null,
-        kind: 'forced',
-        error: new Error('Legacy disposal'),
-      });
+    const release = this.holdConnectionOriginNotifications();
+    this.retireConnectionDial();
+    try {
+      if (this.lifecycle && !this.lifecycle.finishing) {
+        this.lifecycle.stopping = true;
+        this.lifecycle.failures.push({
+          owner: null,
+          kind: 'forced',
+          error: new Error('Legacy disposal'),
+        });
+      }
+      this.disposed = true;
+      this.observeFrame(() => ({ type: 'disconnected' }));
+      this.trafficObservers.clear();
+      this.clearReconnect();
+      this.stopHeartbeat();
+      this.failPending(new Error('JSON-RPC client disposed'));
+      this.failWaiters(new Error('JSON-RPC client disposed'));
+      this.teardownSocket();
+      this.repositoryObservers.clear();
+      this.setStatus('disconnected');
+      this.removeAllListeners();
+      this.finishConnectionOwner();
+      this.lifecycleChanged();
+    } finally {
+      release?.();
+      this.connectionOrigins?.listeners.clear();
+      this.connectionOrigins?.ownerFeeds.clear();
     }
-    this.disposed = true;
-    this.observeFrame(() => ({ type: 'disconnected' }));
-    this.trafficObservers.clear();
-    this.clearReconnect();
-    this.stopHeartbeat();
-    this.failPending(new Error('JSON-RPC client disposed'));
-    this.failWaiters(new Error('JSON-RPC client disposed'));
-    this.teardownSocket();
-    this.repositoryObservers.clear();
-    this.setStatus('disconnected');
-    this.removeAllListeners();
-    this.finishConnectionOwner();
-    this.lifecycleChanged();
   }
 
   /**
@@ -943,25 +1293,44 @@ export class JsonRpcClient extends EventEmitter {
     // A queued hello must not supersede the startup/reconnect handshake it
     // needs to finish. An already-connected renegotiation retires immediately,
     // before even awaiting the persisted identity provider.
-    if (this.status === 'connected') this.beginHello();
-    const merged = await this.mergedHelloParams(params);
+    let openingOrigin: ConnectionOriginRecord | undefined;
+    if (this.status === 'connected') {
+      const openingAttempt = this.beginHello();
+      openingOrigin = this.connectionOrigins?.hellos.get(openingAttempt);
+    }
+    let merged: Record<string, unknown>;
+    try {
+      merged = await this.mergedHelloParams(params);
+    } catch (error) {
+      this.retireConnectionOrigin(openingOrigin);
+      throw error;
+    }
     if (this.disposed) throw new Error('JSON-RPC client disposed');
     if (this.status !== 'connected') await this.ensureConnected();
     if (this.disposed) throw new Error('JSON-RPC client disposed');
     // ensureConnected may itself have completed a handshake while this caller
     // waited. Retire that identity too, immediately before this renegotiation.
     const attempt = this.beginHello();
+    const origin = this.connectionOrigins?.hellos.get(attempt);
     const incarnation = this.socketIncarnation;
-    const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
-    if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
+    try {
+      const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
+      if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
+        return result;
+      this.own('hello-result', () =>
+        this.originalCallback(parent, (parent) =>
+          parent === undefined
+            ? this.onHelloResult?.(result)
+            : this.onHelloResult?.(result, parent),
+        ),
+      );
+      this.confirmHello(attempt, result);
+      this.readyConnectionOrigin(origin);
       return result;
-    this.own('hello-result', () =>
-      this.originalCallback(parent, (parent) =>
-        parent === undefined ? this.onHelloResult?.(result) : this.onHelloResult?.(result, parent),
-      ),
-    );
-    this.confirmHello(attempt, result);
-    return result;
+    } catch (error) {
+      this.retireConnectionOrigin(origin);
+      throw error;
+    }
   }
 
   /** Caller-supplied hello fields survive; the persisted identity wins on `clientId`. */
@@ -993,55 +1362,82 @@ export class JsonRpcClient extends EventEmitter {
 
   private connect(): void {
     if (this.lifecycle?.stopping) return;
-    if (this.lifecycle) {
-      this.connectionOwner = Object.freeze({ kind: 'connect' });
-      this.lifecycle.active.add(this.connectionOwner);
-    }
-    this.clearReconnect();
-    this.setStatus('connecting');
-    let socket: Duplex;
+    if (this.connectionOrigins?.dial && !this.connectionOrigins.dial.retired) return;
+    // An opted-in actual dial owns the factory until its returned socket is accounted for.
+    // Legacy dispose may finish connectionOwner inside the factory; it cannot finish this owner.
+    const factoryOwner = this.connectionOrigins && this.lifecycle ? Object.freeze({}) : undefined;
+    if (factoryOwner) this.lifecycle!.active.add(factoryOwner);
+    const releaseOrigins = this.holdConnectionOriginNotifications();
     try {
-      socket = this.socketFactory(this.config);
-    } catch (error) {
-      this.onConnectionFailure(error instanceof Error ? error : new Error(String(error)));
-      return;
-    }
-    this.socket = socket;
-    this.connectionGeneration++;
-    const incarnation = Object.freeze({});
-    this.socketIncarnation = incarnation;
-    if (this.lifecycle) {
-      const row = { incarnation, destroyRequested: false, closeObserved: false };
-      this.lifecycle.closes.set(socket, row);
-      socket.once('close', () => {
-        row.closeObserved = true;
-        // The original failure handler owns an unsolicited close. It must
-        // record that failure before this event can advertise readiness.
-        if (row.destroyRequested) this.lifecycleChanged();
+      const dial = this.beginConnectionDial();
+      if (!this.ownsConnectionDial(dial)) return;
+      if (this.lifecycle) {
+        this.connectionOwner = Object.freeze({ kind: 'connect' });
+        this.lifecycle.active.add(this.connectionOwner);
+      }
+      const originalConnectionOwner = this.connectionOwner;
+      this.clearReconnect();
+      this.setStatus('connecting');
+      if (!this.ownsConnectionDial(dial)) {
+        if (this.connectionOwner === originalConnectionOwner) this.finishConnectionOwner();
+        return;
+      }
+      let socket: Duplex;
+      try {
+        socket = this.socketFactory(this.config);
+      } catch (error) {
+        this.onConnectionFailure(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      if (!this.ownsConnectionDial(dial)) {
+        this.discardConnectionSocket(socket);
+        if (this.connectionOwner === originalConnectionOwner) this.finishConnectionOwner();
+        return;
+      }
+      this.socket = socket;
+      this.connectionGeneration++;
+      const incarnation = Object.freeze({});
+      this.socketIncarnation = incarnation;
+      this.bindConnectionSocket(dial, socket, incarnation);
+      if (this.lifecycle) {
+        const row = { incarnation, destroyRequested: false, closeObserved: false };
+        this.lifecycle.closes.set(socket, row);
+        socket.once('close', () => {
+          row.closeObserved = true;
+          // The original failure handler owns an unsolicited close. It must
+          // record that failure before this event can advertise readiness.
+          if (row.destroyRequested) this.lifecycleChanged();
+        });
+      }
+      this.repositoryConnection = null;
+      this.emitRepositoryEvent({ type: 'opened', incarnation });
+      const current = () => this.socket === socket && this.socketIncarnation === incarnation;
+      const onConnect = (info?: RaceConnectInfo) => {
+        if (current()) this.onConnected(info);
+      };
+      socket.once('connect', onConnect);
+      socket.once('secureConnect', onConnect);
+      socket.on('data', (chunk: Buffer | string) => this.onData(chunk, incarnation));
+      // Non-fatal per-host pin mismatches from the multi-host connection race
+      // (#1746): re-emit for observers (backend.ipc's renderer warnings) without
+      // touching the connection lifecycle — the race itself decides fatality.
+      socket.on('pin-mismatch', (info: HostCertMismatch) => {
+        if (current()) this.emit('cert-warning', info);
       });
+      socket.once('error', (error: Error) => {
+        if (current()) this.onConnectionFailure(error);
+      });
+      socket.once('close', () => {
+        if (current()) this.onConnectionFailure(new Error('Connection closed'));
+      });
+      logger.info('Connecting to backend', { target: describeBackendConfig(this.config) });
+    } finally {
+      if (factoryOwner) {
+        this.lifecycle!.active.delete(factoryOwner);
+        this.lifecycleChanged();
+      }
+      releaseOrigins?.();
     }
-    this.repositoryConnection = null;
-    this.emitRepositoryEvent({ type: 'opened', incarnation });
-    const current = () => this.socket === socket && this.socketIncarnation === incarnation;
-    const onConnect = (info?: RaceConnectInfo) => {
-      if (current()) this.onConnected(info);
-    };
-    socket.once('connect', onConnect);
-    socket.once('secureConnect', onConnect);
-    socket.on('data', (chunk: Buffer | string) => this.onData(chunk, incarnation));
-    // Non-fatal per-host pin mismatches from the multi-host connection race
-    // (#1746): re-emit for observers (backend.ipc's renderer warnings) without
-    // touching the connection lifecycle — the race itself decides fatality.
-    socket.on('pin-mismatch', (info: HostCertMismatch) => {
-      if (current()) this.emit('cert-warning', info);
-    });
-    socket.once('error', (error: Error) => {
-      if (current()) this.onConnectionFailure(error);
-    });
-    socket.once('close', () => {
-      if (current()) this.onConnectionFailure(new Error('Connection closed'));
-    });
-    logger.info('Connecting to backend', { target: describeBackendConfig(this.config) });
   }
 
   private onConnected(info?: RaceConnectInfo): void {
@@ -1062,6 +1458,7 @@ export class JsonRpcClient extends EventEmitter {
 
   private async performHelloHandshake(socket: Duplex | null): Promise<void> {
     const attempt = this.beginHello();
+    const origin = this.connectionOrigins?.hellos.get(attempt);
     try {
       const params = await this.mergedHelloParams();
       if (this.disposed || this.socket !== socket) return;
@@ -1080,6 +1477,7 @@ export class JsonRpcClient extends EventEmitter {
       );
       this.confirmHello(attempt, result);
     } catch (error) {
+      this.retireConnectionOrigin(origin);
       this.lifecycle?.failures.push({
         owner: this.connectionOwner ?? null,
         kind: 'original',
@@ -1095,10 +1493,11 @@ export class JsonRpcClient extends EventEmitter {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    this.finishConnect();
+    if (this.connectionOrigins) this.finishConnect(origin ?? null);
+    else this.finishConnect();
   }
 
-  private finishConnect(): void {
+  private finishConnect(origin = this.connectionOrigins?.current): void {
     this.currentReconnectDelay = this.reconnectDelayMs;
     this.reconnectAttempts = 0;
     this.connectionLimited = false;
@@ -1117,6 +1516,7 @@ export class JsonRpcClient extends EventEmitter {
     // and refresh coarse state in this handler; see RESUB-1.
     if (wasReconnect) this.emit('reconnected');
     this.finishConnectionOwner();
+    this.readyConnectionOrigin(origin);
   }
 
   private finishConnectionOwner(): void {
@@ -1127,52 +1527,58 @@ export class JsonRpcClient extends EventEmitter {
 
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
-    this.lifecycle?.failures.push({
-      owner: this.connectionOwner ?? null,
-      kind: 'transport',
-      error,
-    });
-    this.retireRepositorySocket();
-    this.hasConnectionFailed = true;
-    this.observeFrame(() => ({ type: 'disconnected' }));
-    this.emitError(error);
-    this.stopHeartbeat();
-    this.teardownSocket();
-    this.failPending(error);
-    // Reject in-flight connection waiters so pending request() calls fail fast
-    // instead of hanging across reconnect attempts.
-    this.failWaiters(error);
-    // Decided BEFORE the status broadcast so the `disconnected` push already
-    // carries the cap posture.
-    this.connectionLimited = error instanceof ConnectionLimitError;
-    this.connectionLimitRetryAfterMs =
-      error instanceof ConnectionLimitError ? error.retryAfterMs : null;
-    this.setStatus('disconnected');
-    // A 401/403 auth rejection (PROTOCOL §2.1) is not transient: every retry
-    // would re-present the same stale credential and fail identically, so the
-    // automatic reconnect loop stops here. Recovery paths (re-pair, backend
-    // switch) build a fresh client; a later request() still triggers a single
-    // on-demand connect via ensureConnected().
-    if (error instanceof AuthRejectedError) {
+    const release = this.holdConnectionOriginNotifications();
+    this.retireConnectionDial();
+    try {
+      this.lifecycle?.failures.push({
+        owner: this.connectionOwner ?? null,
+        kind: 'transport',
+        error,
+      });
+      this.retireRepositorySocket();
+      this.hasConnectionFailed = true;
+      this.observeFrame(() => ({ type: 'disconnected' }));
+      this.emitError(error);
+      this.stopHeartbeat();
+      this.teardownSocket();
+      this.failPending(error);
+      // Reject in-flight connection waiters so pending request() calls fail fast
+      // instead of hanging across reconnect attempts.
+      this.failWaiters(error);
+      // Decided BEFORE the status broadcast so the `disconnected` push already
+      // carries the cap posture.
+      this.connectionLimited = error instanceof ConnectionLimitError;
+      this.connectionLimitRetryAfterMs =
+        error instanceof ConnectionLimitError ? error.retryAfterMs : null;
+      this.setStatus('disconnected');
+      // A 401/403 auth rejection (PROTOCOL §2.1) is not transient: every retry
+      // would re-present the same stale credential and fail identically, so the
+      // automatic reconnect loop stops here. Recovery paths (re-pair, backend
+      // switch) build a fresh client; a later request() still triggers a single
+      // on-demand connect via ensureConnected().
+      if (error instanceof AuthRejectedError) {
+        this.finishConnectionOwner();
+        logger.warn('Backend rejected authentication; automatic reconnect halted', {
+          target: describeBackendConfig(this.config),
+          statusCode: error.statusCode,
+        });
+        return;
+      }
+      if (error instanceof ConnectionLimitError) {
+        // Keep retrying (a seat may free), but on the slow bounded cadence the
+        // daemon asked for: the ordinary backoff would re-present the same
+        // refused upgrade every 5s.
+        logger.warn('Backend refused the connection: guest connection limit reached', {
+          target: describeBackendConfig(this.config),
+          retryInMs: error.retryAfterMs,
+        });
+        this.currentReconnectDelay = Math.max(this.currentReconnectDelay, error.retryAfterMs);
+      }
+      this.scheduleReconnect();
       this.finishConnectionOwner();
-      logger.warn('Backend rejected authentication; automatic reconnect halted', {
-        target: describeBackendConfig(this.config),
-        statusCode: error.statusCode,
-      });
-      return;
+    } finally {
+      release?.();
     }
-    if (error instanceof ConnectionLimitError) {
-      // Keep retrying (a seat may free), but on the slow bounded cadence the
-      // daemon asked for: the ordinary backoff would re-present the same
-      // refused upgrade every 5s.
-      logger.warn('Backend refused the connection: guest connection limit reached', {
-        target: describeBackendConfig(this.config),
-        retryInMs: error.retryAfterMs,
-      });
-      this.currentReconnectDelay = Math.max(this.currentReconnectDelay, error.retryAfterMs);
-    }
-    this.scheduleReconnect();
-    this.finishConnectionOwner();
   }
 
   private onData(chunk: Buffer | string, incarnation: object): void {
@@ -1406,35 +1812,41 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
-    this.protocolVersion = undefined;
-    // Retire BEFORE any teardown callback can attempt another dispatch.
-    this.retireRepositorySocket();
-    if (!this.socket) return;
-    const socket = this.socket;
-    this.socket = null;
-    this.connectedVia = null;
-    this.buffer = '';
-    // Drop any partially-decoded multi-byte sequence so a reconnect starts clean.
-    this.decoder = new StringDecoder('utf8');
-    socket.removeAllListeners();
-    const close = this.lifecycle?.closes.get(socket);
-    if (close) {
-      close.destroyRequested = true;
-      if (!close.closeObserved)
-        socket.once('close', () => {
-          close.closeObserved = true;
+    const release = this.holdConnectionOriginNotifications();
+    this.retireConnectionDial();
+    try {
+      this.protocolVersion = undefined;
+      // Retire BEFORE any teardown callback can attempt another dispatch.
+      this.retireRepositorySocket();
+      if (!this.socket) return;
+      const socket = this.socket;
+      this.socket = null;
+      this.connectedVia = null;
+      this.buffer = '';
+      // Drop any partially-decoded multi-byte sequence so a reconnect starts clean.
+      this.decoder = new StringDecoder('utf8');
+      socket.removeAllListeners();
+      const close = this.lifecycle?.closes.get(socket);
+      if (close) {
+        close.destroyRequested = true;
+        if (!close.closeObserved)
+          socket.once('close', () => {
+            close.closeObserved = true;
+            this.lifecycleChanged();
+          });
+        socket.on('error', (error) => {
+          this.lifecycle?.failures.push({ owner: null, kind: 'close', error });
           this.lifecycleChanged();
         });
-      socket.on('error', (error) => {
+      }
+      try {
+        socket.destroy();
+      } catch (error) {
         this.lifecycle?.failures.push({ owner: null, kind: 'close', error });
-        this.lifecycleChanged();
-      });
-    }
-    try {
-      socket.destroy();
-    } catch (error) {
-      this.lifecycle?.failures.push({ owner: null, kind: 'close', error });
-      // Ordinary disposal keeps its existing best-effort teardown.
+        // Ordinary disposal keeps its existing best-effort teardown.
+      }
+    } finally {
+      release?.();
     }
   }
 

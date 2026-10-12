@@ -47,6 +47,8 @@ import { devConsoleCapture } from '../../dev-console/main/dev-console-service';
 import {
   JsonRpcClient,
   type ConnectionStatus,
+  type ClientConnectionOrigin,
+  type ClientConnectionOriginState,
   type JsonRpcNotification,
   type JsonRpcRetirement,
   type JsonRpcRetirementResult,
@@ -495,6 +497,301 @@ interface PoolLifecycle {
 let poolLifecycle: PoolLifecycle | undefined;
 let poolOwnershipStarted = false;
 
+export interface BackendConnectionOrigin {
+  readonly member: object;
+  readonly client: JsonRpcClient;
+  readonly connectionOrigin: ClientConnectionOrigin;
+  read(): ClientConnectionOriginState;
+  subscribeChanged(wake: () => void): () => void;
+}
+export interface BackendConnectionOrigins {
+  capture(backendId: string): BackendConnectionOrigin | null;
+  subscribeChanged(wake: () => void): () => void;
+}
+interface PhysicalPoolMember {
+  identity: object;
+  id: string;
+  client: JsonRpcClient;
+  retired: boolean;
+  pooled: boolean;
+  origin: PhysicalPoolOrigin | null;
+  registration?: () => void;
+  stop?: () => void;
+}
+interface PhysicalPoolOrigin {
+  member: PhysicalPoolMember;
+  source: ClientConnectionOrigin;
+  retired: boolean;
+  listeners: Set<() => void>;
+  handle: BackendConnectionOrigin;
+}
+interface PhysicalPool {
+  closed: boolean;
+  byClient: WeakMap<JsonRpcClient, PhysicalPoolMember>;
+  // Retired slot markers remain until an actual successor replaces them.
+  slots: Map<string, PhysicalPoolMember>;
+  members: Set<PhysicalPoolMember>;
+  listeners: Set<() => void>;
+  changed: Set<PhysicalPoolOrigin>;
+  changedPool: boolean;
+  depth: number;
+  notifying: boolean;
+}
+let backendConnectionOrigins: PhysicalPool | undefined;
+
+function wakePhysicalOrigin(wake: () => void): void {
+  try {
+    wake();
+  } catch {
+    /* New passive observers cannot replace original results. */
+  }
+}
+function flushPhysicalOrigins(scope: PhysicalPool): void {
+  if (scope.depth || scope.notifying) return;
+  scope.notifying = true;
+  try {
+    while (scope.changedPool || scope.changed.size) {
+      const changed = [...scope.changed];
+      scope.changed.clear();
+      scope.changedPool = false;
+      for (const origin of changed) {
+        for (const wake of [...origin.listeners]) wakePhysicalOrigin(wake);
+        if (origin.retired) origin.listeners.clear();
+      }
+      for (const wake of [...scope.listeners]) wakePhysicalOrigin(wake);
+      if (scope.closed) scope.listeners.clear();
+    }
+  } finally {
+    scope.notifying = false;
+  }
+}
+function holdPhysicalOrigins(scope = backendConnectionOrigins): (() => void) | undefined {
+  if (!scope) return undefined;
+  scope.depth++;
+  return () => {
+    scope.depth--;
+    flushPhysicalOrigins(scope);
+  };
+}
+function retirePhysicalOrigin(scope: PhysicalPool, origin: PhysicalPoolOrigin | null): void {
+  if (!origin || origin.retired) return;
+  origin.retired = true;
+  scope.changed.add(origin);
+  scope.changedPool = true;
+}
+function retirePhysicalMember(scope: PhysicalPool, member: PhysicalPoolMember): void {
+  if (member.retired) return;
+  member.retired = true;
+  retirePhysicalOrigin(scope, member.origin);
+  scope.members.delete(member);
+  const stop = member.stop;
+  member.stop = undefined;
+  stop?.();
+  scope.changedPool = true;
+}
+function physicalSlotOwned(client: JsonRpcClient): boolean {
+  const scope = backendConnectionOrigins;
+  if (!scope) return true;
+  const member = scope.byClient.get(client);
+  return !!member && scope.slots.get(member.id) === member;
+}
+function beginPhysicalDetach(client: JsonRpcClient): (() => void) | undefined {
+  const scope = backendConnectionOrigins;
+  if (!scope) return undefined;
+  const release = holdPhysicalOrigins(scope);
+  const member = scope.byClient.get(client);
+  if (member) retirePhysicalMember(scope, member);
+  return release;
+}
+function closePhysicalOrigins(): (() => void) | undefined {
+  const scope = backendConnectionOrigins;
+  if (!scope) return undefined;
+  const release = holdPhysicalOrigins(scope);
+  scope.closed = true;
+  for (const member of scope.members) retirePhysicalMember(scope, member);
+  return release;
+}
+function readPhysicalOrigin(
+  scope: PhysicalPool,
+  origin: PhysicalPoolOrigin,
+): ClientConnectionOriginState {
+  const member = origin.member;
+  const state = origin.source.read();
+  // The source read may notify/reenter. All local latches and references are last.
+  if (
+    scope.closed ||
+    origin.retired ||
+    member.retired ||
+    scope.slots.get(member.id) !== member ||
+    member.origin !== origin ||
+    (member.pooled && backendClients.get(member.id) !== member.client) ||
+    state.state === 'retired'
+  ) {
+    retirePhysicalOrigin(scope, origin);
+    // Reads latch immediately; the existing client/pool boundary releases public wakes.
+    return { state: 'retired' };
+  }
+  if (!member.pooled && state.state === 'ready') {
+    return {
+      state: 'pending',
+      dial: state.dial,
+      incarnation: state.incarnation,
+      hello: state.hello,
+    };
+  }
+  return state;
+}
+function attachPhysicalMember(id: string, client: JsonRpcClient): PhysicalPoolMember | undefined {
+  const scope = backendConnectionOrigins;
+  if (!scope) return undefined;
+  const release = holdPhysicalOrigins(scope);
+  try {
+    const pooled = backendClients.get(id);
+    const refused = scope.closed || (!!pooled && pooled !== client);
+    const member: PhysicalPoolMember = {
+      identity: Object.freeze({}),
+      id,
+      client,
+      retired: refused,
+      pooled: false,
+      origin: null,
+    };
+    scope.byClient.set(client, member);
+    if (refused) return member;
+    const prior = scope.slots.get(id);
+    if (prior) retirePhysicalMember(scope, prior);
+    scope.slots.set(id, member);
+    scope.members.add(member);
+    const stopOwner = client.onConnectionOriginChanged(
+      () => {
+        if (member.retired || scope.closed || scope.slots.get(id) !== member) return;
+        const captured = client.captureConnectionOrigin();
+        if (member.retired || scope.closed || scope.slots.get(id) !== member) return;
+        if (member.origin?.source === captured) {
+          scope.changed.add(member.origin);
+        } else {
+          retirePhysicalOrigin(scope, member.origin);
+          member.origin = null;
+          if (captured) {
+            const origin: PhysicalPoolOrigin = {
+              member,
+              source: captured,
+              retired: false,
+              listeners: new Set(),
+              handle: undefined!,
+            };
+            origin.handle = Object.freeze({
+              member: member.identity,
+              client,
+              connectionOrigin: captured,
+              read: () => readPhysicalOrigin(scope, origin),
+              subscribeChanged: (wake: () => void) => {
+                if (!origin.retired) origin.listeners.add(wake);
+                wakePhysicalOrigin(wake);
+                if (origin.retired) origin.listeners.delete(wake);
+                return () => {
+                  origin.listeners.delete(wake);
+                };
+              },
+            });
+            member.origin = origin;
+            scope.changed.add(origin);
+          }
+        }
+        scope.changedPool = true;
+      },
+      { ownerFeed: true },
+    );
+    // Public wakes are released only at the client's completed source boundary.
+    const stopPublic = client.onConnectionOriginChanged(() => flushPhysicalOrigins(scope));
+    const stop = () => {
+      stopOwner();
+      stopPublic();
+    };
+    if (member.retired || scope.closed || scope.slots.get(id) !== member) stop();
+    else member.stop = stop;
+    return member;
+  } finally {
+    release?.();
+  }
+}
+function canInsertPhysicalMember(client: JsonRpcClient): boolean {
+  const scope = backendConnectionOrigins;
+  if (!scope) return true;
+  const member = scope.byClient.get(client);
+  return (
+    !!member &&
+    !scope.closed &&
+    !member.retired &&
+    scope.slots.get(member.id) === member &&
+    (!backendClients.has(member.id) || backendClients.get(member.id) === client)
+  );
+}
+function finishPhysicalInsertion(client: JsonRpcClient): void {
+  const scope = backendConnectionOrigins;
+  const member = scope?.byClient.get(client);
+  if (!scope || !member) return;
+  if (!canInsertPhysicalMember(client) || backendClients.get(member.id) !== client) {
+    const done = beginPhysicalDetach(client);
+    try {
+      member.registration?.();
+      // Real enrolled producers remain owned by the existing global join.
+      if (poolLifecycle?.members.has(client)) client.beginRetirement();
+      else client.dispose();
+    } finally {
+      done?.();
+    }
+    return;
+  }
+  member.pooled = true;
+  if (member.origin) scope.changed.add(member.origin);
+  scope.changedPool = true;
+  flushPhysicalOrigins(scope);
+}
+function unregisterPhysicalCapture(id: string, client: JsonRpcClient): void {
+  const original = backendConnectionOrigins?.byClient.get(client)?.registration;
+  original?.();
+  if (original && captureRegistrations.get(id) === original) captureRegistrations.delete(id);
+}
+
+/** Opt-in before allocation. Existing pool/lifecycle owners remain authoritative. */
+export function enrollBackendConnectionOrigins(): BackendConnectionOrigins {
+  if (
+    backendConnectionOrigins ||
+    poolOwnershipStarted ||
+    handlersRegistered ||
+    backendClients.size ||
+    backendClientConnects.size
+  )
+    throw new Error('Connection origin capture requires an unowned empty pool');
+  const scope: PhysicalPool = {
+    closed: false,
+    byClient: new WeakMap(),
+    slots: new Map(),
+    members: new Set(),
+    listeners: new Set(),
+    changed: new Set(),
+    changedPool: false,
+    depth: 0,
+    notifying: false,
+  };
+  backendConnectionOrigins = scope;
+  return Object.freeze({
+    capture(id: string) {
+      const origin = scope.slots.get(id)?.origin;
+      if (!origin || readPhysicalOrigin(scope, origin).state === 'retired') return null;
+      return origin.handle;
+    },
+    subscribeChanged(wake: () => void) {
+      if (!scope.closed) scope.listeners.add(wake);
+      wakePhysicalOrigin(wake);
+      return () => {
+        scope.listeners.delete(wake);
+      };
+    },
+  });
+}
+
 function poolChanged(scope = poolLifecycle): void {
   if (!scope) return;
   for (const wake of [...scope.listeners]) {
@@ -732,133 +1029,139 @@ function retireOriginalMember(
     if (member.fence !== fence) refuse('Original member fence changed');
     return member.retirement;
   }
-  member.fence = fence;
-  member.disconnectJoined = false;
-  scope.retiringIds.add(member.id);
-  let resolve!: (result: PoolRetirementResult) => void;
-  let reject!: (error: unknown) => void;
-  member.retirement = new Promise((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  member.ticket = client.beginMemberRetirement();
-  const ticket = member.ticket;
-  let prepared = false,
-    checking = false,
-    finishing = false;
-  const unsubscribers: Array<() => void> = [];
-  const leave = () => {
-    scope.listeners.delete(wake);
-    for (const unsubscribe of unsubscribers) unsubscribe();
-  };
-  const belongs = (owner: PoolOwner): boolean =>
-    owner.client === client ||
-    owner.backendId === member.id ||
-    !!(owner.parent && belongs(owner.parent));
-  const wake = () => {
-    if (!prepared || checking || finishing) return;
-    checking = true;
+  const releaseOrigins = beginPhysicalDetach(client);
+  try {
+    member.fence = fence;
+    member.disconnectJoined = false;
+    scope.retiringIds.add(member.id);
+    let resolve!: (result: PoolRetirementResult) => void;
+    let reject!: (error: unknown) => void;
+    member.retirement = new Promise((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    member.ticket = client.beginMemberRetirement();
+    const ticket = member.ticket;
+    let prepared = false,
+      checking = false,
+      finishing = false;
+    const unsubscribers: Array<() => void> = [];
+    const leave = () => {
+      scope.listeners.delete(wake);
+      for (const unsubscribe of unsubscribers) unsubscribe();
+    };
+    const belongs = (owner: PoolOwner): boolean =>
+      owner.client === client ||
+      owner.backendId === member.id ||
+      !!(owner.parent && belongs(owner.parent));
+    const wake = () => {
+      if (!prepared || checking || finishing) return;
+      checking = true;
+      try {
+        if (
+          [...scope.owners].some(belongs) ||
+          !fence.ready() ||
+          !member.disconnectJoined ||
+          !ticket.isDrained()
+        )
+          return;
+        for (const kind of ticket.excludedOwners()) scope.exclusions.add(kind);
+        if (scope.exclusions.size) throw new Error('Original member has unjoined auxiliary owners');
+        // A global stop takes over sealing; never close this member ahead of its all-member barrier.
+        if (scope.phase !== 'active' && !member.finish) return;
+        if (backendClients.get(member.id) === client) backendClients.delete(member.id);
+        const original = member.finish ?? finishPoolMember(scope, client, member, ticket.seal());
+        finishing = true;
+        void original.then(
+          (result) => {
+            leave();
+            const failures = [...scope.failures, ...ticket.failures()];
+            const outcome =
+              result.outcome !== 'clean'
+                ? result.outcome
+                : failures.some((f) => f.kind !== 'original')
+                  ? 'ownership-fault'
+                  : failures.length
+                    ? 'original-failure'
+                    : 'clean';
+            if (outcome === 'clean' && scope.phase === 'active' && physicalSlotOwned(client))
+              scope.retiringIds.delete(member.id);
+            resolve(
+              Object.freeze({
+                scope: scope.scope,
+                ownersJoined: true,
+                admissionSealed: true,
+                outcome,
+                clients: [result],
+                excludedOwners: [...scope.exclusions],
+                failures,
+              }),
+            );
+            poolChanged(scope);
+          },
+          (error) => {
+            leave();
+            reject(error);
+          },
+        );
+      } catch (error) {
+        leave();
+        scope.failures.push({ kind: 'retirement', error });
+        reject(error);
+      } finally {
+        checking = false;
+      }
+    };
     try {
-      if (
-        [...scope.owners].some(belongs) ||
-        !fence.ready() ||
-        !member.disconnectJoined ||
-        !ticket.isDrained()
-      )
-        return;
-      for (const kind of ticket.excludedOwners()) scope.exclusions.add(kind);
-      if (scope.exclusions.size) throw new Error('Original member has unjoined auxiliary owners');
-      // A global stop takes over sealing; never close this member ahead of its all-member barrier.
-      if (scope.phase !== 'active' && !member.finish) return;
-      if (backendClients.get(member.id) === client) backendClients.delete(member.id);
-      const original = member.finish ?? finishPoolMember(scope, client, member, ticket.seal());
-      finishing = true;
-      void original.then(
-        (result) => {
-          leave();
-          const failures = [...scope.failures, ...ticket.failures()];
-          const outcome =
-            result.outcome !== 'clean'
-              ? result.outcome
-              : failures.some((f) => f.kind !== 'original')
-                ? 'ownership-fault'
-                : failures.length
-                  ? 'original-failure'
-                  : 'clean';
-          if (outcome === 'clean' && scope.phase === 'active') scope.retiringIds.delete(member.id);
-          resolve(
-            Object.freeze({
-              scope: scope.scope,
-              ownersJoined: true,
-              admissionSealed: true,
-              outcome,
-              clients: [result],
-              excludedOwners: [...scope.exclusions],
-              failures,
-            }),
-          );
+      if (physicalSlotOwned(client)) repositoryRoutes?.retireBackend(member.id);
+      if (physicalSlotOwned(client)) resourceRoutes?.retireBackend(member.id);
+      if (physicalSlotOwned(client)) checkoutRoutes?.retireBackend(member.id);
+      if (physicalSlotOwned(client)) selectionRoutes?.retireBackend(member.id);
+      if (physicalSlotOwned(client)) nativeReviewRoutes?.retireBackend(member.id);
+      // Original disconnect side effects run once while the transport and admitted releases remain alive.
+      if (physicalSlotOwned(client)) invitedConnectionGuards.delete(member.id);
+      if (member.id === LOCAL_CONNECTION_ID && physicalSlotOwned(client)) {
+        localIdentityGeneration++;
+        localCollaborationIdentitySupported = false;
+      }
+      if (physicalSlotOwned(client)) connectedDaemonVersions.delete(member.id);
+      if (physicalSlotOwned(client)) connectedProtocolVersions.delete(member.id);
+      if (physicalSlotOwned(client)) clearPendingDaemonUpdate(member.id);
+      if (physicalSlotOwned(client)) clearBackendFailureState(member.id);
+      if (physicalSlotOwned(client)) disposeTransferConnectionsForBackend(member.id);
+      const cancelled = cancelInflightHostExecStreamsForBackendSwitch(client);
+      void cancelled.then(
+        () => {
+          member.disconnectJoined = true;
+          wake();
           poolChanged(scope);
         },
-        (error) => {
-          leave();
-          reject(error);
+        (error: unknown) => {
+          scope.failures.push({ kind: 'original', error });
+          member.disconnectJoined = true;
+          wake();
+          poolChanged(scope);
         },
       );
+      app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, client);
+      repositoryFeeds.get(client)?.dispose();
+      resourceFeeds.get(client)?.dispose();
+      checkoutFeeds.get(client)?.dispose();
+      selectionFeeds.get(client)?.dispose();
+      nativeReviewFeeds.get(client)?.dispose();
+      scope.listeners.add(wake);
+      unsubscribers.push(ticket.subscribeChanged(wake), fence.subscribeChanged(wake));
+      prepared = true;
+      wake();
     } catch (error) {
       leave();
       scope.failures.push({ kind: 'retirement', error });
       reject(error);
-    } finally {
-      checking = false;
     }
-  };
-  try {
-    repositoryRoutes?.retireBackend(member.id);
-    resourceRoutes?.retireBackend(member.id);
-    checkoutRoutes?.retireBackend(member.id);
-    selectionRoutes?.retireBackend(member.id);
-    nativeReviewRoutes?.retireBackend(member.id);
-    // Original disconnect side effects run once while the transport and admitted releases remain alive.
-    invitedConnectionGuards.delete(member.id);
-    if (member.id === LOCAL_CONNECTION_ID) {
-      localIdentityGeneration++;
-      localCollaborationIdentitySupported = false;
-    }
-    connectedDaemonVersions.delete(member.id);
-    connectedProtocolVersions.delete(member.id);
-    clearPendingDaemonUpdate(member.id);
-    clearBackendFailureState(member.id);
-    disposeTransferConnectionsForBackend(member.id);
-    const cancelled = cancelInflightHostExecStreamsForBackendSwitch(client);
-    void cancelled.then(
-      () => {
-        member.disconnectJoined = true;
-        wake();
-        poolChanged(scope);
-      },
-      (error: unknown) => {
-        scope.failures.push({ kind: 'original', error });
-        member.disconnectJoined = true;
-        wake();
-        poolChanged(scope);
-      },
-    );
-    app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, client);
-    repositoryFeeds.get(client)?.dispose();
-    resourceFeeds.get(client)?.dispose();
-    checkoutFeeds.get(client)?.dispose();
-    selectionFeeds.get(client)?.dispose();
-    nativeReviewFeeds.get(client)?.dispose();
-    scope.listeners.add(wake);
-    unsubscribers.push(ticket.subscribeChanged(wake), fence.subscribeChanged(wake));
-    prepared = true;
-    wake();
-  } catch (error) {
-    leave();
-    scope.failures.push({ kind: 'retirement', error });
-    reject(error);
+    return member.retirement;
+  } finally {
+    releaseOrigins?.();
   }
-  return member.retirement;
 }
 
 /** Enroll before handlers or allocation. This joins only the declared main pool owners. */
@@ -897,128 +1200,133 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (scope.fence !== fence) throw new Error('Original retirement fence changed');
         return scope.retirement;
       }
-      scope.fence = fence;
-      let resolve!: (value: PoolRetirementResult) => void;
-      let reject!: (error: unknown) => void;
-      scope.retirement = new Promise((yes, no) => {
-        resolve = yes;
-        reject = no;
-      });
-      scope.phase = 'stopping';
-      const unsubscribers: Array<() => void> = [];
-      let checking = false;
-      let prepared = false;
-      const wake = () => {
-        if (!prepared || checking || scope.phase !== 'stopping') return;
-        checking = true;
-        try {
-          for (const [client, member] of scope.members) {
-            if (!member.ticket) {
-              member.ticket = client.beginRetirement();
-              unsubscribers.push(member.ticket.subscribeChanged(wake));
+      const releaseOrigins = closePhysicalOrigins();
+      try {
+        scope.fence = fence;
+        let resolve!: (value: PoolRetirementResult) => void;
+        let reject!: (error: unknown) => void;
+        scope.retirement = new Promise((yes, no) => {
+          resolve = yes;
+          reject = no;
+        });
+        scope.phase = 'stopping';
+        const unsubscribers: Array<() => void> = [];
+        let checking = false;
+        let prepared = false;
+        const wake = () => {
+          if (!prepared || checking || scope.phase !== 'stopping') return;
+          checking = true;
+          try {
+            for (const [client, member] of scope.members) {
+              if (!member.ticket) {
+                member.ticket = client.beginRetirement();
+                unsubscribers.push(member.ticket.subscribeChanged(wake));
+              }
             }
-          }
-          if (
-            scope.owners.size ||
-            !fence.ready() ||
-            [...scope.members.values()].some(
-              (m) => m.disconnectJoined === false || (m.fence && !m.fence.ready()),
-            ) ||
-            [...scope.members.values()].some((m) => !m.ticket!.isDrained())
-          )
-            return;
-          for (const member of scope.members.values())
-            for (const kind of member.ticket!.excludedOwners()) scope.exclusions.add(kind);
-          if (scope.exclusions.size)
-            throw new Error('Unjoined auxiliary pool owners: ' + [...scope.exclusions].join(','));
-          // No await, dispatch or teardown between the final fence and ALL admission seals.
-          scope.phase = 'sealed';
-          const sealed = [...scope.members].map(([client, m]) => ({
-            client,
-            ticket: m.ticket!,
-            sealed: m.ticket!.seal(),
-          }));
-          for (const [client, member] of scope.members) {
-            if (backendClients.get(member.id) === client) backendClients.delete(member.id);
-            connectedProtocolVersions.delete(member.id);
-            clearBackendFailureState(member.id);
-          }
-          void Promise.all(
-            sealed.map(({ client, sealed }) =>
-              finishPoolMember(scope, client, scope.members.get(client)!, sealed),
-            ),
-          ).then((clients) => {
-            poolChanged(scope);
-            scope.phase = 'finished';
-            poolChanged(scope);
+            if (
+              scope.owners.size ||
+              !fence.ready() ||
+              [...scope.members.values()].some(
+                (m) => m.disconnectJoined === false || (m.fence && !m.fence.ready()),
+              ) ||
+              [...scope.members.values()].some((m) => !m.ticket!.isDrained())
+            )
+              return;
+            for (const member of scope.members.values())
+              for (const kind of member.ticket!.excludedOwners()) scope.exclusions.add(kind);
+            if (scope.exclusions.size)
+              throw new Error('Unjoined auxiliary pool owners: ' + [...scope.exclusions].join(','));
+            // No await, dispatch or teardown between the final fence and ALL admission seals.
+            scope.phase = 'sealed';
+            const sealed = [...scope.members].map(([client, m]) => ({
+              client,
+              ticket: m.ticket!,
+              sealed: m.ticket!.seal(),
+            }));
+            for (const [client, member] of scope.members) {
+              if (backendClients.get(member.id) === client) backendClients.delete(member.id);
+              if (physicalSlotOwned(client)) connectedProtocolVersions.delete(member.id);
+              if (physicalSlotOwned(client)) clearBackendFailureState(member.id);
+            }
+            void Promise.all(
+              sealed.map(({ client, sealed }) =>
+                finishPoolMember(scope, client, scope.members.get(client)!, sealed),
+              ),
+            ).then((clients) => {
+              poolChanged(scope);
+              scope.phase = 'finished';
+              poolChanged(scope);
+              for (const unsubscribe of unsubscribers) unsubscribe();
+              scope.listeners.delete(wake);
+              const failed = clients.find((client) => client.outcome !== 'clean');
+              const finalClientFailures = [...scope.members.values()].flatMap((m) =>
+                m.ticket!.failures(),
+              );
+              const forced = finalClientFailures.some((f) => f.kind === 'forced');
+              const ownershipFault =
+                scope.exclusions.size > 0 ||
+                scope.failures.some((f) => f.kind !== 'original') ||
+                finalClientFailures.some((f) => ['late', 'unknown', 'close'].includes(f.kind));
+              resolve(
+                Object.freeze({
+                  scope: scope.scope,
+                  ownersJoined: scope.exclusions.size === 0,
+                  admissionSealed: true,
+                  outcome: forced
+                    ? 'forced'
+                    : ownershipFault
+                      ? 'ownership-fault'
+                      : scope.failures.length
+                        ? 'original-failure'
+                        : (failed?.outcome ?? 'clean'),
+                  clients,
+                  excludedOwners: [...scope.exclusions],
+                  failures: [...scope.failures, ...finalClientFailures],
+                }),
+              );
+            }, reject);
+          } catch (error) {
+            scope.failures.push({ kind: 'retirement', error });
             for (const unsubscribe of unsubscribers) unsubscribe();
             scope.listeners.delete(wake);
-            const failed = clients.find((client) => client.outcome !== 'clean');
-            const finalClientFailures = [...scope.members.values()].flatMap((m) =>
-              m.ticket!.failures(),
-            );
-            const forced = finalClientFailures.some((f) => f.kind === 'forced');
-            const ownershipFault =
-              scope.exclusions.size > 0 ||
-              scope.failures.some((f) => f.kind !== 'original') ||
-              finalClientFailures.some((f) => ['late', 'unknown', 'close'].includes(f.kind));
-            resolve(
-              Object.freeze({
-                scope: scope.scope,
-                ownersJoined: scope.exclusions.size === 0,
-                admissionSealed: true,
-                outcome: forced
-                  ? 'forced'
-                  : ownershipFault
-                    ? 'ownership-fault'
-                    : scope.failures.length
-                      ? 'original-failure'
-                      : (failed?.outcome ?? 'clean'),
-                clients,
-                excludedOwners: [...scope.exclusions],
-                failures: [...scope.failures, ...finalClientFailures],
-              }),
-            );
-          }, reject);
+            reject(error);
+          } finally {
+            checking = false;
+          }
+        };
+        // Stop autonomous client work synchronously before route disposal can issue releases.
+        for (const [client, member] of scope.members) {
+          member.ticket = client.beginRetirement();
+          unsubscribers.push(member.ticket.subscribeChanged(wake));
+          if (member.fence) unsubscribers.push(member.fence.subscribeChanged(wake));
+        }
+        try {
+          keychainSyncLifecycle?.dispose();
+          if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
+          repositoryRoutes?.dispose();
+          resourceRoutes?.dispose();
+          checkoutRoutes?.dispose();
+          selectionRoutes?.dispose();
+          nativeReviewRoutes?.dispose();
+          for (const client of scope.members.keys()) {
+            repositoryFeeds.get(client)?.dispose();
+            resourceFeeds.get(client)?.dispose();
+            checkoutFeeds.get(client)?.dispose();
+            selectionFeeds.get(client)?.dispose();
+            nativeReviewFeeds.get(client)?.dispose();
+          }
+          scope.listeners.add(wake);
+          unsubscribers.push(fence.subscribeChanged(wake));
+          prepared = true;
+          wake();
         } catch (error) {
           scope.failures.push({ kind: 'retirement', error });
-          for (const unsubscribe of unsubscribers) unsubscribe();
-          scope.listeners.delete(wake);
           reject(error);
-        } finally {
-          checking = false;
         }
-      };
-      // Stop autonomous client work synchronously before route disposal can issue releases.
-      for (const [client, member] of scope.members) {
-        member.ticket = client.beginRetirement();
-        unsubscribers.push(member.ticket.subscribeChanged(wake));
-        if (member.fence) unsubscribers.push(member.fence.subscribeChanged(wake));
+        return scope.retirement;
+      } finally {
+        releaseOrigins?.();
       }
-      try {
-        keychainSyncLifecycle?.dispose();
-        if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
-        repositoryRoutes?.dispose();
-        resourceRoutes?.dispose();
-        checkoutRoutes?.dispose();
-        selectionRoutes?.dispose();
-        nativeReviewRoutes?.dispose();
-        for (const client of scope.members.keys()) {
-          repositoryFeeds.get(client)?.dispose();
-          resourceFeeds.get(client)?.dispose();
-          checkoutFeeds.get(client)?.dispose();
-          selectionFeeds.get(client)?.dispose();
-          nativeReviewFeeds.get(client)?.dispose();
-        }
-        scope.listeners.add(wake);
-        unsubscribers.push(fence.subscribeChanged(wake));
-        prepared = true;
-        wake();
-      } catch (error) {
-        scope.failures.push({ kind: 'retirement', error });
-        reject(error);
-      }
-      return scope.retirement;
     },
   });
 }
@@ -1460,9 +1768,15 @@ function getLocalBackendClientOriginal(owner?: PoolOwner): JsonRpcClient {
   const existing = backendClients.get(LOCAL_CONNECTION_ID);
   if (existing) return existing;
   const config = resolveBackendConfig(process.env, { isDev: !app.isPackaged });
-  const instance = createAdditionalBackendClient(LOCAL_CONNECTION_ID, config);
-  backendClients.set(LOCAL_CONNECTION_ID, instance);
-  return poolClient(owner, instance);
+  const releaseOrigins = holdPhysicalOrigins();
+  try {
+    const instance = createAdditionalBackendClient(LOCAL_CONNECTION_ID, config);
+    if (canInsertPhysicalMember(instance)) backendClients.set(LOCAL_CONNECTION_ID, instance);
+    finishPhysicalInsertion(instance);
+    return poolClient(owner, instance);
+  } finally {
+    releaseOrigins?.();
+  }
 }
 
 /**
@@ -1613,12 +1927,19 @@ function connectBackendClientOriginal(
       // The credential was replaced while this config was being read: the
       // config is superseded, so read it again rather than pooling it.
       if ((backendCredentialGenerations.get(id) ?? 0) !== generation) continue;
-      const instance = createAdditionalBackendClient(id, config, invitedCredential);
-      backendClients.set(id, instance);
-      return poolClient(owner, instance);
+      const releaseOrigins = holdPhysicalOrigins();
+      try {
+        const instance = createAdditionalBackendClient(id, config, invitedCredential);
+        if (canInsertPhysicalMember(instance)) backendClients.set(id, instance);
+        finishPhysicalInsertion(instance);
+        return poolClient(owner, instance);
+      } finally {
+        releaseOrigins?.();
+      }
     }
   })().finally(() => {
-    backendClientConnects.delete(id);
+    if (!backendConnectionOrigins || backendClientConnects.get(id) === connecting)
+      backendClientConnects.delete(id);
   });
   backendClientConnects.set(id, connecting);
   return connecting;
@@ -1628,38 +1949,46 @@ function connectBackendClientOriginal(
 export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
-  repositoryRoutes?.retireBackend(id);
-  resourceRoutes?.retireBackend(id);
-  checkoutRoutes?.retireBackend(id);
-  selectionRoutes?.retireBackend(id);
-  nativeReviewRoutes?.retireBackend(id);
-  backendClients.delete(id);
-  captureRegistrations.get(id)?.();
-  captureRegistrations.delete(id);
-  invitedConnectionGuards.delete(id);
-  if (id === LOCAL_CONNECTION_ID) {
-    localIdentityGeneration++;
-    localCollaborationIdentitySupported = false;
+  const releaseOrigins = beginPhysicalDetach(instance);
+  try {
+    if (physicalSlotOwned(instance)) repositoryRoutes?.retireBackend(id);
+    if (physicalSlotOwned(instance)) resourceRoutes?.retireBackend(id);
+    if (physicalSlotOwned(instance)) checkoutRoutes?.retireBackend(id);
+    if (physicalSlotOwned(instance)) selectionRoutes?.retireBackend(id);
+    if (physicalSlotOwned(instance)) nativeReviewRoutes?.retireBackend(id);
+    if (!backendConnectionOrigins || backendClients.get(id) === instance) backendClients.delete(id);
+    if (backendConnectionOrigins) unregisterPhysicalCapture(id, instance);
+    else {
+      captureRegistrations.get(id)?.();
+      captureRegistrations.delete(id);
+    }
+    if (physicalSlotOwned(instance)) invitedConnectionGuards.delete(id);
+    if (id === LOCAL_CONNECTION_ID && physicalSlotOwned(instance)) {
+      localIdentityGeneration++;
+      localCollaborationIdentitySupported = false;
+    }
+    if (physicalSlotOwned(instance)) connectedDaemonVersions.delete(id);
+    if (physicalSlotOwned(instance)) connectedProtocolVersions.delete(id);
+    // A user-driven dispose ends any update-caused outage as far as the UI is
+    // concerned: the rebuilt client's first status must not carry the marker.
+    if (physicalSlotOwned(instance)) clearPendingDaemonUpdate(id);
+    if (physicalSlotOwned(instance)) clearBackendFailureState(id);
+    if (physicalSlotOwned(instance)) disposeTransferConnectionsForBackend(id);
+    void cancelInflightHostExecStreamsForBackendSwitch(instance);
+    app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
+    repositoryFeeds.get(instance)?.dispose();
+    resourceFeeds.get(instance)?.dispose();
+    checkoutFeeds.get(instance)?.dispose();
+    selectionFeeds.get(instance)?.dispose();
+    nativeReviewFeeds.get(instance)?.dispose();
+    instance.dispose();
+    // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
+    // already-disconnected client emits no status change, so the forwarder
+    // below never pushes the fresh list on its own.
+    refreshGuestSessionsForPoolChange(id);
+  } finally {
+    releaseOrigins?.();
   }
-  connectedDaemonVersions.delete(id);
-  connectedProtocolVersions.delete(id);
-  // A user-driven dispose ends any update-caused outage as far as the UI is
-  // concerned: the rebuilt client's first status must not carry the marker.
-  clearPendingDaemonUpdate(id);
-  clearBackendFailureState(id);
-  disposeTransferConnectionsForBackend(id);
-  void cancelInflightHostExecStreamsForBackendSwitch(instance);
-  app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
-  repositoryFeeds.get(instance)?.dispose();
-  resourceFeeds.get(instance)?.dispose();
-  checkoutFeeds.get(instance)?.dispose();
-  selectionFeeds.get(instance)?.dispose();
-  nativeReviewFeeds.get(instance)?.dispose();
-  instance.dispose();
-  // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
-  // already-disconnected client emits no status change, so the forwarder
-  // below never pushes the fresh list on its own.
-  refreshGuestSessionsForPoolChange(id);
 }
 
 /**
@@ -1887,6 +2216,7 @@ function createAdditionalBackendClient(
     });
   let observedGeneration: number | undefined;
   const instance = new JsonRpcClient({
+    ...(backendConnectionOrigins ? { captureConnectionOrigins: true as const } : {}),
     ...(poolLifecycle
       ? {
           lifecycle: {
@@ -2017,6 +2347,7 @@ function createAdditionalBackendClient(
         producer,
       ),
   });
+  const physicalMember = attachPhysicalMember(id, instance);
   // Subscribe before start/hello. Older test doubles have no private source feed.
   if (typeof instance.onRepositoryConnectionEvent === 'function') {
     repositoryFeeds.set(instance, createRepositoryAuthorityFeed(instance));
@@ -2202,7 +2533,19 @@ function createAdditionalBackendClient(
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
-  captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
+  if (physicalMember) {
+    if (!physicalMember.retired && physicalSlotOwned(instance)) {
+      const registration = devConsoleCapture.registerClient(id, id, instance, {
+        preserveReplacement: true,
+      });
+      physicalMember.registration = registration;
+      if (physicalSlotOwned(instance) && !physicalMember.retired)
+        captureRegistrations.set(id, registration);
+      else registration();
+    }
+  } else {
+    captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
+  }
   poolLifecycle?.members.set(instance, { id });
   if (poolLifecycle)
     observePool(poolLifecycle, {
@@ -5407,27 +5750,37 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 
 /** Dispose every pooled backend client (app shutdown). */
 export function disposeAllBackendClients(): void {
-  repositoryRoutes?.dispose();
-  resourceRoutes?.dispose();
-  checkoutRoutes?.dispose();
-  selectionRoutes?.dispose();
-  nativeReviewRoutes?.dispose();
-  for (const [id, instance] of backendClients) {
-    backendClients.delete(id);
-    captureRegistrations.get(id)?.();
-    captureRegistrations.delete(id);
-    if (id === LOCAL_CONNECTION_ID) {
-      localIdentityGeneration++;
-      localCollaborationIdentitySupported = false;
+  const originals = backendConnectionOrigins ? [...backendClients] : backendClients;
+  const releaseOrigins = closePhysicalOrigins();
+  try {
+    repositoryRoutes?.dispose();
+    resourceRoutes?.dispose();
+    checkoutRoutes?.dispose();
+    selectionRoutes?.dispose();
+    nativeReviewRoutes?.dispose();
+    for (const [id, instance] of originals) {
+      if (!backendConnectionOrigins || backendClients.get(id) === instance)
+        backendClients.delete(id);
+      if (backendConnectionOrigins) unregisterPhysicalCapture(id, instance);
+      else {
+        captureRegistrations.get(id)?.();
+        captureRegistrations.delete(id);
+      }
+      if (id === LOCAL_CONNECTION_ID && physicalSlotOwned(instance)) {
+        localIdentityGeneration++;
+        localCollaborationIdentitySupported = false;
+      }
+      if (physicalSlotOwned(instance)) connectedProtocolVersions.delete(id);
+      if (physicalSlotOwned(instance)) clearBackendFailureState(id);
+      if (physicalSlotOwned(instance)) disposeTransferConnectionsForBackend(id);
+      repositoryFeeds.get(instance)?.dispose();
+      resourceFeeds.get(instance)?.dispose();
+      checkoutFeeds.get(instance)?.dispose();
+      selectionFeeds.get(instance)?.dispose();
+      nativeReviewFeeds.get(instance)?.dispose();
+      instance.dispose();
     }
-    connectedProtocolVersions.delete(id);
-    clearBackendFailureState(id);
-    disposeTransferConnectionsForBackend(id);
-    repositoryFeeds.get(instance)?.dispose();
-    resourceFeeds.get(instance)?.dispose();
-    checkoutFeeds.get(instance)?.dispose();
-    selectionFeeds.get(instance)?.dispose();
-    nativeReviewFeeds.get(instance)?.dispose();
-    instance.dispose();
+  } finally {
+    releaseOrigins?.();
   }
 }
