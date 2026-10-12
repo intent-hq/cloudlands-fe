@@ -67,3 +67,56 @@ export type WorkspaceLoadReadOutcome<T = unknown> =
       settlement:
         { status: 'fulfilled'; value: T } | { status: 'rejected'; error: WorkspaceLoadError };
     };
+
+/** Inactive captured Git operations; none grants daemon access. */
+const gitStatus = z
+  .object({
+    operation: z.literal('git-status'),
+    forceRefresh: z.boolean().optional(),
+  })
+  .strict();
+const trackedChanges = z.object({ operation: z.literal('tracked-changes') }).strict();
+const commitsWithBoundary = z
+  .object({
+    operation: z.literal('commits-with-boundary'),
+    includeOlder: z.boolean().optional(),
+  })
+  .strict();
+const prRefresh = z
+  .object({
+    operation: z.literal('pr-refresh'),
+    automatic: z.boolean().optional(),
+  })
+  .strict();
+export const WorkspaceGitOperationSchema = z.discriminatedUnion('operation', [
+  gitStatus,
+  trackedChanges,
+  commitsWithBoundary,
+  prRefresh,
+]);
+export const WorkspaceGitReadSchema = z.discriminatedUnion('operation', [
+  WorkspaceLoadRouteRefSchema.extend(gitStatus.shape).strict(),
+  WorkspaceLoadRouteRefSchema.extend(trackedChanges.shape).strict(),
+  WorkspaceLoadRouteRefSchema.extend(commitsWithBoundary.shape).strict(),
+  WorkspaceLoadRouteRefSchema.extend(prRefresh.shape).strict(),
+]);
+export type WorkspaceGitOperation = z.infer<typeof WorkspaceGitOperationSchema>;
+/** Local IPC containment only; PR refresh persists daemon state and is separately enabled. */
+export type WorkspaceGitReadAccess = Readonly<{
+  reads?: readonly Exclude<WorkspaceGitOperation['operation'], 'pr-refresh'>[];
+  prRefresh?: boolean;
+}>;
+
+/** Opt-in only. Default PREPARE and full route references retain their strict shapes. */
+export const WorkspaceGitPrepareSchema = WorkspaceLoadPrepareSchema.extend({
+  operation: z.enum(['git-status', 'tracked-changes', 'commits-with-boundary', 'pr-refresh']),
+}).strict();
+export const WorkspaceGitProvenanceSchema = z.object({ physicalOwnerId: id }).strict();
+export const WorkspaceGitPreparedSchema = z
+  .object({
+    ref: WorkspaceLoadRouteRefSchema,
+    provenance: WorkspaceGitProvenanceSchema,
+  })
+  .strict();
+export type WorkspaceGitProvenance = Readonly<z.infer<typeof WorkspaceGitProvenanceSchema>>;
+export type WorkspaceGitPrepared = z.infer<typeof WorkspaceGitPreparedSchema>;

@@ -10,7 +10,7 @@ import { backendReconnected } from '../workspace-lifecycle/workspace-lifecycle-s
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
-import type { PRStatusWorkspaceState, PRStatusState } from './pr-status-types';
+import type { PRRefreshProvenance, PRStatusWorkspaceState, PRStatusState } from './pr-status-types';
 
 const emptyWorkspaceState: PRStatusWorkspaceState = {
   lastRefreshTime: null,
@@ -47,6 +47,17 @@ export const prStatusRefreshCompleted = createAction(
   }),
 );
 
+/** Timestamp and physical/principal provenance are committed in one reducer transition. */
+export const prStatusScopedRefreshSucceeded = createAction(
+  'prStatus/scopedRefreshSucceeded',
+  (wsId: string, refreshProvenance: PRRefreshProvenance) => ({
+    wsId,
+    success: true as const,
+    timestamp: Date.now(),
+    refreshProvenance,
+  }),
+);
+
 // ── Reducer ──
 
 export const prStatusReducer = createReducer<PRStatusState>(initialState);
@@ -60,7 +71,11 @@ prStatusReducer.with(prStatusRefreshStarted, (state, { payload: [wsId] }) => {
 });
 prStatusReducer.with(prStatusRefreshCompleted, (state, action) => {
   const { wsId, success, error } = action.payload;
-  const ws = getWorkspaceState(state, wsId);
+  let ws = getWorkspaceState(state, wsId);
+  if (success && 'refreshProvenance' in ws) {
+    const { refreshProvenance: _previousProvenance, ...legacy } = ws;
+    ws = legacy;
+  }
   return setWorkspaceState(state, wsId, {
     ...ws,
     isRefreshing: false,
@@ -68,6 +83,16 @@ prStatusReducer.with(prStatusRefreshCompleted, (state, action) => {
     lastError: error ?? null,
   });
 });
+
+prStatusReducer.with(prStatusScopedRefreshSucceeded, (state, { payload }) =>
+  setWorkspaceState(state, payload.wsId, {
+    ...getWorkspaceState(state, payload.wsId),
+    isRefreshing: false,
+    lastError: null,
+    lastRefreshTime: payload.timestamp,
+    refreshProvenance: payload.refreshProvenance,
+  }),
+);
 
 // Refresh timestamps and loading flags belong to the connection that produced them.
 prStatusReducer.with(backendReconnected, () => initialState);

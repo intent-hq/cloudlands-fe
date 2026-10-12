@@ -9,6 +9,7 @@ import type { BrowserWindow as ElectronWindow, IpcMainInvokeEvent } from 'electr
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JsonRpcClient } from '../../../backend/main/json-rpc-client';
 import type {
+  WorkspaceGitReadAccess,
   WorkspaceLoadOriginRef,
   WorkspaceLoadRouteRef,
 } from '$shared/types/workspace-load-route';
@@ -252,15 +253,26 @@ beforeEach(() => {
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
 afterEach(async () => {
+  const cleanupErrors: unknown[] = [];
+  const attempt = (work: () => void) => {
+    try {
+      work();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  };
   try {
-    for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+    for (const cleanup of cleanups.splice(0).reverse()) attempt(cleanup);
     // Failure-safe release of every controlled hold before joining genuine pool work.
-    for (const release of releases.splice(0)) release();
+    for (const release of releases.splice(0)) attempt(release);
     edge.autoHello = true;
     for (const socket of edge.sockets) {
       if (socket.destroyed) continue;
-      if (!socket.frames.some((frame) => frame.method === 'client.hello')) socket.emit('connect');
-      for (const frame of socket.frames) if (frame.method === 'client.hello') socket.reply(frame);
+      attempt(() => {
+        if (!socket.frames.some((frame) => frame.method === 'client.hello')) socket.emit('connect');
+      });
+      for (const frame of socket.frames)
+        if (frame.method === 'client.hello') attempt(() => socket.reply(frame));
     }
     if (lifecycle) {
       const receipt = await lifecycle.retire({
@@ -291,17 +303,31 @@ afterEach(async () => {
       }
       expect(edge.sockets.every((socket) => socket.destroyed)).toBe(true);
     }
+  } catch (error) {
+    cleanupErrors.push(error);
   } finally {
     lifecycle = undefined;
-    windows.clear();
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-    vi.useRealTimers();
-    Object.defineProperty(process, 'platform', { value: platform });
+    attempt(() => {
+      windows.clear();
+    });
+    attempt(() => {
+      vi.restoreAllMocks();
+    });
+    attempt(() => {
+      vi.unstubAllEnvs();
+    });
+    attempt(() => {
+      vi.useRealTimers();
+    });
+    attempt(() => {
+      Object.defineProperty(process, 'platform', { value: platform });
+    });
   }
+  if (cleanupErrors.length)
+    throw new AggregateError(cleanupErrors, 'Physical fixture cleanup failed');
 });
 
-async function harness() {
+async function harness(git?: WorkspaceGitReadAccess) {
   const pool = await import('../../../backend/main/backend.ipc');
   const origins = pool.enrollBackendConnectionOrigins();
   lifecycle = pool.enrollBackendClientLifecycle();
@@ -320,6 +346,7 @@ async function harness() {
   stampWindowWithBackend(native);
   const event = { sender, senderFrame: sender.mainFrame } as unknown as IpcMainInvokeEvent;
   const listeners = new Map<string, (...args: unknown[]) => void>();
+  let listenerSerial = 0;
   const seen: Array<{ channel: string; payload: unknown }> = [];
   const replyControls = {
     suppressNotices: false,
@@ -331,6 +358,7 @@ async function harness() {
   const routes = createWorkspaceLoadRoutes({
     originAdmission: { kind: 'physical', origins },
     readBackend,
+    ...(git === undefined ? {} : { git }),
     open: async () => {
       throw new Error('OPEN service coverage is in workspace-load-open-wire.test.ts');
     },
@@ -362,8 +390,19 @@ async function harness() {
             return routes.observeOrigin(event);
           case channels.PREPARE:
             if (replyControls.beforePrepare) await replyControls.beforePrepare();
+            if (git && payload && typeof payload === 'object' && 'operation' in payload)
+              return routes.prepareGit(event, payload);
             return routes.prepare(event, payload);
           case channels.READ:
+            if (
+              git &&
+              payload &&
+              typeof payload === 'object' &&
+              'operation' in payload &&
+              payload.operation !== 'open' &&
+              payload.operation !== 'get'
+            )
+              return routes.readGit(event, payload);
             return routes.read(event, payload);
           case channels.RELEASE:
             routes.release(event, payload);
@@ -394,7 +433,7 @@ async function harness() {
       listener: (...args: unknown[]) => void,
     ) {
       expect(this).toBe(api);
-      const id = `listener-${listeners.size}`;
+      const id = `listener-${listenerSerial++}`;
       listeners.set(id, listener);
       return id;
     }),
@@ -784,4 +823,818 @@ describe('physical workspace load composition', () => {
     expect(order).toEqual(['retired', 'rejected']);
     expect(origin.isCurrent()).toBe(false);
   });
+});
+
+type GitSettlement<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; error: unknown };
+
+function observeGitSettlement<T>(pending: Promise<T>): Promise<GitSettlement<T>> {
+  return pending.then(
+    (value): GitSettlement<T> => ({ status: 'fulfilled', value }),
+    (error: unknown): GitSettlement<T> => ({ status: 'rejected', error }),
+  );
+}
+
+function gitFulfilledValue<T>(settlement: GitSettlement<T>): T {
+  expect(settlement.status).toBe('fulfilled');
+  if (settlement.status === 'rejected') throw settlement.error;
+  return settlement.value;
+}
+
+function expectGitUnavailable<T>(settlement: GitSettlement<T>): void {
+  expect(settlement.status).toBe('rejected');
+  if (settlement.status !== 'rejected') throw new Error('Expected a rejected Git read');
+  const { error } = settlement;
+  expect(error).toBeInstanceOf(Error);
+  if (!(error instanceof Error) || !('code' in error)) throw error;
+  expect(error.code).toBe('WORKSPACE_LOAD_ROUTE_UNAVAILABLE');
+}
+
+describe('captured Git scope with actual physical owners', () => {
+  const access: WorkspaceGitReadAccess = {
+    reads: ['git-status', 'tracked-changes', 'commits-with-boundary'],
+    prRefresh: true,
+  };
+  async function gitHarness() {
+    const h = await harness(access);
+    const client = h.pool.getLocalBackendClient();
+    await h.acknowledge(client);
+    const { acquireWorkspaceGitReadScope } =
+      await import('../../../../lib/client/live/workspace-git-read-scope');
+    async function acquire() {
+      const result = await acquireWorkspaceGitReadScope(
+        h.transport,
+        'amber-forest',
+        new AbortController().signal,
+      );
+      if (result.kind !== 'acquired') throw new Error('Expected original physical scope');
+      cleanups.push(result.scope.release);
+      return result.scope;
+    }
+    return { ...h, client, acquire, acquireWorkspaceGitReadScope };
+  }
+
+  it('uses one original origin and three children for simultaneous changes operations', async () => {
+    const h = await gitHarness();
+    const scope = await h.acquire();
+    const status = deferred<unknown>();
+    const changes = deferred<unknown>();
+    const commits = deferred<unknown>();
+    const statusValue = {
+      branch: 'work',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+      hasUpstream: false,
+    };
+    const changesValue = { changes: [], truncated: false, totalCount: 0 };
+    const commitsValue = { commits: [], boundarySha: null, nextToken: null };
+    releases.push(() => {
+      status.resolve(statusValue);
+      changes.resolve(changesValue);
+      commits.resolve(commitsValue);
+    });
+    const replies: Record<string, Promise<unknown>> = {
+      'git.status': status.promise,
+      'file-tracking.getChanges': changes.promise,
+      'file-tracking.loadCommits': commits.promise,
+    };
+    edge.respond = (_socket, frame) => replies[frame.method] ?? defaultReply(frame);
+    const pending = observeGitSettlement(
+      Promise.all([
+        scope.read({ operation: 'git-status' }),
+        scope.read({ operation: 'tracked-changes' }),
+        scope.read({ operation: 'commits-with-boundary', includeOlder: false }),
+      ]),
+    );
+    const frames = await Promise.all(
+      ['git.status', 'file-tracking.getChanges', 'file-tracking.loadCommits'].map((method) =>
+        edge.sockets[0].next(method),
+      ),
+    );
+    expect(frames.map((frame) => frame.params)).toEqual([
+      { workspaceId: 'amber-forest' },
+      { workspaceId: 'amber-forest' },
+      { workspaceId: 'amber-forest', includeOlder: false },
+    ]);
+    const prepared = h.seen
+      .filter((entry) => entry.channel === channels.PREPARE)
+      .map((entry) => entry.payload as WorkspaceLoadRouteRef);
+    expect(new Set(prepared.map((ref) => ref.originId)).size).toBe(1);
+    expect(new Set(prepared.map((ref) => ref.requestId)).size).toBe(3);
+    expect(h.seen.filter((entry) => entry.channel === channels.OBSERVE_ORIGIN)).toHaveLength(1);
+    status.resolve(statusValue);
+    changes.resolve(changesValue);
+    commits.resolve(commitsValue);
+    expect(gitFulfilledValue(await pending)).toEqual([statusValue, changesValue, commitsValue]);
+    expect(h.seen.filter((entry) => entry.channel === channels.RELEASE)).toHaveLength(3);
+    scope.release();
+    scope.release();
+    expect(h.seen.filter((entry) => entry.channel === channels.RELEASE_ORIGIN)).toHaveLength(1);
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it('counts held load origins with six Git scopes and refuses excess without recapture', async () => {
+    const h = await gitHarness();
+    const loads = [];
+    for (let i = 0; i < 2; i++) {
+      const origin = (await h.transport.observeOrigin())!;
+      cleanups.push(origin.release);
+      const route = await origin.prepare(
+        `held-load-${i}`,
+        'amber-forest',
+        new AbortController().signal,
+      );
+      expect(route).not.toBeNull();
+      loads.push(origin);
+    }
+    const scopes = [];
+    for (let i = 0; i < 6; i++) scopes.push(await h.acquire());
+    const refused = await h.acquireWorkspaceGitReadScope(
+      h.transport,
+      'amber-forest',
+      new AbortController().signal,
+    );
+    expect(refused).toEqual({ kind: 'unavailable' });
+    expect(h.seen.filter((entry) => entry.channel === channels.OBSERVE_ORIGIN)).toHaveLength(9);
+    expect(h.seen.filter((entry) => entry.channel === channels.READ)).toEqual([]);
+    loads[0].release();
+    const fresh = await h.acquire();
+    expect(fresh.isCurrent()).toBe(true);
+    expect(scopes.every((scope) => scope.isCurrent())).toBe(true);
+    expect(h.seen.filter((entry) => entry.channel === channels.OBSERVE_ORIGIN)).toHaveLength(10);
+  });
+
+  it('refuses old Git results after same-client hello replacement and preserves successor scope', async () => {
+    const h = await gitHarness();
+    const original = await h.acquire();
+    const held = deferred<unknown>();
+    const value = { changes: [], truncated: false, totalCount: 0 };
+    releases.push(() => held.resolve(value));
+    edge.respond = (_socket, frame) =>
+      frame.method === 'file-tracking.getChanges' ? held.promise : defaultReply(frame);
+    const stale = observeGitSettlement(original.read({ operation: 'tracked-changes' }));
+    await edge.sockets[0].next('file-tracking.getChanges');
+    edge.autoHello = true;
+    await h.client.request('client.hello', {});
+    const successor = await h.acquire();
+    held.resolve(value);
+    expectGitUnavailable(await stale);
+    original.release();
+    expect(successor.isCurrent()).toBe(true);
+    expect(await successor.read({ operation: 'tracked-changes' })).toEqual(value);
+    expect(
+      edge.sockets[0].frames.filter((frame) => frame.method === 'file-tracking.getChanges'),
+    ).toHaveLength(2);
+  });
+
+  it('preserves the two-active-read limit on a single Git child route', async () => {
+    const h = await gitHarness();
+    const origin = (await h.transport.observeOrigin())!;
+    cleanups.push(origin.release);
+    const route = (await origin.prepare(
+      'limited-child',
+      'amber-forest',
+      new AbortController().signal,
+    ))!;
+    const held = deferred<unknown>();
+    releases.push(() => held.resolve({ changes: [], truncated: false, totalCount: 0 }));
+    edge.respond = (_socket, frame) =>
+      frame.method === 'file-tracking.getChanges' ? held.promise : defaultReply(frame);
+    const first = h.routes.readGit(h.event, { ...route.ref, operation: 'tracked-changes' });
+    const second = h.routes.readGit(h.event, { ...route.ref, operation: 'tracked-changes' });
+    const pending = observeGitSettlement(Promise.all([first, second]));
+    await edge.sockets[0].next('file-tracking.getChanges');
+    await edge.sockets[0].next('file-tracking.getChanges');
+    expect(await h.routes.readGit(h.event, { ...route.ref, operation: 'tracked-changes' })).toEqual(
+      { ref: route.ref, current: false, reason: 'retired' },
+    );
+    held.resolve({ changes: [], truncated: false, totalCount: 0 });
+    const outcomes = gitFulfilledValue(await pending);
+    expect(outcomes.every((result) => !result.current)).toBe(true);
+    expect(outcomes).toEqual([
+      { ref: route.ref, current: false, reason: 'retired' },
+      { ref: route.ref, current: false, reason: 'retired' },
+    ]);
+    expect(
+      edge.sockets[0].frames.filter((frame) => frame.method === 'file-tracking.getChanges'),
+    ).toHaveLength(2);
+  });
+
+  it('retains final stream-entry fencing for Git after traffic callback retirement', async () => {
+    const h = await gitHarness();
+    const scope = await h.acquire();
+    expectedOutcome = 'original-failure';
+    expectedFailures = [
+      {
+        owner: { kind: 'captured-request' },
+        kind: 'original',
+        error: expect.objectContaining({
+          name: 'Error',
+          message: 'Captured repository connection is unavailable',
+        }),
+      },
+    ];
+    expectedClients = [{ generation: 1, outcome: expectedOutcome, failures: expectedFailures }];
+    cleanups.push(
+      h.client.observeTraffic((message) => {
+        if (message.type === 'request' && message.method === 'git.status') scope.release();
+      }),
+    );
+    await expect(scope.read({ operation: 'git-status' })).rejects.toMatchObject({
+      code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE',
+    });
+    expect(edge.sockets[0].frames.filter((frame) => frame.method === 'git.status')).toEqual([]);
+  });
+
+  it('suppresses a cancelled PR result without claiming to cancel its daemon command', async () => {
+    const h = await gitHarness();
+    const controller = new AbortController();
+    const result = await h.acquireWorkspaceGitReadScope(
+      h.transport,
+      'amber-forest',
+      controller.signal,
+    );
+    if (result.kind !== 'acquired') throw new Error('Expected physical scope');
+    cleanups.push(result.scope.release);
+    const held = deferred<unknown>();
+    const linked = {
+      outcome: 'linked',
+      prNumber: 7,
+      prUrl: 'https://example.test/pull/7',
+      prStatus: 'open',
+      pullRequests: [],
+    };
+    releases.push(() => held.resolve(linked));
+    edge.respond = (_socket, frame) =>
+      frame.method === 'pr.refresh' ? held.promise : defaultReply(frame);
+    const pending = observeGitSettlement(
+      result.scope.read({ operation: 'pr-refresh', automatic: true }),
+    );
+    expect((await edge.sockets[0].next('pr.refresh')).params).toEqual({
+      workspaceId: 'amber-forest',
+      automatic: true,
+    });
+    controller.abort();
+    held.resolve(linked);
+    expectGitUnavailable(await pending);
+    expect(edge.sockets[0].frames.filter((frame) => frame.method === 'pr.refresh')).toHaveLength(1);
+    expect(h.listeners.size).toBe(0);
+  });
+});
+
+describe('physical Git replacement and ownership boundaries', () => {
+  it.each(['socket', 'member'] as const)(
+    'never follows %s replacement for Git requests',
+    async (boundary) => {
+      const h = await harness({ reads: ['git-status'] });
+      const client = h.pool.getLocalBackendClient();
+      await h.acknowledge(client);
+      const original = (await h.transport.observeOrigin())!;
+      cleanups.push(original.release);
+      const route = (await original.prepare(
+        'git-original',
+        'amber-forest',
+        new AbortController().signal,
+      ))!;
+      if (boundary === 'socket') {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        inducedError = new Error('lost original Git socket');
+        expectedOutcome = 'original-failure';
+        expectedFailures = [{ owner: null, kind: 'transport', error: inducedError }];
+        expectedClients = [{ generation: 1, outcome: expectedOutcome, failures: expectedFailures }];
+        edge.sockets[0].emit('error', inducedError);
+        await vi.advanceTimersByTimeAsync(1000);
+        await h.acknowledge(client);
+        vi.useRealTimers();
+      } else {
+        expectedOutcome = 'forced';
+        expectedFailures = [
+          {
+            owner: null,
+            kind: 'forced',
+            error: expect.objectContaining({ name: 'Error', message: 'Legacy disposal' }),
+          },
+        ];
+        expectedClients = [
+          { generation: 1, outcome: 'forced', failures: expectedFailures },
+          { generation: 2, outcome: 'clean', failures: [] },
+        ];
+        h.pool.disconnectBackendClient('local');
+        await h.acknowledge(h.pool.getLocalBackendClient());
+      }
+      await expect(route.readGit({ operation: 'git-status' })).rejects.toMatchObject({
+        code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE',
+      });
+      expect(
+        edge.sockets
+          .flatMap((socket) => socket.frames)
+          .filter((frame) => frame.method === 'git.status'),
+      ).toEqual([]);
+      expect(h.readBackend).not.toHaveBeenCalled();
+      const successor = (await h.transport.observeOrigin())!;
+      cleanups.push(successor.release);
+      original.release();
+      expect(successor.isCurrent()).toBe(true);
+    },
+  );
+
+  it('refuses foreign sender, frame and complete tuple without writing on a physical Git route', async () => {
+    const h = await harness({ reads: ['tracked-changes'] });
+    await h.acknowledge(h.pool.getLocalBackendClient());
+    const origin = h.routes.observeOrigin(h.event);
+    const ref = await h.routes.prepare(h.event, tuple(origin));
+    for (const input of [
+      { ...ref, workspaceId: 'another-workspace' },
+      { ...ref, originId: 'another-origin' },
+      { ...ref, routeId: 'another-route' },
+      { ...ref, requestId: 'another-request' },
+    ])
+      expect(await h.routes.readGit(h.event, { ...input, operation: 'tracked-changes' })).toEqual({
+        ref: input,
+        current: false,
+        reason: 'retired',
+      });
+    const foreignFrame = { ...h.event, senderFrame: {} } as IpcMainInvokeEvent;
+    const foreignSender = {
+      ...h.event,
+      sender: Object.assign(new EventEmitter(), { mainFrame: {} }),
+    } as IpcMainInvokeEvent;
+    for (const event of [foreignFrame, foreignSender]) {
+      expect(await h.routes.readGit(event, { ...ref, operation: 'tracked-changes' })).toEqual({
+        ref,
+        current: false,
+        reason: 'retired',
+      });
+    }
+    expect(
+      edge.sockets[0].frames.filter((frame) => frame.method === 'file-tracking.getChanges'),
+    ).toEqual([]);
+    h.routes.releaseOrigin(h.event, origin);
+  });
+});
+
+describe('Git admission cannot upgrade an already ready-only origin', () => {
+  it('requires the original owned physical handle even after physical options are injected', async () => {
+    const h = await harness();
+    await h.acknowledge(h.pool.getLocalBackendClient());
+    const { createWorkspaceLoadRoutes } = await import('../workspace-load-route');
+    const deps = {
+      readBackend: h.readBackend,
+      open: async () => undefined,
+      errorPayload: (error: unknown) => ({ code: 'TRANSPORT_ERROR', message: String(error) }),
+      notify: () => {},
+    };
+    Object.defineProperty(deps, 'git', { value: { reads: ['git-status'], prRefresh: true } });
+    const readyOnly = createWorkspaceLoadRoutes(deps);
+    cleanups.push(() => readyOnly.dispose());
+    const origin = readyOnly.observeOrigin(h.event);
+    const ref = readyOnly.prepare(h.event, tuple(origin));
+    // Real enrollment is supplied later, but it cannot rewrite the captured origin's provenance.
+    Object.defineProperty(deps, 'originAdmission', {
+      value: { kind: 'physical', origins: h.origins },
+    });
+    expect(await readyOnly.readGit(h.event, { ...ref, operation: 'git-status' })).toEqual({
+      ref,
+      current: false,
+      reason: 'retired',
+    });
+    expect(edge.sockets[0].frames.filter((frame) => frame.method === 'git.status')).toEqual([]);
+  });
+});
+
+describe('ready provenance from genuine physical pool lifetimes', () => {
+  async function provenanceFixture() {
+    const h = await harness({ reads: ['tracked-changes'], prRefresh: true });
+    const client = h.pool.getLocalBackendClient();
+    await h.acknowledge(client);
+    const { acquireWorkspaceGitReadScope } =
+      await import('../../../../lib/client/live/workspace-git-read-scope');
+    async function acquire() {
+      const result = await acquireWorkspaceGitReadScope(
+        h.transport,
+        'amber-forest',
+        new AbortController().signal,
+      );
+      if (result.kind !== 'acquired') throw new Error('Expected actual physical scope');
+      cleanups.push(result.scope.release);
+      return result.scope;
+    }
+    return { ...h, client, acquire };
+  }
+
+  it('carries actual attested provenance through canonical PR mapping while the original parent remains current', async () => {
+    const h = await provenanceFixture();
+    const scope = await h.acquire();
+    const prepared = await scope.preparePrRefresh();
+    const { createBackendGitReadRuntime } =
+      await import('../../../../lib/client/live/backend-git-read-runtime');
+    const runtime = createBackendGitReadRuntime({
+      isCurrent: scope.isCurrent,
+      request<T>(method: string, params: Record<string, unknown>) {
+        expect(method).toBe('pr.refresh');
+        expect(params).toEqual({ workspaceId: 'amber-forest', automatic: true });
+        return prepared.read<T>({ operation: 'pr-refresh', automatic: true });
+      },
+    });
+    edge.respond = (_socket, frame) =>
+      frame.method === 'pr.refresh'
+        ? { outcome: 'linked', prNumber: 42, pullRequests: [] }
+        : defaultReply(frame);
+    const pending = observeGitSettlement(runtime.prRefresh('amber-forest', { automatic: true }));
+    expect(gitFulfilledValue(await pending)).toMatchObject({
+      outcome: 'linked',
+      prNumber: 42,
+      pullRequests: [],
+    });
+    expect(prepared.provenance.physicalOwnerId.length).toBeGreaterThan(0);
+    expect(scope.isCurrent()).toBe(true);
+    expect(scope.signal.aborted).toBe(false);
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toEqual([]);
+    scope.release();
+    expect(scope.isCurrent()).toBe(false);
+    expect(h.listeners.size).toBe(0);
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toHaveLength(1);
+    expect(
+      edge.sockets[0].frames
+        .filter((frame) => frame.method === 'pr.refresh')
+        .map((frame) => frame.params),
+    ).toEqual([{ workspaceId: 'amber-forest', automatic: true }]);
+  });
+
+  it('reuses physical provenance across ten released fresh observations without holding the sender cap', async () => {
+    const h = await provenanceFixture();
+    const tokens: string[] = [];
+    for (let index = 0; index < 10; index++) {
+      const scope = await h.acquire();
+      const prepared = await scope.preparePrRefresh();
+      tokens.push(prepared.provenance.physicalOwnerId);
+      expect(prepared.isCurrent()).toBe(true);
+      prepared.release();
+      expect(scope.isCurrent()).toBe(false);
+      expect(h.listeners.size).toBe(0);
+    }
+    expect(new Set(tokens).size).toBe(1);
+    const refs = h.seen
+      .filter((call) => call.channel === channels.RELEASE_ORIGIN)
+      .map((call) => call.payload);
+    expect(refs).toHaveLength(10);
+    expect(new Set(refs.map((ref) => JSON.stringify(ref))).size).toBe(10);
+    expect(h.seen.filter((call) => call.channel === channels.PREPARE)).toHaveLength(10);
+    expect(edge.sockets[0].frames.filter((frame) => frame.method === 'pr.refresh')).toEqual([]);
+    expect(h.readBackend).not.toHaveBeenCalled();
+  });
+
+  it.each(['document', 'hello'] as const)(
+    'never revives provenance across repeated %s replacement with equal labels',
+    async (boundary) => {
+      const h = await provenanceFixture();
+      const tokens: string[] = [];
+      let previous:
+        Awaited<ReturnType<Awaited<ReturnType<typeof h.acquire>>['preparePrRefresh']>> | undefined;
+      for (let generation = 0; generation < 3; generation++) {
+        if (generation) {
+          if (boundary === 'document') {
+            h.stampWindowWithBackend(h.native, 'remote-B');
+            expect(await h.transport.observeOrigin()).toBeNull();
+            h.stampWindowWithBackend(h.native, 'local');
+            // The old document cannot receive RETIRED. Its real READ must observe main refusal.
+            if (!previous) throw new Error('Missing old prepared handle');
+            expectGitUnavailable(
+              await observeGitSettlement(previous.read({ operation: 'pr-refresh' })),
+            );
+            expect(h.seen.filter((call) => call.channel === channels.READ)).toHaveLength(
+              generation,
+            );
+          } else {
+            edge.autoHello = true;
+            await h.client.request('client.hello', {});
+          }
+          expect(previous?.isCurrent()).toBe(false);
+        }
+        const scope = await h.acquire();
+        const prepared = await scope.preparePrRefresh();
+        tokens.push(prepared.provenance.physicalOwnerId);
+        previous = prepared;
+      }
+      expect(new Set(tokens).size).toBe(3);
+      expect(
+        edge.sockets
+          .flatMap((socket) => socket.frames)
+          .some((frame) => frame.method === 'pr.refresh'),
+      ).toBe(false);
+    },
+  );
+
+  it.each(['socket', 'member'] as const)(
+    'never aliases the original token after two real %s replacements',
+    async (boundary) => {
+      const h = await provenanceFixture();
+      const tokens: string[] = [];
+      const socketError = new Error('provenance socket retired');
+      const failure = {
+        owner: null,
+        kind: boundary === 'socket' ? 'transport' : 'forced',
+        error:
+          boundary === 'socket'
+            ? socketError
+            : expect.objectContaining({ name: 'Error', message: 'Legacy disposal' }),
+      };
+      for (let generation = 0; generation < 3; generation++) {
+        const scope = await h.acquire();
+        const prepared = await scope.preparePrRefresh();
+        tokens.push(prepared.provenance.physicalOwnerId);
+        if (generation === 2) {
+          prepared.release();
+          break;
+        }
+        if (boundary === 'socket') {
+          inducedError = socketError;
+          expectedOutcome = 'original-failure';
+          expectedFailures = Array.from({ length: generation + 1 }, () => failure);
+          expectedClients = [
+            { generation: 1, outcome: expectedOutcome, failures: expectedFailures },
+          ];
+          vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+          edge.sockets.at(-1)!.emit('error', failure.error);
+          await vi.advanceTimersByTimeAsync(1000);
+          await h.acknowledge(h.client);
+          vi.useRealTimers();
+        } else {
+          expectedOutcome = 'forced';
+          expectedFailures = Array.from({ length: generation + 1 }, () => failure);
+          expectedClients = [
+            ...Array.from({ length: generation + 1 }, (_, index) => ({
+              generation: index + 1,
+              outcome: 'forced' as const,
+              failures: [failure],
+            })),
+            { generation: generation + 2, outcome: 'clean', failures: [] },
+          ];
+          h.pool.disconnectBackendClient('local');
+          await h.acknowledge(h.pool.getLocalBackendClient());
+        }
+        expect(prepared.isCurrent()).toBe(false);
+        expectGitUnavailable(
+          await observeGitSettlement(prepared.read({ operation: 'pr-refresh' })),
+        );
+      }
+      expect(new Set(tokens).size).toBe(3);
+      expect(
+        edge.sockets
+          .flatMap((socket) => socket.frames)
+          .some((frame) => frame.method === 'pr.refresh'),
+      ).toBe(false);
+    },
+  );
+
+  it('waits for the captured hello and cancels attestation without PR traffic or recapture', async () => {
+    const h = await harness({ prRefresh: true });
+    const client = h.pool.getLocalBackendClient();
+    const origin = (await h.transport.observeOrigin())!;
+    cleanups.push(origin.release);
+    const signal = new AbortController();
+    const pending = observeGitSettlement(
+      origin.prepareGit('pending-proof', 'amber-forest', 'pr-refresh', signal.signal),
+    );
+    signal.abort();
+    expect(gitFulfilledValue(await pending)).toBeNull();
+    await h.acknowledge(client);
+    expect(edge.sockets[0].frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+    expect(h.seen.filter((call) => call.channel === channels.OBSERVE_ORIGIN)).toHaveLength(1);
+    const input = h.seen.find((call) => call.channel === channels.PREPARE)?.payload;
+    if (!input || typeof input !== 'object' || !('originId' in input))
+      throw new Error('Missing preparation input');
+    expect(
+      h.seen.filter((call) => call.channel === channels.RELEASE).map((call) => call.payload),
+    ).toEqual([
+      { originId: input.originId, requestId: 'pending-proof', workspaceId: 'amber-forest' },
+    ]);
+  });
+
+  it('rejects attestation when a real binding lookup reenters owner disposal after preparation', async () => {
+    const h = await provenanceFixture();
+    const observed = h.routes.observeOrigin(h.event);
+    const pending = observeGitSettlement(
+      h.routes.prepareGit(h.event, {
+        ...observed,
+        requestId: 'reentry',
+        workspaceId: 'amber-forest',
+        operation: 'pr-refresh',
+      }),
+    );
+    vi.mocked(BrowserWindow.fromWebContents).mockImplementationOnce((sender) => {
+      h.routes.dispose();
+      return windows.get(sender) ?? null;
+    });
+    const settled = await pending;
+    expect(settled.status).toBe('rejected');
+    if (settled.status !== 'rejected') throw new Error('Expected disposal to defeat attestation');
+    expect(settled.error).toMatchObject({ message: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE' });
+    expect(edge.sockets[0].frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+  });
+
+  it('retains a real current PR rejection for publication then revokes it on physical hello replacement', async () => {
+    const h = await provenanceFixture();
+    const scope = await h.acquire();
+    const prepared = await scope.preparePrRefresh({ retainCurrentFailure: true });
+    expectedOutcome = 'original-failure';
+    expectedFailures = [
+      {
+        owner: { kind: 'captured-request' },
+        kind: 'original',
+        error: expect.objectContaining({
+          name: 'JsonRpcError',
+          message: 'PR member required',
+          code: 'FORBIDDEN',
+          rpcCode: -32003,
+          data: { code: 'FORBIDDEN', resource: 'pr-refresh' },
+        }),
+      },
+    ];
+    expectedClients = [{ generation: 1, outcome: expectedOutcome, failures: expectedFailures }];
+    edge.respond = (_socket, frame) =>
+      frame.method === 'pr.refresh'
+        ? Promise.reject({
+            code: -32003,
+            message: 'PR member required',
+            data: { code: 'FORBIDDEN', resource: 'pr-refresh' },
+          })
+        : defaultReply(frame);
+    const settled = await observeGitSettlement(
+      prepared.read({ operation: 'pr-refresh', automatic: true }),
+    );
+    expect(settled.status).toBe('rejected');
+    if (settled.status !== 'rejected') throw new Error('Expected current PR rejection');
+    expect(settled.error).toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'PR member required',
+      rpcCode: -32003,
+    });
+    expect(scope.isCurrent()).toBe(true);
+    expect(prepared.isCurrent()).toBe(true);
+    expect(scope.signal.aborted).toBe(false);
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toEqual([]);
+    edge.autoHello = true;
+    await h.client.request('client.hello', {});
+    expect(prepared.isCurrent()).toBe(false);
+    expect(scope.isCurrent()).toBe(false);
+    const next = await h.acquire();
+    const nextPrepared = await next.preparePrRefresh({ retainCurrentFailure: true });
+    expect(nextPrepared.provenance.physicalOwnerId).not.toBe(prepared.provenance.physicalOwnerId);
+    expect(next.isCurrent()).toBe(true);
+    expectGitUnavailable(await observeGitSettlement(prepared.read({ operation: 'pr-refresh' })));
+    expect(
+      edge.sockets[0].frames
+        .filter((frame) => frame.method === 'pr.refresh')
+        .map((frame) => frame.params),
+    ).toEqual([{ workspaceId: 'amber-forest', automatic: true }]);
+    scope.release();
+    next.release();
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toHaveLength(2);
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it('keeps the real physical origin current after prepared success until caller finalization', async () => {
+    const h = await provenanceFixture();
+    const scope = await h.acquire();
+    const prepared = await scope.preparePrRefresh();
+    const value = {
+      outcome: 'unchanged',
+      prNumber: null,
+      prUrl: null,
+      prStatus: null,
+      pullRequests: [],
+    };
+    edge.respond = (_socket, frame) =>
+      frame.method === 'pr.refresh' ? value : defaultReply(frame);
+    try {
+      expect(
+        gitFulfilledValue(
+          await observeGitSettlement(prepared.read({ operation: 'pr-refresh', automatic: true })),
+        ),
+      ).toEqual(value);
+      expect(scope.isCurrent()).toBe(true);
+      expect(prepared.isCurrent()).toBe(true);
+      expect(scope.signal.aborted).toBe(false);
+      expect(h.listeners.size).toBe(1);
+      expect(h.seen.filter((call) => call.channel === channels.RELEASE)).toHaveLength(1);
+      expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toEqual([]);
+      expectGitUnavailable(
+        await observeGitSettlement(prepared.read({ operation: 'pr-refresh', automatic: false })),
+      );
+      expect(scope.isCurrent()).toBe(true);
+      expect(prepared.isCurrent()).toBe(true);
+      expect(h.seen.filter((call) => call.channel === channels.PREPARE)).toHaveLength(1);
+      expect(h.seen.filter((call) => call.channel === channels.READ)).toHaveLength(1);
+      expect(
+        edge.sockets[0].frames
+          .filter((frame) => frame.method === 'pr.refresh')
+          .map((frame) => frame.params),
+      ).toEqual([{ workspaceId: 'amber-forest', automatic: true }]);
+      expect(h.readBackend).not.toHaveBeenCalled();
+    } finally {
+      scope.release();
+      prepared.release();
+    }
+    expect(scope.isCurrent()).toBe(false);
+    expect(prepared.isCurrent()).toBe(false);
+    expect(scope.signal.aborted).toBe(true);
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE)).toHaveLength(1);
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toHaveLength(1);
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it('retires the surviving publication origin on a real hello replacement after prepared success', async () => {
+    const h = await provenanceFixture();
+    const scope = await h.acquire();
+    const prepared = await scope.preparePrRefresh();
+    const value = {
+      outcome: 'unchanged',
+      prNumber: null,
+      prUrl: null,
+      prStatus: null,
+      pullRequests: [],
+    };
+    edge.respond = (_socket, frame) =>
+      frame.method === 'pr.refresh' ? value : defaultReply(frame);
+    try {
+      expect(
+        gitFulfilledValue(await observeGitSettlement(prepared.read({ operation: 'pr-refresh' }))),
+      ).toEqual(value);
+      expect(prepared.isCurrent()).toBe(true);
+      expect(scope.signal.aborted).toBe(false);
+      expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toEqual([]);
+      edge.autoHello = true;
+      await h.client.request('client.hello', {});
+      expect(scope.isCurrent()).toBe(false);
+      expect(prepared.isCurrent()).toBe(false);
+      expect(scope.signal.aborted).toBe(true);
+      expectGitUnavailable(await observeGitSettlement(prepared.read({ operation: 'pr-refresh' })));
+      expect(edge.sockets[0].frames.filter((frame) => frame.method === 'pr.refresh')).toHaveLength(
+        1,
+      );
+    } finally {
+      prepared.release();
+      scope.release();
+    }
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE)).toHaveLength(1);
+    expect(h.seen.filter((call) => call.channel === channels.RELEASE_ORIGIN)).toHaveLength(1);
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it('fences a prepared PR at final write and retains the original physical cleanup error', async () => {
+    const h = await provenanceFixture();
+    const scope = await h.acquire();
+    const prepared = await scope.preparePrRefresh();
+    expectedOutcome = 'original-failure';
+    expectedFailures = [
+      {
+        owner: { kind: 'captured-request' },
+        kind: 'original',
+        error: expect.objectContaining({
+          name: 'Error',
+          message: 'Captured repository connection is unavailable',
+        }),
+      },
+    ];
+    expectedClients = [{ generation: 1, outcome: expectedOutcome, failures: expectedFailures }];
+    cleanups.push(
+      h.client.observeTraffic((message) => {
+        if (message.type === 'request' && message.method === 'pr.refresh') prepared.release();
+      }),
+    );
+    expectGitUnavailable(
+      await observeGitSettlement(prepared.read({ operation: 'pr-refresh', automatic: true })),
+    );
+    expect(edge.sockets[0].frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+    expect(h.listeners.size).toBe(0);
+  });
+});
+
+it('delivers attestation only after the original physical hello and still sends no PR read', async () => {
+  const h = await harness({ prRefresh: true });
+  const client = h.pool.getLocalBackendClient();
+  const origin = (await h.transport.observeOrigin())!;
+  cleanups.push(origin.release);
+  const pending = observeGitSettlement(
+    origin.prepareGit('ready-proof', 'amber-forest', 'pr-refresh', new AbortController().signal),
+  );
+  edge.sockets[0].emit('connect');
+  const hello = await edge.sockets[0].next('client.hello');
+  expect(client.getRepositoryConnection()).toBeNull();
+  expect(h.seen.filter((call) => call.channel === channels.PREPARE)).toHaveLength(1);
+  expect(edge.sockets[0].frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+  edge.sockets[0].reply(hello);
+  const prepared = gitFulfilledValue(await pending);
+  expect(prepared).not.toBeNull();
+  if (!prepared) throw new Error('Expected ready attestation');
+  expect(prepared.provenance.physicalOwnerId.length).toBeGreaterThan(0);
+  expect(prepared.isCurrent()).toBe(true);
+  expect(edge.sockets[0].frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+  prepared.release();
+  origin.release();
+  expect(h.listeners.size).toBe(0);
 });

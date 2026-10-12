@@ -22,3 +22,21 @@ export const selectIsWorkspaceSessionLive = store.createSelector<[wsId: string],
 export const selectWorkspaceLoadState = store.createSelector<[wsId: string], WorkspaceLoadState>(
   getWorkspaceLoadState,
 );
+
+import { getAdmittedWorkspaceReadContext } from '../../../../../src/store/renderer/slices/workspace-lifecycle/utils/workspace-read-admission';
+import { selectPrincipalActionContext, selectHostRole } from '../principal/principal-selectors';
+import {
+  selectWorkspaceById,
+  selectWorkspaceListLoadedForBackend,
+} from '../workspace/workspace-selectors';
+
+const admissionSelectors = {
+  selectPrincipalActionContext,
+  selectHostRole,
+  selectWorkspaceById,
+  selectWorkspaceListLoadedForBackend,
+};
+export const selectAdmittedWorkspaceReadContext = store.createSelector<
+  [workspaceId: string],
+  string | null
+>((state, workspaceId) => getAdmittedWorkspaceReadContext(state, workspaceId, admissionSelectors));

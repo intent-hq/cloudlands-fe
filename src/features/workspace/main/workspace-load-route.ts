@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { IpcMainInvokeEvent, WebContents } from 'electron';
 import {
+  WorkspaceGitReadSchema,
+  WorkspaceGitPrepareSchema,
+  type WorkspaceGitPrepared,
+  type WorkspaceGitOperation,
+  type WorkspaceGitReadAccess,
   WorkspaceLoadOriginRefSchema,
   WorkspaceLoadPrepareSchema,
   WorkspaceLoadReadSchema,
@@ -42,6 +47,9 @@ interface Dependencies {
   notify(frame: Electron.WebFrameMain, retirement: WorkspaceLoadRetired): void;
 }
 
+type RouteDependencies = Dependencies &
+  ({ originAdmission: PhysicalAdmission; git?: WorkspaceGitReadAccess } | { git?: never });
+
 // These bound private resources, not daemon permissions or readiness waits.
 const MAX_ORIGINS = 256;
 const MAX_SENDER_ORIGINS = 8;
@@ -60,17 +68,17 @@ type PreparedOwner<Result> = Omit<RouteOwner, 'prepare'> & {
  * Daemon read permission remains daemon-owned; no repository lease is involved.
  */
 export function createWorkspaceLoadRoutes(
-  deps: Dependencies & { originAdmission: PhysicalAdmission },
+  deps: Dependencies & { originAdmission: PhysicalAdmission; git?: WorkspaceGitReadAccess },
 ): PreparedOwner<Promise<WorkspaceLoadRouteRef>>;
 export function createWorkspaceLoadRoutes(
-  deps: Dependencies & { originAdmission?: undefined },
+  deps: Dependencies & { originAdmission?: undefined; git?: never },
 ): PreparedOwner<WorkspaceLoadRouteRef>;
-export function createWorkspaceLoadRoutes(deps: Dependencies): RouteOwner;
-export function createWorkspaceLoadRoutes(deps: Dependencies): RouteOwner {
+export function createWorkspaceLoadRoutes(deps: RouteDependencies): RouteOwner;
+export function createWorkspaceLoadRoutes(deps: RouteDependencies): RouteOwner {
   return createWorkspaceLoadRouteOwner(deps);
 }
 
-function createWorkspaceLoadRouteOwner(deps: Dependencies) {
+function createWorkspaceLoadRouteOwner(deps: RouteDependencies) {
   type Origin = {
     originId: string;
     sender: WebContents;
@@ -96,10 +104,65 @@ function createWorkspaceLoadRouteOwner(deps: Dependencies) {
     connection: RepositoryConnection;
     retired: boolean;
     activeReads: number;
+    gitOperation?: WorkspaceGitOperation['operation'];
   };
   const origins = new Map<string, Origin>();
   const routes = new Map<string, Route>();
   let disposed = false;
+  // Weak keys do not retain a document, pool member, socket or hello for PR freshness.
+  // The actual owners never revive a retired binding/source/ready connection tuple.
+  type IdentityNode = { children: WeakMap<object, IdentityNode>; token?: string };
+  const identities: IdentityNode = { children: new WeakMap() };
+
+  function readyIdentity(route: Route): readonly object[] | null {
+    const physical = route.origin.physical;
+    if (!physical || deps.originAdmission?.kind !== 'physical') return null;
+    const state = physicalState(route.origin);
+    if (state?.state !== 'ready' || state.connection !== route.connection) return null;
+    const keys = [
+      route.origin.binding,
+      route.origin.binding.stamp,
+      physical.member,
+      physical.connectionOrigin,
+      state.dial,
+      state.incarnation,
+      state.hello,
+      state.connection,
+      state.connection.identity,
+    ];
+    // Dependency reads may reenter release/disposal. End on private owned state.
+    if (
+      disposed ||
+      route.origin.retired ||
+      route.retired ||
+      origins.get(route.origin.originId) !== route.origin ||
+      routes.get(route.ref.routeId) !== route
+    )
+      return null;
+    return keys;
+  }
+
+  function attest(route: Route): WorkspaceGitPrepared {
+    const keys = readyIdentity(route);
+    if (!keys) throw unavailable();
+    let node = identities;
+    for (const key of keys) {
+      let child = node.children.get(key);
+      if (!child) {
+        child = { children: new WeakMap() };
+        node.children.set(key, child);
+      }
+      node = child;
+    }
+    node.token ??= randomUUID();
+    const result = Object.freeze({
+      ref: route.ref,
+      provenance: Object.freeze({ physicalOwnerId: node.token }),
+    });
+    const finalKeys = readyIdentity(route);
+    if (!finalKeys || finalKeys.some((key, index) => key !== keys[index])) throw unavailable();
+    return result;
+  }
 
   function notify(origin: Origin, message: WorkspaceLoadRetired): void {
     try {
@@ -420,6 +483,30 @@ function createWorkspaceLoadRouteOwner(deps: Dependencies) {
       return route.ref;
     },
 
+    /** Ready attestation only: prepares one child without any daemon request. */
+    async prepareGit(event: IpcMainInvokeEvent, payload: unknown): Promise<WorkspaceGitPrepared> {
+      const { operation, ...tuple } = WorkspaceGitPrepareSchema.parse(payload);
+      if (deps.originAdmission?.kind !== 'physical') throw unavailable();
+      const access = deps.git;
+      const allowed =
+        operation === 'pr-refresh'
+          ? access?.prRefresh === true
+          : access?.reads?.includes(operation) === true;
+      if (!allowed) throw unavailable();
+      const origin = origins.get(tuple.originId);
+      if (!origin?.physical || !owns(event, origin)) throw unavailable();
+      const ref = await preparePhysical(event, tuple);
+      const route = ownedRoute(event, ref);
+      if (!route) throw unavailable();
+      try {
+        route.gitOperation = operation;
+        return attest(route);
+      } catch (error) {
+        dropRoute(route);
+        throw error;
+      }
+    },
+
     async read(event: IpcMainInvokeEvent, payload: unknown): Promise<WorkspaceLoadReadOutcome> {
       const input = WorkspaceLoadReadSchema.parse(payload);
       const { operation: _operation, ...ref } = input;
@@ -558,6 +645,95 @@ function createWorkspaceLoadRouteOwner(deps: Dependencies) {
           rpcCode: payload.rpcCode,
         };
         if (!current(route)) return retired();
+        return { ref, current: true, settlement: { status: 'rejected', error: structuredError } };
+      } finally {
+        route.activeReads--;
+      }
+    },
+
+    /** New operations require a genuine physical origin, even if a default caller injects access. */
+    async readGit(event: IpcMainInvokeEvent, payload: unknown): Promise<WorkspaceLoadReadOutcome> {
+      const input = WorkspaceGitReadSchema.parse(payload);
+      const ref: WorkspaceLoadRouteRef = {
+        originId: input.originId,
+        requestId: input.requestId,
+        workspaceId: input.workspaceId,
+        routeId: input.routeId,
+      };
+      const retired = (): WorkspaceLoadReadOutcome => ({ ref, current: false, reason: 'retired' });
+      // No ordinary/default origin is upgraded by an operation allowlist.
+      if (deps.originAdmission?.kind !== 'physical') throw unavailable();
+      const access = deps.git;
+      const allowed =
+        input.operation === 'pr-refresh'
+          ? access?.prRefresh === true
+          : access?.reads?.includes(input.operation) === true;
+      if (!allowed) throw unavailable();
+      const route = ownedRoute(event, ref);
+      if (!route) return retired();
+      if (route.gitOperation !== undefined && route.gitOperation !== input.operation)
+        throw unavailable();
+      function gitCurrent(): boolean {
+        if (deps.originAdmission?.kind !== 'physical' || !route!.origin.physical) return false;
+        const state = physicalState(route!.origin);
+        return (
+          state?.state === 'ready' && state.connection === route!.connection && current(route!)
+        );
+      }
+      if (!gitCurrent()) return retired();
+      if (route.activeReads >= MAX_ACTIVE_READS) {
+        dropRoute(route);
+        return retired();
+      }
+      route.activeReads++;
+      try {
+        let method: string;
+        let params: Readonly<Record<string, unknown>>;
+        switch (input.operation) {
+          case 'git-status':
+            method = 'git.status';
+            params = Object.freeze({
+              workspaceId: route.ref.workspaceId,
+              ...(input.forceRefresh ? { forceRefresh: true } : {}),
+            });
+            break;
+          case 'tracked-changes':
+            method = 'file-tracking.getChanges';
+            params = Object.freeze({ workspaceId: route.ref.workspaceId });
+            break;
+          case 'commits-with-boundary':
+            method = 'file-tracking.loadCommits';
+            params = Object.freeze({
+              workspaceId: route.ref.workspaceId,
+              ...(input.includeOlder !== undefined ? { includeOlder: input.includeOlder } : {}),
+            });
+            break;
+          case 'pr-refresh':
+            method = 'pr.refresh';
+            params = Object.freeze({
+              workspaceId: route.ref.workspaceId,
+              ...(input.automatic !== undefined ? { automatic: input.automatic } : {}),
+            });
+            break;
+        }
+        const client = route.origin.client;
+        const send = client.requestOnCapturedConnection;
+        const args = [route.connection, method, params, undefined, undefined, gitCurrent] as const;
+        // Method lookup and argument construction precede the adjacent final admission fence.
+        if (!gitCurrent()) return retired();
+        const value = await Reflect.apply(send, client, args);
+        if (!gitCurrent()) return retired();
+        return { ref, current: true, settlement: { status: 'fulfilled', value } };
+      } catch (error) {
+        if (!gitCurrent()) return retired();
+        const payload = deps.errorPayload(error);
+        const structuredError: WorkspaceLoadError = {
+          code: payload.code,
+          message: payload.message,
+          data: payload.data,
+          rpcCode: payload.rpcCode,
+        };
+        if (!gitCurrent()) return retired();
         return { ref, current: true, settlement: { status: 'rejected', error: structuredError } };
       } finally {
         route.activeReads--;

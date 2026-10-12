@@ -312,13 +312,24 @@ beforeEach(() => {
   });
 });
 afterEach(async () => {
+  const cleanupErrors: unknown[] = [];
+  const attempt = (work: () => void) => {
+    try {
+      work();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  };
   try {
-    for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+    for (const cleanup of cleanups.splice(0).reverse()) attempt(cleanup);
     edge.autoHello = true;
     for (const socket of edge.sockets) {
       if (socket.destroyed) continue;
-      if (!socket.frames.some((frame) => frame.method === 'client.hello')) socket.emit('connect');
-      for (const frame of socket.frames) if (frame.method === 'client.hello') socket.reply(frame);
+      attempt(() => {
+        if (!socket.frames.some((frame) => frame.method === 'client.hello')) socket.emit('connect');
+      });
+      for (const frame of socket.frames)
+        if (frame.method === 'client.hello') attempt(() => socket.reply(frame));
     }
     if (lifecycle) {
       const receipt = await lifecycle.retire({
@@ -366,14 +377,28 @@ afterEach(async () => {
       }
       expect(edge.sockets.every((socket) => socket.destroyed)).toBe(true);
     }
+  } catch (error) {
+    cleanupErrors.push(error);
   } finally {
     lifecycle = undefined;
-    windows.clear();
-    resetMockIpcRouter();
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-    Object.defineProperty(process, 'platform', { value: platform });
+    attempt(() => {
+      windows.clear();
+    });
+    attempt(() => {
+      resetMockIpcRouter();
+    });
+    attempt(() => {
+      vi.restoreAllMocks();
+    });
+    attempt(() => {
+      vi.unstubAllEnvs();
+    });
+    attempt(() => {
+      Object.defineProperty(process, 'platform', { value: platform });
+    });
   }
+  if (cleanupErrors.length)
+    throw new AggregateError(cleanupErrors, 'Physical fixture cleanup failed');
 });
 
 function expectCapturedFailure(error: Record<string, unknown>) {
@@ -872,5 +897,330 @@ describe('terminal physical enrollment disposal', () => {
     expect(h.origins.capture('remote-A')).toBeNull();
     // The enrolled lifecycle owns physical shutdown; insertion is already refused.
     expect(refused?.getStatus()).not.toBe('connected');
+  });
+});
+
+describe('explicit physical Git IPC operations', () => {
+  async function gitHarness(prRefresh = false) {
+    const h = await harness(false);
+    cleanups.push(
+      h.setupWorkspaceLoadIPC(
+        {
+          origins: h.origins,
+          readBackend: h.readBackend,
+        },
+        { reads: ['git-status', 'tracked-changes', 'commits-with-boundary'], prRefresh },
+      ),
+    );
+    const peer = await h.ready();
+    return { ...h, ...peer, ref: await h.prepare() };
+  }
+
+  it.each([
+    [
+      { operation: 'git-status' },
+      'git.status',
+      {},
+      {
+        branch: 'work',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [],
+        hasUncommittedChanges: false,
+        hasUntrackedFiles: false,
+        hasUpstream: false,
+      },
+    ],
+    [
+      { operation: 'git-status', forceRefresh: false },
+      'git.status',
+      {},
+      {
+        branch: 'work',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [],
+        hasUncommittedChanges: false,
+        hasUntrackedFiles: false,
+        hasUpstream: false,
+      },
+    ],
+    [
+      { operation: 'git-status', forceRefresh: true },
+      'git.status',
+      { forceRefresh: true },
+      {
+        branch: 'work',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [],
+        hasUncommittedChanges: false,
+        hasUntrackedFiles: false,
+        hasUpstream: false,
+      },
+    ],
+    [
+      { operation: 'tracked-changes' },
+      'file-tracking.getChanges',
+      {},
+      { changes: [], truncated: false, totalCount: 0 },
+    ],
+    [
+      { operation: 'commits-with-boundary' },
+      'file-tracking.loadCommits',
+      {},
+      { commits: [], boundarySha: null, nextToken: null },
+    ],
+    [
+      { operation: 'commits-with-boundary', includeOlder: false },
+      'file-tracking.loadCommits',
+      { includeOlder: false },
+      { commits: [], boundarySha: null, nextToken: null },
+    ],
+    [
+      { operation: 'commits-with-boundary', includeOlder: true },
+      'file-tracking.loadCommits',
+      { includeOlder: true },
+      { commits: [], boundarySha: null, nextToken: null },
+    ],
+    [
+      { operation: 'pr-refresh' },
+      'pr.refresh',
+      {},
+      { outcome: 'skipped', prNumber: null, prUrl: null, prStatus: null, pullRequests: [] },
+    ],
+    [
+      { operation: 'pr-refresh', automatic: false },
+      'pr.refresh',
+      { automatic: false },
+      { outcome: 'unchanged', prNumber: null, prUrl: null, prStatus: null, pullRequests: [] },
+    ],
+    [
+      { operation: 'pr-refresh', automatic: true },
+      'pr.refresh',
+      { automatic: true },
+      { outcome: 'skipped', prNumber: null, prUrl: null, prStatus: null, pullRequests: [] },
+    ],
+  ] as const)(
+    'routes %j through its exact daemon method and raw result',
+    async (operation, method, params, value) => {
+      const h = await gitHarness(true);
+      edge.respond = (_socket, frame) => (frame.method === method ? value : defaultReply(frame));
+      expect(await h.invoke(channels.READ, { ...h.ref, ...operation })).toEqual({
+        ok: true,
+        result: { ref: h.ref, current: true, settlement: { status: 'fulfilled', value } },
+      });
+      expect(
+        h.socket.frames.filter((frame) => frame.method === method).map((frame) => frame.params),
+      ).toEqual([{ workspaceId: WS, ...params }]);
+    },
+  );
+
+  it('keeps all Git operations disabled at default registration and PR separately disabled', async () => {
+    const h = await harness();
+    const peer = await h.ready();
+    const ref = await h.prepare();
+    for (const operation of [
+      'git-status',
+      'tracked-changes',
+      'commits-with-boundary',
+      'pr-refresh',
+    ]) {
+      expect(await h.invoke(channels.READ, { ...ref, operation })).toMatchObject({
+        ok: false,
+        error: { code: 'INVALID_PARAMS' },
+      });
+    }
+    expect(
+      peer.socket.frames.some((frame) =>
+        [
+          'git.status',
+          'file-tracking.getChanges',
+          'file-tracking.loadCommits',
+          'pr.refresh',
+        ].includes(frame.method),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not let passive-read opt-in grant PR refresh', async () => {
+    const h = await gitHarness();
+    expect(
+      await h.invoke(channels.READ, { ...h.ref, operation: 'pr-refresh', automatic: true }),
+    ).toMatchObject({ ok: false, error: { code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE' } });
+    expect(h.socket.frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+  });
+
+  it.each([
+    { operation: 'git-status', method: 'git.push' },
+    { operation: 'git-status', gitRootId: 'other' },
+    { operation: 'git-status', timeout: 1 },
+    { operation: 'git-status', forceRefresh: 'true' },
+    { operation: 'tracked-changes', filter: {} },
+    { operation: 'commits-with-boundary', limit: 200 },
+    { operation: 'commits-with-boundary', nextToken: 'next' },
+    { operation: 'pr-refresh', automatic: null },
+    { operation: 'pr-refresh', path: '/another-repo' },
+    { operation: 'git-push' },
+  ])('rejects unapproved operation input %j without sending', async (operation) => {
+    const h = await gitHarness(true);
+    const before = h.socket.frames.length;
+    expect(await h.invoke(channels.READ, { ...h.ref, ...operation })).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_PARAMS' },
+    });
+    expect(h.socket.frames).toHaveLength(before);
+  });
+
+  it.each([
+    { code: -32003, message: 'Forbidden' },
+    { code: -32003, message: 'Forbidden', data: { code: 'forbidden', detail: 'member removed' } },
+    { code: -32602, message: 'Workspace not found', data: { code: 'not-found' } },
+    { code: -32602, message: 'Invalid params', data: { code: 'invalid-params' } },
+    { code: -32603, message: 'quota exhausted', data: { code: 'rate-limited' } },
+    { code: -32601, message: 'Method not found' },
+  ] as const)('preserves the original daemon rejection %j', async (error) => {
+    const h = await gitHarness(true);
+    // Independent expected bridge fields for these pinned external error shapes.
+    const code =
+      'data' in error && error.data !== undefined
+        ? error.data.code
+        : error.code === -32003
+          ? 'SERVER_ERROR'
+          : 'METHOD_NOT_FOUND';
+    const oracle = {
+      code,
+      message: error.message,
+      rpcCode: error.code,
+      data: 'data' in error ? error.data : { code },
+    };
+    expectCapturedFailure({ ...oracle, name: 'JsonRpcError' });
+    edge.respond = (_socket, frame) =>
+      frame.method === 'pr.refresh' ? Promise.reject(error) : defaultReply(frame);
+    expect(
+      await h.invoke(channels.READ, { ...h.ref, operation: 'pr-refresh', automatic: true }),
+    ).toEqual({
+      ok: true,
+      result: { ref: h.ref, current: true, settlement: { status: 'rejected', error: oracle } },
+    });
+    expect(h.socket.frames.filter((frame) => frame.method === 'pr.refresh')).toHaveLength(1);
+  });
+});
+
+describe('opt-in ready Git attestation on the actual IPC dispatcher', () => {
+  async function attestationFixture(prRefresh = true) {
+    const h = await harness(false);
+    cleanups.push(
+      h.setupWorkspaceLoadIPC(
+        { origins: h.origins, readBackend: h.readBackend },
+        {
+          reads: ['git-status'],
+          prRefresh,
+        },
+      ),
+    );
+    const peer = await h.ready();
+    const value = await h.invoke(channels.OBSERVE_ORIGIN);
+    const { WorkspaceLoadOriginRefSchema } = await import('$shared/types/workspace-load-route');
+    if (!value || typeof value !== 'object' || !('result' in value))
+      throw new Error('Expected observed envelope');
+    const origin = WorkspaceLoadOriginRefSchema.parse(value.result);
+    return {
+      ...h,
+      ...peer,
+      input: { ...origin, requestId: 'attested', workspaceId: WS, operation: 'pr-refresh' },
+    };
+  }
+
+  it('attests without a PR request then executes the same complete child exactly once', async () => {
+    const h = await attestationFixture();
+    const response = await h.invoke(channels.PREPARE, h.input);
+    expect(response).toMatchObject({ ok: true });
+    if (!response || typeof response !== 'object' || !('result' in response))
+      throw new Error('Expected prepared envelope');
+    const { WorkspaceGitPreparedSchema } = await import('$shared/types/workspace-load-route');
+    const prepared = WorkspaceGitPreparedSchema.parse(response.result);
+    expect(prepared.ref).toMatchObject({
+      originId: h.input.originId,
+      requestId: 'attested',
+      workspaceId: WS,
+    });
+    expect(prepared.provenance.physicalOwnerId.length).toBeGreaterThan(0);
+    expect(h.socket.frames.filter((frame) => frame.method === 'pr.refresh')).toEqual([]);
+    const value = {
+      outcome: 'skipped',
+      prNumber: null,
+      prUrl: null,
+      prStatus: null,
+      pullRequests: [],
+    };
+    edge.respond = (_socket, frame) =>
+      frame.method === 'pr.refresh' ? value : defaultReply(frame);
+    expect(
+      await h.invoke(channels.READ, { ...prepared.ref, operation: 'pr-refresh', automatic: true }),
+    ).toEqual({
+      ok: true,
+      result: { ref: prepared.ref, current: true, settlement: { status: 'fulfilled', value } },
+    });
+    expect(
+      h.socket.frames.filter((frame) => frame.method === 'pr.refresh').map((frame) => frame.params),
+    ).toEqual([{ workspaceId: WS, automatic: true }]);
+    expect(await h.invoke(channels.PREPARE, h.input)).toMatchObject({
+      ok: false,
+      error: { code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE' },
+    });
+    expect(
+      await h.invoke(channels.READ, { ...prepared.ref, operation: 'git-status' }),
+    ).toMatchObject({ ok: false, error: { code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE' } });
+    expect(h.socket.frames.some((frame) => frame.method === 'git.status')).toBe(false);
+  });
+
+  it('keeps prepared attestation absent from default dispatch', async () => {
+    const h = await harness();
+    const peer = await h.ready();
+    const ref = await h.prepare();
+    const { routeId: _routeId, ...tuple } = ref;
+    expect(
+      await h.invoke(channels.PREPARE, { ...tuple, requestId: 'opt-in', operation: 'pr-refresh' }),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_PARAMS' } });
+    expect(Object.keys(ref).sort()).toEqual(['originId', 'requestId', 'routeId', 'workspaceId']);
+    expect(peer.socket.frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+  });
+
+  it('preserves separate PR enablement before physical preparation', async () => {
+    const h = await attestationFixture(false);
+    const before = h.socket.frames.length;
+    expect(await h.invoke(channels.PREPARE, h.input)).toMatchObject({
+      ok: false,
+      error: { code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE' },
+    });
+    expect(h.socket.frames).toHaveLength(before);
+  });
+
+  it.each([
+    { operation: 'pr-refresh', automatic: true },
+    { operation: 'git-push' },
+    { operation: 'pr-refresh', provenance: { physicalOwnerId: 'supplied' } },
+  ])('rejects extra or unknown preparation fields %j', async (extra) => {
+    const h = await attestationFixture();
+    expect(await h.invoke(channels.PREPARE, { ...h.input, ...extra })).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_PARAMS' },
+    });
+    expect(h.socket.frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
+  });
+
+  it('refuses foreign frame preparation without manufacturing provenance', async () => {
+    const h = await attestationFixture();
+    edge.event = { ...h.event, senderFrame: null };
+    expect(await h.invoke(channels.PREPARE, h.input)).toMatchObject({
+      ok: false,
+      error: { code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE' },
+    });
+    edge.event = h.event;
+    expect(h.socket.frames.some((frame) => frame.method === 'pr.refresh')).toBe(false);
   });
 });

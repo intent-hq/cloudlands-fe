@@ -1,3 +1,4 @@
+import { createBackendGitReadRuntime } from './backend-git-read-runtime';
 /**
  * Live git domain backed by the intentd daemon.
  *
@@ -22,22 +23,9 @@
  * (workspace-create auto-pull). All fold the daemon outcome into a
  * `MutationResult`.
  */
-import { GitFileStatus, LineType } from '$shared/types';
-import type {
-  DiffChunk,
-  DiffLine,
-  FileStatus,
-  GitStatus,
-  PullRequestInfo,
-  PullRequestStatus,
-} from '$shared/types';
-import { ChangeStage } from '$features/file-tracking/types';
-import type {
-  CommitFile,
-  CommitInfo,
-  FileChangeStatus,
-  TrackedChange,
-} from '$features/file-tracking/types';
+import { LineType } from '$shared/types';
+import type { DiffChunk, DiffLine, GitStatus } from '$shared/types';
+import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
 import type {
   CommitDetailsResult,
   CommitFileDetail,
@@ -72,64 +60,15 @@ import {
  */
 const PULL_TIMEOUT_MS = 150_000;
 
-/** Coerce a raw daemon git-status object into the renderer `GitStatus` shape. */
-function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
-  const rawFiles = Array.isArray(raw.files) ? raw.files : [];
-  const files: FileStatus[] = rawFiles.map((f) => {
-    const file = f as Record<string, unknown>;
-    const entry: FileStatus = {
-      path: String(file.path ?? ''),
-      status: (typeof file.status === 'string'
-        ? file.status.trim() || GitFileStatus.Modified
-        : GitFileStatus.Modified) as GitFileStatus,
-      staged: Boolean(file.staged),
-    };
-    // Gitlink (submodule) marking — present only on 160000 entries (#1739).
-    if (typeof file.mode === 'string') entry.mode = file.mode;
-    if (typeof file.oldSha === 'string') entry.oldSha = file.oldSha;
-    if (typeof file.newSha === 'string') entry.newSha = file.newSha;
-    return entry;
-  });
-  return {
-    branch: String(raw.branch ?? ''),
-    ahead: Number(raw.ahead ?? 0),
-    behind: Number(raw.behind ?? 0),
-    diverged: Boolean(raw.diverged),
-    files,
-    hasUncommittedChanges: Boolean(raw.hasUncommittedChanges),
-    hasUntrackedFiles: Boolean(raw.hasUntrackedFiles),
-  };
-}
-
-/** Concurrent ordinary readers for one workspace share one fresh wire snapshot. */
-const statusReadsInFlight = new Map<string, Promise<GitStatus | null>>();
-
-function fetchStatus(
-  workspaceId: string,
-  options?: { forceRefresh?: boolean },
-): Promise<GitStatus | null> {
-  if (!options?.forceRefresh) {
-    const existing = statusReadsInFlight.get(workspaceId);
-    if (existing) return existing;
-  }
-
-  const request = backendRequest<unknown>('git.status', {
-    workspaceId,
-    ...(options?.forceRefresh ? { forceRefresh: true } : {}),
-  })
-    .then((result) => {
-      if (!result || typeof result !== 'object') return null;
-      return normalizeGitStatus(result as Record<string, unknown>);
-    })
-    .catch(() => null);
-  statusReadsInFlight.set(workspaceId, request);
-  void request.then(() => {
-    if (statusReadsInFlight.get(workspaceId) === request) {
-      statusReadsInFlight.delete(workspaceId);
-    }
-  });
-  return request;
-}
+// Compatibility binding for LiveAppClient and its existing subscription owner.
+// Remove only at source renderer cutover. Resolve the imported callee before raw params evaluation.
+const sourceReads = createBackendGitReadRuntime({
+  get request() {
+    const request = backendRequest;
+    return <T>(...args: [method: string, params: Record<string, unknown>]) => request<T>(...args);
+  },
+});
+const fetchStatus = sourceReads.status;
 
 /**
  * Shared single-flight state for the `subscribe` refetch path
@@ -304,56 +243,6 @@ function toDiffChunks(result: unknown): DiffChunk[] {
 }
 
 /** Best-effort epoch timestamp from a daemon commit `date` (ISO/RFC string). */
-function dateToTimestamp(date: unknown): number {
-  if (typeof date !== 'string' || !date) return 0;
-  const t = Date.parse(date);
-  return Number.isFinite(t) ? t : 0;
-}
-
-/** Map a §5.19 `CommitWithAttribution` file entry into the renderer `CommitFile`. */
-function toCommitFile(raw: unknown): CommitFile | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const f = raw as Record<string, unknown>;
-  const path = typeof f.path === 'string' ? f.path : '';
-  if (!path) return null;
-  const file: CommitFile = { path };
-  if (typeof f.additions === 'number') file.additions = f.additions;
-  if (typeof f.deletions === 'number') file.deletions = f.deletions;
-  if (typeof f.status === 'string') file.status = f.status;
-  return file;
-}
-
-/**
- * Map a daemon `file-tracking.loadCommits` entry (§5.19 `CommitWithAttribution`:
- * hash/message/author/date/isPushed/files?/filesChanged?/agentId?/linkedNoteId?)
- * into the renderer `CommitInfo`. `files`/`filesChanged` are omitted by the
- * metadata-only list payload — carried through as absent (not healed to `[]`)
- * so consumers lazily fetch `git.commitDetails` on demand.
- */
-function toCommitInfo(raw: unknown): CommitInfo | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const hash = typeof r.hash === 'string' ? r.hash : '';
-  if (!hash) return null;
-  const isPushed = Boolean(r.isPushed);
-  const info: CommitInfo = {
-    hash,
-    message: typeof r.message === 'string' ? r.message : '',
-    author: typeof r.author === 'string' ? r.author : '',
-    timestamp: dateToTimestamp(r.date),
-    stage: isPushed ? 'pushed' : 'local',
-    isPushed,
-  };
-  if (Array.isArray(r.files)) {
-    info.files = r.files.map(toCommitFile).filter((f): f is CommitFile => f !== null);
-  }
-  if (typeof r.filesChanged === 'number') info.filesChanged = r.filesChanged;
-  if (typeof r.date === 'string') info.date = r.date;
-  if (typeof r.agentId === 'string') info.agentId = r.agentId;
-  if (typeof r.linkedNoteId === 'string') info.linkedNoteId = r.linkedNoteId;
-  return info;
-}
-
 /** Map a daemon `git.commitDetails` entry into a renderer `CommitDetailsResult`. */
 function normalizeCommitDetails(
   raw: Record<string, unknown>,
@@ -385,63 +274,6 @@ function normalizeCommitDetails(
     message: typeof raw.message === 'string' ? raw.message : '',
     files,
     fileDetails,
-  };
-}
-
-/** Wire stage values (§5.19) — a 1:1 match with the renderer `ChangeStage` enum. */
-const WIRE_CHANGE_STAGES: ReadonlySet<string> = new Set(Object.values(ChangeStage));
-const WIRE_CHANGE_STATUSES: ReadonlySet<string> = new Set([
-  'added',
-  'modified',
-  'deleted',
-  'renamed',
-]);
-
-/**
- * Map a daemon `file-tracking.getChanges` entry (§5.19 `TrackedChange`:
- * id/file/relativePath/stage/status?/stats/attribution) into the renderer
- * `TrackedChange`. The wire shape mirrors the renderer type, so fields are
- * carried through with type guards rather than re-derived.
- */
-function toTrackedChange(raw: unknown): TrackedChange | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const file = typeof r.file === 'string' ? r.file : '';
-  const relativePath = typeof r.relativePath === 'string' ? r.relativePath : file;
-  if (!file && !relativePath) return null;
-  const stage =
-    typeof r.stage === 'string' && WIRE_CHANGE_STAGES.has(r.stage)
-      ? (r.stage as ChangeStage)
-      : ChangeStage.Unstaged;
-  const status =
-    typeof r.status === 'string' && WIRE_CHANGE_STATUSES.has(r.status)
-      ? (r.status as FileChangeStatus)
-      : undefined;
-  const rawStats = (r.stats && typeof r.stats === 'object' ? r.stats : {}) as Record<
-    string,
-    unknown
-  >;
-  const rawAttribution = (
-    r.attribution && typeof r.attribution === 'object' ? r.attribution : {}
-  ) as Record<string, unknown>;
-  return {
-    id: typeof r.id === 'string' && r.id ? r.id : relativePath || file,
-    file: file || relativePath,
-    relativePath: relativePath || file,
-    stage,
-    stats: {
-      additions: typeof rawStats.additions === 'number' ? rawStats.additions : 0,
-      deletions: typeof rawStats.deletions === 'number' ? rawStats.deletions : 0,
-    },
-    ...(status ? { status } : {}),
-    attribution: {
-      ...(rawAttribution.agent && typeof rawAttribution.agent === 'object'
-        ? { agent: rawAttribution.agent as TrackedChange['attribution']['agent'] }
-        : {}),
-      ...(typeof rawAttribution.manual === 'boolean' ? { manual: rawAttribution.manual } : {}),
-      timestamp: typeof rawAttribution.timestamp === 'number' ? rawAttribution.timestamp : 0,
-    },
-    ...(typeof r.commitHash === 'string' ? { commitHash: r.commitHash } : {}),
   };
 }
 
@@ -558,16 +390,8 @@ export class LiveGitClient implements GitClient {
   // to hold. The seam surfaces `TrackedChange[] | null` so callers can preserve
   // existing attribution on read failure; the pagination envelope
   // (`truncated`/`totalCount`) is not yet threaded through.
-  async trackedChanges(workspaceId: string): Promise<TrackedChange[] | null> {
-    try {
-      const result = await backendRequest<{ changes?: unknown[] }>('file-tracking.getChanges', {
-        workspaceId,
-      });
-      const changes = Array.isArray(result?.changes) ? result.changes : [];
-      return changes.map(toTrackedChange).filter((c): c is TrackedChange => c !== null);
-    } catch {
-      return null;
-    }
+  trackedChanges(workspaceId: string): Promise<TrackedChange[] | null> {
+    return sourceReads.trackedChanges(workspaceId);
   }
 
   // `file-tracking.loadCommits` (PROTOCOL §5.19) returns
@@ -583,7 +407,7 @@ export class LiveGitClient implements GitClient {
 
   // `file-tracking.loadCommits` with full envelope — returns the boundary SHA
   // alongside the commits for the Changes panel to render the workspace-start marker.
-  async commitsWithBoundary(
+  commitsWithBoundary(
     workspaceId: string,
     includeOlder?: boolean,
   ): Promise<{
@@ -591,34 +415,7 @@ export class LiveGitClient implements GitClient {
     boundarySha: string | null;
     nextToken: string | null;
   }> {
-    try {
-      const result = await backendRequest<{
-        commits?: unknown[];
-        boundarySha?: unknown;
-        nextToken?: unknown;
-      }>('file-tracking.loadCommits', {
-        workspaceId,
-        ...(includeOlder !== undefined ? { includeOlder } : {}),
-      });
-      const commits = Array.isArray(result?.commits) ? result.commits : [];
-      // Runtime validation: boundarySha and nextToken must be string | null.
-      // Untrusted payloads from backendRequest could send any shape.
-      const boundarySha =
-        result?.boundarySha === null || typeof result?.boundarySha === 'string'
-          ? result.boundarySha
-          : null;
-      const nextToken =
-        result?.nextToken === null || typeof result?.nextToken === 'string'
-          ? result.nextToken
-          : null;
-      return {
-        commits: commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null),
-        boundarySha,
-        nextToken,
-      };
-    } catch {
-      return { commits: [], boundarySha: null, nextToken: null };
-    }
+    return sourceReads.commitsWithBoundary(workspaceId, includeOlder);
   }
 
   // `git.getBranches` (PROTOCOL §5.6) keeps path-based repository selection.
@@ -697,31 +494,11 @@ export class LiveGitClient implements GitClient {
   // divergence, folded to null like any malformed response); the BE-owned
   // `prStatus`/`pullRequests` payloads pass through unhealed per the
   // thin-presenter rules.
-  async prRefresh(
+  prRefresh(
     workspaceId: string,
     options?: { automatic: boolean },
   ): Promise<PrRefreshResult | null> {
-    try {
-      const result = await backendRequest<Record<string, unknown>>('pr.refresh', {
-        workspaceId,
-        ...options,
-      });
-      if (!result || typeof result !== 'object' || typeof result.outcome !== 'string') return null;
-      const outcomes: readonly string[] = ['skipped', 'unchanged', 'linked', 'updated', 'unlinked'];
-      if (!outcomes.includes(result.outcome)) return null;
-      return {
-        outcome: result.outcome as PrRefreshResult['outcome'],
-        prNumber: typeof result.prNumber === 'number' ? result.prNumber : undefined,
-        prUrl: typeof result.prUrl === 'string' ? result.prUrl : undefined,
-        prStatus:
-          typeof result.prStatus === 'string' ? (result.prStatus as PullRequestStatus) : undefined,
-        pullRequests: Array.isArray(result.pullRequests)
-          ? (result.pullRequests as PullRequestInfo[])
-          : [],
-      };
-    } catch {
-      return null;
-    }
+    return sourceReads.prRefresh(workspaceId, options);
   }
 
   // ---- Mutations ----------------------------------------------------------

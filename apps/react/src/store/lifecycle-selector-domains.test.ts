@@ -255,3 +255,28 @@ describe('canonical lifecycle selector domains on the configured React Store', (
     });
   });
 });
+
+import { selectPRStatusRefreshMetadata } from './pr-status/pr-status-selectors';
+import { selectAdmittedWorkspaceReadContext } from './workspace-lifecycle/workspace-lifecycle-selectors';
+import { prStatusScopedRefreshSucceeded } from '../../../../src/store/renderer/slices/pr-status/pr-status-slice';
+it('reads the canonical atomic metadata row without materializing an admission for a missing principal', () => {
+  expect(selectAdmittedWorkspaceReadContext.select(store.state, ws)).toBeNull();
+  const before = store.state;
+  expect(selectPRStatusRefreshMetadata.select(store.state, ws)).toEqual({
+    lastRefreshTime: null,
+    isRefreshing: false,
+    lastError: null,
+  });
+  expect(store.state).toBe(before);
+  const action = prStatusScopedRefreshSucceeded(ws, {
+    principalContext: 'admitted',
+    physicalOwnerId: 'physical',
+  });
+  store.dispatch(action);
+  expect(selectPRStatusRefreshMetadata.select(store.state, ws)).toBe(
+    store.state.prStatus.byWorkspaceId[ws],
+  );
+  expect(selectPRStatusLastRefreshTime.select(store.state, ws)).toBe(action.payload.timestamp);
+  store.dispatch(prStatusRefreshCompleted(ws, true));
+  expect(selectPRStatusRefreshMetadata.select(store.state, ws).refreshProvenance).toBeUndefined();
+});

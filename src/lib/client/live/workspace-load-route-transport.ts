@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import {
+  WorkspaceGitOperationSchema,
+  WorkspaceGitPrepareSchema,
+  WorkspaceGitPreparedSchema,
+  type WorkspaceGitProvenance,
+  type WorkspaceGitOperation,
   WorkspaceLoadErrorSchema,
   WorkspaceLoadOriginRefSchema,
   WorkspaceLoadPrepareSchema,
@@ -30,8 +35,13 @@ export interface CapturedWorkspaceLoadRoute {
   readonly signal: AbortSignal;
   isCurrent(): boolean;
   read<T = unknown>(operation: 'open' | 'get'): Promise<T>;
+  readGit<T = unknown>(operation: WorkspaceGitOperation): Promise<T>;
   createDomainReadTransport(): WorkspaceDomainReadTransport;
   release(): void;
+}
+
+export interface CapturedWorkspaceGitRoute extends CapturedWorkspaceLoadRoute {
+  readonly provenance: WorkspaceGitProvenance;
 }
 
 export interface CapturedWorkspaceLoadOrigin {
@@ -47,6 +57,15 @@ export interface CapturedWorkspaceLoadOrigin {
   /** Eligibility failures retire the ORIGINAL authority before canonical error folding. */
   retire(): void;
   release(): void;
+}
+
+export interface CapturedWorkspaceGitOrigin extends CapturedWorkspaceLoadOrigin {
+  prepareGit(
+    requestId: string,
+    workspaceId: string,
+    operation: WorkspaceGitOperation['operation'],
+    requestSignal: AbortSignal,
+  ): Promise<CapturedWorkspaceGitRoute | null>;
 }
 
 const ChannelsSchema = z
@@ -103,7 +122,7 @@ export function createElectronWorkspaceLoadTransport(
   return {
     async observeOrigin(
       observationSignal?: AbortSignal,
-    ): Promise<CapturedWorkspaceLoadOrigin | null> {
+    ): Promise<CapturedWorkspaceGitOrigin | null> {
       if (observationSignal) {
         try {
           if (observationSignal.aborted) return null;
@@ -340,217 +359,218 @@ export function createElectronWorkspaceLoadTransport(
         stopObservation?.();
       }
 
-      const origin: CapturedWorkspaceLoadOrigin = {
-        identity,
-        signal: controller.signal,
-        isCurrent,
-        retire,
-        release: retire,
-        onRetired(listener) {
-          if (!isCurrent()) {
-            try {
-              listener();
-            } catch {
-              /* Already retired; a listener cannot revive it. */
-            }
-            return () => {};
+      async function prepareRoute(
+        requestId: string,
+        workspaceId: string,
+        requestSignal: AbortSignal,
+        gitOperation?: WorkspaceGitOperation['operation'],
+      ): Promise<
+        (CapturedWorkspaceLoadRoute & { readonly provenance?: WorkspaceGitProvenance }) | null
+      > {
+        let expected: Readonly<WorkspaceLoadPrepare>;
+        try {
+          expected = Object.freeze(
+            WorkspaceLoadPrepareSchema.parse({ ...ref, requestId, workspaceId }),
+          );
+        } catch {
+          retire();
+          return null;
+        }
+        if (!isCurrent() || requests.has(requestId)) return null;
+        if (requests.size >= MAX_REQUESTS) {
+          retire();
+          return null;
+        }
+        requests.add(requestId);
+        let cancelled = false;
+        let cancellationSent = false;
+        let removeAbort: AbortSignal['removeEventListener'] | undefined;
+        let resolveCancelled!: (value: { kind: 'cancelled' }) => void;
+        const cancellation = new Promise<{ kind: 'cancelled' }>((resolve) => {
+          resolveCancelled = resolve;
+        });
+        const admission = { workspaceId, signal: requestSignal, cancel };
+        function clearAdmission(): void {
+          if (pending.get(requestId) === admission) pending.delete(requestId);
+          for (const [key, notice] of early) {
+            if (notice.kind === 'route' && notice.requestId === requestId) early.delete(key);
           }
-          const entry = () => listener();
-          listeners.add(entry);
-          return () => {
-            listeners.delete(entry);
-          };
-        },
-        async prepare(requestId, workspaceId, requestSignal) {
-          let expected: Readonly<WorkspaceLoadPrepare>;
+        }
+        function detachPreparation(): void {
           try {
-            expected = Object.freeze(
-              WorkspaceLoadPrepareSchema.parse({ ...ref, requestId, workspaceId }),
-            );
+            if (removeAbort) Reflect.apply(removeAbort, requestSignal, ['abort', cancel]);
           } catch {
-            retire();
-            return null;
+            /* Continue local settlement even if old listener cleanup fails. */
           }
-          if (!isCurrent() || requests.has(requestId)) return null;
-          if (requests.size >= MAX_REQUESTS) {
-            retire();
-            return null;
+          controller.signal.removeEventListener('abort', cancelOrigin);
+        }
+        function cancel(): void {
+          finishCancellation(true);
+        }
+        function cancelOrigin(): void {
+          finishCancellation(false);
+        }
+        function finishCancellation(releaseRequest: boolean): void {
+          if (cancelled) return;
+          cancelled = true;
+          clearAdmission();
+          detachPreparation();
+          resolveCancelled({ kind: 'cancelled' });
+          if (releaseRequest && !cancellationSent) {
+            cancellationSent = true;
+            bestEffort(names.RELEASE, expected);
           }
-          requests.add(requestId);
-          let cancelled = false;
-          let cancellationSent = false;
-          let removeAbort: AbortSignal['removeEventListener'] | undefined;
-          let resolveCancelled!: (value: { kind: 'cancelled' }) => void;
-          const cancellation = new Promise<{ kind: 'cancelled' }>((resolve) => {
-            resolveCancelled = resolve;
-          });
-          const admission = { workspaceId, signal: requestSignal, cancel };
-          function clearAdmission(): void {
-            if (pending.get(requestId) === admission) pending.delete(requestId);
-            for (const [key, notice] of early) {
-              if (notice.kind === 'route' && notice.requestId === requestId) early.delete(key);
-            }
-          }
-          function detachPreparation(): void {
-            try {
-              if (removeAbort) Reflect.apply(removeAbort, requestSignal, ['abort', cancel]);
-            } catch {
-              /* Continue local settlement even if old listener cleanup fails. */
-            }
-            controller.signal.removeEventListener('abort', cancelOrigin);
-          }
-          function cancel(): void {
-            finishCancellation(true);
-          }
-          function cancelOrigin(): void {
-            finishCancellation(false);
-          }
-          function finishCancellation(releaseRequest: boolean): void {
-            if (cancelled) return;
-            cancelled = true;
-            clearAdmission();
-            detachPreparation();
-            resolveCancelled({ kind: 'cancelled' });
-            if (releaseRequest && !cancellationSent) {
-              cancellationSent = true;
-              bestEffort(names.RELEASE, expected);
-            }
-          }
-          function isCancelled(): boolean {
-            if (cancelled) return true;
-            if (requestSignal.aborted) cancel();
-            return cancelled;
-          }
-          function preparationCurrent(): boolean {
-            try {
-              if (isCancelled()) return false;
-              const originalCurrent = isCurrent();
-              const originalCancelled = isCancelled();
-              // Every external getter/callback has finished; read irreversible latches last.
-              return originalCurrent && !originalCancelled && !retired && !cancelled;
-            } catch {
-              if (!cancelled) retire();
-              return false;
-            }
-          }
-          pending.set(requestId, admission);
-          let prepared: Readonly<WorkspaceLoadRouteRef> | undefined;
+        }
+        function isCancelled(): boolean {
+          if (cancelled) return true;
+          if (requestSignal.aborted) cancel();
+          return cancelled;
+        }
+        function preparationCurrent(): boolean {
           try {
-            const addAbort = requestSignal.addEventListener;
-            removeAbort = requestSignal.removeEventListener;
-            Reflect.apply(addAbort, requestSignal, ['abort', cancel, { once: true }]);
-            controller.signal.addEventListener('abort', cancelOrigin, { once: true });
-            if (!preparationCurrent()) return null;
-            // Drain the original invocation even when abort wins while IPC withholds its reply.
-            const reply = Promise.resolve(
-              Reflect.apply(invoke, api, [names.PREPARE, expected]),
-            ).then(
-              (response) => {
-                if (cancelled || retired) {
-                  try {
-                    const late = WorkspaceLoadRouteRefSchema.parse(unwrap(response));
-                    if (
-                      late.originId === expected.originId &&
-                      late.requestId === requestId &&
-                      late.workspaceId === workspaceId
-                    )
-                      releaseKnownRoute(late);
-                  } catch {
-                    /* A late malformed/refused reply cannot retire a sibling. */
-                  }
-                }
-                return { kind: 'reply' as const, response };
-              },
-              (error: unknown) => ({ kind: 'error' as const, error }),
-            );
-            const outcome = await Promise.race([reply, cancellation]);
-            if (outcome.kind === 'cancelled') return null;
-            if (outcome.kind === 'error') throw outcome.error;
-            const raw = unwrap(outcome.response);
-            const value = WorkspaceLoadRouteRefSchema.parse(raw);
-            if (
-              value.originId !== expected.originId ||
-              value.requestId !== requestId ||
-              value.workspaceId !== workspaceId ||
-              routes.has(value.routeId) ||
-              releasedRoutes.has(value.routeId)
-            ) {
-              throw unavailable();
-            }
-            prepared = Object.freeze(value);
-            if (isCancelled()) {
-              releaseKnownRoute(prepared);
-              return null;
-            }
-            const notices = [...early.values()].filter(
-              (notice) =>
-                notice.kind === 'route' &&
-                notice.originId === expected.originId &&
-                notice.requestId === requestId,
-            );
-            for (const [key, notice] of early) {
-              if (notice.kind === 'route' && notice.requestId === requestId) early.delete(key);
-            }
-            // One request has only one route; any retirement/conflict for it is terminal.
-            if (notices.length > 0) retire();
-            if (!preparationCurrent()) {
-              releaseKnownRoute(value);
-              return null;
-            }
+            if (isCancelled()) return false;
+            const originalCurrent = isCurrent();
+            const originalCancelled = isCancelled();
+            // Every external getter/callback has finished; read irreversible latches last.
+            return originalCurrent && !originalCancelled && !retired && !cancelled;
           } catch {
             if (!cancelled) retire();
-            if (prepared) releaseKnownRoute(prepared);
-            return null;
-          } finally {
-            clearAdmission();
-            detachPreparation();
+            return false;
           }
-          if (!preparationCurrent()) {
+        }
+        pending.set(requestId, admission);
+        let prepared: Readonly<WorkspaceLoadRouteRef> | undefined;
+        let provenance: WorkspaceGitProvenance | undefined;
+        const parsePrepared = (raw: unknown) =>
+          gitOperation === undefined
+            ? { ref: WorkspaceLoadRouteRefSchema.parse(raw), provenance: undefined }
+            : WorkspaceGitPreparedSchema.parse(raw);
+        try {
+          const addAbort = requestSignal.addEventListener;
+          removeAbort = requestSignal.removeEventListener;
+          Reflect.apply(addAbort, requestSignal, ['abort', cancel, { once: true }]);
+          controller.signal.addEventListener('abort', cancelOrigin, { once: true });
+          if (!preparationCurrent()) return null;
+          // Drain the original invocation even when abort wins while IPC withholds its reply.
+          const reply = Promise.resolve(
+            Reflect.apply(invoke, api, [
+              names.PREPARE,
+              gitOperation === undefined
+                ? expected
+                : WorkspaceGitPrepareSchema.parse({ ...expected, operation: gitOperation }),
+            ]),
+          ).then(
+            (response) => {
+              if (cancelled || retired) {
+                try {
+                  const late = parsePrepared(unwrap(response)).ref;
+                  if (
+                    late.originId === expected.originId &&
+                    late.requestId === requestId &&
+                    late.workspaceId === workspaceId
+                  )
+                    releaseKnownRoute(late);
+                } catch {
+                  /* A late malformed/refused reply cannot retire a sibling. */
+                }
+              }
+              return { kind: 'reply' as const, response };
+            },
+            (error: unknown) => ({ kind: 'error' as const, error }),
+          );
+          const outcome = await Promise.race([reply, cancellation]);
+          if (outcome.kind === 'cancelled') return null;
+          if (outcome.kind === 'error') throw outcome.error;
+          const raw = unwrap(outcome.response);
+          const parsed = parsePrepared(raw);
+          const value = parsed.ref;
+          provenance =
+            parsed.provenance === undefined ? undefined : Object.freeze(parsed.provenance);
+          if (
+            value.originId !== expected.originId ||
+            value.requestId !== requestId ||
+            value.workspaceId !== workspaceId ||
+            routes.has(value.routeId) ||
+            releasedRoutes.has(value.routeId)
+          ) {
+            throw unavailable();
+          }
+          prepared = Object.freeze(value);
+          if (isCancelled()) {
             releaseKnownRoute(prepared);
             return null;
           }
+          const notices = [...early.values()].filter(
+            (notice) =>
+              notice.kind === 'route' &&
+              notice.originId === expected.originId &&
+              notice.requestId === requestId,
+          );
+          for (const [key, notice] of early) {
+            if (notice.kind === 'route' && notice.requestId === requestId) early.delete(key);
+          }
+          // One request has only one route; any retirement/conflict for it is terminal.
+          if (notices.length > 0) retire();
+          if (!preparationCurrent()) {
+            releaseKnownRoute(value);
+            return null;
+          }
+        } catch {
+          if (!cancelled) retire();
+          if (prepared) releaseKnownRoute(prepared);
+          return null;
+        } finally {
+          clearAdmission();
+          detachPreparation();
+        }
+        if (!preparationCurrent()) {
+          releaseKnownRoute(prepared);
+          return null;
+        }
 
-          const routeRef = prepared;
-          const routeController = new AbortController();
-          let ended = false;
-          function end(): void {
-            if (ended) return;
-            ended = true;
-            routes.delete(routeRef.routeId);
-            routeController.abort();
-          }
-          function releaseRoute(): void {
-            if (ended) return;
-            end();
-            releaseKnownRoute(routeRef);
-          }
-          function routeCurrent(): boolean {
-            if (ended) return false;
-            try {
-              if (isCancelled()) {
-                releaseRoute();
-                return false;
-              }
-              const current = isCurrent();
-              const requestCancelled = isCancelled();
-              if (requestCancelled) releaseRoute();
-              return (
-                current &&
-                !requestCancelled &&
-                !ended &&
-                !retired &&
-                routes.get(routeRef.routeId)?.end === end
-              );
-            } catch {
-              retire();
+        const routeRef = prepared;
+        const routeController = new AbortController();
+        let ended = false;
+        function end(): void {
+          if (ended) return;
+          ended = true;
+          routes.delete(routeRef.routeId);
+          routeController.abort();
+        }
+        function releaseRoute(): void {
+          if (ended) return;
+          end();
+          releaseKnownRoute(routeRef);
+        }
+        function routeCurrent(): boolean {
+          if (ended) return false;
+          try {
+            if (isCancelled()) {
+              releaseRoute();
               return false;
             }
-          }
-          function fail(): never {
+            const current = isCurrent();
+            const requestCancelled = isCancelled();
+            if (requestCancelled) releaseRoute();
+            return (
+              current &&
+              !requestCancelled &&
+              !ended &&
+              !retired &&
+              routes.get(routeRef.routeId)?.end === end
+            );
+          } catch {
             retire();
-            throw unavailable();
+            return false;
           }
-          const route: CapturedWorkspaceLoadRoute = {
+        }
+        function fail(): never {
+          retire();
+          throw unavailable();
+        }
+        const route: CapturedWorkspaceLoadRoute & { readonly provenance?: WorkspaceGitProvenance } =
+          {
+            ...(provenance === undefined ? {} : { provenance }),
             ref: routeRef,
             signal: routeController.signal,
             isCurrent: routeCurrent,
@@ -586,6 +606,35 @@ export function createElectronWorkspaceLoadTransport(
                 throw new BackendError(parsed.settlement.error);
               return parsed.settlement.value as T;
             },
+            async readGit<T>(operation: WorkspaceGitOperation): Promise<T> {
+              if (!routeCurrent()) throw unavailable();
+              let parsed;
+              try {
+                const input = WorkspaceGitOperationSchema.parse(operation);
+                const payload = Object.freeze({ ...routeRef, ...input });
+                if (!routeCurrent()) throw unavailable();
+                const response = await Reflect.apply(invoke, api, [names.READ, payload]);
+                if (ended) throw unavailable();
+                parsed = WorkspaceLoadReadOutcomeSchema.parse(unwrap(response));
+                if (!sameRef(parsed.ref, routeRef) || !parsed.current) return fail();
+                if (
+                  parsed.settlement.status === 'fulfilled' &&
+                  !Object.hasOwn(parsed.settlement, 'value')
+                )
+                  return fail();
+                if (!routeCurrent()) {
+                  if (!ended) retire();
+                  throw unavailable();
+                }
+              } catch {
+                if (!ended) retire();
+                throw unavailable();
+              }
+              // Daemon rejection is distinct from acquisition/physical retirement.
+              if (parsed.settlement.status === 'rejected')
+                throw new BackendError(parsed.settlement.error);
+              return parsed.settlement.value as T;
+            },
             createDomainReadTransport() {
               return {
                 available: routeCurrent,
@@ -616,13 +665,47 @@ export function createElectronWorkspaceLoadTransport(
             },
             release: releaseRoute,
           };
-          routes.set(routeRef.routeId, {
-            ref: routeRef,
-            end,
-            requestCancelled: isCancelled,
-            release: releaseRoute,
-          });
-          return route;
+        routes.set(routeRef.routeId, {
+          ref: routeRef,
+          end,
+          requestCancelled: isCancelled,
+          release: releaseRoute,
+        });
+        return route;
+      }
+
+      const origin: CapturedWorkspaceGitOrigin = {
+        identity,
+        signal: controller.signal,
+        isCurrent,
+        retire,
+        release: retire,
+        onRetired(listener) {
+          if (!isCurrent()) {
+            try {
+              listener();
+            } catch {
+              /* Already retired; a listener cannot revive it. */
+            }
+            return () => {};
+          }
+          const entry = () => listener();
+          listeners.add(entry);
+          return () => {
+            listeners.delete(entry);
+          };
+        },
+        prepare(requestId, workspaceId, requestSignal) {
+          return prepareRoute(requestId, workspaceId, requestSignal);
+        },
+        async prepareGit(requestId, workspaceId, operation, requestSignal) {
+          const route = await prepareRoute(requestId, workspaceId, requestSignal, operation);
+          if (!route) return null;
+          if (!route.provenance || !route.isCurrent()) {
+            route.release();
+            return null;
+          }
+          return { ...route, provenance: route.provenance };
         },
       };
       if (observationSignal) {

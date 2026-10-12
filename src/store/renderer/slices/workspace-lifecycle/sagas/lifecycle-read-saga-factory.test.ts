@@ -316,3 +316,649 @@ describe('Complete extracted receiver through its genuine source facade', () => 
     ]);
   });
 });
+
+// Controlled-port worker evidence only. This is NOT complete React receiver composition:
+// list/membership startup is parked, and unrelated selector operations fail if reached.
+import { setImmediate } from 'node:timers/promises';
+import { ClientLogger } from '$lib/utils/client-logger';
+import { take, type SagaGenerator } from 'typed-redux-saga';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import type { GenericAction } from '@themislib/themis/types';
+import { appClient } from '$lib/client';
+import { createLifecycleReadSaga } from './lifecycle-read-saga-factory';
+import type {
+  LifecycleReadDependencies,
+  ScopedGitReadPorts,
+  ScopedGitReadScope,
+} from '../lifecycle-read-types';
+import { getAdmittedWorkspaceReadContext } from '../utils/workspace-read-admission';
+import { selectPrincipalActionContext, selectHostRole } from '../../principal/principal-selectors';
+import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  prStatusRefreshCompleted,
+  prStatusScopedRefreshSucceeded,
+  refreshPRStatusRequested,
+} from '../../pr-status/pr-status-slice';
+import {
+  refreshRequested,
+  loadOlderCommitsRequested,
+  setLoadingOlderCommits,
+} from '../../changes/changes-slice';
+import { getPRStatusRefreshMetadata } from '../../pr-status/pr-status-projections';
+import type { PrRefreshResult } from '../../../../../lib/client/lifecycle-read-client-types';
+
+const controlledOwnerStop = createAction('test/scopedGitOwnerStop');
+const controlledAdmissionSelectors = {
+  selectPrincipalActionContext,
+  selectHostRole,
+  selectWorkspaceById,
+  selectWorkspaceListLoadedForBackend,
+};
+const controlledGitAdmission = store.createSelector((state, id: string) =>
+  getAdmittedWorkspaceReadContext(state, id, controlledAdmissionSelectors),
+);
+function* unusedGitDependency(): SagaGenerator<never> {
+  throw new Error('Unrelated controlled dependency was reached');
+}
+function* parkedGitDependency(): SagaGenerator<void> {
+  yield* take(controlledOwnerStop);
+}
+function controlledReply<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  const observed = promise.then(
+    (value) => ({ status: 'fulfilled' as const, value }),
+    (error) => ({ status: 'rejected' as const, error: error as unknown }),
+  );
+  return { promise, resolve, reject, observed };
+}
+async function withControlledGit(
+  run: (f: {
+    ports: ScopedGitReadPorts<typeof store.state>;
+    actions: GenericAction[];
+    scopes: Array<ReturnType<typeof makeScope>>;
+    acquired: string[];
+    request(force?: boolean, manual?: boolean, workspaceId?: string): void;
+    nextToken(value: string): void;
+    refuse(value: boolean): void;
+    onPut(fn: (action: GenericAction) => void): void;
+    onWorkspaceSelection(fn: () => void): void;
+    onAcquire(fn: (scope: ReturnType<typeof makeScope>) => void): void;
+    context(): string;
+  }) => Promise<void>,
+) {
+  fixture(); // Actual source Store setup, existing declared IPC control; no source saga started.
+  const context = selectPrincipalActionContext.select(store.state);
+  if (!context) throw new Error('Actual principal context missing');
+  store.dispatch(setWorkspaceHasLoaded(true, 'local', context));
+  const actions: GenericAction[] = [];
+  const acquired: string[] = [];
+  const scopes: Array<ReturnType<typeof makeScope>> = [];
+  let token = 'owner-A';
+  let unavailable = false;
+  let duringPut: (action: GenericAction) => void = () => {};
+  let duringSelection: () => void = () => {};
+  let acquiredScope: (scope: ReturnType<typeof makeScope>) => void = () => {};
+  const dispatch = (action: GenericAction) => {
+    actions.push(action);
+    const result = store.dispatch(action);
+    duringPut(action);
+    return result;
+  };
+  const ports: ScopedGitReadPorts<typeof store.state> = {
+    admission: controlledGitAdmission,
+    readCurrentContext: (id) => controlledGitAdmission.select(store.state, id),
+    readMetadata: (id) => getPRStatusRefreshMetadata(store.state, id),
+    getDispatch: () => dispatch,
+    acquire: async (id, signal) => {
+      acquired.push(id);
+      if (unavailable) return { kind: 'unavailable' };
+      const scope = makeScope(id, token, signal);
+      scopes.push(scope);
+      acquiredScope(scope);
+      return { kind: 'acquired', scope };
+    },
+  };
+  const unused = { effect: unusedGitDependency };
+  const dependencies: LifecycleReadDependencies<typeof store.state, { requestId: string }> = {
+    appClient,
+    scopedGit: ports,
+    getAgentLineStats: async () => {
+      throw new Error('Unexpected stats');
+    },
+    beginScriptRead: unusedGitDependency,
+    isScriptReadCurrent: unusedGitDependency,
+    reconcileScriptRead: unusedGitDependency,
+    refreshIntegrationAuthAfterReconnect: unusedGitDependency,
+    workspaceAuthoritySaga: parkedGitDependency,
+    createMembershipSaga: () => parkedGitDependency,
+    selectors: {
+      ...controlledAdmissionSelectors,
+      selectWorkspaceById: {
+        select: selectWorkspaceById.select,
+        effect: function* (id) {
+          const value = yield* selectWorkspaceById.effect(id);
+          duringSelection();
+          return value;
+        },
+      },
+      selectCurrentWorkspaceTabId: {
+        effect: function* () {
+          return WS;
+        },
+      },
+      selectAllWorkspaceScriptEntries: unused,
+      selectAgentSessionWorkspaceId: unused,
+      selectAgentSession: unused,
+      selectAgentSessionsById: unused,
+      selectShouldRequestAgentLineStats: unused,
+      selectPRStatusLastRefreshTime: unused,
+      selectTerminalsForWorkspace: unused,
+      selectActiveAgentId: unused,
+      selectWorkspaceAgentIds: unused,
+      selectAllWorkspaceAgents: unused,
+      selectRetiredAgentsLoaded: unused,
+      selectIsLoadingRetiredAgents: unused,
+      selectDelegatedAgentsLoaded: unused,
+      selectIsLoadingDelegatedAgents: unused,
+      selectBackgroundAgentsLoaded: unused,
+      selectIsLoadingBackgroundAgents: unused,
+      selectOrphanedDelegatedAgentsLoaded: unused,
+      selectIsLoadingOrphanedDelegatedAgents: unused,
+      selectDelegatedParentLoaded: unused,
+      selectIsLoadingDelegatedParent: unused,
+      selectLoadedDelegatedParentIds: unused,
+      selectScopeCounts: unused,
+      selectDelegatedCounts: unused,
+      selectScopeCountsGeneration: unused,
+      selectOlderEventsNextToken: unused,
+      selectDemandedTaskWorkspaceIds: unused,
+      selectWorkspaceTasksShouldLoad: unused,
+    },
+  };
+  const stop = store.runSaga(createLifecycleReadSaga(dependencies));
+  const errors: unknown[] = [];
+  try {
+    await run({
+      ports,
+      actions,
+      acquired,
+      scopes,
+      context: () => context,
+      request: (force = false, manual = false, id = WS) =>
+        store.dispatch(refreshPRStatusRequested(id, force, manual)),
+      nextToken: (value) => {
+        token = value;
+      },
+      refuse: (value) => {
+        unavailable = value;
+      },
+      onPut: (fn) => {
+        duringPut = fn;
+      },
+      onWorkspaceSelection: (fn) => {
+        duringSelection = fn;
+      },
+      onAcquire: (fn) => {
+        acquiredScope = fn;
+      },
+    });
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    stop();
+  } catch (error) {
+    errors.push(error);
+  }
+  for (const scope of scopes) {
+    try {
+      scope.release();
+    } catch (error) {
+      errors.push(error);
+    }
+    scope.pr.resolve(null);
+    scope.statusReply.resolve(null);
+    try {
+      await scope.pr.observed;
+      await scope.statusReply.observed;
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  await setImmediate();
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, 'Controlled Git case/cleanup failures');
+}
+function makeScope(workspaceId: string, token: string, parent: AbortSignal) {
+  const controller = new AbortController();
+  const pr = controlledReply<PrRefreshResult | null>();
+  const statusReply = controlledReply<Awaited<ReturnType<ScopedGitReadScope['reads']['status']>>>();
+  let released = false;
+  let heldStatus = false;
+  let releaseError: unknown;
+  const calls: Array<{ operation: string; args: unknown[] }> = [];
+  const releases: string[] = [];
+  function release() {
+    if (released) return;
+    released = true;
+    controller.abort();
+    releases.push(workspaceId);
+    if (releaseError !== undefined) throw releaseError;
+  }
+  // Controlled port observes parent cancellation in isCurrent; actual prompt transport drainage is tested separately.
+  const scope: ScopedGitReadScope = {
+    identity: {},
+    signal: controller.signal,
+    isCurrent: () => !released && !parent.aborted,
+    release,
+    reads: {
+      status: async (...args) => {
+        calls.push({ operation: 'status', args });
+        return heldStatus
+          ? statusReply.promise
+          : {
+              branch: 'main',
+              ahead: 0,
+              behind: 0,
+              diverged: false,
+              files: [],
+              hasUncommittedChanges: false,
+              hasUntrackedFiles: false,
+            };
+      },
+      trackedChanges: async (...args) => {
+        calls.push({ operation: 'tracked', args });
+        return [];
+      },
+      commitsWithBoundary: async (...args) => {
+        calls.push({ operation: 'commits', args });
+        return { commits: [], boundarySha: null, nextToken: null };
+      },
+    },
+    preparePrRefresh: async () => {
+      calls.push({ operation: 'prepare', args: [] });
+      return {
+        provenance: { physicalOwnerId: token },
+        isCurrent: scopeCurrent,
+        read: async (...args) => {
+          calls.push({ operation: 'pr', args });
+          return pr.promise;
+        },
+      };
+    },
+  };
+  function scopeCurrent() {
+    return scope.isCurrent();
+  }
+  return {
+    ...scope,
+    calls,
+    releases,
+    pr,
+    statusReply,
+    holdStatus: () => {
+      heldStatus = true;
+    },
+    failRelease: (error: unknown) => {
+      releaseError = error;
+    },
+  };
+}
+const scopedPrSuccess: PrRefreshResult = { outcome: 'linked', prNumber: 7, pullRequests: [] };
+const gitActions = (actions: GenericAction[]) =>
+  actions.filter(
+    (a) =>
+      a.type.startsWith('prStatus/') ||
+      a.type.startsWith('changes/') ||
+      a.type.startsWith('prBranchLookup/'),
+  );
+
+describe('canonical receiver scoped workers with explicitly controlled ports', () => {
+  it.each([
+    { elapsed: 59_999, read: false },
+    { elapsed: 60_000, read: true },
+  ])(
+    'preserves the exact TTL boundary at $elapsed milliseconds after genuine prepare',
+    async ({ elapsed, read }) =>
+      withControlledGit(async (f) => {
+        vi.spyOn(Date, 'now').mockReturnValue(100_000);
+        store.dispatch(
+          prStatusScopedRefreshSucceeded(WS, {
+            principalContext: f.context(),
+            physicalOwnerId: 'owner-A',
+          }),
+        );
+        vi.mocked(Date.now).mockReturnValue(100_000 + elapsed);
+        f.request();
+        await setImmediate();
+        expect(f.acquired).toEqual([WS]);
+        expect(f.scopes[0].calls[0]).toEqual({ operation: 'prepare', args: [] });
+        expect(f.scopes[0].calls.some((x) => x.operation === 'pr')).toBe(read);
+        if (read) {
+          f.scopes[0].pr.resolve(scopedPrSuccess);
+          await setImmediate();
+        } else {
+          expect(gitActions(f.actions)).toEqual([]);
+          expect(f.scopes[0].releases).toEqual([WS]);
+        }
+        expect(store.state.prStatus.byWorkspaceId[WS].lastRefreshTime).toBe(
+          read ? 160_000 : 100_000,
+        );
+      }),
+  );
+  it.each([
+    { force: true, manual: false },
+    { force: true, manual: true },
+    { force: false, manual: true },
+  ])(
+    'preserves force=$force and manual=$manual without changing automatic admission',
+    async ({ force, manual }) =>
+      withControlledGit(async (f) => {
+        if (force)
+          store.dispatch(
+            prStatusScopedRefreshSucceeded(WS, {
+              principalContext: f.context(),
+              physicalOwnerId: 'owner-A',
+            }),
+          );
+        if (force)
+          f.ports.readMetadata = () => {
+            throw new Error('Forced refresh must bypass metadata lookup');
+          };
+        f.request(force, manual);
+        await setImmediate();
+        expect(f.scopes[0].calls).toEqual([
+          { operation: 'prepare', args: [] },
+          { operation: 'pr', args: [{ automatic: !manual }] },
+        ]);
+        f.scopes[0].pr.resolve(scopedPrSuccess);
+        await setImmediate();
+        expect(
+          f.actions.filter((a) => a.type === prStatusScopedRefreshSucceeded.type),
+        ).toHaveLength(1);
+        expect(f.actions.filter((a) => a.type === prStatusRefreshCompleted.type)).toEqual([]);
+      }),
+  );
+  it('cannot inherit a same-clock legacy timestamp or a different physical/principal provenance', async () =>
+    withControlledGit(async (f) => {
+      vi.spyOn(Date, 'now').mockReturnValue(1000);
+      store.dispatch(
+        prStatusScopedRefreshSucceeded(WS, {
+          principalContext: f.context(),
+          physicalOwnerId: 'owner-A',
+        }),
+      );
+      store.dispatch(prStatusRefreshCompleted(WS, true));
+      f.request();
+      await setImmediate();
+      expect(f.scopes[0].calls.at(-1)?.operation).toBe('pr');
+      f.scopes[0].pr.resolve(scopedPrSuccess);
+      await setImmediate();
+      for (const token of ['owner-B', 'owner-A-after-retirement']) {
+        f.nextToken(token);
+        f.request();
+        await setImmediate();
+        const scope = f.scopes.at(-1)!;
+        expect(scope.calls.at(-1)?.operation).toBe('pr');
+        scope.pr.resolve(scopedPrSuccess);
+        await setImmediate();
+        expect(store.state.prStatus.byWorkspaceId[WS].refreshProvenance?.physicalOwnerId).toBe(
+          token,
+        );
+      }
+      // Actual physical A->B->A non-revival is separately covered by the accepted main prerequisite.
+      store.dispatch(
+        prStatusScopedRefreshSucceeded(WS, {
+          principalContext: 'other-principal',
+          physicalOwnerId: 'owner-A-after-retirement',
+        }),
+      );
+      f.request();
+      await setImmediate();
+      expect(f.scopes.at(-1)!.calls.at(-1)?.operation).toBe('pr');
+      f.scopes.at(-1)!.pr.resolve(scopedPrSuccess);
+      await setImmediate();
+    }));
+  it('does not turn acquisition refusal into command, metadata or hydration success even with fresh metadata', async () =>
+    withControlledGit(async (f) => {
+      store.dispatch(
+        prStatusScopedRefreshSucceeded(WS, {
+          principalContext: f.context(),
+          physicalOwnerId: 'owner-A',
+        }),
+      );
+      const before = store.state.prStatus;
+      f.refuse(true);
+      f.request();
+      await setImmediate();
+      expect(f.acquired).toEqual([WS]);
+      expect(f.scopes).toEqual([]);
+      expect(gitActions(f.actions)).toEqual([]);
+      expect(store.state.prStatus).toBe(before);
+    }));
+  it('keeps the original parent through success publication and releases it exactly once afterward', async () =>
+    withControlledGit(async (f) => {
+      const observed: boolean[] = [];
+      f.onPut((action) => {
+        if (action.type === prStatusScopedRefreshSucceeded.type)
+          observed.push(f.scopes[0].isCurrent());
+      });
+      f.request();
+      await setImmediate();
+      expect(f.scopes[0].releases).toEqual([]);
+      f.scopes[0].pr.resolve(scopedPrSuccess);
+      await setImmediate();
+      expect(observed).toEqual([true]);
+      expect(f.scopes[0].releases).toEqual([WS]);
+      expect(store.state.prStatus.byWorkspaceId[WS].refreshProvenance).toEqual({
+        principalContext: f.context(),
+        physicalOwnerId: 'owner-A',
+      });
+    }));
+  it.each(['prStatus/refreshStarted', 'prStatus/scopedRefreshSucceeded'])(
+    'fences later PR publications when %s reenters retirement',
+    async (type) =>
+      withControlledGit(async (f) => {
+        f.onPut((action) => {
+          if (action.type === type) f.scopes[0].release();
+        });
+        f.request();
+        await setImmediate();
+        if (type.endsWith('Succeeded')) {
+          f.scopes[0].pr.resolve(scopedPrSuccess);
+          await setImmediate();
+        }
+        expect(f.actions.some((a) => a.type === 'prBranchLookup/succeeded')).toBe(false);
+        if (type.endsWith('Started')) {
+          expect(f.scopes[0].calls.some((x) => x.operation === 'pr')).toBe(false);
+          expect(store.state.prStatus.byWorkspaceId[WS].lastRefreshTime).toBeNull();
+        }
+        expect(f.scopes[0].releases).toEqual([WS]);
+      }),
+  );
+  it('rechecks physical ownership after the workspace selection before publishing PR branch linkage', async () =>
+    withControlledGit(async (f) => {
+      store.dispatch(
+        setWorkspaceEntity({ ...workspace(), repositoryOwner: 'owner', repositoryName: 'repo' }),
+      );
+      f.onWorkspaceSelection(() => f.scopes[0].release());
+      f.request();
+      await setImmediate();
+      f.scopes[0].pr.resolve(scopedPrSuccess);
+      await setImmediate();
+      expect(f.actions.filter((a) => a.type === prStatusScopedRefreshSucceeded.type)).toHaveLength(
+        1,
+      );
+      expect(f.actions.some((a) => a.type.startsWith('prBranchLookup/'))).toBe(false);
+    }));
+  it('retires A-null-A irreversibly and refuses a held success before a new genuine demand', async () =>
+    withControlledGit(async (f) => {
+      f.request();
+      await setImmediate();
+      const snapshot = store.state.principal.snapshot;
+      const connectionContext = getPrincipalConnectionContext(store.state);
+      if (!snapshot || !connectionContext)
+        throw new Error('Original canonical principal is required');
+      store.dispatch(principalContextChanged(null));
+      // A genuine canonical re-admission cannot unretire this older attempt.
+      store.dispatch(principalContextChanged(connectionContext));
+      store.dispatch(
+        principalReceived(
+          { context: connectionContext, invalidation: 0, presentationVersion: 0 },
+          snapshot,
+        ),
+      );
+      expect(f.ports.readCurrentContext(WS)).toBe(f.context());
+      f.scopes[0].pr.resolve(scopedPrSuccess);
+      await setImmediate();
+      expect(f.scopes[0].releases).toEqual([WS]);
+      expect(f.actions.filter((a) => a.type === prStatusScopedRefreshSucceeded.type)).toEqual([]);
+      expect(f.acquired).toEqual([WS]);
+    }));
+  it('fences a held result against a direct current-state change even without selector delivery', async () =>
+    withControlledGit(async (f) => {
+      f.request();
+      await setImmediate();
+      f.ports.readCurrentContext = () => null;
+      f.scopes[0].pr.resolve(scopedPrSuccess);
+      await setImmediate();
+      expect(f.actions.filter((a) => a.type === prStatusScopedRefreshSucceeded.type)).toEqual([]);
+      expect(f.scopes[0].releases).toEqual([WS]);
+    }));
+  it.each(['changes/setChangesData', 'changes/setCommitsData', 'changes/setHasLoadedInitialData'])(
+    'fences Changes publication after reentrancy at %s',
+    async (type) =>
+      withControlledGit(async (f) => {
+        f.onPut((action) => {
+          if (action.type === type) f.scopes[0].release();
+        });
+        store.dispatch(refreshRequested(WS));
+        await setImmediate();
+        expect(f.scopes[0].calls).toEqual([
+          { operation: 'status', args: [WS] },
+          { operation: 'tracked', args: [WS] },
+          { operation: 'commits', args: [WS] },
+        ]);
+        const types = gitActions(f.actions).map((a) => a.type);
+        const order = [
+          'changes/setChangesData',
+          'changes/setCommitsData',
+          'changes/setHasLoadedInitialData',
+        ];
+        expect(types).toEqual(order.slice(0, order.indexOf(type) + 1));
+        expect(f.scopes[0].releases).toEqual([WS]);
+      }),
+  );
+  it('preserves includeOlder and never lets retired finally clear successor loading', async () =>
+    withControlledGit(async (f) => {
+      f.onPut((action) => {
+        if (action.type === 'changes/appendOlderCommits') {
+          f.scopes[0].release();
+          store.dispatch(setLoadingOlderCommits(WS, true));
+        }
+      });
+      store.dispatch(loadOlderCommitsRequested(WS, 'boundary'));
+      await setImmediate();
+      expect(f.scopes[0].calls).toEqual([{ operation: 'commits', args: [WS, true] }]);
+      expect(
+        f.actions.filter((a) => a.type === 'changes/setLoadingOlderCommits').map((a) => a.payload),
+      ).toEqual([[WS, true]]);
+      expect(store.state.changes.byWorkspaceId[WS].loadingOlderCommits).toBe(true);
+    }));
+
+  it('acquires Changes scopes only after six real scheduler slots while PR remains unscheduled', async () =>
+    withControlledGit(async (f) => {
+      f.onAcquire((scope) => scope.holdStatus());
+      const ids = Array.from({ length: 7 }, (_, index) => `slot-${index}`);
+      for (const id of ids) store.dispatch(setWorkspaceEntity(workspace(id)));
+      for (const id of ids) store.dispatch(refreshRequested(id));
+      await setImmediate();
+      expect(f.acquired).toEqual(ids.slice(0, 6));
+      f.request();
+      await setImmediate();
+      expect(f.acquired).toEqual([...ids.slice(0, 6), WS]);
+      f.scopes[6].pr.resolve(scopedPrSuccess);
+      await setImmediate();
+      expect(f.acquired).not.toContain(ids[6]);
+      f.scopes[0].statusReply.resolve(null);
+      await setImmediate();
+      expect(f.acquired).toEqual([...ids.slice(0, 6), WS, ids[6]]);
+      expect(f.scopes[0].releases).toEqual([ids[0]]);
+    }));
+  it('retains the original failure before an independent cleanup failure at the existing error owner', async () =>
+    withControlledGit(async (f) => {
+      const logged = vi.spyOn(ClientLogger.prototype, 'error');
+      const original = new Error('original PR rejection');
+      const cleanup = new Error('independent release failure');
+      f.request();
+      await setImmediate();
+      f.scopes[0].failRelease(cleanup);
+      f.scopes[0].pr.reject(original);
+      await setImmediate();
+      const failures = logged.mock.calls
+        .map((call) => call[1])
+        .filter((error): error is AggregateError => error instanceof AggregateError);
+      expect(failures).toHaveLength(1);
+      expect(failures[0].errors).toEqual([original, cleanup]);
+      expect(store.state.prStatus.byWorkspaceId[WS].lastRefreshTime).toBeNull();
+      expect(f.scopes[0].releases).toEqual([WS]);
+    }));
+  it.each([true, false])(
+    'fences older loading=%s dispatch reentrancy and still releases its original scope',
+    async (loading) =>
+      withControlledGit(async (f) => {
+        f.onPut((action) => {
+          if (
+            action.type === 'changes/setLoadingOlderCommits' &&
+            Array.isArray(action.payload) &&
+            action.payload[1] === loading
+          ) {
+            f.scopes[0].release();
+            store.dispatch(setLoadingOlderCommits(WS, true));
+          }
+        });
+        store.dispatch(loadOlderCommitsRequested(WS, 'boundary'));
+        await setImmediate();
+        expect(
+          f.actions
+            .filter((a) => a.type === 'changes/setLoadingOlderCommits')
+            .map((a) => a.payload),
+        ).toEqual(
+          loading
+            ? [[WS, true]]
+            : [
+                [WS, true],
+                [WS, false],
+              ],
+        );
+        expect(f.scopes[0].releases).toEqual([WS]);
+        expect(store.state.changes.byWorkspaceId[WS].loadingOlderCommits).toBe(true);
+        if (loading) expect(f.scopes[0].calls).toEqual([]);
+      }),
+  );
+  it('does not grant freshness for null or errors but retains the existing non-null skipped success policy', async () =>
+    withControlledGit(async (f) => {
+      f.request();
+      await setImmediate();
+      f.scopes[0].pr.resolve(null);
+      await setImmediate();
+      expect(store.state.prStatus.byWorkspaceId[WS].lastRefreshTime).toBeNull();
+      expect(f.actions.filter((a) => a.type === prStatusScopedRefreshSucceeded.type)).toEqual([]);
+      f.request();
+      await setImmediate();
+      f.scopes[1].pr.resolve({ outcome: 'skipped', pullRequests: [] });
+      await setImmediate();
+      expect(f.actions.filter((a) => a.type === prStatusScopedRefreshSucceeded.type)).toHaveLength(
+        1,
+      );
+      expect(store.state.prStatus.byWorkspaceId[WS].refreshProvenance).toEqual({
+        principalContext: f.context(),
+        physicalOwnerId: 'owner-A',
+      });
+    }));
+});

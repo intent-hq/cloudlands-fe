@@ -757,3 +757,155 @@ describe('observation-only cancellation before origin handoff', () => {
     },
   );
 });
+
+describe('captured Git renderer transport', () => {
+  it('sends only strict Git input on the original route and preserves a raw null result', async () => {
+    const h = await ready();
+    try {
+      h.invoke.mockResolvedValueOnce(fulfilled(null));
+      expect(await h.route.readGit({ operation: 'git-status', forceRefresh: false })).toBeNull();
+      expect(h.invoke).toHaveBeenLastCalledWith(channels.READ, {
+        ...ref,
+        operation: 'git-status',
+        forceRefresh: false,
+      });
+      expect(h.origin.isCurrent()).toBe(true);
+    } finally {
+      h.origin.release();
+    }
+  });
+
+  it('does not fold current ordinary Git errors into unavailable or release its origin', async () => {
+    const h = await ready();
+    const error = {
+      code: 'forbidden',
+      message: 'Forbidden',
+      rpcCode: -32003,
+      data: { code: 'forbidden', detail: 'member removed' },
+    };
+    try {
+      h.invoke.mockResolvedValueOnce(
+        envelope({ ref, current: true, settlement: { status: 'rejected', error } }),
+      );
+      await expect(h.route.readGit({ operation: 'tracked-changes' })).rejects.toMatchObject(error);
+      expect(h.origin.isCurrent()).toBe(true);
+      expect(h.invoke.mock.calls.filter(([name]) => name === channels.RELEASE_ORIGIN)).toEqual([]);
+    } finally {
+      h.origin.release();
+    }
+  });
+
+  it.each([
+    {
+      ref: { ...ref, originId: 'foreign' },
+      current: true,
+      settlement: { status: 'fulfilled', value: [] },
+    },
+    { ref, current: false, reason: 'retired' },
+    { ref, current: true, settlement: { status: 'fulfilled' } },
+  ])('retires malformed or ineligible Git reply %j before returning data', async (reply) => {
+    const h = await ready();
+    h.invoke.mockResolvedValueOnce(envelope(reply));
+    await expect(h.route.readGit({ operation: 'tracked-changes' })).rejects.toMatchObject({
+      code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE',
+    });
+    expect(h.origin.isCurrent()).toBe(false);
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it('does not send a Git read through a replacement preload bridge', async () => {
+    const h = await ready();
+    const successor = install();
+    await expect(
+      h.route.readGit({ operation: 'pr-refresh', automatic: true }),
+    ).rejects.toMatchObject({ code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE' });
+    expect(successor.invoke).not.toHaveBeenCalled();
+    expect(h.invoke.mock.calls.filter(([name]) => name === channels.RELEASE_ORIGIN)).toHaveLength(
+      1,
+    );
+  });
+});
+
+describe('explicit prepared Git response boundary', () => {
+  async function preparedFixture() {
+    const h = install();
+    const origin = await createElectronWorkspaceLoadTransport(channels).observeOrigin();
+    if (!origin) throw new Error('Expected controlled original bridge');
+    return { ...h, origin };
+  }
+
+  it('uses the strict opt-in tuple and preserves the full default route schema', async () => {
+    const h = await preparedFixture();
+    try {
+      h.invoke.mockResolvedValueOnce(
+        envelope({ ref, provenance: { physicalOwnerId: 'owner-token' } }),
+      );
+      const route = await h.origin.prepareGit(
+        ref.requestId,
+        ref.workspaceId,
+        'pr-refresh',
+        new AbortController().signal,
+      );
+      expect(route?.ref).toEqual(ref);
+      expect(route?.provenance).toEqual({ physicalOwnerId: 'owner-token' });
+      expect(h.invoke).toHaveBeenLastCalledWith(channels.PREPARE, {
+        ...tuple,
+        operation: 'pr-refresh',
+      });
+      const { WorkspaceLoadRouteRefSchema, WorkspaceLoadPrepareSchema } =
+        await import('$shared/types/workspace-load-route');
+      expect(
+        WorkspaceLoadRouteRefSchema.safeParse({
+          ...ref,
+          provenance: { physicalOwnerId: 'owner-token' },
+        }).success,
+      ).toBe(false);
+      expect(
+        WorkspaceLoadPrepareSchema.safeParse({ ...tuple, operation: 'pr-refresh' }).success,
+      ).toBe(false);
+      route?.release();
+    } finally {
+      h.origin.release();
+    }
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it.each([
+    { ref, provenance: { physicalOwnerId: '' } },
+    { ref, provenance: { physicalOwnerId: 'token', timestamp: 1 } },
+    { ref, provenance: { physicalOwnerId: 'token' }, extra: true },
+    { ref: { ...ref, requestId: 'foreign' }, provenance: { physicalOwnerId: 'token' } },
+    ref,
+  ])('refuses malformed or mismatched prepared response %j', async (response) => {
+    const h = await preparedFixture();
+    try {
+      h.invoke.mockResolvedValueOnce(envelope(response));
+      expect(
+        await h.origin.prepareGit(
+          ref.requestId,
+          ref.workspaceId,
+          'pr-refresh',
+          new AbortController().signal,
+        ),
+      ).toBeNull();
+      expect(h.origin.isCurrent()).toBe(false);
+      expect(h.invoke.mock.calls.filter(([channel]) => channel === channels.READ)).toEqual([]);
+    } finally {
+      h.origin.release();
+    }
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it('keeps default preparation strict when an attestation-shaped reply is unsolicited', async () => {
+    const h = await preparedFixture();
+    try {
+      h.invoke.mockResolvedValueOnce(envelope({ ref, provenance: { physicalOwnerId: 'token' } }));
+      expect(
+        await h.origin.prepare(ref.requestId, ref.workspaceId, new AbortController().signal),
+      ).toBeNull();
+      expect(h.origin.isCurrent()).toBe(false);
+    } finally {
+      h.origin.release();
+    }
+  });
+});

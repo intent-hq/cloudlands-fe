@@ -13,8 +13,11 @@ import { toErrorPayload } from '../../backend/main/json-rpc-errors';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { getStrictBackendBindingForWebContents } from '../../../main/window-backend';
 import {
+  WorkspaceGitReadSchema,
+  type WorkspaceGitReadAccess,
   WorkspaceLoadOriginRefSchema,
   WorkspaceLoadPrepareSchema,
+  WorkspaceGitPrepareSchema,
   WorkspaceLoadReadSchema,
   WorkspaceLoadReleaseSchema,
 } from '../../../shared/types/workspace-load-route';
@@ -136,13 +139,16 @@ function resultToCommandResponse<T>(result: Result<T, string>): CommandResponse<
 let workspaceLoadIPCInstalled = false;
 
 /** Install only the physical route owner. Ordinary workspace startup stays separate. */
-export function setupWorkspaceLoadIPC({
-  origins,
-  readBackend,
-}: {
-  origins: BackendConnectionOrigins;
-  readBackend(id: string): JsonRpcClient | undefined;
-}): () => void {
+export function setupWorkspaceLoadIPC(
+  {
+    origins,
+    readBackend,
+  }: {
+    origins: BackendConnectionOrigins;
+    readBackend(id: string): JsonRpcClient | undefined;
+  },
+  git?: WorkspaceGitReadAccess,
+): () => void {
   if (workspaceLoadIPCInstalled) throw new Error('Workspace load IPC already installed'); // i18n-ignore (internal diagnostic)
   workspaceLoadIPCInstalled = true;
   const channels = IPC_CHANNELS.WORKSPACE_LOAD;
@@ -151,6 +157,7 @@ export function setupWorkspaceLoadIPC({
   const routes = createWorkspaceLoadRoutes({
     originAdmission: { kind: 'physical', origins },
     readBackend,
+    ...(git === undefined ? {} : { git }),
     errorPayload: toErrorPayload,
     open: (event, id, reads) =>
       createSafeValidatedHandler(
@@ -212,10 +219,30 @@ export function setupWorkspaceLoadIPC({
   }
   try {
     register(channels.OBSERVE_ORIGIN, z.undefined(), (event) => routes.observeOrigin(event));
-    register(channels.PREPARE, WorkspaceLoadPrepareSchema, (event, input) =>
-      routes.prepare(event, input),
-    );
-    register(channels.READ, WorkspaceLoadReadSchema, (event, input) => routes.read(event, input));
+    if (git === undefined) {
+      register(channels.PREPARE, WorkspaceLoadPrepareSchema, (event, input) =>
+        routes.prepare(event, input),
+      );
+    } else {
+      register(
+        channels.PREPARE,
+        z.union([WorkspaceLoadPrepareSchema, WorkspaceGitPrepareSchema]),
+        (event, input) =>
+          'operation' in input ? routes.prepareGit(event, input) : routes.prepare(event, input),
+      );
+    }
+    if (git === undefined) {
+      register(channels.READ, WorkspaceLoadReadSchema, (event, input) => routes.read(event, input));
+    } else {
+      register(
+        channels.READ,
+        z.union([WorkspaceLoadReadSchema, WorkspaceGitReadSchema]),
+        (event, input) =>
+          input.operation === 'open' || input.operation === 'get'
+            ? routes.read(event, input)
+            : routes.readGit(event, input),
+      );
+    }
     register(channels.RELEASE, WorkspaceLoadReleaseSchema, (event, input) => {
       routes.release(event, input);
       return null;

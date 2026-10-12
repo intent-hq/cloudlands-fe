@@ -1,3 +1,10 @@
+import type { GenericAction } from '@themislib/themis/types';
+import type { SelectorChannelSelector } from '@themislib/themis/saga';
+import type {
+  GitReadClient,
+  PrRefreshResult,
+} from '../../../../lib/client/lifecycle-read-client-types';
+import type { PRStatusWorkspaceState } from '../pr-status/pr-status-types';
 import type { SagaGenerator } from 'typed-redux-saga';
 import type {
   AgentDelegatedCounts,
@@ -81,6 +88,8 @@ export interface LifecycleReadDependencies<
   ScriptContext extends { requestId: string },
 > {
   selectors: LifecycleReadSelectors<State>;
+  /** Opt-in only; the source facade supplies no physical Git ports. */
+  scopedGit?: ScopedGitReadPorts<State>;
   appClient: LifecycleReadClient;
   getAgentLineStats: (agentId: string, workspaceId?: string) => Promise<Metrics | null>;
   beginScriptRead: (workspaceId: string) => SagaGenerator<ScriptContext>;
@@ -99,4 +108,28 @@ export interface LifecycleReadDependencies<
       read: (workspaceId: string) => SagaGenerator<void>,
     ) => SagaGenerator<void>,
   ) => () => SagaGenerator<void>;
+}
+
+export interface ScopedGitReadScope {
+  readonly identity: object;
+  readonly signal: AbortSignal;
+  isCurrent(): boolean;
+  release(): void;
+  readonly reads: Pick<GitReadClient, 'status' | 'trackedChanges' | 'commitsWithBoundary'>;
+  preparePrRefresh(): Promise<{
+    readonly provenance: { readonly physicalOwnerId: string };
+    isCurrent(): boolean;
+    read(options: { automatic: boolean }): Promise<PrRefreshResult | null>;
+  }>;
+}
+
+export interface ScopedGitReadPorts<State extends LifecycleReadState> {
+  admission: SelectorChannelSelector<string | null, [workspaceId: string], State>;
+  readCurrentContext(workspaceId: string): string | null;
+  readMetadata(workspaceId: string): PRStatusWorkspaceState;
+  getDispatch(): (action: GenericAction) => unknown;
+  acquire(
+    workspaceId: string,
+    signal: AbortSignal,
+  ): Promise<{ kind: 'unavailable' } | { kind: 'acquired'; scope: ScopedGitReadScope }>;
 }

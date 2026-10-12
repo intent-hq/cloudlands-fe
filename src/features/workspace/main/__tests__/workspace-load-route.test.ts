@@ -491,3 +491,71 @@ describe('prepare tuple cancellation with the ready-only default', () => {
     expect(h.capture('fresh-origin')).toMatchObject({ requestId: 'fresh-origin' });
   });
 });
+
+describe('ready-only route cannot acquire physical Git access', () => {
+  it('refuses an injected operation allowlist while retaining original GET behavior', async () => {
+    const h = await harness();
+    // Deliberately evade only the static option boundary; use the genuine ready-only owner.
+    const deps = { ...h.deps };
+    Object.defineProperty(deps, 'git', {
+      value: {
+        reads: ['git-status', 'tracked-changes', 'commits-with-boundary'],
+        prRefresh: true,
+      },
+    });
+    const routes = createWorkspaceLoadRoutes(deps);
+    cleanups.push(() => routes.dispose());
+    const origin = routes.observeOrigin(h.owner.event);
+    const ref = routes.prepare(h.owner.event, {
+      ...origin,
+      requestId: 'git-default',
+      workspaceId: 'amber-forest',
+    });
+    for (const operation of [
+      'git-status',
+      'tracked-changes',
+      'commits-with-boundary',
+      'pr-refresh',
+    ]) {
+      await expect(routes.readGit(h.owner.event, { ...ref, operation })).rejects.toThrow(
+        'WORKSPACE_LOAD_ROUTE_UNAVAILABLE',
+      );
+    }
+    expect(h.sockets[0].frames.map((frame) => frame.method)).toEqual(['client.hello']);
+    const pending = routes.read(h.owner.event, { ...ref, operation: 'get' });
+    h.sockets[0].reply(await h.sockets[0].next('workspace.get'), {
+      workspace: { id: 'amber-forest' },
+    });
+    expect(await pending).toEqual({
+      ref,
+      current: true,
+      settlement: { status: 'fulfilled', value: { workspace: { id: 'amber-forest' } } },
+    });
+  });
+});
+
+describe('ready-only owners cannot attest a physical Git identity', () => {
+  it('refuses ready-only Git preparation even when an allowlist is injected', async () => {
+    const h = await harness();
+    const deps = { ...h.deps };
+    Object.defineProperty(deps, 'git', { value: { prRefresh: true } });
+    const routes = createWorkspaceLoadRoutes(deps);
+    cleanups.push(() => routes.dispose());
+    const origin = routes.observeOrigin(h.owner.event);
+    await expect(
+      routes.prepareGit(h.owner.event, {
+        ...origin,
+        requestId: 'proof',
+        workspaceId: 'amber-forest',
+        operation: 'pr-refresh',
+      }),
+    ).rejects.toThrow('WORKSPACE_LOAD_ROUTE_UNAVAILABLE');
+    expect(h.sockets[0].frames.map((frame) => frame.method)).toEqual(['client.hello']);
+    const ref = routes.prepare(h.owner.event, {
+      ...origin,
+      requestId: 'default',
+      workspaceId: 'amber-forest',
+    });
+    expect(Object.keys(ref).sort()).toEqual(['originId', 'requestId', 'routeId', 'workspaceId']);
+  });
+});

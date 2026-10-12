@@ -436,3 +436,62 @@ describe('isolated lifecycle IPC owner dispatch contracts', () => {
     expect(branches(run.actions)).toEqual(immediate());
   });
 });
+
+import {
+  prStatusScopedRefreshSucceeded,
+  prStatusRefreshCompleted,
+} from '../../pr-status/pr-status-slice';
+it('settles one PR hydration branch for atomic scoped success without a second legacy completion', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+  performance.clearMarks();
+  performance.clearMeasures();
+  const run = fixture();
+  run.start();
+  run.store.dispatch(setWorkspaceEntity(workspace(WS, '/repo')));
+  run.store.dispatch(workspaceHydrationRequested(WS));
+  await vi.advanceTimersByTimeAsync(1_500);
+  const dispatchMark = `intent:workspace-hydration:${WS}:1:prStatus:dispatch`;
+  expect(performance.getEntriesByName(dispatchMark)).toHaveLength(1);
+  const completion = prStatusScopedRefreshSucceeded(WS, {
+    principalContext: 'admitted',
+    physicalOwnerId: 'attested',
+  });
+  run.store.dispatch(completion);
+  expect(performance.getEntriesByName(dispatchMark)).toHaveLength(0);
+  expect(
+    performance.getEntriesByName('intent:workspace-hydration:prStatus:dispatch-to-settle'),
+  ).toHaveLength(1);
+  run.store.dispatch(completion);
+  expect(
+    performance.getEntriesByName('intent:workspace-hydration:prStatus:dispatch-to-settle'),
+  ).toHaveLength(1);
+  expect(run.actions.filter((action) => action.type === prStatusRefreshCompleted.type)).toEqual([]);
+});
+
+it('settles a current PR failure once without treating it as successful hydration', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+  performance.clearMarks();
+  performance.clearMeasures();
+  const run = fixture();
+  run.start();
+  run.store.dispatch(setWorkspaceEntity(workspace(WS, '/repo')));
+  run.store.dispatch(workspaceHydrationRequested(WS));
+  await vi.advanceTimersByTimeAsync(1_500);
+  const dispatchMark = `intent:workspace-hydration:${WS}:1:prStatus:dispatch`;
+  expect(performance.getEntriesByName(dispatchMark)).toHaveLength(1);
+  const mark = vi.spyOn(performance, 'mark');
+  const failure = prStatusRefreshCompleted(WS, false, 'member required');
+  run.store.dispatch(failure);
+  run.store.dispatch(failure);
+  expect(performance.getEntriesByName(dispatchMark)).toHaveLength(0);
+  expect(
+    performance.getEntriesByName('intent:workspace-hydration:prStatus:dispatch-to-settle'),
+  ).toHaveLength(1);
+  expect(
+    mark.mock.calls.filter(
+      ([name]) => name === `intent:workspace-hydration:${WS}:1:prStatus:settle`,
+    ),
+  ).toEqual([
+    [`intent:workspace-hydration:${WS}:1:prStatus:settle`, { detail: { outcome: 'failure' } }],
+  ]);
+});

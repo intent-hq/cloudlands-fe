@@ -44,6 +44,7 @@ import {
 import { loadKnownRepos, setRepos } from '../../known-repos/known-repos-slice';
 import {
   prStatusRefreshCompleted,
+  prStatusScopedRefreshSucceeded,
   refreshPRStatusRequested,
 } from '../../pr-status/pr-status-slice';
 import { refreshScripts, setScriptsInitialized } from '../../scripts/scripts-slice';
@@ -456,7 +457,8 @@ export function createLifecycleIpcReadSaga(
     const payload = action.payload;
     const tuplePayload = Array.isArray(payload) ? payload : null;
     const prStatusPayload =
-      action.type === prStatusRefreshCompleted.type &&
+      (action.type === prStatusRefreshCompleted.type ||
+        action.type === prStatusScopedRefreshSucceeded.type) &&
       payload != null &&
       typeof payload === 'object' &&
       !Array.isArray(payload)
@@ -482,6 +484,7 @@ export function createLifecycleIpcReadSaga(
       [setSkills.type]: 'skills',
       [loadSkillsFailed.type]: 'skills',
       [prStatusRefreshCompleted.type]: 'prStatus',
+      [prStatusScopedRefreshSucceeded.type]: 'prStatus',
       [setHasLoadedInitialData.type]: 'changes',
       [setAgentsLoaded.type]: 'agents',
       [loadWorkspaceTerminals.type]: 'terminals',
@@ -510,6 +513,7 @@ export function createLifecycleIpcReadSaga(
     setSkills.type,
     loadSkillsFailed.type,
     prStatusRefreshCompleted.type,
+    prStatusScopedRefreshSucceeded.type,
     setHasLoadedInitialData.type,
     setAgentsLoaded.type,
     loadWorkspaceTerminals.type,

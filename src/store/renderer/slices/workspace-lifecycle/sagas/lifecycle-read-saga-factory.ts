@@ -1,13 +1,26 @@
+import type { GenericAction } from '@themislib/themis/types';
+import { createChannelFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
+import type { EventChannel, Task } from 'redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, fork, put, race, select, take, takeEvery } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  cancel,
+  cancelled,
+  fork,
+  put,
+  race,
+  select,
+  take,
+  takeEvery,
+} from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '../../../../../features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '../../../../../features/agent/utils/stale-runtime-flag-clear';
 import { reconcileGitStatusChanges } from '../../../../../features/file-tracking/git-status-reconciliation';
-import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
+import { BackendError, isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/types';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   takeLeadingByAgent,
   takeLeadingByWorkspace,
@@ -36,6 +49,7 @@ import { prBranchLookupSucceeded } from '../../pr-branch-lookup/pr-branch-lookup
 import type { PrBranchLookupPayload } from '../../pr-branch-lookup/pr-branch-lookup-types';
 import {
   prStatusRefreshCompleted,
+  prStatusScopedRefreshSucceeded,
   prStatusRefreshStarted,
   refreshPRStatusRequested,
 } from '../../pr-status/pr-status-slice';
@@ -120,7 +134,12 @@ import {
   type WorkspaceReadScheduler,
 } from './workspace-read-scheduler';
 
-import type { LifecycleReadDependencies, LifecycleReadState } from '../lifecycle-read-types';
+import { getAdmittedWorkspaceReadContext } from '../utils/workspace-read-admission';
+import type {
+  LifecycleReadDependencies,
+  LifecycleReadState,
+  ScopedGitReadScope,
+} from '../lifecycle-read-types';
 
 export function createLifecycleReadSaga<
   State extends LifecycleReadState,
@@ -170,6 +189,12 @@ export function createLifecycleReadSaga<
     selectWorkspaceById,
     selectWorkspaceListLoadedForBackend,
   } = dependencies.selectors;
+  const admissionSelectors = {
+    selectPrincipalActionContext,
+    selectHostRole,
+    selectWorkspaceById,
+    selectWorkspaceListLoadedForBackend,
+  };
   const logger = createLogger('LifecycleReadSaga');
 
   /**
@@ -234,11 +259,237 @@ export function createLifecycleReadSaga<
     }
   }
 
+  /** Attempt-local retirement only; canonical principal and scheduler ownership stay external. */
+  function* withScopedGit(
+    workspaceId: string,
+    read: (attempt: {
+      scope: ScopedGitReadScope;
+      context: string;
+      current(): boolean;
+      putCurrent(action: () => GenericAction): SagaGenerator<boolean>;
+    }) => SagaGenerator<void>,
+  ): SagaGenerator<void> {
+    const ports = dependencies.scopedGit!;
+    const context = yield* ports.admission.effect(workspaceId);
+    if (context === null) return;
+    const dispatch = ports.getDispatch();
+    const controller = new AbortController();
+    const failures: unknown[] = [];
+    let retired = false;
+    let scope: ScopedGitReadScope | undefined;
+    let channel: EventChannel<SelectorChannelPayload<string | null>> | undefined;
+    let observer: Task | undefined;
+    function retire() {
+      if (retired) return;
+      retired = true;
+      try {
+        controller.abort();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    function current(): boolean {
+      if (retired) return false;
+      try {
+        if (
+          ports.readCurrentContext(workspaceId) !== context ||
+          ports.getDispatch() !== dispatch ||
+          (scope && (!scope.isCurrent() || scope.signal.aborted)) ||
+          ports.readCurrentContext(workspaceId) !== context ||
+          ports.getDispatch() !== dispatch ||
+          retired
+        ) {
+          retire();
+          return false;
+        }
+        return true;
+      } catch (error) {
+        failures.push(error);
+        retire();
+        return false;
+      }
+    }
+    function* putCurrent(action: () => GenericAction): SagaGenerator<boolean> {
+      // Recheck after action construction (which can read the clock), then publish synchronously.
+      // This avoids an effect scheduling gap between the last fence and the actual captured dispatch.
+      return yield* call(() => {
+        if (!current()) return false;
+        const next = action();
+        if (!current()) return false;
+        dispatch(next);
+        return true;
+      });
+    }
+    try {
+      channel = yield* createChannelFromSelector(ports.admission, workspaceId);
+      const admissionChannel = channel;
+      observer = yield* fork(function* observeAdmission(): SagaGenerator<void> {
+        while (true) {
+          const update = yield* take(admissionChannel);
+          if (update.payload !== context) {
+            retire();
+            return;
+          }
+        }
+      });
+      if (!current()) return;
+      const acquired = yield* call([ports, ports.acquire], workspaceId, controller.signal);
+      if (acquired.kind === 'unavailable') {
+        // i18n-ignore (internal refusal; never successful empty hydration)
+        throw new BackendError({
+          code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE',
+          message: 'Captured Git acquisition unavailable',
+        });
+      }
+      scope = acquired.scope;
+      scope.signal.addEventListener('abort', retire, { once: true });
+      if (!current()) return;
+      yield* read({ scope, context, current, putCurrent });
+    } catch (error) {
+      // Keep the operation's original failure before independent cleanup failures.
+      failures.unshift(error);
+    } finally {
+      retire();
+      try {
+        scope?.signal.removeEventListener('abort', retire);
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        scope?.release();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        if (observer) yield* cancel(observer);
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        channel?.close();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length === 1) throw failures[0];
+      // i18n-ignore (internal aggregate; retains original failures for the existing error owner)
+      if (failures.length > 1) throw new AggregateError(failures, 'Captured Git attempt failed');
+    }
+  }
+
+  function* refreshScopedPrStatus(
+    workspaceId: string,
+    force: boolean,
+    isManual: boolean,
+  ): SagaGenerator<void> {
+    yield* withScopedGit(workspaceId, function* ({ scope, context, current, putCurrent }) {
+      const prepared = yield* call([scope, scope.preparePrRefresh]);
+      if (!current() || !prepared.isCurrent() || !current()) return;
+      if (!force) {
+        const metadata = dependencies.scopedGit!.readMetadata(workspaceId);
+        if (!current()) return;
+        const lastRefreshTime = metadata.lastRefreshTime;
+        if (
+          lastRefreshTime != null &&
+          Date.now() - lastRefreshTime < PR_STATUS_REFRESH_TTL_MS &&
+          metadata.refreshProvenance?.principalContext === context &&
+          metadata.refreshProvenance.physicalOwnerId === prepared.provenance.physicalOwnerId
+        )
+          return;
+      }
+      if (!(yield* putCurrent(() => prStatusRefreshStarted(workspaceId)))) return;
+      if (!current() || !prepared.isCurrent() || !current()) return;
+      try {
+        const refresh = yield* call([prepared, prepared.read], { automatic: !isManual });
+        if (!current()) return;
+        if (refresh === null) {
+          yield* putCurrent(() =>
+            prStatusRefreshCompleted(workspaceId, false, 'pr.refresh failed'),
+          );
+          return;
+        }
+        if (
+          !(yield* putCurrent(() =>
+            prStatusScopedRefreshSucceeded(workspaceId, {
+              principalContext: context,
+              physicalOwnerId: prepared.provenance.physicalOwnerId,
+            }),
+          ))
+        )
+          return;
+        const workspace: Workspace | undefined = yield* selectWorkspaceById.effect(workspaceId);
+        if (!current()) return;
+        if (refresh.prNumber != null && workspace?.repositoryOwner && workspace.repositoryName) {
+          const payload: PrBranchLookupPayload = {
+            owner: workspace.repositoryOwner,
+            repo: workspace.repositoryName,
+            prNumber: refresh.prNumber,
+            key: `${workspace.repositoryOwner}/${workspace.repositoryName}#${refresh.prNumber}`,
+          };
+          yield* putCurrent(() => prBranchLookupSucceeded(payload, workspace.branch));
+        }
+      } catch (error) {
+        if (!current()) throw error;
+        yield* putCurrent(() =>
+          prStatusRefreshCompleted(
+            workspaceId,
+            false,
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
+        throw error; // Existing worker error owner receives the original plus any cleanup failures.
+      }
+    });
+  }
+
+  function* refreshScopedChanges(workspaceId: string): SagaGenerator<void> {
+    yield* withScopedGit(workspaceId, function* ({ scope, current, putCurrent }) {
+      const { status, trackedChanges, commitsEnvelope } = yield* all({
+        status: call([scope.reads, scope.reads.status], workspaceId),
+        trackedChanges: call([scope.reads, scope.reads.trackedChanges], workspaceId),
+        commitsEnvelope: call([scope.reads, scope.reads.commitsWithBoundary], workspaceId),
+      });
+      if (!current() || !status || trackedChanges === null) return;
+      const changes = reconcileGitStatusChanges(status.files, trackedChanges);
+      if (!(yield* putCurrent(() => setChangesData(workspaceId, changes, false, changes.length))))
+        return;
+      if (
+        !(yield* putCurrent(() =>
+          setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha),
+        ))
+      )
+        return;
+      yield* putCurrent(() => setHasLoadedInitialData(workspaceId, true));
+    });
+  }
+
+  function* refreshScopedOlderCommits(workspaceId: string): SagaGenerator<void> {
+    yield* withScopedGit(workspaceId, function* ({ scope, current, putCurrent }) {
+      if (!(yield* putCurrent(() => setLoadingOlderCommits(workspaceId, true)))) return;
+      try {
+        if (!current()) return;
+        const envelope = yield* call(
+          [scope.reads, scope.reads.commitsWithBoundary],
+          workspaceId,
+          true,
+        );
+        yield* putCurrent(() => appendOlderCommits(workspaceId, envelope.commits));
+      } finally {
+        if (!(yield* cancelled()) && current()) {
+          yield* putCurrent(() => setLoadingOlderCommits(workspaceId, false));
+        }
+      }
+    });
+  }
+
   function* refreshPrStatus(
     workspaceId: string,
     force: boolean,
     isManual: boolean,
   ): SagaGenerator<void> {
+    if (dependencies.scopedGit) {
+      yield* refreshScopedPrStatus(workspaceId, force, isManual);
+      return;
+    }
     if (!force) {
       const lastRefreshTime = yield* selectPRStatusLastRefreshTime.effect(workspaceId);
       if (lastRefreshTime != null && Date.now() - lastRefreshTime < PR_STATUS_REFRESH_TTL_MS) {
@@ -285,21 +536,14 @@ export function createLifecycleReadSaga<
    */
   function* admittedWorkspaceRead(workspaceId: string): SagaGenerator<string | null> {
     const state: State = yield* select();
-    const context = selectPrincipalActionContext.select(state);
-    const role = selectHostRole.select(state);
-    if (
-      !context ||
-      (role !== 'owner' && role !== 'member') ||
-      (role === 'member' && workspaceId === CHIEF_WORKSPACE_ID) ||
-      !selectWorkspaceById.select(state, workspaceId) ||
-      !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) ||
-      state.workspace.capabilityContext !== context
-    )
-      return null;
-    return context;
+    return getAdmittedWorkspaceReadContext(state, workspaceId, admissionSelectors);
   }
 
   function* refreshChanges(workspaceId: string): SagaGenerator<void> {
+    if (dependencies.scopedGit) {
+      yield* refreshScopedChanges(workspaceId);
+      return;
+    }
     const context = yield* admittedWorkspaceRead(workspaceId);
     if (!context) return;
     const { status, trackedChanges, commitsEnvelope } = yield* all({
@@ -320,6 +564,10 @@ export function createLifecycleReadSaga<
   }
 
   function* refreshOlderCommits(workspaceId: string): SagaGenerator<void> {
+    if (dependencies.scopedGit) {
+      yield* refreshScopedOlderCommits(workspaceId);
+      return;
+    }
     const context = yield* admittedWorkspaceRead(workspaceId);
     if (!context) return;
     yield* put(setLoadingOlderCommits(workspaceId, true));
