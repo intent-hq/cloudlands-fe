@@ -18,6 +18,10 @@ import {
   geometry,
   capture,
   rowByLabel,
+  followingState,
+  expectFollowingBottom,
+  observeNativeScroll,
+  pressObservedEnd,
 } from '../lib/operational-window.mjs';
 
 test('operational-window OW1 initial admission preserves content and spacer coverage', async ({
@@ -213,4 +217,204 @@ test('operational-window OW7 current items callbacks and reorder retain node ide
   } finally {
     await old.dispose();
   }
+});
+
+test('operational-window E1 qualified End follows actual content growth and shrink', async ({
+  page,
+}, info) => {
+  const { host, primary } = await openOperational(page);
+  await choice(host, 'Items per window', '8');
+  await focusScroll(primary.scroll);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  await capture(page, primary, 'E1-before', info);
+  await pressObservedEnd(page, primary.scroll, primary.scroll, info, 'E1-End', { prevented: true });
+  const followed = await expectFollowingBottom(primary.scroll);
+  const body = rowByLabel(primary, 'scope-a:second row 8').locator('p').nth(1);
+  await expect(body).toHaveCount(1);
+  const beforeBody = await body.boundingBox();
+  expect(beforeBody).not.toBeNull();
+  await capture(page, primary, 'E1-followed', info);
+  await toggle(host, 'Expanded row content', true);
+  await expect
+    .poll(async () => (await body.boundingBox()).height)
+    .toBeGreaterThan(beforeBody.height);
+  await expect
+    .poll(async () => (await followingState(primary.scroll)).maximum)
+    .toBeGreaterThan(followed.maximum);
+  const expanded = await expectFollowingBottom(primary.scroll);
+  const expandedBody = await body.boundingBox();
+  // Global caller controls can move document/focus. Observe the root outcome
+  // before revealing it for evidence; this does not prove reader retention.
+  await focusScroll(primary.scroll);
+  await expectFollowingBottom(primary.scroll);
+  await capture(page, primary, 'E1-expanded', info);
+  await toggle(host, 'Expanded row content', false);
+  await expect
+    .poll(async () => (await body.boundingBox()).height)
+    .toBeLessThan(expandedBody.height);
+  await expect
+    .poll(async () => (await followingState(primary.scroll)).maximum)
+    .toBeLessThan(expanded.maximum);
+  const shrunk = await expectFollowingBottom(primary.scroll);
+  await info.attach('E1-growth-shrink.json', {
+    body: JSON.stringify(
+      {
+        followed,
+        expanded,
+        shrunk,
+        body: { before: beforeBody, expanded: expandedBody, shrunk: await body.boundingBox() },
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+  await focusScroll(primary.scroll);
+  await expectFollowingBottom(primary.scroll);
+  await capture(page, primary, 'E1-after', info);
+});
+
+test('operational-window E2 upward wheel detaches and qualified End reattaches', async ({
+  page,
+}, info) => {
+  const { primary } = await openOperational(page);
+  await focusScroll(primary.scroll);
+  await pressObservedEnd(page, primary.scroll, primary.scroll, info, 'E2-first-End', {
+    prevented: true,
+  });
+  await expectFollowingBottom(primary.scroll);
+  await capture(page, primary, 'E2-before', info);
+  await observeNativeScroll(
+    primary.scroll,
+    primary.scroll,
+    info,
+    'E2-upward-wheel',
+    async (read) => {
+      const before = await read();
+      const point = await primary.scroll.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        const scaleX = box.width / node.offsetWidth;
+        const scaleY = box.height / node.offsetHeight;
+        const left = Math.max(0, box.left + node.clientLeft * scaleX);
+        const top = Math.max(0, box.top + node.clientTop * scaleY);
+        const right = Math.min(
+          innerWidth,
+          box.left + (node.clientLeft + node.clientWidth) * scaleX,
+        );
+        const bottom = Math.min(
+          innerHeight,
+          box.top + (node.clientTop + node.clientHeight) * scaleY,
+        );
+        const x = (left + right) / 2;
+        const y = (top + bottom) / 2;
+        const hit = document.elementFromPoint(x, y);
+        return {
+          x,
+          y,
+          width: right - left,
+          height: bottom - top,
+          inside:
+            !!hit &&
+            node.contains(hit) &&
+            hit.closest('[data-testid="operational-panel-scroll"]') === node,
+        };
+      });
+      expect(point.width).toBeGreaterThan(0);
+      expect(point.height).toBeGreaterThan(0);
+      expect(point.inside).toBe(true);
+      await page.mouse.move(point.x, point.y);
+      await expect(primary.scroll).toBeFocused();
+      await page.mouse.wheel(0, -point.height);
+      await expect
+        .poll(
+          async () => {
+            const current = await read();
+            const wheelIndex = current.events.findIndex(
+              (event) =>
+                event.type === 'wheel' &&
+                event.trusted &&
+                event.sameCurrentTarget &&
+                event.targetInside &&
+                event.delta.y < 0,
+            );
+            return (
+              wheelIndex >= 0 &&
+              current.events
+                .slice(wheelIndex + 1)
+                .some(
+                  (event) =>
+                    event.type === 'scrollend' &&
+                    event.trusted &&
+                    event.sameTarget &&
+                    event.sameCurrentTarget,
+                )
+            );
+          },
+          { timeout: 5000 },
+        )
+        .toBe(true);
+      const after = await read();
+      const wheels = after.events.filter((event) => event.type === 'wheel');
+      expect(wheels).toHaveLength(1);
+      expect(wheels[0]).toMatchObject({
+        trusted: true,
+        sameCurrentTarget: true,
+        targetInside: true,
+        delta: { x: 0, y: -point.height, mode: 0 },
+      });
+      expect(after.current.outer.top).toBeLessThan(before.current.outer.top);
+      expect(after.current.document).toEqual(before.current.document);
+      expect(after.current.sameFocusedTarget).toBe(true);
+    },
+  );
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  const detached = await followingState(primary.scroll);
+  expect(detached.maximum - detached.top).toBeGreaterThan(1);
+  await capture(page, primary, 'E2-detached', info);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  const capturedDetached = await followingState(primary.scroll);
+  expect(capturedDetached.maximum - capturedDetached.top).toBeGreaterThan(1);
+  await expect(primary.scroll).toBeFocused();
+  await pressObservedEnd(page, primary.scroll, primary.scroll, info, 'E2-second-End', {
+    prevented: true,
+  });
+  await expectFollowingBottom(primary.scroll);
+  await capture(page, primary, 'E2-after', info);
+});
+
+test('operational-window E3 focused input End retains native caret ownership', async ({
+  page,
+}, info) => {
+  const { host, primary } = await openOperational(page);
+  await choice(host, 'Items per window', '8');
+  await focusScroll(primary.scroll);
+  const row = await visibleRow(primary);
+  const input = row.node.getByRole('textbox');
+  await input.click();
+  await input.pressSequentially('End keeps this input editable');
+  await page.keyboard.press('Home');
+  await expect(input).toBeFocused();
+  expect(
+    await input.evaluate((node) => ({ start: node.selectionStart, end: node.selectionEnd })),
+  ).toEqual({ start: 0, end: 0 });
+  const before = await followingState(primary.scroll);
+  // Canonical FollowBottomOptions documents the default near-bottom threshold.
+  expect(before.maximum - before.top).toBeGreaterThan(100);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  await capture(page, primary, 'E3-before', info);
+  await pressObservedEnd(page, input, primary.scroll, info, 'E3-input-End', { prevented: false });
+  const selection = await input.evaluate((node) => ({
+    length: node.value.length,
+    start: node.selectionStart,
+    end: node.selectionEnd,
+  }));
+  expect(selection.length).toBeGreaterThan(0);
+  expect(selection.start).toBe(selection.length);
+  expect(selection.end).toBe(selection.length);
+  await expect(input).toBeFocused();
+  const after = await followingState(primary.scroll);
+  expect(after.maximum - after.top).toBeGreaterThan(100);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  await capture(page, primary, 'E3-after', info);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
 });

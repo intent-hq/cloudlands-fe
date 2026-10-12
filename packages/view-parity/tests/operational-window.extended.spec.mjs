@@ -17,6 +17,9 @@ import {
   outputJson,
   capture,
   rowByLabel,
+  followingState,
+  expectFollowingBottom,
+  pressObservedEnd,
 } from '../lib/operational-window.mjs';
 
 test('operational-window OW4 native nested scrolling respects outer clipping', async ({
@@ -216,4 +219,103 @@ test('operational-window OW10 independent provider survives neighbor teardown an
     await oldPrimary.dispose();
     await independentRoot.dispose();
   }
+});
+
+test('operational-window E4 nested inner End retains native scroll ownership', async ({
+  page,
+}, info) => {
+  const { host, primary } = await openOperational(page);
+  await choice(host, 'Scroll mode', 'nested');
+  const inner = primary.inner(0);
+  await focusScroll(inner);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  await capture(page, primary, 'E4-before', info, inner);
+  const beforeOuter = await followingState(primary.scroll);
+  const beforeInner = await scrollState(inner);
+  // The unqualified fallback may follow a near-bottom outer root; this case
+  // establishes the actual far-from-bottom precondition instead of assuming it.
+  expect(beforeOuter.maximum - beforeOuter.top).toBeGreaterThan(100);
+  await pressObservedEnd(page, inner, primary.scroll, info, 'E4-inner-End', {
+    prevented: false,
+    nativeScrollEnd: true,
+  });
+  expect((await scrollState(inner)).top).toBeGreaterThan(beforeInner.top);
+  const afterOuter = await followingState(primary.scroll);
+  expect(afterOuter.top).toBe(beforeOuter.top);
+  expect(afterOuter.maximum - afterOuter.top).toBeGreaterThan(100);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  await expect(inner).toBeFocused();
+  await capture(page, primary, 'E4-after', info, inner);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  // Real measurement can extend the inner content: no final-bottom claim.
+});
+
+test('operational-window E5 modified outer End remains available to the browser', async ({
+  page,
+}, info) => {
+  const { primary } = await openOperational(page);
+  await focusScroll(primary.scroll);
+  await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+  await capture(page, primary, 'E5-before', info);
+  await pressObservedEnd(page, primary.scroll, primary.scroll, info, 'E5-Shift-End', {
+    shift: true,
+    prevented: false,
+  });
+  await info.attach('E5-browser-outcome.json', {
+    body: JSON.stringify(
+      {
+        root: await followingState(primary.scroll),
+        selection: await page.evaluate(() => document.getSelection()?.toString() ?? null),
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+  await capture(page, primary, 'E5-after', info);
+  // The preserved fallback may follow if the browser reaches near bottom.
+  // Ownership is the trusted unprevented modifier receipt, not inert scrolling.
+});
+
+test('operational-window E6 StrictMode provider remount restores usable following', async ({
+  page,
+}, info) => {
+  const { host, primary } = await openOperational(page);
+  await focusScroll(primary.scroll);
+  await pressObservedEnd(page, primary.scroll, primary.scroll, info, 'E6-initial-End', {
+    prevented: true,
+  });
+  await expectFollowingBottom(primary.scroll);
+  await capture(page, primary, 'E6-before', info);
+  const oldRoot = await primary.scroll.elementHandle();
+  expect(oldRoot).not.toBeNull();
+  try {
+    await button(host, 'Remount provider').click();
+    await disconnected(oldRoot);
+    expect(await primary.scroll.evaluate((node, previous) => node === previous, oldRoot)).toBe(
+      false,
+    );
+    await expect(primary.scroll).toHaveAttribute('data-following-bottom', 'false');
+    await focusScroll(primary.scroll);
+    await capture(page, primary, 'E6-remounted', info);
+    await pressObservedEnd(page, primary.scroll, primary.scroll, info, 'E6-remounted-End', {
+      prevented: true,
+    });
+    await expectFollowingBottom(primary.scroll);
+    const finalRow = rowByLabel(primary, 'scope-a:second row 59');
+    await expect(finalRow).toHaveCount(1);
+    await button(finalRow, 'Observe scope-a:second row 59').click();
+    expect((await outputJson(primary.observations)).at(-1)).toMatchObject({
+      event: 'activate',
+      trusted: true,
+      label: 'scope-a:second row 59',
+      admitted: true,
+    });
+    await expectFollowingBottom(primary.scroll);
+    await capture(page, primary, 'E6-after', info);
+  } finally {
+    await oldRoot.dispose();
+  }
+  // Functional StrictMode replay/remount is not an observer-count or pending
+  // frame cancellation oracle. No detached old-node event is synthesized.
 });

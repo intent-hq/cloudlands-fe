@@ -19,6 +19,16 @@ const sourceCorrection = {
   file: 'src/lib/components/chat/operational-panel-core.ts',
   sha256: '18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c',
 };
+// The committed canonical End intent and its real caller are a separate correction.
+const endIntentCorrection = {
+  commit: 'df98264e99e861f43774c39a8b65de7597e01a53',
+  files: {
+    'src/lib/utils/smartScroll.ts':
+      '07b3def2eaa9dd188b3294f3ac2e81a4cfe51ebfcd8dc6960f197105c5cf0083',
+    'apps/react/src/catalog/operational-window-examples.tsx':
+      '4458f3ca15b90d9219fb04a16384da4c89f13d90c9107e683daf47e3b5035053',
+  },
+};
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const blob = (file, sha) => execFileSync('git', ['show', `${sha}:${file}`], { cwd: repoRoot });
 const hashes = (files, root = repoRoot) =>
@@ -42,6 +52,7 @@ const sourceFiles = [
 ];
 const profile = [
   ...sourceFiles,
+  'src/lib/utils/smartScroll.ts',
   'apps/react/src/catalog/operational-window-examples.tsx',
   'apps/react/src/catalog/functional-examples.tsx',
   'apps/react/src/client.tsx',
@@ -84,7 +95,7 @@ export const test = base.extend({
       const caseId = process.env.PARITY_OPERATIONAL_CASE;
       expect(sha).toMatch(/^[a-f0-9]{40}$/);
       expect(testSha).toMatch(/^[a-f0-9]{40}$/);
-      expect(caseId).toMatch(/^OW(?:[1-9]|10)$/);
+      expect(caseId).toMatch(/^(?:OW(?:[1-9]|10)|E[1-6])$/);
       expect(info.title.startsWith(`operational-window ${caseId} `)).toBe(true);
       expect(
         process.env.PARITY_GREP,
@@ -117,6 +128,14 @@ export const test = base.extend({
       expectedSource[sourceCorrection.file] = sourceCorrection.sha256;
       expect(before.source).toEqual(expectedSource);
       expect(before.profile).toEqual(blobHashes(profile, sha));
+      expect(
+        blobHashes(Object.keys(endIntentCorrection.files), endIntentCorrection.commit),
+      ).toEqual(endIntentCorrection.files);
+      expect(
+        Object.fromEntries(
+          Object.keys(endIntentCorrection.files).map((file) => [file, before.profile[file]]),
+        ),
+      ).toEqual(endIntentCorrection.files);
       expect(before.candidate.commit).toBe(sha);
       expect(before.candidate.dirty).toBe(false);
       expect(before.candidate.sourceDirty).toBe(false);
@@ -126,7 +145,18 @@ export const test = base.extend({
         const after = read();
         await info.attach('operational-freeze.json', {
           body: JSON.stringify(
-            { original, sourcePort, sourceCorrection, sha, testSha, caseId, root, before, after },
+            {
+              original,
+              sourcePort,
+              sourceCorrection,
+              endIntentCorrection,
+              sha,
+              testSha,
+              caseId,
+              root,
+              before,
+              after,
+            },
             null,
             2,
           ),
@@ -728,4 +758,198 @@ export async function capture(page, item, name, info, target = item.scroll) {
     contentType: 'application/json',
   });
   expect(after, 'Capturing must not change scroll, focus, rows or geometry').toEqual(before);
+}
+
+export const followingState = (scroll) =>
+  scroll.evaluate((node) => ({
+    following: node.getAttribute('data-following-bottom'),
+    top: node.scrollTop,
+    maximum: Math.max(0, node.scrollHeight - node.clientHeight),
+    height: node.clientHeight,
+    total: node.scrollHeight,
+    document: { x: scrollX, y: scrollY },
+    focused: document.activeElement === node,
+  }));
+
+export async function expectFollowingBottom(scroll) {
+  await expect(scroll).toHaveAttribute('data-following-bottom', 'true');
+  await expect
+    .poll(async () => {
+      const state = await followingState(scroll);
+      return Math.abs(state.maximum - state.top);
+    })
+    .toBeLessThanOrEqual(1);
+  return followingState(scroll);
+}
+
+export async function observeNativeScroll(target, scroll, info, name, act) {
+  const root = await scroll.elementHandle();
+  expect(root).not.toBeNull();
+  let observation;
+  try {
+    observation = await target.evaluateHandle((node, outer) => {
+      const describe = (element) =>
+        element instanceof Element
+          ? {
+              tag: element.localName,
+              testId: element.getAttribute('data-testid'),
+              label: element.getAttribute('aria-label'),
+              rowKey:
+                element.closest('[data-caller-row-key]')?.getAttribute('data-caller-row-key') ??
+                null,
+            }
+          : null;
+      const geometry = (element) => ({
+        connected: element.isConnected,
+        top: element.scrollTop,
+        left: element.scrollLeft,
+        height: element.clientHeight,
+        total: element.scrollHeight,
+        following: element.getAttribute('data-following-bottom'),
+      });
+      const state = () => ({
+        target: geometry(node),
+        outer: geometry(outer),
+        document: { x: scrollX, y: scrollY },
+        active: describe(document.activeElement),
+        sameFocusedTarget: document.activeElement === node,
+        input:
+          node instanceof HTMLInputElement
+            ? { value: node.value, start: node.selectionStart, end: node.selectionEnd }
+            : null,
+      });
+      const armed = {
+        at: performance.now(),
+        target: describe(node),
+        outer: describe(outer),
+        state: state(),
+      };
+      const events = [];
+      const onEvent = (event) => {
+        if (event.type === 'keydown' && (event.key !== 'End' || event.target !== node)) return;
+        if (event.type === 'scrollend' && event.target !== node) return;
+        events.push({
+          type: event.type,
+          at: performance.now(),
+          eventTimeStamp: event.timeStamp,
+          trusted: event.isTrusted,
+          defaultPrevented: event.defaultPrevented,
+          target: describe(event.target),
+          active: describe(document.activeElement),
+          sameTarget: event.target === node,
+          targetInside: event.target instanceof Element && node.contains(event.target),
+          sameFocusedTarget: document.activeElement === node,
+          documentBubble:
+            event.type === 'keydown' &&
+            event.currentTarget === document &&
+            event.eventPhase === Event.BUBBLING_PHASE,
+          sameCurrentTarget: event.currentTarget === node,
+          key: event.type === 'keydown' ? event.key : null,
+          code: event.type === 'keydown' ? event.code : null,
+          repeat: event.type === 'keydown' ? event.repeat : null,
+          modifiers:
+            event.type === 'keydown'
+              ? {
+                  alt: event.altKey,
+                  ctrl: event.ctrlKey,
+                  meta: event.metaKey,
+                  shift: event.shiftKey,
+                }
+              : null,
+          delta:
+            event.type === 'wheel'
+              ? { x: event.deltaX, y: event.deltaY, mode: event.deltaMode }
+              : null,
+          state: state(),
+        });
+      };
+      // Document bubble observes prevention after the real container handler.
+      // Passive observation never changes default action or event propagation.
+      document.addEventListener('keydown', onEvent, { passive: true });
+      node.addEventListener('wheel', onEvent, { passive: true });
+      node.addEventListener('scrollend', onEvent, { passive: true });
+      return {
+        read: () => ({ armed, events: [...events], current: state() }),
+        dispose: () => {
+          document.removeEventListener('keydown', onEvent);
+          node.removeEventListener('wheel', onEvent);
+          node.removeEventListener('scrollend', onEvent);
+        },
+      };
+    }, root);
+    const read = () => observation.evaluate((observer) => observer.read());
+    return await act(read);
+  } finally {
+    try {
+      if (observation) {
+        try {
+          await info.attach(`${name}-native-input.json`, {
+            body: JSON.stringify(
+              await observation.evaluate((observer) => observer.read()),
+              null,
+              2,
+            ),
+            contentType: 'application/json',
+          });
+        } finally {
+          try {
+            await observation.evaluate((observer) => observer.dispose());
+          } finally {
+            await observation.dispose();
+          }
+        }
+      }
+    } finally {
+      await root.dispose();
+    }
+  }
+}
+
+export async function pressObservedEnd(
+  page,
+  target,
+  scroll,
+  info,
+  name,
+  { shift = false, prevented, nativeScrollEnd = false } = {},
+) {
+  await expect(target).toBeFocused();
+  return observeNativeScroll(target, scroll, info, name, async (read) => {
+    await page.keyboard.press(shift ? 'Shift+End' : 'End');
+    const receipt = await read();
+    const keys = receipt.events.filter((event) => event.type === 'keydown');
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toMatchObject({
+      key: 'End',
+      code: 'End',
+      repeat: false,
+      trusted: true,
+      sameTarget: true,
+      sameFocusedTarget: true,
+      documentBubble: true,
+      defaultPrevented: prevented,
+      modifiers: { alt: false, ctrl: false, meta: false, shift },
+    });
+    if (nativeScrollEnd) {
+      await expect
+        .poll(
+          async () => {
+            const current = await read();
+            const endIndex = current.events.findIndex((event) => event.type === 'keydown');
+            return current.events
+              .slice(endIndex + 1)
+              .some(
+                (event) =>
+                  event.type === 'scrollend' &&
+                  event.trusted &&
+                  event.sameTarget &&
+                  event.sameCurrentTarget,
+              );
+          },
+          { timeout: 5000 },
+        )
+        .toBe(true);
+    }
+    return read();
+  });
 }
