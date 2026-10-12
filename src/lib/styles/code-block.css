@@ -1,0 +1,192 @@
+/* Shared CodeBlock styles from CodeBlock.svelte. The explicit scope class preserves
+ * Svelte selector isolation and specificity; declarations retain the source palette. */
+/* Container themes - Monaco-like appearance */
+.dark .code-block-container.intent-code-block {
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+/* No border variant - transparent background with higher specificity to override theme */
+.no-border.intent-code-block,
+:root:not(.dark) .code-block-container.no-border.intent-code-block,
+.dark .code-block-container.no-border.intent-code-block {
+  background: transparent;
+  border: none;
+}
+
+/* Line numbers gutter - Monaco style */
+.line-numbers-gutter.intent-code-block {
+  min-width: 3rem;
+}
+
+.dark .code-block-container.intent-code-block .line-numbers-gutter:where(.intent-code-block) {
+  background: #1e1e1e;
+  border-right: 1px solid #3c3c3c;
+}
+
+:root:not(.dark)
+  .code-block-container.intent-code-block
+  .line-numbers-gutter:where(.intent-code-block) {
+  background: #f8f9fa;
+  border-right: 1px solid #e5e7eb;
+}
+
+/* Higher specificity to override theme backgrounds */
+.no-border.intent-code-block .line-numbers-gutter:where(.intent-code-block),
+:root:not(.dark)
+  .code-block-container.no-border.intent-code-block
+  .line-numbers-gutter:where(.intent-code-block),
+.dark
+  .code-block-container.no-border.intent-code-block
+  .line-numbers-gutter:where(.intent-code-block) {
+  background: transparent;
+  border-right: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.line-number.intent-code-block {
+  font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  color: rgba(133, 133, 133, 0.5);
+}
+
+.line-number.highlighted.intent-code-block {
+  background: rgba(86, 156, 214, 0.15);
+}
+
+/* Code area */
+.code-pre.intent-code-block {
+  margin: 0;
+  font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  background: transparent;
+}
+
+.dark .code-block-container.intent-code-block .code-pre:where(.intent-code-block) {
+  color: #d4d4d4;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .code-pre:where(.intent-code-block) {
+  color: #1f2937;
+}
+
+.code-line.intent-code-block {
+  min-height: 20px;
+}
+
+.code-line.highlighted.intent-code-block {
+  background: rgba(86, 156, 214, 0.15);
+}
+
+/* VS Code Dark+ syntax highlighting */
+.dark .code-block-container.intent-code-block .hljs-keyword,
+.dark .code-block-container.intent-code-block .hljs-built_in {
+  color: #569cd6;
+}
+
+.dark .code-block-container.intent-code-block .hljs-tag {
+  color: #569cd6;
+}
+
+.dark .code-block-container.intent-code-block .hljs-string,
+.dark .code-block-container.intent-code-block .hljs-attr-value {
+  color: #ce9178;
+}
+
+.dark .code-block-container.intent-code-block .hljs-number,
+.dark .code-block-container.intent-code-block .hljs-literal {
+  color: #b5cea8;
+}
+
+.dark .code-block-container.intent-code-block .hljs-function,
+.dark .code-block-container.intent-code-block .hljs-title {
+  color: #dcdcaa;
+}
+
+.dark .code-block-container.intent-code-block .hljs-class,
+.dark .code-block-container.intent-code-block .hljs-name {
+  color: #4ec9b0;
+}
+
+.dark .code-block-container.intent-code-block .hljs-comment,
+.dark .code-block-container.intent-code-block .hljs-meta {
+  color: #6a9955;
+  font-style: italic;
+}
+
+.dark .code-block-container.intent-code-block .hljs-variable,
+.dark .code-block-container.intent-code-block .hljs-params {
+  color: #9cdcfe;
+}
+
+.dark .code-block-container.intent-code-block .hljs-attr,
+.dark .code-block-container.intent-code-block .hljs-attribute,
+.dark .code-block-container.intent-code-block .hljs-attr-name {
+  color: #9cdcfe;
+}
+
+.dark .code-block-container.intent-code-block .hljs-type {
+  color: #4ec9b0;
+}
+
+.dark .code-block-container.intent-code-block .hljs-symbol,
+.dark .code-block-container.intent-code-block .hljs-bullet {
+  color: #d7ba7d;
+}
+
+/* VS Code Light+ syntax highlighting */
+:root:not(.dark) .code-block-container.intent-code-block .hljs-keyword,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-built_in {
+  color: #0000ff;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-tag {
+  color: #800000;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-string,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-attr-value {
+  color: #a31515;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-number,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-literal {
+  color: #098658;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-function,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-title {
+  color: #795e26;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-class,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-name {
+  color: #267f99;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-comment,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-meta {
+  color: #008000;
+  font-style: italic;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-variable,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-params {
+  color: #001080;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-attr,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-attribute,
+:root:not(.dark) .code-block-container.intent-code-block .hljs-attr-name {
+  color: #e50000;
+}
+
+:root:not(.dark) .code-block-container.intent-code-block .hljs-type {
+  color: #267f99;
+}
