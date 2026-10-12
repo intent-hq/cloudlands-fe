@@ -30,6 +30,7 @@ import { AttributionHeaderExamples } from './attribution-header-examples';
 import { InlinePermissionExamples } from './inline-permission-examples';
 import { MarkdownCompositionExamples } from './markdown-composition-examples';
 import { ChatVideoExamples } from './chat-video-examples';
+import { MarkdownViewerExamples } from './markdown-viewer-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -493,6 +494,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'inline-permission' && <InlinePermissionExamples />}
       {slug === 'markdown-composition' && <MarkdownCompositionExamples />}
       {slug === 'chat-video' && <ChatVideoExamples />}
+      {slug === 'markdown-viewer' && <MarkdownViewerExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -573,6 +575,7 @@ export function hasFunctionalExample(slug: string) {
     'inline-permission',
     'markdown-composition',
     'chat-video',
+    'markdown-viewer',
     'diagram-workbench',
     'toast',
     'notify',
