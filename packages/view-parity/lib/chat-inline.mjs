@@ -373,7 +373,7 @@ export async function expectArtwork(item, name, info) {
   expect(observed.role).toBe(expected.inline ? null : 'img');
   expect(observed.hidden).toBe(expected.inline ? null : 'true');
   expect(observed.label).toBeNull();
-  await expect(item.leaf.getByRole('img')).toHaveCount(0);
+  await expect(item.leaf.getByRole('img')).toHaveCount(expected.inline ? 1 : 0);
   if (expected.assetPath)
     expect(digest(readFileSync(path.join(repoRoot, expected.assetPath)))).toBe(expected.assetHash);
 }
