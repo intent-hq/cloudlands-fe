@@ -292,3 +292,79 @@ export async function observeScrollFrames(scroll) {
   };
   return finish;
 }
+
+export async function observeNoticeExit(banner) {
+  // Observe the actual retained node; never pause its transition or write DOM.
+  const handle = await banner.evaluateHandle((node) => {
+    const samples = [];
+    const initialHeight = node.getBoundingClientRect().height;
+    let frame;
+    let stopped = false;
+    let resolveExit;
+    const exiting = new Promise((resolve) => {
+      resolveExit = resolve;
+    });
+    const read = (reason) => {
+      const sample = {
+        reason,
+        at: performance.now(),
+        connected: node.isConnected,
+        inert: node.inert,
+        height: node.getBoundingClientRect().height,
+        focusWithin: node.contains(document.activeElement),
+      };
+      samples.push(sample);
+      if (sample.connected && sample.inert && sample.height > 0 && sample.height < initialHeight)
+        resolveExit(true);
+      return sample;
+    };
+    const observer = new MutationObserver(() => read('mutation'));
+    observer.observe(node, { attributes: true, attributeFilter: ['inert'] });
+    const stop = () => {
+      stopped = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      clearTimeout(deadline);
+      resolveExit(false);
+    };
+    const deadline = setTimeout(stop, 5_000);
+    const tick = () => {
+      read('frame');
+      if (!stopped && samples.length < 2048) frame = requestAnimationFrame(tick);
+      else stop();
+    };
+    read('initial');
+    frame = requestAnimationFrame(tick);
+    return {
+      exiting,
+      read,
+      stop() {
+        stop();
+        read('final');
+        return samples;
+      },
+    };
+  });
+  return {
+    read: (reason) => handle.evaluate((value, label) => value.read(label), reason),
+    async waitForExit() {
+      expect(
+        await handle.evaluate((value) => value.exiting),
+        'The real outgoing notice must remain connected and inert during a shrinking frame',
+      ).toBe(true);
+    },
+    async finish(info) {
+      let samples;
+      try {
+        samples = await handle.evaluate((value) => value.stop());
+      } finally {
+        await handle.dispose();
+      }
+      await info.attach('notice-exit-observations.json', {
+        body: JSON.stringify(samples, null, 2),
+        contentType: 'application/json',
+      });
+      return samples;
+    },
+  };
+}

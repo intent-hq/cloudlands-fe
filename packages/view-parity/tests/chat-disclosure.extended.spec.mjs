@@ -9,6 +9,7 @@ import {
   expectLeaseLifetime,
   readScrollSnapshot,
   observeScrollFrames,
+  observeNoticeExit,
   waitForDisclosedControl,
 } from '../lib/chat-disclosure.mjs';
 
@@ -222,6 +223,129 @@ test.describe('isolated full motion', () => {
     await expect(input).toHaveValue('A native draft retained by the caller after reopening');
     await trigger.press('Enter');
     await expect(input).toHaveCount(0);
+  });
+
+  test('chat disclosure D17: outgoing notice leaves accessibility and re-entry cancels removal before final exit', async ({
+    page,
+  }, info) => {
+    const host = await openDisclosure(page, 'full');
+    const exercise = host.getByTestId('chat-notice');
+    const display = exercise.getByTestId('chat-notice-leaf');
+    const banner = display.getByTestId('exercise-notice-banner');
+    const present = exercise.getByRole('switch', { name: 'Present ChatNotice', exact: true });
+    const state = () => outputJson(exercise.getByTestId('chat-notice-state'));
+    await exercise
+      .getByRole('textbox', { name: 'Notice title', exact: true })
+      .fill('Current caller notice during a native exit');
+    await exercise
+      .getByRole('textbox', { name: 'Notice reason', exact: true })
+      .fill('Retain this actual notice only while its original motion completes.');
+    await exercise.getByRole('switch', { name: 'Include notice timestamp', exact: true }).click();
+    const retained = await banner.elementHandle();
+    await retained.waitForElementState('stable');
+    await captureDisclosure(page, display, 'notice-exit-before', info);
+    const initialHeight = await retained.evaluate((node) => node.getBoundingClientRect().height);
+    expect((await state()).observations.exitCount).toBe(0);
+
+    // This fixture has no focusable child. Native caller-control focus is only
+    // recorded; it cannot prove suppression of a formerly focusable descendant.
+    const cdp = await page.context().newCDPSession(page);
+    const axEvidence = [];
+    let observation;
+    let samples;
+    try {
+      const { root } = await cdp.send('DOM.getDocument');
+      const { nodeId } = await cdp.send('DOM.querySelector', {
+        nodeId: root.nodeId,
+        selector: '[data-testid="exercise-notice-banner"]',
+      });
+      const { node } = await cdp.send('DOM.describeNode', { nodeId });
+      const backendNodeId = node.backendNodeId;
+      observation = await observeNoticeExit(banner);
+      const readAX = async (phase) => {
+        const before = await observation.read(`${phase}-before-ax`);
+        const tree = await cdp.send('Accessibility.getPartialAXTree', {
+          backendNodeId,
+          fetchRelatives: false,
+        });
+        const after = await observation.read(`${phase}-after-ax`);
+        const evidence = { phase, backendNodeId, before, tree, after };
+        axEvidence.push(evidence);
+        return evidence;
+      };
+      const initial = await readAX('present');
+      expect(
+        initial.tree.nodes.find((value) => value.backendDOMNodeId === backendNodeId),
+      ).toMatchObject({ ignored: false, role: { value: 'alert' } });
+
+      await present.press('Space');
+      await observation.waitForExit();
+      const outgoing = await readAX('outgoing');
+      expect(outgoing.before).toMatchObject({ connected: true, inert: true });
+      expect(outgoing.after).toMatchObject({ connected: true, inert: true });
+      expect(outgoing.after.height).toBeGreaterThan(0);
+      expect(
+        outgoing.tree.nodes.find((value) => value.backendDOMNodeId === backendNodeId),
+      ).toMatchObject({ ignored: true });
+      expect(
+        outgoing.tree.nodes.filter((value) => !value.ignored && value.role?.value === 'alert'),
+      ).toEqual([]);
+
+      // The same native focused caller control reverses the live outgoing node.
+      await page.keyboard.press('Space');
+      await expect(present).toHaveAttribute('aria-checked', 'true');
+      await expect(banner).not.toHaveAttribute('inert');
+      expect(await retained.evaluate((node) => node.isConnected)).toBe(true);
+      await retained.waitForElementState('stable');
+      expect(await retained.evaluate((node) => node.getBoundingClientRect().height)).toBe(
+        initialHeight,
+      );
+      const returned = await readAX('reentered');
+      expect(returned.after).toMatchObject({ connected: true, inert: false });
+      expect(
+        returned.tree.nodes.find((value) => value.backendDOMNodeId === backendNodeId),
+      ).toMatchObject({ ignored: false, role: { value: 'alert' } });
+      expect((await state()).observations.exitCount).toBe(0);
+      await expect(banner).toContainText('Current caller notice during a native exit');
+      await captureDisclosure(page, display, 'notice-reentered-after', info);
+
+      await present.press('Space');
+      await expect(banner).toHaveCount(0);
+      expect(await retained.evaluate((node) => node.isConnected)).toBe(false);
+      expect((await state()).observations.exitCount).toBe(1);
+      await captureDisclosure(
+        page,
+        exercise.getByTestId('chat-notice-state'),
+        'notice-exit-final',
+        info,
+      );
+      expect((await state()).observations.exitCount).toBe(1);
+    } finally {
+      try {
+        if (observation) samples = await observation.finish(info);
+        await info.attach('notice-exit-accessibility.json', {
+          body: JSON.stringify(
+            {
+              childFocusExclusion: 'Unavailable: no focusable descendant in the real fixture',
+              phases: axEvidence,
+            },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        });
+      } finally {
+        await cdp.detach();
+        await retained.dispose();
+      }
+    }
+    expect(
+      samples.some(
+        (sample) =>
+          sample.connected && sample.inert && sample.height > 0 && sample.height < initialHeight,
+      ),
+    ).toBe(true);
+    expect(samples.at(-1).connected).toBe(false);
   });
 });
 
