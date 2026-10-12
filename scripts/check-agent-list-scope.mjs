@@ -15,8 +15,8 @@ export const SCANNED_EXTENSIONS = new Set(['.ts', '.svelte', '.js', '.mjs']);
 // Documented exceptions: repo-relative path → one-line justification. An entry whose
 // file no longer carries an unscoped request is reported as stale and must be removed.
 export const ALLOWLIST = Object.freeze({
-  'src/lib/client/live/live-agents-client.ts':
-    'the AppClient `agents.list` / `agents.listWithMeta` wrapper — the one renderer wire caller; its callers carry the scope',
+  'src/lib/client/live/backend-agent-client.ts':
+    'the shared renderer `list` / `listWithMeta` wire wrapper used by AppClient and React; its callers carry the scope',
   'src/features/debug/main/debug.ipc.ts':
     'dev-only (`NODE_ENV === development`) human-triggered debug dump that lists every bin',
   'src/store/renderer/seeders/agents-seeder.ts':
