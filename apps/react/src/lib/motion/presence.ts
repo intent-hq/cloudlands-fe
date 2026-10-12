@@ -53,6 +53,7 @@ export function createTransition(
   let recipe: MotionTransitionConfig | undefined;
   let activeConfig: TransitionConfig | undefined;
   let destroyed = false;
+  let generation = 0;
   const previous = new Map<string, { value: string; priority: string }>();
   const scratch = node.ownerDocument.createElement('div').style;
   const restore = () => {
@@ -62,29 +63,43 @@ export function createTransition(
     }
     previous.clear();
   };
+  const remember = (property: string) => {
+    if (!previous.has(property))
+      previous.set(property, {
+        value: node.style.getPropertyValue(property),
+        priority: node.style.getPropertyPriority(property),
+      });
+  };
   const apply = () => {
+    for (const property of activeConfig?.styleProperties ?? []) remember(property);
     scratch.cssText = activeConfig?.css?.(progress, 1 - progress) ?? '';
     for (let index = 0; index < scratch.length; index += 1) {
       const property = scratch.item(index);
-      if (!previous.has(property))
-        previous.set(property, {
-          value: node.style.getPropertyValue(property),
-          priority: node.style.getPropertyPriority(property),
-        });
+      remember(property);
       node.style.setProperty(property, scratch.getPropertyValue(property));
     }
+    activeConfig?.tick?.(progress, 1 - progress);
   };
   const stopFrame = () => {
+    generation += 1;
     if (frame !== undefined) cancelAnimationFrame(frame);
     frame = undefined;
   };
+  const releaseRecipe = () => {
+    const dispose = activeConfig?.dispose;
+    activeConfig = undefined;
+    recipe = undefined;
+    dispose?.();
+  };
   const complete = () => {
     stopFrame();
+    const currentGeneration = generation;
     progress = target;
     apply();
+    if (destroyed || currentGeneration !== generation) return;
     if (target === 1) {
       restore();
-      recipe = undefined;
+      releaseRecipe();
     }
     const callback = finish;
     finish = undefined;
@@ -101,8 +116,10 @@ export function createTransition(
       finish = onFinish;
       // On reversal reuse the natural-layout recipe; do not measure the clipped row.
       recipe ??= factory(node);
-      activeConfig =
+      const nextConfig =
         typeof recipe === 'function' ? recipe({ direction: present ? 'in' : 'out' }) : recipe;
+      if (activeConfig !== nextConfig) activeConfig?.dispose?.();
+      activeConfig = nextConfig;
       const from = progress;
       const duration = (activeConfig.duration ?? 0) * Math.abs(target - from);
       const easing = activeConfig.easing ?? ((t: number) => t);
@@ -111,23 +128,29 @@ export function createTransition(
         return;
       }
       const start = performance.now() + (activeConfig.delay ?? 0);
+      const currentGeneration = generation;
       apply();
+      if (destroyed || currentGeneration !== generation) return;
       const tick = (now: number) => {
-        if (destroyed) return;
+        if (destroyed || currentGeneration !== generation) return;
         const elapsed = Math.max(0, Math.min(1, (now - start) / duration));
         progress = from + (target - from) * Math.max(0, Math.min(1, easing(elapsed)));
-        apply();
         if (elapsed === 1) complete();
-        else frame = requestAnimationFrame(tick);
+        else {
+          apply();
+          if (!destroyed && currentGeneration === generation) frame = requestAnimationFrame(tick);
+        }
       };
       frame = requestAnimationFrame(tick);
     },
     destroy() {
+      if (destroyed) return;
       destroyed = true;
       stopFrame();
       stopPreference();
       finish = undefined;
       restore();
+      releaseRecipe();
     },
   };
 }

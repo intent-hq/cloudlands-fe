@@ -6,6 +6,11 @@ export interface TransitionConfig {
   delay?: number;
   easing?: (t: number) => number;
   css?: (t: number, u: number) => string;
+  tick?: (t: number, u: number) => void;
+  /** Declarations mutated by tick, captured before its first write. */
+  styleProperties?: readonly string[];
+  /** Release recipe resources when shown or when the controller is destroyed. */
+  dispose?: () => void;
 }
 const linear = (t: number) => t;
 

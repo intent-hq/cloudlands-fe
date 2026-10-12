@@ -1,5 +1,6 @@
 import { safeSlide } from '$lib/utils/animations';
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+import { createOperationalDetailsTransition } from '$lib/utils/safe-slide-core';
 import { projectStandaloneReasoningTitles } from './reasoning-heading';
 
 export {
@@ -25,9 +26,11 @@ export {
   COMPACT_TOOL_TRAILING_CLASS,
 } from './operational-disclosure-classes';
 
-export function safeOperationalDetailsTransition(node: Element) {
-  return safeSlide(node, { axis: 'y', duration: prefersReducedMotion() ? 0 : 150 });
-}
+/** Temporary Svelte compatibility binding, retained until the source renderer retires. */
+export const safeOperationalDetailsTransition = createOperationalDetailsTransition({
+  safeSlide,
+  prefersReducedMotion,
+});
 
 interface OperationalClusterBlock {
   type: string;
