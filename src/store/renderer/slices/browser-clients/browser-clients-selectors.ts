@@ -50,6 +50,14 @@ export const selectWorkspaceBrowserClient = store.createSelector(
     (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).browserClient,
 );
 
+/** An event can confirm selection even while its resolution read is unavailable. */
+export const selectWorkspaceBrowserSelectionKnown = store.createSelector(
+  (state, wsId: string): boolean => {
+    const workspace = state?.browserClients?.byWorkspaceId[wsId];
+    return workspace?.pinnedClientId !== undefined || workspace?.browserClient != null;
+  },
+);
+
 /**
  * Display name for the sidebar indicator: the hello host triple when the
  * client sent one, else its hello `name`; the view model falls back to a
@@ -88,7 +96,12 @@ export const selectWorkspaceDrivingClient = store.createSelector(
       eligibleClients,
       ownClientId: slice.ownClientId ?? '',
       driving,
-      pinnedClientId: browserClient?.source === 'workspace' ? browserClient.clientId : null,
+      pinnedClientId:
+        slice.byWorkspaceId[wsId]?.pinnedClientId !== undefined
+          ? slice.byWorkspaceId[wsId].pinnedClientId
+          : browserClient?.source === 'workspace'
+            ? browserClient.clientId
+            : null,
     };
   },
 );

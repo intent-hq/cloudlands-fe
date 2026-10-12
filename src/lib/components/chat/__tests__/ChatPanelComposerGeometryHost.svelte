@@ -5,7 +5,7 @@
     type ComposerDraftRequest,
   } from './mocks/composer-draft-transport';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
-  import { AgentStatus, type AgentSession } from '$shared/types';
+  import { AgentStatus, type AgentMessage, type AgentSession } from '$shared/types';
   import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
@@ -15,6 +15,7 @@
   import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import { clearDraftCacheForTests } from '../chat-draft-cache';
+  import { selectAgentMessages } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     createChatDraftFixture,
@@ -77,6 +78,8 @@
     queuePhase,
     followUp,
     historyNotice,
+    messages,
+    ownerPrincipalId,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -104,6 +107,8 @@
     queuePhase?: 'ready' | 'foreign' | 'restored';
     followUp?: 'blocker' | 'discussion';
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
+    messages?: AgentMessage[];
+    ownerPrincipalId?: string;
   } = $props();
 
   $effect(() => {
@@ -128,6 +133,8 @@
     transcript,
     followUp,
     historyNotice,
+    messages,
+    ownerPrincipalId,
   }));
   let appliedStreaming = fixture.streaming;
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
@@ -253,6 +260,8 @@
     createdAt: timestamp,
     updatedAt: timestamp,
   } as unknown as AgentSession;
+  if (fixture.messages) session.messages = fixture.messages;
+  const storedMessages$ = selectAgentMessages(agentId);
 
   if (fixture.followUp || fixture.historyNotice) {
     session.messages = [
@@ -347,6 +356,7 @@
   });
   store.dispatch(
     setWorkspaceEntity({
+      ownerPrincipalId: fixture.ownerPrincipalId,
       id: workspaceId,
       title: fixture.chief ? 'Chief' : 'Composer geometry',
       myRole: 'owner',
@@ -659,6 +669,7 @@
 </script>
 
 <section style:zoom data-testid="chat-panel-composer-host">
+  <output hidden data-testid="stored-messages">{JSON.stringify($storedMessages$)}</output>
   <output hidden data-testid="composer-draft-requests">{JSON.stringify(draftRequests)}</output>
   <div class="relative" style:width="{width}px" style:height="{height}px">
     <div class="absolute inset-0 h-full w-full">
