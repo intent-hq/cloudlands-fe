@@ -6,6 +6,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
+  import { CYLINDER_SCROLL_SETTLE_MS } from './response-group-timing';
 
   interface Props {
     maxHeight?: number;
@@ -98,7 +99,7 @@
       isUserScrolling = false;
       keyboardScrollPending = false;
       if (followPending) scrollToBottom();
-    }, 150);
+    }, CYLINDER_SCROLL_SETTLE_MS);
   }
 
   function handleScroll() {

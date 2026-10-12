@@ -27,6 +27,7 @@
   } from './operational-disclosure-row';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { safeDisclosureTransition } from './disclosure-motion';
+  import { RESPONSE_GROUP_COLLAPSE_DELAY_MS } from './response-group-timing';
 
   interface Props {
     headerAdmitted?: boolean;
@@ -130,7 +131,7 @@
     collapseTimer = setTimeout(() => {
       setExpanded(false);
       collapseTimer = null;
-    }, 800);
+    }, RESPONSE_GROUP_COLLAPSE_DELAY_MS);
   }
 
   $effect(() => {

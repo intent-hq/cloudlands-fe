@@ -1,0 +1,12 @@
+/* The extra scope class preserves the compiled Svelte selector specificity. */
+.cylinder-scroller.intent-cylinder-scroller {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  position: relative;
+  scroll-behavior: smooth;
+}
+
+.cylinder-scroller.intent-cylinder-scroller::-webkit-scrollbar {
+  display: none;
+}

@@ -2,6 +2,15 @@ import { safeSlide } from '$lib/utils/animations';
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { createOperationalDetailsTransition } from '$lib/utils/safe-slide-core';
 import { projectStandaloneReasoningTitles } from './reasoning-heading';
+import {
+  isOperationalClusterBlock,
+  type OperationalClusterBlock,
+} from './operational-cluster-projections';
+
+export {
+  isOperationalClusterBlock,
+  getOperationalGroupContentSpacingClass,
+} from './operational-cluster-projections';
 
 export {
   OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
@@ -31,24 +40,6 @@ export const safeOperationalDetailsTransition = createOperationalDetailsTransiti
   safeSlide,
   prefersReducedMotion,
 });
-
-interface OperationalClusterBlock {
-  type: string;
-  text?: string;
-  content?: string;
-}
-
-export function isOperationalClusterBlock(block: OperationalClusterBlock): boolean {
-  return block.type === 'thinking' || block.type === 'tool_use' || block.type === 'content_group';
-}
-
-export function getOperationalGroupContentSpacingClass<T extends OperationalClusterBlock>(
-  blocks?: readonly T[],
-): string {
-  const firstVisibleBlock = blocks?.[0];
-  if (!firstVisibleBlock || isOperationalClusterBlock(firstVisibleBlock)) return '';
-  return 'pt-4';
-}
 
 export function isAdjacentOperationalClusterRow<T extends OperationalClusterBlock>(
   blocks: readonly T[],
