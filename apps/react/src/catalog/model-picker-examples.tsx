@@ -118,7 +118,7 @@ export function ModelPickerExamples() {
 
   return (
     <section
-      className="grid gap-4"
+      className="grid min-w-0 grid-cols-1 gap-4"
       data-functional-example="model-picker-callback"
       data-testid="model-picker-callback"
       aria-label="Model picker callback exercise"
@@ -358,7 +358,7 @@ export function ModelPickerExamples() {
           Clear local selection to default
         </Button>
       </div>
-      <dl className="grid gap-2 break-words" aria-live="polite">
+      <dl className="grid min-w-0 grid-cols-1 gap-2 [overflow-wrap:anywhere]" aria-live="polite">
         {[
           ['available-providers', 'Available provider IDs', availableProviderIds],
           ['readiness-loaded', 'Provider readiness loaded', readinessLoaded],
