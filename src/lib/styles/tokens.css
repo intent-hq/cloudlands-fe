@@ -32,6 +32,11 @@
   --color-warning: hsl(var(--warning));
   --color-warning-ink: hsl(var(--warning-ink));
   --color-warning-foreground: hsl(var(--warning-foreground));
+  /* Permission operation categories retain their canonical colors across renderers. */
+  --color-permission-delete: var(--color-red-500);
+  --color-permission-execute: var(--color-emerald-500);
+  --color-permission-read: var(--color-blue-500);
+  --color-permission-other: var(--color-violet-500);
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));
   --color-sidebar-accent: hsl(var(--sidebar-accent));
