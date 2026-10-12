@@ -505,9 +505,13 @@ function getWorkspaceById(
   return wsId ? getItem(collection, wsId as Workspace['id']) : undefined;
 }
 
-function clearWorkspaceAttentionReminders(state: WorkspaceState): WorkspaceState {
+function clearWorkspaceAttentionReminders(
+  state: WorkspaceState,
+  workspaceId?: string,
+): WorkspaceState {
   const clear = (workspace: Workspace): Workspace =>
-    workspace.attentionReminder === undefined
+    workspace.attentionReminder === undefined ||
+    (workspaceId !== undefined && workspace.id !== workspaceId)
       ? workspace
       : { ...workspace, attentionReminder: undefined };
   const previous = getItems(state.workspaces);
@@ -532,10 +536,10 @@ function clearWorkspaceAttentionReminders(state: WorkspaceState): WorkspaceState
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
-workspaceReducer.with(principalContextChanged, clearWorkspaceAttentionReminders);
-workspaceReducer.with(backendReconnected, clearWorkspaceAttentionReminders);
+workspaceReducer.with(principalContextChanged, (state) => clearWorkspaceAttentionReminders(state));
+workspaceReducer.with(backendReconnected, (state) => clearWorkspaceAttentionReminders(state));
 workspaceReducer.with(workspaceReminderInvalidated, (state, { payload: [wsId] }) => ({
-  ...state,
+  ...clearWorkspaceAttentionReminders(state, wsId),
   attentionReadRevisions: {
     ...state.attentionReadRevisions,
     [wsId]: (state.attentionReadRevisions[wsId] ?? 0) + 1,

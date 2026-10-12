@@ -107,7 +107,7 @@ interface AdmissionListRead {
 interface AdmissionDetailRead {
   principalId: string;
   context: string | null;
-  status: 'held' | 'passed';
+  status: 'held' | 'passed' | 'failed';
   workspace: Workspace;
   notFound?: boolean;
 }
@@ -138,6 +138,8 @@ declare global {
       listResults: Array<{ principalId: string; workspaces?: Workspace[]; error?: string }>;
       listReads: AdmissionListRead[];
       holdNextDetail: () => void;
+      failNextDetail: () => void;
+      stagePendingReminder: () => void;
       startDetailRead: () => void;
       startMissingEntityRead: () => void;
       startActivityRead: () => void;
@@ -214,6 +216,7 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
   let holdList = false;
   let failList = false;
   let holdDetail = false;
+  let failDetail = false;
   let releaseDetail = () => {};
   const releaseLists = (caller?: string) => {
     for (const [entry, resolve] of heldLists) {
@@ -351,6 +354,10 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
     holdNextDetail: () => {
       holdDetail = true;
     },
+    failNextDetail: () => {
+      failDetail = true;
+    },
+    stagePendingReminder: () => store.dispatch(setPendingCreation({ ...get() })),
     startDetailRead: () => {
       const caller = principalId;
       void ensureWorkspaceDetail('dismiss-review').then((workspace) =>
@@ -389,7 +396,10 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
       principalId: store.state.principal.snapshot?.principal.id ?? null,
       context: selectPrincipalActionContext.select(store.state),
       workspace: get(),
-      pendingCreation: store.state.workspace.pendingCreations['pending-reminder'] ?? null,
+      pendingCreation:
+        store.state.workspace.pendingCreations['pending-reminder'] ??
+        store.state.workspace.pendingCreations['dismiss-review'] ??
+        null,
       listReads,
       listError: store.state.workspace.error,
       listLoading: store.state.workspace.loading,
@@ -527,6 +537,8 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
         reads.push(params.workspaceId);
         const server = saved.get(params.workspaceId) ?? get(params.workspaceId);
         const workspace = { ...projectWorkspace(server, caller) };
+        const shouldFail = failDetail;
+        failDetail = false;
         if (admissions) {
           const shouldHold = holdDetail;
           holdDetail = false;
@@ -543,8 +555,13 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
             await new Promise<void>((resolve) => {
               releaseDetail = resolve;
             });
-          entry.status = 'passed';
+          entry.status = shouldFail ? 'failed' : 'passed';
         }
+        if (shouldFail)
+          return {
+            ok: false,
+            error: { code: 'GET_UNAVAILABLE', message: 'Workspace get unavailable' },
+          };
         if (caller === missingFor)
           return { ok: false, error: { code: 'NOT_FOUND', message: 'Workspace not found' } };
         return {
