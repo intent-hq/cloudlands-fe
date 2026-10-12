@@ -51,6 +51,10 @@ vi.mock('$store/renderer/slices/setup-scripts/setup-scripts-selectors', () => ({
 }));
 
 // Mock appStore dispatch
+// These terminal tests never read Git status or admit a principal.
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalActionContext: { select: () => null },
+}));
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: vi.fn(),

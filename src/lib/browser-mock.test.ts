@@ -24,6 +24,7 @@ async function importBrowserMock() {
 
 describe('browser-mock DEV gate', () => {
   const originalElectronAPI = (window as any).electronAPI;
+  let disposeStore: (() => void) | undefined;
 
   beforeEach(() => {
     delete (window as any).electronAPI;
@@ -31,6 +32,8 @@ describe('browser-mock DEV gate', () => {
   });
 
   afterEach(() => {
+    disposeStore?.();
+    disposeStore = undefined;
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
     (window as any).electronAPI = originalElectronAPI;
@@ -99,6 +102,8 @@ describe('browser-mock DEV gate', () => {
     const { LiveAppClient } = await import('./client');
     const { backendRequest } = await import('./client/live/backend-transport');
     const { rememberNoteWorkspace } = await import('./client/live/live-support');
+    const { store } = await import('$store/renderer/store');
+    disposeStore = store.init();
     const client = new LiveAppClient();
 
     const workspaces = await client.workspaces.list({ includeArchived: true });
