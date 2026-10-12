@@ -25,27 +25,36 @@ test('chat reference R1: current and latest code remain literal through genuine 
 }, info) => {
   const item = exercise(await openReference(page), 'code');
   await captureReference(page, item.frame, 'current-before', info);
-  const input = field(item.section, 'Code');
-  const escaped =
-    '<section data-literal="& quotes">\n<script>window.unwanted = true</script>\n</section>\n';
-  await field(item.section, 'Code language').fill('plaintext');
-  await input.fill(escaped);
-  await expectCode(item.leaf, escaped);
-  await captureReference(page, item.frame, 'literal-markup', info);
-  // Ordinary successive caller updates. Never replace idle callbacks, clocks,
-  // caches or highlighter promises to manufacture an async ordering.
-  await field(item.section, 'Code language').fill('javascript');
-  await input.fill('const previous = "superseded content";');
-  const latest = 'const latest = "current 日本語 & <text>";\nconsole.log(latest);';
-  await input.fill(latest);
-  await expectCode(item.leaf, latest);
-  await expect.poll(() => item.leaf.locator('code span').count()).toBeGreaterThan(0);
-  await captureReference(page, item.frame, 'latest-after-highlight', info);
-  await expectCode(item.leaf, latest);
-  // Language is an input identity too; a real re-highlight keeps current text.
-  await field(item.section, 'Code language').fill('plaintext');
-  await expectCode(item.leaf, latest);
-  await captureReference(page, item.frame, 'latest-plaintext', info);
+  const originalCode = await item.leaf.locator('code').elementHandle();
+  try {
+    const input = field(item.section, 'Code');
+    const escaped =
+      '<section data-literal="& quotes">\n<script>window.unwanted = true</script>\n</section>\n';
+    await field(item.section, 'Code language').fill('plaintext');
+    await input.fill(escaped);
+    await expectCode(item.leaf, escaped);
+    await captureReference(page, item.frame, 'literal-markup', info);
+    // Ordinary successive caller updates. Never replace idle callbacks, clocks,
+    // caches or highlighter promises to manufacture an async ordering.
+    await field(item.section, 'Code language').fill('javascript');
+    await input.fill('const previous = "superseded content";');
+    const latest = 'const latest = "current 日本語 & <text>";\nconsole.log(latest);';
+    await input.fill(latest);
+    await expectCode(item.leaf, latest);
+    await expect.poll(() => item.leaf.locator('code span').count()).toBeGreaterThan(0);
+    await captureReference(page, item.frame, 'latest-after-highlight', info);
+    await expectCode(item.leaf, latest);
+    // Language is an input identity too; a real re-highlight keeps current text.
+    await field(item.section, 'Code language').fill('plaintext');
+    await expectCode(item.leaf, latest);
+    await captureReference(page, item.frame, 'latest-plaintext', info);
+    expect(await originalCode.evaluate((node) => node.isConnected)).toBe(true);
+    expect(
+      await originalCode.evaluate((node) => [...node.children].map((row) => row.textContent)),
+    ).toEqual(latest.split('\n'));
+  } finally {
+    await originalCode.dispose();
+  }
 });
 
 test('chat reference R2: real clipboard copies changed empty and full source without line numbers', async ({
