@@ -493,23 +493,41 @@ export async function expectIconSize(item, size, info, name) {
   // Native input completion can precede the next rendered size. Wait on actual
   // production geometry, retaining the requested-size contract and its bound.
   let measured;
-  await expect
-    .poll(async () => {
-      measured = await measure();
-      return { width: measured.wrapper.width, height: measured.wrapper.height };
-    })
-    .toEqual({ width: size, height: size });
-  await info.attach(`${name}-icon-geometry.json`, {
-    body: JSON.stringify(measured, null, 2),
-    contentType: 'application/json',
-  });
-  // Explicit iconSize API, measured on real production artwork in the browser.
-  expect(measured.wrapper.width).toBe(size);
-  expect(measured.wrapper.height).toBe(size);
-  expect(measured.artwork.width).toBeGreaterThan(0);
-  expect(measured.artwork.height).toBeGreaterThan(0);
-  expect(measured.artwork.left).toBeGreaterThanOrEqual(measured.wrapper.left - 1);
-  expect(measured.artwork.right).toBeLessThanOrEqual(measured.wrapper.right + 1);
-  expect(measured.artwork.top).toBeGreaterThanOrEqual(measured.wrapper.top - 1);
-  expect(measured.artwork.bottom).toBeLessThanOrEqual(measured.wrapper.bottom + 1);
+  const samples = [];
+  try {
+    await expect
+      .poll(async () => {
+        const sample = { startedAt: new Date().toISOString() };
+        try {
+          measured = await measure();
+          sample.geometry = measured;
+          return { width: measured.wrapper.width, height: measured.wrapper.height };
+        } catch (error) {
+          sample.error = String(error);
+          throw error;
+        } finally {
+          sample.finishedAt = new Date().toISOString();
+          samples.push(sample);
+        }
+      })
+      .toEqual({ width: size, height: size });
+    // Explicit iconSize API, measured on real production artwork in the browser.
+    expect(measured.wrapper.width).toBe(size);
+    expect(measured.wrapper.height).toBe(size);
+    expect(measured.artwork.width).toBeGreaterThan(0);
+    expect(measured.artwork.height).toBeGreaterThan(0);
+    expect(measured.artwork.left).toBeGreaterThanOrEqual(measured.wrapper.left - 1);
+    expect(measured.artwork.right).toBeLessThanOrEqual(measured.wrapper.right + 1);
+    expect(measured.artwork.top).toBeGreaterThanOrEqual(measured.wrapper.top - 1);
+    expect(measured.artwork.bottom).toBeLessThanOrEqual(measured.wrapper.bottom + 1);
+  } finally {
+    await info.attach(`${name}-icon-samples.json`, {
+      body: JSON.stringify(samples, null, 2),
+      contentType: 'application/json',
+    });
+    await info.attach(`${name}-icon-geometry.json`, {
+      body: JSON.stringify(measured ?? null, null, 2),
+      contentType: 'application/json',
+    });
+  }
 }
