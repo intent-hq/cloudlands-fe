@@ -13,6 +13,7 @@ import {
   TooltipTriggerWrapper,
   type TooltipTriggerWrapperProps,
 } from '@/components/ui/tooltip-trigger-wrapper';
+import { useTooltipFocusBoundary } from '@/components/ui/tooltip-focus-boundary';
 import { cn } from '@/lib/utils';
 import { m } from '$shared/paraglide/messages.js';
 import './tooltip.css';
@@ -80,11 +81,13 @@ const variantConfig = {
 };
 
 type RichTriggerProps = TooltipTriggerWrapperProps & {
+  contentRef: React.RefObject<HTMLDivElement | null>;
   disableCloseOnTriggerClick: boolean;
   onTriggerClick?: TooltipRichProps['onClick'];
 };
 
 export function RichTrigger({
+  contentRef,
   disabled,
   disableCloseOnTriggerClick,
   onTriggerClick,
@@ -130,7 +133,9 @@ export function RichTrigger({
         if (!disabled && !pointerDown.current) onFocus?.(event);
       }}
       onBlur={(event) => {
-        if (!disabled) onBlur?.(event);
+        // Closing during focus transfer would remove the native click target.
+        // Only this tooltip's content belongs to its trigger's focus boundary.
+        if (!disabled && !contentRef.current?.contains(event.relatedTarget)) onBlur?.(event);
       }}
       onClick={(event) => {
         onTriggerClick?.(event);
@@ -177,7 +182,6 @@ export function TooltipRich({
 }: TooltipRichProps) {
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
   const isOpen = open ?? internalOpen;
-  const triggerRef = React.useRef<HTMLSpanElement>(null);
   const wasDisabled = React.useRef(false);
   const config = variantConfig[variant];
   const IconComponent = icon || config.icon;
@@ -190,6 +194,10 @@ export function TooltipRich({
       onOpenChange?.(next);
     },
     [disabled, open, onOpenChange],
+  );
+  const { triggerRef, contentRef, onContentBlur } = useTooltipFocusBoundary(
+    !disabled && isOpen,
+    handleOpenChange,
   );
 
   React.useEffect(() => {
@@ -208,6 +216,7 @@ export function TooltipRich({
         <TooltipPrimitive.Trigger asChild>
           <RichTrigger
             ref={triggerRef}
+            contentRef={contentRef}
             disabled={disabled}
             tabIndex={disabled ? undefined : 0}
             className={cn('inline-flex', className)}
@@ -223,6 +232,8 @@ export function TooltipRich({
         {!disabled && Boolean(title || description || content) && (
           <TooltipPrimitive.Portal>
             <TooltipPrimitive.Content
+              ref={contentRef}
+              onBlur={onContentBlur}
               role="tooltip"
               side={side}
               align={align}

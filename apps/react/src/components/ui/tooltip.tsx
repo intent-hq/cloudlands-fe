@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { ShortcutChip } from '@/components/ui/kbd';
 import { clampSurface, SurfaceProvider, useSurface } from '@/components/ui/surface-context';
 import { RichTrigger } from '@/components/ui/tooltip-rich';
+import { useTooltipFocusBoundary } from '@/components/ui/tooltip-focus-boundary';
 import './tooltip.css';
 
 export { TooltipRich, type TooltipRichProps } from '@/components/ui/tooltip-rich';
@@ -207,7 +208,6 @@ export function Tooltip({
 }: TooltipProps) {
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
   const isOpen = open ?? internalOpen;
-  const triggerRef = React.useRef<HTMLSpanElement>(null);
   const contentId = React.useId();
   const handleOpenChange = React.useCallback(
     (next: boolean) => {
@@ -216,6 +216,10 @@ export function Tooltip({
       onOpenChange?.(next);
     },
     [disabled, open, onOpenChange],
+  );
+  const { triggerRef, contentRef, onContentBlur } = useTooltipFocusBoundary(
+    !disabled && isOpen,
+    handleOpenChange,
   );
   // Notify controlled callers once for each open state suppressed by disabled.
   const closedWhileDisabled = React.useRef(false);
@@ -241,6 +245,7 @@ export function Tooltip({
         <TooltipPrimitive.Trigger asChild>
           <RichTrigger
             ref={triggerRef}
+            contentRef={contentRef}
             disabled={disabled}
             tabIndex={disabled ? undefined : 0}
             className={cn('inline-flex', className)}
@@ -256,6 +261,8 @@ export function Tooltip({
         {Boolean(content) && !disabled && (
           <TooltipPortal to={portalTarget}>
             <TooltipPrimitive.Content
+              ref={contentRef}
+              onBlur={onContentBlur}
               id={contentId}
               role="tooltip"
               side={side}
