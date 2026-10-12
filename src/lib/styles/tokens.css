@@ -401,6 +401,7 @@
   --app-background: var(--theme-app-background);
   --agent-avatar-surface-neutral: var(--theme-agent-avatar-surface-neutral);
   --agent-avatar-foreground: var(--theme-agent-avatar-foreground);
+  --agent-avatar-art-foreground: #080808;
   --agent-avatar-surface-completed: var(--theme-agent-avatar-surface-completed);
   --agent-avatar-foreground-completed: var(--theme-agent-avatar-foreground-completed);
   --agent-avatar-surface-attention: var(--theme-agent-avatar-surface-attention);

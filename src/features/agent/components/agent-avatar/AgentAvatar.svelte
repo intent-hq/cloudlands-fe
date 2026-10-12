@@ -77,7 +77,7 @@
     height: var(--agent-avatar-surface-size, 20px);
     border-radius: var(--agent-avatar-corner-radius, 6px);
     background-color: var(--agent-avatar-background, hsl(var(--agent-avatar-surface-neutral)));
-    color: #080808;
+    color: var(--agent-avatar-art-foreground);
     opacity: 1;
     forced-color-adjust: auto;
   }
