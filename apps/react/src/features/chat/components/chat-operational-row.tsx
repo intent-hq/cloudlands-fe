@@ -387,7 +387,7 @@ export function ChatOperationalRow({
   return (
     <div
       ref={root}
-      className={cn(CHAT_OPERATIONAL_CONTAINER_CLASS, sourceClass, className)}
+      className={`${CHAT_OPERATIONAL_CONTAINER_CLASS} ${sourceClass ?? ''} ${className ?? ''}`}
       data-chat-operational-row={headerAdmitted ? '' : undefined}
       data-operational-row-container=""
       data-adjacent-operational-row={adjacentOperationalRow || undefined}

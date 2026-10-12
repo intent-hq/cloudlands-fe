@@ -2,7 +2,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { IntentMarkLoader, type IntentMarkVariant } from '@/components/ui/indicators';
 import { fade, usePresence, usePresenceTransition } from '@/lib/motion';
-import { cn } from '@/lib/utils';
 import { m } from '$shared/paraglide/messages.js';
 import {
   CHAT_OPERATIONAL_LEADING_CLASS,
@@ -88,12 +87,7 @@ function TypingRow({
   return (
     <div
       ref={ref}
-      className={cn(
-        CHAT_OPERATIONAL_ROW_CLASS,
-        'group font-family-child font-normal text-muted-foreground',
-        sourceClass,
-        className,
-      )}
+      className={`${CHAT_OPERATIONAL_ROW_CLASS} group font-family-child font-normal text-muted-foreground ${sourceClass ?? ''} ${className ?? ''}`}
       data-streaming-typing-row=""
       aria-hidden={!visible}
       inert={!present}
