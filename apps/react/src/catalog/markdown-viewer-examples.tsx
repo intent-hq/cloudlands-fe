@@ -533,7 +533,12 @@ export function MarkdownViewerExamples() {
   }
   function appendMedia(linked: boolean) {
     const label = mediaLabel.replace(/[\\[\]]/g, '\\$&');
-    const image = `![${label}](<${mediaUrl}>)`;
+    // FileReader's base64 image URL needs no delimiter escaping; preserve other URL inputs.
+    const destination =
+      localFile?.mimeType.startsWith('image/') && mediaUrl === localFile.url
+        ? mediaUrl
+        : `<${mediaUrl}>`;
+    const image = `![${label}](${destination})`;
     changeDraft(`${draft}\n\n${linked ? `[${image}](intent://local/note/spec)` : image}`);
   }
   function applyMedia() {
