@@ -1242,6 +1242,75 @@ describe('Assistant full-source entry ownership', () => {
     },
   );
 
+  it('returns from raw only after pending saves are acknowledged', async () => {
+    mockState.noteViewMode.set('raw');
+    let settle!: () => void;
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    await fireEvent.click(screen.getByRole('button', { name: 'Back to rendered view' }));
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    expect(
+      (screen.getByRole('button', { name: 'Back to rendered view' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    expect(mockState.dispatch).not.toHaveBeenCalledWith({
+      type: 'transientUi/setNoteViewMode',
+      payload: ['ws-1', 'note-1', 'preview'],
+    });
+    settle();
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'transientUi/setNoteViewMode',
+        payload: ['ws-1', 'note-1', 'preview'],
+      }),
+    );
+    expect(mockState.releaseFullEdit).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a failed raw save open and allows retrying the return', async () => {
+    mockState.noteViewMode.set('raw');
+    fullEditControl.finish = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('save conflict'))
+      .mockResolvedValue(undefined);
+    render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    await fireEvent.click(screen.getByRole('button', { name: 'Back to rendered view' }));
+    await screen.findByText('Could not finish saving. Your draft is still open in Raw Markdown.');
+    expect(screen.getByTestId('full-note-editor').dataset.raw).toBe('true');
+    expect(mockState.releaseFullEdit).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Back to rendered view' }));
+    await waitFor(() => expect(mockState.releaseFullEdit).toHaveBeenCalledOnce());
+    expect(fullEditControl.finish).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not apply a pending raw return to another tab owner', async () => {
+    mockState.noteViewMode.set('raw');
+    let settle!: () => void;
+    fullEditControl.finish = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const view = render(NoteTabTypeHeaderHarness, props());
+    await screen.findByTestId('full-note-editor');
+    await fireEvent.click(screen.getByRole('button', { name: 'Back to rendered view' }));
+    await waitFor(() => expect(fullEditControl.finish).toHaveBeenCalledOnce());
+    await view.rerender({ ...props(), layoutId: 'another-layout' });
+    settle();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(
+      mockState.dispatch.mock.calls.some(([a]) => a.type === 'transientUi/setNoteViewMode'),
+    ).toBe(false);
+  });
+
   it('keeps editor and lease until preview settlement and does not reopen unchanged intent', async () => {
     let settle!: () => void;
     fullEditControl.finish = vi.fn(

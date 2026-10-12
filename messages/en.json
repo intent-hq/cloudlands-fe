@@ -7535,5 +7535,7 @@
   "chat_failureRecovery_action_description": "The response stopped before it finished.",
   "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host.",
   "layout_noteTab_editRawMarkdown_action": "Edit Raw Markdown",
-  "layout_noteTab_pagingUnsupported_error": "This workspace host does not support large-note viewing. Update the workspace host to view this note, or choose Edit Raw Markdown from the note menu."
+  "layout_noteTab_pagingUnsupported_error": "This workspace host does not support large-note viewing. Update the workspace host to view this note, or choose Edit Raw Markdown from the note menu.",
+  "layout_noteTab_backToRendered_label": "Back to rendered view",
+  "layout_noteTab_returnSaveFailed_error": "Could not finish saving. Your draft is still open in Raw Markdown."
 }

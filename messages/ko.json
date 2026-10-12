@@ -7535,5 +7535,7 @@
   "chat_failureRecovery_action_description": "응답이 완료되기 전에 중지되었습니다.",
   "providers_cliVersionWarning_message": "{provider} CLI 버전 {version}은 지원되는 최소 버전 {minimumVersion}보다 낮습니다. 데몬 호스트에서 CLI를 업데이트하세요.",
   "layout_noteTab_editRawMarkdown_action": "Markdown 원문 편집",
-  "layout_noteTab_pagingUnsupported_error": "이 워크스페이스 호스트는 큰 노트 보기를 지원하지 않습니다. 호스트를 업데이트하거나 노트 메뉴에서 \"Markdown 원문 편집\"을 선택하세요."
+  "layout_noteTab_pagingUnsupported_error": "이 워크스페이스 호스트는 큰 노트 보기를 지원하지 않습니다. 호스트를 업데이트하거나 노트 메뉴에서 \"Markdown 원문 편집\"을 선택하세요.",
+  "layout_noteTab_backToRendered_label": "렌더링 보기로 돌아가기",
+  "layout_noteTab_returnSaveFailed_error": "저장을 완료하지 못했습니다. 초안은 원시 Markdown에서 계속 열려 있습니다."
 }

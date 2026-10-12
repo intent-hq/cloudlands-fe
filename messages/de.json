@@ -7535,5 +7535,7 @@
   "chat_failureRecovery_action_description": "Die Antwort wurde vorzeitig beendet.",
   "providers_cliVersionWarning_message": "Die CLI-Version {version} von {provider} liegt unter der unterstützten Mindestversion {minimumVersion}. Aktualisieren Sie die CLI auf dem Daemon-Host.",
   "layout_noteTab_editRawMarkdown_action": "Markdown-Quelltext bearbeiten",
-  "layout_noteTab_pagingUnsupported_error": "Der Host dieses Arbeitsbereichs unterstützt die Anzeige großer Notizen nicht. Aktualisieren Sie den Host oder wählen Sie im Notizmenü „Markdown-Quelltext bearbeiten“."
+  "layout_noteTab_pagingUnsupported_error": "Der Host dieses Arbeitsbereichs unterstützt die Anzeige großer Notizen nicht. Aktualisieren Sie den Host oder wählen Sie im Notizmenü „Markdown-Quelltext bearbeiten“.",
+  "layout_noteTab_backToRendered_label": "Zurück zur gerenderten Ansicht",
+  "layout_noteTab_returnSaveFailed_error": "Das Speichern konnte nicht abgeschlossen werden. Ihr Entwurf ist weiterhin im Markdown-Quelltext geöffnet."
 }

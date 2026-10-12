@@ -78,6 +78,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
+  import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 
@@ -98,6 +99,9 @@
   const headerContext = getPanelHeaderContext();
   const assistantLayout = $derived(isAssistantPanelLayout(layoutId ?? ''));
   let editorRawView = $state(false);
+  let returningToView = $state(false);
+  let returnSaveFailed = $state(false);
+  let returnGeneration = 0;
   const editOwnerIdentity = $derived(JSON.stringify([layoutId, tab.id, workspaceId, tab.noteId]));
   let loadedEditIdentity = $state('');
   let loadedEditNoteInstanceId = $state<string | undefined>();
@@ -259,6 +263,9 @@
       loadedEditIdentity = '';
       loadedEditNoteInstanceId = undefined;
       pendingFinish = undefined;
+      returnGeneration++;
+      returningToView = false;
+      returnSaveFailed = false;
     };
   });
 
@@ -321,13 +328,13 @@
   async function finishFullEdit(current: () => boolean = () => true) {
     const lease = editLease,
       identity = editOwnerIdentity;
-    if (!lease) return;
+    if (!lease) return false;
     // A mode request can arrive in the same turn as source admission. Wait for
     // the admitted editor binding instead of treating its absence as a save.
     await tick();
-    if (editLease !== lease || editOwnerIdentity !== identity || !current()) return;
+    if (editLease !== lease || editOwnerIdentity !== identity || !current()) return false;
     const editor = fullEditor;
-    if (!editor) return;
+    if (!editor) return false;
     let pending: typeof pendingFinish;
     try {
       pending =
@@ -348,14 +355,45 @@
         fullEditor === editor &&
         editOwnerIdentity === identity &&
         current()
-      )
+      ) {
         cancelFullEdit();
+        return true;
+      }
     } catch (error) {
       logger.warn('Full note edit remains open because saving failed', error);
     } finally {
       if (pending && pendingFinish === pending) {
         pendingFinish = undefined;
       }
+    }
+    return false;
+  }
+  async function backToRenderedView() {
+    if (returningToView || deletionBusy) return;
+    const identity = editOwnerIdentity,
+      mode = noteViewMode,
+      generation = ++returnGeneration;
+    const current = () =>
+      editOwnerIdentity === identity &&
+      noteViewMode === mode &&
+      returnGeneration === generation &&
+      !deletionBusy;
+    returningToView = true;
+    returnSaveFailed = false;
+    try {
+      if (editState === 'editing') {
+        if (!(await finishFullEdit(current))) {
+          if (current()) returnSaveFailed = true;
+          return;
+        }
+      } else {
+        // No draft has been admitted while source is loading or unavailable.
+        cancelFullEdit();
+      }
+      if (current() && tab.noteId)
+        appStore.dispatch(setNoteViewMode(workspaceId, tab.noteId, 'preview'));
+    } finally {
+      if (returnGeneration === generation) returningToView = false;
     }
   }
   // Both ordinary and Assistant tabs honor the selected mode without an extra
@@ -762,6 +800,24 @@
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col">
+  {#if noteViewMode === 'raw' || (editState === 'editing' && editorRawView)}
+    <div class="shrink-0 border-b px-3 py-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={backToRenderedView}
+        disabled={returningToView || deletionBusy}
+      >
+        {m.layout_noteTab_backToRendered_label()}
+      </Button>
+      {#if returningToView}<span role="status" class="ml-2 text-sm text-muted-foreground"
+          >{m.ui_saveIndicator_saving_tooltip()}</span
+        >{/if}
+      {#if returnSaveFailed}<p role="alert" class="text-sm text-danger">
+          {m.layout_noteTab_returnSaveFailed_error()}
+        </p>{/if}
+    </div>
+  {/if}
   {#if $deletion}
     {#key $deletion.owner}
       <NoteDeleteStatus target={noteDeleteUiTarget($deletion)} />

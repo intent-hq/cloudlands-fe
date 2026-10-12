@@ -85,3 +85,79 @@ test('initially renders a disposable 2 MB spec read-only without a whole-note re
     contentType: 'image/png',
   });
 });
+
+test('returns to bounded rendering after flushing an immediate raw edit', async ({
+  mount,
+  page,
+}, info) => {
+  const source = '# Disposable return test\n\n' + 'Read-only large note body.\n'.repeat(14000);
+  const component = await mount(Harness, {
+    props: { initialContent: source, paging: true, viewMode: 'raw', holdSave: true },
+  });
+  const editor = component.locator('.monaco-editor').first();
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' Saved before returning.');
+  await component.getByRole('button', { name: 'Back to rendered view' }).click();
+  await expect(component.getByRole('button', { name: 'Acknowledge fixture save' })).toBeVisible();
+  await expect(editor).toBeVisible();
+  await expect(component.getByRole('button', { name: 'Back to rendered view' })).toBeDisabled();
+  await component.getByRole('button', { name: 'Acknowledge fixture save' }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(component.locator('.ProseMirror[contenteditable="false"]')).toBeVisible();
+  const state = JSON.parse((await component.getByTestId('wire').textContent())!);
+  expect(state.original.content).toBe(source + ' Saved before returning.');
+  expect(state.original.rev).toBe(5);
+  expect(state.windows['note-tab'].sourceRevision).toBe('r5');
+  expect(state.windows['note-tab'].snapshotId).toBe('s5');
+  expect(state.writes).toBe(1);
+  expect(state.reads).toBe(1);
+  expect(state.pageReads).toBeGreaterThan(0);
+  await info.attach('raw-return-rendered', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+test('raw access does not bypass a matching rendered-page failure', async ({ mount, page }) => {
+  const source =
+    '# Disposable unavailable rendered note\n\n' + 'Bounded pages unavailable.\n'.repeat(14000);
+  const component = await mount(Harness, {
+    props: { initialContent: source, paging: true, failPages: true },
+  });
+  await expect(component.getByRole('alert')).toContainText('Failed to load note content');
+  const state = async () => JSON.parse((await component.getByTestId('wire').textContent())!);
+  expect((await state()).reads).toBe(0);
+  await component.getByRole('button', { name: 'Commands' }).click();
+  await page.getByRole('menuitem', { name: 'Edit Raw Markdown', exact: true }).click();
+  await expect(component.locator('.monaco-editor').first()).toBeVisible();
+  expect((await state()).reads).toBe(1);
+  await component.getByRole('button', { name: 'Back to rendered view' }).click();
+  await expect(component.locator('.monaco-editor')).toHaveCount(0);
+  await expect(component.getByRole('alert')).toContainText('Failed to load note content');
+  expect((await state()).reads).toBe(1);
+  expect((await state()).writes).toBe(0);
+});
+
+test('keeps raw Markdown open during composition and returns after composition ends', async ({
+  mount,
+}) => {
+  const component = await mount(Harness, {
+    props: { initialContent: '# Composition draft', paging: true, viewMode: 'raw' },
+  });
+  const raw = component.getByTestId('raw-note-view');
+  await expect(component.locator('.monaco-editor').first()).toBeVisible();
+  await raw.dispatchEvent('compositionstart');
+  await component.getByRole('button', { name: 'Back to rendered view' }).click();
+  await expect(component.getByRole('alert')).toContainText(
+    'Your draft is still open in Raw Markdown',
+  );
+  await expect(component.locator('.monaco-editor').first()).toBeVisible();
+  expect(JSON.parse((await component.getByTestId('wire').textContent())!).writes).toBe(0);
+  await raw.dispatchEvent('compositionend');
+  await component.getByRole('button', { name: 'Back to rendered view' }).click();
+  await expect(component.locator('.monaco-editor')).toHaveCount(0);
+  await expect(component.locator('.ProseMirror[contenteditable="false"]')).toBeVisible();
+  expect(JSON.parse((await component.getByTestId('wire').textContent())!).writes).toBe(0);
+});

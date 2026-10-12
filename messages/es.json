@@ -7535,5 +7535,7 @@
   "chat_failureRecovery_action_description": "La respuesta se detuvo antes de terminar.",
   "providers_cliVersionWarning_message": "La versión {version} de la CLI de {provider} es anterior a la mínima compatible {minimumVersion}. Actualiza la CLI en el equipo del daemon.",
   "layout_noteTab_editRawMarkdown_action": "Editar Markdown sin formato",
-  "layout_noteTab_pagingUnsupported_error": "El host de este espacio de trabajo no admite la visualización de notas grandes. Actualice el host o seleccione «Editar Markdown sin formato» en el menú de la nota."
+  "layout_noteTab_pagingUnsupported_error": "El host de este espacio de trabajo no admite la visualización de notas grandes. Actualice el host o seleccione «Editar Markdown sin formato» en el menú de la nota.",
+  "layout_noteTab_backToRendered_label": "Volver a la vista renderizada",
+  "layout_noteTab_returnSaveFailed_error": "No se pudo terminar de guardar. Tu borrador sigue abierto en Markdown sin formato."
 }
