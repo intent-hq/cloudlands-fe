@@ -49,7 +49,7 @@ import type {
 import { backendRequest } from './backend-transport';
 import { runMutation } from './live-support';
 import { store } from '$store/renderer/store';
-import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
 import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 
 /**
@@ -129,7 +129,7 @@ function fetchStatus(
   const state = store.state;
   const key = JSON.stringify([
     getActiveBackendId(state),
-    selectPrincipalActionContext.select(state),
+    getPrincipalActionContext(state),
     state.daemonHealth?.connectionGeneration,
     workspaceId,
   ]);

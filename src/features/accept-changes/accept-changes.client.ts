@@ -10,7 +10,7 @@
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
-import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
 import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 import {
   addAcceptRemoteRequested,
@@ -58,7 +58,7 @@ export class AcceptChangesClient {
     options?: { forceRefresh?: boolean },
   ): Promise<WorkspaceGitStatus> {
     const state = appStore.state;
-    const context = selectPrincipalActionContext.select(state);
+    const context = getPrincipalActionContext(state);
     // An unadmitted caller has no stable authority lifetime to share with.
     if (!context)
       return backendRequest<WorkspaceGitStatus>('accept-changes.getStatus', { workspaceId });

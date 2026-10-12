@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 
 beforeAll(() => store.init());
@@ -58,6 +59,52 @@ describe('LiveGitClient reads (fake transport)', () => {
       connectionsListReceived({ connections: [], activeId: previous, windowBackendId: previous }),
     );
   });
+
+  it.each(['principal', 'reconnect'] as const)(
+    'does not share held status across an admitted %s lifetime change',
+    async (change) => {
+      let state = withLegacyPrincipal(store.state);
+      const getter = vi.spyOn(store, 'state', 'get').mockImplementation(() => state);
+      let finish!: (value: unknown) => void;
+      mockedRequest.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const client = new LiveGitClient();
+      try {
+        const old = client.status('same-workspace');
+        if (change === 'principal') {
+          state = {
+            ...state,
+            principal: {
+              ...state.principal,
+              snapshot: {
+                ...state.principal.snapshot!,
+                principal: { ...state.principal.snapshot!.principal, id: 'replacement' },
+              },
+            },
+          };
+        } else {
+          state = withLegacyPrincipal({
+            ...state,
+            daemonHealth: {
+              ...state.daemonHealth,
+              connectionGeneration: state.daemonHealth.connectionGeneration + 1,
+            },
+          });
+        }
+        mockedRequest.mockResolvedValueOnce({ ...GIT_STATUS_FIXTURE, branch: 'new' });
+        const current = await client.status('same-workspace');
+        expect(mockedRequest).toHaveBeenCalledTimes(2);
+        expect(current?.branch).toBe('new');
+        finish({ ...GIT_STATUS_FIXTURE, branch: 'old' });
+        expect((await old)?.branch).toBe('old');
+      } finally {
+        getter.mockRestore();
+      }
+    },
+  );
 
   it('status maps the daemon git.status shape into GitStatus', async () => {
     mockedRequest.mockResolvedValueOnce({
