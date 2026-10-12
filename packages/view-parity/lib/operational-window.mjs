@@ -13,6 +13,12 @@ import { observeAvatarPairNetwork, assertAvatarPairNetwork } from './agent-avata
 export { expect, outputJson };
 const original = '003bc52c00dcfffe8513cd6be1b8f45011716714';
 const sourcePort = '8a05278b842cc4dd80c0d0913c576208e17eabb9';
+// Intentional shared canonical correction; all other source-port files stay pinned.
+const sourceCorrection = {
+  commit: 'd47f4dc54d23956becbc898f6d61e490a385075a',
+  file: 'src/lib/components/chat/operational-panel-core.ts',
+  sha256: '18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c',
+};
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const blob = (file, sha) => execFileSync('git', ['show', `${sha}:${file}`], { cwd: repoRoot });
 const hashes = (files, root = repoRoot) =>
@@ -104,7 +110,12 @@ export const test = base.extend({
       const before = read();
       expect(before.runner).toEqual(blobHashes(runnerFiles, testSha));
       expect(before.unchanged).toEqual(blobHashes(unchanged, original));
-      expect(before.source).toEqual(blobHashes(sourceFiles, sourcePort));
+      const expectedSource = blobHashes(sourceFiles, sourcePort);
+      expect(digest(blob(sourceCorrection.file, sourceCorrection.commit))).toBe(
+        sourceCorrection.sha256,
+      );
+      expectedSource[sourceCorrection.file] = sourceCorrection.sha256;
+      expect(before.source).toEqual(expectedSource);
       expect(before.profile).toEqual(blobHashes(profile, sha));
       expect(before.candidate.commit).toBe(sha);
       expect(before.candidate.dirty).toBe(false);
@@ -115,7 +126,7 @@ export const test = base.extend({
         const after = read();
         await info.attach('operational-freeze.json', {
           body: JSON.stringify(
-            { original, sourcePort, sha, testSha, caseId, root, before, after },
+            { original, sourcePort, sourceCorrection, sha, testSha, caseId, root, before, after },
             null,
             2,
           ),
