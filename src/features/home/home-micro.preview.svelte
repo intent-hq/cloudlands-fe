@@ -16,18 +16,27 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import HomePreview from './home.preview.svelte';
   import { startHomePreview } from './home-preview-lifecycle';
   import { setupHomeMicroPreview } from './home-micro-preview-fixture';
   let { scenario = 'list' }: Props = $props();
+  let previewRoot = $state<HTMLDivElement | null>(null);
   const stop = startHomePreview(() => []);
   const fixture = setupHomeMicroPreview(untrack(() => scenario !== 'disconnected'));
   $effect(() => fixture.setConnected(scenario !== 'disconnected'));
+  onMount(() => {
+    void tick().then(() => {
+      // Load fixture avatars even when wrapped columns put them below the scroll viewport.
+      previewRoot?.querySelectorAll('img').forEach((image) => (image.loading = 'eager'));
+    });
+  });
   onDestroy(() => {
     fixture.dispose();
     stop();
   });
 </script>
 
-<HomePreview scenario={scenario === 'list' ? 'populated' : 'board'} />
+<div class="contents" bind:this={previewRoot}>
+  <HomePreview scenario={scenario === 'list' ? 'populated' : 'board'} />
+</div>
