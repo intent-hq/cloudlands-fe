@@ -17,10 +17,8 @@ import {
 } from './encoder-effort.fixture';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
-import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import {
   bulkUpsertSessions,
   removeSession,
@@ -205,12 +203,16 @@ function effortWire(protocol: EffortProtocol) {
   const modelId = (level: string | null) => (level === null ? 'model-a' : `model-a/${level}`);
   const legacy = vi.fn(async (params: { modelId: string }): Promise<unknown> => ({
     success: true,
-    data: { success: true, modelId: params.modelId },
+    modelId: params.modelId,
   }));
   if (protocol === 'legacy') {
     state.daemonHealth.stats.protocolVersion = '5.1';
     publish();
-    registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+    const fallback = request.getMockImplementation();
+    if (!fallback) throw new Error('Encoder request fixture is not installed');
+    request.mockImplementation((...args) =>
+      args[0] === 'agent.setModel' ? legacy(args[1] as { modelId: string }) : fallback(...args),
+    );
   }
   return {
     hold() {
@@ -220,14 +222,11 @@ function effortWire(protocol: EffortProtocol) {
       return {
         accept(level: string | null) {
           held.resolve(
-            protocol === 'legacy'
-              ? { success: true, data: { success: true, modelId: modelId(level) } }
-              : reply(level),
+            protocol === 'legacy' ? { success: true, modelId: modelId(level) } : reply(level),
           );
         },
         reject(error: string) {
-          if (protocol === 'legacy')
-            held.resolve({ success: true, data: { success: false, error } });
+          if (protocol === 'legacy') held.resolve({ success: false, error });
           else held.reject(new Error(error));
         },
       };
@@ -253,6 +252,17 @@ function effortWire(protocol: EffortProtocol) {
           ]),
         );
         expect(mutations()).toEqual([]);
+        expect(request.mock.calls.filter(([method]) => method === 'agent.setModel')).toEqual(
+          levels.map((level) => [
+            'agent.setModel',
+            {
+              agentId: 'agent-1',
+              workspaceId: 'ws-1',
+              providerId: 'codex',
+              modelId: modelId(level),
+            },
+          ]),
+        );
       } else {
         expect(mutations()).toEqual(
           levels.map((level) => [

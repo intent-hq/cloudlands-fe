@@ -44,6 +44,7 @@ vi.mock('$lib/electron-bridge', async (importOriginal) => {
 });
 
 import { store as appStore } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import {
   checkSingleProviderSuccess,
   setAllProvidersLoading,
@@ -88,6 +89,7 @@ const flush = async () => {
 describe('ProviderCard explicit refresh feedback', () => {
   beforeAll(() => {
     appStore.init();
+    admitLegacyPrincipal();
     stopProviderAvailabilitySaga = appStore.runSaga(providerAvailabilitySaga);
   });
 

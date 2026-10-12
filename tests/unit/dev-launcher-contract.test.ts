@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
+import { buildWaitOnTargets } from '../../scripts/dev-electron-lib.mjs';
 
 describe('dev launcher macOS bundle safety', () => {
   const source = readFileSync(join(process.cwd(), 'scripts/dev-launcher.mjs'), 'utf-8');
@@ -18,7 +19,6 @@ describe('dev launcher macOS bundle safety', () => {
 
 describe('dev Electron child lifecycle', () => {
   const source = readFileSync(join(process.cwd(), 'scripts/dev-electron.js'), 'utf-8');
-  const libSource = readFileSync(join(process.cwd(), 'scripts/dev-electron-lib.mjs'), 'utf-8');
   const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8')).scripts;
 
   it('reports native signal termination as a failed dev process', () => {
@@ -29,13 +29,43 @@ describe('dev Electron child lifecycle', () => {
   });
 
   it('probes the renderer port without requiring a root HTTP route', () => {
-    // The wait-on target list is built by buildWaitOnTargets (see
-    // scripts/dev-electron-lib.test.ts for its full contract): a TCP probe of
-    // the listener — never HTTP `/`, which 404s by design — plus an HTTP probe
-    // of the generated SvelteKit client (intent-hq/monorepo#3524).
-    expect(source).toContain('buildWaitOnTargets(devPort,');
-    expect(libSource).toContain('`tcp:127.0.0.1:${devPort}`');
-    expect(libSource).not.toContain('`http://127.0.0.1:${devPort}`');
+    expect(
+      buildWaitOnTargets('5190', ['/repo/dist/.dev-ready-main', '/repo/dist/.dev-ready-preload']),
+    ).toEqual([
+      'tcp:127.0.0.1:5190',
+      'http-get://127.0.0.1:5190/.svelte-kit/generated/client/nodes/0.js',
+      '/repo/dist/.dev-ready-main',
+      '/repo/dist/.dev-ready-preload',
+    ]);
+  });
+
+  it('waits for the React sandbox and transformed client during development preview', () => {
+    expect(
+      buildWaitOnTargets('5190', ['/repo/dist/.dev-ready-main', '/repo/dist/.dev-ready-preload'], {
+        NODE_ENV: 'development',
+        INTENT_DEV_REACT: '1',
+      }),
+    ).toEqual([
+      'tcp:127.0.0.1:5190',
+      'http-get://127.0.0.1:5190/sandbox',
+      'http-get://127.0.0.1:5190/@id/virtual:tanstack-start-client-entry',
+      '/repo/dist/.dev-ready-main',
+      '/repo/dist/.dev-ready-preload',
+    ]);
+  });
+
+  it('retains Svelte readiness outside development even with React preview enabled', () => {
+    expect(
+      buildWaitOnTargets('5190', ['/repo/dist/.dev-ready-main', '/repo/dist/.dev-ready-preload'], {
+        NODE_ENV: 'production',
+        INTENT_DEV_REACT: '1',
+      }),
+    ).toEqual([
+      'tcp:127.0.0.1:5190',
+      'http-get://127.0.0.1:5190/.svelte-kit/generated/client/nodes/0.js',
+      '/repo/dist/.dev-ready-main',
+      '/repo/dist/.dev-ready-preload',
+    ]);
   });
 
   it('stops the renderer when either Electron dev process fails', () => {

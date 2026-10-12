@@ -1,5 +1,10 @@
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, expect, it, vi } from 'vitest';
+import { cancelled, take } from 'typed-redux-saga';
+import type { GenericAction } from '@themislib/themis/types';
+import type { SettingsUpdateResult } from '$lib/client/settings-types';
+import { selectPrincipalConnectionContext } from '../principal/principal-selectors';
+import { connectionsListReceived } from '../connections/connections-slice';
 
 const { notifyError } = vi.hoisted(() => ({ notifyError: vi.fn() }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: notifyError } }));
@@ -30,6 +35,7 @@ import {
 } from '../provider-settings/provider-settings-slice';
 import {
   backgroundProviderSwitchBlocked,
+  backgroundSettingsSaveSettled,
   setDefaultModel,
   setDefaultReasoningEffort,
   setTypeReasoningEffortOverride,
@@ -39,10 +45,35 @@ import {
 const request = vi.mocked(backendRequest);
 const stopSagas: (() => void)[] = [];
 let dispose: (() => void) | undefined;
+const postStopCleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
-  for (const stop of stopSagas.splice(0)) stop();
-  dispose?.();
-  vi.resetAllMocks();
+  const errors: unknown[] = [];
+  for (const stop of stopSagas.splice(0)) {
+    try {
+      stop();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    dispose?.();
+  } catch (error) {
+    errors.push(error);
+  }
+  dispose = undefined;
+  for (const cleanup of postStopCleanups.splice(0)) {
+    try {
+      await cleanup();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    vi.resetAllMocks();
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length) throw new AggregateError(errors, 'Quick Action test cleanup failed');
 });
 const emptyModels = { commit: '', pr: '', review: '', fast: '' };
 const initial: AppSettingChange[] = [
@@ -83,7 +114,23 @@ function assertBareModels(changes: AppSettingChange[]) {
 
 function start() {
   dispose = store.init();
+  const runtimeErrors: unknown[] = [];
+  const recordError = (error: unknown) => {
+    runtimeErrors.push(error);
+  };
+  store.traceStreams.runtimeError.onValue(recordError);
+  postStopCleanups.push(() => {
+    try {
+      expect(runtimeErrors).toEqual([]);
+    } finally {
+      store.traceStreams.runtimeError.offValue(recordError);
+    }
+  });
   admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  expect(connection).not.toBeNull();
+  if (connection === null) throw new Error('Quick Action test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
   for (const saga of [
     settingsHydrationSaga,
     providerSettingsSaga,
@@ -1225,5 +1272,190 @@ it.each([false, true])(
       path: 'quickActions.defaultReasoningEffort',
       value: 'high',
     });
+  },
+);
+
+it.each(['success', 'rejection'] as const)(
+  'retires a held Quick Action %s on an admitted host switch and releases the write lock',
+  async (outcome) => {
+    const oldSnapshot: AppSettingChange[] = [
+      { path: 'model.defaultProvider', value: 'codex' },
+      { path: 'model.providerDefaults', value: {} },
+      { path: 'quickActions.defaultModel', value: 'old-model' },
+      { path: 'quickActions.typeOverrides', value: emptyModels },
+      { path: 'quickActions.defaultReasoningEffort', value: 'low' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+      {
+        path: 'quickActions.providerSettings',
+        value: { retired: { defaultModel: 'retired-model', typeOverrides: emptyModels } },
+      },
+    ];
+    const nextSnapshot: AppSettingChange[] = [
+      { path: 'model.defaultProvider', value: 'other' },
+      { path: 'model.providerDefaults', value: {} },
+      { path: 'quickActions.defaultModel', value: 'next-model' },
+      { path: 'quickActions.typeOverrides', value: emptyModels },
+      { path: 'quickActions.defaultReasoningEffort', value: 'low' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+      { path: 'quickActions.providerSettings', value: {} },
+    ];
+    const oldChanges: AppSettingChange[] = [
+      { path: 'model.defaultProvider', value: 'codex' },
+      { path: 'quickActions.defaultModel', value: 'old-model' },
+      { path: 'quickActions.typeOverrides', value: emptyModels },
+      { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+      {
+        path: 'quickActions.providerSettings',
+        value: { retired: { defaultModel: 'retired-model', typeOverrides: emptyModels } },
+      },
+    ];
+    const nextChanges: AppSettingChange[] = [
+      { path: 'model.defaultProvider', value: 'other' },
+      { path: 'quickActions.defaultModel', value: 'next-model' },
+      { path: 'quickActions.typeOverrides', value: emptyModels },
+      { path: 'quickActions.defaultReasoningEffort', value: 'medium' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+      { path: 'quickActions.providerSettings', value: {} },
+    ];
+    // The old revision is deliberately newer: host ownership, not revision order, must reject it.
+    const staleReceipt: SettingsUpdateResult = { applied: oldChanges, revision: 99 };
+    let resolveHeld!: (value: SettingsUpdateResult) => void;
+    let rejectHeld!: (error: unknown) => void;
+    const heldReply = new Promise<SettingsUpdateResult>((resolve, reject) => {
+      resolveHeld = resolve;
+      rejectHeld = reject;
+    });
+    const settle = async () => {
+      for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+    };
+    postStopCleanups.push(async () => {
+      resolveHeld(staleReceipt);
+      await settle();
+    });
+    let nextHost = false;
+    let writes = 0;
+    request.mockImplementation(async <T>(method: string): Promise<T> => {
+      if (method === 'settings.list')
+        return {
+          settings: structuredClone(nextHost ? nextSnapshot : oldSnapshot),
+          revision: nextHost ? 20 : 7,
+        } as T;
+      if (method !== 'settings.update') throw new Error(`Unexpected settings request: ${method}`);
+      writes += 1;
+      if (writes === 1) return (await heldReply) as T;
+      return { applied: structuredClone(nextChanges), revision: 21 } as T;
+    });
+    const dispatch = start();
+    let observerCancelled: boolean | null = null;
+    const publications: GenericAction[] = [];
+    stopSagas.push(
+      store.runSaga(function* observeHostRetirement() {
+        try {
+          while (true) {
+            const action: GenericAction = yield* take([
+              backgroundSettingsSaveSettled,
+              settingsChangesReceived,
+            ]);
+            publications.push(action);
+          }
+        } finally {
+          observerCancelled = yield* cancelled();
+        }
+      }),
+    );
+    postStopCleanups.push(async () => {
+      await settle();
+      // This observes the recorder's cancellation only, not an internal child-task join.
+      expect(observerCancelled).toBe(true);
+    });
+    await vi.waitFor(() =>
+      expect(store.state.backgroundAgentSettings.defaultModel).toBe('old-model'),
+    );
+    const oldConnection = selectPrincipalConnectionContext.select(store.state);
+    dispatch(setDefaultReasoningEffort('high'));
+    await vi.waitFor(() => expect(writes).toBe(1));
+    expect(request.mock.calls).toEqual([
+      ['settings.list'],
+      ['settings.list'],
+      ['settings.update', { changes: oldChanges }],
+    ]);
+    expect(store.state.backgroundAgentSettings.persistencePending).toBe(true);
+
+    nextHost = true;
+    dispatch(
+      connectionsListReceived({
+        connections: [],
+        activeId: 'qa-next-host',
+        windowBackendId: 'qa-next-host',
+      }),
+    );
+    const nextConnection = selectPrincipalConnectionContext.select(store.state);
+    expect(nextConnection).not.toBeNull();
+    expect(nextConnection).not.toBe(oldConnection);
+    if (nextConnection === null) throw new Error('Next host requires an acknowledged connection');
+    dispatch(hostExecutionConnectionChanged(nextConnection));
+    expect(store.state.backgroundAgentSettings).toStrictEqual({
+      defaultModel: '',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      defaultReasoningEffort: '',
+      typeReasoningEffortOverrides: {},
+      providerSettings: {},
+      persistencePending: false,
+    });
+    admitLegacyPrincipal();
+    expect(selectPrincipalConnectionContext.select(store.state)).toBe(nextConnection);
+    expect(store.state.model.selectionConnection).toBe(nextConnection);
+    await vi.waitFor(() =>
+      expect(store.state.backgroundAgentSettings.defaultModel).toBe('next-model'),
+    );
+    const nextBackground = store.state.backgroundAgentSettings;
+    expect(nextBackground.persistencePending).toBe(false);
+    expect(publications).toEqual([]);
+
+    if (outcome === 'success') resolveHeld(staleReceipt);
+    else
+      rejectHeld(
+        new BackendError({
+          code: 'INVALID_PARAMS',
+          rpcCode: -32602,
+          message: 'old host rejected',
+        }),
+      );
+    await settle();
+    expect(store.state.backgroundAgentSettings).toBe(nextBackground);
+    expect(publications).toEqual([]);
+
+    // Only the canonically admitted new host may use the released shared lock.
+    dispatch(setDefaultReasoningEffort('medium'));
+    await vi.waitFor(() => expect(writes).toBe(2));
+    await vi.waitFor(() =>
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
+    );
+    expect(request.mock.calls).toEqual([
+      ['settings.list'],
+      ['settings.list'],
+      ['settings.update', { changes: oldChanges }],
+      ['settings.list'],
+      ['settings.list'],
+      ['settings.update', { changes: nextChanges }],
+    ]);
+    expect(store.state.backgroundAgentSettings.providerId).toBe('other');
+    expect(store.state.backgroundAgentSettings.defaultModel).toBe('next-model');
+    expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('medium');
+    expect(store.state.backgroundAgentSettings.providerSettings).toEqual({});
+    const settlements = publications.filter(
+      ({ type }) => type === backgroundSettingsSaveSettled.type,
+    );
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0]).toMatchObject({
+      payload: [{ providerId: 'other', generation: 1, revision: 21 }],
+    });
+    expect(publications.filter(({ type }) => type === settingsChangesReceived.type)).toEqual([
+      settingsChangesReceived(
+        nextChanges.filter(({ path }) => !path.startsWith('model.')),
+        21,
+      ),
+    ]);
   },
 );

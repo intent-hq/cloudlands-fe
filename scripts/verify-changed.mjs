@@ -89,6 +89,10 @@ const LOCALE_COMPLETENESS_INPUTS = new Set([
 const VISUAL_TEST_RE = /\.visual\.spec\.ts$/;
 const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
 const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
+// Manual projects in packages/view-parity/playwright.config.mjs; matches the root unit exclude.
+const VIEW_PARITY_SPEC_RE =
+  /^packages\/view-parity\/tests\/(?:[^/]+\/)*(?:parity|(?:[^/]*\.)?(?:core|extended))\.spec\.mjs$/;
+const UNIT_PROJECT_CONFIGS = new Set(['vitest.config.ts', 'apps/react/vitest.config.ts']);
 const FULL_RISK_FILES = new Set([
   'package.json',
   'pnpm-lock.yaml',
@@ -353,6 +357,7 @@ export function testRunner(file) {
     return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
   }
   if (hasCtSpecSuffix(file)) return 'manual';
+  if (VIEW_PARITY_SPEC_RE.test(file)) return 'manual';
   if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
   return 'vitest';
 }
@@ -376,6 +381,7 @@ function literalProperty(object, name) {
   return matches[0]?.initializer;
 }
 
+/** @returns {{ patterns: string[], hasProjects?: boolean, exclusionsKnown: boolean, complete: boolean }} */
 function vitestExclusions(root, configFile = 'vitest.config.ts') {
   const unknown = { patterns: [], exclusionsKnown: false, complete: false };
   const configPath = resolve(root, configFile);
@@ -440,14 +446,30 @@ function vitestExclusions(root, configFile = 'vitest.config.ts') {
   const test = literalProperty(config, 'test');
   const exclude = literalProperty(test, 'exclude');
   if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
+  const projects = literalProperty(test, 'projects');
+  const hasProjects = projects !== undefined;
+  // An exact root-config entry positively retains this project's own coverage.
+  // Do not infer participation from dynamic entries, exclusions, or glob patterns.
+  const rootProjectParticipates =
+    projects &&
+    ts.isArrayLiteralExpression(projects) &&
+    projects.elements.every(
+      (element) =>
+        ts.isStringLiteral(element) &&
+        element.text.length > 0 &&
+        !isAbsolute(element.text) &&
+        !element.text.startsWith('!') &&
+        !/[*?{}[\]\\]/.test(element.text),
+    ) &&
+    projects.elements.some((element) => ts.isStringLiteral(element) && element.text === configFile);
   // Discovery and execution filters need a real config evaluator; keep the scan then.
   const complete =
+    (!hasProjects || rootProjectParticipates === true) &&
     literalProperty(config, 'root') === undefined &&
     [
       'include',
       'dir',
       'root',
-      'projects',
       'workspace',
       'testNamePattern',
       'typecheck',
@@ -493,7 +515,14 @@ function vitestExclusions(root, configFile = 'vitest.config.ts') {
       patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
     } else exclusionsKnown = false;
   }
-  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
+  // Root exclusions never prove child-project exclusions. A complete root
+  // policy proves only positive coverage when that root explicitly participates.
+  return {
+    patterns,
+    hasProjects,
+    exclusionsKnown: exclusionsKnown && !hasProjects,
+    complete: complete && exclusionsKnown,
+  };
 }
 
 export function vitestExcludePatterns(root = REPO_ROOT) {
@@ -519,10 +548,11 @@ function snapshotOwner(file, root) {
       ? vitestExclusions(root)
       : runner === 'integration'
         ? vitestExclusions(root, 'tests/integration/vitest.integration.config.ts')
-        : { patterns: ['**/node_modules/**'], exclusionsKnown: true };
-  // Unknown excludes must not look like an empty policy. Integration's supported
-  // root/include settings do not make its literal exclusion policy unknown.
-  if (!exclusions.exclusionsKnown) return null;
+        : { patterns: ['**/node_modules/**'], exclusionsKnown: true, complete: false };
+  // A participating root can positively own a nonexcluded snapshot. Its
+  // excluded paths still fall back: a child project may own them instead.
+  // Integration retains its separately known literal exclusion policy.
+  if (!exclusions.exclusionsKnown && !exclusions.complete) return null;
   const exclude = exclusions.patterns;
   const gitignore = resolve(root, '.gitignore');
   // Only the unit config derives exclusions from .gitignore. The integration
@@ -642,7 +672,7 @@ export function createVerificationPlan(files, options = {}) {
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
-      /^(?:src|scripts|playwright)\//.test(file) &&
+      /^(?:src|scripts|playwright|apps\/react\/src)\//.test(file) &&
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
@@ -661,7 +691,8 @@ export function createVerificationPlan(files, options = {}) {
   );
   const boundaries = new Set();
   let svelteCheck = false;
-  let fullUnit = false;
+  // Unknown child-project exclusions cannot justify dropping a deleted test.
+  let fullUnit = deletedUnitTests.length > 0 && vitestExclude.hasProjects === true;
   let fullCt = false;
   let fullPlaywright = false;
   const fallbackReasons = [];
@@ -675,7 +706,7 @@ export function createVerificationPlan(files, options = {}) {
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
     else if (ROOT_PLAYWRIGHT_CONFIG_FILES.has(file)) fullPlaywright = true;
-    else if (file === 'vitest.config.ts') fullUnit = true;
+    else if (UNIT_PROJECT_CONFIGS.has(file)) fullUnit = true;
     // Shared with the pull_request workflow's test-ct relevance step.
     if (isCtContractPath(file)) fullCt = true;
 

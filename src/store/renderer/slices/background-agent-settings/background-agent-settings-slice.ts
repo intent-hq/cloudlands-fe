@@ -439,4 +439,9 @@ backgroundAgentSettingsReducer.with(backgroundSettingsSaveSettled, (state, { pay
 );
 
 // Host changes retire local Quick Action drafts as well as in-flight persistence.
-backgroundAgentSettingsReducer.with(hostExecutionConnectionChanged, () => initialState);
+// Keep boot defaults unchanged and reuse one idle value across repeated host resets.
+const hostResetState: BackgroundAgentSettingsState = {
+  ...initialState,
+  persistencePending: false,
+};
+backgroundAgentSettingsReducer.with(hostExecutionConnectionChanged, () => hostResetState);

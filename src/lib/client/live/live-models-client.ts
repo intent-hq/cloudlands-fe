@@ -5,6 +5,8 @@ import type { ModelsClient } from '../app-client';
 /** Svelte transport binding; remove when the Svelte AppClient retires. */
 export class LiveModelsClient extends BackendModelsClient implements ModelsClient {
   constructor() {
-    super(backendRequest);
+    super(<T>(...args: Parameters<typeof backendRequest>): Promise<T> =>
+      backendRequest<T>(...args),
+    );
   }
 }

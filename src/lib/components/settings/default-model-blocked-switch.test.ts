@@ -12,6 +12,9 @@ const { update, list } = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client', () => ({ appClient: { settings: { get: vi.fn(), update, list } } }));
 import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
 import { preview } from '$lib/components/chat/input/model-picker.preview';
 import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
 import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
@@ -22,6 +25,15 @@ import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/s
 import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { selectModel } from '$store/renderer/slices/model/model-slice';
 const disposers: Array<() => void> = [];
+
+function initAdmittedStore() {
+  disposers.push(store.init());
+  admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  if (connection === null) throw new Error('Blocked-switch fixture has no admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
+}
+
 beforeEach(() => {
   const saved = new Map<string, unknown>([
     ['model.defaultProvider', 'codex'],
@@ -46,7 +58,7 @@ afterEach(() => {
 
 for (const withCallbacks of [false, true]) {
   it(`preserves ordinary effort and picker selection when legacy snapshot blocks model switch (callbacks ${withCallbacks})`, async () => {
-    disposers.push(store.init());
+    initAdmittedStore();
     const restore = preview.states.reasoning.setup?.();
     if (restore) disposers.push(restore);
     disposers.push(store.runSaga(backgroundAgentSettingsSaga));
@@ -100,7 +112,7 @@ for (const withCallbacks of [false, true]) {
 it.each(['accept', 'reject'] as const)(
   'waits for daemon state while persistence can %s',
   async (outcome) => {
-    disposers.push(store.init());
+    initAdmittedStore();
     const restore = preview.states.reasoning.setup?.();
     if (restore) disposers.push(restore);
     applySettingsChanges([
@@ -158,7 +170,7 @@ it.each(['accept', 'reject'] as const)(
 it.each(['accept', 'reject'] as const)(
   'renders the Redux %s outcome in Default model settings before the selector closes',
   async (outcome) => {
-    disposers.push(store.init());
+    initAdmittedStore();
     const restore = preview.states.reasoning.setup?.();
     if (restore) disposers.push(restore);
     applySettingsChanges([
@@ -200,7 +212,7 @@ it.each(['accept', 'reject'] as const)(
 );
 
 it('renders each daemon event while multiple Default picks are queued and Settings stays open', async () => {
-  disposers.push(store.init());
+  initAdmittedStore();
   const restore = preview.states.reasoning.setup?.();
   if (restore) disposers.push(restore);
   applySettingsChanges(
@@ -277,7 +289,7 @@ it('renders each daemon event while multiple Default picks are queued and Settin
 });
 
 it('follows the accepted Redux provider for the same bare default model while Settings stays open', async () => {
-  disposers.push(store.init());
+  initAdmittedStore();
   const restore = preview.states.reasoning.setup?.();
   if (restore) disposers.push(restore);
   for (const providerId of ['codex', 'claude-code']) {

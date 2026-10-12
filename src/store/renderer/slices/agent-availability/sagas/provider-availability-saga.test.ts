@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel } from 'redux-saga';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), catalog: vi.fn() }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
@@ -36,6 +37,48 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+const ownedTasks = new Set<Task>();
+const ownedChannels = new Set<{ close(): void }>();
+
+function trackTask<T extends Task>(task: T): T {
+  ownedTasks.add(task);
+  return task;
+}
+
+function trackChannel<T extends { close(): void }>(channel: T): T {
+  ownedChannels.add(channel);
+  return channel;
+}
+
+afterEach(async () => {
+  const tasks = [...ownedTasks];
+  const channels = [...ownedChannels];
+  ownedTasks.clear();
+  ownedChannels.clear();
+  const errors: unknown[] = [];
+  for (const task of tasks) {
+    try {
+      task.cancel();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  const results = await Promise.allSettled(
+    tasks.map((task) => Promise.resolve().then(() => task.toPromise())),
+  );
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason);
+  }
+  for (const channel of channels) {
+    try {
+      channel.close();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) throw new AggregateError(errors, 'Provider availability cleanup failed');
+});
+
 describe('providerAvailabilitySaga', () => {
   const originalElectronApi = window.electronAPI;
   const catalog: ProviderCatalogResult = { providers: [], defaultProviderId: 'auggie' };
@@ -65,14 +108,20 @@ describe('providerAvailabilitySaga', () => {
           : Promise.resolve({ success: false, error: detail });
       });
       let state = initialState;
-      const channel = stdChannel();
+      const channel = trackChannel(stdChannel());
       const send = (action: Parameters<typeof agentAvailabilityReducer>[1]) => {
         state = agentAvailabilityReducer(state, action);
         channel.put(action);
       };
-      const task = runSaga(
-        { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
-        providerAvailabilitySaga,
+      const task = trackTask(
+        runSaga(
+          {
+            channel,
+            dispatch: send,
+            getState: () => withLegacyPrincipal({ agentAvailability: state }),
+          },
+          providerAvailabilitySaga,
+        ),
       );
       try {
         send(checkAllProvidersRequested(false, silent));
@@ -101,11 +150,13 @@ describe('providerAvailabilitySaga', () => {
   it('handles login before catalog hydration finishes and selects the returned drawer terminal', async () => {
     mocks.catalog.mockImplementation(() => new Promise(() => {}));
     mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'claude-login-terminal' });
-    const channel = stdChannel();
+    const channel = trackChannel(stdChannel());
     const dispatch = vi.fn((action) => channel.put(action));
-    const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
-      providerAvailabilitySaga,
+    const task = trackTask(
+      runSaga(
+        { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
+        providerAvailabilitySaga,
+      ),
     );
     const request = claudeLoginRequested();
     try {
@@ -136,14 +187,20 @@ describe('providerAvailabilitySaga', () => {
         : Promise.resolve({ success: true, data: { available: true } }),
     );
     let state = initialState;
-    const channel = stdChannel();
+    const channel = trackChannel(stdChannel());
     const send = (action: Parameters<typeof agentAvailabilityReducer>[1]) => {
       state = agentAvailabilityReducer(state, action);
       channel.put(action);
     };
-    const task = runSaga(
-      { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
-      providerAvailabilitySaga,
+    const task = trackTask(
+      runSaga(
+        {
+          channel,
+          dispatch: send,
+          getState: () => withLegacyPrincipal({ agentAvailability: state }),
+        },
+        providerAvailabilitySaga,
+      ),
     );
     try {
       send(providerAvailabilityPanelOpened('panel'));
@@ -193,14 +250,20 @@ describe('providerAvailabilitySaga', () => {
           }),
     );
     let state = initialState;
-    const channel = stdChannel();
+    const channel = trackChannel(stdChannel());
     const send = vi.fn((action: Parameters<typeof agentAvailabilityReducer>[1]) => {
       state = agentAvailabilityReducer(state, action);
       channel.put(action);
     });
-    const task = runSaga(
-      { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
-      providerAvailabilitySaga,
+    const task = trackTask(
+      runSaga(
+        {
+          channel,
+          dispatch: send,
+          getState: () => withLegacyPrincipal({ agentAvailability: state }),
+        },
+        providerAvailabilitySaga,
+      ),
     );
     const refreshes = () =>
       send.mock.calls.filter(([action]) => action.type === 'model/reloadModelsForProvider');
@@ -225,6 +288,18 @@ describe('providerAvailabilitySaga', () => {
     }
   });
 
+  it('refuses single and bulk probes before admission while settling only the requested single check', async () => {
+    const dispatch = vi.fn();
+    const options = { dispatch, getState: () => ({ agentAvailability: initialState }) };
+    await trackTask(runSaga(options, checkSingleProviderWorker, 'codex')).toPromise();
+    await trackTask(runSaga(options, checkAllProvidersWorker)).toPromise();
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'agentAvailability/checkSingleProviderFailure', payload: ['codex', 0] },
+    ]);
+  });
+
   it('sends the exact single-provider IPC request and dispatches its terminal result', async () => {
     mocks.invoke.mockResolvedValue({
       success: true,
@@ -234,10 +309,12 @@ describe('providerAvailabilitySaga', () => {
       diagnostics: { elapsedMs: 12 },
     });
     const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => ({ agentAvailability: initialState }) },
-      checkSingleProviderWorker,
-      'codex',
+    await trackTask(
+      runSaga(
+        { dispatch, getState: () => withLegacyPrincipal({ agentAvailability: initialState }) },
+        checkSingleProviderWorker,
+        'codex',
+      ),
     ).toPromise();
 
     expect(mocks.invoke.mock.calls).toEqual([['providers:check-single', 'codex']]);
@@ -262,11 +339,13 @@ describe('providerAvailabilitySaga', () => {
             rejectLaunch = reject;
           }),
       );
-      const channel = stdChannel();
+      const channel = trackChannel(stdChannel());
       const dispatch = vi.fn((action) => channel.put(action));
-      const task = runSaga(
-        { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
-        providerAvailabilitySaga,
+      const task = trackTask(
+        runSaga(
+          { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
+          providerAvailabilitySaga,
+        ),
       );
       const first = claudeLoginRequested();
       const second = claudeLoginRequested();
@@ -307,12 +386,15 @@ describe('providerAvailabilitySaga', () => {
   it('dispatches the exact failure action when a single probe rejects', async () => {
     mocks.invoke.mockRejectedValue(new Error('probe failed'));
     const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => ({ agentAvailability: initialState }) },
-      checkSingleProviderWorker,
-      'codex',
+    await trackTask(
+      runSaga(
+        { dispatch, getState: () => withLegacyPrincipal({ agentAvailability: initialState }) },
+        checkSingleProviderWorker,
+        'codex',
+      ),
     ).toPromise();
 
+    expect(mocks.invoke.mock.calls).toEqual([['providers:check-single', 'codex']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: 'agentAvailability/checkSingleProviderFailure', payload: ['codex', 0] },
     ]);
@@ -337,12 +419,15 @@ describe('providerAvailabilitySaga', () => {
       return action;
     });
     sliceState = agentAvailabilityReducer(sliceState, checkSingleProviderRequested('codex'));
-    await runSaga(
-      { dispatch, getState: () => ({ agentAvailability: sliceState }) },
-      checkSingleProviderWorker,
-      'codex',
+    await trackTask(
+      runSaga(
+        { dispatch, getState: () => withLegacyPrincipal({ agentAvailability: sliceState }) },
+        checkSingleProviderWorker,
+        'codex',
+      ),
     ).toPromise();
 
+    expect(mocks.invoke.mock.calls).toEqual([['providers:check-single', 'codex']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: 'agentAvailability/checkSingleProviderFailure', payload: ['codex', 1] },
     ]);
@@ -370,9 +455,11 @@ describe('providerAvailabilitySaga', () => {
       sliceState = agentAvailabilityReducer(sliceState, action);
       return action;
     });
-    const task = runSaga(
-      { dispatch, getState: () => ({ agentAvailability: sliceState }) },
-      checkAllProvidersWorker,
+    const task = trackTask(
+      runSaga(
+        { dispatch, getState: () => withLegacyPrincipal({ agentAvailability: sliceState }) },
+        checkAllProvidersWorker,
+      ),
     );
     await settle();
 
@@ -437,16 +524,19 @@ describe('providerAvailabilitySaga', () => {
       sliceState = agentAvailabilityReducer(sliceState, action);
       return action;
     });
-    const options = { dispatch, getState: () => ({ agentAvailability: sliceState }) };
+    const options = {
+      dispatch,
+      getState: () => withLegacyPrincipal({ agentAvailability: sliceState }),
+    };
 
     // Stale probe: starts while claude is not yet installed.
     sliceState = agentAvailabilityReducer(sliceState, checkSingleProviderRequested('claude-code'));
-    const staleProbe = runSaga(options, checkSingleProviderWorker, 'claude-code');
+    const staleProbe = trackTask(runSaga(options, checkSingleProviderWorker, 'claude-code'));
     await settle();
 
     // Fresh probe: user finished the install and hit "Check again".
     sliceState = agentAvailabilityReducer(sliceState, checkSingleProviderRequested('claude-code'));
-    const freshProbe = runSaga(options, checkSingleProviderWorker, 'claude-code');
+    const freshProbe = trackTask(runSaga(options, checkSingleProviderWorker, 'claude-code'));
     await settle();
     pendingBySequence[1]!({ success: true, data: { available: true, authenticated: true } });
     await freshProbe.toPromise();
@@ -467,26 +557,28 @@ describe('providerAvailabilitySaga', () => {
   });
 
   it('coalesces host-refresh/manual bulk requests and cleans up on cancellation', async () => {
+    const on = vi.fn((channel: string) => `provider-listener:${channel}`);
     const offById = vi.fn();
     window.electronAPI = {
       ...originalElectronApi,
-      on: vi.fn(() => {
-        return 'provider-listener';
-      }),
+      on,
       offById,
     };
     mocks.invoke.mockImplementation(() => new Promise(() => {}));
-    const channel = stdChannel();
+    const channel = trackChannel(stdChannel());
     const dispatch = vi.fn((action) => channel.put(action));
-    const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({
-          agentAvailability: initialState,
-        }),
-      },
-      providerAvailabilitySaga,
+    const task = trackTask(
+      runSaga(
+        {
+          channel,
+          dispatch,
+          getState: () =>
+            withLegacyPrincipal({
+              agentAvailability: initialState,
+            }),
+        },
+        providerAvailabilitySaga,
+      ),
     );
     await settle();
     channel.put(checkAllProvidersRequested());
@@ -504,7 +596,14 @@ describe('providerAvailabilitySaga', () => {
         .map(([action]) => action)
         .filter((action) => action.type === 'agentAvailability/checkAllProvidersComplete'),
     ).toEqual([]);
-    expect(offById).not.toHaveBeenCalled();
+    expect(on.mock.calls).toEqual([
+      ['backend:notification', expect.any(Function)],
+      ['backend:status', expect.any(Function)],
+    ]);
+    expect(offById.mock.calls).toEqual([
+      ['backend:notification', 'provider-listener:backend:notification'],
+      ['backend:status', 'provider-listener:backend:status'],
+    ]);
   });
 
   it('runs one trailing bulk check after repeated triggers arrive in flight', async () => {
@@ -529,17 +628,20 @@ describe('providerAvailabilitySaga', () => {
       }
       return new Promise(() => {});
     });
-    const channel = stdChannel();
+    const channel = trackChannel(stdChannel());
     const dispatch = vi.fn((action) => channel.put(action));
-    const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({
-          agentAvailability: initialState,
-        }),
-      },
-      providerAvailabilitySaga,
+    const task = trackTask(
+      runSaga(
+        {
+          channel,
+          dispatch,
+          getState: () =>
+            withLegacyPrincipal({
+              agentAvailability: initialState,
+            }),
+        },
+        providerAvailabilitySaga,
+      ),
     );
 
     await settle();
@@ -574,16 +676,19 @@ describe('providerAvailabilitySaga', () => {
       offById: vi.fn(),
     };
     mocks.invoke.mockResolvedValue({ success: false });
-    const channel = stdChannel();
-    const task = runSaga(
-      {
-        channel,
-        dispatch: vi.fn(),
-        getState: () => ({
-          agentAvailability: { hasCheckedOnce: true, providerCheckEpochMap: {} },
-        }),
-      },
-      providerAvailabilitySaga,
+    const channel = trackChannel(stdChannel());
+    const task = trackTask(
+      runSaga(
+        {
+          channel,
+          dispatch: vi.fn(),
+          getState: () =>
+            withLegacyPrincipal({
+              agentAvailability: { hasCheckedOnce: true, providerCheckEpochMap: {} },
+            }),
+        },
+        providerAvailabilitySaga,
+      ),
     );
     await settle();
     channel.put(ensureProvidersChecked());
@@ -613,16 +718,22 @@ describe('Claude login terminal dismissal', () => {
       providerStatusMap: { 'claude-code': { available: true, authenticated: true } },
     };
     let terminals = terminalsReducer(undefined, { type: 'init' });
-    const channel = stdChannel();
+    const channel = trackChannel(stdChannel());
     const dispatch = vi.fn((action) => {
       availability = agentAvailabilityReducer(availability, action);
       terminals = terminalsReducer(terminals, action);
       channel.put(action);
       return action;
     });
-    const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: availability, terminals }) },
-      providerAvailabilitySaga,
+    const task = trackTask(
+      runSaga(
+        {
+          channel,
+          dispatch,
+          getState: () => withLegacyPrincipal({ agentAvailability: availability, terminals }),
+        },
+        providerAvailabilitySaga,
+      ),
     );
     dispatch(openTerminalOverlay('__root__', 'login-terminal'));
     dispatch(claudeLoginStarted('login-terminal'));
@@ -663,6 +774,7 @@ describe('Claude login terminal dismissal', () => {
     const login = startLogin();
     try {
       await vi.advanceTimersByTimeAsync(2000);
+      expect(mocks.invoke.mock.calls).toEqual([['providers:check-single', 'claude-code']]);
       expect(login.isOpen()).toBe(true);
       expect(login.dispatch).not.toHaveBeenCalledWith(closeTerminalOverlay('__root__'));
     } finally {

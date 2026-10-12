@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 
+import { selectModelBootContext } from '$store/renderer/slices/model/model-selectors';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
+import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -107,7 +110,8 @@ vi.mock('$features/agent/agent.client', () => ({
   },
 }));
 
-vi.mock('$features/agent/reasoning-effort', () => ({
+vi.mock('$features/agent/reasoning-effort', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/agent/reasoning-effort')>()),
   applyReasoningEffort: vi.fn(async () => true),
 }));
 
@@ -176,6 +180,7 @@ function startCatalogOwner() {
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+  admitLegacyPrincipal();
   const dispatch = appStore.dispatch.bind(appStore);
   vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
     mockReduxDispatch(action);
@@ -215,7 +220,8 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-slice', async (impor
   }),
 }));
 
-vi.mock('$store/renderer/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-selectors')>()),
   selectSelectedModel: () => selectedModel$,
   selectAvailableModels: () => availableModels$,
   selectAvailableModelsProviderId: () => writable('auggie'),
@@ -277,6 +283,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import {
   providerCatalogLoaded,
   workspaceCatalogReceived,
@@ -322,6 +329,17 @@ describe('ModelPicker trigger label regressions', () => {
     vi.restoreAllMocks();
     disposeStore();
     document.body.innerHTML = '';
+  });
+
+  it('keeps the real model boot-context selector gated by admission and subscription lifetime', () => {
+    appStore.dispatch(principalContextChanged(null));
+    expect(selectModelBootContext.select(appStore.state)).toBeNull();
+
+    admitLegacyPrincipal();
+    expect(selectModelBootContext.select(appStore.state)).not.toBeNull();
+
+    appStore.dispatch(daemonEventsSubscribed());
+    expect(selectModelBootContext.select(appStore.state)).toBeNull();
   });
 
   it('renders the selected model label instead of the first available model label', () => {

@@ -167,7 +167,7 @@ export function createBackendAgentClient(backend: AgentBackend) {
         return { ok: false, error: mutationErrorMessage(error) };
       }
     },
-    setReasoningEffort(params: {
+    async setReasoningEffort(params: {
       agentId: string;
       workspaceId: string;
       reasoningEffort: string | null;

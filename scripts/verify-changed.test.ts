@@ -226,6 +226,20 @@ describe('verify-changed arguments and paths', () => {
 });
 
 describe('verification planning', () => {
+  function projectRoot(files: Record<string, string>) {
+    const root = fixtureRoot({
+      'vitest.config.ts':
+        "export default { test: { name: 'source', exclude: ['apps/react/**'], projects: ['vitest.config.ts', 'apps/react/vitest.config.ts'] } };",
+      'apps/react/vitest.config.ts': '',
+      ...files,
+    });
+    writeFileSync(
+      join(root, 'apps/react/vitest.config.ts'),
+      `export default { test: { name: 'react', root: ${JSON.stringify(root)}, include: ['apps/react/src/**/*.test.ts'], exclude: [] } };`,
+    );
+    return root;
+  }
+
   describe('snapshot ownership', () => {
     const owner = 'src/lib/component-catalog/catalog-contract.test.ts';
     const snapshot = 'src/lib/component-catalog/__snapshots__/catalog-contract.test.ts.snap';
@@ -242,6 +256,82 @@ describe('verification planning', () => {
     function planFor(files: string[], root: string) {
       return createVerificationPlan(files, { root, ctTests: [], declaredSuites: [] });
     }
+
+    it('routes a snapshot owned by a root project that actual discovery includes', () => {
+      const root = projectRoot({
+        [owner]: "import { test } from 'vitest'; test('root owner', () => {});",
+        [snapshot]: '',
+      });
+      expect(vitestList(root, owner).some((name) => name.endsWith(`${owner} > root owner`))).toBe(
+        true,
+      );
+      const plan = planFor([snapshot], root);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.map((check) => check.id)).toEqual(['vitest-direct']);
+      expect(plan.checks[0].args).toContain(owner);
+    });
+
+    it.each([
+      [
+        'no root entry',
+        "export default { test: { projects: ['apps/react/vitest.config.ts'], exclude: [] } };",
+      ],
+      [
+        'dynamic projects',
+        "const projects = ['vitest.config.ts']; export default { test: { projects, exclude: [] } };",
+      ],
+      [
+        'spread entries',
+        "const children = []; export default { test: { projects: ['vitest.config.ts', ...children], exclude: [] } };",
+      ],
+      [
+        'inline project',
+        "export default { test: { projects: ['vitest.config.ts', { test: { name: 'child' } }], exclude: [] } };",
+      ],
+      [
+        'negative glob',
+        "export default { test: { projects: ['vitest.config.ts', '!vitest.config.ts'], exclude: [] } };",
+      ],
+      [
+        'positive glob',
+        "export default { test: { projects: ['vitest.config.ts', 'apps/*/vitest.config.ts'], exclude: [] } };",
+      ],
+      [
+        'custom root',
+        "export default { root: 'apps/react', test: { projects: ['vitest.config.ts'], exclude: [] } };",
+      ],
+      [
+        'filtered root',
+        "export default { test: { projects: ['vitest.config.ts'], include: ['apps/react/**/*.test.ts'], exclude: [] } };",
+      ],
+    ])('keeps snapshot fallback when %s cannot prove root coverage', (_, config) => {
+      const root = projectRoot({
+        'vitest.config.ts': config,
+        [owner]: "import { test } from 'vitest'; test('owner', () => {});",
+        [snapshot]: '',
+      });
+      const plan = planFor([snapshot], root);
+      expect(plan.fallbackReasons).toEqual([snapshot]);
+      expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+    });
+
+    it('keeps full coverage for a discovered child-only snapshot and a deleted child test', () => {
+      const child = 'apps/react/src/child.test.ts';
+      const childSnapshot = 'apps/react/src/__snapshots__/child.test.ts.snap';
+      const root = projectRoot({
+        [child]: "import { test } from 'vitest'; test('child owner', () => {});",
+        [childSnapshot]: '',
+      });
+      expect(vitestList(root, child).some((name) => name.endsWith(`${child} > child owner`))).toBe(
+        true,
+      );
+      const snapshotPlan = planFor([childSnapshot], root);
+      expect(snapshotPlan.fallbackReasons).toEqual([childSnapshot]);
+      expect(snapshotPlan.checks.map((check) => check.id)).toContain('vitest-full');
+      rmSync(join(root, child));
+      const deletionPlan = planFor([child], root);
+      expect(deletionPlan.checks.map((check) => check.id)).toContain('vitest-full');
+    });
 
     it('routes the existing catalog snapshot to its unit test without broad checks', () => {
       const plan = planFor([snapshot], process.cwd());
@@ -863,6 +953,38 @@ describe('verification planning', () => {
           declaredSuites: [],
         });
         expect(translationChecks(plan)).toEqual([]);
+      });
+
+      it('reuses inventory coverage only after a root project is positively included', () => {
+        const root = projectRoot({ [source]: '', [inventorySuite]: test });
+        expect(
+          vitestList(root, inventorySuite).some((name) =>
+            name.endsWith(`${inventorySuite} > kept`),
+          ),
+        ).toBe(true);
+        const plan = createVerificationPlan([source, inventorySuite], {
+          root,
+          ctTests: [],
+          declaredSuites: [],
+        });
+        expect(translationChecks(plan)).toEqual([]);
+      });
+
+      it.each([
+        "export default { test: { projects: ['apps/react/vitest.config.ts'], exclude: [] } };",
+        "const projects = ['vitest.config.ts']; export default { test: { projects, exclude: [] } };",
+      ])('retains inventory validation without proven root participation: %s', (config) => {
+        const root = projectRoot({
+          'vitest.config.ts': config,
+          [source]: '',
+          [inventorySuite]: test,
+        });
+        const plan = createVerificationPlan([source, inventorySuite], {
+          root,
+          ctTests: [],
+          declaredSuites: [],
+        });
+        expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
       });
 
       it.each([
@@ -1863,6 +1985,63 @@ describe('verification planning', () => {
     expect(testRunner('src/lib/example.ts')).toBeNull();
   });
 
+  describe('manual view-parity runner ownership', () => {
+    const browserSpecs = [
+      'packages/view-parity/tests/parity.spec.mjs',
+      'packages/view-parity/tests/core.spec.mjs',
+      'packages/view-parity/tests/extended.spec.mjs',
+      'packages/view-parity/tests/chat.core.spec.mjs',
+      'packages/view-parity/tests/chat.extended.spec.mjs',
+      'packages/view-parity/tests/nested/chat.core.spec.mjs',
+    ];
+    const unitSpecs = [
+      'packages/view-parity/tests/core.test.mjs',
+      'packages/view-parity/tests/unrelated.spec.mjs',
+      'packages/view-parity/lib/core.spec.mjs',
+      'packages/other/tests/chat.core.spec.mjs',
+    ];
+
+    it('keeps manual browser suites out of automatic commands without dropping nearby units', () => {
+      const paths = [...browserSpecs, ...unitSpecs];
+      const root = fixtureRoot(Object.fromEntries(paths.map((file) => [file, ''])));
+      const plan = createVerificationPlan(paths, { root, ctTests: [], declaredSuites: [] });
+      for (const file of browserSpecs) expect(testRunner(file)).toBe('manual');
+      for (const file of unitSpecs) expect(testRunner(file)).toBe('vitest');
+      expect(plan.checks.find((check) => check.id === 'vitest-direct')?.args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'vitest.config.ts',
+        ...unitSpecs,
+      ]);
+      expect(plan.checks.map((check) => check.id)).not.toContain('playwright-direct');
+      expect(plan.checks.map((check) => check.id)).not.toContain('vitest-full');
+    });
+
+    it('uses the root unit exclusions to avoid importing browser suites while discovering nearby units', () => {
+      const exclude = vitestExcludePatterns(process.cwd());
+      const root = fixtureRoot({
+        'vitest.config.ts': `export default { test: { exclude: ${JSON.stringify(exclude)} } };`,
+        ...Object.fromEntries(
+          browserSpecs.map((file) => [
+            file,
+            "throw new Error('Browser suite imported by Vitest');",
+          ]),
+        ),
+        ...Object.fromEntries(
+          unitSpecs.map((file) => [
+            file,
+            "import { it } from 'vitest'; it('unit ownership', () => {});",
+          ]),
+        ),
+      });
+      expect(vitestList(root, 'packages').sort()).toEqual(
+        unitSpecs.map((file) => `${file} > unit ownership`).sort(),
+      );
+    });
+  });
+
   it('routes an added browser spec to Playwright instead of Vitest', () => {
     const root = fixtureRoot({ 'test/splash-loader.spec.ts': '' });
     const plan = createVerificationPlan(['test/splash-loader.spec.ts'], { root, ctTests: [] });
@@ -1951,6 +2130,56 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).not.toContain('vitest-direct');
     for (const check of plan.checks) expect(check.args).not.toContain('src/lib/debug/__tests__');
   });
+
+  it('routes React source and direct tests through required root project discovery', () => {
+    const source = 'apps/react/src/store/settings/sagas/settings-saga.ts';
+    const suite = 'apps/react/src/store/settings/sagas/settings-receipts.test.ts';
+    const root = fixtureRoot({ [source]: 'export {};', [suite]: 'export {};' });
+    const plan = createVerificationPlan([source, suite], { root, ctTests: [] });
+    expect(plan.checks.find((entry) => entry.id === 'vitest-related')?.args).toEqual([
+      'exec',
+      'vitest',
+      'related',
+      '--run',
+      '--config',
+      'vitest.config.ts',
+      source,
+    ]);
+    expect(plan.checks.find((entry) => entry.id === 'vitest-direct')?.args).toContain(suite);
+  });
+
+  it('selects all unit projects when the per-app runner config changes', () => {
+    const config = 'apps/react/vitest.config.ts';
+    const root = fixtureRoot({ [config]: 'export default {};' });
+    const plan = createVerificationPlan([config], { root, ctTests: [] });
+    expect(plan.checks.find((entry) => entry.id === 'vitest-full')?.args).toEqual([
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'vitest.config.ts',
+      '--maxWorkers=1',
+    ]);
+  });
+
+  it.each(['deleted test', 'snapshot'])(
+    'keeps child-project %s coverage when root excludes that app',
+    (change) => {
+      const suite = 'apps/react/src/store/kept.test.ts';
+      const snapshot = 'apps/react/src/store/__snapshots__/kept.test.ts.snap';
+      const root = fixtureRoot({
+        'vitest.config.ts':
+          "export default { test: { exclude: ['apps/react/**'], projects: ['vitest.config.ts', 'apps/react/vitest.config.ts'] } };",
+        'apps/react/vitest.config.ts':
+          "export default { test: { include: ['apps/react/src/**/*.test.ts'] } };",
+        [suite]: 'export {};',
+        [snapshot]: '',
+      });
+      const changed = change === 'snapshot' ? snapshot : 'apps/react/src/store/removed.test.ts';
+      const plan = createVerificationPlan([changed], { root, ctTests: [] });
+      expect(plan.checks.map((entry) => entry.id)).toContain('vitest-full');
+    },
+  );
 
   it('reads the Vitest exclude list from the repository config', () => {
     const patterns = vitestExcludePatterns(process.cwd());

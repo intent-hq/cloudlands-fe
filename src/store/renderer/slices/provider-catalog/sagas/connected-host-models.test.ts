@@ -125,6 +125,10 @@ it('does not reuse owner settings or wait for the previous host after a window s
   });
   stop.push(store.runSaga(hostExecutionSaga));
   const old = readSetting('model.defaultProvider');
+  const oldSettlement = old.then(
+    (value): PromiseFulfilledResult<Awaited<typeof old>> => ({ status: 'fulfilled', value }),
+    (reason: unknown): PromiseRejectedResult => ({ status: 'rejected', reason }),
+  );
   store.dispatch(
     connectionsListReceived({ connections: [], activeId: 'host-b', windowBackendId: 'host-b' }),
   );
@@ -135,8 +139,12 @@ it('does not reuse owner settings or wait for the previous host after a window s
     expect(await fresh).toMatchObject({ value: 'codex' });
   } finally {
     finishOld(setting('auggie'));
-    await old;
+    await oldSettlement;
   }
+  expect(await oldSettlement).toEqual({
+    status: 'rejected',
+    reason: new Error('Settings connection retired'),
+  });
   expect(await readSetting('model.defaultProvider')).toMatchObject({ value: 'codex' });
 });
 afterEach(() => {

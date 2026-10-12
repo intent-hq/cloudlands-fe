@@ -3,9 +3,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { runSaga } from 'redux-saga';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -24,6 +26,7 @@ import { applySettingsChanges } from '$features/settings/settings-hydration-serv
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { checkSingleProviderSuccess } from '../../agent-availability/agent-availability-slice';
 import { providerModelsLoaded } from '../../provider-models/provider-models-slice';
+import { selectProviderModelsClearEpoch } from '../../provider-models/provider-models-selectors';
 import { selectModel } from '../model-slice';
 import { selectSelectedModel } from '../model-selectors';
 import { modelSelectionSaga } from './model-selection-saga';
@@ -46,17 +49,26 @@ beforeEach(() => {
   vi.mocked(window.matchMedia).mockImplementation(matchMediaImplementation);
 });
 let dispose: (() => void) | undefined;
-const tasks: Task[] = [];
 const cancelSagas: (() => void)[] = [];
-afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
+afterEach(() => {
+  const errors: unknown[] = [];
+  const attemptCleanup = (callback: () => void) => {
+    try {
+      callback();
+    } catch (error) {
+      errors.push(error);
+    }
+  };
+  try {
+    for (const cancel of cancelSagas.splice(0)) attemptCleanup(cancel);
+  } finally {
+    attemptCleanup(cleanup);
+    if (dispose) attemptCleanup(dispose);
+    dispose = undefined;
+    attemptCleanup(() => vi.resetAllMocks());
   }
-  for (const cancel of cancelSagas.splice(0)) cancel();
-  cleanup();
-  dispose?.();
-  vi.resetAllMocks();
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, 'Default model fixture cleanup failed');
 });
 
 const providerCatalogs = {
@@ -96,6 +108,9 @@ for (const legacyEmptyKey of [true, false]) {
     it('keeps the selected model after a delayed cross-provider catalog reload and settings hydration', async () => {
       dispose = store.init();
       admitLegacyPrincipal();
+      const connection = selectPrincipalConnectionContext.select(store.state);
+      if (!connection) throw new Error('Default model test requires an admitted connection');
+      store.dispatch(hostExecutionConnectionChanged(connection));
       store.dispatch(
         providerCatalogLoaded({
           providers: ['auggie', 'codex', 'grok', 'opencode', 'pi'].map((id) => ({
@@ -122,7 +137,6 @@ for (const legacyEmptyKey of [true, false]) {
       const snapshot = () => Object.entries(persisted).map(([path, value]) => ({ path, value }));
       const initialSnapshot = structuredClone(snapshot());
       applySettingsChanges(initialSnapshot);
-      const channel = stdChannel();
       const trace: unknown[] = [];
       const pair = () => ({
         provider: store.state.model.defaultProviderId,
@@ -131,7 +145,6 @@ for (const legacyEmptyKey of [true, false]) {
       const dispatch = (action: { type: string; payload?: unknown }) => {
         store.dispatch(action);
         trace.push({ action, pair: pair() });
-        channel.put(action);
         return action;
       };
       let releaseCatalog!: () => void;
@@ -164,28 +177,9 @@ for (const legacyEmptyKey of [true, false]) {
       cancelSagas.push(store.runSaga(settingsHydrationSaga));
       cancelSagas.push(store.runSaga(modelBootSaga));
       await Promise.resolve();
-      tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelSelectionSaga));
-      tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, providerSettingsSaga));
-      tasks.push(
-        runSaga(
-          {
-            channel,
-            dispatch,
-            getState: () => store.state,
-            context: {
-              reduxStore: {
-                getState: () => store.state,
-                subscribe: (listener: () => void) => {
-                  const stream = store.getStoreStateStream();
-                  stream.onValue(listener);
-                  return () => stream.offValue(listener);
-                },
-              },
-            },
-          },
-          modelReloadSaga,
-        ),
-      );
+      cancelSagas.push(store.runSaga(modelSelectionSaga));
+      cancelSagas.push(store.runSaga(providerSettingsSaga));
+      cancelSagas.push(store.runSaga(modelReloadSaga));
       // The action emitted by the Settings ModelPicker's updateGlobalDefault path.
       dispatch(selectModel('grok4.5', 'grok'));
       await vi.waitFor(() => expect(releaseCatalog).toBeTypeOf('function'));
@@ -272,6 +266,9 @@ for (const legacyEmptyKey of [true, false]) {
 it('keeps a Grok choice made through the real Settings dropdown after the reload returns', async () => {
   dispose = store.init();
   admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  if (!connection) throw new Error('Default model test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
   store.dispatch(
     providerCatalogLoaded({
       providers: ['auggie', 'codex', 'grok'].map((id) => ({
@@ -299,9 +296,10 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
     codex: [{ value: 'gpt-6-astra', label: 'Codex Astra' }],
     grok: [{ value: 'grok4.5', label: 'Grok 4.5' }],
   };
+  const catalogEpoch = selectProviderModelsClearEpoch.select(store.state);
   for (const [id, models] of Object.entries(catalogs)) {
     store.dispatch(checkSingleProviderSuccess(id, { available: true, authenticated: true }));
-    store.dispatch(providerModelsLoaded(id, { models }, 0));
+    store.dispatch(providerModelsLoaded(id, { models }, catalogEpoch));
   }
   const originalInvoke = window.electronAPI!.invoke;
   window.electronAPI!.invoke = vi.fn(async (channel: string) => ({

@@ -1,21 +1,32 @@
-import type { StoreState } from '$store/renderer/types';
-import { initialState as connections } from '$store/renderer/slices/connections/connections-slice';
-import { initialState as daemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import { initialState as workspaceEvents } from '$store/renderer/slices/workspace-events/workspace-events-slice';
-import { getPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-context';
+import { initialState as connections } from '../../store/renderer/slices/connections/connections-slice';
+import { initialState as daemonHealth } from '../../store/renderer/slices/daemon-health/daemon-health-slice';
+import { initialState as workspaceEvents } from '../../store/renderer/slices/workspace-events/workspace-events-slice';
+import { getPrincipalConnectionContext } from '../../store/renderer/slices/principal/principal-context';
 import {
   initialState,
   principalContextChanged,
   principalReceived,
   principalReducer,
-} from '$store/renderer/slices/principal/principal-slice';
+} from '../../store/renderer/slices/principal/principal-slice';
+
+// Match the readonly domain keys of the canonical source reducer map without
+// importing a framework-bound Store type into this shared fixture.
+type LegacyPrincipalState = {
+  readonly connections: typeof connections;
+  readonly daemonHealth: typeof daemonHealth;
+  readonly workspaceEvents: typeof workspaceEvents;
+  readonly principal: typeof initialState;
+};
 
 type LegacyPrincipalBase = {
-  connections?: Omit<Partial<StoreState['connections']>, 'hasReceivedList'> & {
+  connections?: Omit<Partial<LegacyPrincipalState['connections']>, 'hasReceivedList'> & {
     hasReceivedList?: never;
   };
-  daemonHealth?: Omit<Partial<StoreState['daemonHealth']>, 'health'> & { health?: never };
-  workspaceEvents?: Omit<Partial<StoreState['workspaceEvents']>, 'subscriptionPending'> & {
+  daemonHealth?: Omit<Partial<LegacyPrincipalState['daemonHealth']>, 'health'> & { health?: never };
+  workspaceEvents?: Omit<
+    Partial<LegacyPrincipalState['workspaceEvents']>,
+    'subscriptionPending'
+  > & {
     subscriptionPending?: never;
   };
   principal?: never;
@@ -26,7 +37,7 @@ type LegacyPrincipalBase = {
 export function createAdmittedLegacyPrincipal(
   base: LegacyPrincipalBase = {},
   role: 'owner' | 'guest' = 'owner',
-): Pick<StoreState, 'connections' | 'daemonHealth' | 'workspaceEvents' | 'principal'> {
+): LegacyPrincipalState {
   const bound = {
     connections: { ...connections, ...base.connections, hasReceivedList: true },
     daemonHealth: { ...daemonHealth, ...base.daemonHealth, health: 'healthy' as const },

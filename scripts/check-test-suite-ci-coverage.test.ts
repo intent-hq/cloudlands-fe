@@ -405,6 +405,112 @@ const launcherFile = (words: string[]): string | undefined => {
   return file && LAUNCHER.test(file) && file !== PNPM_RUN_WRAPPER ? normalizePath(file) : undefined;
 };
 
+/** Literal project paths from the exported config only; never evaluate config code. */
+function vitestProjectConfigs(configFile: string, read: Reader): string[] {
+  const text = read(configFile);
+  if (text === undefined) return [];
+  const source = ts.createSourceFile(
+    configFile,
+    text,
+    ts.ScriptTarget.Latest,
+    false,
+  ) as ts.SourceFile & {
+    readonly parseDiagnostics: readonly ts.Diagnostic[];
+  };
+  if (source.parseDiagnostics.length) return [];
+  const bindings = new Set<string>();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    if (
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== 'vitest/config'
+    )
+      continue;
+    const names = statement.importClause?.namedBindings;
+    if (names && ts.isNamedImports(names)) {
+      for (const name of names.elements) {
+        if ((name.propertyName ?? name.name).text === 'defineConfig') bindings.add(name.name.text);
+      }
+    }
+  }
+  const exported = source.statements.filter(ts.isExportAssignment);
+  if (exported.length !== 1 || exported[0].isExportEquals) return [];
+  let config = exported[0].expression;
+  if (ts.isCallExpression(config)) {
+    if (
+      !ts.isIdentifier(config.expression) ||
+      !bindings.has(config.expression.text) ||
+      config.arguments.length !== 1
+    )
+      return [];
+    config = config.arguments[0];
+    if (ts.isArrowFunction(config)) {
+      if (config.parameters.length !== 0) return [];
+      if (ts.isBlock(config.body)) {
+        const statements = config.body.statements;
+        const last = statements.at(-1);
+        if (
+          !last ||
+          !ts.isReturnStatement(last) ||
+          !last.expression ||
+          !statements.slice(0, -1).every(ts.isVariableStatement)
+        )
+          return [];
+        config = last.expression;
+      } else config = config.body;
+    }
+  }
+  const property = (node: ts.Node | undefined, key: string): ts.Expression | undefined => {
+    if (!node || !ts.isObjectLiteralExpression(node)) return undefined;
+    if (
+      node.properties.some(
+        (entry) => ts.isSpreadAssignment(entry) || ts.isComputedPropertyName(entry.name),
+      )
+    )
+      return undefined;
+    const matches = node.properties.filter(
+      (entry) =>
+        entry.name &&
+        (ts.isIdentifier(entry.name) || ts.isStringLiteral(entry.name)) &&
+        entry.name.text === key,
+    );
+    return matches.length === 1 && ts.isPropertyAssignment(matches[0])
+      ? matches[0].initializer
+      : undefined;
+  };
+  // A custom root changes the base for project paths. Unsupported expressions
+  // remain uncovered, so this audit cannot grant coverage by guessing a root.
+  const hasRoot = (node: ts.Node | undefined) =>
+    node &&
+    ts.isObjectLiteralExpression(node) &&
+    node.properties.some(
+      (entry) =>
+        entry.name &&
+        (ts.isIdentifier(entry.name) || ts.isStringLiteral(entry.name)) &&
+        entry.name.text === 'root',
+    );
+  const test = property(config, 'test');
+  if (hasRoot(config) || hasRoot(test)) return [];
+  const projects = property(test, 'projects');
+  if (!projects || !ts.isArrayLiteralExpression(projects)) return [];
+  const paths: string[] = [];
+  for (const entry of projects.elements) {
+    // A negative glob or dynamic entry can remove or replace a preceding child.
+    // Reject the entire proof, not only the element we cannot interpret.
+    if (
+      !ts.isStringLiteral(entry) ||
+      !entry.text ||
+      /[!*?{}()[\]\\]/.test(entry.text) ||
+      posix.isAbsolute(entry.text)
+    )
+      return [];
+    const project = posix.normalize(posix.join(posix.dirname(configFile), entry.text));
+    if (project.startsWith('../') || project === '..') return [];
+    paths.push(project);
+  }
+  return paths;
+}
+
 /**
  * The suites one command line reaches: the config it names, the runner's
  * default config, or (one hop) the configs a launched `scripts/<file>` names.
@@ -428,6 +534,14 @@ function suitesReferencedBy(
     if (source === undefined) continue;
     const code = withoutComments(source);
     for (const suite of suites) if (mentionsSuite(code, suite)) reached.add(suite);
+  }
+  // Required root runs include literal Vitest project configs transitively.
+  // Set iteration visits newly added entries and terminates self/cyclic projects.
+  for (const config of reached) {
+    if (!/(?:^|\/)vitest[^/]*\.config\.[^/]+$/.test(config)) continue;
+    for (const project of vitestProjectConfigs(config, readLauncher)) {
+      if (suiteSet.has(project)) reached.add(project);
+    }
   }
   return reached;
 }
@@ -827,6 +941,47 @@ describe('test-suite CI coverage detector', () => {
       'PACKAGED_APP_PATH=dist-electron/linux-unpacked/intent pnpm run test:build-smoke',
     );
     expect([...coveredSuites(input(workflow))]).toEqual(['e2e/build-smoke.config.ts']);
+  });
+
+  it('reaches a per-app project from the required root unit command without an extra CI lane', () => {
+    const app = 'apps/react/vitest.config.ts';
+    const configs: Record<string, string> = {
+      'scripts/run-unit-tests.mjs': "const args = ['run', '--config', 'vitest.config.ts'];",
+      'vitest.config.ts': `import { defineConfig } from 'vitest/config';
+export default defineConfig(async () => { const setup = 'shared'; return {
+  test: { projects: ['vitest.config.ts', '${app}'] }
+}; });`,
+      [app]: "export default { test: { include: ['apps/react/src/**/*.test.ts'] } };",
+    };
+    const reached = coveredSuites({
+      suites: ['vitest.config.ts', app],
+      scripts: { 'test:unit': 'node scripts/run-unit-tests.mjs' },
+      workflows: [steps('pnpm run test:unit --shard=1/2')],
+      readLauncher: (file) => configs[file],
+    });
+    expect([...reached]).toEqual(['vitest.config.ts', app]);
+  });
+
+  it.each([
+    "export default { test: {} }; // projects: ['apps/react/vitest.config.ts']",
+    "const docs = { test: { projects: ['apps/react/vitest.config.ts'] } }; export default { test: {} };",
+    "export default { root: 'elsewhere', test: { projects: ['apps/react/vitest.config.ts'] } };",
+    'export default { test: { projects: projectPaths } };',
+    "export default { test: { root: 'elsewhere', projects: ['apps/react/vitest.config.ts'] } };",
+    "export default { test: { projects: ['apps/react/vitest.config.ts', ...otherProjects] } };",
+    "export default { test: { projects: ['apps/react/vitest.config.ts', '!apps/react/vitest.config.ts'] } };",
+    "export default { test: { projects: ['apps/react/vitest.config.ts', 'apps/*/vitest.config.ts'] } };",
+    "export default { test: { projects: ['apps/react/vitest.config.ts', { extends: true, test: { name: 'dynamic' } }] } };",
+    "export default { test: { projects: ['apps/react/vitest.config.ts', buildProject()] } };",
+    "export default { test: { projects: ['apps/react/vitest.config.ts', '../outside/vitest.config.ts'] } };",
+    "export default { test: { projects: ['apps/react/vitest.config.ts', '/outside/vitest.config.ts'] } };",
+    "export default { test: { ...overrides, projects: ['apps/react/vitest.config.ts'] } };",
+  ])('does not infer child CI coverage from unowned or unresolved config: %s', (source) => {
+    const app = 'apps/react/vitest.config.ts';
+    const reached = suitesReferencedBy('pnpm exec vitest run', ['vitest.config.ts', app], (file) =>
+      file === 'vitest.config.ts' ? source : undefined,
+    );
+    expect([...reached]).toEqual(['vitest.config.ts']);
   });
 
   it('does not let a launcher mention of a similar basename stand in for the root config', () => {

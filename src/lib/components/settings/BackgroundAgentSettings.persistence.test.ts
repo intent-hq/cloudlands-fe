@@ -20,6 +20,8 @@ vi.mock('svelte-fa', async () => ({
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { AppSettingChange } from '$lib/client/app-client';
 import { store } from '$store/renderer/store';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
@@ -31,6 +33,7 @@ import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/s
 import { backgroundAgentSettingsSaga } from '$store/renderer/slices/background-agent-settings/sagas/background-agent-settings-saga';
 import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.fixture';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import BackgroundAgentSettings from './BackgroundAgentSettings.svelte';
 
 const emptyOverrides = { commit: '', pr: '', review: '', fast: '' };
@@ -43,6 +46,10 @@ let revision: number;
 
 beforeEach(() => {
   dispose = store.init();
+  admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  if (connection === null) throw new Error('Settings test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
   persisted = {
     'model.defaultProvider': 'codex',
     'providers.enabled': { codex: true, 'claude-code': true },
@@ -111,7 +118,7 @@ beforeEach(() => {
             },
           ],
         },
-        0,
+        store.state.providerModels.clearEpoch,
       ),
     );
   }
@@ -204,6 +211,10 @@ it.each([0, 1, 2, 3].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ ro
     for (const stop of stops.splice(0)) stop();
     dispose();
     dispose = store.init();
+    admitLegacyPrincipal();
+    const connection = selectPrincipalConnectionContext.select(store.state);
+    if (connection === null) throw new Error('Settings test requires an admitted connection');
+    store.dispatch(hostExecutionConnectionChanged(connection));
     stops.push(store.runSaga(backgroundAgentSettingsSaga));
     applySettingsChanges(Object.entries(saved).map(([path, value]) => ({ path, value })));
     expect(store.state.backgroundAgentSettings).toMatchObject({

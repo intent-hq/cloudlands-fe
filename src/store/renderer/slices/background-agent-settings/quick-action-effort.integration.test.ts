@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const { update, listSnapshot } = vi.hoisted(() => ({ update: vi.fn(), listSnapshot: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { settings: { update, listSnapshot } } }));
 import { store } from '../../store';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '../principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { providerSettingsSaga } from '../provider-settings/sagas/provider-settings-saga';
 import { modelSelectionSaga } from '../model/sagas/model-selection-saga';
@@ -41,6 +44,10 @@ const saved = {
 };
 function setup() {
   dispose = store.init();
+  admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  expect(connection).not.toBeNull();
+  store.dispatch(hostExecutionConnectionChanged(connection));
   const persisted: Record<string, unknown> = structuredClone(saved);
   let revision = 0;
   const receipts: { changes: AppSettingChange[]; revision: number }[] = [];
@@ -136,6 +143,10 @@ for (const atomic of [false, true]) {
     for (const stop of stopSagas.splice(0)) stop();
     dispose?.();
     dispose = store.init();
+    admitLegacyPrincipal();
+    const connection = selectPrincipalConnectionContext.select(store.state);
+    expect(connection).not.toBeNull();
+    store.dispatch(hostExecutionConnectionChanged(connection));
     stopSagas.push(store.runSaga(backgroundAgentSettingsSaga));
     applySettingsChanges(Object.entries(reloaded).map(([path, value]) => ({ path, value })));
     expect(store.state.backgroundAgentSettings.defaultModel).toBe('balanced');

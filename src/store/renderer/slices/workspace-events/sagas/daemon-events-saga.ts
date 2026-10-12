@@ -21,11 +21,19 @@ export {
   FILE_EVENTS_REPLACE_GROUP,
   FILE_EVENTS_SUBSCRIBE_TYPES,
 } from './daemon-events-saga-factory';
+// Resolve source transport exports when called; remove this binding at renderer cutover.
 export const daemonEventsSaga = createDaemonEventsSaga({
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-  onBackendReconnected,
+  backendSubscribe: <T>(...args: Parameters<typeof backendSubscribe>): Promise<T> =>
+    backendSubscribe<T>(...args),
+  backendUnsubscribe: (
+    ...args: Parameters<typeof backendUnsubscribe>
+  ): ReturnType<typeof backendUnsubscribe> => backendUnsubscribe(...args),
+  onBackendNotification: (
+    ...args: Parameters<typeof onBackendNotification>
+  ): ReturnType<typeof onBackendNotification> => onBackendNotification(...args),
+  onBackendReconnected: (
+    ...args: Parameters<typeof onBackendReconnected>
+  ): ReturnType<typeof onBackendReconnected> => onBackendReconnected(...args),
   eventTypes: DAEMON_EVENTS_SUBSCRIBE_TYPES,
   subscriptionAttemptEffect: selectDaemonEventsSubscriptionAttempt.effect,
   routeNotification: routeDaemonEventsNotification,

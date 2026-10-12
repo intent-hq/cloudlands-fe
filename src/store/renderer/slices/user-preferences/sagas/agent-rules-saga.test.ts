@@ -1,9 +1,55 @@
 import { store } from '$store/renderer/store';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BackendNotification } from '$lib/client/live/backend-transport-types';
+import { readSetting } from '$lib/client/live/live-settings-client';
 
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+type SettingsRuntime = ReturnType<
+  typeof import('$lib/client/live/backend-settings-client').createSettingsClientRuntime
+>;
+
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  notifications: new Set<(notification: BackendNotification) => void>(),
+  reconnects: new Set<() => void>(),
+  lifecycle: [] as string[],
+  runtime: undefined as SettingsRuntime | undefined,
+}));
+
+// Capture the actual facade-owned runtime solely to own its test lifetime.
+// The real factory, returned object, client and request algorithms stay intact.
+vi.mock('$lib/client/live/backend-settings-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/client/live/backend-settings-client')>();
+  return {
+    ...actual,
+    createSettingsClientRuntime: (
+      ...args: Parameters<typeof actual.createSettingsClientRuntime>
+    ) => {
+      const runtime = actual.createSettingsClientRuntime(...args);
+      mocks.runtime = runtime;
+      return runtime;
+    },
+  };
+});
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.request,
+  onBackendNotification: (handler: (notification: BackendNotification) => void) => {
+    mocks.lifecycle.push('notification');
+    mocks.notifications.add(handler);
+    return () => {
+      mocks.notifications.delete(handler);
+      mocks.lifecycle.push('notification-disposed');
+    };
+  },
+  onBackendReconnected: (handler: () => void) => {
+    mocks.lifecycle.push('reconnected');
+    mocks.reconnects.add(handler);
+    return () => {
+      mocks.reconnects.delete(handler);
+      mocks.lifecycle.push('reconnected-disposed');
+    };
+  },
+}));
 vi.mock('$lib/client', async () => {
   const { LiveSettingsClient } = await import('$lib/client/live/live-settings-client');
   return { appClient: { settings: new LiveSettingsClient() } };
@@ -47,6 +93,10 @@ function start() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  expect(mocks.notifications.size).toBe(0);
+  expect(mocks.reconnects.size).toBe(0);
+  mocks.lifecycle.length = 0;
+  mocks.runtime!.start();
   mocks.request
     .mockReset()
     .mockImplementation(async (method: string) =>
@@ -54,11 +104,22 @@ beforeEach(() => {
     );
 });
 afterEach(async () => {
-  stops
-    .reverse()
-    .splice(0)
-    .forEach((stop) => stop());
-  vi.useRealTimers();
+  try {
+    stops
+      .reverse()
+      .splice(0)
+      .forEach((stop) => stop());
+    // Store.runSaga exposes a synchronous stop callback, not a joinable Task.
+    await settle();
+  } finally {
+    try {
+      mocks.runtime!.dispose();
+      expect(mocks.notifications.size).toBe(0);
+      expect(mocks.reconnects.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
 });
 
 describe('agent rules persistence through the live wire adapter', () => {
@@ -245,5 +306,120 @@ describe('agent rules persistence through the live wire adapter', () => {
     expect(editor()).toBe(stopped);
     expect(editor()).toMatchObject({ active: false, saveStatus: 'idle' });
     expect(mocks.request).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('agent rules settings-runtime lifetime', () => {
+  it('installs observable listeners before the request and rejects a response from a retired connection', async () => {
+    const read = deferred<unknown>();
+    const atRequest: Array<{ lifecycle: string[]; notifications: number; reconnects: number }> = [];
+    mocks.request.mockImplementationOnce(() => {
+      atRequest.push({
+        lifecycle: [...mocks.lifecycle],
+        notifications: mocks.notifications.size,
+        reconnects: mocks.reconnects.size,
+      });
+      return read.promise;
+    });
+    const { send, editor } = start();
+    send(agentRulesEditorOpened());
+    await settle();
+    expect(atRequest).toEqual([
+      { lifecycle: ['notification', 'reconnected'], notifications: 1, reconnects: 1 },
+    ]);
+    expect(mocks.request).toHaveBeenCalledWith('rules.get', {
+      workspaceId: 'global',
+      ruleType: 'base-system-prompt',
+    });
+    for (const listener of [...mocks.reconnects]) listener();
+    read.resolve({ ...rule, content: 'retired connection instructions' });
+    await settle();
+    expect(editor().content).not.toBe('retired connection instructions');
+    expect(editor()).toMatchObject({ loading: false, saveStatus: 'idle' });
+    expect(editor().errorMessage).not.toBeNull();
+
+    send(agentRulesEditorClosed());
+    send(agentRulesEditorOpened());
+    await settle();
+    expect(editor()).toMatchObject({ content: rule.content, loading: false, errorMessage: null });
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('delivers settings notifications to the real read cache without replacing the settings client', async () => {
+    const definition = {
+      path: 'model.defaultProvider',
+      label: 'Default provider',
+      description: '',
+      category: 'model',
+      type: 'string',
+    };
+    mocks.request.mockResolvedValueOnce({
+      path: definition.path,
+      definition,
+      value: 'auggie',
+      origin: 'file',
+      revision: 1,
+    });
+    expect((await readSetting('model.defaultProvider'))?.value).toBe('auggie');
+    expect((await readSetting('model.defaultProvider'))?.value).toBe('auggie');
+    expect(mocks.request.mock.calls).toEqual([['settings.get', { path: 'model.defaultProvider' }]]);
+
+    mocks.request.mockResolvedValueOnce({
+      path: definition.path,
+      definition,
+      value: 'codex',
+      origin: 'file',
+      revision: 2,
+    });
+    for (const listener of [...mocks.notifications]) {
+      listener({
+        method: 'events.event',
+        params: {
+          subscriptionId: 'rules-settings-fixture',
+          event: {
+            id: 'settings-fixture-2',
+            type: 'settings:changed',
+            timestamp: '2026-10-12T00:00:00.000Z',
+            actor: { type: 'system' },
+            data: {
+              changes: [{ path: definition.path, value: 'codex', origin: 'file' }],
+              revision: 2,
+            },
+          },
+        },
+      });
+    }
+    expect((await readSetting('model.defaultProvider'))?.value).toBe('codex');
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('disposes the real listeners, rejects a pending load and can start a fresh test lifetime', async () => {
+    const read = deferred<unknown>();
+    mocks.request.mockImplementationOnce(() => read.promise);
+    const { send, editor } = start();
+    send(agentRulesEditorOpened());
+    await settle();
+    mocks.runtime!.dispose();
+    expect(mocks.notifications.size).toBe(0);
+    expect(mocks.reconnects.size).toBe(0);
+    expect(mocks.lifecycle).toEqual([
+      'notification',
+      'reconnected',
+      'notification-disposed',
+      'reconnected-disposed',
+    ]);
+    read.resolve({ ...rule, content: 'disposed lifetime instructions' });
+    await settle();
+    expect(editor().content).not.toBe('disposed lifetime instructions');
+    expect(editor().errorMessage).not.toBeNull();
+
+    mocks.runtime!.start();
+    expect(mocks.notifications.size).toBe(1);
+    expect(mocks.reconnects.size).toBe(1);
+    send(agentRulesEditorClosed());
+    send(agentRulesEditorOpened());
+    await settle();
+    expect(editor()).toMatchObject({ content: rule.content, loading: false, errorMessage: null });
+    expect(mocks.request).toHaveBeenCalledTimes(2);
   });
 });

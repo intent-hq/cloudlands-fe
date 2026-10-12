@@ -77,7 +77,9 @@ describe('MermaidRenderer theme updates', () => {
   it('rerenders with current tokens when a custom theme changes root styles', async () => {
     const result = render(MermaidRenderer, { code: 'sequenceDiagram\nA->>B: Ready' });
     await waitFor(() => expect(mermaidMocks.initialize).toHaveBeenCalledOnce());
-    expect(result.container.querySelector('svg[aria-roledescription="sequence"]')).toBeTruthy();
+    await waitFor(() =>
+      expect(result.container.querySelector('svg[aria-roledescription="sequence"]')).toBeTruthy(),
+    );
 
     document.documentElement.style.setProperty('--diagram-node-surface', '260 20% 18%');
 
@@ -245,7 +247,9 @@ describe('MermaidRenderer theme updates', () => {
     });
     await waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledTimes(2));
     expect(view.container.querySelector('[data-obsolete]')).toBeNull();
-    expect(view.container.querySelector('svg[aria-roledescription="sequence"]')).toBeTruthy();
+    await waitFor(() =>
+      expect(view.container.querySelector('svg[aria-roledescription="sequence"]')).toBeTruthy(),
+    );
     expect(mermaidMocks.mermaidAPI.getDiagramFromText).toHaveBeenCalledOnce();
   });
 

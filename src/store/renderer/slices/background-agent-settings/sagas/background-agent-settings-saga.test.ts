@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel } from 'redux-saga';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 
 const mocks = vi.hoisted(() => ({ update: vi.fn(), list: vi.fn() }));
 vi.mock('$lib/client', () => ({
@@ -13,8 +16,6 @@ import {
   setDefaultReasoningEffort,
   setTypeOverride,
   backgroundSettingsHydrationRequested,
-  backgroundAgentSettingsReducer,
-  initialState,
   BG_MODEL_MIGRATION_MARKER_KEY,
 } from '../background-agent-settings-slice';
 import { backgroundAgentSettingsSaga } from './background-agent-settings-saga';
@@ -29,32 +30,49 @@ function commit(changes: AppSettingChange[]) {
   return structuredClone(changes);
 }
 
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup();
+});
+
 function harness() {
-  let state = {
-    backgroundAgentSettings: backgroundAgentSettingsReducer(
-      initialState,
-      hydrateSettings({
-        providerId: 'codex',
-        defaultModel: 'sonnet4.5',
-        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
-        defaultReasoningEffort: '',
-        typeReasoningEffortOverrides: {},
-        providerSettings: {},
-      }),
-    ),
+  const disposeStore = store.init();
+  const runtimeErrors: unknown[] = [];
+  const recordRuntimeError = (event: unknown) => runtimeErrors.push(event);
+  store.traceStreams.runtimeError.onValue(recordRuntimeError);
+  const cancelOwners: (() => void)[] = [];
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    for (const cancel of [...cancelOwners].reverse()) cancel();
+    await settle();
   };
-  const channel = stdChannel();
-  const dispatch = (action: Parameters<typeof backgroundAgentSettingsReducer>[1]) => {
-    state = {
-      backgroundAgentSettings: backgroundAgentSettingsReducer(
-        state.backgroundAgentSettings,
-        action,
-      ),
-    };
-    channel.put(action);
-  };
-  const task = runSaga({ channel, dispatch, getState: () => state }, backgroundAgentSettingsSaga);
-  return { task, dispatch, state: () => state };
+  cleanups.push(async () => {
+    try {
+      await stop();
+    } finally {
+      disposeStore();
+      store.traceStreams.runtimeError.offValue(recordRuntimeError);
+    }
+    expect(runtimeErrors).toEqual([]);
+  });
+  admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  if (!connection) throw new Error('Settings test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
+  store.dispatch(
+    hydrateSettings({
+      providerId: 'codex',
+      defaultModel: 'sonnet4.5',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      defaultReasoningEffort: '',
+      typeReasoningEffortOverrides: {},
+      providerSettings: {},
+    }),
+  );
+  cancelOwners.push(store.runSaga(backgroundAgentSettingsSaga));
+  return { stop, dispatch: store.dispatch, state: () => store.state };
 }
 
 describe('backgroundAgentSettingsSaga', () => {
@@ -92,7 +110,7 @@ describe('backgroundAgentSettingsSaga', () => {
         });
         return commit(changes);
       });
-    const { task, dispatch, state } = harness();
+    const { stop, dispatch, state } = harness();
     dispatch(setDefaultModel('first'));
     await vi.waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
     dispatch(setDefaultModel('newest'));
@@ -130,8 +148,7 @@ describe('backgroundAgentSettingsSaga', () => {
     await settle();
     expect(localStorage.setItem).toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
     expect(mocks.list.mock.calls).toEqual([[], []]);
-    task.cancel();
-    await task.toPromise();
+    await stop();
   });
 
   it('does not commit a pending migration after the saga owner is cancelled', async () => {
@@ -143,7 +160,7 @@ describe('backgroundAgentSettingsSaga', () => {
       });
       return commit(changes);
     });
-    const { task, dispatch } = harness();
+    const { stop, dispatch } = harness();
     persisted['quickActions.defaultModel'] = 'haiku4.5';
     dispatch(
       backgroundSettingsHydrationRequested({
@@ -152,8 +169,7 @@ describe('backgroundAgentSettingsSaga', () => {
       }),
     );
     await vi.waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
-    task.cancel();
-    await task.toPromise();
+    await stop();
     release();
     await settle();
     expect(localStorage.setItem).not.toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
@@ -168,7 +184,7 @@ describe('backgroundAgentSettingsSaga', () => {
       });
       return commit(changes);
     });
-    const { task, dispatch, state } = harness();
+    const { stop, dispatch, state } = harness();
     dispatch(setDefaultModel('opus4.7'));
     await vi.waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
     dispatch(setTypeOverride({ type: 'commit', model: 'haiku4.5' }));
@@ -207,12 +223,11 @@ describe('backgroundAgentSettingsSaga', () => {
     expect(mocks.list.mock.calls).toEqual([[], []]);
     expect(state().backgroundAgentSettings.persistencePending).toBe(false);
     expect(persisted['quickActions.defaultModel']).toBe('opus4.7');
-    task.cancel();
-    await task.toPromise();
+    await stop();
   });
 
   it('does not echo hydration snapshots back to settings.update', async () => {
-    const { task, dispatch } = harness();
+    const { stop, dispatch } = harness();
     persisted['quickActions.defaultModel'] = 'hydrated';
     dispatch(
       hydrateSettings({
@@ -224,7 +239,6 @@ describe('backgroundAgentSettingsSaga', () => {
 
     expect(mocks.update.mock.calls).toEqual([]);
     expect(mocks.list).not.toHaveBeenCalled();
-    task.cancel();
-    await task.toPromise();
+    await stop();
   });
 });

@@ -164,37 +164,64 @@ describe('daemonEventsSaga', () => {
         typeof import('$features/events/daemon-events-bridge.client')
       >('$features/events/daemon-events-bridge.client');
       const { store } = await import('$store/renderer/store');
-      const {
-        hostMembershipListsChanged,
-        hostMembershipReducer,
-        hostMembershipOpened,
-        initialState,
-      } = await import('$store/renderer/slices/host-membership/host-membership-slice');
-      let membership = hostMembershipReducer(
-        initialState,
-        hostMembershipOpened({ session: 'active', context: 'owner' }),
-      );
-      const dispatch = vi.fn((action: Parameters<typeof hostMembershipReducer>[1]) => {
-        membership = hostMembershipReducer(membership, action);
-        return action;
-      });
-      const dispatchGetter = vi.spyOn(store, 'dispatch', 'get').mockReturnValue(dispatch);
-      mocks.route.mockImplementation(actual.routeDaemonEventsNotification);
-      const { task } = startSaga();
-      const completion = task.toPromise().catch(() => undefined);
-      const notify = (payload: unknown, subscriptionId = 'sub-1') =>
-        mocks.notificationHandler!({
-          method: 'events.event',
-          params: { subscriptionId, event: { type: 'host:invites-changed', data: payload } },
-        });
+      const { hostMembershipListsChanged, hostMembershipOpened } =
+        await import('$store/renderer/slices/host-membership/host-membership-slice');
+      const { selectHostMembershipContext } =
+        await import('$store/renderer/slices/host-membership/host-membership-selectors');
+      const { admitLegacyPrincipal, withHostPrincipal } =
+        await import('../../../../../test/fixtures/principal-state');
+      const { principalReceived } =
+        await import('$store/renderer/slices/principal/principal-slice');
+      const { setLabsMultiplayerEnabled } =
+        await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+      const dispose = store.init();
+      const cleanups: Array<() => void | Promise<void>> = [dispose];
+      const errors: unknown[] = [];
       try {
+        store.dispatch(setLabsMultiplayerEnabled(true));
+        admitLegacyPrincipal();
+        const { context, invalidation, presentationVersion } = store.state.principal;
+        if (!context) throw new Error('Invitation test requires an admitted connection');
+        store.dispatch(
+          principalReceived(
+            { context, invalidation, presentationVersion },
+            withHostPrincipal(store.state).principal.snapshot!,
+          ),
+        );
+        const membershipContext = selectHostMembershipContext.select(store.state);
+        if (!membershipContext)
+          throw new Error('Invitation test requires host membership authority');
+        store.dispatch(hostMembershipOpened({ session: 'active', context: membershipContext }));
+        const dispatch = vi.spyOn(store, 'dispatch');
+        cleanups.unshift(() => dispatch.mockRestore());
+        mocks.route.mockImplementation(actual.routeDaemonEventsNotification);
+        cleanups.unshift(() => {
+          mocks.route.mockReset();
+        });
+        const { task } = startSaga();
+        const completion = task.toPromise().then(
+          () => ({ status: 'resolved' as const }),
+          (error: unknown) => ({ status: 'rejected' as const, error }),
+        );
+        cleanups.unshift(
+          () => task.cancel(),
+          async () => {
+            const result = await completion;
+            if (result.status === 'rejected') throw result.error;
+          },
+        );
+        const notify = (payload: unknown, subscriptionId = 'sub-1') =>
+          mocks.notificationHandler!({
+            method: 'events.event',
+            params: { subscriptionId, event: { type: 'host:invites-changed', data: payload } },
+          });
         await settle();
         dispatch.mockClear();
         notify(data);
         await settle();
         expect(task.isRunning()).toBe(true);
         expect(dispatch).not.toHaveBeenCalledWith(hostMembershipListsChanged());
-        expect(membership.reloadPending).toBe(false);
+        expect(store.state.hostMembership.reloadPending).toBe(false);
         notify({ inviteId: 'valid', action: 'created' }, 'foreign-host');
         await settle();
         expect(dispatch).not.toHaveBeenCalledWith(hostMembershipListsChanged());
@@ -207,14 +234,21 @@ describe('daemonEventsSaga', () => {
           [hostMembershipListsChanged()],
           [hostMembershipListsChanged()],
         ]);
-        expect(membership.reloadPending).toBe(true);
+        expect(store.state.hostMembership.reloadPending).toBe(true);
         expect(JSON.stringify(dispatch.mock.calls)).not.toContain('must-not-dispatch');
+      } catch (error) {
+        errors.push(error);
       } finally {
-        task.cancel();
-        await completion;
-        dispatchGetter.mockRestore();
-        mocks.route.mockReset();
+        for (const cleanup of cleanups) {
+          try {
+            await cleanup();
+          } catch (error) {
+            errors.push(error);
+          }
+        }
       }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'Invitation fixture cleanup failed');
     },
   );
 

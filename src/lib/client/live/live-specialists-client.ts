@@ -31,7 +31,10 @@ import {
 } from './backend-transport';
 
 import { createSpecialistCatalogRead } from './specialist-catalog-read';
-const readSpecialistCatalog = createSpecialistCatalogRead(backendRequest);
+// Resolve the source export at catalog read; remove with the Svelte AppClient.
+const readSpecialistCatalog = createSpecialistCatalogRead(
+  <T>(...args: Parameters<typeof backendRequest>): Promise<T> => backendRequest<T>(...args),
+);
 
 const logger = createLogger('LiveSpecialistsClient');
 

@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import {
   setActiveProvider,
   setAtomicDefaultModel,
@@ -326,4 +327,85 @@ it('does not mutate provider snapshots or effort for unaccepted switch requests'
       setAtomicDefaultModel({ providerId: 'codex', model: 'new-model' }),
     ),
   ).toBe(initialState);
+});
+
+describe('host connection retirement', () => {
+  it('drops pending drafts, authority, generations and provider caches on a host switch', () => {
+    const hydrated = backgroundAgentSettingsReducer(
+      initialState,
+      hydrateSettings({
+        providerId: 'old-provider',
+        defaultModel: 'old-model',
+        typeOverrides: { commit: 'old-commit', pr: '', review: '', fast: '' },
+        defaultReasoningEffort: 'low',
+        typeReasoningEffortOverrides: { review: 'high' },
+        providerSettings: {
+          retired: {
+            defaultModel: 'retired-model',
+            typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+          },
+        },
+        revision: 7,
+      }),
+    );
+    const pending = backgroundAgentSettingsReducer(
+      backgroundAgentSettingsReducer(hydrated, setDefaultModel('unsaved-model')),
+      setTypeReasoningEffortOverride({ type: 'commit', effort: 'high' }),
+    );
+    const before = structuredClone(pending);
+    expect(pending.persistencePending).toBe(true);
+    expect(pending.persistenceGeneration).toBe(2);
+    expect(pending.authoritativeSettings).toBeDefined();
+    expect(pending.pendingFields).toEqual({
+      defaultModel: 1,
+      'typeReasoningEffortOverrides.commit': 2,
+    });
+
+    const retired = backgroundAgentSettingsReducer(
+      pending,
+      hostExecutionConnectionChanged('next-host'),
+    );
+
+    expect(retired).toStrictEqual({
+      defaultModel: '',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      defaultReasoningEffort: '',
+      typeReasoningEffortOverrides: {},
+      providerSettings: {},
+      persistencePending: false,
+    });
+    expect(retired).not.toBe(pending);
+    expect(pending).toStrictEqual(before);
+  });
+
+  it('reuses the retired state for repeated resets and preserves unrelated-action identity', () => {
+    const first = backgroundAgentSettingsReducer(
+      initialState,
+      hostExecutionConnectionChanged('first-host'),
+    );
+    expect(first.persistencePending).toBe(false);
+    expect(
+      backgroundAgentSettingsReducer(first, hostExecutionConnectionChanged('first-host')),
+    ).toBe(first);
+    expect(
+      backgroundAgentSettingsReducer(first, hostExecutionConnectionChanged('second-host')),
+    ).toBe(first);
+    expect(backgroundAgentSettingsReducer(first, { type: 'unrelated/action' })).toBe(first);
+
+    const hydrated = backgroundAgentSettingsReducer(
+      first,
+      hydrateSettings({
+        providerId: 'second-provider',
+        defaultModel: 'second-model',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+        defaultReasoningEffort: 'medium',
+        revision: 1,
+      }),
+    );
+    expect(hydrated.defaultModel).toBe('second-model');
+    expect(hydrated).not.toBe(first);
+    expect(
+      backgroundAgentSettingsReducer(hydrated, hostExecutionConnectionChanged('third-host')),
+    ).toBe(first);
+  });
 });

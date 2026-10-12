@@ -43,6 +43,9 @@ import {
   applySettingsChanges as applyReceivedSettings,
   BG_MODEL_MIGRATION_MARKER_KEY,
 } from './settings-hydration-service';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import {
@@ -70,10 +73,9 @@ function applySettingsChanges(changes: AppliedSettingChange[], revision?: number
   applyReceivedSettings(changes, revision);
 }
 
-describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
+function useSettingsHydrationFixture(admission: 'unadmitted' | 'host') {
   let dispose: (() => void) | undefined;
-  let stopBackground: () => void;
-  let stopMigrations: () => void;
+  const stops: Array<() => void> = [];
   beforeEach(() => {
     daemonValues = {
       'model.defaultProvider': null,
@@ -111,22 +113,91 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
         );
       },
     );
-    dispose = appStore.init();
-    stopBackground = appStore.runSaga(backgroundAgentSettingsSaga);
-    stopMigrations = appStore.runSaga(settingsMigrationsSaga);
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
     catalogSpy.mockReset();
     catalogSpy.mockRejectedValue(new Error('no catalog in this test'));
     localStorage.removeItem(BG_MODEL_MIGRATION_MARKER_KEY);
+    dispose = appStore.init();
+    if (admission === 'host') {
+      admitLegacyPrincipal();
+      const connection = selectPrincipalConnectionContext.select(appStore.state);
+      if (connection === null) throw new Error('Settings fixture has no admitted connection');
+      appStore.dispatch(hostExecutionConnectionChanged(connection));
+    }
+    stops.push(appStore.runSaga(backgroundAgentSettingsSaga));
+    stops.push(appStore.runSaga(settingsMigrationsSaga));
   });
 
   afterEach(() => {
-    stopBackground();
-    stopMigrations();
-    dispose?.();
-    vi.clearAllMocks();
+    const failures: unknown[] = [];
+    for (const cleanup of [...stops.splice(0), () => dispose?.(), () => vi.clearAllMocks()]) {
+      try {
+        cleanup();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    dispose = undefined;
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Settings fixture cleanup failed');
   });
+
+  return (stop: () => void) => {
+    // Nested provider owners stop before the shared background and migration owners.
+    stops.unshift(stop);
+  };
+}
+
+describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
+  useSettingsHydrationFixture('unadmitted');
+
+  describe('enablement seeding boot race (settings hydrate before connections:list)', () => {
+    // Must run before any connectionsListReceived dispatch: the singleton
+    // store's hasReceivedList only ever flips to true, so this file gets
+    // exactly one shot at the pre-list boot window.
+    it('defers the seed until connections:list lands and never seeds a remote backend', async () => {
+      catalogSpy.mockResolvedValue({ providers: [] });
+      // Stale renderer state from the local machine: active provider set, no
+      // enablement entry — the shape that passed the old gate during boot.
+      appStore.dispatch(hydrateDefaultProvider(''));
+      appStore.dispatch(loadEnabledProvidersFromStorage({}));
+      appStore.dispatch(loadProviderModelsFromStorage({}));
+      const connections = () =>
+        (appStore.state as { connections: { hasReceivedList: boolean } }).connections;
+      expect(connections().hasReceivedList).toBe(false);
+
+      applySettingsChanges([
+        { path: 'model.defaultProvider', value: 'auggie' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+      // Deferred: no wire traffic while the active backend is still unknown.
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(catalogSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+
+      // connections:list resolves on a remote backend — the re-run gate must
+      // reject the seed instead of writing stale local state to the remote.
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'remote-1',
+          windowBackendId: 'remote-1',
+        }),
+      );
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(catalogSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+      expect(
+        (appStore.state as { providerSettings: { enabledProviders: Record<string, boolean> } })
+          .providerSettings.enabledProviders,
+      ).toEqual({});
+    });
+  });
+});
+
+describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
+  const registerStop = useSettingsHydrationFixture('host');
 
   it('hydrates the default provider and enablement map from model.defaultProvider / providers.enabled', async () => {
     applySettingsChanges([
@@ -611,55 +682,10 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     });
   });
 
-  describe('enablement seeding boot race (settings hydrate before connections:list)', () => {
-    // Must run before any connectionsListReceived dispatch: the singleton
-    // store's hasReceivedList only ever flips to true, so this file gets
-    // exactly one shot at the pre-list boot window.
-    it('defers the seed until connections:list lands and never seeds a remote backend', async () => {
-      catalogSpy.mockResolvedValue({ providers: [] });
-      // Stale renderer state from the local machine: active provider set, no
-      // enablement entry — the shape that passed the old gate during boot.
-      appStore.dispatch(hydrateDefaultProvider(''));
-      appStore.dispatch(loadEnabledProvidersFromStorage({}));
-      appStore.dispatch(loadProviderModelsFromStorage({}));
-      const connections = () =>
-        (appStore.state as { connections: { hasReceivedList: boolean } }).connections;
-      expect(connections().hasReceivedList).toBe(false);
-
-      applySettingsChanges([
-        { path: 'model.defaultProvider', value: 'auggie' },
-        { path: 'providers.enabled', value: {} },
-      ]);
-      // Deferred: no wire traffic while the active backend is still unknown.
-      for (let i = 0; i < 5; i++) await Promise.resolve();
-      expect(catalogSpy).not.toHaveBeenCalled();
-      expect(updateSpy).not.toHaveBeenCalled();
-
-      // connections:list resolves on a remote backend — the re-run gate must
-      // reject the seed instead of writing stale local state to the remote.
-      appStore.dispatch(
-        connectionsListReceived({
-          connections: [],
-          activeId: 'remote-1',
-          windowBackendId: 'remote-1',
-        }),
-      );
-      for (let i = 0; i < 5; i++) await Promise.resolve();
-      expect(catalogSpy).not.toHaveBeenCalled();
-      expect(updateSpy).not.toHaveBeenCalled();
-      expect(
-        (appStore.state as { providerSettings: { enabledProviders: Record<string, boolean> } })
-          .providerSettings.enabledProviders,
-      ).toEqual({});
-    });
-  });
-
   describe('default-provider enablement seeding (monorepo#1947)', () => {
-    let stopProviders: () => void;
     beforeEach(() => {
-      stopProviders = appStore.runSaga(providerSettingsSaga);
+      registerStop(appStore.runSaga(providerSettingsSaga));
     });
-    afterEach(() => stopProviders());
     type ProviderState = {
       providerSettings: { enabledProviders: Record<string, boolean> };
     };

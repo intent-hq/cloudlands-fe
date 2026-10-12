@@ -311,3 +311,23 @@ describe('shared agent list reads', () => {
     ]);
   });
 });
+
+describe('reasoning effort asynchronous error contract', () => {
+  it('rejects a throwing parameter getter without issuing a backend request', async () => {
+    const { client, backendRequest } = fixture();
+    const error = new Error('reasoning effort getter failed');
+    const params: Parameters<typeof client.setReasoningEffort>[0] = {
+      agentId: 'existing',
+      workspaceId: 'ws-existing',
+      get reasoningEffort(): string | null {
+        throw error;
+      },
+    };
+
+    const result = client.setReasoningEffort(params);
+
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).rejects.toBe(error);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+});

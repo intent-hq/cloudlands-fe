@@ -65,8 +65,15 @@ export default defineConfig(async () => {
   const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
   return {
-    plugins: [generatedBuildConfigPlugin(), generatedParaglidePlugin(), svelte()],
+    plugins: [
+      generatedBuildConfigPlugin(),
+      generatedParaglidePlugin(),
+      svelte({ configFile: path.join(__dirname, 'svelte.config.js') }),
+    ],
     test: {
+      name: 'source',
+      // Both apps remain in the default required unit run and its CI shards.
+      projects: ['vitest.config.ts', 'apps/react/vitest.config.ts'],
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
@@ -107,6 +114,8 @@ export default defineConfig(async () => {
       // matches the local default (a watch Program over the probe's own text).
       env: { TSESTREE_SINGLE_RUN: 'false' },
       exclude: [
+        // React suites run once in their own project with the app's @ alias.
+        'apps/react/**',
         '**/node_modules/**',
         '**/dist/**',
         '**/build/**',
@@ -114,6 +123,8 @@ export default defineConfig(async () => {
         // Scratch/sandbox excludes (worktrees, probes, .dev/, etc.) come from .gitignore.
         ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
+        // Manual Playwright projects retain their package runner and CI disposition.
+        'packages/view-parity/tests/**/{parity,core,extended,*.core,*.extended}.spec.mjs',
         // Required CI runs this suite separately with its Node-specific setup.
         'tests/integration/**',
         '**/*.ct.spec.ts', // Exclude Playwright component tests

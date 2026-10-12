@@ -263,7 +263,10 @@ export function repoParaglidePaths(rootDir) {
   };
 }
 
-/** `ensureGeneratedParaglide` for the package at `rootDir`, compiling with `@inlang/paraglide-js`. */
+/**
+ * `ensureGeneratedParaglide` for the package at `rootDir`, compiling with `@inlang/paraglide-js`.
+ * @param {{ rootDir: string, ifStale?: boolean, compile?: (options: { outdir: string }) => unknown }} options
+ */
 export async function ensureRepoParaglide({ rootDir, ifStale = false, compile }) {
   const paths = repoParaglidePaths(rootDir);
   return ensureGeneratedParaglide({

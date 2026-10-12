@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel } from 'redux-saga';
-import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { call, cancelled, take } from 'typed-redux-saga';
+import type { GenericAction } from '@themislib/themis/types';
+import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
+import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 
 const mocks = vi.hoisted(() => ({ update: vi.fn(), list: vi.fn() }));
 vi.mock('$lib/client', () => ({
@@ -14,31 +19,118 @@ import {
   setActiveProvider,
   setProviderEnabled,
   toggleProvider,
-  initialState,
+  loadEnabledProvidersFromStorage,
 } from '../provider-settings-slice';
-import { hydrateDefaultProvider, initialState as modelInitialState } from '../../model/model-slice';
+import { hydrateDefaultProvider } from '../../model/model-slice';
 import { settingsFieldsRefreshRequested } from '../../settings-events/settings-events-slice';
-import { initialState as backgroundInitialState } from '../../background-agent-settings/background-agent-settings-slice';
 import { PROVIDER_SETTINGS_RETRY_DELAYS_MS, providerSettingsSaga } from './provider-settings-saga';
 
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 
-function state(canBeDisabled = true) {
-  return {
-    backgroundAgentSettings: backgroundInitialState,
-    model: modelInitialState,
-    providerSettings: {
-      ...initialState,
-      activeProviderId: 'auggie',
-      enabledProviders: { codex: true },
-    },
-    providerCatalog: {
-      providers: createCollection('id', [{ id: 'codex', canBeDisabled }]),
-    },
+const cleanups: (() => Promise<void>)[] = [];
+
+function harness({ canBeDisabled = true, enabled = true } = {}) {
+  const dispose = store.init();
+  const runtimeErrors: unknown[] = [];
+  const recordError = (error: unknown) => runtimeErrors.push(error);
+  store.traceStreams.runtimeError.onValue(recordError);
+  const stops: (() => Promise<void>)[] = [];
+  cleanups.push(async () => {
+    const errors: unknown[] = [];
+    for (const stop of [...stops].reverse()) {
+      try {
+        await stop();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    try {
+      dispose();
+    } catch (error) {
+      errors.push(error);
+    } finally {
+      store.traceStreams.runtimeError.offValue(recordError);
+    }
+    expect({ runtimeErrors, cleanupErrors: errors }).toEqual({
+      runtimeErrors: [],
+      cleanupErrors: [],
+    });
+  });
+  admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  expect(connection).not.toBeNull();
+  if (connection === null) throw new Error('Settings test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
+  store.dispatch(
+    providerCatalogLoaded({
+      providers: [
+        {
+          id: 'codex',
+          displayName: 'Codex',
+          shortName: 'Codex',
+          command: 'codex',
+          canBeDisabled,
+          visible: true,
+        },
+      ],
+    }),
+  );
+  store.dispatch(loadEnabledProvidersFromStorage({ codex: enabled }));
+
+  // Observe every application action, omitting only Store lifecycle instrumentation.
+  const dispatch = vi.fn<(action: GenericAction) => void>();
+  let recorderCancelled: boolean | null = null;
+  const stopRecorder = store.runSaga(function* recordProviderTestActions() {
+    try {
+      while (true) {
+        const action: GenericAction = yield* take('*');
+        if (action.type !== 'sagaManager/startSaga' && action.type !== 'sagaManager/stopSaga') {
+          dispatch(action);
+        }
+      }
+    } finally {
+      recorderCancelled = yield* cancelled();
+    }
+  });
+  stops.push(async () => {
+    stopRecorder();
+    await settle();
+    expect(recorderCancelled).toBe(true);
+  });
+  let ownerCancelled: boolean | null = null;
+  const cancel = store.runSaga(function* providerSettingsTestOwner() {
+    try {
+      yield* call(providerSettingsSaga);
+    } finally {
+      ownerCancelled = yield* cancelled();
+    }
+  });
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    cancel();
+    await settle();
+    expect(ownerCancelled).toBe(true);
   };
+  stops.push(stop);
+  return { send: store.dispatch, dispatch, stop, connection };
 }
+
+afterEach(async () => {
+  const errors: unknown[] = [];
+  for (const cleanup of cleanups.splice(0)) {
+    try {
+      await cleanup();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  vi.useRealTimers();
+  expect(errors).toEqual([]);
+});
 
 describe('providerSettingsSaga', () => {
   beforeEach(() => {
@@ -63,15 +155,10 @@ describe('providerSettingsSaga', () => {
         }),
       )
       .mockResolvedValue([]);
-    const current = state();
-    const channel = stdChannel();
-    const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => current },
-      providerSettingsSaga,
-    );
-    channel.put(setActiveProvider('codex'));
+    const { send, stop } = harness({ enabled: false });
+    send(setActiveProvider('codex'));
     await settle();
-    channel.put(toggleProvider('codex'));
+    send(toggleProvider('codex'));
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([
@@ -83,22 +170,16 @@ describe('providerSettingsSaga', () => {
       [[{ path: 'model.defaultProvider', value: 'codex' }]],
       [[{ path: 'providers.enabled', value: { codex: true } }]],
     ]);
-    task.cancel();
-    await task.toPromise();
+    await stop();
   });
 
   it('skips enabled persistence when the catalog says the reducer mutation is a no-op', async () => {
-    const channel = stdChannel();
-    const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state(false) },
-      providerSettingsSaga,
-    );
-    channel.put(toggleProvider('codex'));
+    const { send, stop } = harness({ canBeDisabled: false });
+    send(toggleProvider('codex'));
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([]);
-    task.cancel();
-    await task.toPromise();
+    await stop();
   });
 
   it('merges the click intent over the live map at write time after hydration replaced it (monorepo#1986)', async () => {
@@ -110,20 +191,15 @@ describe('providerSettingsSaga', () => {
         }),
       )
       .mockResolvedValue([]);
-    const current = state();
-    const channel = stdChannel();
-    const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => current },
-      providerSettingsSaga,
-    );
-    channel.put(setActiveProvider('codex'));
+    const { send, stop } = harness();
+    send(setActiveProvider('codex'));
     await settle();
-    channel.put(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
+    send(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
     await settle();
-    // Boot settings hydration replaces the whole local map while the write is
-    // still queued behind the in-flight active-provider write — the stale
-    // snapshot has no claude-code entry.
-    current.providerSettings.enabledProviders = { auggie: true };
+    // Boot hydration arrives while the write is queued behind the in-flight
+    // provider write. The canonical reducer retains the pending click over
+    // this stale snapshot, which has no claude-code entry.
+    send(loadEnabledProvidersFromStorage({ auggie: true }));
     release([]);
     await settle();
 
@@ -131,34 +207,27 @@ describe('providerSettingsSaga', () => {
       [[{ path: 'model.defaultProvider', value: 'codex' }]],
       [[{ path: 'providers.enabled', value: { auggie: true, 'claude-code': true } }]],
     ]);
-    task.cancel();
-    await task.toPromise();
+    await stop();
   });
 
   it('does not echo provider hydration actions', async () => {
-    const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: state }, providerSettingsSaga);
-    channel.put(hydrateDefaultProvider('codex'));
+    const { send, stop } = harness();
+    send(hydrateDefaultProvider('codex'));
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([]);
-    task.cancel();
-    await task.toPromise();
+    await stop();
   });
 
   it('retains transport retry for enablement writes and drains that queue in order', async () => {
     vi.useFakeTimers();
     try {
       mocks.update.mockRejectedValueOnce(new Error('settings unavailable')).mockResolvedValue([]);
-      const channel = stdChannel();
-      const task = runSaga(
-        { channel, dispatch: vi.fn(), getState: () => state() },
-        providerSettingsSaga,
-      );
+      const { send, stop } = harness();
 
-      channel.put(setProviderEnabled({ providerId: 'codex', enabled: false }));
+      send(setProviderEnabled({ providerId: 'codex', enabled: false }));
       await vi.advanceTimersByTimeAsync(0);
-      channel.put(toggleProvider('codex'));
+      send(toggleProvider('codex'));
       await vi.advanceTimersByTimeAsync(0);
       // Enablement retains its existing retry policy; model/provider defaults do not.
       expect(mocks.update.mock.calls).toEqual([
@@ -171,8 +240,7 @@ describe('providerSettingsSaga', () => {
         [[{ path: 'providers.enabled', value: { codex: false } }]],
         [[{ path: 'providers.enabled', value: { codex: true } }]],
       ]);
-      task.cancel();
-      await task.toPromise();
+      await stop();
     } finally {
       vi.useRealTimers();
     }
@@ -185,11 +253,9 @@ describe('providerSettingsSaga', () => {
     'requests field recovery rather than retrying a default-provider failure (%s)',
     async (error) => {
       mocks.update.mockRejectedValue(error);
-      const channel = stdChannel();
-      const dispatch = vi.fn();
-      const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+      const { send, dispatch, stop, connection } = harness();
 
-      channel.put(setActiveProvider('codex'));
+      send(setActiveProvider('codex'));
       await settle();
 
       expect(mocks.update.mock.calls).toEqual([
@@ -197,10 +263,9 @@ describe('providerSettingsSaga', () => {
       ]);
       expect(mocks.list).toHaveBeenCalledExactlyOnceWith();
       expect(dispatch).toHaveBeenCalledWith(
-        settingsFieldsRefreshRequested(['model.defaultProvider'], null),
+        settingsFieldsRefreshRequested(['model.defaultProvider'], connection),
       );
-      task.cancel();
-      await task.toPromise();
+      await stop();
     },
   );
 
@@ -208,18 +273,15 @@ describe('providerSettingsSaga', () => {
     mocks.update.mockRejectedValue(
       new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
     );
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+    const { send, dispatch, stop } = harness();
 
-    channel.put(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
+    send(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([
       [[{ path: 'providers.enabled', value: { codex: true, 'claude-code': true } }]],
     ]);
-    expect(dispatch).toHaveBeenCalledWith(enablementPersistRejected('claude-code', 0));
-    task.cancel();
-    await task.toPromise();
+    expect(dispatch).toHaveBeenCalledWith(enablementPersistRejected('claude-code', 1));
+    await stop();
   });
 });

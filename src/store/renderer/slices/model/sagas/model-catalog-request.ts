@@ -9,5 +9,7 @@ export const { loadModelCatalog } = createModelCatalogRequest({
   selectProviderModelsClearEpoch,
   selectActiveProviderId,
   selectModelBootContext,
-  models: { list: (providerId, workspaceId) => appClient.models.list(providerId, workspaceId) },
+  models: {
+    list: (...args: Parameters<typeof appClient.models.list>) => appClient.models.list(...args),
+  },
 });

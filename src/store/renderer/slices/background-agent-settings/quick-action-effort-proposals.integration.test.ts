@@ -6,6 +6,7 @@ import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { modelSelectionSaga } from '../model/sagas/model-selection-saga';
 import { backgroundAgentSettingsSaga } from './sagas/background-agent-settings-saga';
 import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import {
   applySettingsProposalWork,
@@ -24,6 +25,7 @@ afterEach(() => {
 for (const initial of [{}, { walkthrough: 'low' }]) {
   it(`applies the complete free-form effort map for a settings proposal from ${JSON.stringify(initial)}`, async () => {
     dispose = store.init();
+    admitLegacyPrincipal();
     const snapshot: AppSettingChange[] = [
       { path: 'model.defaultProvider', value: 'codex' },
       { path: 'quickActions.defaultModel', value: 'balanced' },
@@ -89,6 +91,7 @@ for (const path of ['model.defaultProvider', 'model.default']) {
     for (const switchFirst of [true, false]) {
       it(`rejects a blocked provider proposal before any changes (${path}, undo ${undo}, switch first ${switchFirst})`, async () => {
         dispose = store.init();
+        admitLegacyPrincipal();
         stopBackground = store.runSaga(backgroundAgentSettingsSaga);
         applySettingsChanges([
           { path: 'model.defaultProvider', value: 'codex' },

@@ -25,6 +25,7 @@ import {
   type MockBackendHandle,
 } from '../../../../test/mocks/backend-transport.mock';
 import { store } from '../../store';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { workspaceCatalogSaga } from './workspace-catalog-saga';
 import {
   workspaceMounted,
@@ -238,6 +239,7 @@ describe('workspace catalog host probes through live clients', () => {
   it.each(['single', 'all'] as const)(
     'refreshes workspace readiness after an explicit %s provider recheck',
     async (kind) => {
+      admitLegacyPrincipal();
       backend.onRequest('providers.catalog', () => ({
         providers: [
           {
@@ -284,6 +286,7 @@ describe('workspace catalog host probes through live clients', () => {
   );
 
   it('does not refresh workspace catalogs for failed or superseded provider checks', async () => {
+    admitLegacyPrincipal();
     store.dispatch(workspaceMounted(WS));
     await settle();
     ipc.invoke.mockRejectedValueOnce(new Error('provider probe failed'));
@@ -312,6 +315,7 @@ describe('workspace catalog host probes through live clients', () => {
   });
 
   it('retains a provider recheck invalidation while a workspace catalog read is pending', async () => {
+    admitLegacyPrincipal();
     let release!: (value: { providers: { id: string; installed: boolean }[] }) => void;
     const old = new Promise<{ providers: { id: string; installed: boolean }[] }>((resolve) => {
       release = resolve;

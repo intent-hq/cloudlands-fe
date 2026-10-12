@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
+import type { ProviderModelsState } from '$store/renderer/slices/provider-models/provider-models-types';
 
 const mockSetReasoningEffort = vi.hoisted(() =>
   vi.fn(
@@ -37,6 +38,43 @@ const storeState = vi.hoisted(() => ({
     >,
   },
   daemonHealth: { stats: { protocolVersion: '6.1' } },
+  providerModels: {
+    learnedNames: {},
+    byProviderId: {},
+    byWorkspaceId: {
+      'ws-1': {
+        codex: {
+          models: [
+            {
+              value: 'gpt-5.3-codex',
+              label: 'GPT-5.3 Codex',
+              effortLevels: ['low', 'medium', 'high', 'xhigh'],
+            },
+            {
+              value: 'gpt-5.1-codex',
+              label: 'GPT-5.1 Codex',
+              effortLevels: ['low', 'medium', 'high', 'xhigh'],
+            },
+          ],
+          fetchedAt: '2026-01-01T00:00:00.000Z',
+        },
+        auggie: {
+          models: [
+            {
+              value: 'gpt5.6-sol',
+              label: 'GPT-5.6 Sol',
+              effortLevels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+            },
+          ],
+          fetchedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    },
+    requestsByWorkspaceId: {},
+    requests: { idField: 'providerId', ids: [], map: {}, refsCount: {} },
+    observers: { idField: 'id', ids: [], map: {}, refsCount: {} },
+    clearEpoch: 0,
+  } satisfies ProviderModelsState,
 }));
 const mockDispatch = vi.hoisted(() => vi.fn());
 
@@ -81,24 +119,6 @@ vi.mock('$store/renderer/store', async () => {
   };
   return module;
 });
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentProvider: {
-    select: (_state: unknown, agentId: string) => {
-      const session = storeState.agentSessions.byAgentId[agentId];
-      return session?.provider ?? session?.metadata?.provider;
-    },
-  },
-}));
-vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectAgentModelEffortLevels: {
-    select: (_state: unknown, agentId: string) => {
-      const model = storeState.agentSessions.byAgentId[agentId]?.model;
-      return model?.startsWith('gpt5.6-')
-        ? ['none', 'low', 'medium', 'high', 'xhigh', 'max']
-        : ['low', 'medium', 'high', 'xhigh'];
-    },
-  },
-}));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mockToastError } }));
 
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';

@@ -1,23 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { takeEvery } from 'typed-redux-saga';
+import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { connectionsListReceived } from '../../connections/connections-slice';
+import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
+import { getItems, getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
+import { hydrateDefaultProvider, loadProviderModelsFromStorage } from '../../model/model-slice';
 import {
-  hydrateDefaultProvider,
-  loadProviderModelsFromStorage,
-  initialState as modelInitialState,
-  modelReducer,
-} from '../../model/model-slice';
-import { initialState as availabilityInitialState } from '../../agent-availability/agent-availability-slice';
-import {
-  backgroundAgentSettingsReducer,
+  hydrateSettings,
   initialState as backgroundInitialState,
   type BackgroundAgentSettingsState,
 } from '../../background-agent-settings/background-agent-settings-slice';
 import {
-  initialState,
-  providerSettingsReducer,
   providerSettingsSessionOpened,
   providerSettingsSessionClosed,
   providerPathSaveRequested,
@@ -68,7 +65,7 @@ function deferred<T>() {
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
-const tasks: Task[] = [];
+const cleanups: (() => Promise<void>)[] = [];
 const emptyQuickActions = {
   defaultModel: '',
   typeOverrides: { commit: '', pr: '', review: '', fast: '' },
@@ -85,44 +82,92 @@ const daemonSettings: AppSettingChange[] = [
   { path: 'quickActions.providerSettings', value: {} },
 ];
 function harness(backgroundAgentSettings: BackgroundAgentSettingsState = backgroundInitialState) {
-  let current = {
-    providerSettings: initialState,
-    model: modelReducer(modelInitialState, hydrateDefaultProvider('codex')),
-    backgroundAgentSettings,
-    agentAvailability: availabilityInitialState,
-    providerCatalog: {
-      providers: createCollection('id', [
-        { id: 'codex', displayName: 'Codex', canBeDisabled: true, supportsFastMode: true },
-      ]),
-    },
-    connections: { windowBackendId: 'local' },
+  const disposeStore = store.init();
+  const runtimeErrors: unknown[] = [];
+  const recordRuntimeError = (event: unknown) => runtimeErrors.push(event);
+  store.traceStreams.runtimeError.onValue(recordRuntimeError);
+  const cancelOwners: (() => void)[] = [];
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    for (const cancel of [...cancelOwners].reverse()) cancel();
+    await settle();
   };
-  const channel = stdChannel();
+  cleanups.push(async () => {
+    try {
+      await stop();
+    } finally {
+      disposeStore();
+      store.traceStreams.runtimeError.offValue(recordRuntimeError);
+    }
+    expect(runtimeErrors).toEqual([]);
+  });
+  admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  if (!connection) throw new Error('Settings test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
+  store.dispatch(hydrateDefaultProvider('codex'));
+  store.dispatch(hydrateSettings(backgroundAgentSettings));
+  store.dispatch(
+    providerCatalogLoaded({
+      providers: [
+        {
+          id: 'codex',
+          displayName: 'Codex',
+          shortName: 'Codex',
+          command: 'codex',
+          visible: true,
+          canBeDisabled: true,
+          supportsFastMode: true,
+        },
+      ],
+    }),
+  );
   const actions: { type: string; payload?: unknown }[] = [];
-  const send = (action: Parameters<typeof providerSettingsReducer>[1]) => {
-    actions.push(action);
-    current = {
-      ...current,
-      providerSettings: providerSettingsReducer(current.providerSettings, action),
-      model: modelReducer(current.model, action),
-      backgroundAgentSettings: backgroundAgentSettingsReducer(
-        current.backgroundAgentSettings,
-        action,
-      ),
-    };
-    channel.put(action);
+  cancelOwners.push(
+    store.runSaga(function* recordSettingsActions() {
+      yield* takeEvery('*', function record(action: { type: string; payload?: unknown }) {
+        actions.push(action);
+      });
+    }),
+  );
+  cancelOwners.push(store.runSaga(providerSettingsSaga));
+  store.dispatch(providerSettingsSessionOpened('panel'));
+  const switchBackend = (windowBackendId: string) => {
+    const current = store.state.connections;
+    store.dispatch(
+      connectionsListReceived({
+        connections: getItems(current.connections),
+        activeId: current.activeId,
+        windowBackendId,
+      }),
+    );
+    admitLegacyPrincipal();
+    const nextConnection = selectPrincipalConnectionContext.select(store.state);
+    if (!nextConnection) throw new Error('Settings test requires an admitted connection');
+    store.dispatch(hostExecutionConnectionChanged(nextConnection));
   };
-  const task = runSaga({ channel, dispatch: send, getState: () => current }, providerSettingsSaga);
-  tasks.push(task);
-  send(providerSettingsSessionOpened('panel'));
   return {
-    send,
-    task,
+    send: store.dispatch,
+    stop,
     actions,
-    state: () => current,
-    request: (id: string) => getItem(current.providerSettings.requests, id),
+    switchBackend,
+    state: () => store.state,
+    request: (id: string) => getItem(store.state.providerSettings.requests, id),
   };
 }
+
+async function waitForConsumedRequest(promise: Promise<unknown>) {
+  await vi.waitFor(() =>
+    expect(
+      mocks.update.mock.results.some(
+        (result) => result.type === 'return' && result.value === promise,
+      ),
+    ).toBe(true),
+  );
+}
+
 const context = (id: string) => ({ id, sessionId: 'panel' });
 const invalid = () =>
   new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 });
@@ -138,10 +183,7 @@ beforeEach(() => {
   }));
 });
 afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
-  }
+  for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
 describe('provider settings ordered ownership', () => {
@@ -156,6 +198,7 @@ describe('provider settings ordered ownership', () => {
       expect(mocks.update).toHaveBeenCalledTimes(1);
       h.send(hostExecutionConnectionChanged('remote'));
       h.send(hydrateDefaultProvider('grok'));
+      await waitForConsumedRequest(first.promise);
       if (outcome === 'resolve') first.resolve([]);
       else first.reject(invalid());
       await settle();
@@ -192,11 +235,13 @@ describe('provider settings ordered ownership', () => {
       await settle();
       expect(h.state().model.defaultProviderId).toBe('codex');
       expect(h.state().model.providerModels).toEqual({ codex: 'balanced', grok: 'shared' });
+      await waitForConsumedRequest(first.promise);
       if (outcome === 'resolve') first.resolve([]);
       else first.reject(invalid());
       await settle();
       expect(h.state().model.defaultProviderId).toBe('codex');
       expect(mocks.update).toHaveBeenCalledTimes(2);
+      await waitForConsumedRequest(second.promise);
       second.reject(invalid());
       await settle();
       expect(h.state().model.defaultProviderId).toBe('codex');
@@ -223,9 +268,14 @@ describe('provider settings ordered ownership', () => {
           ...backgroundInitialState,
           providerId: 'codex',
           providerSettings: {
-            blocked: { defaultModel: 'codex:foreign', typeOverrides: {} },
+            blocked: {
+              defaultModel: 'codex:foreign',
+              typeOverrides: { ...backgroundInitialState.typeOverrides },
+            },
           },
         });
+        const admittedConnection = h.state().model.selectionConnection;
+        expect(admittedConnection).not.toBeNull();
         h.send(
           pendingAtomic
             ? setAtomicDefaultModel({ providerId: 'codex', model: 'balanced' })
@@ -247,6 +297,7 @@ describe('provider settings ordered ownership', () => {
         expect(mocks.update).toHaveBeenCalledTimes(1);
         if (!blockedAtomic) expect(h.request('blocked')?.status).toBe('failure');
 
+        await waitForConsumedRequest(pending.promise);
         pending.reject(invalid());
         await settle();
         expect(h.state().model.defaultProviderId).toBe('codex');
@@ -256,7 +307,7 @@ describe('provider settings ordered ownership', () => {
             pendingAtomic
               ? ['model.defaultProvider', 'model.providerDefaults']
               : ['model.defaultProvider'],
-            null,
+            admittedConnection,
           ),
         );
         if (!pendingAtomic) expect(h.request('accepted')?.status).toBe('failure');
@@ -314,11 +365,13 @@ describe('provider settings ordered ownership', () => {
     const h = harness();
     h.send(setProviderEnabled({ providerId: 'codex', enabled: true }, context('old')));
     h.send(setProviderEnabled({ providerId: 'codex', enabled: true }, context('new')));
+    await waitForConsumedRequest(first.promise);
     first.reject(invalid());
     await settle();
     expect(h.state().providerSettings.pendingEnablementOverrides).toEqual({ codex: true });
     expect(h.request('old')?.status).toBe('failure');
     expect(h.request('new')?.status).toBe('pending');
+    await waitForConsumedRequest(second.promise);
     second.reject(invalid());
     await settle();
     expect(h.state().providerSettings.pendingEnablementOverrides).toEqual({});
@@ -411,8 +464,7 @@ describe('provider settings ordered ownership', () => {
     h.send(providerPathSaveRequested('codex', '/one', context('one')));
     h.send(providerPathSaveRequested('grok', '/two', context('two')));
     await settle();
-    h.task.cancel();
-    await h.task.toPromise();
+    await h.stop();
     expect(h.request('one')?.status).toBe('cancelled');
     expect(h.request('two')?.status).toBe('cancelled');
     first.resolve([]);
@@ -471,12 +523,13 @@ describe('provider settings ordered ownership', () => {
     const h = harness();
     h.send(setActiveProvider('codex'));
     h.send(providerEnablementSeedRequested({ codex: true }));
-    h.state().connections.windowBackendId = 'remote';
+    await waitForConsumedRequest(first.promise);
+    h.switchBackend('remote');
     first.resolve([]);
     await settle();
     expect(mocks.update).toHaveBeenCalledTimes(1);
     expect(h.state().providerSettings.enabledProviders).toEqual({});
-    h.state().connections.windowBackendId = 'local';
+    h.switchBackend('local');
     h.send(setProviderEnabled({ providerId: 'codex', enabled: false }));
     h.send(providerEnablementSeedRequested({ codex: true }));
     await settle();

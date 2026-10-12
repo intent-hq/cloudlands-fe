@@ -28,10 +28,34 @@ export const selectPendingCount = store.createSelector((state, sessionId: string
 });
 
 const recoveryProjections = createPermissionRecoveryProjections({
-  selectPrincipalActionContext,
-  selectWorkspaceListLoadedForBackend,
-  selectWorkspacePermissionContext,
-  selectWorkspaceManagementDenied,
+  selectPrincipalActionContext: {
+    get select() {
+      const selector = selectPrincipalActionContext;
+      const select = selector.select;
+      return (...args: Parameters<typeof select>) => select.apply(selector, args);
+    },
+  },
+  selectWorkspaceListLoadedForBackend: {
+    get select() {
+      const selector = selectWorkspaceListLoadedForBackend;
+      const select = selector.select;
+      return (...args: Parameters<typeof select>) => select.apply(selector, args);
+    },
+  },
+  selectWorkspacePermissionContext: {
+    get select() {
+      const selector = selectWorkspacePermissionContext;
+      const select = selector.select;
+      return (...args: Parameters<typeof select>) => select.apply(selector, args);
+    },
+  },
+  selectWorkspaceManagementDenied: {
+    get select() {
+      const selector = selectWorkspaceManagementDenied;
+      const select = selector.select;
+      return (...args: Parameters<typeof select>) => select.apply(selector, args);
+    },
+  },
 });
 
 export const selectPermissionRecoveryScope = store.createSelector(

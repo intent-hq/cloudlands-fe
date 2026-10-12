@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { store } from '$store/renderer/store';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 import ProviderPathConfigHost from './__tests__/ProviderPathConfigHost.svelte';
 import { warmImport } from '../../../test/warm-import';
@@ -87,6 +90,10 @@ describe('ProviderPathConfig', () => {
     mocks.mockSettingsGet.mockReset().mockResolvedValue({ value: {} });
     mocks.mockSettingsUpdate.mockReset().mockResolvedValue([]);
     store.init();
+    admitLegacyPrincipal();
+    const connection = selectPrincipalConnectionContext.select(store.state);
+    if (connection === null) throw new Error('Provider path fixture has no admitted connection');
+    store.dispatch(hostExecutionConnectionChanged(connection));
     stop = store.runSaga(providerSettingsSaga);
   });
 

@@ -6,7 +6,7 @@ import ts from 'typescript';
 // vitest suite membership from source markers (`ui-invariant-suites.mjs`,
 // `verify-changed-triggers.mjs`), so both audit the same file set and read
 // markers by the same rules.
-export const TEST_SCAN_ROOTS = ['scripts', 'src'];
+export const TEST_SCAN_ROOTS = ['scripts', 'src', 'apps/react'];
 
 // Mirrors vitest's default include; `.ct.spec` / `.visual.spec` are the
 // Playwright suites vitest.config.ts excludes.

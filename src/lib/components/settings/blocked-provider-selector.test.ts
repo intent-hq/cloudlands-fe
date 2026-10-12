@@ -12,6 +12,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: notifySuccess, error: notifyError },
 }));
 import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { setupPreviewProviders } from '$lib/components/settings/provider-selector.preview';
 import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
@@ -25,7 +26,9 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 it('does not announce a successful provider switch when the legacy snapshot rejects it', async () => {
-  disposers.push(store.init(), setupPreviewProviders());
+  disposers.push(store.init());
+  admitLegacyPrincipal();
+  disposers.push(setupPreviewProviders());
   disposers.push(store.runSaga(providerSettingsSaga), store.runSaga(backgroundAgentSettingsSaga));
   applySettingsChanges([
     { path: 'model.defaultProvider', value: 'codex' },

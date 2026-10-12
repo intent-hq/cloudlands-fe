@@ -20,6 +20,9 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import type { AppSettingChange } from '$lib/client/app-client';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
 import {
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
@@ -129,6 +132,10 @@ describe('no-click welcome-step advance regression (empty enabled set on step 4)
   // active so ModelPicker's availability gate sees a non-empty set.
   it('enables and activates the resolved provider on an explicit advance', async () => {
     dispose = store.init();
+    admitLegacyPrincipal();
+    const connection = selectPrincipalConnectionContext.select(store.state);
+    if (connection === null) throw new Error('Onboarding fixture has no admitted connection');
+    store.dispatch(hostExecutionConnectionChanged(connection));
     store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
     store.dispatch(checkSingleProviderRequested('claude-code'));
     store.dispatch(

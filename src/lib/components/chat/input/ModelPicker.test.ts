@@ -1,4 +1,13 @@
-import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
+import { selectModelBootContext } from '$store/renderer/slices/model/model-selectors';
+import {
+  daemonEventsSubscribed,
+  workspaceEventsReducer,
+} from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import {
+  initialState as principalInitialState,
+  principalContextChanged,
+  principalReducer,
+} from '$store/renderer/slices/principal/principal-slice';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -136,7 +145,7 @@ vi.mock('$store/renderer/store', async () => {
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
       providerSettings: { enabledProviders: {} },
-      model: { defaultProviderId: mockModelState.defaultProviderId },
+      model: { ...modelSliceState, defaultProviderId: mockModelState.defaultProviderId },
       // Selector-channel memoization needs immutable snapshots like real Redux.
       providerModels: { ...mockProviderModelsState },
       agentModel: mutationState,
@@ -207,6 +216,7 @@ const mockSvelteDispatch = vi.hoisted(() =>
       (mockAppStore as unknown as { emitState: () => void }).emitState();
     }
     if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
+      modelSliceState = modelReducer(modelSliceState, action as Parameters<typeof modelReducer>[1]);
       const [payload] = action.payload as [
         { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
           string,
@@ -227,6 +237,7 @@ const mockSvelteDispatch = vi.hoisted(() =>
         }
         return remaining;
       });
+      (mockAppStore as unknown as { emitState: () => void }).emitState();
     }
     catalogChannel?.put(action);
     return action;
@@ -282,7 +293,8 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
   getModelsForProviderForLoadingState: vi.fn(),
 }));
 
-vi.mock('$store/renderer/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-selectors')>()),
   selectSelectedModel: () => readable(mockModelState.selectedModel),
   selectAvailableModels: () => readable(mockModelState.availableModels),
   selectAvailableModelsProviderId: () => readable(mockModelState.availableModelsProviderId),
@@ -372,7 +384,7 @@ import {
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
-import { selectModel } from '$store/renderer/slices/model/model-slice';
+import { modelReducer, selectModel } from '$store/renderer/slices/model/model-slice';
 import { store as mockAppStore } from '$store/renderer/store';
 import {
   providerModelsCacheCleared,
@@ -396,9 +408,11 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 let catalogChannel: ReturnType<typeof stdChannel> | undefined;
 let catalogTask: Task;
 let mutationTask: Task;
+let modelSliceState = modelReducer(undefined, { type: 'init' });
 let mutationState = agentModelReducer(undefined, { type: 'init' });
 let mutationSession: Record<string, unknown> = {};
 beforeEach(() => {
+  modelSliceState = modelReducer(undefined, { type: 'init' });
   mutationState = agentModelReducer(undefined, { type: 'init' });
   mutationSession = {};
   mockRoleState.current = withLegacyPrincipal(
@@ -5707,3 +5721,25 @@ vi.mock(
     };
   },
 );
+
+it('keeps the mocked Store boot-context effect tied to canonical admission and subscription lifetime', async () => {
+  const readContext = () =>
+    runSaga({ getState: () => mockAppStore.state }, function* () {
+      return yield* selectModelBootContext.effect();
+    }).toPromise();
+  Object.assign(mockRoleState.current, {
+    principal: principalReducer(mockAppStore.state.principal, principalContextChanged(null)),
+  });
+  expect(await readContext()).toBeNull();
+
+  Object.assign(mockRoleState.current, withLegacyPrincipal(mockRoleState.current));
+  expect(await readContext()).not.toBeNull();
+
+  Object.assign(mockRoleState.current, {
+    workspaceEvents: workspaceEventsReducer(
+      mockAppStore.state.workspaceEvents,
+      daemonEventsSubscribed(),
+    ),
+  });
+  expect(await readContext()).toBeNull();
+});

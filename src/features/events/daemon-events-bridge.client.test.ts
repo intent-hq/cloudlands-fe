@@ -7740,40 +7740,46 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     // createWorkspaceId when folding the workspace.list response.
     const REMOTE_WS = '99999999-9999-4999-8999-999999999999';
     await primeBridge();
-    const handler = capturedHandlers[0]!;
-    backendRequestSpy.mockClear();
-    workspaceServiceListSpy.mockResolvedValueOnce({
-      ok: true,
-      data: [
-        {
-          id: REMOTE_WS,
-          title: 'Created elsewhere',
-          branch: 'main',
-          status: 'Active',
-        },
-      ],
-    });
+    try {
+      // Admit before installing the creation event's one-shot list response.
+      admitLegacyPrincipal();
+      const handler = capturedHandlers[0]!;
+      backendRequestSpy.mockClear();
+      workspaceServiceListSpy.mockResolvedValueOnce({
+        ok: true,
+        data: [
+          {
+            id: REMOTE_WS,
+            title: 'Created elsewhere',
+            branch: 'main',
+            status: 'Active',
+          },
+        ],
+      });
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-workspace-created-elsewhere',
-          workspaceId: REMOTE_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'workspace:created',
-          actor: { type: 'user', id: 'u1' },
-          data: { workspaceId: REMOTE_WS },
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-workspace-created-elsewhere',
+            workspaceId: REMOTE_WS,
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'workspace:created',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: REMOTE_WS },
+          },
         },
-      },
-    });
-    // loadWorkspacesRequested → lifecycle-read-saga → appClient.workspaces.list
-    // (live client → mocked backendRequest); let the async refetch settle.
-    await flush();
+      });
+      // loadWorkspacesRequested → lifecycle-read-saga → appClient.workspaces.list
+      // (live client → mocked backendRequest); let the async refetch settle.
+      await flush();
 
-    expect(workspaceServiceListSpy).toHaveBeenCalledWith({ lite: true });
-    const state = appStore.state as { workspace: { workspaces: { ids: string[] } } };
-    expect(state.workspace.workspaces.ids).toContain(REMOTE_WS);
+      expect(workspaceServiceListSpy).toHaveBeenCalledWith({ lite: true });
+      const state = appStore.state as { workspace: { workspaces: { ids: string[] } } };
+      expect(state.workspace.workspaces.ids).toContain(REMOTE_WS);
+    } finally {
+      appStore.dispatch(principalContextChanged(null));
+    }
   });
 
   it('does not refetch the workspace list when the created ID is already in the collection', async () => {

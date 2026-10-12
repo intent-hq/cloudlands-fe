@@ -1,3 +1,6 @@
+import { selectModelBootContext } from '$store/renderer/slices/model/model-selectors';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
+import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -72,7 +75,8 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   selectAvailableEnabledProviderIds: () => mocks.readable(mocks.availableProviderIds),
 }));
 
-vi.mock('$store/renderer/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-selectors')>()),
   selectSelectedModel: () => mocks.readable(mocks.selectedModel),
   selectDefaultReasoningEffort: () => mocks.readable(mocks.defaultReasoningEffort),
   selectProviderModels: () => mocks.readable(mocks.configuredModels),
@@ -357,6 +361,17 @@ describe('NewSpaceModal model-picker composition', () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     disposeStore();
+  });
+
+  it('keeps the real model boot-context selector gated by admission and subscription lifetime', () => {
+    appStore.dispatch(principalContextChanged(null));
+    expect(selectModelBootContext.select(appStore.state)).toBeNull();
+
+    admitLegacyPrincipal();
+    expect(selectModelBootContext.select(appStore.state)).not.toBeNull();
+
+    appStore.dispatch(daemonEventsSubscribed());
+    expect(selectModelBootContext.select(appStore.state)).toBeNull();
   });
 
   it.each(['team', 'single'] as const)(

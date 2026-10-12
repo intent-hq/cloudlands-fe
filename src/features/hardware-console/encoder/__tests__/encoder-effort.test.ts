@@ -23,8 +23,6 @@ import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { getItem, updateItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareDeviceModel } from '../../input/types';
-import { registerMockIpcHandler } from '$shared/ipc-mock-router';
-import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { m } from '$shared/paraglide/messages.js';
 import { applyReasoningEffort } from '$features/agent/reasoning-effort';
@@ -43,6 +41,15 @@ import { selectEncoderEffortFeedback } from '$store/renderer/slices/hardware-con
 import { ENCODER_HUD_HIDE_MS } from '../encoder-service';
 import EncoderCycleHud from '../EncoderCycleHud.svelte';
 import EffortPicker from '$lib/components/chat/input/EffortPicker.svelte';
+
+// Hold the actual daemon request boundary; replies are raw service results.
+function useLegacyModelWire(handler: (params: unknown) => Promise<unknown>) {
+  const fallback = request.getMockImplementation();
+  if (!fallback) throw new Error('Encoder request fixture is not installed');
+  request.mockImplementation((...args) =>
+    args[0] === 'agent.setModel' ? handler(args[1]) : fallback(...args),
+  );
+}
 
 useEncoderEffortHarness();
 
@@ -313,13 +320,13 @@ describe('decoded Micro encoder effort and wire behavior', () => {
         .fn()
         .mockImplementationOnce(() => first.promise)
         .mockResolvedValue({
-          success: true,
-          data: { success: false, error: 'picker save rejected' },
+          success: false,
+          error: 'picker save rejected',
         });
       if (protocol === 'legacy') {
         state.daemonHealth.stats.protocolVersion = '5.1';
         publish();
-        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+        useLegacyModelWire(legacy);
       } else {
         request.mockImplementationOnce(() => first.promise);
         request.mockRejectedValueOnce(new Error('picker save rejected'));
@@ -332,12 +339,9 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       if (stop === 'cancel') tasks[0].cancel();
       if (protocol === 'legacy') {
         first.resolve({
-          success: true,
-          data: {
-            success: oldAccepted,
-            modelId: 'model-a/low',
-            error: 'old encoder save rejected',
-          },
+          success: oldAccepted,
+          modelId: 'model-a/low',
+          error: 'old encoder save rejected',
         });
       } else if (oldAccepted) first.resolve(reply('low'));
       else first.reject(new Error('old encoder save rejected'));
@@ -686,13 +690,19 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     publish();
     const legacy = vi.fn(async () => ({
       success: true,
-      data: { success: true, modelId: 'model-a/low' },
+      modelId: 'model-a/low',
     }));
-    registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+    useLegacyModelWire(legacy);
     const device = manager('creator-micro-2');
     device.turn();
     await flush();
     expect(legacy).toHaveBeenCalledExactlyOnceWith({
+      agentId: 'agent-1',
+      modelId: 'model-a/low',
+      workspaceId: 'ws-1',
+      providerId: 'codex',
+    });
+    expect(request).toHaveBeenCalledExactlyOnceWith('agent.setModel', {
       agentId: 'agent-1',
       modelId: 'model-a/low',
       workspaceId: 'ws-1',
@@ -710,14 +720,14 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     const legacy = vi
       .fn()
       .mockImplementationOnce(() => first.promise)
-      .mockResolvedValue({ success: true, data: { success: true, modelId: 'model-a/high' } });
-    registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+      .mockResolvedValue({ success: true, modelId: 'model-a/high' });
+    useLegacyModelWire(legacy);
     const device = manager('creator-micro-2');
     device.turn();
     device.turn();
     device.turn();
     mocks.dispatch(updateSession('agent-1', { model: 'model-a/low', reasoningEffort: 'low' }));
-    first.resolve({ success: true, data: { success: true, modelId: 'model-a/low' } });
+    first.resolve({ success: true, modelId: 'model-a/low' });
     await flush();
     expect(legacy).toHaveBeenCalledTimes(2);
     expect(legacy).toHaveBeenLastCalledWith({
@@ -754,11 +764,11 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       const legacy = vi
         .fn()
         .mockImplementationOnce(() => first.promise)
-        .mockResolvedValue({ success: true, data: { success: false, error: 'new save rejected' } });
+        .mockResolvedValue({ success: false, error: 'new save rejected' });
       if (protocol === 'legacy') {
         state.daemonHealth.stats.protocolVersion = '5.1';
         publish();
-        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+        useLegacyModelWire(legacy);
       } else {
         request.mockImplementationOnce(() => first.promise);
         request.mockRejectedValueOnce(new Error('new save rejected'));
@@ -777,9 +787,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       for (let n = 0; n < turns; n++) device.turn();
       expect(effort()).toBe(turns === 1 ? 'low' : 'medium');
       first.resolve(
-        protocol === 'legacy'
-          ? { success: true, data: { success: true, modelId: 'model-a/low' } }
-          : reply('low'),
+        protocol === 'legacy' ? { success: true, modelId: 'model-a/low' } : reply('low'),
       );
       await flush();
       expect(effort()).toBe('low');
@@ -841,13 +849,14 @@ describe('decoded Micro encoder effort and wire behavior', () => {
         .fn()
         .mockImplementationOnce(() => first.promise)
         .mockResolvedValue({
-          success: true,
-          data: { success: accepted, modelId: 'model-a/medium', error: 'new save rejected' },
+          success: accepted,
+          modelId: 'model-a/medium',
+          error: 'new save rejected',
         });
       if (protocol === 'legacy') {
         state.daemonHealth.stats.protocolVersion = '5.1';
         publish();
-        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+        useLegacyModelWire(legacy);
       } else {
         request.mockImplementationOnce(() => first.promise);
         if (!accepted) request.mockRejectedValueOnce(new Error('new save rejected'));
@@ -858,8 +867,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.statusChanged('connected');
       device.turn();
       device.turn();
-      if (protocol === 'legacy')
-        first.resolve({ success: true, data: { success: false, error: 'old save rejected' } });
+      if (protocol === 'legacy') first.resolve({ success: false, error: 'old save rejected' });
       else first.reject(new Error('old save rejected'));
       await flush();
       expect(effort()).toBe(accepted ? 'medium' : null);
@@ -919,7 +927,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       if (protocol === 'legacy') {
         state.daemonHealth.stats.protocolVersion = '5.1';
         publish();
-        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+        useLegacyModelWire(legacy);
       } else request.mockImplementationOnce(() => first.promise);
       render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
       const device = manager(protocol === 'legacy' ? 'creator-micro-2' : 'codex-micro');
@@ -937,9 +945,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
         for (const task of tasks) task.cancel();
       }
       first.resolve(
-        protocol === 'legacy'
-          ? { success: true, data: { success: true, modelId: 'model-a/low' } }
-          : reply('low'),
+        protocol === 'legacy' ? { success: true, modelId: 'model-a/low' } : reply('low'),
       );
       await flush();
       expect(effort()).toBe('low');

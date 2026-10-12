@@ -559,6 +559,21 @@ describe('requiresTriggerDeclaration', () => {
 });
 
 describe('inspectDeclaredSuites', () => {
+  it('finds React declared triggers and reports undeclared disk readers in the same app', () => {
+    const declared = 'apps/react/src/store/declared.test.ts';
+    const undeclared = 'apps/react/src/store/undeclared.test.ts';
+    const root = fixtureRoot({
+      [declared]: lines('// @verify-changed-triggers: src/shared/settings/**', cwdReader),
+      [undeclared]: cwdReader,
+    });
+    const result = listDeclaredSuites(root);
+    expect(result.suites).toContainEqual({ path: declared, triggers: ['src/shared/settings/**'] });
+    expect(result.violations.map((entry) => entry.path)).toContain(undeclared);
+    expect(selectDeclaredSuites(result.suites, ['src/shared/settings/contract.ts'])).toEqual([
+      declared,
+    ]);
+  });
+
   const declared = lines(`// ${TRIGGER_MARKER} src/preload/index.ts, ./fixtures/**`, cwdReader);
 
   it('separates declared, exempt, and @ui-invariant suites and flags the rest', () => {

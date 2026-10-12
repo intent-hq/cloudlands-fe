@@ -7,7 +7,10 @@ import { createAgentReadService } from './agent-read-service-factory';
 const agentReadService = createAgentReadService({
   appStore,
   getAgent: (...args) => appClient.agents.get(...args),
-  onBackendReconnected,
+  // Resolve the source export at first read; remove this binding with the Svelte renderer.
+  onBackendReconnected: (
+    ...args: Parameters<typeof onBackendReconnected>
+  ): ReturnType<typeof onBackendReconnected> => onBackendReconnected(...args),
   ownership: agentReadOwnership,
 });
 export const {

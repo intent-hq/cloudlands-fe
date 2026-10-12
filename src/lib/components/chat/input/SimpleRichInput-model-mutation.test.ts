@@ -33,6 +33,16 @@ vi.mock('$store/renderer/store', async () => {
   };
   return module;
 });
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/client/live/backend-transport')>();
+  return {
+    ...actual,
+    backendRequest: (...[method, params]: Parameters<typeof actual.backendRequest>) => {
+      expect(method).toBe('agent.setModel');
+      return fixture.setModel(params);
+    },
+  };
+});
 vi.mock('$lib/client', () => ({
   appClient: { agents: { setReasoningEffort: fixture.setEffort } },
 }));
@@ -96,8 +106,6 @@ import {
   providerModelsReducer,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
-import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
-import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import {
   agentModelReducer,
@@ -254,9 +262,8 @@ beforeEach(() => {
     catalogChannel?.put(action);
     return action;
   });
-  fixture.setModel.mockResolvedValue({ success: true, data: { success: true } });
+  fixture.setModel.mockResolvedValue({ success: true });
   fixture.setEffort.mockResolvedValue({ success: true });
-  registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, fixture.setModel);
   expect(catalogTask?.isRunning() ?? false).toBe(false);
   catalogChannel = stdChannel();
   catalogTask = runSaga(
@@ -288,7 +295,6 @@ afterEach(async () => {
     catalogTask?.cancel();
     catalogChannel?.close();
     catalogChannel = undefined;
-    unregisterMockIpcHandler(AGENT_CHANNELS.SET_MODEL);
     await mutationTask?.toPromise();
     await catalogTask?.toPromise();
     expect(catalogTask?.isCancelled()).toBe(true);
@@ -479,7 +485,7 @@ describe('real composer model mutation ownership', () => {
         await view.rerender({ isStreaming: false });
       } else {
         expect(fixture.setModel).toHaveBeenCalledTimes(1);
-        finish({ success: true, data: { success: true } });
+        finish({ success: true });
       }
       await waitFor(() =>
         expect(session()).toMatchObject({ provider: 'codex', reasoningEffort: 'medium' }),
@@ -629,7 +635,7 @@ describe('real composer model mutation ownership', () => {
   });
 
   it('restores the original selection on failure and permits a later successful edit', async () => {
-    fixture.setModel.mockResolvedValueOnce({ success: false, error: 'Provider rejected model' });
+    fixture.setModel.mockRejectedValueOnce(new Error('Provider rejected model'));
     mount({ requiresModelSwitchConfirmation: false });
     await pick('codex', 'codex only');
     const { notify } = await import('$lib/components/patterns/notify');
@@ -664,7 +670,7 @@ describe('real composer model mutation ownership', () => {
     await pick('codex', 'codex only');
     await waitFor(() => expect(fixture.setModel).toHaveBeenCalled());
     await pick('auggie', 'auggie only');
-    finish({ success: true, data: { success: true } });
+    finish({ success: true });
     await waitFor(() =>
       expect(session()).toMatchObject({ provider: 'codex', model: 'codex-only' }),
     );
@@ -689,7 +695,7 @@ describe('real composer model mutation ownership', () => {
     await waitFor(() => expect(fixture.setModel).toHaveBeenCalled());
     losePermission();
     const before = session();
-    finish({ success: true, data: { success: true } });
+    finish({ success: true });
     await tick();
     expect(fixture.setEffort).not.toHaveBeenCalled();
     expect(session()).toBe(before);
@@ -752,7 +758,7 @@ describe('real composer model mutation ownership', () => {
     await pick('codex', 'codex shared');
     await waitFor(() => expect(fixture.setModel).toHaveBeenCalledTimes(1));
     view.unmount();
-    finish({ success: true, data: { success: true } });
+    finish({ success: true });
     await tick();
     expect(session()).toMatchObject({
       provider: 'auggie',

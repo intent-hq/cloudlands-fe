@@ -5,7 +5,11 @@ import {
   providerModelsCacheCleared,
   providerModelsLoaded,
 } from '../../provider-models/provider-models-slice';
-import { hostExecutionInvalidated } from '../../host-execution/host-execution-slice';
+import {
+  hostExecutionConnectionChanged,
+  hostExecutionInvalidated,
+} from '../../host-execution/host-execution-slice';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -64,6 +68,10 @@ const snapshot = () =>
 
 function seed() {
   admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  expect(connection).not.toBeNull();
+  if (connection === null) throw new Error('Catalog test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
   applySettingsChanges(snapshot(), revision);
 }
 

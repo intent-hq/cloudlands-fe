@@ -8,10 +8,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { setAtomicDefaultModel } from '../../provider-settings/provider-settings-slice';
 import { selectModel, setDefaultReasoningEffort } from '../model-slice';
-import {
-  settingsFieldsRefreshRequested,
-  settingsChangesReceived,
-} from '../../settings-events/settings-events-slice';
+import { settingsFieldsRefreshRequested } from '../../settings-events/settings-events-slice';
 
 const logger = createLogger('ModelSelectionSaga');
 
@@ -109,14 +106,7 @@ export function createModelSelectionSaga<State>({
       if (!snapshot.settings.length) throw new Error('Settings snapshot was empty');
       if (!(yield* selectCanAdministerHost.effect())) return false;
       changes = modelSettingsChanges(snapshot.settings, picks, atomicProviderId);
-      const result = settings.updateSnapshot
-        ? yield* call([settings, settings.updateSnapshot], changes)
-        : { applied: yield* call([settings, settings.update], changes), revision: 0 };
-      if (
-        (yield* selectCanAdministerHost.effect()) &&
-        admittedConnection === (yield* selectModelSelectionState.effect()).selectionConnection
-      )
-        yield* put(settingsChangesReceived(result.applied, result.revision));
+      yield* call([settings, settings.update], changes);
       return admittedConnection === (yield* selectModelSelectionState.effect()).selectionConnection;
     } catch (error) {
       logger.error('Failed to persist default model settings', { error });
@@ -152,14 +142,7 @@ export function createModelSelectionSaga<State>({
       return;
     try {
       const changes = [{ path: 'model.defaultReasoningEffort', value: effort }];
-      const result = settings.updateSnapshot
-        ? yield* call([settings, settings.updateSnapshot], changes)
-        : { applied: yield* call([settings, settings.update], changes), revision: 0 };
-      if (
-        (yield* selectCanAdministerHost.effect()) &&
-        admittedConnection === (yield* selectModelSelectionState.effect()).selectionConnection
-      )
-        yield* put(settingsChangesReceived(result.applied, result.revision));
+      yield* call([settings, settings.update], changes);
     } catch (error) {
       logger.error('Failed to persist model.defaultReasoningEffort', { error });
       yield* put(

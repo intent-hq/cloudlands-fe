@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: scripts/verify-changed.mjs, scripts/verify-unit-selection.mjs
+// @verify-changed-triggers: scripts/verify-changed.mjs, scripts/verify-unit-selection.mjs, vitest.config.ts, apps/react/vitest.config.ts
 // @verify-changed-triggers: scripts/generate-build-config.cjs, scripts/unit-test-prerequisites.mjs
 import { spawnSync } from 'node:child_process';
 import {
@@ -518,5 +518,119 @@ it('body', () => appendFileSync(${JSON.stringify(join(root, 'bodies.jsonl'))}, $
       ['--dry-run', '--max-unit-files=1'],
     ])
       expect(() => parseArgs(args)).toThrow();
+  });
+});
+
+// Independent app values exercise real project resolution and required-runner
+// discovery. No application Store or middleware is replaced by this fixture.
+function appProjectsFixture() {
+  const h = fixture();
+  const sourceSuite = 'src/app.test.ts';
+  const reactSuite = 'apps/react/src/app.test.ts';
+  h.write('src/value.ts', 'export const value = 17;');
+  h.write('apps/react/src/value.ts', 'export const value = 29;');
+  h.write('src/shared.ts', 'export const shared = 3;');
+  h.write('shared-setup.ts', 'globalThis.__APP_SETUP_OBSERVED__ = true;');
+  h.write(
+    'global-setup.ts',
+    `import { appendFileSync } from 'node:fs';
+export default function setup() {
+  appendFileSync('lifecycle.jsonl', 'setup\\n');
+  return () => appendFileSync('lifecycle.jsonl', 'teardown\\n');
+}`,
+  );
+  h.write(
+    'vitest.config.ts',
+    `export default {
+  resolve: { alias: [{ find: '@', replacement: ${JSON.stringify(join(h.root, 'src'))} }] },
+  test: { name: 'source', environment: 'node', maxWorkers: 1,
+    projects: ['vitest.config.ts', 'apps/react/vitest.config.ts'],
+    include: ['src/**/*.test.ts'], globalSetup: ['./global-setup.ts'],
+    setupFiles: ['./shared-setup.ts'] }
+};`,
+  );
+  h.write(
+    'apps/react/vitest.config.ts',
+    `import shared from '../../vitest.config';
+const { projects, globalSetup, ...test } = shared.test;
+export default { ...shared, root: ${JSON.stringify(h.root)},
+  resolve: { alias: [{ find: '@', replacement: ${JSON.stringify(join(h.root, 'apps/react/src'))} }] },
+  test: { ...test, name: 'react', root: ${JSON.stringify(h.root)}, include: ['apps/react/src/**/*.test.ts'] }
+};`,
+  );
+  for (const [file, sharedImport, expected] of [
+    [sourceSuite, './shared', 20],
+    [reactSuite, '../../../src/shared', 32],
+  ] as const) {
+    h.write(
+      file,
+      `import { it, expect } from 'vitest';
+import { appendFileSync } from 'node:fs';
+import { value } from '@/value';
+import { shared } from '${sharedImport}';
+appendFileSync('imports.jsonl', 'imported\\n');
+it('uses the app module and shared setup', () => {
+  expect(globalThis.__APP_SETUP_OBSERVED__).toBe(true);
+  expect(value + shared).toBe(${expected});
+  appendFileSync('bodies.jsonl', JSON.stringify(${JSON.stringify(file)}) + '\\n');
+});`,
+    );
+  }
+  return { ...h, sourceSuite, reactSuite };
+}
+
+describe('required unit discovery across app projects', () => {
+  it('budgets both apps before imports, then executes each once with its real alias and shared setup', async () => {
+    const { root, bodies, sourceSuite, reactSuite } = appProjectsFixture();
+    const selected = plan(check('vitest-full', 'run'));
+    await expect(
+      runVerificationPlan(selected, root, { maxUnitFiles: 1, log() {} }),
+    ).rejects.toThrow(/2 unit files exceed/);
+    expect(existsSync(join(root, 'imports.jsonl'))).toBe(false);
+    expect(existsSync(join(root, 'lifecycle.jsonl'))).toBe(false);
+    await runVerificationPlan(selected, root, { maxUnitFiles: 2, log() {} });
+    expect(bodies()).toEqual([reactSuite, sourceSuite]);
+    expect(readFileSync(join(root, 'lifecycle.jsonl'), 'utf8').trim().split('\n')).toEqual([
+      'setup',
+      'teardown',
+    ]);
+  });
+
+  it('keeps app-local and shared-source related selections distinct without importing suites', async () => {
+    const { root, bodies, sourceSuite, reactSuite } = appProjectsFixture();
+    for (const [changed, expected] of [
+      ['src/value.ts', [sourceSuite]],
+      ['apps/react/src/value.ts', [reactSuite]],
+      ['src/shared.ts', [reactSuite, sourceSuite]],
+    ] as const) {
+      const lines: string[] = [];
+      await runVerificationPlan(plan(check('vitest-related', 'related', '--run', changed)), root, {
+        resolvedPlan: true,
+        maxUnitFiles: 2,
+        log: (line: string) => lines.push(line),
+      });
+      expect(lines.filter((line) => line.startsWith('  - ')).map((line) => line.slice(4))).toEqual(
+        expected,
+      );
+    }
+    expect(existsSync(join(root, 'imports.jsonl'))).toBe(false);
+    expect(bodies()).toEqual([]);
+  });
+
+  it('retains the root global guard when only the React project is selected', async () => {
+    const { root, bodies, reactSuite } = appProjectsFixture();
+    await runVerificationPlan(
+      plan(check('vitest-direct', 'run', '--project=react', reactSuite)),
+      root,
+      {
+        maxUnitFiles: 1,
+        log() {},
+      },
+    );
+    expect(bodies()).toEqual([reactSuite]);
+    expect(readFileSync(join(root, 'lifecycle.jsonl'), 'utf8').trim().split('\n')).toEqual([
+      'setup',
+      'teardown',
+    ]);
   });
 });

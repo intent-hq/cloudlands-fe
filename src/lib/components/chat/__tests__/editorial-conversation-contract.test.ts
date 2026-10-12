@@ -1,7 +1,8 @@
 // @verify-changed-triggers: ../ChatPanel.svelte, ../ChatMessage.svelte, ../LazyTurn.svelte,
 //   ../PinnedUserPrompt.svelte, ../pinned-prompt.ts, ../user-message-surface.ts,
 //   ../ConversationTurnGap.svelte, ../MessageContent.svelte, ../StreamingMessageContent.svelte,
-//   ../ResponseGroup.svelte, ../operational-disclosure-row.ts, ../ChatOperationalRow.svelte,
+//   ../ResponseGroup.svelte, ../operational-disclosure-row.ts,
+//   ../operational-disclosure-classes.ts, ../ChatOperationalRow.svelte,
 //   ../operational-window-items.ts, ../OperationalWindow.svelte,
 //   ../StreamingStatus.svelte, ../StreamingTypingIndicator.svelte, ../EventWakeupBanner.svelte,
 //   ../InlineAgentAvatar.svelte, ../SuggestedPrompts.svelte, ../message-action-surface.ts,
@@ -183,7 +184,7 @@ describe('editorial conversation presentation contract', () => {
     const staticContent = source('src/lib/components/chat/MessageContent.svelte');
     const streamingContent = source('src/lib/components/chat/StreamingMessageContent.svelte');
     const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
-    const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
+    const operationalRow = source('src/lib/components/chat/operational-disclosure-classes.ts');
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
@@ -303,7 +304,7 @@ describe('editorial conversation presentation contract', () => {
     const contextEngine = source('src/lib/components/chat/ContextEngineToolCall.svelte');
     const sharedRow = source('src/lib/components/chat/ChatOperationalRow.svelte');
     const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
-    const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
+    const operationalRow = source('src/lib/components/chat/operational-disclosure-classes.ts');
     const agentTab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
     expect(operationalRow).toContain('CHAT_OPERATIONAL_ROW_CLASS');

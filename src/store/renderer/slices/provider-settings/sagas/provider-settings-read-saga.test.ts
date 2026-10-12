@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { PI_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import {
-  initialState,
-  providerSettingsReducer,
   providerSettingsSessionOpened,
   providerPathsRequested,
   providerPathSaved,
   piAdapterInstallRequested,
 } from '../provider-settings-slice';
-import { initialState as availabilityState } from '../../agent-availability/agent-availability-slice';
+import { checkSingleProviderSuccess } from '../../agent-availability/agent-availability-slice';
 import { providerSettingsSaga } from './provider-settings-saga';
 
 const mocks = vi.hoisted(() => ({
@@ -25,43 +26,47 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: mocks.success, error: mocks.error },
 }));
 
-const tasks: Task[] = [];
+const cleanups: (() => Promise<void>)[] = [];
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 function harness(piAvailable = false) {
-  let state = initialState;
-  const channel = stdChannel();
-  const send = (action: Parameters<typeof providerSettingsReducer>[1]) => {
-    state = providerSettingsReducer(state, action);
-    channel.put(action);
+  const disposeStore = store.init();
+  const runtimeErrors: unknown[] = [];
+  const recordRuntimeError = (event: unknown) => runtimeErrors.push(event);
+  store.traceStreams.runtimeError.onValue(recordRuntimeError);
+  const cancelOwners: (() => void)[] = [];
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    for (const cancel of [...cancelOwners].reverse()) cancel();
+    await settle();
   };
-  const task = runSaga(
-    {
-      channel,
-      dispatch: send,
-      getState: () => ({
-        providerSettings: state,
-        agentAvailability: {
-          ...availabilityState,
-          providerStatusMap: { pi: { available: piAvailable } },
-        },
-      }),
-    },
-    providerSettingsSaga,
-  );
-  tasks.push(task);
-  send(providerSettingsSessionOpened('panel'));
-  return { send, task, state: () => state };
+  cleanups.push(async () => {
+    try {
+      await stop();
+    } finally {
+      disposeStore();
+      store.traceStreams.runtimeError.offValue(recordRuntimeError);
+    }
+    expect(runtimeErrors).toEqual([]);
+  });
+  admitLegacyPrincipal();
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  if (!connection) throw new Error('Settings test requires an admitted connection');
+  store.dispatch(hostExecutionConnectionChanged(connection));
+  store.dispatch(checkSingleProviderSuccess('pi', { available: piAvailable }));
+  cancelOwners.push(store.runSaga(providerSettingsSaga));
+  store.dispatch(providerSettingsSessionOpened('panel'));
+  return { send: store.dispatch, stop, state: () => store.state.providerSettings };
 }
+
 beforeEach(() => {
   vi.resetAllMocks();
 });
 afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
-  }
+  for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
 it('requests configured and resolved paths exactly and ignores a pre-save response', async () => {
@@ -232,8 +237,7 @@ it('cancels in-flight and queued adapter requests when the owner stops', async (
   const h = harness();
   h.send(piAdapterInstallRequested({ id: 'one', sessionId: 'panel' }));
   h.send(piAdapterInstallRequested({ id: 'two', sessionId: 'panel' }));
-  h.task.cancel();
-  await h.task.toPromise();
+  await h.stop();
   expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(PI_CHANNELS.INSTALL_MCP_ADAPTER);
   expect(getItem(h.state().requests, 'one')?.status).toBe('cancelled');
   expect(getItem(h.state().requests, 'two')?.status).toBe('cancelled');

@@ -5,5 +5,8 @@ import { createProviderCatalogSaga } from './provider-catalog-saga-factory';
 
 export const { hydrateProviderCatalog } = createProviderCatalogSaga({
   selectPrincipalConnectionContext,
-  providers: { catalog: (workspaceId) => appClient.providers.catalog(workspaceId) },
+  providers: {
+    catalog: (...args: Parameters<typeof appClient.providers.catalog>) =>
+      appClient.providers.catalog(...args),
+  },
 });
