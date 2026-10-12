@@ -1,0 +1,8 @@
+@utility subscription-card-row-inset {
+  padding-inline: 0.75rem !important;
+}
+
+@utility subscription-card-body-inset {
+  padding-inline-start: 2.5rem;
+  padding-inline-end: 0.75rem;
+}

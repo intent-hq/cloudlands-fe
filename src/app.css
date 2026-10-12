@@ -4,6 +4,7 @@
    the production bundle (intent-hq/monorepo#1909). Keep these imports first. */
 @import '$lib/styles/tokens.css';
 @import '$lib/styles/overlay-surface.css';
+@import '$lib/styles/subscription-card-utilities.css';
 @import '$lib/styles/tiptap-editor.css';
 @import '$lib/styles/chat-messages.css';
 @import '$lib/styles/comments.css';
@@ -53,15 +54,6 @@
    `--motion-reduced` token from tokens.css so every `motion-reduce:*` utility
    follows the same single source of truth as the hand-written component CSS. */
 @custom-variant motion-reduce (@container style(--motion-reduced: 1));
-
-@utility subscription-card-row-inset {
-  padding-inline: 0.75rem !important;
-}
-
-@utility subscription-card-body-inset {
-  padding-inline-start: 2.5rem;
-  padding-inline-end: 0.75rem;
-}
 
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
