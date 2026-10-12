@@ -9,6 +9,7 @@ import { DiagramFunctionalExamples } from './diagram-functional-examples';
 import { CallbackDialogExamples } from './callback-dialog-examples';
 import { MenuFocusExamples } from './menu-focus-examples';
 import { EffortPickerExamples } from './effort-picker-examples';
+import { ModelPickerExamples } from './model-picker-examples';
 import { WorkspacePresentationExamples } from './workspace-presentation-examples';
 import { ResourceIconExamples } from './resource-icon-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
@@ -455,6 +456,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'modals' && <CallbackDialogExamples />}
       {slug === 'menu' && <MenuFocusExamples />}
       {slug === 'effort-picker' && <EffortPickerExamples />}
+      {slug === 'model-picker' && <ModelPickerExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -516,6 +518,7 @@ export function hasFunctionalExample(slug: string) {
     'modals',
     'menu',
     'effort-picker',
+    'model-picker',
     'diagram-workbench',
     'toast',
     'notify',
