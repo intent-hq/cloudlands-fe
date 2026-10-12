@@ -1,4 +1,8 @@
-import { getMountedWorkspaceIds } from './workspace-lifecycle-projections';
+import {
+  createIsWorkspaceSessionLiveProjection,
+  getMountedWorkspaceIds,
+  getWorkspaceSessionPhase,
+} from './workspace-lifecycle-projections';
 import { store } from '../../store';
 import type { Workspace } from '$shared/types';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -28,9 +32,7 @@ export const selectWorkspaceLoadResult = store.createSelector<
   );
 });
 
-const selectWorkspaceSessionPhase = store.createSelector<[wsId: string]>(
-  (state, wsId) => state.workspaceLifecycle.sessionPhaseByWorkspaceId[wsId],
-);
+const selectWorkspaceSessionPhase = store.createSelector<[wsId: string]>(getWorkspaceSessionPhase);
 
 export const selectIsWorkspaceHydrated = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => {
@@ -46,5 +48,5 @@ export const selectIsWorkspaceHydrated = store.createSelector<[wsId: string], bo
 export const selectMountedWorkspaceIds = store.createSelector(getMountedWorkspaceIds);
 
 export const selectIsWorkspaceSessionLive = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => selectWorkspaceSessionPhase.select(state, wsId) === 'live',
+  createIsWorkspaceSessionLiveProjection(selectWorkspaceSessionPhase),
 );
