@@ -254,7 +254,10 @@ export async function applyPrompts(item, prompts) {
   await expect(item.rows).toHaveCount(prompts.length);
 }
 export async function chooseChief(item, chief = true) {
-  await control(item, chief ? 'Chief starters' : 'Suggested prompts').click();
+  await item.host
+    .getByRole('radiogroup', { name: 'Prompt composition', exact: true })
+    .getByRole('radio', { name: chief ? 'Chief starters' : 'Suggested prompts', exact: true })
+    .click();
   await expect.poll(async () => (await item.inputs()).composition).toBe(chief ? 'chief' : 'source');
 }
 export async function expectCounts(item, select, edit = 0, link = 0) {
