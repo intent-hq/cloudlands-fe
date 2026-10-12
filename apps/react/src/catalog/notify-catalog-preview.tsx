@@ -3,7 +3,7 @@
 // i18n-ignore (internal catalog fixture content)
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Toast, AgentAttentionToast, UpdateToast } from '@/components/ui/toast';
+import { AgentAttentionToast, UpdateToast } from '@/components/ui/toast';
 import { notify, type NotifyId, type ProgressHandle } from '@/components/patterns/notify';
 import { NotifyErrorToast } from '@/components/patterns/notify/notify-error-toast';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
@@ -311,7 +311,6 @@ export function NotifyExample({ policyControls = true }: { policyControls?: bool
       <output className="sr-only" data-testid="notify-events">
         {events.join(',')}
       </output>
-      <Toast />
     </section>
   );
 }

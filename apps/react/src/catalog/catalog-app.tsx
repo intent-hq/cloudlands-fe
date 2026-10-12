@@ -1,4 +1,5 @@
 import { ToastCatalogPage } from './toast-catalog-page';
+import { Toast } from '@/components/ui/toast';
 import { useLocation } from '@tanstack/react-router';
 import { FunctionalExamples, hasFunctionalExample } from './functional-examples';
 import { LiveExamples, hasLiveExample } from './live-examples';
@@ -29,37 +30,40 @@ export function CatalogApp() {
     hasFunctionalExample(slug);
   const live = search.get('example') === 'live' && hasLiveExample(slug);
   return (
-    <CatalogShell>
-      {live ? (
-        <LiveExamples key={`${slug}:${location.searchStr}`} slug={slug} search={search} />
-      ) : interactive ? (
-        <FunctionalExamples key={slug} slug={slug} />
-      ) : !slug ? (
-        <CatalogIntroduction />
-      ) : slug === 'recipes' ? (
-        <RecipesPage />
-      ) : slug === 'question-wizard' ? (
-        <QuestionWizardPage />
-      ) : systemSlug ? (
-        <CatalogSystemPage key={slug} slug={systemSlug} />
-      ) : !settings.state && entry?.slug === 'toast' ? (
-        <ToastCatalogPage entry={entry} />
-      ) : entry &&
-        (!settings.state ||
-          entry.slug === 'fields' ||
-          entry.slug === 'rows' ||
-          entry.slug === 'modals') &&
-        hasComponentPage(entry.slug) ? (
-        <CatalogComponentPage key={entry.slug} entry={entry} />
-      ) : (
-        <CatalogScene
-          key={slug}
-          slug={slug}
-          requestedState={settings.state}
-          requestedWidth={settings.width}
-          requestedFit={settings.fit}
-        />
-      )}
-    </CatalogShell>
+    <>
+      <CatalogShell>
+        {live ? (
+          <LiveExamples key={`${slug}:${location.searchStr}`} slug={slug} search={search} />
+        ) : interactive ? (
+          <FunctionalExamples key={slug} slug={slug} />
+        ) : !slug ? (
+          <CatalogIntroduction />
+        ) : slug === 'recipes' ? (
+          <RecipesPage />
+        ) : slug === 'question-wizard' ? (
+          <QuestionWizardPage />
+        ) : systemSlug ? (
+          <CatalogSystemPage key={slug} slug={systemSlug} />
+        ) : !settings.state && entry?.slug === 'toast' ? (
+          <ToastCatalogPage entry={entry} />
+        ) : entry &&
+          (!settings.state ||
+            entry.slug === 'fields' ||
+            entry.slug === 'rows' ||
+            entry.slug === 'modals') &&
+          hasComponentPage(entry.slug) ? (
+          <CatalogComponentPage key={entry.slug} entry={entry} />
+        ) : (
+          <CatalogScene
+            key={slug}
+            slug={slug}
+            requestedState={settings.state}
+            requestedWidth={settings.width}
+            requestedFit={settings.fit}
+          />
+        )}
+      </CatalogShell>
+      <Toast />
+    </>
   );
 }

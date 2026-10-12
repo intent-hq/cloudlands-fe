@@ -4,7 +4,6 @@ import { FormField } from '@/components/patterns/form';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Toast } from '@/components/ui/toast';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ChatCliBlock } from '@/features/chat/components/chat-cli-block';
 import { QueuedMessageActions } from '@/features/chat/components/queued-message-actions';
@@ -326,7 +325,6 @@ export function ChatCommandExamples() {
       </p>
       <QueuedActionsExercise />
       <CommandCardExercise />
-      <Toast />
     </section>
   );
 }

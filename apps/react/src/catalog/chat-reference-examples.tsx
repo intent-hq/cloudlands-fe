@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Toast } from '@/components/ui/toast';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   ChatReferenceBlock,
@@ -605,7 +604,6 @@ export function ChatReferenceExamples() {
       <CodeExercise />
       <ReferenceExercise />
       <ChipExercise />
-      <Toast />
     </section>
   );
 }
