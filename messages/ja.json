@@ -7535,5 +7535,7 @@
   "chat_failureRecovery_action_description": "応答が完了前に停止しました。",
   "providers_cliVersionWarning_message": "{provider} CLI のバージョン {version} は、サポート対象の最低バージョン {minimumVersion} を下回っています。デーモンのホストで CLI を更新してください。",
   "layout_noteTab_editRawMarkdown_action": "Markdownソースを編集",
-  "layout_noteTab_pagingUnsupported_error": "このワークスペースのホストは大きなノートの表示に対応していません。ホストを更新するか、ノートのメニューから「Markdownソースを編集」を選択してください。"
+  "layout_noteTab_pagingUnsupported_error": "このワークスペースのホストは大きなノートの表示に対応していません。ホストを更新するか、ノートのメニューから「Markdownソースを編集」を選択してください。",
+  "layout_noteTab_backToRendered_label": "レンダリング表示に戻る",
+  "layout_noteTab_returnSaveFailed_error": "保存を完了できませんでした。下書きは引き続き Markdown ソースで開いています。"
 }

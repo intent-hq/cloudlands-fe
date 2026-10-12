@@ -32,6 +32,7 @@
     viewMode = 'editor',
     paging = false,
     failPages = false,
+    holdSave = false,
     pageChunk = 1024,
     canonicalPadding = 0,
     nativeClipboard = false,
@@ -44,6 +45,7 @@
     viewMode?: NoteViewMode;
     paging?: boolean;
     failPages?: boolean;
+    holdSave?: boolean;
     pageChunk?: number;
     canonicalPadding?: number;
     nativeClipboard?: boolean;
@@ -52,6 +54,7 @@
     nativeDelete?: boolean;
     deleteMode?: 'supported' | 'unsupported' | 'lost-ack' | 'rejected';
   }>();
+  let releaseSave = $state<(() => void) | undefined>();
   let viewFailure = $state('');
   const originalShow = NoteWindowView.prototype.show;
   NoteWindowView.prototype.show = function (...args) {
@@ -303,7 +306,15 @@
       if (p.expectedVersion !== rev) throw new Error('Conflict');
       source = p.content;
       writes++;
-      return { ...note, content: source, contentLength: source.length, rev: ++rev };
+      const saved = { ...note, content: source, contentLength: source.length, rev: ++rev };
+      if (holdSave)
+        return new Promise((resolve) => {
+          releaseSave = () => {
+            releaseSave = undefined;
+            resolve(saved);
+          };
+        });
+      return saved;
     },
   };
   // A mocked request may run synchronously inside a mounting effect. Keep fixture
@@ -467,6 +478,7 @@
   </div>{/if}
 
 <div class="h-[600px] flex flex-col" data-testid="note-pane">
+  {#if releaseSave}<button onclick={releaseSave}>Acknowledge fixture save</button>{/if}
   <button
     onclick={() =>
       store.dispatch(

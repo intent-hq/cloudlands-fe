@@ -7535,5 +7535,7 @@
   "chat_failureRecovery_action_description": "回复在完成前停止了。",
   "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低于支持的最低版本 {minimumVersion}。请在守护进程主机上更新 CLI。",
   "layout_noteTab_editRawMarkdown_action": "编辑 Markdown 源码",
-  "layout_noteTab_pagingUnsupported_error": "此工作区主机不支持查看大型笔记。请更新主机，或在笔记菜单中选择“编辑 Markdown 源码”。"
+  "layout_noteTab_pagingUnsupported_error": "此工作区主机不支持查看大型笔记。请更新主机，或在笔记菜单中选择“编辑 Markdown 源码”。",
+  "layout_noteTab_backToRendered_label": "返回渲染视图",
+  "layout_noteTab_returnSaveFailed_error": "无法完成保存。草稿仍在原始 Markdown 中打开。"
 }

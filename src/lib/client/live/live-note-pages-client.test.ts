@@ -294,3 +294,38 @@ it('checks the fixed staged send after its final clock callback, before backend 
   expect(finalClockReached).toBe(true);
   expect(rpc).not.toHaveBeenCalled();
 });
+
+it('isolates an unavailable unrelated workspace from the active note page subscription', async () => {
+  const notify: Array<(n: { method: string; params?: unknown }) => void> = [];
+  vi.mocked(onBackendNotification).mockImplementation((fn) => {
+    notify.push(fn);
+    return vi.fn();
+  });
+  rpc.mockImplementation((method, params) => {
+    if (
+      method === 'note.subscribe' &&
+      (params as { workspaceId?: string })?.workspaceId === 'bump-beta'
+    )
+      return Promise.reject(new Error('Workspace not found'));
+    if (method === 'note.subscribe') return Promise.resolve({ subscriptionId: 'sub-a' });
+    return Promise.resolve({});
+  });
+  const currentState = vi.fn(),
+    currentReset = vi.fn(),
+    unrelatedReset = vi.fn();
+  const client = new LiveNotePagesClient();
+  const stopActive = client.subscribe('ws-a', 'spec', currentState, currentReset);
+  const stopStale = client.subscribe('bump-beta', 'spec', vi.fn(), unrelatedReset);
+  await vi.waitFor(() => expect(unrelatedReset).toHaveBeenCalledWith('Workspace not found'));
+  for (const fn of notify) fn(vectors.events[0]);
+  expect(currentState).toHaveBeenCalledWith(vectors.events[0].params.snapshot);
+  expect(currentReset.mock.calls).toEqual([[undefined]]);
+  expect(rpc).toHaveBeenCalledWith('note.subscribe', {
+    workspaceId: 'ws-a',
+    noteId: 'spec',
+    projection: 'pageState',
+  });
+  expect(rpc.mock.calls.filter(([method]) => method === 'note.get')).toEqual([]);
+  stopActive();
+  stopStale();
+});

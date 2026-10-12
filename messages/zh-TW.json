@@ -7535,5 +7535,7 @@
   "chat_failureRecovery_action_description": "回覆在完成前停止了。",
   "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低於支援的最低版本 {minimumVersion}。請在守護程序主機上更新 CLI。",
   "layout_noteTab_editRawMarkdown_action": "編輯 Markdown 原始碼",
-  "layout_noteTab_pagingUnsupported_error": "此工作區主機不支援檢視大型筆記。請更新主機，或在筆記選單中選擇「編輯 Markdown 原始碼」。"
+  "layout_noteTab_pagingUnsupported_error": "此工作區主機不支援檢視大型筆記。請更新主機，或在筆記選單中選擇「編輯 Markdown 原始碼」。",
+  "layout_noteTab_backToRendered_label": "返回呈現檢視",
+  "layout_noteTab_returnSaveFailed_error": "無法完成儲存。草稿仍在原始 Markdown 中開啟。"
 }

@@ -1174,7 +1174,7 @@
       workspace.id === targetWorkspace &&
       noteId === targetNote &&
       !deletionHeld();
-    if (composing || editor?.view.composing)
+    if (composing || editor?.view.composing || rawNoteEditorRef?.getDeleteState().composing)
       throw new Error('Finish composing before closing the editor');
     finishing = true;
     if (editor && !editor.isDestroyed) editor.setEditable(false, false);
