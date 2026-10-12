@@ -8,6 +8,7 @@
 import type { AppClient, SkillsClient, SubscriptionHandler, Unsubscribe } from '../app-client';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import { createLogger } from '$lib/utils/client-logger';
+import { createBackendSkillsClient } from './backend-skills-client';
 import {
   backendRequest,
   backendSubscribe,
@@ -18,39 +19,17 @@ import {
 
 const logger = createLogger('LiveSkillsClient');
 
-/**
- * Wire shape for `skill.list` response per PROTOCOL §5.34 — a bare array of
- * skill objects (no envelope). Includes optional frontmatter fields
- * (`allowedTools`, `compatibility`) that the renderer `SkillInfo` contract
- * omits.
- */
-interface WireSkill {
-  name: string;
-  description: string;
-  location: string;
-  resourceDirectory?: string;
-  scope: 'project' | 'user';
-  allowedTools?: string;
-  compatibility?: string;
-}
-
-/** Map wire skill → renderer SkillInfo (strip allowedTools/compatibility). */
-function normalizeSkill(wire: WireSkill): SkillInfo {
-  return {
-    name: wire.name,
-    description: wire.description,
-    location: wire.location,
-    ...(wire.resourceDirectory ? { resourceDirectory: wire.resourceDirectory } : {}),
-    scope: wire.scope,
-  };
-}
+// Compatibility for LiveAppClient until the Svelte renderer is retired.
+// Read the transport export inside the moved async body, preserving overrides.
+const skillReads = createBackendSkillsClient({
+  backendRequest: <T>(...args: Parameters<typeof backendRequest>): Promise<T> =>
+    backendRequest<T>(...args),
+});
 
 export class LiveSkillsClient implements SkillsClient {
   /** Raw `skill.list` fetch — throws on transport/daemon failure. */
-  private async fetchList(workspaceId: string): Promise<SkillInfo[]> {
-    // `skill.list` (§5.34) returns a bare array of skills (name-sorted).
-    const result = await backendRequest<WireSkill[]>('skill.list', { workspaceId });
-    return Array.isArray(result) ? result.map(normalizeSkill) : [];
+  private fetchList(workspaceId: string): Promise<SkillInfo[]> {
+    return skillReads.list(workspaceId);
   }
 
   async list(workspaceId: string): Promise<SkillInfo[]> {
