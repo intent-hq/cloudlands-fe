@@ -309,6 +309,22 @@ export function assertAvatarPairNetwork(evidence, origin) {
     'Only this page’s same-origin Vite HMR socket is permitted',
   ).toEqual([]);
   expect(evidence.rpc, 'A pure avatar comparison must not communicate with a daemon').toEqual([]);
+  // Pinned Vite 6.4.3 / 8.3.4 servers send only { type: 'connected' } at
+  // startup; their clients send { type: 'ping' } heartbeats. This frozen run
+  // permits no updates or custom events. Keep unknown raw frames and fail.
+  for (const frame of evidence.frames) {
+    expect(['framesent', 'framereceived']).toContain(frame.direction);
+    expect(evidence.sockets).toContain(frame.url);
+    expect(JSON.parse(frame.raw), `Unexpected ${frame.direction} frame: ${frame.raw}`).toEqual({
+      type: frame.direction === 'framereceived' ? 'connected' : 'ping',
+    });
+  }
+  for (const url of evidence.sockets) {
+    expect(
+      evidence.frames.some((frame) => frame.url === url && frame.direction === 'framereceived'),
+      'Every observed HMR connection must retain its startup frame',
+    ).toBe(true);
+  }
   expect(evidence.failures, 'Every failed request remains fatal').toEqual([]);
   expect(
     evidence.requests.filter(
