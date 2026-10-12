@@ -239,28 +239,94 @@ export async function openCatalogFixture(page, baseUrl, entry, errors = []) {
   };
 }
 
-export async function stableScreenshot(page, entry, onUnstable) {
+async function captureContext(frame) {
+  return frame.evaluate((target) => {
+    const { ownerDocument: document } = target;
+    const window = document.defaultView;
+    const { scrollX, scrollY, innerWidth, innerHeight, visualViewport } = window;
+    const bounds = target.getBoundingClientRect();
+    const active = document.activeElement;
+    const focusPath = [];
+    for (let node = active; node; node = node.parentElement) {
+      const index = node.parentElement ? [...node.parentElement.children].indexOf(node) : 0;
+      focusPath.unshift(`${node.tagName}:${index}`);
+    }
+    return {
+      scrollX,
+      scrollY,
+      layoutViewport: {
+        width: innerWidth,
+        height: innerHeight,
+        clientWidth: document.documentElement.clientWidth,
+        clientHeight: document.documentElement.clientHeight,
+      },
+      visualViewport: visualViewport
+        ? {
+            width: visualViewport.width,
+            height: visualViewport.height,
+            offsetLeft: visualViewport.offsetLeft,
+            offsetTop: visualViewport.offsetTop,
+            pageLeft: visualViewport.pageLeft,
+            pageTop: visualViewport.pageTop,
+            scale: visualViewport.scale,
+          }
+        : null,
+      targetDocumentBounds: {
+        x: bounds.x + scrollX,
+        y: bounds.y + scrollY,
+        width: bounds.width,
+        height: bounds.height,
+      },
+      activeFocus: active
+        ? { tag: active.tagName, id: active.id, path: focusPath.join("/") }
+        : null,
+    };
+  });
+}
+
+function captureContextChanges(before, after, path = "") {
+  if (before === after) return [];
+  if (!before || !after || typeof before !== "object" || typeof after !== "object") return [path];
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].flatMap((key) =>
+    captureContextChanges(before[key], after[key], path ? `${path}.${key}` : key),
+  );
+}
+
+export async function stableScreenshot(page, entry, onAttempt) {
   const frame = page.locator(entry ? captureSelector(entry) : frameSelector);
   let previous;
-  const attempts = [];
   // Repeated real captures detect moving content without injecting CSS or freezing clocks.
   for (let attempt = 0; attempt < 6; attempt += 1) {
     if (entry?.kind !== "catalog-fixture")
       await page.locator('[data-preview-ready="true"][data-preview-stable="true"]').waitFor();
-    const png = await frame.screenshot({
-      animations: "allow",
-      caret: "hide",
-      scale: "css",
-      timeout: 5_000,
-    });
-    attempts.push(png);
+    const before = await captureContext(frame);
+    let png;
+    let after;
+    try {
+      png = await frame.screenshot({
+        animations: "allow",
+        caret: "hide",
+        scale: "css",
+        timeout: 5_000,
+      });
+      after = await captureContext(frame);
+    } catch (error) {
+      await onAttempt?.({ attempt: attempt + 1, png, before, after, error: String(error) });
+      throw error;
+    }
+    const changes = captureContextChanges(before, after);
+    await onAttempt?.({ attempt: attempt + 1, png, before, after, changes });
+    // Matching PNGs cannot establish stability when capture itself changes the context.
+    if (changes.length)
+      throw new Error(
+        `Capture context changed on attempt ${attempt + 1} at ${page.url()}: ${changes.join(", ")}. No later frame was attempted or accepted.`,
+      );
     if (previous?.equals(png)) return png;
     previous = png;
     await page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
   }
-  await onUnstable?.(attempts);
   throw new Error(
     `Capture never produced two identical frames at ${page.url()}. The scene is still moving; no baseline was accepted.`,
   );

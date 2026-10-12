@@ -69,30 +69,44 @@ for (const entry of selectedCases(manifest)) {
                 ),
               ].sort()
           : undefined;
-      // Preserve both sides' original failed attempts before closing either page.
+      // Retain every attempt and its context, including attempts that fail before stability.
       const captures = await Promise.allSettled(
         [
           ["reference", reference],
           ["candidate", candidate],
         ].map(([side, page]) =>
-          stableScreenshot(page, entry, async (attempts) => {
-            const frames = [];
-            for (const [index, png] of attempts.entries()) {
-              const name = `${side}-unstable-${index + 1}.png`;
+          stableScreenshot(page, entry, async ({ png, ...attempt }) => {
+            const name = `${side}-attempt-${attempt.attempt}.png`;
+            if (png) {
               const file = testInfo.outputPath(name);
               await writeFile(file, png);
               await testInfo.attach(name, { path: file, contentType: "image/png" });
-              frames.push({ name, sha256: createHash("sha256").update(png).digest("hex") });
             }
-            await testInfo.attach(`${side}-unstable.json`, {
-              body: JSON.stringify({ url: page.url(), frames }, null, 2),
+            await testInfo.attach(`${side}-attempt-${attempt.attempt}.json`, {
+              body: JSON.stringify(
+                {
+                  url: page.url(),
+                  ...attempt,
+                  image: png
+                    ? { name, sha256: createHash("sha256").update(png).digest("hex") }
+                    : null,
+                },
+                null,
+                2,
+              ),
               contentType: "application/json",
             });
           }),
         ),
       );
       const failed = captures.find((result) => result.status === "rejected");
-      if (failed) throw failed.reason;
+      if (failed) {
+        await testInfo.attach("capture-errors.json", {
+          body: JSON.stringify({ reference: referenceErrors, candidate: candidateErrors }, null, 2),
+          contentType: "application/json",
+        });
+        throw failed.reason;
+      }
       const [referencePng, candidatePng] = captures.map((result) => result.value);
       const [referenceAria, candidateAria] = await Promise.all([
         reference.locator(captureSelector(entry)).ariaSnapshot(),
