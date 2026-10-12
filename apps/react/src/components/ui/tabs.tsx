@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useSize, type UiSize } from '@/components/ui/size-context';
 import { ChoiceHighlight } from './choice-highlight';
 
-type TabsVariant = 'default' | 'subtle' | 'underline';
+export type TabsVariant = 'default' | 'subtle' | 'underline';
 const TabsContext = React.createContext({
   variant: 'default' as TabsVariant,
   size: 'default' as UiSize,
@@ -106,3 +106,6 @@ export function TabsContent({
     <TabsPrimitive.Content data-slot="tabs-content" className={cn('mt-3', className)} {...props} />
   );
 }
+
+// Preserve the source public barrel's namespace-style component names.
+export { Tabs as Root, TabsList as List, TabsTrigger as Trigger, TabsContent as Content };
