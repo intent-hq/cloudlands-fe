@@ -43,7 +43,7 @@ test('response-group RG1 automatic streaming changes the live child branch', asy
   await choice(item.host, 'Primary blocks', 'mixed');
   await sameNode(item.primary.child, previewChild);
   await captureGroupViews(page, item, 'RG1-streaming-preview', info, [
-    { group: 'primary', view: 'preview' },
+    { group: 'primary', view: 'preview', readiness: 'following-preview-bottom' },
   ]);
   await choice(item.host, 'Primary blocks', 'empty');
   await expanded(item.primary, true);

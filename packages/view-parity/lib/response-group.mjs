@@ -631,6 +631,99 @@ function assertRevealState(observed) {
   ).toBeLessThanOrEqual(observed.clip.bottom - observed.clip.top);
 }
 
+// Only an explicitly fresh following preview may settle before framing begins.
+// Original owners and numeric positions remain in the receipt; no browser state is written.
+async function prepareFollowingPreviewBottom(page, frame, targets, baseline, evidence, handles) {
+  const preparation = { kind: 'following-preview-bottom', samples: [] };
+  evidence.preparation = preparation;
+  const target = await targets[1].$('[role="group"]');
+  expect(target, 'Following preview must own a Cylinder').not.toBeNull();
+  handles.push(target);
+  preparation.original = await baseline.evaluate(
+    (state, target) => ({
+      targetIndex: state.cylinders.findIndex((entry) => entry.node === target),
+      inner: state.cylinders.map((entry) => ({
+        top: entry.top,
+        currentTop: entry.node.scrollTop,
+        total: entry.node.scrollHeight,
+        height: entry.node.clientHeight,
+      })),
+    }),
+    target,
+  );
+  const { targetIndex, inner: original } = preparation.original;
+  expect(targetIndex, 'Preview Cylinder must belong to the original owners').toBeGreaterThanOrEqual(
+    0,
+  );
+  let previousTop = original[targetIndex].top;
+  const sample = async () => {
+    const observed = await measureGroupView(frame, targets, baseline);
+    preparation.samples.push(observed);
+    expect(
+      preparation.samples.length,
+      'Following preview readiness sample limit',
+    ).toBeLessThanOrEqual(120);
+    for (const [name, same] of Object.entries(observed.invariants)) {
+      if (name !== 'innerScroll') expect(same, `Preview readiness changed ${name}`).toBe(true);
+    }
+    expect(observed.targets.every((node) => node.connected)).toBe(true);
+    for (const [index, current] of observed.inner.entries()) {
+      if (index !== targetIndex)
+        expect(current.top, 'Readiness changed a non-target Cylinder').toBe(original[index].top);
+    }
+    const current = observed.inner[targetIndex];
+    expect(current.height, 'Following preview needs a measurable viewport').toBeGreaterThan(0);
+    expect(current.top, 'Following preview moved upward during readiness').toBeGreaterThanOrEqual(
+      previousTop,
+    );
+    expect(current.top).toBeGreaterThanOrEqual(0);
+    expect(current.top).toBeLessThanOrEqual(Math.max(0, current.total - current.height));
+    previousTop = current.top;
+    return current;
+  };
+  const atBottom = (current) => Math.max(0, current.total - current.height) - current.top <= 1;
+  const metrics = (current) => [current.top, current.total, current.height];
+  await expect
+    .poll(
+      async () => {
+        const first = await sample();
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        );
+        const second = await sample();
+        return (
+          atBottom(first) &&
+          atBottom(second) &&
+          JSON.stringify(metrics(first)) === JSON.stringify(metrics(second))
+        );
+      },
+      {
+        timeout: 5000,
+        message: 'Fresh following preview must reach its actual bottom before framing',
+      },
+    )
+    .toBe(true);
+  const settled = preparation.samples.at(-1).inner[targetIndex];
+  preparation.settled = settled;
+  const framingBaseline = await baseline.evaluateHandle(
+    (state, { target, top }) => ({
+      ...state,
+      cylinders: state.cylinders.map((entry) =>
+        entry.node === target ? { ...entry, top } : entry,
+      ),
+    }),
+    { target, top: settled.top },
+  );
+  handles.push(framingBaseline);
+  preparation.beforeFraming = await measureGroupView(frame, targets, framingBaseline);
+  for (const [name, same] of Object.entries(preparation.beforeFraming.invariants))
+    expect(same, `Settled preview changed ${name} before framing`).toBe(true);
+  expect(preparation.beforeFraming.targets.every((node) => node.connected)).toBe(true);
+  expect(metrics(preparation.beforeFraming.inner[targetIndex])).toEqual(metrics(settled));
+  return framingBaseline;
+}
+
 export async function captureGroupViews(page, item, name, info, views) {
   expect(Array.isArray(views) && views.length > 0, 'Explicit capture subjects are required').toBe(
     true,
@@ -687,12 +780,27 @@ export async function captureGroupViews(page, item, name, info, views) {
         };
       });
       handles.push(baseline);
+      let framingBaseline = baseline;
+      if (view.readiness !== undefined) {
+        expect(view.readiness).toBe('following-preview-bottom');
+        expect(name).toBe('RG1-streaming-preview');
+        expect(view.group).toBe('primary');
+        expect(view.view).toBe('preview');
+        framingBaseline = await prepareFollowingPreviewBottom(
+          page,
+          item.frame,
+          targets,
+          baseline,
+          evidence,
+          handles,
+        );
+      }
       await item.frame.hover({ position: { x: 2, y: 2 } });
       const visibleBox = await item.frame.boundingBox();
       expect(visibleBox).not.toBeNull();
       await item.frame.hover({ position: { x: 2, y: Math.max(1, visibleBox.height - 2) } });
       await page.evaluate(() => document.fonts.ready);
-      let observed = await measureGroupView(item.frame, targets, baseline);
+      let observed = await measureGroupView(item.frame, targets, framingBaseline);
       evidence.initial = observed;
       assertRevealState(observed);
       for (let input = 0; !observed.contained && input < 3; input += 1) {
@@ -701,7 +809,7 @@ export async function captureGroupViews(page, item, name, info, views) {
         expect(observed.wheelPoint, 'No safe non-Cylinder wheel point; stop').not.toBeNull();
         const point = { x: observed.wheelPoint.x, y: observed.wheelPoint.y };
         await page.mouse.move(point.x, point.y);
-        const ready = await measureGroupView(item.frame, targets, baseline, point);
+        const ready = await measureGroupView(item.frame, targets, framingBaseline, point);
         step.ready = ready;
         assertRevealState(ready);
         expect(ready.wheelPoint, 'Wheel hit ownership changed; stop').not.toBeNull();
@@ -711,7 +819,7 @@ export async function captureGroupViews(page, item, name, info, views) {
         await expect
           .poll(
             async () => {
-              observed = await measureGroupView(item.frame, targets, baseline);
+              observed = await measureGroupView(item.frame, targets, framingBaseline);
               step.last = observed;
               step.settleSamples += 1;
               assertRevealState(observed);
@@ -722,7 +830,7 @@ export async function captureGroupViews(page, item, name, info, views) {
                     requestAnimationFrame(() => requestAnimationFrame(resolve)),
                   ),
               );
-              observed = await measureGroupView(item.frame, targets, baseline);
+              observed = await measureGroupView(item.frame, targets, framingBaseline);
               step.last = observed;
               assertRevealState(observed);
               const movement = observed.outer.top - ready.outer.top;
@@ -743,7 +851,7 @@ export async function captureGroupViews(page, item, name, info, views) {
         'All named subjects must be contained and hittable before capture',
       ).toBe(true);
       await capture(page, item, outputName, info);
-      evidence.afterCapture = await measureGroupView(item.frame, targets, baseline);
+      evidence.afterCapture = await measureGroupView(item.frame, targets, framingBaseline);
       assertRevealState(evidence.afterCapture);
       expect(evidence.afterCapture.contained, 'Capture must leave named subjects contained').toBe(
         true,
