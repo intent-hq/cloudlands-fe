@@ -478,7 +478,7 @@ export async function expectArtwork(container, name, info) {
   expect(observed.role).toBe(expected.inline ? null : 'img');
   expect(observed.hidden).toBe(expected.inline ? null : 'true');
   expect(observed.label).toBeNull();
-  await expect(container.getByRole('img')).toHaveCount(0);
+  await expect(container.getByRole('img')).toHaveCount(expected.inline ? 1 : 0);
 }
 
 export async function expectIconSize(item, size, info, name) {
