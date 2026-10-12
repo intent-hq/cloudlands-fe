@@ -99,8 +99,8 @@ test('chat transcript T6: missing effort uses fallback while provider spelling r
 }, info) => {
   const host = await openTranscript(page);
   const exercise = host.getByTestId('chat-effort');
-  const status = exercise.getByRole('status');
   const display = exercise.getByTestId('chat-effort-leaf');
+  const status = display.getByRole('status');
   await captureTranscript(page, display, 'effort-fallback-before', info);
   await chooseProp(page, exercise, 'Effort notice case', 'provider');
   await expect(status).toHaveText('Effort changed from provider/Deep-Think to custom-Mixed_CASE');
@@ -137,7 +137,7 @@ test('chat transcript T9: long notice text remains readable through unmount and 
   for (const [id, name, label, value] of cases) {
     const exercise = host.getByTestId(`chat-${id}`);
     const display = exercise.getByTestId(`chat-${id}-leaf`);
-    const status = exercise.getByRole('status');
+    const status = display.getByRole('status');
     await chooseProp(page, exercise, label, value);
     await expect(status).toHaveText(longText);
     await expectReadable(status);

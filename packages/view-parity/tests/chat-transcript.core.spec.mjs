@@ -24,7 +24,7 @@ test('chat transcript T1: separator and dismissal title survive prop changes and
   await captureTranscript(page, divider.getByTestId('chat-divider-leaf'), 'divider-after', info);
 
   const questions = host.getByTestId('chat-questions');
-  const status = questions.getByRole('status');
+  const status = questions.getByTestId('chat-questions-leaf').getByRole('status');
   await expect(status).toHaveAttribute('title', 'Caller supplied dismissal title');
   await captureTranscript(
     page,
@@ -137,8 +137,8 @@ test('chat transcript T5: effort labels distinguish Auto Off and case-insensitiv
 }, info) => {
   const host = await openTranscript(page);
   const exercise = host.getByTestId('chat-effort');
-  const status = exercise.getByRole('status');
   const display = exercise.getByTestId('chat-effort-leaf');
+  const status = display.getByRole('status');
   await expect(status).toHaveText('Effort changed from Auto to High');
   await captureTranscript(page, display, 'effort-before', info);
   await chooseProp(page, exercise, 'Effort notice case', 'none');
@@ -153,8 +153,8 @@ test('chat transcript T7: model props use raw IDs provider defaults and incomple
 }, info) => {
   const host = await openTranscript(page);
   const exercise = host.getByTestId('chat-model');
-  const status = exercise.getByRole('status');
   const display = exercise.getByTestId('chat-model-leaf');
+  const status = display.getByRole('status');
   await expect(status).toHaveText('Switched from org/model:alpha to org/model:beta');
   await captureTranscript(page, display, 'model-before', info);
   // Original selectors return unresolved raw provider IDs; null is provider default,
@@ -199,8 +199,8 @@ test('chat transcript T8: provider notices distinguish disabled defaults and mis
 }, info) => {
   const host = await openTranscript(page);
   const exercise = host.getByTestId('chat-provider');
-  const status = exercise.getByRole('status');
   const display = exercise.getByTestId('chat-provider-leaf');
+  const status = display.getByRole('status');
   await expect(status).toHaveText(
     'sonnet4.6 (auggie) is no longer available — auggie was disabled in Settings > Agents; this agent now runs on codex.',
   );
