@@ -186,3 +186,12 @@ export async function expectActive(host, kind, option) {
     .toBe(id);
   return id;
 }
+
+export async function expectIdentities(host, kind, count) {
+  await expect
+    .poll(
+      async () =>
+        (await outputJson(host.getByTestId(`${kind}-callback-state`))).selectionIdentities,
+    )
+    .toEqual(Array(count).fill(true));
+}

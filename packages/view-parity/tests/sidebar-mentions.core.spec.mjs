@@ -6,6 +6,7 @@ import {
   captureLeaf,
   chooseProp,
   expectActive,
+  expectIdentities,
 } from '../lib/sidebar-mentions.mjs';
 
 // Source: SidebarActionIconsHarness, SidebarHeaderAction, SidebarGroupHeader,
@@ -74,7 +75,7 @@ test('sidebar mentions M1: grouped display order wraps and selects the exact men
   const input = exercise.getByRole('combobox', { name: 'Filter mentions', exact: true });
   const options = exercise.getByRole('option');
   await expect(options).toHaveCount(5);
-  const list = exercise.getByRole('listbox');
+  const list = exercise.getByTestId('mention-list-display');
   await captureLeaf(page, list, 'grouped-before', info);
   await expectActive(exercise, 'mention', options.nth(0));
   await input.press('ArrowDown');
@@ -100,6 +101,7 @@ test('sidebar mentions M1: grouped display order wraps and selects the exact men
         group: 'Files',
       },
     ]);
+  await expectIdentities(exercise, 'mention', 1);
   await input.press('ArrowDown');
   await expectActive(exercise, 'mention', options.nth(4));
   await expect(options.nth(4)).toHaveAccessibleName('Development preview service');
@@ -119,7 +121,12 @@ test('sidebar mentions M2: nested Enter Right Left and Escape preserve breadcrum
   await chooseProp(page, exercise, 'Mention list props', 'nested');
   const input = exercise.getByRole('combobox', { name: 'Filter mentions', exact: true });
   const state = () => outputJson(exercise.getByTestId('mention-callback-state'));
-  await captureLeaf(page, exercise.getByRole('listbox'), 'nested-mentions-before', info);
+  await captureLeaf(
+    page,
+    exercise.getByTestId('mention-list-display'),
+    'nested-mentions-before',
+    info,
+  );
   await input.press('Enter');
   await expectActive(
     exercise,
@@ -144,6 +151,13 @@ test('sidebar mentions M2: nested Enter Right Left and Escape preserve breadcrum
         uri: 'devspace://note/nested-note',
       },
     ]);
+  await expectIdentities(exercise, 'mention', 1);
+  await captureLeaf(
+    page,
+    exercise.getByTestId('mention-list-display'),
+    'nested-mentions-child',
+    info,
+  );
   await input.press('ArrowLeft');
   await expectActive(
     exercise,
@@ -158,7 +172,12 @@ test('sidebar mentions M2: nested Enter Right Left and Escape preserve breadcrum
     exercise.getByRole('option', { name: 'Fixture folder', exact: true }),
   );
   expect((await state()).closeCallbacks).toBe(0);
-  await captureLeaf(page, exercise.getByRole('listbox'), 'nested-mentions-after', info);
+  await captureLeaf(
+    page,
+    exercise.getByTestId('mention-list-display'),
+    'nested-mentions-after',
+    info,
+  );
   await input.press('Escape');
   await expect(exercise.getByRole('listbox')).toHaveCount(0);
   await expect(input).toBeFocused();
@@ -174,7 +193,13 @@ test('sidebar mentions M2: nested Enter Right Left and Escape preserve breadcrum
       'ArrowRight',
       'Escape',
       'Escape',
-    ].map((key) => ({ key, handled: true, defaultPrevented: true, native: true })),
+    ].map((key) => ({
+      key,
+      handled: true,
+      defaultPrevented: true,
+      native: true,
+      refPresent: true,
+    })),
   );
 });
 
@@ -186,7 +211,7 @@ test('sidebar mentions K1: skill keyboard selection and dismissal report exact c
   const input = exercise.getByRole('combobox', { name: 'Filter skills', exact: true });
   const state = () => outputJson(exercise.getByTestId('skill-callback-state'));
   const list = exercise.getByRole('listbox');
-  await captureLeaf(page, list, 'skills-before', info);
+  await captureLeaf(page, exercise.getByTestId('skill-list-display'), 'skills-before', info);
   await input.press('ArrowUp');
   await expectActive(
     exercise,
@@ -204,13 +229,14 @@ test('sidebar mentions K1: skill keyboard selection and dismissal report exact c
         scope: 'user',
       },
     ]);
+  await expectIdentities(exercise, 'skill', 1);
   await input.press('ArrowDown');
   await expectActive(
     exercise,
     'skill',
     exercise.getByRole('option', { name: 'fixture-review', exact: true }),
   );
-  await captureLeaf(page, list, 'skills-after', info);
+  await captureLeaf(page, exercise.getByTestId('skill-list-display'), 'skills-after', info);
   await input.press('Escape');
   await expect(list).toHaveCount(0);
   await expect(input).toBeFocused();
@@ -221,6 +247,7 @@ test('sidebar mentions K1: skill keyboard selection and dismissal report exact c
     handled: false,
     defaultPrevented: false,
     native: true,
+    refPresent: false,
   });
   expect((await state()).selections).toHaveLength(1);
 });

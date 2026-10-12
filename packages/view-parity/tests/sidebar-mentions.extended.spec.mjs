@@ -7,6 +7,7 @@ import {
   expectContained,
   chooseProp,
   expectActive,
+  expectIdentities,
 } from '../lib/sidebar-mentions.mjs';
 
 test('sidebar mentions S5: external query updates preserve header toolbar and files containment', async ({
@@ -63,7 +64,7 @@ test('sidebar mentions M3: genuine pointer entry respects the movement gate', as
   await input.press('ArrowDown');
   const note = exercise.getByRole('option', { name: 'Flat note', exact: true });
   await expectActive(exercise, 'mention', note);
-  await captureLeaf(page, exercise.getByRole('listbox'), 'pointer-before', info);
+  await captureLeaf(page, exercise.getByTestId('mention-list-display'), 'pointer-before', info);
   const task = exercise.getByRole('option', { name: 'Flat task', exact: true });
   const box = await task.boundingBox();
   expect(box).not.toBeNull();
@@ -87,7 +88,8 @@ test('sidebar mentions M3: genuine pointer entry respects the movement gate', as
         uri: 'devspace://task/flat-task',
       },
     ]);
-  await captureLeaf(page, exercise.getByRole('listbox'), 'pointer-after', info);
+  await expectIdentities(exercise, 'mention', 1);
+  await captureLeaf(page, exercise.getByTestId('mention-list-display'), 'pointer-after', info);
 });
 
 test('sidebar mentions M4: loading empty replacement and ref lifetime follow source behavior', async ({
@@ -97,16 +99,19 @@ test('sidebar mentions M4: loading empty replacement and ref lifetime follow sou
   const exercise = host.getByTestId('mention-exercise');
   const input = exercise.getByRole('combobox', { name: 'Filter mentions', exact: true });
   const state = () => outputJson(exercise.getByTestId('mention-callback-state'));
-  await captureLeaf(page, exercise.getByRole('listbox'), 'props-before', info);
+  const display = exercise.getByTestId('mention-list-display');
+  await captureLeaf(page, display, 'props-before', info);
   await input.fill('no-such-result');
   await expect(exercise.getByRole('option')).toHaveCount(0);
   await expect.poll(async () => (await state()).activeOption).toBeNull();
   await input.press('ArrowUp');
   await input.press('Enter');
   expect((await state()).selections).toEqual([]);
+  await captureLeaf(page, display, 'props-empty', info);
   await exercise.getByRole('switch', { name: 'Loading mentions', exact: true }).click();
   await input.press('Enter');
   expect((await state()).selections).toEqual([]);
+  await captureLeaf(page, display, 'props-loading', info);
   await input.fill('service');
   await expect(exercise.getByRole('listbox')).toHaveAttribute('aria-busy', 'true');
   // Unlike the skill list, source EnhancedMentionList permits loaded rows while busy.
@@ -136,6 +141,7 @@ test('sidebar mentions M4: loading empty replacement and ref lifetime follow sou
     handled: false,
     defaultPrevented: false,
     native: true,
+    refPresent: false,
   });
   expect((await state()).selections).toHaveLength(2);
   await exercise.getByRole('button', { name: 'Remount mentions', exact: true }).click();
@@ -143,7 +149,15 @@ test('sidebar mentions M4: loading empty replacement and ref lifetime follow sou
   expect(newId).not.toBe(oldId);
   await input.press('Enter');
   expect((await state()).selections.slice(1)).toEqual([expected, expected]);
-  await captureLeaf(page, exercise.getByRole('listbox'), 'props-after', info);
+  await expectIdentities(exercise, 'mention', 3);
+  expect((await state()).keys.at(-1)).toEqual({
+    key: 'Enter',
+    handled: true,
+    defaultPrevented: true,
+    native: true,
+    refPresent: true,
+  });
+  await captureLeaf(page, display, 'props-after', info);
 });
 
 test('sidebar mentions M5: keyboard wrap scrolls the last real row into view', async ({
@@ -152,7 +166,7 @@ test('sidebar mentions M5: keyboard wrap scrolls the last real row into view', a
   const host = await openLeafExample(page, 'mention-navigation', 'mention-navigation');
   const exercise = host.getByTestId('mention-exercise');
   await chooseProp(page, exercise, 'Mention list props', 'many');
-  const list = exercise.getByRole('listbox');
+  const list = exercise.getByTestId('mention-list-display');
   const input = exercise.getByRole('combobox', { name: 'Filter mentions', exact: true });
   await expect(exercise.getByRole('option')).toHaveCount(24);
   await captureLeaf(page, list, 'wrap-before', info);
@@ -177,6 +191,7 @@ test('sidebar mentions M5: keyboard wrap scrolls the last real row into view', a
       ),
     )
     .toEqual(['file-23']);
+  await expectIdentities(exercise, 'mention', 1);
   await captureLeaf(page, list, 'wrap-after', info);
   await input.press('ArrowDown');
   await expectActive(exercise, 'mention', exercise.getByRole('option').first());
@@ -195,7 +210,8 @@ test('sidebar mentions K2: skill loading error retry empty and reset remain dist
     'skill',
     exercise.getByRole('option', { name: 'fixture-plan', exact: true }),
   );
-  await captureLeaf(page, exercise.getByRole('listbox'), 'skill-states-before', info);
+  const display = exercise.getByTestId('skill-list-display');
+  await captureLeaf(page, display, 'skill-states-before', info);
   for (const mode of ['loading', 'error', 'empty']) {
     await chooseProp(page, exercise, 'Skill list props', mode);
     await expect(exercise.getByRole('listbox')).toHaveCount(0);
@@ -209,8 +225,10 @@ test('sidebar mentions K2: skill loading error retry empty and reset remain dist
         handled: false,
         defaultPrevented: false,
         native: true,
+        refPresent: true,
       })),
     );
+    await captureLeaf(page, display, `skill-state-${mode}`, info);
     if (mode === 'error') {
       await expect(exercise.getByRole('alert')).toBeVisible();
       await exercise.getByRole('button', { name: 'Retry', exact: true }).click();
@@ -233,13 +251,14 @@ test('sidebar mentions K2: skill loading error retry empty and reset remain dist
   await expect
     .poll(async () => (await state()).selections.map((item) => item.name))
     .toEqual(['fixture-plan']);
+  await expectIdentities(exercise, 'skill', 1);
   await input.fill('');
   await expectActive(
     exercise,
     'skill',
     exercise.getByRole('option', { name: 'fixture-review', exact: true }),
   );
-  await captureLeaf(page, exercise.getByRole('listbox'), 'skill-states-after', info);
+  await captureLeaf(page, display, 'skill-states-after', info);
   await chooseProp(page, exercise, 'Skill list props', 'loading');
   await input.press('Escape');
   await expect.poll(async () => (await state()).dismissCallbacks).toBe(1);
@@ -254,7 +273,8 @@ test('sidebar mentions B1: absent-session avatar and changing badge props retain
   const avatar = leaves.locator('[data-agent-avatar-with-state]');
   await expect(avatar).toHaveAccessibleName('Idle');
   await expect(leaves.getByLabel('1 unread response', { exact: true })).toBeVisible();
-  await captureLeaf(page, leaves, 'badge-before', info);
+  const display = leaves.getByTestId('agent-leaf-display');
+  await captureLeaf(page, display, 'badge-before', info);
   for (const [count, label] of [
     ['2', '2 unread responses'],
     ['1000', '1,000 unread responses'],
@@ -274,7 +294,7 @@ test('sidebar mentions B1: absent-session avatar and changing badge props retain
       )
       .toBe(0);
     await info.attach(`badge-${count}-ax.txt`, {
-      body: await leaves.ariaSnapshot(),
+      body: await display.ariaSnapshot(),
       contentType: 'text/plain',
     });
   }
@@ -287,7 +307,7 @@ test('sidebar mentions B1: absent-session avatar and changing badge props retain
   await expect(avatar).toHaveAccessibleName('Idle');
   await chooseProp(page, leaves, 'Badge count prop', '1');
   await expect(leaves.getByLabel('1 unread response', { exact: true })).toBeVisible();
-  await captureLeaf(page, leaves, 'badge-after', info);
+  await captureLeaf(page, display, 'badge-after', info);
 });
 
 test('sidebar mentions S6: unmount releases search Escape and header refs before remount', async ({
