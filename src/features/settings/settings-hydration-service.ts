@@ -46,7 +46,7 @@ function applyOther({ path, value }: AppliedSettingChange, revision?: number) {
 }
 // Svelte compatibility composition; remove at the renderer cutover.
 export const applySettingsChanges = createSettingsHydrator({
-  dispatch: appStore.dispatch,
+  dispatch: (action) => appStore.dispatch(action),
   getState: () => appStore.state,
   applyOther,
 });
