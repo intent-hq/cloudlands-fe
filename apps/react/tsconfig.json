@@ -37,5 +37,10 @@
       "$lib/*": ["../../src/lib/*"]
     }
   },
-  "include": ["src", "vite*.config.ts", "../../src/types/electron.d.ts"]
+  "include": [
+    "src",
+    "vite*.config.ts",
+    "../../src/types/electron.d.ts",
+    "../../src/types/flatstr.d.ts"
+  ]
 }
