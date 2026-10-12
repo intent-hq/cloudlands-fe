@@ -1,0 +1,32 @@
+.agent-avatar {
+  display: block;
+  box-sizing: border-box;
+  width: var(--agent-avatar-surface-size, 20px);
+  height: var(--agent-avatar-surface-size, 20px);
+  border-radius: var(--agent-avatar-corner-radius, 6px);
+  background-color: var(--agent-avatar-background, hsl(var(--agent-avatar-surface-neutral)));
+  color: var(--agent-avatar-art-foreground);
+  opacity: 1;
+  forced-color-adjust: auto;
+}
+
+.agent-avatar--named {
+  padding: var(--agent-avatar-clear-space, 2px);
+}
+
+.agent-avatar--legacy {
+  padding: 1px;
+}
+
+[data-agent-avatar-with-state] .agent-avatar {
+  color: inherit;
+}
+
+@media (forced-colors: active) {
+  .agent-avatar {
+    background-color: var(--agent-avatar-background-forced, Canvas);
+    color: CanvasText;
+    outline: var(--agent-avatar-outline-forced, 1px solid CanvasText);
+    outline-offset: -1px;
+  }
+}

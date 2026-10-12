@@ -1,5 +1,5 @@
 import { m } from '$shared/paraglide/messages.js';
-import type { AvatarState } from './avatar-state';
+import type { AvatarState } from './avatar-state-core';
 
 export function getAgentAvatarStateLabel(state: AvatarState): string {
   switch (state) {
