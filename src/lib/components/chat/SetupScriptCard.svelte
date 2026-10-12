@@ -2,6 +2,7 @@
   import { faTerminal, faCopy, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { COPY_FEEDBACK_RESET_MS } from '$lib/motion/copy-feedback-timing';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -19,7 +20,7 @@
     copied = true;
     setTimeout(() => {
       copied = false;
-    }, 2000);
+    }, COPY_FEEDBACK_RESET_MS);
   }
 
   function handleUse() {
