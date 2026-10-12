@@ -15,10 +15,11 @@ import { createBackendAgentClient } from './backend-agent-client';
 import { createBackendPermissionClient } from './backend-permission-client';
 import { onBackendNotification, onBackendReconnected } from './backend-transport';
 export { normalizeAgent } from './agent-normalization';
+// Keep call-time source lookup until the Svelte AppClient compatibility facade retires.
 const agentReads = createBackendAgentClient({
-  backendRequest,
-  onBackendNotification,
-  onBackendReconnected,
+  backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+  onBackendNotification: (...args) => onBackendNotification(...args),
+  onBackendReconnected: (...args) => onBackendReconnected(...args),
 });
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';

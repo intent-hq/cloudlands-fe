@@ -20,7 +20,9 @@ export { newIdempotencyKey } from './idempotency-key';
 // Svelte compatibility binding; remove at the renderer cutover.
 import { createRunMutation, extractConflict, mutationErrorMessage } from './backend-mutation';
 export { extractConflict, mutationErrorMessage } from './backend-mutation';
-export const runMutation = createRunMutation(backendRequest);
+export const runMutation = createRunMutation(<T>(...args: Parameters<typeof backendRequest>) =>
+  backendRequest<T>(...args),
+);
 
 /**
  * Extract the canonical entity id from a daemon mutation response. Handles a

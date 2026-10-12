@@ -9,7 +9,21 @@ import { LiveIntegrationsClientCore } from './live-integrations-client-core';
 /** Compatibility constructor for LiveAppClient until the legacy renderer is retired. */
 export class LiveIntegrationsClient extends LiveIntegrationsClientCore {
   constructor() {
-    super({ backendRequest, captureBackendRepositoryCheckout, captureBackendRepositoryResource });
+    // Resolve legacy transport exports before each operation's arguments, as before extraction.
+    super({
+      get backendRequest() {
+        const request = backendRequest;
+        return <T>(...args: Parameters<typeof request>) => request<T>(...args);
+      },
+      get captureBackendRepositoryCheckout() {
+        const capture = captureBackendRepositoryCheckout;
+        return (...args: Parameters<typeof capture>) => capture(...args);
+      },
+      get captureBackendRepositoryResource() {
+        const capture = captureBackendRepositoryResource;
+        return (...args: Parameters<typeof capture>) => capture(...args);
+      },
+    });
   }
 }
 
