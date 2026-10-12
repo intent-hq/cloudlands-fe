@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.215.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.6...v2.215.7) (2026-10-12)
+
+
+### 🐛 Bug Fixes
+
+* recall presented user messages in composer ([#7068](https://github.com/intent-hq/cloudlands-fe/issues/7068)) ([#3359](https://github.com/intent-hq/cloudlands-fe/issues/3359)) ([f6301c7](https://github.com/intent-hq/cloudlands-fe/commit/f6301c733cc057046586c5f218a500d630f06e04))
+* require PR component tests for fixture dependencies ([#3363](https://github.com/intent-hq/cloudlands-fe/issues/3363)) ([e04cb98](https://github.com/intent-hq/cloudlands-fe/commit/e04cb9843018aa0177c7c25200b8d31bf0b4285e))
+
 ## [2.215.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.5...v2.215.6) (2026-10-12)
 
 
