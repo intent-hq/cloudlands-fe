@@ -71,7 +71,6 @@ import {
   stopScriptRequested,
   updateRuntimeState,
   updateScriptDefinitionRequested,
-  upsertScript,
 } from '../scripts-slice';
 import type { ScriptDetectionOutcome, ScriptQuickAction } from '../scripts-types';
 
@@ -259,7 +258,7 @@ function* createScriptDefinition(
     const result = yield* call([scriptsClient, scriptsClient.create], workspaceId, input);
     yield* scriptAuthority(workspaceId, authority);
     if (!result.success || !result.data) throw new Error(result.error ?? 'Script creation failed');
-    yield* put(upsertScript(workspaceId, result.data));
+    yield* put(refreshScripts(workspaceId));
     yield* put(action.success(result.data));
     settled = true;
   } catch (error) {
@@ -286,7 +285,7 @@ function* updateScriptDefinition(
     );
     yield* scriptAuthority(workspaceId, authority);
     if (!result.success || !result.data) throw new Error(result.error ?? 'Script update failed');
-    yield* put(upsertScript(workspaceId, result.data));
+    yield* put(refreshScripts(workspaceId));
     yield* put(action.success(result.data));
     settled = true;
   } catch (error) {
@@ -402,7 +401,6 @@ function* applyScriptDefinitionChanges(
       const result = yield* call([scriptsClient, scriptsClient.create], workspaceId, input);
       if (result.success && result.data) {
         added += 1;
-        yield* put(upsertScript(workspaceId, result.data));
       }
     }
     yield* scriptAuthority(workspaceId, authority);

@@ -46,6 +46,7 @@ import {
   clearScriptOperations,
   refreshScripts,
   restartScriptRequested,
+  scriptSnapshotReceived,
   scriptOperationFailed,
   scriptOperationSucceeded,
   restoreScriptDefinitionsRequested,
@@ -273,7 +274,7 @@ describe('scriptsOperationSaga', () => {
     run.channel.put(create);
     await expect(create.promise).resolves.toEqual(created);
     expect(mocks.create).toHaveBeenCalledWith(WS, create.payload[1]);
-    expect(run.state.scripts.byWorkspaceId[WS].scripts[created.id]?.name).toBe('Build');
+    expect(run.actions).toContainEqual(refreshScripts(WS));
 
     const update = updateScriptDefinitionRequested(WS, created.id, {
       name: 'Production build',
@@ -281,7 +282,61 @@ describe('scriptsOperationSaga', () => {
     run.channel.put(update);
     await expect(update.promise).resolves.toEqual(updated);
     expect(mocks.update).toHaveBeenCalledWith(WS, created.id, update.payload[2]);
-    expect(run.state.scripts.byWorkspaceId[WS].scripts[created.id]?.name).toBe('Production build');
+    expect(run.actions.filter(({ type }) => type === refreshScripts.type)).toHaveLength(2);
+    await stop(run.task);
+  });
+
+  it('preserves a newer script snapshot while an update response is pending', async () => {
+    const pending = deferred<{ success: true; data: Record<string, unknown> }>();
+    mocks.update.mockReturnValueOnce(pending.promise);
+    const run = start();
+    seed(run);
+    const request = updateScriptDefinitionRequested(WS, 'script-1', { name: 'Saved name' });
+    run.channel.put(request);
+    await settle();
+
+    const newer = {
+      ...run.state.scripts.byWorkspaceId[WS].scripts['script-1'],
+      name: 'Newer event name',
+    };
+    run.dispatch(scriptSnapshotReceived(WS, newer));
+    pending.resolve({
+      success: true,
+      data: { ...newer, name: 'Saved name' },
+    });
+
+    await expect(request.promise).resolves.toEqual({ ...newer, name: 'Saved name' });
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']?.name).toBe('Newer event name');
+    expect(run.actions).toContainEqual(refreshScripts(WS));
+    await stop(run.task);
+  });
+
+  it('does not recreate a definition removed while a create response is pending', async () => {
+    const pending = deferred<{ success: true; data: Record<string, unknown> }>();
+    mocks.create.mockReturnValueOnce(pending.promise);
+    const run = start();
+    seed(run);
+    const request = createScriptDefinitionRequested(WS, {
+      name: 'Build',
+      command: 'pnpm build',
+      mode: 'command',
+      purpose: 'saved',
+      source: 'user',
+    });
+    run.channel.put(request);
+    await settle();
+
+    run.dispatch(removeScript(WS, 'script-created'));
+    const created = {
+      ...run.state.scripts.byWorkspaceId[WS].scripts['script-1'],
+      id: 'script-created',
+      name: 'Build',
+    };
+    pending.resolve({ success: true, data: created });
+
+    await expect(request.promise).resolves.toEqual(created);
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-created']).toBeUndefined();
+    expect(run.actions).toContainEqual(refreshScripts(WS));
     await stop(run.task);
   });
 
