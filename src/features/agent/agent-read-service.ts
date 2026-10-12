@@ -4,7 +4,7 @@ import { store as appStore } from '$store/renderer/store';
 import { agentReadOwnership } from './agent-read-ownership';
 import { createAgentReadService } from './agent-read-service-factory';
 /** Source binding shared by metadata/event/chat consumers; no transcript read is introduced. */
-export const agentReadService = createAgentReadService({
+const agentReadService = createAgentReadService({
   appStore,
   getAgent: (...args) => appClient.agents.get(...args),
   onBackendReconnected,

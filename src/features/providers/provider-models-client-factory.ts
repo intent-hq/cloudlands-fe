@@ -25,7 +25,7 @@ import { m } from '$shared/paraglide/messages.js';
 const logger = createLogger('ProviderModelsClient');
 
 import type { ProviderModelsEnvelope, ProviderModelsResult } from './provider-models-types';
-export type { ProviderModelEntry, ProviderModelsResult } from './provider-models-types';
+export type { ProviderModelsResult } from './provider-models-types';
 
 /**
  * The uniform `<provider>:get-models` channels. Recorded in

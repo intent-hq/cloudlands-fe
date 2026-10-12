@@ -28,7 +28,7 @@ import {
 } from '../agent-availability-selectors';
 import { createProviderAvailabilitySaga } from './provider-availability-saga-factory';
 
-export const { checkSingleProviderWorker, checkAllProvidersWorker, providerAvailabilityReadSaga } =
+const { checkSingleProviderWorker, checkAllProvidersWorker, providerAvailabilityReadSaga } =
   createProviderAvailabilitySaga({
     selectPrincipalConnectionContext,
     selectHostRole,
@@ -42,6 +42,8 @@ export const { checkSingleProviderWorker, checkAllProvidersWorker, providerAvail
     readAvailability,
     authLifetime,
   });
+
+export { checkSingleProviderWorker, checkAllProvidersWorker };
 
 import { call, cancelled, delay, put, takeEvery, takeLatest } from 'typed-redux-saga';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
