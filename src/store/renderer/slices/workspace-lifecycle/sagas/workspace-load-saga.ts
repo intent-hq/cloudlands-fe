@@ -9,6 +9,7 @@ import { createWorkspaceLoadSaga } from './workspace-load-saga-factory';
 
 // Compatibility binding for the existing root saga until the Svelte renderer is retired.
 export const workspaceLoadSaga = createWorkspaceLoadSaga({
+  admission: { kind: 'source' },
   workspaceClient,
   appClient,
   selectWorkspaceById,
