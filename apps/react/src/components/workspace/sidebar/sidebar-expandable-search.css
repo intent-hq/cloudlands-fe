@@ -1,0 +1,21 @@
+.sidebar-search--header:has([data-sidebar-search-expanded]) {
+  width: clamp(5.5rem, 36cqi, 10rem);
+}
+
+[data-sidebar-search-expanded] > svg {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+
+[data-sidebar-search='files'] [data-sidebar-search-expanded] > svg {
+  left: calc((var(--control-height-compact) - 0.875rem) / 2);
+}
+
+[data-sidebar-search-input]::-webkit-search-cancel-button {
+  display: none;
+}
