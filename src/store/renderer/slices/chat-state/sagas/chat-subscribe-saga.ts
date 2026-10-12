@@ -1,7 +1,4 @@
-import {
-  observeSubmissionEvidence,
-  submissionHistoryEvidence,
-} from '$features/agent/submission-evidence';
+import { observeSubmissionTranscript } from '$features/agent/submission-evidence';
 /**
  * Chat subscribe saga — feeds the STANDING `chat.subscribe` transcript
  * (PROTOCOL §7.1) into the agent-session slice so ChatPanel renders from the
@@ -200,6 +197,8 @@ interface SubscriptionEntry {
   lastTranscript?: ChatTranscript;
   /** Last transcript whose submission evidence actually reached a hydrated session. */
   lastObservedTranscript?: ChatTranscript;
+  /** Immutable correlation/bounds evidence, cleared on stream continuity loss. */
+  lastSubmissionEvidence?: string;
   /**
    * A seq-0 snapshot that arrived BEFORE the session shell existed (the
    * chat-read saga's `agents.get` was still pending), held back so its meta
@@ -473,17 +472,17 @@ function* applyTranscript(
     if (isCurrentSubscription(coordinator, agentId, entry)) {
       // Hydration settlement restores the live transcript after a history read.
       // Re-observing that same evidence would invalidate the read and schedule
-      // another refresh forever. New subscription deliveries still invalidate,
-      // even when the client emits the same object; deferred first applies do too.
+      // another refresh forever. Accepted deliveries only preserve settled queue
+      // authority when their submission correlation and history bounds agree.
       if (
         (!transcript.fromHistory || transcript.initialHistory?.complete === true) &&
         (!restoration || entry.lastObservedTranscript !== transcript)
       ) {
-        observeSubmissionEvidence(
+        entry.lastSubmissionEvidence = observeSubmissionTranscript(
           agentId,
           session.workspaceId,
-          'history',
-          submissionHistoryEvidence(transcript.messages),
+          transcript,
+          entry.lastSubmissionEvidence,
         );
         entry.lastObservedTranscript = transcript;
       }
@@ -611,6 +610,7 @@ function* handleSubscriptionEvent(
   try {
     if (event.kind === 'phase') {
       if (isCurrentSubscription(coordinator, event.agentId, entry)) {
+        if (event.phase !== 'live') entry.lastSubmissionEvidence = undefined;
         yield* put(chatLiveStreamPhaseChanged(event.agentId, event.phase));
       }
       return;

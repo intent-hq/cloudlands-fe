@@ -13,6 +13,8 @@ import type {
   SubmissionRead,
 } from '$store/renderer/slices/pending-submissions/pending-submissions-types';
 import type { AgentMessage } from '$shared/types';
+import type { ChatTranscript } from '$lib/client/app-client';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 function currentEntry(agentId: string, workspaceId?: string) {
   const scope = appStore.state.pendingSubmissions?.byAgentId[agentId]?.scope;
@@ -40,6 +42,43 @@ export function observeSubmissionEvidence(
 ) {
   const entry = currentEntry(agentId, workspaceId);
   if (entry) appStore.dispatch(pendingEvidenceObserved(entry.scope, kind, rows, Date.now()));
+}
+
+/** Compare only accepted deliveries in the same admitted submission lifetime. */
+export function observeSubmissionTranscript(
+  agentId: string,
+  workspaceId: string | undefined,
+  transcript: ChatTranscript,
+  previousEvidence?: string,
+): string | undefined {
+  const entry = currentEntry(agentId, workspaceId);
+  if (!entry) return undefined;
+  const rows = submissionHistoryEvidence(transcript.messages);
+  const evidence = JSON.stringify([
+    entry.scope,
+    rows,
+    transcript.truncated,
+    transcript.nextToken ?? null,
+    transcript.initialHistory,
+    // Appended assistant rows explain count growth; unseen history does not.
+    transcript.totalMessages - transcript.messages.length,
+  ]);
+  const unchanged =
+    evidence === previousEvidence &&
+    transcript.resumed === undefined &&
+    transcript.resetCachedTranscript !== true;
+  const settled =
+    entry.queueFresh &&
+    !entry.refreshNeeded &&
+    getItems(entry.submissions).length === 0 &&
+    getItems(entry.seeds).length === 0 &&
+    getItems(entry.processing).length === 0;
+  // A complete queue alone cannot prove history absence. Only unchanged
+  // accepted transcript evidence may preserve its already settled authority.
+  // Stale/unresolved state still receives evidence to retry bounded recovery.
+  if (!unchanged || !settled)
+    appStore.dispatch(pendingEvidenceObserved(entry.scope, 'history', rows, Date.now()));
+  return evidence;
 }
 
 export function announceSubmissionDelivery(
