@@ -249,10 +249,57 @@ export async function observeRealTime(page, milliseconds) {
   );
 }
 
-export async function nativePaste(paste, expected) {
-  await paste.fill('');
-  await paste.press('ControlOrMeta+V');
-  await expect(paste).toHaveValue(expected);
+export async function nativePaste(paste, expected, { copy, info, name }) {
+  const observations = [];
+  let beforePaste;
+  let afterPaste;
+  try {
+    // Observe the real asynchronous copy completing before requesting native
+    // paste. Never write the expected value to the clipboard or synthesize paste.
+    await expect
+      .poll(async () => {
+        const observation = await copy.evaluate(async (element) => {
+          const actual = await navigator.clipboard.readText();
+          const active = document.activeElement;
+          return {
+            at: performance.now(),
+            actual,
+            focus: {
+              tag: active?.tagName,
+              id: active?.id,
+              label: active?.getAttribute('aria-label'),
+              copyFocused: active === element,
+            },
+            feedback: {
+              label: element.getAttribute('aria-label'),
+              visible: element.checkVisibility(),
+            },
+          };
+        });
+        observations.push(observation);
+        return observation.actual;
+      }, 'Actual clipboard must contain the current payload before native paste')
+      .toBe(expected);
+    await paste.fill('');
+    beforePaste = await paste.evaluate((element) => ({
+      value: element.value,
+      focused: document.activeElement === element,
+    }));
+    await paste.press('ControlOrMeta+V');
+    await expect(paste).toHaveValue(expected);
+  } finally {
+    try {
+      afterPaste = await paste.evaluate((element) => ({
+        value: element.value,
+        focused: document.activeElement === element,
+      }));
+    } finally {
+      await info.attach(`${name}-clipboard.json`, {
+        body: JSON.stringify({ expected, observations, beforePaste, afterPaste }, null, 2),
+        contentType: 'application/json',
+      });
+    }
+  }
 }
 
 export async function choice(exercise, label, value) {

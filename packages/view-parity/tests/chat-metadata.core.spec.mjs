@@ -199,6 +199,7 @@ test('chat metadata M7: clipboard contains current ordered raw diagnostics and h
   await nativePaste(
     paste,
     '2026-10-12T03:20:00.000Z\nFirst recorded failure.\nCheck the provider response.\n\n2026-10-12T03:10:00.000Z\nSecond recorded failure.',
+    { copy, info, name: 'ordered-history' },
   );
   await exercise
     .getByLabel('Failure first reason', { exact: true })
@@ -211,17 +212,17 @@ test('chat metadata M7: clipboard contains current ordered raw diagnostics and h
   await nativePaste(
     paste,
     'Replaced first diagnostic.\n\n2026-10-12T03:10:00.000Z\nReplaced second diagnostic.',
+    { copy, info, name: 'current-history' },
   );
   await choice(exercise, 'Failure records', 'empty');
   await copy.click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('');
-  await nativePaste(paste, '');
+  await nativePaste(paste, '', { copy, info, name: 'empty-history' });
   await choice(exercise, 'Failure records', 'fallback');
   await exercise
     .getByLabel('Failure fallback reason', { exact: true })
     .fill('Fallback without timestamp.');
   await copy.click();
-  await nativePaste(paste, 'Fallback without timestamp.');
+  await nativePaste(paste, 'Fallback without timestamp.', { copy, info, name: 'fallback-history' });
   await captureMetadata(page, display, 'clipboard-after', info);
 });
 
