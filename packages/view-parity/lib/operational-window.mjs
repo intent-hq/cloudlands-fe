@@ -84,7 +84,10 @@ export const test = base.extend({
         process.env.PARITY_GREP,
         'Select exactly one case; review every PNG before the next',
       ).toBe(`operational-window ${caseId} `);
-      expect(info.config.grep.source).toBe(`operational-window ${caseId} `);
+      expect(
+        JSON.parse(readFileSync(path.join(process.env.PARITY_RUN_DIR, 'session.json'), 'utf8'))
+          .grep,
+      ).toBe(`operational-window ${caseId} `);
       expect(info.retry).toBe(0);
       expect(info.project.retries).toBe(0);
       expect(info.config.workers).toBe(1);
