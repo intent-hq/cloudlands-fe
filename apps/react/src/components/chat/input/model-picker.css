@@ -1,0 +1,35 @@
+.model-picker-panel > div:has(> input[role='searchbox']) {
+  position: absolute;
+  top: 0.25rem;
+  left: 3.5rem;
+  right: 2.5rem;
+  width: auto;
+  padding: 0;
+  z-index: 10;
+  background: transparent;
+  border-radius: var(--radius-medium);
+}
+.model-picker-panel > div:has(> input[role='searchbox']) > svg {
+  display: none;
+}
+.model-picker-panel input[role='searchbox'] {
+  height: 2rem;
+  padding: 0 1.75rem 0 0.25rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  border-radius: var(--radius-medium);
+  caret-color: var(--color-foreground);
+}
+.model-picker-panel.model-picker-pointer {
+  transition: opacity var(--spring-fast) var(--spring-fast-ease);
+  @starting-style {
+    opacity: 0;
+  }
+}
+@container style(--motion-reduced: 1) {
+  .model-picker-panel.model-picker-pointer {
+    transition: none;
+  }
+}
