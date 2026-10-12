@@ -245,7 +245,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     vi.clearAllMocks();
     mockUpdate.mockResolvedValue({ success: true });
     selectedScript.id = null;
-    mockGet.mockResolvedValue(runningScript);
+    mockGet.mockReset().mockResolvedValue(runningScript);
     scriptEntries.value = [runningScript];
     terminalState.activeId = 'terminal-1';
     terminalState.height = 50;
@@ -283,6 +283,80 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     const input = (await screen.findByPlaceholderText('npm run dev')) as HTMLInputElement;
     expect(input.value).toBe('pnpm full-command --long-argument');
     expect(mockGet).toHaveBeenCalledExactlyOnceWith('ws-1', 'script-1');
+  });
+
+  it('discards command detail superseded by a same-ID definition event', async () => {
+    selectedScript.id = 'script-1';
+    let resolve!: (value: typeof runningScript) => void;
+    mockGet.mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText(runningScript.command));
+    const newer = { ...runningScript, command: 'newer committed command' };
+    scriptEntries.value = [newer];
+    await notifyTerminalState();
+    resolve({ ...runningScript });
+    await tick();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(screen.queryByPlaceholderText('npm run dev')).toBeNull();
+    expect(mockUpdate).not.toHaveBeenCalled();
+
+    mockGet.mockResolvedValueOnce(newer);
+    await fireEvent.click(screen.getByText(newer.command));
+    const input = (await screen.findByPlaceholderText('npm run dev')) as HTMLTextAreaElement;
+    expect(input.value).toBe(newer.command);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards a command-detail reply when a newer editor request has completed', async () => {
+    selectedScript.id = 'script-1';
+    let resolve!: (value: typeof runningScript) => void;
+    mockGet.mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+    mockGet.mockResolvedValueOnce({ ...runningScript, command: 'latest full command' });
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText(runningScript.command));
+    await fireEvent.click(screen.getByText(runningScript.command));
+    const input = (await screen.findByPlaceholderText('npm run dev')) as HTMLTextAreaElement;
+    expect(input.value).toBe('latest full command');
+    resolve({ ...runningScript, command: 'obsolete full command' });
+    await tick();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(input.value).toBe('latest full command');
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['ctrlKey', 'metaKey'])(
+    'keeps unchanged compact command saves read-only with %s',
+    async (modifier) => {
+      selectedScript.id = 'script-1';
+      const { command: _command, ...summary } = runningScript;
+      scriptEntries.value = [{ ...summary, commandPreview: 'pnpm…', commandTruncated: true }];
+      mockGet.mockResolvedValue({ ...runningScript, command: 'pnpm full-command --long-argument' });
+      render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+      await fireEvent.click(screen.getByText('pnpm…'));
+      const input = await screen.findByPlaceholderText('npm run dev');
+      await fireEvent.keyDown(input, { key: 's', [modifier]: true });
+      await tick();
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockGet).toHaveBeenCalledExactlyOnceWith('ws-1', 'script-1');
+      expect(screen.queryByPlaceholderText('npm run dev')).toBeNull();
+    },
+  );
+
+  it('saves an actual compact command edit against the loaded full baseline', async () => {
+    selectedScript.id = 'script-1';
+    const { command: _command, ...summary } = runningScript;
+    scriptEntries.value = [{ ...summary, commandPreview: 'pnpm…', commandTruncated: true }];
+    mockGet.mockResolvedValue({ ...runningScript, command: 'pnpm full-command --long-argument' });
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText('pnpm…'));
+    const input = await screen.findByPlaceholderText('npm run dev');
+    await fireEvent.input(input, { target: { value: 'pnpm edited-command' } });
+    await fireEvent.keyDown(input, { key: 's', ctrlKey: true });
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledExactlyOnceWith('ws-1', 'script-1', {
+        command: 'pnpm edited-command',
+      }),
+    );
   });
 
   it('awaits a script rename and keeps the editor open when the mutation fails in-band', async () => {

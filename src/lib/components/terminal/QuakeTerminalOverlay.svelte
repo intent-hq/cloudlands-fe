@@ -171,6 +171,7 @@
   let showScriptEditPanel = $state(false);
   let editScriptCommandTextarea: HTMLInputElement | undefined = $state();
   let editedScriptCommand = $state('');
+  let originalScriptCommand = '';
 
   let isDetectingScripts = $state(false);
   let terminalPanel: HTMLDivElement | undefined = $state();
@@ -418,6 +419,8 @@
       ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
+  const commandEditScope = $derived({ owner: workspaceOwnership, script: selectedScript });
+  let commandEditRequest = 0;
   const selectedScriptIdStore = writable('');
   $effect(() => selectedScriptIdStore.set(selectedScriptId ?? ''));
   const canDeleteScript$ = selectCanDeleteScript(workspaceIdStore, selectedScriptIdStore);
@@ -502,13 +505,17 @@
   async function startEditingScriptCommand(): Promise<void> {
     if (!selectedScript || !workspaceId) return;
     const id = selectedScript.id;
-    const owner = workspaceOwnership;
+    const scope = commandEditScope;
+    const request = ++commandEditRequest;
+    const isCurrent = () => mounted && commandEditScope === scope && commandEditRequest === request;
     try {
       const full = await appClient.scripts.get(workspaceId, id);
-      if (workspaceOwnership !== owner || selectedScriptId !== id) return;
+      // A newer row snapshot or edit request invalidates this selected detail read.
+      if (!isCurrent()) return;
       editedScriptCommand = full.command;
+      originalScriptCommand = full.command;
     } catch {
-      notify.error(m.terminal_quakeOverlay_updateCommandFailed_error());
+      if (isCurrent()) notify.error(m.terminal_quakeOverlay_updateCommandFailed_error());
       return;
     }
     showScriptEditPanel = true;
@@ -518,6 +525,7 @@
   }
 
   function cancelEditingScriptCommand(): void {
+    commandEditRequest++;
     showScriptEditPanel = false;
   }
 
@@ -528,7 +536,7 @@
     const mutationValue = editedScriptCommand;
     if (selectedScript && mutationScriptId && mutationWorkspaceId) {
       const updates: Record<string, any> = {};
-      if (mutationValue !== selectedScript.command) updates.command = mutationValue;
+      if (mutationValue !== originalScriptCommand) updates.command = mutationValue;
       if (Object.keys(updates).length > 0) {
         const succeeded = await runScriptMutation(
           () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
