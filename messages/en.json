@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "Keep your initial prompt under 100,000 characters",
   "workspace_validation_repoPathRequired_error": "Repository path is required",
   "workspace_validation_repoPathRequired_suggestion": "Select a local folder or enter a GitHub URL",
-  "workspace_validation_willCreateRepo_warning": "This directory will be created and a new git repository will be initialized."
+  "workspace_validation_willCreateRepo_warning": "This directory will be created and a new git repository will be initialized.",
+  "inlineHtml_preview_preview_label": "Preview",
+  "inlineHtml_preview_source_label": "Source",
+  "inlineHtml_preview_reload_label": "Reload",
+  "inlineHtml_preview_building_label": "Building preview…",
+  "inlineHtml_preview_incomplete_description": "This preview is unfinished. Open source to inspect it.",
+  "inlineHtml_preview_empty_description": "No HTML to preview.",
+  "inlineHtml_preview_runtime_error": "This preview encountered an error.",
+  "inlineHtml_preview_frame_ariaLabel": "Interactive HTML preview",
+  "inlineHtml_preview_loading_label": "Loading preview…"
 }

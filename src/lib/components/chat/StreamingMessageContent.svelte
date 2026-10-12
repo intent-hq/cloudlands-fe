@@ -25,6 +25,7 @@
   import ToolCall from './ToolCall.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
+  import InlineHtmlBlock from '$features/inline-html/InlineHtmlBlock.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
   import DigestCard from './DigestCard.svelte';
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
@@ -169,11 +170,7 @@
     cleanupFunctions = [];
   });
 
-  /**
-   * Set of block keys that have already been animated.
-   * Prevents the slide-up animation from replaying when Svelte
-   * recreates DOM elements due to reactive content updates.
-   */
+  // Stable keys prevent entrance motion replay during reactive updates.
   const animatedKeys = new Set<string>();
 
   // Existing rows must not replay their entrance when a live transcript mounts.
@@ -653,6 +650,8 @@
     <ChatCliBlock command={cliData.command} />
   {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
     <ChatAgentActionBlock goal={parsedBlock.metadata.agentActionData.goal} />
+  {:else if parsedBlock.type === 'html'}
+    <InlineHtmlBlock block={parsedBlock} {role} />
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}

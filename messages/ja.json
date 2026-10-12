@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "最初のプロンプトは 100,000 文字以内にしてください",
   "workspace_validation_repoPathRequired_error": "リポジトリのパスは必須です",
   "workspace_validation_repoPathRequired_suggestion": "ローカルフォルダーを選択するか GitHub URL を入力してください",
-  "workspace_validation_willCreateRepo_warning": "このディレクトリが作成され、新しい Git リポジトリが初期化されます。"
+  "workspace_validation_willCreateRepo_warning": "このディレクトリが作成され、新しい Git リポジトリが初期化されます。",
+  "inlineHtml_preview_preview_label": "プレビュー",
+  "inlineHtml_preview_source_label": "ソース",
+  "inlineHtml_preview_reload_label": "再読み込み",
+  "inlineHtml_preview_building_label": "プレビューを作成中…",
+  "inlineHtml_preview_incomplete_description": "このプレビューは未完成です。ソースを開いて確認してください。",
+  "inlineHtml_preview_empty_description": "プレビューする HTML がありません。",
+  "inlineHtml_preview_runtime_error": "プレビューでエラーが発生しました。",
+  "inlineHtml_preview_frame_ariaLabel": "インタラクティブな HTML プレビュー",
+  "inlineHtml_preview_loading_label": "プレビューを読み込み中…"
 }

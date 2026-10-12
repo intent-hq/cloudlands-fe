@@ -27,6 +27,7 @@
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
   import ExecutionPlanCard from './ExecutionPlanCard.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
+  import InlineHtmlBlock from '$features/inline-html/InlineHtmlBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
   import ChatDiffViewer from './ChatDiffViewer.svelte';
@@ -436,6 +437,8 @@
         showExportButton
       />
     </DiagramPresentation>
+  {:else if parsedBlock.type === 'html'}
+    <InlineHtmlBlock block={parsedBlock} {role} />
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}

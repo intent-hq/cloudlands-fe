@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "初始提示词请控制在 100,000 个字符以内",
   "workspace_validation_repoPathRequired_error": "仓库路径为必填项",
   "workspace_validation_repoPathRequired_suggestion": "选择本地文件夹或输入 GitHub URL",
-  "workspace_validation_willCreateRepo_warning": "将创建此目录并初始化一个新的 Git 仓库。"
+  "workspace_validation_willCreateRepo_warning": "将创建此目录并初始化一个新的 Git 仓库。",
+  "inlineHtml_preview_preview_label": "预览",
+  "inlineHtml_preview_source_label": "源码",
+  "inlineHtml_preview_reload_label": "重新加载",
+  "inlineHtml_preview_building_label": "正在生成预览…",
+  "inlineHtml_preview_incomplete_description": "此预览尚未完成。打开源码进行查看。",
+  "inlineHtml_preview_empty_description": "没有可预览的 HTML。",
+  "inlineHtml_preview_runtime_error": "此预览发生错误。",
+  "inlineHtml_preview_frame_ariaLabel": "交互式 HTML 预览",
+  "inlineHtml_preview_loading_label": "正在加载预览…"
 }

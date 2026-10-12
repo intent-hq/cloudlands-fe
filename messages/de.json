@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "Halten Sie Ihren anfänglichen Prompt unter 100.000 Zeichen",
   "workspace_validation_repoPathRequired_error": "Repository-Pfad ist erforderlich",
   "workspace_validation_repoPathRequired_suggestion": "Wählen Sie einen lokalen Ordner oder geben Sie eine GitHub-URL ein",
-  "workspace_validation_willCreateRepo_warning": "Dieses Verzeichnis wird erstellt und ein neues Git-Repository wird initialisiert."
+  "workspace_validation_willCreateRepo_warning": "Dieses Verzeichnis wird erstellt und ein neues Git-Repository wird initialisiert.",
+  "inlineHtml_preview_preview_label": "Vorschau",
+  "inlineHtml_preview_source_label": "Quelltext",
+  "inlineHtml_preview_reload_label": "Neu laden",
+  "inlineHtml_preview_building_label": "Vorschau wird erstellt…",
+  "inlineHtml_preview_incomplete_description": "Diese Vorschau ist unvollständig. Öffne den Quelltext, um sie zu prüfen.",
+  "inlineHtml_preview_empty_description": "Kein HTML für die Vorschau.",
+  "inlineHtml_preview_runtime_error": "In dieser Vorschau ist ein Fehler aufgetreten.",
+  "inlineHtml_preview_frame_ariaLabel": "Interaktive HTML-Vorschau",
+  "inlineHtml_preview_loading_label": "Vorschau wird geladen…"
 }

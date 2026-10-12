@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "初始提示詞請控制在 100,000 個字元以內",
   "workspace_validation_repoPathRequired_error": "儲存庫路徑為必填項",
   "workspace_validation_repoPathRequired_suggestion": "選擇本地資料夾或輸入 GitHub URL",
-  "workspace_validation_willCreateRepo_warning": "將建立此目錄並初始化一個新的 Git 儲存庫。"
+  "workspace_validation_willCreateRepo_warning": "將建立此目錄並初始化一個新的 Git 儲存庫。",
+  "inlineHtml_preview_preview_label": "預覽",
+  "inlineHtml_preview_source_label": "原始碼",
+  "inlineHtml_preview_reload_label": "重新載入",
+  "inlineHtml_preview_building_label": "正在產生預覽…",
+  "inlineHtml_preview_incomplete_description": "此預覽尚未完成。開啟原始碼進行查看。",
+  "inlineHtml_preview_empty_description": "沒有可預覽的 HTML。",
+  "inlineHtml_preview_runtime_error": "此預覽發生錯誤。",
+  "inlineHtml_preview_frame_ariaLabel": "互動式 HTML 預覽",
+  "inlineHtml_preview_loading_label": "正在載入預覽…"
 }

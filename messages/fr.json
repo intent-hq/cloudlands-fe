@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "Gardez votre prompt initial sous 100 000 caractères",
   "workspace_validation_repoPathRequired_error": "Le chemin du dépôt est requis",
   "workspace_validation_repoPathRequired_suggestion": "Sélectionnez un dossier local ou saisissez une URL GitHub",
-  "workspace_validation_willCreateRepo_warning": "Ce répertoire sera créé et un nouveau dépôt git sera initialisé."
+  "workspace_validation_willCreateRepo_warning": "Ce répertoire sera créé et un nouveau dépôt git sera initialisé.",
+  "inlineHtml_preview_preview_label": "Aperçu",
+  "inlineHtml_preview_source_label": "Code source",
+  "inlineHtml_preview_reload_label": "Recharger",
+  "inlineHtml_preview_building_label": "Création de l’aperçu…",
+  "inlineHtml_preview_incomplete_description": "Cet aperçu est incomplet. Ouvrez le code source pour l’examiner.",
+  "inlineHtml_preview_empty_description": "Aucun HTML à afficher.",
+  "inlineHtml_preview_runtime_error": "Une erreur est survenue dans cet aperçu.",
+  "inlineHtml_preview_frame_ariaLabel": "Aperçu HTML interactif",
+  "inlineHtml_preview_loading_label": "Chargement de l’aperçu…"
 }

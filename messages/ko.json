@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "초기 프롬프트는 100,000자 미만으로 유지하세요",
   "workspace_validation_repoPathRequired_error": "저장소 경로가 필요합니다",
   "workspace_validation_repoPathRequired_suggestion": "로컬 폴더를 선택하거나 GitHub URL을 입력하세요",
-  "workspace_validation_willCreateRepo_warning": "이 디렉터리가 생성되고 새 git 저장소가 초기화됩니다."
+  "workspace_validation_willCreateRepo_warning": "이 디렉터리가 생성되고 새 git 저장소가 초기화됩니다.",
+  "inlineHtml_preview_preview_label": "미리보기",
+  "inlineHtml_preview_source_label": "소스",
+  "inlineHtml_preview_reload_label": "새로고침",
+  "inlineHtml_preview_building_label": "미리보기 생성 중…",
+  "inlineHtml_preview_incomplete_description": "이 미리보기는 미완성입니다. 소스를 열어 확인하세요.",
+  "inlineHtml_preview_empty_description": "미리 볼 HTML이 없습니다.",
+  "inlineHtml_preview_runtime_error": "미리보기에서 오류가 발생했습니다.",
+  "inlineHtml_preview_frame_ariaLabel": "대화형 HTML 미리보기",
+  "inlineHtml_preview_loading_label": "미리보기 로딩 중…"
 }

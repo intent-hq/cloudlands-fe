@@ -7661,5 +7661,14 @@
   "workspace_validation_promptTooLong_suggestion": "Mantenga su prompt inicial por debajo de 100 000 caracteres",
   "workspace_validation_repoPathRequired_error": "Se requiere la ruta del repositorio",
   "workspace_validation_repoPathRequired_suggestion": "Seleccione una carpeta local o introduzca una URL de GitHub",
-  "workspace_validation_willCreateRepo_warning": "Este directorio se creará y se inicializará un repositorio de git nuevo."
+  "workspace_validation_willCreateRepo_warning": "Este directorio se creará y se inicializará un repositorio de git nuevo.",
+  "inlineHtml_preview_preview_label": "Vista previa",
+  "inlineHtml_preview_source_label": "Código fuente",
+  "inlineHtml_preview_reload_label": "Recargar",
+  "inlineHtml_preview_building_label": "Creando vista previa…",
+  "inlineHtml_preview_incomplete_description": "Esta vista previa está incompleta. Abre el código fuente para revisarla.",
+  "inlineHtml_preview_empty_description": "No hay HTML para mostrar.",
+  "inlineHtml_preview_runtime_error": "Se produjo un error en esta vista previa.",
+  "inlineHtml_preview_frame_ariaLabel": "Vista previa HTML interactiva",
+  "inlineHtml_preview_loading_label": "Cargando vista previa…"
 }
