@@ -8,7 +8,9 @@ import {
   shouldShowStoppedIndicator,
 } from './message-display-utils';
 
-export type SubscriptionCardSeam = 'cards' | 'content';
+import type { SubscriptionCardSeam } from './subscription-card-spacing-types';
+
+export type { SubscriptionCardSeam } from './subscription-card-spacing-types';
 
 /** Spacing only: retain every message/anchor, but do not space an empty or wizard-only body. */
 export function hasVisibleTurnBody({
