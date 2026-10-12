@@ -1,12 +1,8 @@
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
-import { call, delay, select, type SagaGenerator } from 'typed-redux-saga';
-
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';
-import { createLogger } from '$lib/utils/client-logger';
 import { selectWorkspaceTabsToReconcile } from '../tab-state-selectors';
+import { createWorkspaceTabReconciliationSaga } from './workspace-tab-reconciliation-saga-factory';
 
-const logger = createLogger('WorkspaceTabReconciliationSaga');
-
+// Svelte lifetime binding; remove when the Svelte renderer retires.
 /**
  * Reconcile the hydrated workspace-tab strip against the loaded workspace
  * list: close tabs whose workspace no longer exists in the list. Archived
@@ -33,19 +29,7 @@ const logger = createLogger('WorkspaceTabReconciliationSaga');
  * dispatch changes the prunable set, and the fresh re-read covers anything a
  * cancellation-free burst may have changed.
  */
-export function* workspaceTabReconciliationSaga(): SagaGenerator<void> {
-  yield* takeLatestFromSelector(
-    selectWorkspaceTabsToReconcile,
-    function* (_: SelectorChannelPayload<string[]>): SagaGenerator<void> {
-      yield* delay(0);
-      const tabsToClose = yield* select(selectWorkspaceTabsToReconcile.select);
-      for (const workspaceId of tabsToClose) {
-        try {
-          yield* call(closeWorkspaceTabAndNavigateAway, workspaceId);
-        } catch (error) {
-          logger.warn(`Failed to close ghost workspace tab ${workspaceId}`, error);
-        }
-      }
-    },
-  );
-}
+export const workspaceTabReconciliationSaga = createWorkspaceTabReconciliationSaga({
+  selectWorkspaceTabsToReconcile,
+  closeWorkspaceTabAndNavigateAway,
+});

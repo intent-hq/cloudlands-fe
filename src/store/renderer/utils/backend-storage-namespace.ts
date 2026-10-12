@@ -16,7 +16,7 @@
 import { select, type SagaGenerator } from 'typed-redux-saga';
 
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-import type { StoreState } from '../types';
+type BackendStorageState = { connections?: { windowBackendId: string } };
 
 /**
  * This window's backend id from the connections slice, defaulting to the
@@ -25,7 +25,7 @@ import type { StoreState } from '../types';
  * performed in another window must never re-key this window's persistence
  * mid-session.
  */
-export function getActiveBackendId(state: StoreState): string {
+export function getActiveBackendId(state: BackendStorageState): string {
   return state.connections?.windowBackendId ?? LOCAL_CONNECTION_ID;
 }
 

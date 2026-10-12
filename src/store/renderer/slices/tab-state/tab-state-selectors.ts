@@ -1,73 +1,48 @@
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
-
-import { type Workspace } from '$shared/types';
+// Svelte selector bindings; retain public imports until the Svelte renderer retires.
 import { store } from '../../store';
-import { getActiveBackendId } from '../../utils/backend-storage-namespace';
-import { serializeWorkspaceTabsState } from './tab-state-slice';
+import * as projections from './tab-state-projections';
 
-export const selectIsDragging = store.createSelector((state) => {
-  return state.tabState.isDragging;
-});
+export const selectIsDragging = store.createSelector(projections.getIsDragging);
 
-export const selectAllScrollPositions = store.createSelector((state) => {
-  return state.tabState.scrollPositions;
-});
+export const selectAllScrollPositions = store.createSelector(projections.getAllScrollPositions);
 
-export const selectCurrentWorkspaceTabId = store.createSelector((state) => {
-  return state.tabState.currentTabId;
-});
+export const selectCurrentWorkspaceTabId = store.createSelector(
+  projections.getCurrentWorkspaceTabId,
+);
 
 /** Actual panel webview mounts, including retained inactive tabs. */
-export const selectMountedBrowserTabLeases = store.createSelector((state) => {
-  return state.tabState.mountedBrowserTabLeases;
-});
+export const selectMountedBrowserTabLeases = store.createSelector(
+  projections.getMountedBrowserTabLeases,
+);
 
-export const selectBrowserTabRecoveryRequests = store.createSelector((state) => {
-  return state.tabState.browserTabRecoveryRequests;
-});
+export const selectBrowserTabRecoveryRequests = store.createSelector(
+  projections.getBrowserTabRecoveryRequests,
+);
 
-export const selectBrowserTabNavigations = store.createSelector((state) => {
-  return state.tabState.browserTabNavigations;
-});
+export const selectBrowserTabNavigations = store.createSelector(
+  projections.getBrowserTabNavigations,
+);
 
 /**
  * True once the tab saga has (re)hydrated the persisted tab strip for the
  * ACTIVE backend. Until then `currentTabId` may still be the previous
  * backend's (or empty), so boot-time consumers must not treat it as final.
  */
-export const selectWorkspaceTabsHydrated = store.createSelector((state) => {
-  return state.tabState.hydratedBackendId === getActiveBackendId(state);
-});
-
-export const selectWorkspaceTabOrder = store.createSelector((state) => {
-  return state.tabState.workspaceStacks.flatMap((stack) => stack);
-});
-
-export const selectActiveWorkspaceIds = store.createSelector((state): string[] => {
-  return Object.keys(state.tabState.openTabs).filter(
-    (workspaceId) => state.tabState.openTabs[workspaceId] === true,
-  );
-});
-
-export const selectLastClosedWorkspaceTab = store.createSelector(
-  (state): { workspaceId: string; closedAt: number } | null => {
-    const { recentlyClosedTabIds, recentlyClosedTabAt, openTabs } = state.tabState;
-    for (let index = recentlyClosedTabIds.length - 1; index >= 0; index--) {
-      const workspaceId = recentlyClosedTabIds[index];
-      if (!openTabs[workspaceId]) {
-        return { workspaceId, closedAt: recentlyClosedTabAt[workspaceId] ?? 0 };
-      }
-    }
-    return null;
-  },
+export const selectWorkspaceTabsHydrated = store.createSelector(
+  projections.getWorkspaceTabsHydrated,
 );
 
-export const selectPersistedWorkspaceTabsState = store.createSelector((state) => {
-  return serializeWorkspaceTabsState(state.tabState);
-});
+export const selectWorkspaceTabOrder = store.createSelector(projections.getWorkspaceTabOrder);
 
-/** Stable empty result so guard-failed states never re-emit through selector channels. */
-const NO_TABS_TO_RECONCILE: string[] = [];
+export const selectActiveWorkspaceIds = store.createSelector(projections.getActiveWorkspaceIds);
+
+export const selectLastClosedWorkspaceTab = store.createSelector(
+  projections.getLastClosedWorkspaceTab,
+);
+
+export const selectPersistedWorkspaceTabsState = store.createSelector(
+  projections.getPersistedWorkspaceTabsState,
+);
 
 /**
  * Open workspace-tab IDs whose workspace is missing from the loaded workspace
@@ -100,20 +75,6 @@ const NO_TABS_TO_RECONCILE: string[] = [];
  * unreachable UI-wise and `closeWorkspaceTab` no-ops on it anyway (the reducer
  * early-returns when the ID is not in the tab order).
  */
-export const selectWorkspaceTabsToReconcile = store.createSelector((state): string[] => {
-  if (state.connections && !state.connections.hasReceivedList) return NO_TABS_TO_RECONCILE;
-  const activeBackendId = getActiveBackendId(state);
-  if (state.tabState.hydratedBackendId !== activeBackendId) return NO_TABS_TO_RECONCILE;
-  if (!state.workspace.hasLoaded) return NO_TABS_TO_RECONCILE;
-  if (state.workspace.loadedBackendId !== activeBackendId) return NO_TABS_TO_RECONCILE;
-  if (state.workspace.workspaces.ids.length === 0) return NO_TABS_TO_RECONCILE;
-  const prunable = state.tabState.workspaceStacks
-    .flatMap((stack) => stack)
-    .filter((workspaceId) => {
-      if (state.tabState.optimisticTabs[workspaceId]) return false;
-      if (state.workspace.pendingCreations[workspaceId]) return false;
-      if (state.workspace.pendingDeletions[workspaceId]) return false;
-      return !getItem(state.workspace.workspaces, workspaceId as Workspace['id']);
-    });
-  return prunable.length === 0 ? NO_TABS_TO_RECONCILE : prunable;
-});
+export const selectWorkspaceTabsToReconcile = store.createSelector(
+  projections.getWorkspaceTabsToReconcile,
+);
