@@ -445,9 +445,11 @@ function* watchMembershipNotifications(
     reads,
   );
   const debounce = yield* takeLatestInContext(
-    membershipEvents
-      ? [presenceMembershipChanged, presenceWorkspaceRemoved]
-      : [presenceMembershipChanged, presenceWorkspaceRemoved, presenceRosterReceived],
+    [
+      presenceMembershipChanged,
+      presenceWorkspaceRemoved,
+      ...(membershipEvents ? [] : [presenceRosterReceived]),
+    ],
     membershipNotificationWorkspace,
     queueMembershipRefresh,
     notifications,
