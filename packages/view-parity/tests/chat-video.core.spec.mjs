@@ -16,6 +16,7 @@ import {
   pick,
   choose,
   decoded,
+  readyForInitialVideoCapture,
   menuInfo,
   sameNode,
   captureVideo,
@@ -96,6 +97,7 @@ test('chat video V2 pointer lightbox exposes real playback and restores focus on
     'faXmark',
     info,
   );
+  await readyForInitialVideoCapture(player, info);
   await captureVideo(page, surface, 'v2-open-before-play', info);
   // Native Chromium media keyboard handling; never call play(), assign time, or synthesize events.
   await player.press('Space');

@@ -498,6 +498,59 @@ export async function decoded(target, index = 0) {
     });
   }
 }
+export async function readyForInitialVideoCapture(target, info) {
+  const samples = [];
+  let passed = false;
+  const observe = async () => {
+    const sample = await target.evaluate((node) => {
+      const ranges = (value) =>
+        Array.from({ length: value.length }, (_, index) => ({
+          start: value.start(index),
+          end: value.end(index),
+        }));
+      return {
+        observedAt: new Date().toISOString(),
+        readyState: node.readyState,
+        enoughData: node.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA,
+        networkState: node.networkState,
+        buffered: ranges(node.buffered),
+        paused: node.paused,
+        autoplay: node.autoplay,
+        currentTime: node.currentTime,
+        playedLength: node.played.length,
+        played: ranges(node.played),
+        error: node.error?.code ?? null,
+      };
+    });
+    samples.push(sample);
+    return sample;
+  };
+  const unplayed = { paused: true, autoplay: false, currentTime: 0, playedLength: 0 };
+  try {
+    expect(await observe(), 'The initial video must be paused and unplayed').toMatchObject(
+      unplayed,
+    );
+    await expect
+      .poll(
+        async () => {
+          const sample = await observe();
+          return { enoughData: sample.enoughData, error: sample.error };
+        },
+        { timeout: 5_000, message: 'The real video must have enough data before initial capture' },
+      )
+      .toEqual({ enoughData: true, error: null });
+    expect(await observe(), 'Readiness must leave the video paused and unplayed').toMatchObject(
+      unplayed,
+    );
+    passed = true;
+  } finally {
+    await info.attach('chat-video-initial-readiness.json', {
+      body: JSON.stringify({ timeoutMs: 5_000, passed, samples }, null, 2),
+      contentType: 'application/json',
+    });
+  }
+}
+
 export async function menuInfo(page, index = 0) {
   const record = videoContract(index);
   const menu = page.getByRole('menu');
