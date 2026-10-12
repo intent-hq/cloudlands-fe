@@ -13,6 +13,7 @@ import {
   __resetAgentQueueReadServiceForTests,
 } from './agent-queue-read-service';
 import { beginSubmissionRead } from './submission-evidence';
+import { chatReadSaga } from '$store/renderer/slices/chat-state/sagas/chat-read-saga';
 
 const wire = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -85,6 +86,111 @@ function event(type: string, data: Record<string, unknown>) {
 }
 
 describe('authoritative submission integration', () => {
+  it('uses settled correlated full queue snapshots with zero recovery reads and enabled controls', async () => {
+    vi.useFakeTimers();
+    const stop = appStore.runSaga(chatReadSaga);
+    try {
+      const accepted = fixture();
+      appStore.dispatch(
+        pendingSubmissionSettled(
+          accepted.scope,
+          accepted.submission.id,
+          'accepted',
+          Date.now(),
+          accepted.row,
+          true,
+        ),
+      );
+      wire.request.mockImplementation(async (method) => {
+        if (method === 'agent.getQueue') return { queue: [accepted.row] };
+        if (method === 'agent.getConversation')
+          return { messages: [], totalMessages: 0, truncated: false };
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      event('agent:queue:updated', { queue: [accepted.row] });
+      await vi.runAllTimersAsync();
+      expect(
+        accepted.display().queue.map((row) => [row.confirmedId, row.content, row.blocksMutations]),
+      ).toEqual([[accepted.row.id, 'pending content', false]]);
+      expect(wire.request.mock.calls.map(([method]) => method)).toEqual([]);
+      event('agent:queue:updated', { queue: [{ ...accepted.row, content: 'updated content' }] });
+      event('agent:queue:updated', { queue: [{ ...accepted.row, content: 'updated content' }] });
+      await vi.runAllTimersAsync();
+      expect(accepted.display().queue.map((row) => [row.content, row.blocksMutations])).toEqual([
+        ['updated content', false],
+      ]);
+      event('agent:queue:updated', { queue: [] });
+      await vi.runAllTimersAsync();
+      expect(accepted.display().queue).toEqual([]);
+      expect(wire.request).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('recovers absent accepted content from history without rereading the complete queue', async () => {
+    vi.useFakeTimers();
+    const stop = appStore.runSaga(chatReadSaga);
+    try {
+      const accepted = fixture();
+      appStore.dispatch(
+        pendingSubmissionSettled(
+          accepted.scope,
+          accepted.submission.id,
+          'accepted',
+          Date.now(),
+          accepted.row,
+          true,
+        ),
+      );
+      let resolveHistory!: (value: unknown) => void;
+      wire.request.mockImplementation((method) => {
+        if (method === 'agent.getConversation')
+          return new Promise((resolve) => {
+            resolveHistory = resolve;
+          });
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      event('agent:queue:updated', { queue: [] });
+      await vi.runAllTimersAsync();
+      expect(accepted.display().queue.map((row) => [row.content, row.blocksMutations])).toEqual([
+        ['pending content', true],
+      ]);
+      expect(wire.request.mock.calls.map(([method]) => method)).toEqual(['agent.getConversation']);
+      expect(wire.request).toHaveBeenCalledWith('agent.getConversation', {
+        agentId: 'agent-evidence',
+        workspaceId: 'evidence-workspace',
+        limit: 5,
+        projection: 'slim',
+      });
+      resolveHistory({
+        messages: [
+          {
+            id: accepted.row.id,
+            role: 'user',
+            timestamp: new Date().toISOString(),
+            contentBlocks: [{ type: 'text', text: accepted.row.content }],
+            author: accepted.row.author,
+            metadata: { submissionIds: accepted.row.submissionIds },
+          },
+        ],
+        totalMessages: 1,
+        truncated: false,
+      });
+      await vi.runAllTimersAsync();
+      expect(accepted.display().queue).toEqual([]);
+      expect(accepted.display().conversation).toEqual([]);
+      expect(appStore.state.agentSessions.byAgentId['agent-evidence'].messages[0].id).toBe(
+        accepted.row.id,
+      );
+      expect(wire.request).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      vi.useRealTimers();
+    }
+  });
+
   it('uses real queue, processing and lean message events to fence a late queued ACK', () => {
     const accepted = fixture();
     event('agent:queue:updated', { queue: [accepted.row] });

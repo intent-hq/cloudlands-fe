@@ -46,7 +46,10 @@ import {
   clearQueuedMessagesRequested,
   chatLastAttemptedMessageSet,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
-import { pendingScopeReleased } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import {
+  pendingLifecycleObserved,
+  pendingScopeReleased,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { submitChatMessage } from '$features/agent/chat-submission';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
@@ -758,7 +761,7 @@ describe('queue admission and command ordering through the live boundary', () =>
 });
 
 describe('queue control freshness after later daemon events', () => {
-  it('refreshes both authoritative sources after a later append so confirmed controls become usable again', async () => {
+  it('uses a later full queue append with zero reads and usable confirmed controls', async () => {
     const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
     let authoritative = [row(a, { mergeEligible: true })];
     emit('agent:queue:updated', { queue: authoritative });
@@ -780,10 +783,9 @@ describe('queue control freshness after later daemon events', () => {
     ];
     emit('agent:queue:updated', { queue: authoritative });
     await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
-    expect(wire.request.mock.calls.some(([method]) => method === 'agent.getQueue')).toBe(true);
-    expect(wire.request.mock.calls.some(([method]) => method === 'agent.getConversation')).toBe(
-      true,
-    );
+    await quiet();
+    expect(count('agent.getQueue')).toBe(0);
+    expect(count('agent.getConversation')).toBe(0);
     expect(display().queue.map((row) => row.content)).toEqual(['A plus another client append']);
     expect(sends()).toEqual([]);
     expect(queues()).toEqual([]);
@@ -837,7 +839,7 @@ describe('queue freshness with the production standing subscription', () => {
         return baseReply(method, params);
       });
       cleanups.push(store.runSaga(chatReadSaga));
-      emit('agent:queue:updated', { queue: [original] });
+      store.dispatch(pendingLifecycleObserved(a.scope, false));
       await settle();
       const reads = () =>
         ['agent.getQueue', 'agent.getConversation'].map(
@@ -997,7 +999,7 @@ async function standing() {
 }
 
 it('coalesces live subscription bursts during reads, rejects stale publication and restores live rows after partial history', async () => {
-  const { original, handler } = await standing();
+  const { a, original, handler } = await standing();
   const qs: ((v: any) => void)[] = [],
     hs: ((v: any) => void)[] = [];
   wire.request.mockImplementation((m, p) =>
@@ -1008,7 +1010,7 @@ it('coalesces live subscription bursts during reads, rejects stale publication a
         : baseReply(m, p),
   );
   cleanups.push(store.runSaga(chatReadSaga));
-  emit('agent:queue:updated', { queue: [original] });
+  store.dispatch(pendingLifecycleObserved(a.scope, false));
   await vi.waitFor(() => {
     expect(qs).toHaveLength(1);
     expect(hs).toHaveLength(1);
@@ -1095,7 +1097,7 @@ it.each(['send', 'send-all', 'clear', 'remove'] as const)(
           : clearQueuedMessagesRequested(agent, ws, [a.submission.id]),
       );
     };
-    emit('agent:queue:updated', { queue: [original] });
+    store.dispatch(pendingLifecycleObserved(a.scope, false));
     await quiet();
     expect(count('agent.getQueue')).toBe(1);
     expect(count('agent.getConversation')).toBe(1);
@@ -1186,17 +1188,17 @@ it.each([
     startSending();
     if (automaticRefresh) {
       emit('agent:queue:updated', { queue: [confirmed] });
-      await vi.waitFor(() => {
-        expect(count('agent.getQueue')).toBe(1);
-        expect(count('agent.getConversation')).toBe(1);
-      });
+      await quiet();
+      expect(count('agent.getQueue')).toBe(0);
+      expect(count('agent.getConversation')).toBe(0);
     } else await Promise.all([hydrateAgentQueue(agent, ws), loadChatTranscript(agent, ws)]);
     await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
     const entry = store.state.pendingSubmissions.byAgentId[agent];
     expect(getItems(entry.submissions)).toEqual([]);
     expect(getItems(entry.operations)).toEqual([]);
     expect(getItems(entry.processing)).toEqual([]);
-    expect(entry.queueFresh && entry.historyFresh).toBe(true);
+    expect(entry.queueFresh).toBe(true);
+    expect(entry.historyFresh).toBe(!automaticRefresh);
     expect(entry.refreshNeeded).toBe(false);
     const requestId = requestQueueMutation(confirmed.id, { kind: 'remove' });
     await expectQueueMutationStatus(requestId, 'succeeded');
