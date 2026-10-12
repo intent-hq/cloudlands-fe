@@ -25,6 +25,7 @@ const runnerFiles = [
   'packages/view-parity/package.json',
   'pnpm-lock.yaml',
 ];
+const disclosureNetworks = new WeakMap();
 
 function runnerHashes() {
   return Object.fromEntries(
@@ -75,9 +76,11 @@ export const test = base.extend({
   disclosureNetwork: [
     async ({ page }, use, info) => {
       const network = observeAvatarPairNetwork(page);
+      disclosureNetworks.set(page, network);
       try {
         await use();
       } finally {
+        disclosureNetworks.delete(page);
         await info.attach('chat-disclosure-network.json', {
           body: JSON.stringify(network, null, 2),
           contentType: 'application/json',
@@ -178,21 +181,51 @@ export async function expectFollowedAndSettled(exercise) {
   return snapshot;
 }
 
+export function expectLeaseLifetime(samples, connected = true) {
+  expect(
+    samples.some((sample) => sample.connected && sample.isFollowing && sample.hasActiveMutation),
+    'The real follower must hold a mutation lease before its release can be verified',
+  ).toBe(true);
+  expect(
+    samples.at(-1),
+    'The actual canonical lease must be released after settlement or teardown',
+  ).toMatchObject({ connected, isFollowing: connected, hasActiveMutation: false });
+}
+
 export async function observeScrollFrames(scroll) {
   // Read-only observation armed before input. Native rAF and layout are neither
   // replaced nor advanced, and no event or application state is synthesized.
-  const handle = await scroll.evaluateHandle((node) => {
+  const modulePath = `/@fs${path.join(realpathSync(process.env.PARITY_CANDIDATE_ROOT), 'src/lib/utils/smartScroll.ts')}`;
+  // Reuse the exact module URL loaded by the real caller, including its query,
+  // from the existing strict network recorder. A guessed URL could create a
+  // second empty ownership registry; resource timing's bounded buffer can omit it.
+  const origin = new URL(process.env.PARITY_CANDIDATE_URL).origin;
+  const moduleUrls = [
+    ...new Set(disclosureNetworks.get(scroll.page()).requests.map(({ url }) => url)),
+  ].filter((name) => {
+    const url = new URL(name);
+    return url.origin === origin && decodeURIComponent(url.pathname) === modulePath;
+  });
+  expect(moduleUrls, 'Expected one loaded canonical smartScroll module').toHaveLength(1);
+  const handle = await scroll.evaluateHandle(async (node, moduleUrl) => {
+    const { hasActiveFollowBottomMutation, isFollowingBottom } = await import(moduleUrl);
     const samples = [];
     let frame;
     let stopped = false;
     let shrinkResolve;
+    let activeResolve;
     const shrinking = new Promise((resolve) => {
       shrinkResolve = resolve;
     });
-    const sample = () => {
+    const active = new Promise((resolve) => {
+      activeResolve = resolve;
+    });
+    const readSample = () => {
       const details = node.querySelector('[id="caller-row-details"]');
       samples.push({
         connected: node.isConnected,
+        isFollowing: isFollowingBottom(node),
+        hasActiveMutation: hasActiveFollowBottomMutation(node),
         scrollTop: node.scrollTop,
         scrollHeight: node.scrollHeight,
         clientHeight: node.clientHeight,
@@ -200,29 +233,62 @@ export async function observeScrollFrames(scroll) {
         detailsHeight: details?.getBoundingClientRect().height ?? 0,
       });
       const latest = samples.at(-1);
-      if (latest.detailsHeight > 0 && latest.detailsHeight < samples[0].detailsHeight)
-        shrinkResolve();
+      if (latest.isFollowing && latest.hasActiveMutation) {
+        activeResolve(true);
+        if (latest.detailsHeight > 0 && latest.detailsHeight < samples[0].detailsHeight)
+          shrinkResolve(true);
+      }
+    };
+    const stop = () => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(deadline);
+      activeResolve(false);
+      shrinkResolve(false);
+    };
+    // A real observation deadline bounds both promises even if rAF is suspended.
+    // This does not advance, replace, or influence the application's clock.
+    const deadline = setTimeout(stop, 5_000);
+    const sample = () => {
+      readSample();
       if (!stopped && samples.length < 2048) frame = requestAnimationFrame(sample);
+      else stop();
     };
     sample();
     return {
       shrinking,
+      active,
       stop() {
-        stopped = true;
-        cancelAnimationFrame(frame);
-        return samples;
+        stop();
+        readSample();
+        return { moduleUrl, samples };
       },
     };
-  });
+  }, moduleUrls[0]);
   const finish = async (name, info) => {
-    const samples = await handle.evaluate((observation) => observation.stop());
-    await handle.dispose();
+    let observation;
+    try {
+      observation = await handle.evaluate((value) => value.stop());
+    } finally {
+      await handle.dispose();
+    }
     await info.attach(`${name}-frames.json`, {
-      body: JSON.stringify(samples, null, 2),
+      body: JSON.stringify(observation, null, 2),
       contentType: 'application/json',
     });
-    return samples;
+    return observation.samples;
   };
-  finish.waitForShrink = () => handle.evaluate((observation) => observation.shrinking);
+  finish.waitForActive = async () => {
+    expect(
+      await handle.evaluate((observation) => observation.active),
+      'The actual canonical follower must acquire a mutation lease during native motion',
+    ).toBe(true);
+  };
+  finish.waitForShrink = async () => {
+    expect(
+      await handle.evaluate((observation) => observation.shrinking),
+      'Native collapse must shrink while the canonical follower holds an active mutation lease',
+    ).toBe(true);
+  };
   return finish;
 }

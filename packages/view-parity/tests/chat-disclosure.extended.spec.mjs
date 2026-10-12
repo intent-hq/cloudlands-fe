@@ -6,6 +6,7 @@ import {
   outputJson,
   prepareFollowedDisclosure,
   expectFollowedAndSettled,
+  expectLeaseLifetime,
   readScrollSnapshot,
   observeScrollFrames,
   waitForDisclosedControl,
@@ -25,6 +26,7 @@ test.describe('isolated full motion', () => {
     let growth;
     try {
       await trigger.press('Enter');
+      await finishGrowth.waitForActive();
       await expect(
         details.getByRole('button', { name: 'Activate row detail', exact: true }),
       ).toBeVisible();
@@ -32,6 +34,7 @@ test.describe('isolated full motion', () => {
     } finally {
       growth = await finishGrowth('full-follow-growth', info);
     }
+    expectLeaseLifetime(growth);
     const expanded = await readScrollSnapshot(exercise);
     expect(expanded.scrollHeight).toBeGreaterThan(before.scrollHeight);
     const finalHeight = await details.evaluate((node) => node.getBoundingClientRect().height);
@@ -44,11 +47,13 @@ test.describe('isolated full motion', () => {
     let collapse;
     try {
       await trigger.press('Space');
+      await finishCollapse.waitForActive();
       await expect(details).toHaveCount(0);
       await expectFollowedAndSettled(exercise);
     } finally {
       collapse = await finishCollapse('full-follow-collapse', info);
     }
+    expectLeaseLifetime(collapse);
     expect(
       collapse.some((sample) => sample.detailsHeight > 0 && sample.detailsHeight < finalHeight),
     ).toBe(true);
@@ -78,6 +83,7 @@ test.describe('isolated full motion', () => {
     } finally {
       samples = await finish('reversal', info);
     }
+    expectLeaseLifetime(samples);
     expect(
       await retained.evaluate((node) => node.isConnected),
       'Re-entry retains the actual outgoing details node',
@@ -94,6 +100,7 @@ test.describe('isolated full motion', () => {
     });
     const oldRow = await exercise.getByTestId('operational-row').elementHandle();
     const finishRemoval = await observeScrollFrames(scroll);
+    let removal;
     try {
       await trigger.press('Enter');
       await finishRemoval.waitForShrink();
@@ -104,16 +111,25 @@ test.describe('isolated full motion', () => {
       await expect(scroll).toHaveCount(1);
       await expectFollowedAndSettled(exercise);
     } finally {
-      await finishRemoval('row-removal-with-live-follower', info);
+      removal = await finishRemoval('row-removal-with-live-follower', info);
     }
+    expectLeaseLifetime(removal);
     await rowMount.press('Space');
     await trigger.press('Enter');
     await expectFollowedAndSettled(exercise);
     const oldViewport = await scroll.elementHandle();
     const mount = exercise.getByRole('switch', { name: 'Mount ChatOperationalRow', exact: true });
-    await trigger.press('Enter');
-    await mount.press('Space');
-    await expect(scroll).toHaveCount(0);
+    const finishOwnerRemoval = await observeScrollFrames(scroll);
+    let ownerRemoval;
+    try {
+      await trigger.press('Enter');
+      await finishOwnerRemoval.waitForShrink();
+      await mount.press('Space');
+      await expect(scroll).toHaveCount(0);
+    } finally {
+      ownerRemoval = await finishOwnerRemoval('owner-removal', info);
+    }
+    expectLeaseLifetime(ownerRemoval, false);
     expect(await oldViewport.evaluate((node) => node.isConnected)).toBe(false);
     const readLifetime = exercise.getByRole('button', {
       name: 'Read row scroll lifetime',
