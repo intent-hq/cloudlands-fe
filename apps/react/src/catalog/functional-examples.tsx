@@ -18,6 +18,7 @@ import { MentionNavigationExamples } from './mention-navigation-examples';
 import { ChatTranscriptExamples } from './chat-transcript-examples';
 import { ChatDisclosureExamples } from './chat-disclosure-examples';
 import { ChatMetadataExamples } from './chat-metadata-examples';
+import { ChatCommandExamples } from './chat-command-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -469,6 +470,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'chat-transcript' && <ChatTranscriptExamples />}
       {slug === 'chat-disclosure' && <ChatDisclosureExamples />}
       {slug === 'chat-metadata' && <ChatMetadataExamples />}
+      {slug === 'chat-command' && <ChatCommandExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -537,6 +539,7 @@ export function hasFunctionalExample(slug: string) {
     'chat-transcript',
     'chat-disclosure',
     'chat-metadata',
+    'chat-command',
     'diagram-workbench',
     'toast',
     'notify',
