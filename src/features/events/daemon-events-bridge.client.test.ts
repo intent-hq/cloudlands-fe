@@ -1,3 +1,4 @@
+import { presenceMembershipChanged } from '$store/renderer/slices/presence/presence-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -4878,7 +4879,7 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
   // covered by the "daemonEventsBridge (pr:linked / pr:updated / pr:unlinked
   // → workspace slice)" suite below.
 
-  it('re-emits agent:status-changed and agent:idle onto their legacy channels (and still dispatches the lifecycle)', async () => {
+  it('applies agent lifecycle events without duplicate legacy IPC relays', async () => {
     appStore.dispatch(clearAllSessions());
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();
@@ -4890,13 +4891,8 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     );
     capturedHandlers[0]!(notification('agent:idle', { agentId: AGENT }));
 
-    // active-streams-tracker refetches on any delivery — payload is the event.
-    expect(statusSeen).toHaveLength(1);
-    expect(statusSeen[0]).toMatchObject({ type: 'agent:status-changed', workspaceId: WS });
-    expect(idleSeen).toHaveLength(1);
-    expect(idleSeen[0]).toMatchObject({ type: 'agent:idle', workspaceId: WS });
-    // The relay is a side effect, not an early return: agent:idle still clears
-    // the optimistic responding flag through the lifecycle dispatch.
+    expect(statusSeen).toEqual([]);
+    expect(idleSeen).toEqual([]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
@@ -9442,7 +9438,10 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     // PROTOCOL §5.1: invite redeem / member remove publish `workspace:updated`
     // with `{ members: true, memberCount }` — the non-column flags are dropped,
     // the post-change count lands on the entity.
+    const dispatch = vi.spyOn(appStore, 'dispatch');
     handler(updatedNotification({ members: true, addedPrincipalId: 'p-bob', memberCount: 2 }));
+    expect(dispatch).toHaveBeenCalledWith(presenceMembershipChanged('ws-updated-1'));
+    dispatch.mockRestore();
 
     const ws = await readWorkspace();
     expect(ws.memberCount).toBe(2);
@@ -9455,7 +9454,10 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
+    const dispatch = vi.spyOn(appStore, 'dispatch');
     handler(updatedNotification({ invites: true, openInviteCount: 3 }));
+    expect(dispatch).not.toHaveBeenCalledWith(presenceMembershipChanged('ws-updated-1'));
+    dispatch.mockRestore();
 
     const ws = await readWorkspace();
     expect(ws.openInviteCount).toBe(3);
@@ -10931,7 +10933,7 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  it.each(['agent:idle', 'agent:failed', 'agent:deleted', 'agent:created'])(
+  it.each(['agent:idle', 'agent:failed', 'agent:deleted'])(
     "%s dispatches refreshWorkspaceSubscriptionEntriesRequested for the event's workspace",
     async (eventType) => {
       await primeBridge();
@@ -10940,7 +10942,9 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
 
       handler(notification(eventType, { agentId: AGENT }));
 
-      expect(dispatchSpy).toHaveBeenCalledWith(refreshWorkspaceSubscriptionEntriesRequested(WS));
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        refreshWorkspaceSubscriptionEntriesRequested(WS, undefined, AGENT),
+      );
       dispatchSpy.mockRestore();
     },
   );
@@ -10959,7 +10963,7 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
   });
 });
 
-describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refresh only the changed agent)', () => {
+describe('daemonEventsBridge (agent lifecycle pushes update known sessions without reads)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -10975,7 +10979,7 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refre
 
   afterEach(() => vi.clearAllMocks());
 
-  it('agent:status-changed refreshes only the changed agent (no whole-list hydrate)', async () => {
+  it('agent:status-changed updates known status without a read', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -10990,16 +10994,26 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refre
     const dispatchSpy = vi.fn(originalDispatch);
     const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
-    handler(notification('agent:status-changed', { agentId: AGENT, status: 'responding' }));
+    handler(
+      notification('agent:status-changed', {
+        agentId: AGENT,
+        status: 'responding',
+        isActive: true,
+      }),
+    );
+    expect(appStore.state.agentSessions.byAgentId[AGENT]?.status).toBe('responding');
+    expect(appStore.state.agentSessions.byAgentId[AGENT]?.lastActivity).toBe(
+      '2026-01-02T00:00:00.000Z',
+    );
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
     expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage
     dispatchGetterSpy.mockRestore();
   });
 
-  it('agent:idle refreshes only the changed agent (no whole-list hydrate)', async () => {
+  it('agent:idle updates known status without a read', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -11015,8 +11029,9 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refre
     const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
     handler(notification('agent:idle', { agentId: AGENT }));
+    expect(appStore.state.agentSessions.byAgentId[AGENT]?.isResponding).toBe(false);
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
     expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage
@@ -11427,124 +11442,95 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
   });
 });
 
-describe('daemonEventsBridge (STAB-22 back-compat — agent:message falls back to a light agent.get refresh)', () => {
-  beforeAll(() => {
-    appStore.init();
-  });
-
-  beforeEach(() => {
+describe('daemonEventsBridge (persisted message pushes)', () => {
+  beforeEach(async () => {
     appStore.init();
     appStore.dispatch(clearAllSessions());
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    loadChatTranscriptSpy.mockClear();
-    ensureAgentSessionSpy.mockClear();
+    vi.clearAllMocks();
+    const { clearPendingAgentDeletions } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    clearPendingAgentDeletions();
   });
 
-  it('agent:message on an older daemon triggers the ensureAgentSession refresh — never a transcript walk', async () => {
+  it('uses the first last-message companion without an initial agent.get probe or transcript read', async () => {
     seedSession({ messages: [] });
     await primeBridge();
     const handler = capturedHandlers[0]!;
-
     handler(
       notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'assistant' }),
     );
-    await flush();
-
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
-    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
-  });
-
-  it('coalesces refreshes single-flight: N events during one in-flight fetch produce at most 1 follow-up', async () => {
-    seedSession({ messages: [] });
-    let resolveFirst: (() => void) | undefined;
-    ensureAgentSessionSpy.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveFirst = () => resolve();
-        }) as never,
-    );
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    handler(
-      notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'assistant' }),
-    );
-    handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-2', role: 'user' }));
-    handler(
-      notification('agent:message', { agentId: AGENT, messageId: 'msg-3', role: 'assistant' }),
-    );
-    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
-
-    resolveFirst?.();
-    await flush();
-    // Trailing coalesce: the burst collapsed into exactly one follow-up.
-    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
-    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
-  });
-
-  it('drops a queued metadata refresh when routing is disposed before the reply', async () => {
-    seedSession({ messages: [] });
-    let finish!: () => void;
-    ensureAgentSessionSpy.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }) as never,
-    );
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-    handler(
-      notification('agent:message', { agentId: AGENT, messageId: 'old-1', role: 'assistant' }),
-    );
-    handler(
-      notification('agent:message', { agentId: AGENT, messageId: 'old-2', role: 'assistant' }),
-    );
-    const { disposeDaemonEventsRoutingState } = await import('./daemon-events-bridge.client');
-    disposeDaemonEventsRoutingState();
-    finish();
-    await flush();
-    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
-  });
-
-  it('retires the fallback once the daemon emits agent:last-message', async () => {
-    seedSession({ messages: [] });
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
     handler(
       notification('agent:last-message', {
         agentId: AGENT,
         messageId: 'msg-1',
         role: 'assistant',
-        lastMessageRole: 'assistant',
         lastMessageId: 'msg-1',
-        lastAgentResponse: 'text',
+        lastMessageRole: 'assistant',
+        lastAgentResponse: 'Finished',
       }),
     );
     await flush();
-    ensureAgentSessionSpy.mockClear();
-
-    handler(
-      notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'assistant' }),
-    );
-    await flush();
-
+    expect(appStore.state.agentSessions.byAgentId[AGENT]?.lastAgentResponse).toBe('Finished');
     expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
-  it('ignores system-role agent:message echoes (no refresh)', async () => {
-    seedSession({ messages: [] });
+  it('applies question markers and attention clears without metadata reads', async () => {
+    seedSession({
+      metadata: {
+        pendingQuestionsMessageId: 'question',
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Need input',
+      },
+    });
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    handler(notification('agent:updated', { agentId: AGENT, pendingQuestionsMessageId: '' }));
+    handler(notification('agent:updated', { agentId: AGENT, attentionRequestCleared: true }));
+    expect(appStore.state.agentSessions.byAgentId[AGENT]?.metadata?.pendingQuestionsMessageId).toBe(
+      '',
+    );
+    expect(
+      appStore.state.agentSessions.byAgentId[AGENT]?.metadata?.attentionRequestKind,
+    ).toBeUndefined();
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+  });
 
-    handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'system' }));
-    await flush();
+  it('projects complete proposal snapshots and preserves unknown mutation recovery', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler(
+      notification('agent:updated', {
+        agentId: AGENT,
+        pendingProposals: [{ proposalId: 'p1', messageId: 'm1' }],
+      }),
+    );
+    handler(
+      notification('agent:updated', {
+        agentId: AGENT,
+        pendingProposals: [],
+        proposalResolutions: { p1: 'applied' },
+      }),
+    );
+    expect(appStore.state.agentSessions.byAgentId[AGENT]?.metadata).toMatchObject({
+      pendingProposals: [],
+      proposalResolutions: { p1: 'applied' },
+    });
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+    handler(notification('agent:updated', { agentId: AGENT, modelId: 'new-provider-model' }));
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(1);
+  });
 
-    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
-    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  it('hydrates an unknown lifecycle target once through the shared read owner', async () => {
+    await primeBridge();
+    capturedHandlers[0]!(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 });
 
@@ -14383,14 +14369,14 @@ it.each([
         firstDisabled ? { [server.id]: true } : {},
       );
       expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]?.mcpServers).toEqual([
-        server,
+        { ...server, workspaceDisabled: firstDisabled },
       ]);
       emitToggle(!firstDisabled);
       await flush();
       release({ providers: [] });
       for (let i = 0; i < 20; i++) await flush();
       expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]?.mcpServers).toEqual([
-        server,
+        { ...server, workspaceDisabled: !firstDisabled },
       ]);
       expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
         firstDisabled ? {} : { [server.id]: true },

@@ -648,6 +648,7 @@ describe('agentReadService (fake seam, real store)', () => {
 });
 
 it('keeps concurrent reads of an opaque agent id separate by workspace', async () => {
+  appStore.init();
   const resolve: Array<(session: AgentSession) => void> = [];
   agentsApi.get.mockImplementation(() => new Promise((r) => resolve.push(r)));
   const a = readAgentSession('shared-id', 'workspace-a');
@@ -754,4 +755,31 @@ it('never projects workspace A question markers into a pending workspace B read'
     }),
   );
   expect((await read)?.metadata?.pendingQuestionsMessageId).toBe('b-marker');
+});
+
+it('preserves a pushed idle transition over an older metadata read without a trailing RPC', async () => {
+  appStore.init();
+  agentsApi.get.mockClear();
+  const agentId = 'pushed-idle-read';
+  const busy = makeSession({ id: agentId, isActive: true, isResponding: true });
+  appStore.dispatch(bulkUpsertSessions([busy]));
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise<AgentSession>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const read = ensureAgentSession(agentId, WS);
+  appStore.dispatch(
+    updateSession(agentId, { status: AgentStatus.Idle, isActive: false, isResponding: false }),
+  );
+  finish(busy);
+  await read;
+  expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+    status: AgentStatus.Idle,
+    isActive: false,
+    isResponding: false,
+  });
+  expect(agentsApi.get).toHaveBeenCalledTimes(1);
 });

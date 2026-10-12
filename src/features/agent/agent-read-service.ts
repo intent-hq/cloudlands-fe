@@ -19,9 +19,8 @@ import { onBackendReconnected } from '$lib/client/live/backend-transport';
  *
  * Conversation note: the agent session's `messages` array IS the conversation.
  * On the mock seam this carries the sample transcript; on the live daemon
- * `agent.get` currently returns message COUNTS only (no transcript) and the chat
- * domain is still mock-delegated, so live transcripts are a documented BE gap
- * (Track C chat snapshot) — this service does not fabricate them.
+ * `agent.get` returns message COUNTS only. chat.subscribe owns live history;
+ * metadata reads preserve that separately hydrated transcript.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
  * configured store, the slice actions, and the logger.
@@ -103,6 +102,31 @@ function preserveProjectedQuestionMarkers(
   return metadata === session.metadata ? session : { ...session, metadata };
 }
 
+/** A read started before a push must not roll its fields back on arrival. */
+function preserveLocalUpdates(
+  before: AgentSession | undefined,
+  incoming: AgentSession | null,
+): AgentSession | null {
+  if (!incoming || !before || before.workspaceId !== incoming.workspaceId) return incoming;
+  const current = appStore.state.agentSessions?.byAgentId[String(incoming.id)];
+  if (!current || current.workspaceId !== incoming.workspaceId || current === before)
+    return incoming;
+  const merged = { ...incoming };
+  for (const key of Object.keys(current) as Array<keyof AgentSession>) {
+    if (key === 'metadata') continue;
+    if (current[key] !== before[key]) Object.assign(merged, { [key]: current[key] });
+  }
+  const metadata = { ...incoming.metadata };
+  for (const key of new Set([
+    ...Object.keys(before.metadata ?? {}),
+    ...Object.keys(current.metadata ?? {}),
+  ])) {
+    if (current.metadata?.[key] !== before.metadata?.[key]) metadata[key] = current.metadata?.[key];
+  }
+  merged.metadata = metadata;
+  return merged;
+}
+
 /**
  * Refresh after a daemon event without losing an update behind an older read.
  * If a read is already in flight, one trailing read is scheduled after it;
@@ -146,9 +170,8 @@ export async function refreshAgentSessionAfterEvent(
  * Shared raw `agent.get` read for callers that need the returned projection.
  * Rejections propagate so each caller can preserve its existing error policy;
  * the failed promise is always evicted and is never treated as cached data.
- * The only reconciliation applied is the question-marker guard above: a
- * response to a request that started before an `agent:updated` marker
- * projection keeps the store's projected marker values.
+ * Fields changed by local pushes while the request was in flight stay current;
+ * the explicit question-marker guard also protects repeated marker clears.
  */
 export function readAgentSession(
   agentId: string,
@@ -159,13 +182,25 @@ export function readAgentSession(
   const pending = inFlight.get(key);
   if (pending) return pending;
 
+  // Explicit-workspace raw readers also run outside the initialized renderer
+  // (for example isolated saga stores). Only renderer reads have local pushes
+  // to preserve; keep the raw seam usable without a mounted store.
+  let beforeRead: AgentSession | undefined;
+  try {
+    beforeRead = appStore.state.agentSessions?.byAgentId[agentId];
+  } catch {
+    beforeRead = undefined;
+  }
   const generation = ++readGeneration;
   const connection = connectionGeneration;
   const run = appClient.agents
     .get(agentId, workspaceId)
     .then((session) =>
       connection === connectionGeneration
-        ? preserveProjectedQuestionMarkers(agentId, generation, session)
+        ? preserveLocalUpdates(
+            beforeRead,
+            preserveProjectedQuestionMarkers(agentId, generation, session),
+          )
         : null,
     )
     .finally(() => {
