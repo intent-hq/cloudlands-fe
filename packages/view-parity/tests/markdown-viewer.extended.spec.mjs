@@ -15,6 +15,7 @@ import {
   anchorArgs,
   mention,
   insertImage,
+  pickImage,
   pngFile,
   label,
   tabTo,
@@ -102,42 +103,204 @@ test('markdown viewer MV11: sidecar sizing decoded readiness and current media p
   const host = await openViewer(page);
   await apply(host, '');
   const { image, src, file } = await insertImage(page, host);
-  await expect(image).not.toHaveAttribute('width');
-  await field(host, 'Media sidecar JSON').fill(
-    JSON.stringify({ [src]: { width: 320, height: 200 } }),
-  );
-  await button(host, 'Apply media JSON').click();
-  await toggle(host, 'Supply media sidecar', true);
-  await expect(image).toHaveAttribute('width', '320');
-  await expect(image).toHaveAttribute('height', '200');
-  await expect
-    .poll(() =>
-      image.evaluate((node) => ({
-        complete: node.complete,
-        width: node.naturalWidth,
-        height: node.naturalHeight,
-      })),
-    )
-    .toEqual({ complete: true, width: file.width, height: file.height });
-  await expect(viewer(host).getByTestId('media-loading-placeholder')).toHaveCount(0);
-  await tabTo(page, host, image);
-  await expect(image).toBeFocused();
-  await capture(page, frame(host), 'mv11-sidecar-ready', info);
-  await choose(host, 'chatImageThumbnails', 'true');
-  await expect(image).toHaveAttribute('width', '320');
-  await expect(image).toHaveAttribute('src', src);
-  await field(host, 'Media sidecar JSON').fill(
-    JSON.stringify({ [src]: { width: 240, height: 150 } }),
-  );
-  await button(host, 'Apply media JSON').click();
-  await expect(image).toHaveAttribute('width', '240');
-  await expect(image).toHaveAttribute('height', '150');
-  await toggle(host, 'Supply media sidecar', false);
-  await expect(image).not.toHaveAttribute('width');
-  await expect(image).not.toHaveAttribute('height');
-  await expect(image).toHaveAttribute('role', 'button');
-  await capture(page, frame(host), 'mv11-omitted-sidecar', info);
-  // Decoded data URLs need not expose a loading frame. No transient-loading or file-thumbnail geometry claim.
+  const handles = [];
+  const holdImage = async () => {
+    const handle = await image.elementHandle();
+    expect(handle).not.toBeNull();
+    handles.push(handle);
+    return handle;
+  };
+  // Proposed passive observation only: no DOM, application state or globals are written.
+  const identityLog = await viewer(host).evaluateHandle((root) => {
+    const rows = [];
+    const ids = new WeakMap();
+    let nextId = 0;
+    const identify = (node) => {
+      if (!ids.has(node)) ids.set(node, ++nextId);
+      return ids.get(node);
+    };
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const removed of record.removedNodes) {
+          const images =
+            removed instanceof HTMLImageElement
+              ? [removed]
+              : removed instanceof Element
+                ? [...removed.querySelectorAll('img')]
+                : [];
+          for (const removedImage of images) {
+            rows.push({
+              id: identify(removedImage),
+              connected: removedImage.isConnected,
+              withinViewer: root.contains(removedImage),
+            });
+          }
+        }
+      }
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    return {
+      read: (previous, current) => ({
+        previousId: previous ? identify(previous) : null,
+        currentId: current ? identify(current) : null,
+        sameNode: previous && current ? previous === current : null,
+        previousConnected: previous?.isConnected ?? null,
+        currentConnected: current?.isConnected ?? null,
+        currentWithinViewer: current ? root.contains(current) : null,
+        rows,
+      }),
+      disconnect: () => observer.disconnect(),
+    };
+  });
+  const replacedImage = async (previous, name) => {
+    await detached(previous);
+    await expect(imageActions(host)).toHaveCount(0);
+    await expect(viewer(host).getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    const current = await holdImage();
+    const identity = await identityLog.evaluate(
+      (log, pair) => log.read(pair.previous, pair.current),
+      { previous, current },
+    );
+    await info.attach(`${name}-identity.json`, {
+      body: JSON.stringify(identity, null, 2),
+      contentType: 'application/json',
+    });
+    expect(identity).toMatchObject({
+      sameNode: false,
+      previousConnected: false,
+      currentConnected: true,
+      currentWithinViewer: true,
+    });
+    expect(identity.rows).toContainEqual({
+      id: identity.previousId,
+      connected: false,
+      withinViewer: false,
+    });
+    return { current, identity };
+  };
+  const currentActions = async (name, expectedSource, expectedName) => {
+    await expect(image).toHaveAttribute('src', expectedSource);
+    await expect(image).toHaveAttribute('alt', expectedName);
+    const options = imageActions(host);
+    await expect(options).toBeVisible();
+    await expect(options).toHaveAttribute('aria-haspopup', 'menu');
+    await expect(options).toHaveAttribute('aria-expanded', 'false');
+    const state = {
+      aria: await frame(host).ariaSnapshot(),
+      image: await image.boundingBox(),
+      options: await options.boundingBox(),
+      src: await image.getAttribute('src'),
+      alt: await image.getAttribute('alt'),
+    };
+    await info.attach(`${name}-actions.json`, {
+      body: JSON.stringify(state, null, 2),
+      contentType: 'application/json',
+    });
+    expect(state.image).not.toBeNull();
+    expect(state.options).not.toBeNull();
+    expect(state.options.x).toBeGreaterThanOrEqual(state.image.x);
+    expect(state.options.y).toBeGreaterThanOrEqual(state.image.y);
+    expect(state.options.x + state.options.width).toBeLessThanOrEqual(
+      state.image.x + state.image.width,
+    );
+    expect(state.options.y + state.options.height).toBeLessThanOrEqual(
+      state.image.y + state.image.height,
+    );
+  };
+  try {
+    const unsized = await holdImage();
+    await expect(image).not.toHaveAttribute('width');
+    await field(host, 'Media sidecar JSON').fill(
+      JSON.stringify({ [src]: { width: 320, height: 200 } }),
+    );
+    await button(host, 'Apply media JSON').click();
+    await toggle(host, 'Supply media sidecar', true);
+    await expect(image).toHaveAttribute('width', '320');
+    await expect(image).toHaveAttribute('height', '200');
+    const sized = await replacedImage(unsized, 'mv11-sized');
+    // The current image was genuinely reparented into its production sizing frame.
+    expect(sized.identity.rows).toContainEqual({
+      id: sized.identity.currentId,
+      connected: true,
+      withinViewer: true,
+    });
+    await expect
+      .poll(() =>
+        image.evaluate((node) => ({
+          complete: node.complete,
+          width: node.naturalWidth,
+          height: node.naturalHeight,
+        })),
+      )
+      .toEqual({ complete: true, width: file.width, height: file.height });
+    await expect(viewer(host).getByTestId('media-loading-placeholder')).toHaveCount(0);
+    await tabTo(page, host, image);
+    await expect(image).toBeFocused();
+    await currentActions('mv11-sized', src, file.name);
+    await capture(page, frame(host), 'mv11-sidecar-ready', info);
+    await choose(host, 'chatImageThumbnails', 'true');
+    await expect(image).toHaveAttribute('width', '320');
+    await expect(image).toHaveAttribute('src', src);
+    await sameNode(image, sized.current);
+    await field(host, 'Media sidecar JSON').fill(
+      JSON.stringify({ [src]: { width: 240, height: 150 } }),
+    );
+    await button(host, 'Apply media JSON').click();
+    await expect(image).toHaveAttribute('width', '240');
+    await expect(image).toHaveAttribute('height', '150');
+    const resized = await replacedImage(sized.current, 'mv11-resized');
+    await tabTo(page, host, image);
+    await expect(image).toBeFocused();
+    await currentActions('mv11-resized', src, file.name);
+    await toggle(host, 'Supply media sidecar', false);
+    await expect(image).not.toHaveAttribute('width');
+    await expect(image).not.toHaveAttribute('height');
+    await expect(image).toHaveAttribute('role', 'button');
+    const omitted = await replacedImage(resized.current, 'mv11-omitted');
+    await image.hover();
+    await currentActions('mv11-omitted', src, file.name);
+    await capture(page, frame(host), 'mv11-omitted-sidecar', info);
+    // Decoded data URLs need not expose a loading frame. No transient-loading or file-thumbnail geometry claim.
+    const nextFile = pngFile('current-viewer-image.png', 96, 64);
+    const nextSource = await pickImage(page, host, nextFile);
+    await apply(host, `![${nextFile.name}](${nextSource})`);
+    await replacedImage(omitted.current, 'mv11-content-replaced');
+    await image.hover();
+    await currentActions('mv11-current-content', nextSource, nextFile.name);
+    await image.click({ button: 'right' });
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expect(page.getByTestId('image-info-dimensions')).toHaveText(
+      label('ui_imageActionsMenu_dimensions_label', {
+        width: nextFile.width,
+        height: nextFile.height,
+      }),
+    );
+    await capture(page, page.getByRole('menu'), 'mv11-current-image-menu', info);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    const records = await observations(host);
+    expect(records.native).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'contextmenu-capture',
+          type: 'contextmenu',
+          isTrusted: true,
+          target: expect.objectContaining({ tag: 'IMG' }),
+        }),
+      ]),
+    );
+    expect(navigation(records)).toEqual([]);
+  } finally {
+    await identityLog.evaluate((log) => log.disconnect());
+    const identities = await identityLog.evaluate((log) => log.read(null, null));
+    await info.attach('mv11-all-image-identities.json', {
+      body: JSON.stringify(identities, null, 2),
+      contentType: 'application/json',
+    });
+    await identityLog.dispose();
+    for (const handle of handles) await handle.dispose();
+  }
 });
 
 test('markdown viewer MV13: keyboard image actions survive pointer movement and media replacement', async ({
