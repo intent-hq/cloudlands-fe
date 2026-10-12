@@ -2,8 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { test as base, expect, openExample, outputJson } from './functional.mjs';
-import { repoRoot } from './manifest.mjs';
+import { test as base, expect, outputJson } from './functional.mjs';
+import { endpoint, repoRoot } from './manifest.mjs';
 import { candidateProvenance } from './provenance.mjs';
 import { observeAvatarPairNetwork, assertAvatarPairNetwork } from './agent-avatar.mjs';
 import { captureTranscript } from './chat-transcript.mjs';
@@ -147,9 +147,7 @@ export const test = base.extend({
         if (!page.isClosed()) {
           await info.attach('queued-attachments-observations.json', {
             body: JSON.stringify(
-              await page
-                .locator('[data-functional-example="queued-attachments"] pre')
-                .allTextContents(),
+              await page.getByTestId('queued-attachments-state').allTextContents(),
               null,
               2,
             ),
@@ -165,7 +163,25 @@ export const test = base.extend({
 export { expect, outputJson, captureTranscript as captureAttachments };
 
 export async function openAttachments(page) {
-  const host = await openExample(page, 'queued-attachments', 'queued-attachments');
+  const baseUrl = endpoint(process.env.PARITY_CANDIDATE_URL, 'PARITY_CANDIDATE_URL');
+  const url = new URL(`${baseUrl}/sandbox/queued-attachments`);
+  for (const [key, value] of Object.entries({
+    example: 'interactive',
+    theme: 'light',
+    motion: 'reduced',
+    width: '420',
+  }))
+    url.searchParams.set(key, value);
+  const response = await page.goto(url.href, { waitUntil: 'domcontentloaded' });
+  expect(response?.ok(), `Cannot load actual interactive example ${url}`).toBe(true);
+  const host = page.getByRole('main');
+  // This committed caller exposes a test ID, not data-functional-example.
+  // The original failed trace retains the actual section and rendered controls.
+  const section = host.getByTestId('queued-attachments');
+  await expect(section, 'The actual queued attachment caller must be visible').toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(section.locator('[data-catalog-unimplemented]')).toHaveCount(0);
   expect(
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
