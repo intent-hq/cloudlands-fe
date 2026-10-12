@@ -90,6 +90,7 @@ export function NativeAttachmentExample() {
   const [callbacks, setCallbacks] = useState<AttachmentObservation[]>([]);
   const [capture, setCapture] = useState<AttachmentObservation[]>([]);
   const [bubble, setBubble] = useState<AttachmentObservation[]>([]);
+  const [reactBubble, setReactBubble] = useState<AttachmentObservation[]>([]);
   const [removeEnabled, setRemoveEnabled] = useState(true);
   const [retryEnabled, setRetryEnabled] = useState(false);
   const [callbackRevision, setCallbackRevision] = useState(0);
@@ -245,10 +246,30 @@ export function NativeAttachmentExample() {
           setAttachments((current) => [...current, ...additions]);
         }}
       />
+      {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Passive parent observer; the production child controls own keyboard activation. */}
       <div
         ref={previewParent}
         className="flex min-w-0 flex-wrap gap-3"
         aria-label="Attachment preview area"
+        onClick={(event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          const slot =
+            target?.closest<HTMLElement>('[data-attachment-slot]')?.dataset.attachmentSlot;
+          const item = attachments.find((attachment) => attachment.slot === slot);
+          if (!item) return;
+          const entry: AttachmentObservation = {
+            sequence: ++eventSequence.current,
+            slot: item.slot,
+            currentId: item.id,
+            revision: callbackRevision,
+            kind: 'react-bubble',
+            target: target?.tagName,
+            label: target?.closest('[aria-label]')?.getAttribute('aria-label'),
+            defaultPrevented: event.defaultPrevented,
+            eventPhase: event.eventPhase,
+          };
+          setReactBubble((current) => [...current, entry].slice(-12));
+        }}
       >
         {mounted &&
           attachments.map((item) => {
@@ -540,6 +561,7 @@ export function NativeAttachmentExample() {
             setCallbacks([]);
             setCapture([]);
             setBubble([]);
+            setReactBubble([]);
             setRemoved([]);
           }}
         >
@@ -566,13 +588,16 @@ export function NativeAttachmentExample() {
       <output className="min-w-0 whitespace-pre-wrap" aria-label="Attachment native bubble log">
         {JSON.stringify(bubble)}
       </output>
+      <output className="min-w-0 whitespace-pre-wrap" aria-label="Attachment React bubble log">
+        {JSON.stringify(reactBubble)}
+      </output>
       <p>
         Logs retain the last 12 observations per stream. Callbacks report received arguments and
         current caller values; retry only records the callback. Native parent click capture and
-        bubble are separate observations, not a prediction of React propagation. The source stops
-        thumbnail removal and retry clicks, but lets chip removal bubble. Decode failures, browser
-        errors and object URL revocation need independent native verification; this page does not
-        count allocations or infer success from props. Placement controls do not upload files.
+        bubble are separate observations from the React parent click log. The source stops thumbnail
+        removal and retry clicks, but lets chip removal bubble. Decode failures, browser errors and
+        object URL revocation need independent native verification; this page does not count
+        allocations or infer success from props. Placement controls do not upload files.
       </p>
     </section>
   );
