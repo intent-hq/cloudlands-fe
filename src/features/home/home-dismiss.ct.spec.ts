@@ -327,6 +327,170 @@ test('aggregate reminder reads cannot replace another person’s current project
   });
 });
 
+test('workspace opening IPC coalesces only within one admission', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, { props: { admissions: true } });
+  const row = component.getByRole('option', { name: 'Review onboarding' });
+  await row.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'idle');
+  const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  await page.evaluate(() => {
+    window.__homeDismiss!.holdNextOpenReply();
+    window.__homeDismiss!.startOpenRead();
+    window.__homeDismiss!.startOpenRead();
+  });
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.openReplies.length)).toBe(1);
+  expect(
+    await page.evaluate(
+      () => window.__homeDismiss!.openReplies[0].workspace.attentionReminder?.dismissed,
+    ),
+  ).toBe(true);
+  await page.evaluate(() => window.__homeDismiss!.changePrincipal('person-b'));
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__homeDismiss!.listReads.filter((read) => read.status === 'held').length,
+      ),
+    )
+    .toBe(1);
+  await page.evaluate(() => window.__homeDismiss!.startOpenRead());
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.openReplies.length)).toBe(2);
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.openResults.length)).toBe(1);
+  const fresh = await page.evaluate(() => window.__homeDismiss!.openResults[0]);
+  expect(fresh.principalId).toBe('person-b');
+  expect(fresh.result.ok).toBe(true);
+  if (fresh.result.ok) expect(fresh.result.data.attentionReminder?.dismissed).toBe(false);
+  await page.evaluate(() => window.__homeDismiss!.releaseOpenReply());
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.openResults.length)).toBe(3);
+  const after = await page.evaluate(() => ({
+    state: window.__homeDismiss!.admissionSnapshot(),
+    replies: window.__homeDismiss!.openReplies,
+    results: window.__homeDismiss!.openResults,
+  }));
+  expect(
+    after.results
+      .filter((result) => result.principalId === before.principalId)
+      .every((result) => !result.result.ok),
+  ).toBe(true);
+  expect(after.replies.map((reply) => reply.principalId)).toEqual([before.principalId, 'person-b']);
+  expect(after.state.workspace.attentionReminder).toBeUndefined();
+  await page.evaluate(() => window.__homeDismiss!.releaseList());
+  await expect
+    .poll(() => page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.dismissed))
+    .toBe(false);
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'needs-you');
+  await testInfo.attach('workspace-open-ipc-admission-proof', {
+    body: JSON.stringify({ before, fresh, after }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+for (const newerLoad of ['after-old-reply', 'while-old-reply-held'] as const) {
+  test(
+    'workspace load retires an earlier admission ' + newerLoad,
+    async ({ mount, page }, testInfo) => {
+      const component = await mount(Preview, { props: { admissions: true } });
+      const row = component.getByRole('option', { name: 'Review onboarding' });
+      await row.focus();
+      await page.keyboard.press('Shift+F10');
+      await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+      await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'idle');
+      const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      await page.evaluate(() => {
+        window.__homeDismiss!.holdNextOpenReply();
+        window.__homeDismiss!.startLoadRead();
+      });
+      await expect
+        .poll(() => page.evaluate(() => window.__homeDismiss!.openReplies.length))
+        .toBe(1);
+      await expect
+        .poll(() => page.evaluate(() => window.__homeDismiss!.admissionSnapshot().loadState.status))
+        .toBe('cached-ready');
+      expect(
+        await page.evaluate(
+          () => window.__homeDismiss!.openReplies[0].workspace.attentionReminder?.dismissed,
+        ),
+      ).toBe(true);
+      await page.evaluate(() => window.__homeDismiss!.changePrincipal('person-b'));
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => window.__homeDismiss!.listReads.filter((read) => read.status === 'held').length,
+          ),
+        )
+        .toBe(1);
+      if (newerLoad === 'after-old-reply') {
+        await page.evaluate(() => window.__homeDismiss!.releaseOpenReply());
+        await expect
+          .poll(() =>
+            page.evaluate(() => window.__homeDismiss!.admissionSnapshot().loadState.status),
+          )
+          .toBe('idle');
+        expect(
+          await page.evaluate(() => window.__homeDismiss!.snapshot().setupScript),
+        ).toBeUndefined();
+        await expect(row.locator('[data-home-status]')).toHaveAttribute(
+          'data-home-status',
+          'needs-you',
+        );
+      }
+      const held = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      await page.evaluate(() => window.__homeDismiss!.startLoadRead());
+      await expect
+        .poll(() => page.evaluate(() => window.__homeDismiss!.openReplies.length))
+        .toBe(2);
+      await expect
+        .poll(() => page.evaluate(() => window.__homeDismiss!.admissionSnapshot().loadState.status))
+        .toBe('ready');
+      expect(await page.evaluate(() => window.__homeDismiss!.snapshot().setupScript)).toBe(
+        'detail-for-person-b',
+      );
+      await expect(row.locator('[data-home-status]')).toHaveAttribute(
+        'data-home-status',
+        'needs-you',
+      );
+      if (newerLoad === 'while-old-reply-held') {
+        await page.evaluate(() => window.__homeDismiss!.releaseOpenReply());
+        await expect
+          .poll(() => page.evaluate(() => window.__homeDismiss!.openReplies[0].status))
+          .toBe('passed');
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+            ),
+        );
+      }
+      expect(await page.evaluate(() => window.__homeDismiss!.snapshot().setupScript)).toBe(
+        'detail-for-person-b',
+      );
+      await page.evaluate(() => window.__homeDismiss!.releaseList());
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.dismissed),
+        )
+        .toBe(false);
+      const after = await page.evaluate(() => ({
+        state: window.__homeDismiss!.admissionSnapshot(),
+        replies: window.__homeDismiss!.openReplies,
+        reads: window.__homeDismiss!.detailReads,
+      }));
+      expect(after.state.loadState.status).toBe('ready');
+      expect(after.state.workspace.attentionReminder?.dismissed).toBe(false);
+      expect(after.state.hudCard?.stateKey).toBe('wait');
+      expect(after.state.tabStatus?.categories.map((item) => item.category)).toContain('review');
+      await testInfo.attach('workspace-load-' + newerLoad + '-proof', {
+        body: JSON.stringify({ before, held, after }, null, 2),
+        contentType: 'application/json',
+      });
+    },
+  );
+}
+
 for (const surface of ['home', 'sidebar'] as const) {
   for (const refresh of ['delayed', 'failed'] as const) {
     test(

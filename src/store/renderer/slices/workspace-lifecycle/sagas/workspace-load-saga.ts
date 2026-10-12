@@ -24,6 +24,10 @@ import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { appClient } from '$lib/client';
 import {
+  captureWorkspaceReadContext,
+  type WorkspaceReadContext,
+} from '$lib/client/live/workspace-read-context';
+import {
   backendReconnected,
   workspaceDeleted,
   workspaceHydrationRequested,
@@ -69,7 +73,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function* isLoadInvalidated(workspaceId: string): SagaGenerator<boolean> {
+function* isLoadInvalidated(
+  workspaceId: string,
+  read: WorkspaceReadContext,
+): SagaGenerator<boolean> {
+  if (!read.isCurrent()) {
+    yield* put(workspaceLoadCancelled(workspaceId));
+    return true;
+  }
   const state = yield* select(selectWorkspaceLoadState.select, workspaceId);
   return state.status === 'idle';
 }
@@ -100,6 +111,7 @@ function* hydrateOptionalWorkspaceDetail(
   workspaceId: string,
   openedWorkspace: Workspace,
 ): SagaGenerator<void> {
+  const read = captureWorkspaceReadContext();
   try {
     const { hydratedWorkspace, invalidated } = yield* race({
       hydratedWorkspace: call([appClient.workspaces, appClient.workspaces.get], workspaceId),
@@ -107,10 +119,10 @@ function* hydrateOptionalWorkspaceDetail(
         isWorkspaceDetailInvalidation(action, workspaceId),
       ),
     });
-    if (invalidated || !hydratedWorkspace) return;
+    if (invalidated || !hydratedWorkspace || !read.isCurrent()) return;
 
     const current = yield* select(selectWorkspaceById.select, workspaceId);
-    if (!current || !workspacePathsMatch(current, openedWorkspace)) return;
+    if (!current || !workspacePathsMatch(current, openedWorkspace) || !read.isCurrent()) return;
 
     yield* put(
       setWorkspaceEntity({
@@ -125,13 +137,19 @@ function* hydrateOptionalWorkspaceDetail(
   }
 }
 
-type ActiveWorkspaceLoad = { workspaceId: string; task?: Task; succeeded: boolean };
+type ActiveWorkspaceLoad = {
+  workspaceId: string;
+  task?: Task;
+  succeeded: boolean;
+  read: WorkspaceReadContext;
+};
 
 function* loadWorkspace(
   action: ReturnType<typeof workspaceLoadRequested>,
   slot: ActiveWorkspaceLoad,
 ): SagaGenerator<void> {
   const workspaceId = action.payload[0];
+  const read = slot.read;
   if (workspaceId.startsWith('optimistic-')) {
     yield* put(workspaceLoadOptimisticReady(workspaceId));
     return;
@@ -151,13 +169,13 @@ function* loadWorkspace(
   yield* put(workspaceHydrationRequested(workspaceId));
   try {
     let result = yield* call([workspaceClient, workspaceClient.open], WorkspaceId(workspaceId));
-    if (yield* isLoadInvalidated(workspaceId)) return;
+    if (yield* isLoadInvalidated(workspaceId, read)) return;
     if (!result.ok && isNotFoundError(result.error)) {
       yield* put(loadWorkspacesRequested());
       yield* delay(NOT_FOUND_RETRY_DELAY_MS);
-      if (yield* isLoadInvalidated(workspaceId)) return;
+      if (yield* isLoadInvalidated(workspaceId, read)) return;
       result = yield* call([workspaceClient, workspaceClient.open], WorkspaceId(workspaceId));
-      if (yield* isLoadInvalidated(workspaceId)) return;
+      if (yield* isLoadInvalidated(workspaceId, read)) return;
     }
 
     if (!result.ok) {
@@ -180,8 +198,9 @@ function* loadWorkspace(
     }
 
     const workspace = result.data;
+    if (yield* isLoadInvalidated(workspaceId, read)) return;
     yield* put(setWorkspaceEntity(workspace));
-    if (yield* isLoadInvalidated(workspaceId)) return;
+    if (yield* isLoadInvalidated(workspaceId, read)) return;
     yield* put(workspaceOpenSucceeded(workspaceId));
     yield* put(workspaceLoadSucceeded(workspaceId));
     slot.succeeded = true;
@@ -190,7 +209,7 @@ function* loadWorkspace(
       yield* call(hydrateOptionalWorkspaceDetail, workspaceId, workspace);
     }
   } catch (error) {
-    if (yield* isLoadInvalidated(workspaceId)) return;
+    if (yield* isLoadInvalidated(workspaceId, read)) return;
     if (cached) {
       yield* put(workspaceOpenFailed(workspaceId));
       return;
@@ -207,13 +226,17 @@ export function* workspaceLoadSaga(): SagaGenerator<void> {
     const workspaceId = action.payload[0];
     const activeTask = active?.task;
     if (active && activeTask?.isRunning()) {
-      if (active.workspaceId === workspaceId) continue;
+      if (active.workspaceId === workspaceId && active.read.isCurrent()) continue;
       const stale = active;
       yield* cancel(activeTask);
       if (!stale.succeeded) yield* put(workspaceLoadCancelled(stale.workspaceId));
     }
 
-    const slot: ActiveWorkspaceLoad = { workspaceId, succeeded: false };
+    const slot: ActiveWorkspaceLoad = {
+      workspaceId,
+      succeeded: false,
+      read: captureWorkspaceReadContext(),
+    };
     active = slot;
     const task = yield* fork(function* activeWorkspaceLoad() {
       try {

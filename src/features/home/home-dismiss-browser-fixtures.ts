@@ -9,6 +9,7 @@ import {
   type Workspace,
   type AttentionReminderReason,
   type WorkspaceDisplayStatus,
+  type Result,
 } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { store } from '$store/renderer/store';
@@ -27,7 +28,13 @@ import { resetHomeWorkspaceView } from './home-workspaces-slice';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { workspaceOperationsSaga } from '$store/renderer/slices/workspace-operations/sagas/workspace-operations-saga';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
-import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceLoadRequested,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { selectWorkspaceLoadState } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors';
+import { workspaceLoadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/workspace-load-saga';
+import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 import {
   principalContextChanged,
   principalReceived,
@@ -130,6 +137,12 @@ declare global {
       releaseDetail: () => void;
       detailReads: AdmissionDetailRead[];
       detailResults: Array<{ principalId: string; workspace?: Workspace }>;
+      holdNextOpenReply: () => void;
+      releaseOpenReply: () => void;
+      startOpenRead: () => void;
+      startLoadRead: () => void;
+      openReplies: AdmissionDetailRead[];
+      openResults: Array<{ principalId: string; result: Result<Workspace, string> }>;
       addPendingCreation: () => void;
       admissionSnapshot: () => {
         principalId: string | null;
@@ -138,6 +151,7 @@ declare global {
         pendingCreation: Workspace | null;
         listReads: AdmissionListRead[];
         listError: string | null;
+        loadState: ReturnType<typeof selectWorkspaceLoadState.select>;
         hudCard: ReturnType<typeof selectHudWorkspaceCards.select>[number] | undefined;
         attentionItems: ReturnType<typeof selectHudAttentionItems.select>;
         tabStatus: ReturnType<typeof selectWorkspaceTabStatuses.select>[string] | undefined;
@@ -170,6 +184,11 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
   const listResults: NonNullable<Window['__homeDismiss']>['listResults'] = [];
   const detailReads: AdmissionDetailRead[] = [];
   const detailResults: NonNullable<Window['__homeDismiss']>['detailResults'] = [];
+  const openReplies: AdmissionDetailRead[] = [];
+  const openResults: NonNullable<Window['__homeDismiss']>['openResults'] = [];
+  let holdOpenReply = false;
+  let releaseOpenReply = () => {};
+  let stopLoads: (() => void) | null = null;
   const heldLists = new Map<AdmissionListRead, () => void>();
   let holdList = false;
   let failList = false;
@@ -252,6 +271,22 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
     listReads,
     detailReads,
     detailResults,
+    openReplies,
+    openResults,
+    holdNextOpenReply: () => {
+      holdOpenReply = true;
+    },
+    releaseOpenReply: () => releaseOpenReply(),
+    startOpenRead: () => {
+      const caller = principalId;
+      void workspaceClient
+        .open(WorkspaceId('dismiss-review'))
+        .then((result) => openResults.push({ principalId: caller, result }));
+    },
+    startLoadRead: () => {
+      stopLoads ??= store.runSaga(workspaceLoadSaga);
+      store.dispatch(workspaceLoadRequested('dismiss-review'));
+    },
     changePrincipal: (caller, shouldFail = false) => {
       failList = shouldFail;
       admit(caller);
@@ -316,6 +351,7 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
       pendingCreation: store.state.workspace.pendingCreations['pending-reminder'] ?? null,
       listReads,
       listError: store.state.workspace.error,
+      loadState: selectWorkspaceLoadState.select(store.state, 'dismiss-review'),
       hudCard: selectHudWorkspaceCards
         .select(store.state)
         .find((card) => card.workspaceId === get().id),
@@ -526,14 +562,41 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
         data: await appClient.workspaces.list({ includeArchived: true }),
       }))
     : null;
+  const restoreOpen = admissions
+    ? overrideMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
+        const caller = principalId;
+        const context = selectPrincipalActionContext.select(store.state);
+        const shouldHold = holdOpenReply;
+        holdOpenReply = false;
+        const id = (arg as { id: string }).id;
+        const workspace = await appClient.workspaces.open(id);
+        if (!workspace) return { success: false, error: 'Workspace not found' };
+        const entry: AdmissionDetailRead = {
+          principalId: caller,
+          context,
+          status: shouldHold ? 'held' : 'passed',
+          workspace,
+        };
+        openReplies.push(entry);
+        if (shouldHold)
+          await new Promise<void>((resolve) => {
+            releaseOpenReply = resolve;
+          });
+        entry.status = 'passed';
+        return { success: true, data: workspace };
+      })
+    : null;
   const stopSaga = store.runSaga(workspaceOperationsSaga);
   const stopReads = admissions ? store.runSaga(lifecycleReadSaga) : null;
   return () => {
+    stopLoads?.();
     stopReads?.();
     stopSaga();
     releaseLists();
     releaseDetail();
+    releaseOpenReply();
     release();
+    restoreOpen?.();
     restoreList?.();
     window.electronAPI = previous;
     delete window.__homeDismiss;
