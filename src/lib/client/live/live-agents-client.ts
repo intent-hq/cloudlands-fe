@@ -12,6 +12,7 @@ import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-erro
 import { isContentBlock } from '$shared/types';
 import { normalizeAgent, getKnownAgentWorkspace } from './agent-normalization';
 import { createBackendAgentClient } from './backend-agent-client';
+import { createBackendPermissionClient } from './backend-permission-client';
 import { onBackendNotification, onBackendReconnected } from './backend-transport';
 export { normalizeAgent } from './agent-normalization';
 const agentReads = createBackendAgentClient({
@@ -947,22 +948,11 @@ export class LiveAgentsClient implements AgentsClient {
     outcome: PermissionOutcome,
     workspaceId?: string,
   ): Promise<RespondPermissionResult> {
-    // `agent.respondPermission` (PROTOCOL §8) forwards the caller's outcome to
-    // the blocked provider and emits `agent:permission:resolved` so any other
-    // client can clear its inline prompt. The daemon returns `{ resolved }` —
-    // `false` when the pending prompt is already gone (5-min timeout or an
-    // earlier response) — which we surface on top of MutationResult so callers
-    // decide whether to keep the local slice entry visible for a retry.
-    try {
-      const result = await backendRequest<{ resolved?: unknown } | undefined>(
-        'agent.respondPermission',
-        { requestId, outcome, ...(workspaceId !== undefined ? { workspaceId } : {}) },
-      );
-      const resolved = typeof result?.resolved === 'boolean' ? result.resolved : undefined;
-      return resolved !== undefined ? { success: true, resolved } : { success: true };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
+    return createBackendPermissionClient(backendRequest).respondPermission(
+      requestId,
+      outcome,
+      workspaceId,
+    );
   }
 
   async listInterrupted(): Promise<import('../app-client').InterruptedAgent[]> {
