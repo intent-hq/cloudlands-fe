@@ -16,6 +16,7 @@ import { ResourceIconExamples } from './resource-icon-examples';
 import { SidebarActionsExamples } from './sidebar-actions-examples';
 import { MentionNavigationExamples } from './mention-navigation-examples';
 import { ChatTranscriptExamples } from './chat-transcript-examples';
+import { ChatDisclosureExamples } from './chat-disclosure-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -465,6 +466,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'sidebar-actions' && <SidebarActionsExamples />}
       {slug === 'mention-navigation' && <MentionNavigationExamples />}
       {slug === 'chat-transcript' && <ChatTranscriptExamples />}
+      {slug === 'chat-disclosure' && <ChatDisclosureExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -531,6 +533,7 @@ export function hasFunctionalExample(slug: string) {
     'sidebar-actions',
     'mention-navigation',
     'chat-transcript',
+    'chat-disclosure',
     'diagram-workbench',
     'toast',
     'notify',
