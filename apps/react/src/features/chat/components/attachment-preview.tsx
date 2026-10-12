@@ -27,7 +27,9 @@ export interface AttachmentPreviewProps {
   imageData?: string;
   imageMimeType?: string;
   onRemove?: (id: string) => void;
+  /** Overrides the source `class` alias, including when explicitly empty. */
   className?: string;
+  class?: string;
   variant?: 'chip' | 'thumbnail';
   placementStatus?: 'placing' | 'failed' | 'placed';
   placementProgress?: number;
@@ -54,7 +56,8 @@ export function AttachmentPreview({
   imageData,
   imageMimeType,
   onRemove,
-  className = '',
+  className,
+  class: sourceClass = '',
   variant = 'chip',
   placementStatus,
   placementProgress,
@@ -115,7 +118,7 @@ export function AttachmentPreview({
           ref={root}
           inert={!present}
           aria-hidden={!present || undefined}
-          className={cn('relative group shrink-0', className)}
+          className={`relative group shrink-0 ${className ?? sourceClass}`}
         >
           <Button
             ref={setThumbnailButton}
@@ -166,13 +169,11 @@ export function AttachmentPreview({
         ref={root}
         inert={!present}
         aria-hidden={!present || undefined}
-        className={cn(
-          'flex items-center gap-1.5 px-2 py-0.5 rounded text-xs whitespace-nowrap group shrink-0',
+        className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs whitespace-nowrap group shrink-0 ${
           placementStatus === 'failed'
             ? 'bg-danger-background/10 text-danger border border-danger/40'
-            : 'bg-muted/70 text-subtle',
-          className,
-        )}
+            : 'bg-muted/70 text-subtle'
+        } ${className ?? sourceClass}`}
         data-placement-status={placementStatus}
         title={chipTitle}
       >
