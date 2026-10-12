@@ -1479,7 +1479,7 @@ function projectAgentMetadata(
   if (!session || session.workspaceId !== event.workspaceId || isAgentDeletionPending(agentId))
     return false;
   const updates: Partial<AgentSession> = {};
-  const metadata = { ...session.metadata };
+  const metadataUpdates: NonNullable<AgentSession['metadata']> = {};
   const consumed = new Set(['agentId']);
   for (const key of [
     'pendingQuestionsMessageId',
@@ -1487,7 +1487,7 @@ function projectAgentMetadata(
     'lastSeenMessageId',
   ]) {
     if (typeof data[key] === 'string') {
-      metadata[key] = data[key];
+      metadataUpdates[key] = data[key];
       consumed.add(key);
     }
   }
@@ -1501,7 +1501,7 @@ function projectAgentMetadata(
         typeof item.messageId === 'string',
     )
   ) {
-    metadata.pendingProposals = data.pendingProposals;
+    metadataUpdates.pendingProposals = data.pendingProposals;
     consumed.add('pendingProposals');
   }
   const resolutions = data.proposalResolutions;
@@ -1511,12 +1511,12 @@ function projectAgentMetadata(
     !Array.isArray(resolutions) &&
     Object.values(resolutions).every((value) => value === 'applied' || value === 'dismissed')
   ) {
-    metadata.proposalResolutions = resolutions as Record<string, 'applied' | 'dismissed'>;
+    metadataUpdates.proposalResolutions = resolutions as Record<string, 'applied' | 'dismissed'>;
     consumed.add('proposalResolutions');
   }
   if (data.completionReportCleared === true) {
-    metadata.completionReport = undefined;
-    metadata.completionReportTimestamp = undefined;
+    metadataUpdates.completionReport = undefined;
+    metadataUpdates.completionReportTimestamp = undefined;
     consumed.add('completionReportCleared');
   }
   if (data.attentionRequestCleared === true) {
@@ -1526,7 +1526,7 @@ function projectAgentMetadata(
       'attentionRequestTimestamp',
     ] as const) {
       updates[key] = undefined;
-      metadata[key] = undefined;
+      metadataUpdates[key] = undefined;
     }
     consumed.add('attentionRequestCleared');
   }
@@ -1539,13 +1539,16 @@ function projectAgentMetadata(
     updates.attentionRequestReason = data.reason;
     updates.attentionRequestTimestamp =
       typeof data.timestamp === 'string' ? data.timestamp : event.timestamp;
-    Object.assign(metadata, updates);
+    Object.assign(metadataUpdates, updates);
     for (const key of Object.keys(data)) consumed.add(key);
   }
   if (consumed.size === 1) return false;
+  const metadata = { ...session.metadata, ...metadataUpdates };
   updates.metadata = metadata;
   updates.hasUnread = deriveAgentHasUnread({ ...session, metadata });
-  appStore.dispatch(updateSession(agentId, updates));
+  appStore.dispatch(
+    updateSession(agentId, updates, { projectedMetadataKeys: Object.keys(metadataUpdates) }),
+  );
   // modelId alone lacks the changed provider; completionReportLength lacks
   // the report; id-only recovery events also still require an agent.get.
   return Object.keys(data).every((key) => consumed.has(key));

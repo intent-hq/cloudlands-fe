@@ -208,7 +208,15 @@ export interface AgentHistorySegment {
  * All Date fields are stored as ISO strings (serializable).
  * Messages are stored as an ordered, serializable array.
  */
+/** Per-field local projection order, independent of value equality or daemon timestamps. */
+export interface AgentSessionProjectionVersions {
+  fields: Record<string, number>;
+  metadata: Record<string, number>;
+}
+
 export interface AgentSessionState {
+  /** Never persisted; removed with the session. Used to fence pending detail reads. */
+  projectionVersions?: Record<string, AgentSessionProjectionVersions>;
   /** In-flight mode mutations; never persisted with agent sessions. */
   backgroundModePending?: Record<string, true>;
   /** Agent sessions keyed by agentId */

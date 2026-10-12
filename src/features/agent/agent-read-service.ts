@@ -27,6 +27,7 @@ import { onBackendReconnected } from '$lib/client/live/backend-transport';
  */
 import { appClient } from '$lib/client';
 import type { AgentSession } from '$shared/types';
+import type { AgentSessionProjectionVersions } from '$store/renderer/slices/agent-session/agent-session-types';
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -111,22 +112,32 @@ function preserveProjectedQuestionMarkers(
 function preserveLocalUpdates(
   before: AgentSession | undefined,
   incoming: AgentSession | null,
+  beforeProjection: AgentSessionProjectionVersions | undefined,
 ): AgentSession | null {
   if (!incoming || !before || before.workspaceId !== incoming.workspaceId) return incoming;
   const current = appStore.state.agentSessions?.byAgentId[String(incoming.id)];
-  if (!current || current.workspaceId !== incoming.workspaceId || current === before)
-    return incoming;
+  if (!current || current.workspaceId !== incoming.workspaceId) return incoming;
+  const projected = appStore.state.agentSessions.projectionVersions?.[String(incoming.id)];
   const merged = { ...incoming };
-  for (const key of Object.keys(current) as Array<keyof AgentSession>) {
+  for (const key of new Set([
+    ...Object.keys(current),
+    ...Object.keys(projected?.fields ?? {}),
+  ]) as Set<keyof AgentSession>) {
     if (key === 'metadata') continue;
-    if (current[key] !== before[key]) Object.assign(merged, { [key]: current[key] });
+    if (current[key] !== before[key] || projected?.fields[key] !== beforeProjection?.fields[key])
+      Object.assign(merged, { [key]: current[key] });
   }
   const metadata = { ...incoming.metadata };
   for (const key of new Set([
     ...Object.keys(before.metadata ?? {}),
     ...Object.keys(current.metadata ?? {}),
+    ...Object.keys(projected?.metadata ?? {}),
   ])) {
-    if (current.metadata?.[key] !== before.metadata?.[key]) metadata[key] = current.metadata?.[key];
+    if (
+      current.metadata?.[key] !== before.metadata?.[key] ||
+      projected?.metadata[key] !== beforeProjection?.metadata[key]
+    )
+      metadata[key] = current.metadata?.[key];
   }
   merged.metadata = metadata;
   return merged;
@@ -191,8 +202,10 @@ export function readAgentSession(
   // (for example isolated saga stores). Only renderer reads have local pushes
   // to preserve; keep the raw seam usable without a mounted store.
   let beforeRead: AgentSession | undefined;
+  let beforeProjection: AgentSessionProjectionVersions | undefined;
   try {
     beforeRead = appStore.state.agentSessions?.byAgentId[agentId];
+    beforeProjection = appStore.state.agentSessions?.projectionVersions?.[agentId];
   } catch {
     beforeRead = undefined;
   }
@@ -206,6 +219,7 @@ export function readAgentSession(
         ? preserveLocalUpdates(
             beforeRead,
             preserveProjectedQuestionMarkers(agentId, generation, session),
+            beforeProjection,
           )
         : null,
     )

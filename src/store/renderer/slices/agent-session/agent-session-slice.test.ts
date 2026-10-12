@@ -212,6 +212,20 @@ function getMsgs(state: AgentSessionState, agentId: string): AgentMessage[] {
 // ============================================================================
 
 describe('agent-session-slice reducer', () => {
+  it.each([removeSession('a1'), removeWorkspaceSessions('ws-1'), clearAllSessions()])(
+    'removes projection versions with evicted sessions: $type',
+    (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, updateSession('a1', { status: AgentStatus.Active }));
+      expect(state.projectionVersions?.a1.fields.status).toBe(1);
+      state = agentSessionReducer(state, action);
+      expect(state.projectionVersions?.a1).toBeUndefined();
+    },
+  );
+
   it('returns initial state', () => {
     const state = agentSessionReducer(undefined, { type: '@@INIT', payload: undefined });
     expect(state).toEqual(initialState);
