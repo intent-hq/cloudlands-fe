@@ -596,6 +596,73 @@ describe('CT spec fixture dependencies', () => {
     },
   );
 
+  it.each([
+    "const keyword = 'import';\nimport Host from './MemberMentionsHost.svelte';",
+    "const keyword = 'from';\nimport Host from './MemberMentionsHost.svelte';",
+    "// The keyword is 'import'\nimport Host from './MemberMentionsHost.svelte';",
+    "/* The keyword is 'from' */ import Host from './MemberMentionsHost.svelte';",
+    "const keyword = 'import'; import Host from './MemberMentionsHost.svelte';",
+    "const keyword = 'import'; const host = import('./MemberMentionsHost.svelte');",
+    "import assert from 'node:assert'; const keyword = 'import'; import Host from './MemberMentionsHost.svelte';",
+    "const text = `the keyword is 'import'`; import Host from './MemberMentionsHost.svelte';",
+    "const text = `import './Ghost.svelte' ${import('./MemberMentionsHost.svelte')}`;",
+    "const text = `${`${import('./MemberMentionsHost.svelte')}`}`;",
+    String.raw`const pattern = /['"]import['"]/; import Host from './MemberMentionsHost.svelte';`,
+    String.raw`if (true) /['"]import['"]/.test('text'); import Host from './MemberMentionsHost.svelte';`,
+    "const ratio = (10 + 2) / 2 / 3; import Host from './MemberMentionsHost.svelte';",
+    "const ratio = value! / await import('./MemberMentionsHost.svelte') / 3;",
+    "const ratio = object.return / await import('./MemberMentionsHost.svelte') / 3;",
+  ])('does not let non-code text hide a fixture dependency: %s', (imports) => {
+    const root = fixtureRepository(imports);
+    branch(root, 'fixture', host);
+    expect(runCli(root, '--diff', 'main', 'fixture')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+    branch(root, 'unrelated', 'src/lib/components/chat/input/__tests__/Ghost.svelte');
+    expect(runCli(root, '--diff', 'main', 'unrelated')).toEqual({
+      status: 0,
+      stdout: 'ct_required=false\n',
+      stderr: '',
+    });
+  });
+
+  it.each([
+    "// import './Ghost.svelte';",
+    "/* export { value } from './Ghost.svelte'; */",
+    `const text = "import './Ghost.svelte';";`,
+    "const text = `import './Ghost.svelte'; require('./Ghost.svelte')`;",
+    String.raw`const pattern = /import ['"]\.\/Ghost.svelte['"]/;`,
+    "const text = `import.meta.glob('./*.svelte')`;",
+  ])('ignores import-looking text outside code: %s', (prefix) => {
+    const root = fixtureRepository(`${prefix}\nimport Host from './MemberMentionsHost.svelte';`);
+    branch(root, 'unrelated', 'src/lib/components/chat/input/__tests__/Ghost.svelte');
+    expect(runCli(root, '--diff', 'main', 'unrelated')).toEqual({
+      status: 0,
+      stdout: 'ct_required=false\n',
+      stderr: '',
+    });
+  });
+
+  it.each([
+    '/* unclosed comment',
+    "const text = 'unclosed string",
+    'const text = `unclosed template',
+    "const value = {} / import('./MemberMentionsHost.svelte') / 3;",
+    'const text = `${import(name)}`;',
+  ])(
+    'fails safe when lexical analysis is incomplete or a template computes an import: %s',
+    (imports) => {
+      const root = fixtureRepository(imports);
+      branch(root, 'fixture', host);
+      const result = runCli(root, '--diff', 'main', 'fixture');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe('ct_required=true\n');
+      expect(result.stderr).toContain('fail-safe');
+    },
+  );
+
   it('fails safe when dependency discovery fails', () => {
     const logs: string[] = [];
     const warnings: string[] = [];

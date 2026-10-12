@@ -88,24 +88,9 @@ export function ctRequired(files, dependencies = new Set()) {
 // side-effect imports, re-exports and literal dynamic imports). Relative paths
 // and the four frontend aliases support explicit paths, extensionless modules
 // and directory indexes. Candidate paths are conservative, not a Vite resolver:
-// comments/type imports can over-select. Computed imports, globs, require calls
+// type imports can over-select. Computed imports, globs, require calls
 // and unknown $ aliases or escaped literals fail safe. Query/fragment suffixes
 // are ignored for path matching; transitive dependencies are outside this rule.
-// Match comment trivia at token boundaries instead of deleting comments from
-// source: comment markers and the opposite quote are valid inside module strings.
-const IMPORT_TRIVIA = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\r\n\u2028\u2029]*)*`;
-const IMPORT_LITERAL = String.raw`(?:"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*')`;
-const IMPORT_RE = new RegExp(
-  String.raw`(?:\bfrom${IMPORT_TRIVIA}|\bimport${IMPORT_TRIVIA}(?:\(${IMPORT_TRIVIA})?)(${IMPORT_LITERAL})`,
-  'g',
-);
-const DYNAMIC_IMPORT_RE = new RegExp(String.raw`\bimport${IMPORT_TRIVIA}\(`, 'g');
-const LITERAL_DYNAMIC_IMPORT_RE = new RegExp(
-  String.raw`^import${IMPORT_TRIVIA}\(${IMPORT_TRIVIA}${IMPORT_LITERAL}${IMPORT_TRIVIA}(?:\)|,)`,
-);
-const UNSUPPORTED_IMPORT_RE = new RegExp(
-  String.raw`\brequire${IMPORT_TRIVIA}\(|\bimport${IMPORT_TRIVIA}\.${IMPORT_TRIVIA}meta${IMPORT_TRIVIA}\.${IMPORT_TRIVIA}glob`,
-);
 const IMPORT_ALIASES = {
   '$features/': 'src/features/',
   '$lib/': 'src/lib/',
@@ -113,6 +98,189 @@ const IMPORT_ALIASES = {
   '$store/': 'src/store/',
 };
 const IMPORT_EXTENSIONS = ['.svelte', '.ts', '.tsx', '.js', '.mjs'];
+
+// This is a bounded lexical scan, not a JS/TS parser or a module resolver.
+// Only code tokens can introduce imports: strings/comments/regexes are consumed
+// atomically, and template expressions are scanned separately from template text.
+// Any incomplete or ambiguous lexical analysis throws into main's CT fallback.
+function ctImportSpecifiers(source, file) {
+  const tokens = [];
+  let cursor = 0;
+  const push = (kind, text, controlClose = false) => tokens.push({ kind, text, controlClose });
+  const fail = () => {
+    throw new Error(
+      `unsupported CT dependency syntax in ${file}: incomplete or ambiguous lexical input`,
+    );
+  };
+  const controlKeywords = new Set(['if', 'while', 'for', 'with', 'switch', 'catch']);
+  const regexKeywords = new Set([
+    'return',
+    'throw',
+    'case',
+    'delete',
+    'void',
+    'typeof',
+    'yield',
+    'await',
+    'in',
+    'of',
+    'instanceof',
+    'else',
+    'do',
+    'new',
+  ]);
+  const regexPreceders = new Set('([,:;=!?&|+-*%<>~^{/');
+
+  function scanString(quote) {
+    const start = cursor++;
+    while (cursor < source.length) {
+      const char = source[cursor++];
+      if (char === '\\') {
+        if (source[cursor] === '\r' && source[cursor + 1] === '\n') cursor++;
+        cursor++;
+      } else if (char === quote) {
+        push('string', source.slice(start, cursor));
+        return;
+      } else if (char === '\n' || char === '\r') fail();
+    }
+    fail();
+  }
+
+  function scanRegex() {
+    cursor++;
+    let inClass = false;
+    while (cursor < source.length) {
+      const char = source[cursor++];
+      if (char === '\\') cursor++;
+      else if (/\r|\n|\u2028|\u2029/.test(char)) fail();
+      else if (char === '[') inClass = true;
+      else if (char === ']') inClass = false;
+      else if (char === '/' && !inClass) {
+        while (cursor < source.length && /[a-z]/i.test(source[cursor])) cursor++;
+        push('regex', '');
+        return;
+      }
+    }
+    fail();
+  }
+
+  function scanTemplate() {
+    push('template', '`');
+    cursor++;
+    while (cursor < source.length) {
+      const char = source[cursor++];
+      if (char === '\\') cursor++;
+      else if (char === '`') {
+        push('template', '`');
+        return;
+      } else if (char === '$' && source[cursor] === '{') {
+        cursor++;
+        // Token barriers keep template text out of import argument matching.
+        push('punctuation', '(');
+        scanCode(true);
+        push('punctuation', ')');
+      }
+    }
+    fail();
+  }
+
+  function scanCode(inTemplate = false) {
+    let braces = 0;
+    const parens = [];
+    while (cursor < source.length) {
+      const char = source[cursor];
+      const next = source[cursor + 1];
+      const previous = tokens.at(-1);
+      if (/\s/.test(char)) cursor++;
+      else if (char === '/' && next === '/') {
+        while (cursor < source.length && !/[\r\n\u2028\u2029]/.test(source[cursor])) cursor++;
+      } else if (char === '/' && next === '*') {
+        const end = source.indexOf('*/', cursor + 2);
+        if (end === -1) fail();
+        cursor = end + 2;
+      } else if (char === "'" || char === '"') scanString(char);
+      else if (char === '`') scanTemplate();
+      else if (/[\p{ID_Start}_$]/u.test(char)) {
+        const start = cursor++;
+        while (cursor < source.length && /[\p{ID_Continue}$\u200c\u200d]/u.test(source[cursor]))
+          cursor++;
+        push('word', source.slice(start, cursor));
+      } else if (/[0-9]/.test(char)) {
+        const start = cursor++;
+        while (cursor < source.length && /[\w.]/.test(source[cursor])) cursor++;
+        push('number', source.slice(start, cursor));
+      } else if (char === '/') {
+        // After a closing brace this small scanner cannot tell an object-valued
+        // division from a new regex statement. Never silently discard imports.
+        if (previous?.text === '}') fail();
+        if (
+          !previous ||
+          previous.controlClose ||
+          (previous.kind === 'word' &&
+            regexKeywords.has(previous.text) &&
+            tokens.at(-2)?.text !== '.') ||
+          (previous.kind === 'punctuation' && regexPreceders.has(previous.text))
+        )
+          scanRegex();
+        else {
+          push('punctuation', '/');
+          cursor++;
+        }
+      } else if (char === '\\') fail();
+      else {
+        if (char === '}' && inTemplate && braces === 0) {
+          cursor++;
+          if (parens.length) fail();
+          return;
+        }
+        if (char === '{') braces++;
+        else if (char === '}') braces--;
+        if (char === '(')
+          parens.push(previous?.kind === 'word' && controlKeywords.has(previous.text));
+        const controlClose = char === ')' ? parens.pop() : false;
+        if ((char === '+' || char === '-') && next === char) {
+          push('punctuation', char + char);
+          cursor += 2;
+        } else {
+          // TS's postfix non-null assertion still ends an expression: the next
+          // slash is division, unlike the unary negation operator before a regex.
+          const postfix =
+            char === '!' &&
+            previous &&
+            (['string', 'number', 'regex', 'template', 'postfix'].includes(previous.kind) ||
+              (previous.kind === 'word' && !regexKeywords.has(previous.text)) ||
+              [')', ']', '++', '--'].includes(previous.text));
+          push(postfix ? 'postfix' : 'punctuation', char, controlClose);
+          cursor++;
+        }
+      }
+    }
+    if (inTemplate || braces !== 0 || parens.length) fail();
+  }
+
+  scanCode();
+  const specifiers = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind !== 'word' || tokens[i - 1]?.text === '.') continue;
+    const next = tokens[i + 1];
+    if (token.text === 'require' && next?.text === '(') fail();
+    if (token.text === 'import') {
+      if (next?.text === '(') {
+        if (tokens[i + 2]?.kind !== 'string' || ![')', ','].includes(tokens[i + 3]?.text)) fail();
+        specifiers.push(tokens[i + 2].text);
+      } else if (
+        next?.text === '.' &&
+        tokens[i + 2]?.text === 'meta' &&
+        tokens[i + 3]?.text === '.' &&
+        tokens[i + 4]?.text.startsWith('glob')
+      )
+        fail();
+      else if (next?.kind === 'string') specifiers.push(next.text);
+    } else if (token.text === 'from' && next?.kind === 'string') specifiers.push(next.text);
+  }
+  return specifiers;
+}
 
 function ctSpecDependencies(base, head) {
   const gitOptions = { stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 };
@@ -166,18 +334,7 @@ function ctSpecDependencies(base, head) {
 
   const dependencies = new Set();
   for (const { oid, file } of specs.values()) {
-    const source = sources.get(oid);
-    // The workflow runs before dependency installation, so there is no TS/Vite
-    // parser here. Reject forms this literal scan cannot resolve rather than
-    // treating an incomplete dependency set as evidence to skip CT.
-    if (
-      UNSUPPORTED_IMPORT_RE.test(source) ||
-      [...source.matchAll(DYNAMIC_IMPORT_RE)].some(
-        (match) => !LITERAL_DYNAMIC_IMPORT_RE.test(source.slice(match.index)),
-      )
-    )
-      throw new Error(`unsupported CT dependency syntax in ${file}`);
-    for (const [, literal] of source.matchAll(IMPORT_RE)) {
+    for (const literal of ctImportSpecifiers(sources.get(oid), file)) {
       // Do not silently treat an encoded JS string as a literal filesystem path.
       // Resolving escapes needs a JS string decoder; fail safe until supported.
       if (literal.includes('\\')) {
