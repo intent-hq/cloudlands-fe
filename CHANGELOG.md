@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.215.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.4...v2.215.5) (2026-10-12)
+
+
+### 🐛 Bug Fixes
+
+* cycle from Home to the first or last workspace ([#3358](https://github.com/intent-hq/cloudlands-fe/issues/3358)) ([a175f76](https://github.com/intent-hq/cloudlands-fe/commit/a175f76cb57ab7a268c86f8ef982043c15ad04de))
+* default new workspace dialog to sidebar repository ([#3360](https://github.com/intent-hq/cloudlands-fe/issues/3360)) ([0511e02](https://github.com/intent-hq/cloudlands-fe/commit/0511e0283f2ac815f27a1dce0aa6015a6b9cbaa9))
+
 ## [2.215.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.3...v2.215.4) (2026-10-11)
 
 
