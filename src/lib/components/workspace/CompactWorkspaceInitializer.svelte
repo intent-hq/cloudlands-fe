@@ -221,9 +221,19 @@
   const PREFILL_KEY = 'workspace-prefill';
   const UNKNOWN_SPECIALIST_ERROR_PREFIX = 'unknown specialist:'; // i18n-ignore (daemon error prefix)
 
-  function hasWorkspacePrefillData(): boolean {
+  function hasWorkspacePrefillData({ repositoryOnly = false } = {}): boolean {
     try {
-      return typeof sessionStorage !== 'undefined' && !!sessionStorage.getItem(PREFILL_KEY);
+      const prefill = typeof sessionStorage !== 'undefined' && sessionStorage.getItem(PREFILL_KEY);
+      if (!prefill) return false;
+      if (!repositoryOnly) return true;
+      const data = JSON.parse(prefill);
+      return !!(
+        data &&
+        (data.repoPath ||
+          data.githubUrl ||
+          data.repositoryCheckoutDraft !== undefined ||
+          data.environmentType === 'remote')
+      );
     } catch {
       return false;
     }
@@ -528,7 +538,7 @@
     if (
       !defaultToSidebarRepository ||
       initialRepo ||
-      hasWorkspacePrefillData() ||
+      hasWorkspacePrefillData({ repositoryOnly: true }) ||
       $pendingGitHubPrefill$
     )
       return saved;

@@ -536,6 +536,27 @@ describe('NewSpaceModal model-picker composition', () => {
       );
     });
 
+    it('keeps prompt-only prefills while defaulting to the sidebar repository', async () => {
+      mocks.compactFormState = {
+        repoPath: '/repos/saved',
+        repoType: 'local',
+        isValidPath: true,
+        branch: 'old-branch',
+      };
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ title: 'Linear issue', prompt: 'ENG-123: Fix the issue' }),
+      );
+      render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/sidebar'),
+      );
+      expect(screen.getByTestId('mock-rich-textarea').textContent).toContain(
+        'ENG-123: Fix the issue',
+      );
+      expect(persistedStates().at(-1)).toMatchObject({ repoPath: '/repos/sidebar', branch: '' });
+    });
+
     it('keeps explicit session repository and branch prefills', async () => {
       sessionStorage.setItem(
         'workspace-prefill',
