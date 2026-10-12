@@ -59,6 +59,17 @@ export interface ResponseGroupProps {
 }
 
 type Branch = 'preview' | 'details';
+type DisclosureReactionReads = {
+  isStreaming: boolean;
+  isTerminal: boolean;
+  hasPreview: boolean;
+  saved?: { value: ResponseGroupProps['saved'] };
+  isExpanded?: boolean;
+  isLastConversationMessage?: boolean;
+  contentEl?: HTMLDivElement | null;
+  triggerEl?: HTMLButtonElement | null;
+};
+
 const ChildLifetime = createContext<{
   branch: Branch | null;
   lifetime: number;
@@ -150,11 +161,27 @@ export function ResponseGroup({
   }, [saved, isStreaming, isTerminal, isLastConversationMessage, hasPreview]);
   const contentEl = useRef<HTMLDivElement>(null);
   const triggerEl = useRef<HTMLButtonElement>(null);
+  const previousReaction = useRef<DisclosureReactionReads | null>(null);
+  const recordingReaction = useRef<DisclosureReactionReads | null>(null);
+  const [, notifyElementChange] = useState(0);
+  const bindContent = useCallback((node: HTMLDivElement | null) => {
+    if (contentEl.current === node) return;
+    contentEl.current = node;
+    if (previousReaction.current?.contentEl !== undefined)
+      notifyElementChange((revision) => revision + 1);
+  }, []);
+  const bindTrigger = useCallback((node: HTMLButtonElement | null) => {
+    if (triggerEl.current === node) return;
+    triggerEl.current = node;
+    if (previousReaction.current?.triggerEl !== undefined)
+      notifyElementChange((revision) => revision + 1);
+  }, []);
   const instanceId = useId();
   const detailsId = `response-group-details-${instanceId}`;
 
   const save = useCallback(() => {
     const target = props.current.saved;
+    if (recordingReaction.current) recordingReaction.current.saved = { value: target };
     if (target) {
       target.expanded = current.current.desiredExpanded;
       target.searchOwnsExpansion = current.current.searchOwnsExpansion;
@@ -185,9 +212,16 @@ export function ResponseGroup({
         publish();
         return;
       }
+      const reads = recordingReaction.current;
+      if (reads) reads.isExpanded = state.isExpanded;
       if (!state.isExpanded) return;
-      if (contentEl.current?.contains(document.activeElement))
-        triggerEl.current?.focus({ preventScroll: true });
+      const content = contentEl.current;
+      if (reads) reads.contentEl = content;
+      if (content?.contains(document.activeElement)) {
+        const trigger = triggerEl.current;
+        if (reads) reads.triggerEl = trigger;
+        trigger?.focus({ preventScroll: true });
+      }
       state.isClosing = true;
       publish();
     },
@@ -219,65 +253,78 @@ export function ResponseGroup({
     }, RESPONSE_GROUP_COLLAPSE_DELAY_MS);
   }, [clearCollapseTimer, setExpanded]);
 
-  // These are the source streaming-edge inputs. Last-message status is consulted only
-  // for initial automatic expansion; saved replacement never re-seeds local ownership.
-  const previousInputs = useRef<{
-    isStreaming: boolean;
-    isTerminal: boolean;
-    hasPreview: boolean;
-  } | null>(null);
+  // The source effect tracks reads inside setExpanded as well as its three edge inputs.
+  // Replace that conditional read set each run: scheduling the 800 ms collapse does not
+  // subscribe to saved or expansion, and an owner swap must not shorten that delay.
+  // Checking each commit also observes real ref notifications and ignores unchanged
+  // StrictMode setup replay. Saved fields seed local ownership only on initial mount.
   useLayoutEffect(() => {
-    const previous = previousInputs.current;
+    const state = current.current;
+    const previous = previousReaction.current;
     if (
       previous?.isStreaming === isStreaming &&
       previous.isTerminal === isTerminal &&
-      previous.hasPreview === hasPreview
+      previous.hasPreview === hasPreview &&
+      (previous.saved === undefined || previous.saved.value === saved) &&
+      (previous.isExpanded === undefined || previous.isExpanded === state.isExpanded) &&
+      (previous.isLastConversationMessage === undefined ||
+        previous.isLastConversationMessage === isLastConversationMessage) &&
+      (previous.contentEl === undefined || previous.contentEl === contentEl.current) &&
+      (previous.triggerEl === undefined || previous.triggerEl === triggerEl.current)
     )
       return;
-    previousInputs.current = { isStreaming, isTerminal, hasPreview };
-    const state = current.current;
-    if (!state.isInitialized) {
-      state.isInitialized = true;
-      state.desiredExpanded = state.isExpanded;
+    const reads: DisclosureReactionReads = { isStreaming, isTerminal, hasPreview };
+    previousReaction.current = reads;
+    recordingReaction.current = reads;
+    try {
+      if (!state.isInitialized) {
+        state.isInitialized = true;
+        reads.isExpanded = state.isExpanded;
+        state.desiredExpanded = state.isExpanded;
+        state.prevStreaming = isStreaming;
+        state.prevTerminal = isTerminal;
+        if (state.searchOwnsExpansion) return;
+        if (isStreaming && hasPreview && state.disclosureOverride === 'automatic') {
+          setExpanded(false);
+        } else if (!isStreaming && state.disclosureOverride === 'automatic') {
+          if (isTerminal) reads.isLastConversationMessage = props.current.isLastConversationMessage;
+          setExpanded(isTerminal && props.current.isLastConversationMessage);
+        }
+        return;
+      }
+
+      if (isStreaming) {
+        if (!state.prevStreaming) state.searchOwnsExpansion = false;
+        if (!state.prevStreaming && state.disclosureOverride === 'expanded-completed') {
+          state.disclosureOverride = 'automatic';
+        }
+        if (state.disclosureOverride === 'automatic') setExpanded(!hasPreview);
+        clearCollapseTimer();
+      } else if (state.prevStreaming && !isStreaming) {
+        if (isTerminal) {
+          clearCollapseTimer();
+          if (state.disclosureOverride !== 'collapsed') setExpanded(true);
+        } else {
+          scheduleCollapse();
+        }
+      } else if (state.prevTerminal && !isTerminal) {
+        scheduleCollapse();
+      } else if (!state.prevTerminal && isTerminal) {
+        clearCollapseTimer();
+      } else if (
+        !state.searchOwnsExpansion &&
+        state.disclosureOverride !== 'expanded-completed' &&
+        !isTerminal
+      ) {
+        setExpanded(false);
+      }
       state.prevStreaming = isStreaming;
       state.prevTerminal = isTerminal;
-      if (state.searchOwnsExpansion) return;
-      if (isStreaming && hasPreview && state.disclosureOverride === 'automatic') {
-        setExpanded(false);
-      } else if (!isStreaming && state.disclosureOverride === 'automatic') {
-        setExpanded(isTerminal && props.current.isLastConversationMessage);
-      }
-      return;
+    } finally {
+      // Native handlers, timers and teardown save current state without subscribing.
+      recordingReaction.current = null;
     }
-
-    if (isStreaming) {
-      if (!state.prevStreaming) state.searchOwnsExpansion = false;
-      if (!state.prevStreaming && state.disclosureOverride === 'expanded-completed') {
-        state.disclosureOverride = 'automatic';
-      }
-      if (state.disclosureOverride === 'automatic') setExpanded(!hasPreview);
-      clearCollapseTimer();
-    } else if (state.prevStreaming && !isStreaming) {
-      if (isTerminal) {
-        clearCollapseTimer();
-        if (state.disclosureOverride !== 'collapsed') setExpanded(true);
-      } else {
-        scheduleCollapse();
-      }
-    } else if (state.prevTerminal && !isTerminal) {
-      scheduleCollapse();
-    } else if (!state.prevTerminal && isTerminal) {
-      clearCollapseTimer();
-    } else if (
-      !state.searchOwnsExpansion &&
-      state.disclosureOverride !== 'expanded-completed' &&
-      !isTerminal
-    ) {
-      setExpanded(false);
-    }
-    state.prevStreaming = isStreaming;
-    state.prevTerminal = isTerminal;
-  }, [isStreaming, isTerminal, hasPreview, setExpanded, clearCollapseTimer, scheduleCollapse]);
+  });
 
   useLayoutEffect(
     () => () => {
@@ -406,8 +453,8 @@ export function ResponseGroup({
         detailsMotion="height-opacity-y"
         detailsInert={view.isClosing}
         detailsAriaHidden={view.isClosing || undefined}
-        triggerElement={triggerEl}
-        detailsElement={contentEl}
+        triggerElement={bindTrigger}
+        detailsElement={bindContent}
         adjacentOperationalRow={adjacentOperationalRow}
         streaming={isStreaming}
         testId="response-group"
