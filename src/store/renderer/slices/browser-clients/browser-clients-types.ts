@@ -20,6 +20,8 @@ type AuthenticatedClient = LiveClient & { deviceKey: string };
 type AuthenticatedClientCollection = Collection<AuthenticatedClient, 'deviceKey'>;
 
 export type WorkspaceBrowserClientsState = {
+  /** Saved selection from a read or workspace:updated; undefined until known. */
+  pinnedClientId?: string | null;
   /** `workspace.getBrowserClient` result; null until the first read lands. */
   browserClient: WorkspaceBrowserClient | null;
   liveClients?: LiveClientCollection;
