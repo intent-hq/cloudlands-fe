@@ -49,6 +49,7 @@ import {
   scriptSnapshotReceived,
   scriptOperationFailed,
   scriptOperationSucceeded,
+  scriptDefinitionChangesReleased,
   restoreScriptDefinitionsRequested,
   saveScriptDefinitionsToRepoRequested,
   startScriptRequested,
@@ -427,7 +428,7 @@ describe('scriptsOperationSaga', () => {
         },
       ],
     };
-    const request = applyScriptDefinitionChangesRequested(WS, changes);
+    const request = applyScriptDefinitionChangesRequested(WS, changes, [auto, running], 'consumer');
     run.channel.put(request);
 
     await expect(request.promise).resolves.toEqual({
@@ -437,9 +438,84 @@ describe('scriptsOperationSaga', () => {
       removed: 1,
       skippedRunning: ['Dev'],
     });
-    expect(mocks.remove).toHaveBeenCalledWith(WS, auto.id);
+    expect(mocks.remove).toHaveBeenCalledWith(WS, auto.id, auto, expect.any(Function));
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.create).toHaveBeenCalledWith(WS, changes.add[0]);
+    await stop(run.task);
+  });
+
+  it('applies off-page updates and removals from the complete definition inventory', async () => {
+    const removed = {
+      id: 'off-page-remove',
+      workspaceId: WS,
+      name: 'Old',
+      command: 'pnpm old',
+      mode: 'command',
+      source: 'auto-detected',
+      createdAt: '2026-10-09',
+      runtime: { status: 'idle', restartCount: 0 },
+    } as const;
+    const updated = { ...removed, id: 'off-page-update', name: 'Build' };
+    mocks.remove.mockResolvedValueOnce({ success: true });
+    mocks.update.mockResolvedValueOnce({ success: true, data: updated });
+    const run = start();
+    const changes = {
+      remove: [removed.id],
+      update: [{ id: updated.id, updates: { command: 'pnpm build' } }],
+      add: [],
+    };
+    const request = applyScriptDefinitionChangesRequested(
+      WS,
+      changes,
+      [removed, updated],
+      'consumer',
+    );
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toMatchObject({ removed: 1, updated: 1 });
+    expect(mocks.remove).toHaveBeenCalledWith(WS, removed.id, removed, expect.any(Function));
+    expect(mocks.update).toHaveBeenCalledWith(
+      WS,
+      updated.id,
+      changes.update[0].updates,
+      updated,
+      expect.any(Function),
+    );
+    await stop(run.task);
+  });
+
+  it('stops a definition batch after its component consumer releases the lifetime', async () => {
+    const first = {
+      id: 'first',
+      workspaceId: WS,
+      name: 'First',
+      command: 'pnpm first',
+      mode: 'command',
+      source: 'auto-detected',
+      createdAt: '2026-10-09',
+      runtime: { status: 'idle', restartCount: 0 },
+    } as const;
+    const second = { ...first, id: 'second', name: 'Second' };
+    const pending = deferred<{ success: true }>();
+    mocks.remove.mockReturnValueOnce(pending.promise);
+    const run = start();
+    const request = applyScriptDefinitionChangesRequested(
+      WS,
+      { remove: [first.id, second.id], update: [], add: [] },
+      [first, second],
+      'consumer',
+    );
+    run.channel.put(request);
+    await settle();
+    const isCurrent = mocks.remove.mock.calls[0][3] as () => boolean;
+
+    run.channel.put(scriptDefinitionChangesReleased(WS, 'consumer'));
+
+    await expect(request.promise).rejects.toThrow('cancelled');
+    expect(isCurrent()).toBe(false);
+    pending.resolve({ success: true });
+    await settle();
+    expect(mocks.remove).toHaveBeenCalledTimes(1);
     await stop(run.task);
   });
 

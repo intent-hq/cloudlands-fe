@@ -42,7 +42,6 @@ import {
 } from '../utils/script-read-context';
 import {
   selectScriptById,
-  selectScriptEntries,
   selectWorkspaceScriptOperations,
   selectScriptDetectionOperation,
 } from '../scripts-selectors';
@@ -64,6 +63,7 @@ import {
   restartScriptRequested,
   restoreScriptDefinitionsRequested,
   saveScriptDefinitionsToRepoRequested,
+  scriptDefinitionChangesReleased,
   scriptOperationFailed,
   scriptOperationSucceeded,
   scriptReadFinished,
@@ -357,18 +357,58 @@ function* detectScriptDefinitions(
   }
 }
 
+type ScriptDefinitionChangesLifetime = { ended: boolean };
+
+function* waitForScriptDefinitionChangesRelease(
+  workspaceId: string,
+  consumerId: string,
+  lifetime: ScriptDefinitionChangesLifetime,
+): SagaGenerator<void> {
+  for (;;) {
+    const action = yield* take(scriptDefinitionChangesReleased);
+    if (action.payload[0] !== workspaceId || action.payload[1] !== consumerId) continue;
+    lifetime.ended = true;
+    return;
+  }
+}
+
+function* waitForScriptDefinitionChangesUnmount(
+  workspaceId: string,
+  lifetime: ScriptDefinitionChangesLifetime,
+): SagaGenerator<void> {
+  for (;;) {
+    const action = yield* take(workspaceUnmounted);
+    if (action.payload[0] !== workspaceId) continue;
+    lifetime.ended = true;
+    return;
+  }
+}
+
+function* waitForScriptDefinitionChangesDelete(
+  workspaceId: string,
+  lifetime: ScriptDefinitionChangesLifetime,
+): SagaGenerator<void> {
+  for (;;) {
+    const action = yield* take(workspaceDeleted);
+    if (action.payload[0] !== workspaceId) continue;
+    lifetime.ended = true;
+    return;
+  }
+}
+
 function* applyScriptDefinitionChanges(
   action: ReturnType<typeof applyScriptDefinitionChangesRequested>,
+  lifetime: ScriptDefinitionChangesLifetime,
 ): SagaGenerator<void> {
   let settled = false;
   try {
-    const [workspaceId, changes] = action.payload;
+    const [workspaceId, changes, definitions] = action.payload;
     const authority = yield* scriptAuthority(workspaceId);
-    const entries = yield* selectScriptEntries.effect(workspaceId);
     const autoDetectedIds = new Set(
-      entries.filter((script) => script.source === 'auto-detected').map((script) => script.id),
+      definitions.filter((script) => script.source === 'auto-detected').map((script) => script.id),
     );
-    const entriesById = new Map(entries.map((script) => [script.id, script]));
+    const entriesById = new Map(definitions.map((script) => [script.id, script]));
+    const isCurrent = () => !lifetime.ended;
     const skippedRunning = new Set<string>();
     let added = 0;
     let updated = 0;
@@ -382,7 +422,13 @@ function* applyScriptDefinitionChanges(
         continue;
       }
       yield* scriptAuthority(workspaceId, authority);
-      const result = yield* call([scriptsClient, scriptsClient.remove], workspaceId, scriptId);
+      const result = yield* call(
+        [scriptsClient, scriptsClient.remove],
+        workspaceId,
+        scriptId,
+        target,
+        isCurrent,
+      );
       if (result.success) removed += 1;
     }
     for (const { id, updates } of changes.update) {
@@ -393,7 +439,14 @@ function* applyScriptDefinitionChanges(
         continue;
       }
       yield* scriptAuthority(workspaceId, authority);
-      const result = yield* call([scriptsClient, scriptsClient.update], workspaceId, id, updates);
+      const result = yield* call(
+        [scriptsClient, scriptsClient.update],
+        workspaceId,
+        id,
+        updates,
+        target,
+        isCurrent,
+      );
       if (result.success) updated += 1;
     }
     for (const input of changes.add) {
@@ -422,6 +475,19 @@ function* applyScriptDefinitionChanges(
     if (!settled && (yield* cancelled()))
       yield* put(action.failure(new Error('Applying script changes cancelled')));
   }
+}
+
+function* runScriptDefinitionChanges(
+  action: ReturnType<typeof applyScriptDefinitionChangesRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, , , consumerId] = action.payload;
+  const lifetime: ScriptDefinitionChangesLifetime = { ended: false };
+  yield* race({
+    operation: call(applyScriptDefinitionChanges, action, lifetime),
+    released: call(waitForScriptDefinitionChangesRelease, workspaceId, consumerId, lifetime),
+    unmounted: call(waitForScriptDefinitionChangesUnmount, workspaceId, lifetime),
+    deleted: call(waitForScriptDefinitionChangesDelete, workspaceId, lifetime),
+  });
 }
 
 function* restoreScriptDefinitions(
@@ -483,7 +549,7 @@ export function* scriptsOperationSaga(): SagaGenerator<void> {
     takeEvery(updateScriptDefinitionRequested, updateScriptDefinition),
     takeEvery(removeScriptDefinitionRequested, removeScriptDefinition),
     takeEvery(detectScriptDefinitionsRequested, detectScriptDefinitions),
-    takeEvery(applyScriptDefinitionChangesRequested, applyScriptDefinitionChanges),
+    takeEvery(applyScriptDefinitionChangesRequested, runScriptDefinitionChanges),
     takeEvery(restoreScriptDefinitionsRequested, restoreScriptDefinitions),
     takeEvery(saveScriptDefinitionsToRepoRequested, saveScriptDefinitionsToRepo),
     takeEvery(workspaceUnmounted, clearWorkspaceOperations),

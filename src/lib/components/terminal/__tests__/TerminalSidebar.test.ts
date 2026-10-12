@@ -79,6 +79,7 @@ const {
     selectorWorkspaceArgs: [] as unknown[],
     asyncActionHandlers: {
       detect: null as ((action: any) => void) | null,
+      apply: null as ((action: any) => void) | null,
     },
     notify: {
       success: vi.fn(),
@@ -177,6 +178,10 @@ vi.mock('$store/renderer/store', async () => {
         action.success({ detected: 0, added: 0, updated: 0, removed: 0, skippedRunning: [] });
       } else if (action.type === 'scripts/applyScriptDefinitionChangesRequested') {
         const changes = action.payload[1];
+        if (asyncActionHandlers.apply) {
+          asyncActionHandlers.apply(action);
+          return;
+        }
         const skippedRunning = changes.update.some(
           (entry: { id: string }) => entry.id === 'auto-running',
         )
@@ -325,6 +330,7 @@ beforeEach(() => {
   executorState.isRunning = false;
   executorState.agentId = null;
   asyncActionHandlers.detect = null;
+  asyncActionHandlers.apply = null;
   mockGetNavigationContext.mockReset();
   selectorWorkspaceArgs.length = 0;
 });
@@ -424,6 +430,8 @@ describe('TerminalSidebar detection flow', () => {
           expect.objectContaining({
             add: [expect.objectContaining({ purpose: 'saved', source: 'auto-detected' })],
           }),
+          expect.any(Array),
+          expect.any(String),
         ],
       }),
     );
@@ -455,6 +463,12 @@ describe('TerminalSidebar detection flow', () => {
     await backgroundAgentOptions.value!.onResult(
       JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
     );
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/applyScriptDefinitionChangesRequested',
+        payload: ['ws-1', expect.any(Object), [full], expect.any(String)],
+      }),
+    );
     await notify.success.mock.calls[0][1].action.onClick();
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -466,6 +480,54 @@ describe('TerminalSidebar detection flow', () => {
       }),
     );
   });
+
+  it.each(['switch', 'unmount'] as const)(
+    'releases a pending detection batch on workspace %s without stale fallback',
+    async (lifecycle) => {
+      let reject!: (error: Error) => void;
+      asyncActionHandlers.apply = (action) => {
+        reject = action.failure;
+      };
+      const full = {
+        id: 'off-page',
+        workspaceId: 'ws-a',
+        name: 'Build',
+        command: 'pnpm build',
+        mode: 'command',
+        source: 'auto-detected',
+        createdAt: '2026-10-09',
+        runtime: { status: 'idle', restartCount: 0 },
+      };
+      vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: true, data: [full] as never });
+      const view = render(TerminalSidebar, { props: { workspaceId: 'ws-a' } });
+      const detection = backgroundAgentOptions.value!.onResult(
+        JSON.stringify({ remove: [full.id] }),
+      );
+      await waitFor(() =>
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'scripts/applyScriptDefinitionChangesRequested',
+            payload: ['ws-a', expect.any(Object), [full], expect.any(String)],
+          }),
+        ),
+      );
+
+      if (lifecycle === 'switch') await view.rerender({ workspaceId: 'ws-b' });
+      else view.unmount();
+
+      const request = mockDispatch.mock.calls.find(
+        ([action]) => action.type === 'scripts/applyScriptDefinitionChangesRequested',
+      )![0];
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'scripts/scriptDefinitionChangesReleased',
+        payload: ['ws-a', request.payload[3]],
+      });
+      reject(new Error('Applying script changes cancelled'));
+      await detection;
+      expect(notify.info).not.toHaveBeenCalled();
+      expect(mockDetect).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['saved', 'oneOff', undefined] as const)(
     'restores %s purpose when undo recreates a definition',
@@ -728,6 +790,8 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
             ],
             remove: ['auto-stale'],
           },
+          expect.any(Array),
+          expect.any(String),
         ],
       }),
     );

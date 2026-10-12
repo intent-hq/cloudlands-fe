@@ -19,6 +19,7 @@
     removeScriptDefinitionRequested,
     restoreScriptDefinitionsRequested,
     saveScriptDefinitionsToRepoRequested,
+    scriptDefinitionChangesReleased,
     stopScriptRequested,
     startScriptRequested,
     restartScriptRequested,
@@ -138,9 +139,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let lastClickedScriptId = $state<string | null>(null);
   let pendingScrollScriptId = $state<string | null>(null);
 
+  const detectionConsumerId = crypto.randomUUID();
+  let detectionWorkspaceId = '';
   let mounted = true;
   onDestroy(() => {
     mounted = false;
+    if (detectionWorkspaceId)
+      appStore.dispatch(scriptDefinitionChangesReleased(detectionWorkspaceId, detectionConsumerId));
+  });
+
+  $effect(() => {
+    const nextWorkspaceId = workspaceId;
+    if (detectionWorkspaceId && detectionWorkspaceId !== nextWorkspaceId)
+      appStore.dispatch(scriptDefinitionChangesReleased(detectionWorkspaceId, detectionConsumerId));
+    detectionWorkspaceId = nextWorkspaceId;
   });
 
   async function handleDetectionResult(parsed: any): Promise<void> {
@@ -199,9 +211,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             })
           : [],
       };
-      const request = applyScriptDefinitionChangesRequested(workspaceId, changes);
+      const request = applyScriptDefinitionChangesRequested(
+        requestWorkspaceId,
+        changes,
+        complete.data,
+        detectionConsumerId,
+      );
       appStore.dispatch(request);
-      const result = await request.promise;
+      let result;
+      try {
+        result = await request.promise;
+      } catch (error) {
+        if (!isCurrent()) return;
+        throw error;
+      }
       if (!isCurrent()) return;
 
       const parts: string[] = [];
@@ -279,13 +302,24 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           });
         }
       }
-      const request = applyScriptDefinitionChangesRequested(workspaceId, {
-        add,
-        update: [],
-        remove: [],
-      });
+      const request = applyScriptDefinitionChangesRequested(
+        requestWorkspaceId,
+        {
+          add,
+          update: [],
+          remove: [],
+        },
+        complete.data,
+        detectionConsumerId,
+      );
       appStore.dispatch(request);
-      const { added: createdCount } = await request.promise;
+      let createdCount: number;
+      try {
+        ({ added: createdCount } = await request.promise);
+      } catch (error) {
+        if (!isCurrent()) return;
+        throw error;
+      }
 
       showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
 

@@ -138,9 +138,18 @@ export const detectScriptDefinitionsRequested = createAsyncAction<
 >('scripts/detectScriptDefinitions', 'scripts/detectScriptDefinitionsRequested');
 
 export const applyScriptDefinitionChangesRequested = createAsyncAction<
-  [wsId: string, changes: ScriptDefinitionChanges],
+  [
+    wsId: string,
+    changes: ScriptDefinitionChanges,
+    definitions: ScriptWithState[],
+    consumerId: string,
+  ],
   ScriptDetectionOutcome
 >('scripts/applyScriptDefinitionChanges', 'scripts/applyScriptDefinitionChangesRequested');
+
+export const scriptDefinitionChangesReleased = createAction<[wsId: string, consumerId: string]>(
+  'scripts/scriptDefinitionChangesReleased',
+);
 
 export const restoreScriptDefinitionsRequested = createAsyncAction<
   [wsId: string, snapshot: ScriptDefinitionSnapshot],
