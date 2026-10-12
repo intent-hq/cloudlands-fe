@@ -22,6 +22,7 @@ import { ChatCommandExamples } from './chat-command-examples';
 import { ChatReferenceExamples } from './chat-reference-examples';
 import { ChatInlineExamples } from './chat-inline-examples';
 import { ChatPreviewExamples } from './chat-preview-examples';
+import { QueuedAttachmentExamples } from './queued-attachment-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -477,6 +478,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'chat-reference' && <ChatReferenceExamples />}
       {slug === 'chat-inline' && <ChatInlineExamples />}
       {slug === 'chat-preview' && <ChatPreviewExamples />}
+      {slug === 'queued-attachments' && <QueuedAttachmentExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -549,6 +551,7 @@ export function hasFunctionalExample(slug: string) {
     'chat-reference',
     'chat-inline',
     'chat-preview',
+    'queued-attachments',
     'diagram-workbench',
     'toast',
     'notify',
