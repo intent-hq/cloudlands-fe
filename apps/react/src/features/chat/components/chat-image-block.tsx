@@ -90,11 +90,12 @@ export function ChatImageBlock({
   const titleAction = useRef<ReturnType<typeof truncatedTitle>>(undefined);
   const titleRef = useCallback((node: HTMLSpanElement | null) => {
     if (!node) return;
-    const action = truncatedTitle(node, undefined);
+    // This span contains only alt; initialize every attachment from its committed text.
+    const action = truncatedTitle(node, node.textContent ?? undefined);
     titleAction.current = action;
     return () => {
       action?.destroy?.();
-      titleAction.current = undefined;
+      if (titleAction.current === action) titleAction.current = undefined;
     };
   }, []);
   // Update after every commit, including a newly mounted file caption with the same alt.
