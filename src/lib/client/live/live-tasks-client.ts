@@ -10,7 +10,7 @@
  * (intent-hq/monorepo#1697); there is no legacy `task:*`/`note:*`
  * events-driven refetch.
  */
-import type { NoteId, TaskStatus, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
+import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import type {
   CreatePrerequisiteOptions,
   MarkAsTaskOptions,
@@ -35,170 +35,22 @@ import {
   runMutationWithId,
   subscribeWorkspaceIds,
 } from './live-support';
-import { createLogger } from '$lib/utils/client-logger';
+import { createBackendTasksClient } from './backend-tasks-client';
+import {
+  conflictToTask,
+  normalizeAgentLink,
+  normalizeTaskEntity,
+  noteToTask,
+} from './task-normalization';
 
-const logger = createLogger('LiveTasksClient');
-
-/**
- * Carry a wire string-array field through only when it is a non-empty string
- * array. A non-empty array with a non-string member is a contract divergence
- * (PROTOCOL §5.4 lists are task-note id strings) — it is discarded with a warn
- * so a BE-side break surfaces instead of vanishing silently.
- */
-function stringArray(field: string, value: unknown): string[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined;
-  if (!value.every((v) => typeof v === 'string')) {
-    logger.warn(`discarding malformed ${field}: expected string[], got non-string member`, {
-      value,
-    });
-    return undefined;
-  }
-  return value as string[];
-}
-
-/**
- * Task relation fields (§5.4, presence-detected): `dependsOn` / `conflictsWith`
- * plus the daemon-computed `unmetDependsOn`, all read from the source shape —
- * top-level on `task.list` rows, `metadata.task` on note-shaped entities
- * (monorepo#1979).
- */
-function relationFields(
-  source: Record<string, unknown>,
-): Pick<WorkspaceTask, 'dependsOn' | 'conflictsWith' | 'unmetDependsOn'> {
-  const dependsOn = stringArray('dependsOn', source.dependsOn) as NoteId[] | undefined;
-  const conflictsWith = stringArray('conflictsWith', source.conflictsWith) as NoteId[] | undefined;
-  const unmetDependsOn = stringArray('unmetDependsOn', source.unmetDependsOn) as
-    NoteId[] | undefined;
-  return {
-    ...(dependsOn ? { dependsOn } : {}),
-    ...(conflictsWith ? { conflictsWith } : {}),
-    ...(unmetDependsOn ? { unmetDependsOn } : {}),
-  };
-}
-
-/**
- * `specLinked` (additive, PROTOCOL §5.4): carried through only when the wire
- * row has the boolean — an older daemon omits it and consumers keep their
- * legacy behavior on `undefined` (presence-detected like the relation fields).
- */
-function specLinkedField(source: Record<string, unknown>): Pick<WorkspaceTask, 'specLinked'> {
-  return typeof source.specLinked === 'boolean' ? { specLinked: source.specLinked } : {};
-}
-
-/** Map a raw daemon note to a `WorkspaceTask` when it carries task metadata. */
-function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
-  const metadata = raw.metadata as { task?: { status?: unknown } } | undefined;
-  const task = metadata?.task;
-  if (!task) return null;
-  return {
-    id: String(raw.id ?? ''),
-    title: String(raw.title ?? ''),
-    status: (typeof task.status === 'string' ? task.status : 'not_started') as TaskStatus,
-    updatedAt:
-      typeof raw.updatedAt === 'string'
-        ? raw.updatedAt
-        : typeof raw.updated_at === 'string'
-          ? raw.updated_at
-          : undefined,
-    // Optimistic-concurrency revision (§11.4-D): carried through when the daemon
-    // returns it, left undefined otherwise (no behavior change → last-writer-wins).
-    ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
-    ...relationFields(task as Record<string, unknown>),
-    ...specLinkedField(task as Record<string, unknown>),
-  };
-}
-
-/**
- * Normalize a raw delta-channel entity into a `WorkspaceTask`. Handles both a
- * task note (carrying `metadata.task`, via `noteToTask`) and a direct task
- * entity that exposes a top-level `status`. Returns `null` for anything that is
- * not task-like so non-task notes on a shared channel are never misread.
- */
-function normalizeTaskEntity(raw: Record<string, unknown>): WorkspaceTask | null {
-  const viaNote = noteToTask(raw);
-  if (viaNote) return viaNote;
-  if (typeof raw.status !== 'string') return null;
-  return {
-    id: String(raw.id ?? ''),
-    title: String(raw.title ?? ''),
-    status: raw.status as TaskStatus,
-    updatedAt:
-      typeof raw.updatedAt === 'string'
-        ? raw.updatedAt
-        : typeof raw.updated_at === 'string'
-          ? raw.updated_at
-          : undefined,
-    ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
-    ...relationFields(raw),
-    ...specLinkedField(raw),
-  };
-}
-
-/**
- * Normalize a daemon conflict's authoritative `current` into a `WorkspaceTask`.
- * The daemon may surface either a task note (carrying `metadata.task`) or an
- * already-shaped WorkspaceTask (status at the top level); handle both so the
- * write service always receives a typed entity with the advanced `rev`.
- */
-function conflictToTask(raw: Record<string, unknown>): WorkspaceTask | null {
-  const viaNote = noteToTask(raw);
-  if (viaNote) return viaNote;
-  if (typeof raw.status === 'string') {
-    return {
-      id: String(raw.id ?? ''),
-      title: String(raw.title ?? ''),
-      status: raw.status as TaskStatus,
-      ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {}),
-      ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
-    };
-  }
-  return null;
-}
-
-/** Zero-aggregate fallback for the synthesized `subscribe` snapshot (workspace not loaded). */
-const EMPTY_STATS: WorkspaceTaskStats = { total: 0, completed: 0, inProgress: 0 };
-
-/**
- * Normalize a daemon `TaskAgentLink` row into the renderer
- * `TaskAgentAssociation`. The daemon carries `workspaceId` on every row, but
- * the FE slice is already workspace-scoped, so we drop it. `taskKey` is always
- * populated by the daemon (`taskKey ?? taskText` at link time).
- */
-function normalizeAgentLink(raw: unknown): TaskAgentAssociation | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const noteId = r.noteId;
-  const taskKey = r.taskKey;
-  const taskText = r.taskText;
-  const agentId = r.agentId;
-  const createdAt = r.createdAt;
-  if (
-    typeof noteId !== 'string' ||
-    typeof taskKey !== 'string' ||
-    typeof taskText !== 'string' ||
-    typeof agentId !== 'string' ||
-    typeof createdAt !== 'number'
-  ) {
-    return null;
-  }
-  return { noteId, taskKey, taskText, agentId, createdAt };
-}
-
-/**
- * Normalize the wire `stats` aggregate from `task.list` into the canonical
- * `WorkspaceTaskStats` shape. The daemon emits `{ total, completed, inProgress }`
- * verbatim per PROTOCOL §5.4 — this function is the explicit boundary that
- * defends the call site if a field is absent without re-deriving the rollup.
- */
-function normalizeStats(raw: unknown): WorkspaceTaskStats {
-  if (!raw || typeof raw !== 'object') return { ...EMPTY_STATS };
-  const r = raw as Record<string, unknown>;
-  return {
-    total: typeof r.total === 'number' ? r.total : 0,
-    completed: typeof r.completed === 'number' ? r.completed : 0,
-    inProgress: typeof r.inProgress === 'number' ? r.inProgress : 0,
-  };
-}
+// Svelte compatibility binding; remove after all source consumers use their renderer's
+// task reads and genuine shared note-discovery owner at the renderer cutover.
+const taskReads = createBackendTasksClient({
+  backendRequest: <T>(...args: Parameters<typeof backendRequest>): Promise<T> =>
+    backendRequest<T>(...args),
+  rememberNoteWorkspace: (...args: Parameters<typeof rememberNoteWorkspace>) =>
+    rememberNoteWorkspace(...args),
+});
 
 export class LiveTasksClient implements TasksClient {
   /**
@@ -206,19 +58,8 @@ export class LiveTasksClient implements TasksClient {
    * `taskStats` rollup; the FE renders it verbatim. Tasks are also remembered
    * by workspace so note-scoped mutations can resolve their owning workspace.
    */
-  async list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }> {
-    const result = await backendRequest<{ tasks?: unknown[]; stats?: unknown }>('task.list', {
-      workspaceId,
-    });
-    const rawTasks = Array.isArray(result?.tasks) ? result.tasks : [];
-    const tasks: WorkspaceTask[] = [];
-    for (const entry of rawTasks) {
-      const task = normalizeTaskEntity(entry as Record<string, unknown>);
-      if (!task) continue;
-      if (task.id) rememberNoteWorkspace(task.id, workspaceId);
-      tasks.push(task);
-    }
-    return { tasks, stats: normalizeStats(result?.stats) };
+  list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }> {
+    return taskReads.list(workspaceId);
   }
 
   async get(taskId: string): Promise<WorkspaceTask | null> {
@@ -355,25 +196,8 @@ export class LiveTasksClient implements TasksClient {
    * renderer `TaskAgentAssociation` — dropping the daemon-only `workspaceId`
    * field since the FE slice is already workspace-scoped.
    */
-  async listAgentLinks(
-    workspaceId: string,
-  ): Promise<Record<string, TaskAgentAssociationsByTaskKey>> {
-    const result = await backendRequest<{ linksByNoteId?: unknown }>('task.listAgentLinks', {
-      workspaceId,
-    });
-    const raw = result?.linksByNoteId;
-    if (!raw || typeof raw !== 'object') return {};
-    const out: Record<string, TaskAgentAssociationsByTaskKey> = {};
-    for (const [noteId, byKeyRaw] of Object.entries(raw as Record<string, unknown>)) {
-      if (!byKeyRaw || typeof byKeyRaw !== 'object') continue;
-      const byKey: TaskAgentAssociationsByTaskKey = {};
-      for (const [taskKey, rowRaw] of Object.entries(byKeyRaw as Record<string, unknown>)) {
-        const assoc = normalizeAgentLink(rowRaw);
-        if (assoc) byKey[taskKey] = assoc;
-      }
-      if (Object.keys(byKey).length > 0) out[noteId] = byKey;
-    }
-    return out;
+  listAgentLinks(workspaceId: string): Promise<Record<string, TaskAgentAssociationsByTaskKey>> {
+    return taskReads.listAgentLinks(workspaceId);
   }
 
   /**
