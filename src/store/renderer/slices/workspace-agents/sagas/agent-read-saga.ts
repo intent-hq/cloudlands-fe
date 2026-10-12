@@ -5,6 +5,7 @@ import { cleanupDeletedAgentTabs } from './deleted-agent-cleanup';
 
 // Compatibility binding for the existing root saga until the Svelte renderer is retired.
 export const agentReadSaga = createAgentReadSaga({
+  admission: { kind: 'source' },
   readAgentSession,
   selectAgentSession,
   cleanupDeletedAgentTabs,

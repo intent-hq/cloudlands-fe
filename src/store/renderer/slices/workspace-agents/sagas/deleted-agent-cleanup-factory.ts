@@ -9,7 +9,7 @@
  * saga (transcript hydration) so the close/destroy/clear sequence lives in
  * one place.
  */
-import { call, put } from 'typed-redux-saga';
+import { call } from 'typed-redux-saga';
 
 import { createLogger } from '../../../../../lib/utils/client-logger';
 import { IPC_CHANNELS } from '../../../../../shared/ipc-registry';
@@ -18,6 +18,12 @@ import {
   destroyTabsByOwnerAgent,
   pruneRecentlyClosed,
 } from '../../panel-layout/panel-layout-slice';
+
+import {
+  isAgentReadScopeCurrent,
+  putAgentReadAction,
+  type AgentReadScope,
+} from './agent-read-admission';
 
 const logger = createLogger('DeletedAgentCleanup');
 
@@ -29,25 +35,37 @@ export function createDeletedAgentCleanup({
     data: { agentId: string },
   ) => Promise<unknown>;
 }) {
-  return function* cleanupDeletedAgentTabs(wsId: string, agentId: string) {
+  return function* cleanupDeletedAgentTabs(
+    wsId: string,
+    agentId: string,
+    scope: AgentReadScope = { kind: 'source' },
+  ) {
+    if (!isAgentReadScopeCurrent(scope)) return;
     // WARN once and close any panel tabs pointing at the dead agent; with no
     // referencing tab (speculative load) the close is a no-op.
     logger.warn('Agent no longer exists on daemon; closing stale tabs', { wsId, agentId });
-    yield* put(closeTabsByAgentId(wsId, agentId));
+    if (!(yield* putAgentReadAction(scope, closeTabsByAgentId(wsId, agentId)))) return;
     // A deletion missed while the app was closed: destroy the dead agent's
     // owned browser tabs too (monorepo#2857), and clear main's CDP/ownership
     // registrations — an earlier list-tabs reply may already have rehydrated
     // them for the persisted hidden tabs.
-    yield* put(destroyTabsByOwnerAgent(wsId, agentId));
+    if (!(yield* putAgentReadAction(scope, destroyTabsByOwnerAgent(wsId, agentId)))) return;
     // `closeTabsByAgentId` is a normal close that parks each tab in
     // `recentlyClosed` — and because this recovery covers a deletion event
     // MISSED while the app was closed, no event-driven prune follows it (the
     // `agent:deleted` mutation-saga path is the one that prunes). Prune here so
     // "Reopen closed tab" cannot resurrect the deleted agent and loop straight
     // back into this cleanup.
-    yield* put(pruneRecentlyClosed(wsId, { agentId }));
+    if (!(yield* putAgentReadAction(scope, pruneRecentlyClosed(wsId, { agentId })))) return;
     try {
-      yield* call(invoke, IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId });
+      if (scope.kind === 'source') {
+        yield* call(invoke, IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId });
+      } else {
+        yield* call(() => {
+          if (!isAgentReadScopeCurrent(scope)) return;
+          return invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId });
+        });
+      }
     } catch (clearError) {
       logger.warn('Failed to clear main-process registrations for deleted agent tabs', {
         agentId,

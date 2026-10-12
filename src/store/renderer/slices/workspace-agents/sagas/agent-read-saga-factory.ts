@@ -1,4 +1,6 @@
-import { call, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { createChannelFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
+import type { EventChannel } from 'redux-saga';
 import type { StoreSelectorEffect } from '@themislib/themis/types';
 
 import { createLogger } from '$lib/utils/client-logger';
@@ -13,24 +15,44 @@ import {
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 
+import {
+  isAgentReadScopeCurrent,
+  putAgentReadAction,
+  type AgentReadAdmission,
+  type AgentReadScope,
+} from './agent-read-admission';
+
 const logger = createLogger('AgentReadSaga');
 
 /** Bind the canonical ensure owner to the host's read, selector, and deleted-tab cleanup. */
-export function createAgentReadSaga({
+export function createAgentReadSaga<State>({
+  admission,
   readAgentSession,
   selectAgentSession,
   cleanupDeletedAgentTabs,
 }: {
+  admission: AgentReadAdmission<State>;
   readAgentSession: (agentId: string, workspaceId?: string) => Promise<AgentSession | null>;
   selectAgentSession: {
     effect: StoreSelectorEffect<AgentSession | undefined, [agentId: string]>;
   };
-  cleanupDeletedAgentTabs: (wsId: string, agentId: string) => SagaGenerator<void>;
+  cleanupDeletedAgentTabs: (
+    wsId: string,
+    agentId: string,
+    scope: AgentReadScope,
+  ) => SagaGenerator<void>;
 }) {
-  function* loadAgentSessionSaga(wsId: string, agentId: string) {
+  function* loadAgentSessionSaga(wsId: string, agentId: string, scope: AgentReadScope) {
     if (yield* call(isAgentDeletionPending, agentId)) return;
     try {
-      const session: AgentSession | null = yield* call(readAgentSession, agentId, wsId);
+      const session: AgentSession | null =
+        scope.kind === 'source'
+          ? yield* call(readAgentSession, agentId, wsId)
+          : yield* call((): Promise<AgentSession | null> => {
+              if (!isAgentReadScopeCurrent(scope)) return Promise.resolve(null);
+              return readAgentSession(agentId, wsId);
+            });
+      if (!isAgentReadScopeCurrent(scope)) return;
       if (!session || String(session.workspaceId) !== wsId) return;
       // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
       // §5.5 `pendingDeleteAt`) — the deletion is pending daemon-side.
@@ -39,17 +61,53 @@ export function createAgentReadSaga({
 
       const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
       const merged = existing ? { ...session, messages: existing.messages } : session;
-      yield* put(bulkUpsertSessions([merged]));
-      yield* put(upsertSession(merged));
-      yield* put(markAgentDetailHydrated(agentId));
+      if (!(yield* putAgentReadAction(scope, bulkUpsertSessions([merged])))) return;
+      if (!(yield* putAgentReadAction(scope, upsertSession(merged)))) return;
+      if (!(yield* putAgentReadAction(scope, markAgentDetailHydrated(agentId)))) return;
     } catch (error) {
+      if (!isAgentReadScopeCurrent(scope)) return;
       if (isAgentNotFoundError(error)) {
         // Expected after deletion: a stale tab/route still references the
         // agent (monorepo#1753) — close it instead of erroring.
-        yield* call(cleanupDeletedAgentTabs, wsId, agentId);
+        yield* call(cleanupDeletedAgentTabs, wsId, agentId, scope);
         return;
       }
       logger.error('Failed to load agent session', error);
+    }
+  }
+
+  function* waitForAuthorityLoss(
+    channel: EventChannel<SelectorChannelPayload<string | null>>,
+    scope: AgentReadScope,
+  ) {
+    while (isAgentReadScopeCurrent(scope)) yield* take(channel);
+  }
+
+  function* loadAdmittedAgentSession(wsId: string, agentId: string) {
+    if (admission.kind === 'source') {
+      yield* call(loadAgentSessionSaga, wsId, agentId, admission);
+      return;
+    }
+    const channel = yield* createChannelFromSelector(admission.contextSelector);
+    try {
+      // Notifications wake/cancel the worker; only the direct snapshot admits work.
+      let context = admission.readCurrentContext();
+      while (context === null) {
+        yield* take(channel);
+        context = admission.readCurrentContext();
+      }
+      const scope: AgentReadScope = {
+        kind: 'principal',
+        context,
+        readCurrentContext: admission.readCurrentContext,
+        dispatch: admission.dispatch,
+      };
+      yield* race({
+        authorityLost: call(waitForAuthorityLoss, channel, scope),
+        read: call(loadAgentSessionSaga, wsId, agentId, scope),
+      });
+    } finally {
+      channel.close();
     }
   }
 
@@ -71,7 +129,7 @@ export function createAgentReadSaga({
     const [wsId, agentId] = action.payload;
     if (!wsId || !agentId) return;
     yield* race({
-      read: call(loadAgentSessionSaga, wsId, agentId),
+      read: call(loadAdmittedAgentSession, wsId, agentId),
       cleanup: take(matchesWorkspaceCleanup(wsId)),
       superseded: take(matchesLaterAgentEnsure(agentId)),
     });
