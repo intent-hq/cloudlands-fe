@@ -39,6 +39,7 @@ import { ScriptActionExamples } from './script-action-examples';
 import { OperationalWindowExamples } from './operational-window-examples';
 import { ResponseGroupExamples } from './response-group-examples';
 import { NavigationContentExamples } from './navigation-content-examples';
+import { DetectedScriptExamples } from './detected-script-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -511,6 +512,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'operational-window' && <OperationalWindowExamples />}
       {slug === 'response-group' && <ResponseGroupExamples />}
       {slug === 'navigation-content' && <NavigationContentExamples />}
+      {slug === 'detected-scripts' && <DetectedScriptExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -600,6 +602,7 @@ export function hasFunctionalExample(slug: string) {
     'operational-window',
     'response-group',
     'navigation-content',
+    'detected-scripts',
     'diagram-workbench',
     'toast',
     'notify',
