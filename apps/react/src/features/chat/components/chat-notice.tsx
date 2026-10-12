@@ -37,6 +37,7 @@ export function ChatNotice({
   return (
     <div
       ref={root}
+      inert={!present}
       className={`mt-10 w-full min-w-0 max-w-full font-family-child ${tone === 'danger' ? 'text-danger' : 'text-warning-ink'} ${className}`}
       data-chat-notice=""
       data-testid={`${testIdPrefix}-banner`}
