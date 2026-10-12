@@ -4,7 +4,7 @@ import {
   WorkspaceLoadOriginRefSchema,
   WorkspaceLoadPrepareSchema,
   WorkspaceLoadReadSchema,
-  WorkspaceLoadRouteRefSchema,
+  WorkspaceLoadReleaseSchema,
   type WorkspaceLoadReadOutcome,
   type WorkspaceLoadError,
   type WorkspaceLoadRetired,
@@ -15,12 +15,24 @@ import {
   getStrictBackendBindingForWebContents,
   onStrictBackendBindingRetired,
 } from '../../../main/window-backend';
-import type { JsonRpcClient, RepositoryConnection } from '../../backend/main/json-rpc-client';
+import type {
+  BackendConnectionOrigin,
+  BackendConnectionOrigins,
+} from '../../backend/main/backend.ipc';
+import type {
+  ClientConnectionOriginState,
+  JsonRpcClient,
+  RepositoryConnection,
+} from '../../backend/main/json-rpc-client';
 import type { WorkspaceOpenReads } from './workspace-open-reads';
 
 type Binding = NonNullable<ReturnType<typeof getStrictBackendBindingForWebContents>>;
 
+type PhysicalAdmission = { kind: 'physical'; origins: BackendConnectionOrigins };
+
 interface Dependencies {
+  /** Explicit opt-in; capture ownership once, including its original pending dial. */
+  originAdmission?: PhysicalAdmission;
   /** Actual pool lookup only; no lazy creation or local/focus fallback. */
   readBackend(id: string): JsonRpcClient | undefined;
   /** Invoke the shared validated OPEN handler with protocolAdapter.getWorkspace(id, reads). */
@@ -38,27 +50,50 @@ const MAX_ACTIVE_READS = 2;
 const TTL_MS = 300_000;
 const unavailable = () => new Error('WORKSPACE_LOAD_ROUTE_UNAVAILABLE'); // i18n-ignore (internal diagnostic)
 
+type RouteOwner = ReturnType<typeof createWorkspaceLoadRouteOwner>;
+type PreparedOwner<Result> = Omit<RouteOwner, 'prepare'> & {
+  prepare(event: IpcMainInvokeEvent, payload: unknown): Result;
+};
+
 /**
  * Inert main-owned factory. No registration, startup, socket creation or retries.
  * Daemon read permission remains daemon-owned; no repository lease is involved.
  */
-export function createWorkspaceLoadRoutes(deps: Dependencies) {
+export function createWorkspaceLoadRoutes(
+  deps: Dependencies & { originAdmission: PhysicalAdmission },
+): PreparedOwner<Promise<WorkspaceLoadRouteRef>>;
+export function createWorkspaceLoadRoutes(
+  deps: Dependencies & { originAdmission?: undefined },
+): PreparedOwner<WorkspaceLoadRouteRef>;
+export function createWorkspaceLoadRoutes(deps: Dependencies): RouteOwner;
+export function createWorkspaceLoadRoutes(deps: Dependencies): RouteOwner {
+  return createWorkspaceLoadRouteOwner(deps);
+}
+
+function createWorkspaceLoadRouteOwner(deps: Dependencies) {
   type Origin = {
     originId: string;
     sender: WebContents;
     binding: Binding;
     client: JsonRpcClient;
-    connection: RepositoryConnection;
+    connection: RepositoryConnection | null;
+    physical?: BackendConnectionOrigin;
     retired: boolean;
     expires: number;
     stops: Array<() => void>;
     timer?: ReturnType<typeof setTimeout>;
-    requests: Set<string>;
+    requests: Map<string, Request>;
     routes: Set<Route>;
+  };
+  type Request = {
+    workspaceId: string;
+    pending?: { finish(route?: WorkspaceLoadRouteRef): void };
+    route?: Route;
   };
   type Route = {
     ref: Readonly<WorkspaceLoadRouteRef>;
     origin: Origin;
+    connection: RepositoryConnection;
     retired: boolean;
     activeReads: number;
   };
@@ -89,6 +124,8 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
     origin.retired = true;
     origins.delete(origin.originId);
     clearTimeout(origin.timer);
+    // Pending ownership and subscriptions are removed before any retirement notice.
+    for (const request of origin.requests.values()) request.pending?.finish();
     for (const route of [...origin.routes]) dropRoute(route);
     for (const stop of origin.stops.splice(0)) {
       try {
@@ -99,7 +136,36 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
     }
     notify(origin, { kind: 'origin', originId: origin.originId });
   }
+  function physicalState(origin: Origin): ClientConnectionOriginState | null {
+    if (disposed || origin.retired) return null;
+    try {
+      const binding = getStrictBackendBindingForWebContents(origin.sender);
+      const state = origin.physical!.read();
+      const sameConnection =
+        origin.connection === null ||
+        (state.state === 'ready' && state.connection === origin.connection);
+      // read() may reenter: consult local ownership LAST, without a new callback.
+      if (
+        binding !== origin.binding ||
+        state.state === 'retired' ||
+        !sameConnection ||
+        Date.now() >= origin.expires ||
+        origins.get(origin.originId) !== origin ||
+        disposed ||
+        origin.retired
+      ) {
+        dropOrigin(origin);
+        return null;
+      }
+      if (state.state === 'ready') origin.connection = state.connection;
+      return state;
+    } catch {
+      dropOrigin(origin);
+      return null;
+    }
+  }
   function original(origin: Origin): boolean {
+    if (origin.physical) return physicalState(origin) !== null;
     if (disposed || origin.retired) return false;
     try {
       // Dependency calls/getters may reenter. Sample them first, then consult
@@ -152,11 +218,99 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
     else origin.stops.push(stop);
   }
 
+  function preparePhysical(
+    event: IpcMainInvokeEvent,
+    payload: unknown,
+  ): Promise<WorkspaceLoadRouteRef> {
+    // The executor runs synchronously: reserve before original()/subscribe can reenter.
+    return new Promise((resolve, reject) => {
+      const ref = WorkspaceLoadPrepareSchema.parse(payload);
+      const origin = origins.get(ref.originId);
+      if (
+        !origin ||
+        !owns(event, origin) ||
+        origin.requests.has(ref.requestId) ||
+        origin.requests.size >= MAX_REQUESTS_PER_ORIGIN
+      )
+        throw unavailable();
+      let settled = false;
+      let checking = false;
+      let stop: (() => void) | undefined;
+      const request: Request = { workspaceId: ref.workspaceId, pending: { finish } };
+      origin.requests.set(ref.requestId, request);
+      function finish(route?: WorkspaceLoadRouteRef): void {
+        if (settled) return;
+        settled = true;
+        request.pending = undefined;
+        const detach = stop;
+        stop = undefined;
+        try {
+          detach?.();
+        } catch {
+          /* Settlement remains terminal. */
+        }
+        // Detaching can reenter RELEASE/dispose. Never resolve a route it just retired.
+        if (route && request.route && !request.route.retired && !origin!.retired && !disposed)
+          resolve(route);
+        else reject(unavailable());
+      }
+      function wake(): void {
+        if (settled || checking) return;
+        checking = true;
+        try {
+          const state = physicalState(origin!);
+          if (settled) return;
+          if (!state) {
+            finish();
+            return;
+          }
+          if (state.state !== 'ready') return;
+          const route: Route = {
+            ref: Object.freeze({ ...ref, routeId: randomUUID() }),
+            origin: origin!,
+            connection: state.connection,
+            retired: false,
+            activeReads: 0,
+          };
+          request.route = route;
+          routes.set(route.ref.routeId, route);
+          origin!.routes.add(route);
+          if (!current(route)) {
+            finish();
+            return;
+          }
+          if (settled) {
+            dropRoute(route);
+            return;
+          }
+          finish(route.ref);
+        } finally {
+          checking = false;
+        }
+      }
+      try {
+        // Check first so a retired/expired owner cannot retain a subscription.
+        wake();
+        if (!settled) {
+          const detach = origin.physical!.subscribeChanged(wake);
+          if (settled) detach();
+          else {
+            stop = detach;
+            wake();
+          }
+        }
+      } catch {
+        finish();
+        if (request.route) dropRoute(request.route);
+      }
+    });
+  }
+
   return {
     /**
      * Obtain this anchor BEFORE an originating load intent is accepted. No await,
-     * status inference or hello request here. A missing hello yields refusal;
-     * prehello/initial-open/reconnect waiting needs a separate physical attempt owner.
+     * status inference or hello request here. Default mode refuses a missing hello.
+     * Physical mode captures one actual pending composite; null still refuses.
      */
     observeOrigin(event: IpcMainInvokeEvent) {
       if (disposed) throw unavailable();
@@ -167,9 +321,13 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
         binding.backendId !== LOCAL_CONNECTION_ID
       )
         throw unavailable();
-      const client = deps.readBackend(binding.backendId);
-      const connection = client?.getRepositoryConnection();
-      if (!client || !connection || client.getConfig().transport !== 'uds') throw unavailable();
+      const admission = deps.originAdmission;
+      const physical = admission?.origins.capture(binding.backendId);
+      if (admission && !physical) throw unavailable();
+      const client = physical ? physical.client : deps.readBackend(binding.backendId);
+      const connection = physical ? null : client?.getRepositoryConnection();
+      if (!client || (!physical && !connection) || client.getConfig().transport !== 'uds')
+        throw unavailable();
       if (
         origins.size >= MAX_ORIGINS ||
         [...origins.values()].filter((o) => o.sender === event.sender).length >= MAX_SENDER_ORIGINS
@@ -180,34 +338,46 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
         sender: event.sender,
         binding,
         client,
-        connection,
+        connection: connection ?? null,
+        physical: physical ?? undefined,
         retired: false,
         expires: Date.now() + TTL_MS,
         stops: [],
-        requests: new Set(),
+        requests: new Map(),
         routes: new Set(),
       };
       origins.set(origin.originId, origin);
       try {
-        // The existing hello object positively attests the already-live identity.
-        // This late observer claims nothing about any earlier prehello attempt.
         attach(
           origin,
           onStrictBackendBindingRetired(origin.sender, () => dropOrigin(origin)),
         );
-        attach(
-          origin,
-          client.onRepositoryConnectionEvent((event) => {
-            if (
-              (event.type === 'identity-retired' && event.connection === connection) ||
-              (event.type === 'closed' && event.incarnation === connection.incarnation) ||
-              (event.type === 'opened' && event.incarnation !== connection.incarnation)
-            )
-              dropOrigin(origin);
-          }),
-        );
+        if (physical) {
+          attach(
+            origin,
+            physical.subscribeChanged(() => {
+              original(origin);
+            }),
+          );
+        } else {
+          // The default observer still accepts only an already-acknowledged identity.
+          attach(
+            origin,
+            client.onRepositoryConnectionEvent((event) => {
+              if (
+                (event.type === 'identity-retired' && event.connection === connection) ||
+                (event.type === 'closed' && event.incarnation === connection!.incarnation) ||
+                (event.type === 'opened' && event.incarnation !== connection!.incarnation)
+              )
+                dropOrigin(origin);
+            }),
+          );
+        }
         if (!original(origin)) throw unavailable();
-        origin.timer = setTimeout(() => dropOrigin(origin), TTL_MS);
+        origin.timer = setTimeout(
+          () => dropOrigin(origin),
+          physical ? Math.max(0, origin.expires - Date.now()) : TTL_MS,
+        );
         origin.timer.unref();
         return { originId: origin.originId };
       } catch (error) {
@@ -217,7 +387,11 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
     },
 
     /** IPC is asynchronous to the renderer, but preparation issues no daemon reads. */
-    prepare(event: IpcMainInvokeEvent, payload: unknown): WorkspaceLoadRouteRef {
+    prepare(
+      event: IpcMainInvokeEvent,
+      payload: unknown,
+    ): WorkspaceLoadRouteRef | Promise<WorkspaceLoadRouteRef> {
+      if (deps.originAdmission) return preparePhysical(event, payload);
       const ref = WorkspaceLoadPrepareSchema.parse(payload);
       const origin = origins.get(ref.originId);
       if (
@@ -230,13 +404,16 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
         throw unavailable();
       // A consumed request ID is never reused, even after release. It is correlation,
       // not authority: only the exact main-private origin establishes route ownership.
-      origin.requests.add(ref.requestId);
+      const request: Request = { workspaceId: ref.workspaceId };
+      origin.requests.set(ref.requestId, request);
       const route: Route = {
         ref: Object.freeze({ ...ref, routeId: randomUUID() }),
         origin,
+        connection: origin.connection!,
         retired: false,
         activeReads: 0,
       };
+      request.route = route;
       routes.set(route.ref.routeId, route);
       origin.routes.add(route);
       assertCurrent(route);
@@ -260,7 +437,7 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
         snapshot: Readonly<Record<string, unknown>>,
       ): Promise<T> => {
         const client = route.origin.client;
-        const connection = route.origin.connection;
+        const connection = route.connection;
         const send = client.requestOnCapturedConnection;
         const args = [
           connection,
@@ -389,9 +566,23 @@ export function createWorkspaceLoadRoutes(deps: Dependencies) {
 
     /** Idempotent cleanup never performs a backend lookup/send or releases a successor. */
     release(event: IpcMainInvokeEvent, payload: unknown): void {
-      const ref = WorkspaceLoadRouteRefSchema.parse(payload);
-      const route = ownedRoute(event, ref);
-      if (route) dropRoute(route);
+      const ref = WorkspaceLoadReleaseSchema.parse(payload);
+      if ('routeId' in ref) {
+        const route = ownedRoute(event, ref);
+        if (route) dropRoute(route);
+        return;
+      }
+      const origin = origins.get(ref.originId);
+      if (!origin || !owns(event, origin)) return;
+      const request = origin.requests.get(ref.requestId);
+      if (request) {
+        if (request.workspaceId !== ref.workspaceId) return;
+        request.pending?.finish();
+        if (request.route) dropRoute(request.route);
+      } else if (origin.requests.size < MAX_REQUESTS_PER_ORIGIN) {
+        // A bounded one-use tombstone: a later PREPARE cannot reuse this ID.
+        origin.requests.set(ref.requestId, { workspaceId: ref.workspaceId });
+      }
     },
     releaseOrigin(event: IpcMainInvokeEvent, payload: unknown): void {
       const { originId } = WorkspaceLoadOriginRefSchema.parse(payload);

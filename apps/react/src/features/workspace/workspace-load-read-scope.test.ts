@@ -376,9 +376,18 @@ describe('real canonical clients per workspace-load acquisition', () => {
       });
       const pending = authority.prepare(intent.lifetime);
       const item = f.prepareReplies[0]!;
+      const { routeId: _routeId, ...cancelledTuple } = item.ref;
+      const prepareCall = f.invoke.mock.calls.findIndex(
+        ([channel]) => channel === channels.PREPARE,
+      );
+      const originalPrepare = f.invoke.mock.results[prepareCall]!.value as Promise<unknown>;
       // This valid early notice belongs only to A and must be removed on cancellation.
       f.emit({ kind: 'route', ...item.ref });
       intent.retire();
+      expect(await pending).toBeNull();
+      expect(f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE)).toEqual([
+        [channels.RELEASE, cancelledTuple],
+      ]);
       f.holdPreparation(false);
       const successor = await f.acquire(authority);
       if (kind === 'throwing-cancelled-signal')
@@ -404,11 +413,15 @@ describe('real canonical clients per workspace-load acquisition', () => {
         if (kind === 'foreign-workspace') result.workspaceId = 'foreign';
         item.reply.resolve({ ok: true, result });
       }
+      await originalPrepare.catch(() => undefined);
       expect(await pending).toBeNull();
       expect(f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE)).toEqual(
         ['exact', 'throwing-cancelled-signal', 'throwing-cleanup'].includes(kind)
-          ? [[channels.RELEASE, item.ref]]
-          : [],
+          ? [
+              [channels.RELEASE, cancelledTuple],
+              [channels.RELEASE, item.ref],
+            ]
+          : [[channels.RELEASE, cancelledTuple]],
       );
       expect(
         f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE_ORIGIN),
@@ -450,9 +463,13 @@ describe('real canonical clients per workspace-load acquisition', () => {
     f.holdPreparation();
     const pending = authority.prepare(intent.lifetime);
     const item = f.prepareReplies[0]!;
+    const { routeId: _routeId, ...cancelledTuple } = item.ref;
+    const prepareCall = f.invoke.mock.calls.findIndex(([channel]) => channel === channels.PREPARE);
+    const originalPrepare = f.invoke.mock.results[prepareCall]!.value as Promise<unknown>;
     lateRef = item.ref;
     f.holdPreparation(false);
     item.reply.resolve({ ok: true, result: item.ref });
+    await originalPrepare.catch(() => undefined);
     expect(await pending).toBeNull();
     const owned = await successor!;
     expect(owned.scope.isCurrent()).toBe(true);
@@ -463,6 +480,7 @@ describe('real canonical clients per workspace-load acquisition', () => {
     expect(await opened).toMatchObject({ ok: true });
     expect(await got).toMatchObject({ id: workspaceId });
     expect(f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE)).toEqual([
+      [channels.RELEASE, cancelledTuple],
       [channels.RELEASE, item.ref],
     ]);
     expect(authority.isCurrent()).toBe(true);
@@ -476,13 +494,21 @@ describe('real canonical clients per workspace-load acquisition', () => {
     f.holdPreparation();
     const pending = authority.prepare(intent.lifetime);
     const item = f.prepareReplies[0]!;
+    const { routeId: _routeId, ...cancelledTuple } = item.ref;
+    const prepareCall = f.invoke.mock.calls.findIndex(([channel]) => channel === channels.PREPARE);
+    const originalPrepare = f.invoke.mock.results[prepareCall]!.value as Promise<unknown>;
     intent.retire();
+    expect(await pending).toBeNull();
+    expect(f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE)).toEqual([
+      [channels.RELEASE, cancelledTuple],
+    ]);
     f.holdPreparation(false);
     const successor = await f.acquire(authority);
     f.emit({ kind: 'origin', originId: item.ref.originId });
     expect(successor.scope.signal.aborted).toBe(true);
     expect(successor.intent.authorizePublication()).toBe(false);
     item.reply.resolve({ ok: true, result: item.ref });
+    await originalPrepare.catch(() => undefined);
     expect(await pending).toBeNull();
     expect(f.invoke).toHaveBeenCalledWith(channels.RELEASE, item.ref);
     expect(authority.isCurrent()).toBe(false);

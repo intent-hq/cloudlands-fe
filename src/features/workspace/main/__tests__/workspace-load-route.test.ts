@@ -438,3 +438,56 @@ describe('workspace load route using original window and actual JsonRpcClient', 
     expect(h.sockets[0].frames.map((f) => f.method)).toEqual(['client.hello']);
   });
 });
+
+describe('prepare tuple cancellation with the ready-only default', () => {
+  it('stays synchronous and keeps full route releases exact', async () => {
+    const h = await harness();
+    const ref = h.capture();
+    expect(ref).not.toBeInstanceOf(Promise);
+    h.routes.release(h.owner.event, { ...ref, routeId: 'another-route' });
+    const pending = h.get(ref);
+    const frame = await h.sockets[0].next('workspace.get');
+    h.sockets[0].reply(frame, { workspace: { id: ref.workspaceId } });
+    expect((await pending).current).toBe(true);
+    h.routes.release(h.owner.event, ref);
+    expect((await h.get(ref)).current).toBe(false);
+  });
+
+  it('matches request workspace and sender before cancelling a created route', async () => {
+    const h = await harness();
+    const origin = h.routes.observeOrigin(h.owner.event);
+    const tuple = { ...origin, requestId: 'one', workspaceId: 'amber-forest' };
+    const first = h.routes.prepare(h.owner.event, tuple);
+    const second = h.routes.prepare(h.owner.event, { ...tuple, requestId: 'two' });
+    h.routes.release(h.owner.event, { ...tuple, workspaceId: 'wrong' });
+    h.routes.release(makeWindow().event, tuple);
+    const pending = h.get(first);
+    h.sockets[0].reply(await h.sockets[0].next('workspace.get'), {
+      workspace: { id: tuple.workspaceId },
+    });
+    expect((await pending).current).toBe(true);
+    h.routes.release(h.owner.event, tuple);
+    h.routes.release(h.owner.event, tuple);
+    expect((await h.get(first)).current).toBe(false);
+    const sibling = h.get(second);
+    h.sockets[0].reply(await h.sockets[0].next('workspace.get'), {
+      workspace: { id: tuple.workspaceId },
+    });
+    expect((await sibling).current).toBe(true);
+  });
+
+  it('bounds one-use early cancellations and rejects strict-union extra fields', async () => {
+    const h = await harness();
+    const origin = h.routes.observeOrigin(h.owner.event);
+    const tuple = { ...origin, requestId: 'early-0', workspaceId: 'amber-forest' };
+    expect(() => h.routes.release(h.owner.event, { ...tuple, routeId: undefined })).toThrow();
+    expect(() => h.routes.release(h.owner.event, { ...tuple, operation: 'get' })).toThrow();
+    for (let i = 0; i < 128; i++)
+      h.routes.release(h.owner.event, { ...tuple, requestId: `early-${i}` });
+    expect(() => h.routes.prepare(h.owner.event, tuple)).toThrow();
+    expect(() => h.routes.prepare(h.owner.event, { ...tuple, workspaceId: 'other' })).toThrow();
+    expect(() => h.routes.prepare(h.owner.event, { ...tuple, requestId: 'overflow' })).toThrow();
+    h.routes.releaseOrigin(h.owner.event, origin);
+    expect(h.capture('fresh-origin')).toMatchObject({ requestId: 'fresh-origin' });
+  });
+});

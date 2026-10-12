@@ -7,6 +7,7 @@ import {
   WorkspaceLoadReadOutcomeSchema,
   WorkspaceLoadRouteRefSchema,
   type WorkspaceLoadOriginRef,
+  type WorkspaceLoadPrepare,
   type WorkspaceLoadRetired,
   type WorkspaceLoadRouteRef,
 } from '$shared/types/workspace-load-route';
@@ -297,7 +298,7 @@ export function createElectronWorkspaceLoadTransport(
           };
         },
         async prepare(requestId, workspaceId, requestSignal) {
-          let expected;
+          let expected: Readonly<WorkspaceLoadPrepare>;
           try {
             expected = Object.freeze(
               WorkspaceLoadPrepareSchema.parse({ ...ref, requestId, workspaceId }),
@@ -313,6 +314,12 @@ export function createElectronWorkspaceLoadTransport(
           }
           requests.add(requestId);
           let cancelled = false;
+          let cancellationSent = false;
+          let removeAbort: AbortSignal['removeEventListener'] | undefined;
+          let resolveCancelled!: (value: { kind: 'cancelled' }) => void;
+          const cancellation = new Promise<{ kind: 'cancelled' }>((resolve) => {
+            resolveCancelled = resolve;
+          });
           const admission = { workspaceId, signal: requestSignal, cancel };
           function clearAdmission(): void {
             if (pending.get(requestId) === admission) pending.delete(requestId);
@@ -320,9 +327,30 @@ export function createElectronWorkspaceLoadTransport(
               if (notice.kind === 'route' && notice.requestId === requestId) early.delete(key);
             }
           }
+          function detachPreparation(): void {
+            try {
+              if (removeAbort) Reflect.apply(removeAbort, requestSignal, ['abort', cancel]);
+            } catch {
+              /* Continue local settlement even if old listener cleanup fails. */
+            }
+            controller.signal.removeEventListener('abort', cancelOrigin);
+          }
           function cancel(): void {
+            finishCancellation(true);
+          }
+          function cancelOrigin(): void {
+            finishCancellation(false);
+          }
+          function finishCancellation(releaseRequest: boolean): void {
+            if (cancelled) return;
             cancelled = true;
             clearAdmission();
+            detachPreparation();
+            resolveCancelled({ kind: 'cancelled' });
+            if (releaseRequest && !cancellationSent) {
+              cancellationSent = true;
+              bestEffort(names.RELEASE, expected);
+            }
           }
           function isCancelled(): boolean {
             if (cancelled) return true;
@@ -343,13 +371,38 @@ export function createElectronWorkspaceLoadTransport(
           }
           pending.set(requestId, admission);
           let prepared: Readonly<WorkspaceLoadRouteRef> | undefined;
-          let removeAbort: AbortSignal['removeEventListener'] | undefined;
           try {
             const addAbort = requestSignal.addEventListener;
             removeAbort = requestSignal.removeEventListener;
             Reflect.apply(addAbort, requestSignal, ['abort', cancel, { once: true }]);
+            controller.signal.addEventListener('abort', cancelOrigin, { once: true });
             if (!preparationCurrent()) return null;
-            const raw = unwrap(await Reflect.apply(invoke, api, [names.PREPARE, expected]));
+            // Drain the original invocation even when abort wins while IPC withholds its reply.
+            const reply = Promise.resolve(
+              Reflect.apply(invoke, api, [names.PREPARE, expected]),
+            ).then(
+              (response) => {
+                if (cancelled || retired) {
+                  try {
+                    const late = WorkspaceLoadRouteRefSchema.parse(unwrap(response));
+                    if (
+                      late.originId === expected.originId &&
+                      late.requestId === requestId &&
+                      late.workspaceId === workspaceId
+                    )
+                      releaseKnownRoute(late);
+                  } catch {
+                    /* A late malformed/refused reply cannot retire a sibling. */
+                  }
+                }
+                return { kind: 'reply' as const, response };
+              },
+              (error: unknown) => ({ kind: 'error' as const, error }),
+            );
+            const outcome = await Promise.race([reply, cancellation]);
+            if (outcome.kind === 'cancelled') return null;
+            if (outcome.kind === 'error') throw outcome.error;
+            const raw = unwrap(outcome.response);
             const value = WorkspaceLoadRouteRefSchema.parse(raw);
             if (
               value.originId !== expected.originId ||
@@ -386,11 +439,7 @@ export function createElectronWorkspaceLoadTransport(
             return null;
           } finally {
             clearAdmission();
-            try {
-              if (removeAbort) Reflect.apply(removeAbort, requestSignal, ['abort', cancel]);
-            } catch {
-              // Old listener cleanup cannot escape and retire a successor in composition.
-            }
+            detachPreparation();
           }
           if (!preparationCurrent()) {
             releaseKnownRoute(prepared);

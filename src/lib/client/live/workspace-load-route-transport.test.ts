@@ -30,6 +30,7 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+const tuple = { originId: ref.originId, requestId: ref.requestId, workspaceId: ref.workspaceId };
 const envelope = (result: unknown) => ({ ok: true, result });
 const fulfilled = (value: unknown, selected = ref) =>
   envelope({ ref: selected, current: true, settlement: { status: 'fulfilled', value } });
@@ -181,6 +182,7 @@ describe('captured workspace load IPC eligibility', () => {
     expect(await pending).toBeNull();
     expect(remove).toHaveBeenCalledWith('abort', listener);
     expect(value.invoke.mock.calls.filter(([name]) => name === channels.RELEASE)).toEqual([
+      [channels.RELEASE, tuple],
       [channels.RELEASE, ref],
     ]);
     expect(
@@ -281,6 +283,7 @@ describe('captured workspace load IPC eligibility', () => {
       });
       expect(await origin.prepare(ref.requestId, ref.workspaceId, request.signal)).toBeNull();
       expect(value.invoke.mock.calls.filter(([name]) => name === channels.RELEASE)).toEqual([
+        ...(boundary === 'request' ? [[channels.RELEASE, tuple]] : []),
         [channels.RELEASE, ref],
       ]);
       expect(origin.isCurrent()).toBe(boundary !== 'origin');
@@ -500,5 +503,69 @@ describe('captured workspace load IPC eligibility', () => {
     }
     expect(value.invoke.mock.calls.filter(([name]) => name === channels.READ)).toHaveLength(0);
     value.origin.release();
+  });
+});
+
+describe('prompt pending preparation cancellation', () => {
+  it.each(['reply', 'rejection'] as const)(
+    'settles before a held %s and drains the old invocation',
+    async (settlement) => {
+      const value = install();
+      const origin = (await createElectronWorkspaceLoadTransport(channels).observeOrigin())!;
+      const held = deferred<unknown>();
+      value.invoke.mockImplementationOnce(() => held.promise);
+      const request = new AbortController();
+      const pending = origin.prepare(ref.requestId, ref.workspaceId, request.signal);
+      request.abort();
+      // Await BEFORE releasing the IPC edge: the old implementation cannot complete this.
+      expect(await pending).toBeNull();
+      expect(value.invoke.mock.calls.filter(([name]) => name === channels.RELEASE)).toEqual([
+        [channels.RELEASE, tuple],
+      ]);
+      const sibling = await origin.prepare(
+        'sibling',
+        ref.workspaceId,
+        new AbortController().signal,
+      );
+      if (settlement === 'reply') held.resolve(envelope({ ...ref, routeId: 'late-route' }));
+      else held.reject(new Error('late transport rejection'));
+      await held.promise.catch(() => {});
+      expect(origin.isCurrent()).toBe(true);
+      expect(sibling!.isCurrent()).toBe(true);
+      expect(value.invoke.mock.calls.filter(([name]) => name === channels.RELEASE)).toEqual([
+        [channels.RELEASE, tuple],
+        ...(settlement === 'reply' ? [[channels.RELEASE, { ...ref, routeId: 'late-route' }]] : []),
+      ]);
+      origin.release();
+    },
+  );
+
+  it('consumes an already aborted tuple on main without invoking PREPARE', async () => {
+    const value = install();
+    const origin = (await createElectronWorkspaceLoadTransport(channels).observeOrigin())!;
+    const request = new AbortController();
+    request.abort();
+    expect(await origin.prepare(ref.requestId, ref.workspaceId, request.signal)).toBeNull();
+    expect(value.invoke.mock.calls.filter(([name]) => name === channels.RELEASE)).toEqual([
+      [channels.RELEASE, tuple],
+    ]);
+    expect(value.invoke.mock.calls.filter(([name]) => name === channels.PREPARE)).toEqual([]);
+    origin.release();
+  });
+
+  it('settles a held preparation on origin retirement without sending request cancellation', async () => {
+    const value = install();
+    const origin = (await createElectronWorkspaceLoadTransport(channels).observeOrigin())!;
+    const held = deferred<unknown>();
+    value.invoke.mockImplementationOnce(() => held.promise);
+    const pending = origin.prepare(ref.requestId, ref.workspaceId, new AbortController().signal);
+    origin.release();
+    expect(await pending).toBeNull();
+    expect(value.listeners.size).toBe(0);
+    held.resolve(envelope(ref));
+    await held.promise;
+    expect(value.invoke.mock.calls.filter(([name]) => name === channels.RELEASE)).toEqual([
+      [channels.RELEASE, ref],
+    ]);
   });
 });

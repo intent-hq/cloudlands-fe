@@ -10,6 +10,11 @@ export const WorkspaceLoadPrepareSchema = WorkspaceLoadOriginRefSchema.extend({
 export const WorkspaceLoadRouteRefSchema = WorkspaceLoadPrepareSchema.extend({
   routeId: id,
 }).strict();
+/** Full route release or cancellation of one consumed prepare tuple. */
+export const WorkspaceLoadReleaseSchema = z.union([
+  WorkspaceLoadRouteRefSchema,
+  WorkspaceLoadPrepareSchema,
+]);
 export const WorkspaceLoadReadSchema = WorkspaceLoadRouteRefSchema.extend({
   operation: z.enum(['open', 'get']),
 }).strict();
