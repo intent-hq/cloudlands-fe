@@ -871,8 +871,14 @@ for (const surface of ['home', 'sidebar'] as const) {
         let failed;
         if (refresh === 'failed') {
           await expect
-            .poll(() => page.evaluate(() => window.__homeDismiss!.admissionSnapshot().listError))
-            .toContain('Workspace list unavailable');
+            .poll(() =>
+              page.evaluate(() =>
+                window.__homeDismiss!.listReads.some(
+                  (read) => read.principalId === 'person-b' && read.status === 'failed',
+                ),
+              ),
+            )
+            .toBe(true);
           failed = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
           expect(failed.workspace.attentionReminder).toBeUndefined();
           await expect(status).toHaveAttribute(
