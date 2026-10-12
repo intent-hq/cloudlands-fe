@@ -93,6 +93,51 @@ describe('agentReadService (fake seam, real store)', () => {
     agentsApi.get.mockResolvedValue(null as never);
   });
 
+  it('fences old detail reads and starts a fresh read after same-connection principal invalidation', async () => {
+    const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+    const { principalIdentityChanged } =
+      await import('$store/renderer/slices/principal/principal-slice');
+    admitLegacyPrincipal();
+    const id = 'principal-fenced-detail';
+    let resolveOld!: (value: AgentSession) => void;
+    agentsApi.get.mockImplementationOnce(
+      () =>
+        new Promise<AgentSession>((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    const old = ensureAgentSession(id, WS);
+    appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id, name: 'new authority' }));
+    const fresh = ensureAgentSession(id, WS);
+    expect(agentsApi.get).toHaveBeenCalledTimes(2);
+    await fresh;
+    resolveOld(makeSession({ id, name: 'old authority' }));
+    await old;
+    expect(selectAgentSession.select(appStore.state, id)?.name).toBe('new authority');
+  });
+
+  it('does not restore detail hydration from a response invalidated by the principal', async () => {
+    const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+    const { principalIdentityChanged } =
+      await import('$store/renderer/slices/principal/principal-slice');
+    admitLegacyPrincipal();
+    const id = 'principal-dropped-detail';
+    let resolveOld!: (value: AgentSession) => void;
+    agentsApi.get.mockImplementationOnce(
+      () =>
+        new Promise<AgentSession>((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    const old = ensureAgentSession(id, WS);
+    appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+    resolveOld(makeSession({ id }));
+    await old;
+    expect(appStore.state.agentSessions.detailHydrated?.[id]).not.toBe(true);
+    expect(selectAgentSession.select(appStore.state, id)).toBeUndefined();
+  });
+
   it('ensureAgentSession fetches via the seam and hydrates the store', async () => {
     agentsApi.get.mockResolvedValueOnce(makeSession({ name: 'fetched' }) as never);
 

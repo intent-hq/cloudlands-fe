@@ -98,10 +98,11 @@ function* showBrowserNotification(
   body: string,
   workspaceId: string,
   agentId: string,
+  context: string,
 ) {
   yield* fork(playNotificationSoundPerSettings);
   const granted: boolean = yield* call(ensurePermission);
-  if (!granted) return;
+  if (!granted || context !== (yield* selectPrincipalActionContext.effect())) return;
   try {
     const notification: Notification = yield* call(createBrowserNotification, title, body);
     activeNotifications.add(notification);
@@ -238,6 +239,7 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
       content.body,
       workspaceId,
       event.data.agentId,
+      context,
     );
   } catch (error) {
     logger.error('Failed to handle agent:idle event', error);

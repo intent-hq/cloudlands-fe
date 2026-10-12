@@ -206,7 +206,6 @@
     });
   }
   onMount(() => {
-    activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
     const unsubscribeTabState = appStore.getReadableState().subscribe((state) => {
       const nextTabOrder = selectWorkspaceTabOrder.select(state);

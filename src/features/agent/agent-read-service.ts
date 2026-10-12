@@ -1,4 +1,4 @@
-import { claimAgentReadOwnership } from './agent-read-ownership';
+import { claimAgentReadOwnership, getAgentReadContext } from './agent-read-ownership';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
  * Reusable agent-session read seam used by the agent read saga and event router.
@@ -52,7 +52,12 @@ function readKey(agentId: string, workspaceId?: string): string {
       markerProjectionGeneration.clear();
     });
   }
-  return JSON.stringify([connectionGeneration, workspaceId ?? null, agentId]);
+  return JSON.stringify([
+    connectionGeneration,
+    getAgentReadContext(),
+    workspaceId ?? null,
+    agentId,
+  ]);
 }
 
 /** In-flight wire reads keyed by agent id; shared by every metadata caller. */
@@ -191,12 +196,13 @@ export function readAgentSession(
   } catch {
     beforeRead = undefined;
   }
+  const context = getAgentReadContext();
   const generation = ++readGeneration;
   const connection = connectionGeneration;
   const run = appClient.agents
     .get(agentId, workspaceId)
     .then((session) =>
-      connection === connectionGeneration
+      connection === connectionGeneration && context === getAgentReadContext()
         ? preserveLocalUpdates(
             beforeRead,
             preserveProjectedQuestionMarkers(agentId, generation, session),

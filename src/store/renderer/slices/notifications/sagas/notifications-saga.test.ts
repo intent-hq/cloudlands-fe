@@ -321,6 +321,54 @@ describe('notification sagas', () => {
     focus.mockRestore();
   });
 
+  it('does not read old sibling IDs after a held active gate crosses principal admission', async () => {
+    const current = state();
+    const original = mocks.backend.getMockImplementation()!;
+    let resolveActive!: (value: unknown) => void;
+    mocks.backend.mockImplementation((method, params) =>
+      method === 'agent.listActive'
+        ? new Promise((resolve) => {
+            resolveActive = resolve;
+          })
+        : original(method, params),
+    );
+    const { task } = startWebSaga(current);
+    emitAdmittedEvent('agent:idle', idle());
+    await flush();
+    expect(resolveActive).toBeTypeOf('function');
+    current.principal.invalidation += 1;
+    resolveActive({ streams: [{ agentId: 'old-sibling', workspaceId: 'ws-1' }] });
+    await flush();
+    expect(mocks.backend.mock.calls.filter(([method]) => method === 'agent.get')).toEqual([
+      SELF_GET,
+    ]);
+    expect(MockNotification.instances).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not show an old notification after permission crosses principal admission', async () => {
+    const current = state();
+    let resolvePermission!: (value: NotificationPermission) => void;
+    MockNotification.permission = 'default';
+    MockNotification.requestPermission.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePermission = resolve;
+        }),
+    );
+    const { task } = startWebSaga(current);
+    emitAdmittedEvent('agent:idle', idle());
+    await flush();
+    expect(MockNotification.requestPermission).toHaveBeenCalledTimes(1);
+    current.principal.invalidation += 1;
+    resolvePermission('granted');
+    await flush();
+    expect(MockNotification.instances).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('covers disabled, background, waiting, active-agent, and focused suppression paths', async () => {
     const current = state('ws-1');
     const { task } = startWebSaga(current);
