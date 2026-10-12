@@ -14,6 +14,7 @@ import {
   activate,
   label,
   capture,
+  captureFocusedActionTooltip,
   geometry,
   expectContained,
   originalFormats,
@@ -268,6 +269,7 @@ test('message actions MA8: ordinary hover and keyboard focus reveal reachable ac
   await expect(action(item, 'regenerate')).toBeFocused();
   await expectContained(item, 'focus-revealed', info);
   await capture(item, 'focus-revealed', info);
+  await captureFocusedActionTooltip(item, 'regenerate', 'focus-regenerate-tooltip', info);
   await page.keyboard.press('Enter');
   expect((await refresh(item)).callbacks.at(-1)).toMatchObject({
     callback: 'onRegenerate',
