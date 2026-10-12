@@ -1469,6 +1469,7 @@ export interface GitClient {
    * `file-tracking.loadCommits` with full envelope — returns commits, boundarySha, and nextToken.
    * The `boundarySha` is the workspace boundary commit SHA or null when no boundary exists.
    * When `includeOlder` is true, fetches commits before and including the workspace boundary.
+   * Rejects failed reads so consumers retain the prior history and can retry.
    */
   commitsWithBoundary(
     workspaceId: string,
@@ -1525,7 +1526,6 @@ export interface GitClient {
    * transport/validation errors fold the same way. Never throws.
    */
   pull(repoPath: string, branchName: string, workspaceId?: string): Promise<MutationResult>;
-  subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
    * — staging requires explicit paths per contract.

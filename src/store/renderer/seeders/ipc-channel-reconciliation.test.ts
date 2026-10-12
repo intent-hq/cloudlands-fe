@@ -777,7 +777,7 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
     expect(listenedPrefixes.has('terminal:professional:exit:')).toBe(true);
     // Emit sites: seeder literal + template family + daemon-events-bridge relay.
     expect(emitted.has('terminal:created')).toBe(true);
-    expect(emitted.has('git:status-changed')).toBe(true);
+    expect(emitted.has('git:status-changed')).toBe(false);
     expect(emittedPrefixes.has('terminal:professional:exit:')).toBe(true);
   });
 

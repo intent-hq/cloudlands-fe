@@ -68,6 +68,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { AgentStatus, GitFileStatus, type AgentSession } from '$shared/types';
 import { LiveGitClient } from '$lib/client/live/live-git-client';
 import {
+  changesEventReceived,
   loadOlderCommitsRequested,
   loadWorkspaceDataRequested,
   refreshRequested,
@@ -208,7 +209,7 @@ function state(
   };
 }
 
-function start(current = state()) {
+function start(current = state(), changesVisible = true) {
   const channel = stdChannel();
   const actions: Array<{ type: string; payload?: unknown }> = [];
   const task = runSaga(
@@ -223,12 +224,14 @@ function start(current = state()) {
           )
         )
           actions.push(action);
+        if (action.type === 'changes/reconcileRequested') channel.put(action);
       },
       getState: () => current,
     },
     lifecycleReadSaga,
   );
   runningTasks.push(task);
+  if (changesVisible) channel.put({ type: 'changes/consumerMounted', payload: [WS] });
   return {
     channel: {
       ...channel,
@@ -1724,6 +1727,255 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  describe('pushed file and history state', () => {
+    it('defers detailed reads while the Changes panel is closed and reconciles on reopen', async () => {
+      const run = start(state(WS), false);
+      run.channel.put(push('closed'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      run.channel.put({ type: 'changes/consumerMounted', payload: [WS] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      run.channel.put({ type: 'changes/consumerUnmounted', payload: [WS] } as never);
+      run.channel.put(push('changed-while-closed'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not append an old history page across a changed boundary', async () => {
+      const run = start(state(WS));
+      run.channel.put(push('old'));
+      await vi.advanceTimersByTimeAsync(1000);
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      run.channel.put(loadOlderCommitsRequested(WS, 'old-base'));
+      await settle();
+      run.channel.put(push('new'));
+      await vi.advanceTimersByTimeAsync(1000);
+      resolve({ commits: [{ hash: 'old-parent' }], boundarySha: 'old-base' });
+      await settle();
+      expect(run.actions.filter((a) => a.type === 'changes/appendOlderCommits')).toEqual([]);
+    });
+    it('retains failed invalidations for reopening instead of treating them as loaded', async () => {
+      const current = state(WS);
+      const run = start(current);
+      mocks.git.commitsWithBoundary.mockRejectedValueOnce(new Error('offline'));
+      run.channel.put(push('retry'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([]);
+      run.channel.put({ type: 'tabState/openWorkspaceTab', payload: [WS] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toHaveLength(1);
+    });
+    const tracked = {
+      id: 'tracked-1',
+      file: '/repo/a.ts',
+      relativePath: 'a.ts',
+      stage: 'unstaged',
+      status: 'modified',
+      stats: { additions: 9, deletions: 2 },
+      attribution: { manual: true, timestamp: 1 },
+    };
+    const gitStatus = {
+      branch: 'feature',
+      ahead: 1,
+      behind: 0,
+      files: [{ path: 'a.ts', status: GitFileStatus.Modified, staged: false }],
+    };
+    const push = (identity: string) =>
+      changesEventReceived(WS, 'changes:git-status', {
+        status: { historyIdentity: identity, gitStatus },
+      });
+
+    it('uses a complete tracked push without any file or history reads', async () => {
+      const run = start(state(WS));
+      run.channel.put(changesEventReceived(WS, 'changes:tracked', { changes: [tracked] }));
+      await settle();
+      expect(mocks.git.status).not.toHaveBeenCalled();
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      expect(run.actions).toContainEqual(
+        expect.objectContaining({
+          type: 'changes/setChangesData',
+          payload: expect.objectContaining({ changes: [tracked] }),
+        }),
+      );
+    });
+
+    it('does not reload history for file-only pushes with unchanged history identity', async () => {
+      const run = start(state(WS));
+      run.channel.put(push('history-a'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      mocks.git.trackedChanges.mockResolvedValue([tracked]);
+      run.channel.put(push('history-a'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.status).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      expect(run.actions.filter((a) => a.type === 'changes/setChangesData').at(-1)).toMatchObject({
+        payload: { changes: [tracked] },
+      });
+      run.channel.put(push('history-b'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+    });
+
+    it('defers hidden invalidations and recovers files and history on reopening', async () => {
+      const current = state('ws-other');
+      const run = start(current);
+      run.channel.put(push('history-a'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      current.tabState.currentTabId = WS;
+      run.channel.put({ type: 'tabState/openWorkspaceTab', payload: [WS] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves a newer tracked push over an older in-flight read', async () => {
+      let resolve!: (value: unknown[]) => void;
+      mocks.git.trackedChanges.mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+      const run = start(state(WS));
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      run.channel.put(changesEventReceived(WS, 'changes:tracked', { changes: [tracked] }));
+      resolve([]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setChangesData').at(-1)).toMatchObject({
+        payload: { changes: [tracked] },
+      });
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores secondary roots and keeps workspace history identities separate', async () => {
+      const current = state(WS);
+      const run = start(current);
+      run.channel.put(changesEventReceived(WS, 'git:commit', { gitRootId: 'secondary' }));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      run.channel.put(push('same-identity'));
+      await vi.advanceTimersByTimeAsync(1000);
+      current.tabState.currentTabId = 'ws-other';
+      run.channel.put({ type: 'changes/consumerMounted', payload: ['ws-other'] } as never);
+      run.channel.put(
+        changesEventReceived('ws-other', 'changes:git-status', {
+          status: { historyIdentity: 'same-identity', gitStatus },
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([[WS], ['ws-other']]);
+    });
+
+    it('rejects stale history after an identity change and keeps the new boundary', async () => {
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const run = start(state(WS));
+      run.channel.put(push('before-rebase'));
+      await vi.advanceTimersByTimeAsync(1000);
+      run.channel.put(push('after-rebase'));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'new' }],
+        boundarySha: 'new-base',
+      });
+      resolve({ commits: [{ hash: 'stale' }], boundarySha: 'old-base' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([
+        expect.objectContaining({
+          payload: { wsId: WS, commits: [{ hash: 'new' }], boundarySha: 'new-base' },
+        }),
+      ]);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not repeat an in-flight history read for another file push with the same identity', async () => {
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const run = start(state(WS));
+      run.channel.put(push('same'));
+      await vi.advanceTimersByTimeAsync(1000);
+      run.channel.put(push('same'));
+      resolve({ commits: [{ hash: 'head' }], boundarySha: 'base' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toHaveLength(1);
+    });
+
+    it('recovers after reconnect and conservatively reads history for legacy status pushes', async () => {
+      const run = start(state(WS));
+      run.channel.put(push('same'));
+      await vi.advanceTimersByTimeAsync(1000);
+      run.channel.put(backendReconnected());
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      expect(mocks.git.status).toHaveBeenCalledTimes(1);
+      run.channel.put(
+        changesEventReceived(WS, 'changes:git-status', { status: { localCommits: [] } }),
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(3);
+      expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    });
+
+    it('fences a prior backend reply and does not reuse its history identity', async () => {
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const current = state(WS);
+      const run = start(current);
+      run.channel.put(push('same'));
+      await vi.advanceTimersByTimeAsync(1000);
+      const remote = withLegacyPrincipal({
+        ...current,
+        connections: { ...current.connections, windowBackendId: 'remote' },
+      });
+      Object.assign(current, remote);
+      current.workspace.loadedBackendId = 'remote';
+      current.workspace.capabilityContext = selectPrincipalActionContext.select(remote);
+      run.channel.put(push('same'));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'remote-head' }],
+        boundarySha: 'remote-base',
+      });
+      resolve({ commits: [{ hash: 'local-head' }], boundarySha: 'local-base' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([
+        expect.objectContaining({
+          payload: { wsId: WS, commits: [{ hash: 'remote-head' }], boundarySha: 'remote-base' },
+        }),
+      ]);
+    });
+  });
+
   it('reconciles both changes triggers with parallel reads and keeps partial failure atomic', async () => {
     const change = {
       id: 'change-1',
@@ -1808,6 +2060,7 @@ describe('lifecycleReadSaga', () => {
     const gitTask = runSaga(
       {
         channel: run.channel,
+        getState: () => state(),
         dispatch: (action) => run.actions.push(action as { type: string; payload?: unknown }),
       },
       gitReadSaga,

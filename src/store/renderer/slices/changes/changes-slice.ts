@@ -145,6 +145,14 @@ export const clearMainPanelView = createAction('changes/clearMainPanelView');
 export const refreshRequested = createAction<[wsId: string, forceSync?: boolean]>(
   'changes/refreshRequested',
 );
+/** Admitted daemon state; file-only updates must not invalidate commit history. */
+export const changesEventReceived =
+  createAction<[wsId: string, eventType: string, data: Record<string, unknown>]>(
+    'changes/eventReceived',
+  );
+export const reconcileChangesRequested = createAction<[wsId: string]>('changes/reconcileRequested');
+export const changesConsumerMounted = createAction<[wsId: string]>('changes/consumerMounted');
+export const changesConsumerUnmounted = createAction<[wsId: string]>('changes/consumerUnmounted');
 export const loadWorkspaceDataRequested = createAction<[wsId: string]>(
   'changes/loadWorkspaceDataRequested',
 );

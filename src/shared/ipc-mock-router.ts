@@ -166,8 +166,6 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   // daemon-events-bridge.ts relayLegacyIpcEvent — daemon `events.subscribe`
   // firehose re-emitted onto the legacy channels components still listen on.
   'workspace:updated',
-  'git:status-changed',
-  'file-tracking:changes-updated',
   'task:ready-tasks-changed',
   'line-attribution:updated',
   // window-state-bridge-seeder.ts registerWindowFullScreenEventRelay —

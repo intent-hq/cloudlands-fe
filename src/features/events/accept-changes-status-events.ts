@@ -9,3 +9,18 @@ export function isAcceptChangesStatusEvent(type: string): boolean {
     )
   );
 }
+import type { WorkspaceGitStatus } from '$features/accept-changes/types';
+
+export function isPushedAcceptChangesStatus(value: unknown): value is WorkspaceGitStatus {
+  if (!value || typeof value !== 'object') return false;
+  const status = value as Record<string, unknown>;
+  return (
+    typeof status.branch === 'string' &&
+    typeof status.trunkBranch === 'string' &&
+    ['aheadOfTrunk', 'behindTrunk', 'uncommittedCount', 'stagedCount'].every(
+      (key) => typeof status[key] === 'number',
+    ) &&
+    ['hasRemote', 'isPushed'].every((key) => typeof status[key] === 'boolean') &&
+    Array.isArray(status.localCommits)
+  );
+}

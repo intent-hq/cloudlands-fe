@@ -157,7 +157,7 @@ describe('ipc-mock-router', () => {
     });
 
     it('recognizes emitted channels through isEmittedMockIpcEventChannel', () => {
-      expect(isEmittedMockIpcEventChannel('git:status-changed')).toBe(true);
+      expect(isEmittedMockIpcEventChannel('git:status-changed')).toBe(false);
       expect(isEmittedMockIpcEventChannel('terminal:professional:exit:abc')).toBe(true);
       expect(isEmittedMockIpcEventChannel('evt:unknown')).toBe(false);
     });

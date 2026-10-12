@@ -112,7 +112,6 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  * Besides the Redux dispatches, the bridge re-emits a small set of daemon
  * events onto the LEGACY mock-IPC event channels (`relayLegacyIpcEvent`) that
  * components still subscribe to via `listenSync`/`on` — `workspace:updated`,
- * `git:status-changed`, `file-tracking:changes-updated`,
  * `task:ready-tasks-changed`, `agent:status-changed`, `agent:idle`. Without
  * the relay those listeners never fire (the silent-gap class: stale git
  * status, lost ready-task transitions). The emitted channel set is declared in
@@ -173,7 +172,10 @@ import type {
 } from '$shared/types';
 import { WorkspaceStatus, isWorkspaceAttention, isWorkspaceDisplayStatus } from '$shared/types';
 import type { AppliedSettingChange } from '$lib/client/app-client';
-import { isAcceptChangesStatusEvent } from './accept-changes-status-events';
+import {
+  isAcceptChangesStatusEvent,
+  isPushedAcceptChangesStatus,
+} from './accept-changes-status-events';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
@@ -222,7 +224,7 @@ import {
   ensureWorkspaceTasksLoaded,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import { changesEventReceived } from '$store/renderer/slices/changes/changes-slice';
 import { acceptChangesStatusInvalidated } from '$store/renderer/slices/git/git-slice';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
 import { toLockRecord } from '$features/file-tracking/file-tracking.client';
@@ -408,15 +410,6 @@ const scopeCountedCreatedAgentIds = new Set<string>();
 const lastAppliedRetireTransitionByAgent = new Map<string, 'retired' | 'restored'>();
 
 let agentRefreshGeneration = 0;
-
-/**
- * Debounce timers for changes-slice refresh per workspace. Change events can
- * fire very frequently during agent activity (matching the note in
- * WorkspaceProgressCard.svelte line ~213), so we debounce ~1s per workspace to
- * avoid redundant refreshRequested dispatches.
- */
-const changesRefreshTimersByWorkspace = new Map<string, ReturnType<typeof setTimeout>>();
-const CHANGES_REFRESH_DEBOUNCE_MS = 1000;
 
 /**
  * Debounce timers for workspace-tasks refetch per workspace. Agents write
@@ -3273,10 +3266,6 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  * - `task:ready-tasks-changed` → WorkspaceProgressCard reads
  *   `payload.workspaceId` + `payload.data.readyTaskIds`; the daemon event
  *   envelope (§5.4 TS-parity payload) already has exactly that shape.
- * - git/status-changing events → `git:status-changed { workspaceId }` — the
- *   listener only gates on workspaceId before a debounced reload.
- * - `changes:tracked` (§5.18) → `file-tracking:changes-updated
- *   { workspaceId }` — same debounced-reload gate.
  * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
  *   `{ workspaceId, noteId, attributions }` so the tiptap
  *   the workspace-notes read saga's `takeEveryFromListenSync` listener
@@ -3295,15 +3284,6 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
   switch (type) {
     case 'task:ready-tasks-changed':
       emitMockIpcEvent('task:ready-tasks-changed', event);
-      return;
-    case 'git:commit':
-    case 'git:pull':
-    case 'changes:git-status':
-      emitMockIpcEvent('git:status-changed', { workspaceId });
-      return;
-    case 'changes:tracked':
-      emitMockIpcEvent('git:status-changed', { workspaceId });
-      emitMockIpcEvent('file-tracking:changes-updated', { workspaceId });
       return;
     case 'line-attribution:updated':
       emitMockIpcEvent('line-attribution:updated', {
@@ -3485,25 +3465,6 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   } else {
     appStore.dispatch(clearServerErrorMessage(getMcpServerKey(match)));
   }
-}
-
-/**
- * Debounced changes-slice refresh for git/changes events (`git:commit`,
- * `git:pull`, `changes:git-status`, `changes:tracked`). These can fire frequently during
- * agent activity, so we debounce ~1s per workspace to avoid redundant
- * refreshRequested dispatches. Mirrors the precedent in
- * WorkspaceProgressCard.svelte line ~213.
- */
-function debouncedChangesRefresh(workspaceId: string): void {
-  const existing = changesRefreshTimersByWorkspace.get(workspaceId);
-  if (existing) {
-    clearTimeout(existing);
-  }
-  const timer = setTimeout(() => {
-    appStore.dispatch(refreshRequested(workspaceId));
-    changesRefreshTimersByWorkspace.delete(workspaceId);
-  }, CHANGES_REFRESH_DEBOUNCE_MS);
-  changesRefreshTimersByWorkspace.set(workspaceId, timer);
 }
 
 /** Refresh aggregates independently; detailed task-list reads still require demand. */
@@ -3840,11 +3801,29 @@ export function routeDaemonEventsNotification(
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
 
+  if ((type.startsWith('git:') || type.startsWith('changes:')) && typeof event.id === 'string') {
+    const key = JSON.stringify([
+      selectPrincipalConnectionContext.select(appStore.state),
+      workspaceId,
+      event.id,
+    ]);
+    if (seenChangesEventIds.has(key)) return;
+    seenChangesEventIds.add(key);
+    if (seenChangesEventIds.size > 1024) {
+      const oldest = seenChangesEventIds.values().next().value;
+      if (oldest) seenChangesEventIds.delete(oldest);
+    }
+  }
+
   // Accept-status invalidation is deliberately narrow: repository mutations
   // (`git:*`), linked-PR changes (`pr:*`), and the daemon's authoritative
   // accept-status snapshot edge (`changes:git-status`). The owning saga gates
   // the follow-up read on active consumer visibility and coalesces bursts.
-  if (isAcceptChangesStatusEvent(type)) {
+  if (
+    isAcceptChangesStatusEvent(type) &&
+    !event.data?.gitRootId &&
+    !(type === 'changes:git-status' && isPushedAcceptChangesStatus(event.data?.status))
+  ) {
     appStore.dispatch(acceptChangesStatusInvalidated(workspaceId));
   }
 
@@ -4189,19 +4168,18 @@ export function routeDaemonEventsNotification(
     return;
   }
 
-  // Git/changes events should
-  // refresh the changes slice so daemon-originated commits appear live in the
-  // sidebar Changes panel. Debounce per workspace (~1s) because
-  // `changes:tracked` can fire very frequently during agent activity.
+  // Forward admitted payloads once. The read owner separates working files
+  // from history and defers missing-detail reads until the workspace is visible.
   if (
-    type === 'git:commit' ||
-    type === 'git:pull' ||
+    type.startsWith('git:') ||
     type === 'changes:git-status' ||
-    type === 'changes:tracked'
+    type === 'changes:tracked' ||
+    (type === 'workspace:updated' &&
+      ['baseRef', 'baseCommitSha', 'branch'].some((key) =>
+        Object.hasOwn(event.data?.changes ?? {}, key),
+      ))
   ) {
-    debouncedChangesRefresh(workspaceId);
-    // Fall through to the relayLegacyIpcEvent + eventReceived dispatches below
-    // so the legacy mock-IPC listeners and activity timeline still work.
+    appStore.dispatch(changesEventReceived(workspaceId, type, event.data ?? {}));
   }
 
   // Live stream family — accumulate per-agent and grow the in-flight assistant
@@ -4623,19 +4601,17 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 }
 
 const seenScriptEventIds = new Set<string>();
+const seenChangesEventIds = new Set<string>();
 
 export function disposeDaemonEventsRoutingState(): void {
   seenScriptEventIds.clear();
+  seenChangesEventIds.clear();
   agentRefreshGeneration += 1;
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
   previewTurnEndedMessageIdByAgent.clear();
   scopeCountedCreatedAgentIds.clear();
   lastAppliedRetireTransitionByAgent.clear();
-  for (const timer of changesRefreshTimersByWorkspace.values()) {
-    clearTimeout(timer);
-  }
-  changesRefreshTimersByWorkspace.clear();
   for (const timer of tasksRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
   }
