@@ -4,6 +4,9 @@ import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import {
   loadWorkspaceNotesSucceeded,
+  noteDeleteViewChanged,
+  noteDeleteViewRetired,
+  applyNoteDeleted,
   retryNoteContentRequested,
   settleNoteContentRequested,
   updateNoteTitle,
@@ -300,4 +303,75 @@ it('retires the entire failed predecessor chain after retrying the newest queued
   const settled = settleNoteContentRequested(WS, ID);
   run.send(settled);
   await expect(settled.promise).resolves.toBeUndefined();
+});
+
+function confirmAbsence(run: ReturnType<typeof harness>, noteId: string) {
+  const view = {
+    backendGeneration: 0,
+    workspaceId: WS,
+    noteId,
+    noteInstanceId: 'old-instance',
+    owner: 'delete-owner',
+    phase: 'deleted' as const,
+    held: true,
+    hidden: true,
+    canCancel: false,
+    terminalAbsent: { epoch: 'epoch', sequence: 1 },
+  };
+  run.send(noteDeleteViewChanged(view));
+  run.send(applyNoteDeleted(WS, noteId));
+  run.send(noteDeleteViewRetired(view));
+}
+
+it('settles a strict save after another note is confirmed absent and retired', async () => {
+  const first = deferred<Note>();
+  api.update.mockReturnValueOnce(first.promise);
+  const run = harness();
+  run.stage('first draft');
+  await vi.waitFor(() => expect(api.update).toHaveBeenCalledTimes(1));
+  confirmAbsence(run, 'other-note');
+  first.resolve(note('first draft', 5));
+  await vi.waitFor(() => expect(run.state()?.pendingContentByNoteId[ID]).toBeUndefined());
+  expect(run.retained()).toBeUndefined();
+  expect(run.state()?.notes.map[ID]).toMatchObject({ content: 'first draft', rev: 5 });
+  api.update.mockResolvedValue(note('next draft', 6));
+  run.stage('next draft', 5);
+  await vi.waitFor(() => expect(api.update).toHaveBeenLastCalledWith(ID, 'next draft', 5, WS));
+  expect(run.state()?.notes.map[ID]).toMatchObject({ content: 'next draft', rev: 6 });
+});
+
+it('does not publish a strict save into a replacement of the same deleted note', async () => {
+  const first = deferred<Note>();
+  api.update.mockReturnValueOnce(first.promise);
+  const run = harness();
+  run.stage('old draft');
+  await vi.waitFor(() => expect(api.update).toHaveBeenCalledTimes(1));
+  confirmAbsence(run, ID);
+  run.send(
+    loadWorkspaceNotesSucceeded(
+      [WS],
+      { [WS]: [note('replacement', 1)] },
+      { [WS]: run.state()?.deleteReadAuthority },
+    ),
+  );
+  first.resolve(note('old draft', 5));
+  const settled = settleNoteContentRequested(WS, ID);
+  run.send(settled);
+  await settled.promise;
+  expect(run.state()?.notes.map[ID]).toMatchObject({ content: 'replacement', rev: 1 });
+  expect(run.retained()?.content).toBe('old draft');
+});
+
+it('retains a rejected strict draft after an unrelated note is deleted', async () => {
+  const first = deferred<Note>();
+  api.update.mockReturnValueOnce(first.promise);
+  const run = harness();
+  run.stage('draft to retain');
+  await vi.waitFor(() => expect(api.update).toHaveBeenCalledTimes(1));
+  confirmAbsence(run, 'other-note');
+  first.reject(Object.assign(new Error('Note changed'), { rpcCode: -32005 }));
+  await vi.waitFor(() => expect(run.retained()?.error).toBe('Note changed'));
+  expect(run.retained()).toMatchObject({ content: 'draft to retain', rev: 4 });
+  expect(run.state()?.pendingContentByNoteId[ID]).toBe(true);
+  expect(api.get).not.toHaveBeenCalled();
 });

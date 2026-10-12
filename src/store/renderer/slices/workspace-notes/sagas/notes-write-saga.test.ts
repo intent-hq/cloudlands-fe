@@ -1111,3 +1111,51 @@ it.each(['reconnect', 'workspace-reuse'] as const)(
     }
   },
 );
+
+it.each(['reconnect', 'workspace-reuse'] as const)(
+  'does not publish a successful strict acknowledgement after %s',
+  async (change) => {
+    let finish!: (saved: Note) => void;
+    const update = vi.spyOn(appClient.notes, 'update').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const run = harness();
+    try {
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'old pending draft', {
+          strict: true,
+          immediate: true,
+          baseRev: 4,
+        }),
+      );
+      await settle();
+      expect(update).toHaveBeenCalledOnce();
+      if (change === 'reconnect') {
+        run.dispatch(connectionStatusChanged('disconnected'));
+        run.dispatch(connectionStatusChanged('connected'));
+      } else {
+        run.dispatch(workspaceDeleted(WS, [], 'replaced'));
+      }
+      run.dispatch(
+        loadWorkspaceNotesSucceeded([WS], {
+          [WS]: [note({ content: 'replacement body', rev: 1 })],
+        }),
+      );
+      const retained = run.getState().retainedDrafts[JSON.stringify([WS, NOTE])];
+      finish(note({ content: 'old pending draft', rev: 5 }));
+      await settle();
+      expect(run.getState().byWorkspaceId[WS].notes.map[NOTE]).toMatchObject({
+        content: 'replacement body',
+        rev: 1,
+      });
+      expect(run.getState().retainedDrafts[JSON.stringify([WS, NOTE])]).toBe(retained);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.restoreAllMocks();
+    }
+  },
+);
