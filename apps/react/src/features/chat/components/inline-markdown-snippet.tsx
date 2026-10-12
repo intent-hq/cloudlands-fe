@@ -31,7 +31,7 @@ export function InlineMarkdownSnippet({
   // The shared Markdown pipeline sanitizes this strict inline-only projection.
   return (
     <span
-      className={`inline-markdown-snippet ${className}`}
+      className={`inline-markdown-snippet intent-inline-markdown-snippet ${className}`}
       data-inline-markdown-snippet=""
       data-testid={testId}
       dangerouslySetInnerHTML={{ __html: inlineHTML }}
