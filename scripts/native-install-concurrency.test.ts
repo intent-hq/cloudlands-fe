@@ -17,6 +17,7 @@ it('finishes each dependency build before another can overwrite shared Node head
       join(root, 'package.json'),
       JSON.stringify({
         private: true,
+        packageManager: JSON.parse(readFileSync(resolve('package.json'), 'utf8')).packageManager,
         dependencies: Object.fromEntries(packages.map((name) => [name, `file:./${name}`])),
         pnpm: { onlyBuiltDependencies: packages },
       }),
