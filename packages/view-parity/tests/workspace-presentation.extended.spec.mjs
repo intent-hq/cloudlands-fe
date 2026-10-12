@@ -1,4 +1,4 @@
-import { test, expect } from '../lib/functional.mjs';
+import { test, expect, openExample } from '../lib/functional.mjs';
 import {
   button,
   captureLeaf,
@@ -13,6 +13,123 @@ import {
   radio,
   toggle,
 } from './workspace-presentation.helpers.mjs';
+
+test('workspace tooltip focus: rich actions survive native focus transfer and leaving closes only that surface', async ({
+  page,
+}, info) => {
+  const host = await openExample(page, 'tooltip-rich', 'tooltip-forwarding');
+  const control = button(host, 'Rich tooltip control');
+  const disabled = toggle(host, 'Disable rich tooltip');
+  const keepOpen = toggle(host, 'Keep tooltip open on click');
+  const action = button(page, 'Tooltip action');
+  const close = button(page, 'Close tooltip');
+  const open = host.getByLabel('Rich tooltip open', { exact: true });
+
+  await keepOpen.click();
+  await keepOpen.press('Shift+Tab');
+  await expect(disabled).toBeFocused();
+  await disabled.press('Shift+Tab');
+  await expect(control).toBeFocused();
+  await expect(open).toHaveText('true');
+  await captureLeaf(page, popup(page), 'rich-focus-before', info);
+
+  await action.click();
+  await expect(action).toBeFocused();
+  await expect(host.getByLabel('Rich tooltip actions', { exact: true })).toHaveText('1');
+  await action.press('Shift+Tab');
+  await expect(close).toBeFocused();
+  await expect(open).toHaveText('true');
+  await close.press('Tab');
+  await expect(action).toBeFocused();
+  await expect(open).toHaveText('true');
+
+  await control.click();
+  await expect(control).toBeFocused();
+  await expect(open).toHaveText('true');
+  await expect(host.getByLabel('Rich tooltip clicks', { exact: true })).toHaveText('1');
+  await expect(host.getByLabel('Rich tooltip pressed', { exact: true })).toHaveText('true');
+  await control.press('Tab');
+  await expect(disabled).toBeFocused();
+  await expect(open).toHaveText('false');
+  await expect(popup(page)).toHaveCount(0);
+
+  await disabled.press('Shift+Tab');
+  await expect(control).toBeFocused();
+  await action.click();
+  await expect(host.getByLabel('Rich tooltip actions', { exact: true })).toHaveText('2');
+  await action.press('Shift+Tab');
+  await expect(close).toBeFocused();
+  await close.press('Shift+Tab');
+  await expect(open).toHaveText('false');
+  await expect(popup(page)).toHaveCount(0);
+
+  await keepOpen.click();
+  await keepOpen.press('Shift+Tab');
+  await disabled.press('Shift+Tab');
+  await expect(control).toBeFocused();
+  await expect(open).toHaveText('true');
+  await control.press('Escape');
+  await expect(open).toHaveText('false');
+  await expect(control).toBeFocused();
+  await button(host, 'Open rich tooltip').click();
+  await close.click();
+  await expect(open).toHaveText('false');
+  await expect(host.getByLabel('Rich tooltip closes', { exact: true })).toHaveText('1');
+  await captureLeaf(page, host, 'rich-focus-after', info);
+});
+
+test('workspace tooltip ownership: native outside focus and a second instance dismiss the first tooltip', async ({
+  page,
+}, info) => {
+  const host = await openExample(page, 'tooltip', 'tooltip-public');
+  const control = button(host, 'Public tooltip control');
+  const disabled = toggle(host, 'Disable public tooltip');
+  const keepOpen = toggle(host, 'Keep public tooltip open on click');
+  const alternate = button(host, 'Alternate shortcut trigger');
+  const open = host.getByLabel('Public tooltip open', { exact: true });
+  const first = host.getByTestId('public-tooltip-portal').locator('[data-tooltip-content]');
+
+  await keepOpen.click();
+  await keepOpen.press('Shift+Tab');
+  await expect(disabled).toBeFocused();
+  await disabled.press('Shift+Tab');
+  await expect(control).toBeFocused();
+  await expect(first).toBeVisible();
+  await captureLeaf(page, first, 'public-focus-before', info);
+  await control.press('Tab');
+  await expect(disabled).toBeFocused();
+  await expect(open).toHaveText('false');
+  await expect(first).toBeHidden();
+
+  await disabled.press('Shift+Tab');
+  await expect(control).toBeFocused();
+  await expect(open).toHaveText('true');
+  await control.press('Escape');
+  await expect(open).toHaveText('false');
+  await expect(control).toBeFocused();
+
+  const external = button(host, 'Open public tooltip');
+  await external.click();
+  await expect(first).toBeVisible();
+  await external.press('Tab');
+  await expect(alternate).toBeFocused();
+  await expect(open).toHaveText('false');
+  await expect(first).toBeHidden();
+  await expect(popup(page)).toHaveCount(1);
+  await expect(popup(page)).toContainText('Open navigation');
+  await captureLeaf(page, popup(page), 'public-other-instance-after', info);
+  await alternate.press('Escape');
+  await expect(popup(page)).toHaveCount(0);
+  await expect(alternate).toBeFocused();
+  await alternate.press('Shift+Tab');
+  await expect(external).toBeFocused();
+  await external.press('Tab');
+  await expect(alternate).toBeFocused();
+  await expect(popup(page)).toHaveCount(1);
+  await alternate.press('Shift+Tab');
+  await expect(external).toBeFocused();
+  await expect(popup(page)).toHaveCount(0);
+});
 
 test('workspace driving keyboard: native Tab opens the tooltip and Escape dismisses it', async ({
   page,
