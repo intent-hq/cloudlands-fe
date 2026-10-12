@@ -220,7 +220,9 @@ function useReceipts() {
           arguments: args.map(argument),
           result,
           capturedEvent:
-            name !== 'canOpenFile' && captured.current ? snapshotEvent(captured.current) : null,
+            name !== 'canOpenFile' && captured.current && captured.current.eventPhase !== Event.NONE
+              ? snapshotEvent(captured.current)
+              : null,
         },
       ];
     },
