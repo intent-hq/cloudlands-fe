@@ -73,7 +73,7 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 import RepoSelector from '../RepoSelector.svelte';
 import { performanceMonitor } from '$lib/utils/performance';
-import { store } from '$store/renderer/store';
+import { initAppStore, store } from '$store/renderer/store';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import {
   principalReceived,
@@ -150,7 +150,7 @@ function admit(role: 'owner' | 'member' | 'guest', revision = 1) {
   );
 }
 function init() {
-  dispose = store.init();
+  dispose = initAppStore(store).dispose;
   admitLegacyPrincipal();
   store.dispatch(setLabsMultiplayerEnabled(true));
   admit('member');
@@ -302,7 +302,7 @@ describe('RepoSelector partial source settlement through the real store and clie
   const paths = () => recents().map((repo) => repo.path);
   async function pendingSources() {
     dispose();
-    dispose = store.init();
+    dispose = initAppStore(store).dispose;
     admitLegacyPrincipal();
     admit('owner');
     workspaceClient.clearCache();
@@ -439,7 +439,7 @@ describe('RepoSelector partial source settlement through the real store and clie
   );
   it('retains known workspace-owned exclusions when only the workspace read fails', async () => {
     dispose();
-    dispose = store.init();
+    dispose = initAppStore(store).dispose;
     admitLegacyPrincipal();
     admit('owner');
     list.mockResolvedValue({
