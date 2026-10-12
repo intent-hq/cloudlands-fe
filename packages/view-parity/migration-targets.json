@@ -8,20 +8,20 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+    "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
     "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance.",
+    "method": "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T07:23:03.385162+00:00",
+    "reviewedAt": "2026-10-12T07:50:10.815187+00:00",
     "checkpointAdvance": {
-      "previousLedgerCommit": "774fddd6979970238bd3799cdc178bcae839bf2b",
-      "previousAuditCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "previousLedgerCommit": "dffc53dd313920bf54504dae254a319ec4ff4f68",
+      "previousAuditCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "unchangedUniqueDirectTargets": 230,
       "changedUniqueDirectTargets": 0,
-      "retainedHistoricalReviewCount": 89,
-      "meaning": "Common validation pin only; all mapping rows and their actual inspected/source/support/native pins unchanged. Add supporting-only CSS provenance; Toast remains unmapped."
+      "retainedHistoricalReviewCount": 90,
+      "meaning": "Common validation pin only; every source row and actual inspected/source/support/native pin retained. Explicit new supporting profiles cannot refresh historical operational/runtime acceptance."
     }
   },
   "statusDefinitions": {
@@ -77,7 +77,8 @@
     "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer. Current unsuppressed UIinvariants3fail/Knip579 retained as source-owner reports, no baselineCI or all-gates-green claim. Original gap is historical; no additional static mismatch found, but runtime/current-owner/deadline/source-pair/fullmotion/StrictMode closure remains separate. Candidate preparation receipt/log hashes only; later native image successes not transferred.",
     "Bounded original003/final0afebba9 static audit adds only DetectedScriptsCard local implemented.236/1430(231components+5modules),178partial58localimplemented,230targets88reviews. All229prior directtargets byteequal;1889other rows and87historical reviews retained. Original/current class and compiled-source inverse, normal light/dark token proof and canonical icon/import/caller review. Support484 neutral tuple/type and metadata extraction explicitly reviewed without denominator inflation.18prior source invalidations/failures/receipts retained; new DetectedScripts source drift not waived. No native/visual/product acceptance transfer. Seven supporting deltas carry original/previous/current provenance;11458 historical citations preserved in unchanged old reviews, summarized as51 prior support profiles. Normal-theme compiled declaration proof is not source-runtime/pixel acceptance. No guard rewrites or released help impact.",
     "Bounded static35e MarkdownViewer image-owner correction only; zero new mappings/status promotions.236/1430(231components+5modules),178partial58localimplemented,230targets89reviews.230prior target identities audited:229byteequal, only MarkdownViewer target updated with full oldrow/hash/contract retained. One changed DOM adapter supporting profile. Original003/current source and all19invalidations unchanged. MV11automaticPASS/manualSTOP, MV10olderPASS and OW1configgrep failure/guard corrections retained without transfer. No native/visual/product acceptance. Native MV11 stale options placement remains a manual STOP; same-node resize remains uncorrected. Support callbacks and intentional React lifetime departure are code-review evidence only. Owner Knip589 unsuppressed with old584/579 retained and no baseline-CI comparison. No released user-help impact.",
-    "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance. Saved SN2dJUuXv at d1/c668 remains automatic/manual FAIL with close hit=false and original6D2JWp crop-only ambiguity retained. This CSS departure has no8f native acceptance. SN1tZniJX remains its original default-host scope only. WholeCI/Knip pass unclaimed; prior Knip589 unsuppressed remains in history. No released user-help impact."
+    "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance. Saved SN2dJUuXv at d1/c668 remains automatic/manual FAIL with close hit=false and original6D2JWp crop-only ambiguity retained. This CSS departure has no8f native acceptance. SN1tZniJX remains its original default-host scope only. WholeCI/Knip pass unclaimed; prior Knip589 unsuppressed remains in history. No released user-help impact.",
+    "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved. No statusCLI drift warning can certify these3support paths because they are outside its immutableinventory. OW1/2 old2d passes, bothOW3End1596/1428failures and OW4ZPIOcb164capturefailure retain their exactpins; correctedcandidate builtbutunrun atassignment. NC12older341/b34PASS nottransferred. SourceKnip588unsuppressed/no baseCIcomparison; allpreviousfailures retained. No released helpimpact."
   ],
   "reviews": {
     "foundation": {
@@ -87,7 +88,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -101,7 +102,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -115,7 +116,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -131,7 +132,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -145,7 +146,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -156,7 +157,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -167,7 +168,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -181,7 +182,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -192,7 +193,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -203,7 +204,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -214,7 +215,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -228,7 +229,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -239,7 +240,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -250,7 +251,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -265,7 +266,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -281,7 +282,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -292,7 +293,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -303,7 +304,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -321,7 +322,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -332,7 +333,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -343,7 +344,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -354,7 +355,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -368,7 +369,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -379,7 +380,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -393,7 +394,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -404,7 +405,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -419,7 +420,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -433,7 +434,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -447,7 +448,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -458,7 +459,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -466,7 +467,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -480,7 +481,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -494,7 +495,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -508,7 +509,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -519,7 +520,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -530,7 +531,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -541,7 +542,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -552,7 +553,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -563,7 +564,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -574,7 +575,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -588,7 +589,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -599,7 +600,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -610,7 +611,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -621,7 +622,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -632,7 +633,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -643,7 +644,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -651,7 +652,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -679,7 +680,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -702,7 +703,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -728,7 +729,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -754,7 +755,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -785,7 +786,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -814,7 +815,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -854,7 +855,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -887,7 +888,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -928,7 +929,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -973,7 +974,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -1031,7 +1032,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1076,7 +1077,7 @@
         "0f00a72202dce497991564f9fc6875db9f26c9e5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
       "inspectedCallsites": [
@@ -1174,7 +1175,7 @@
       ],
       "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
       "inspectedCallsites": [
@@ -1279,7 +1280,7 @@
     },
     "chat-disclosure-rows-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1475,7 +1476,7 @@
     },
     "chat-recovery-notices-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1679,7 +1680,7 @@
     },
     "chat-stream-metadata-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -1846,7 +1847,7 @@
     },
     "chat-history-attribution-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -2059,7 +2060,7 @@
     },
     "chat-disclosure-corrections-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2275,7 +2276,7 @@
     },
     "chat-queued-actions-command-3e894": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2469,7 +2470,7 @@
     },
     "chat-code-reference-context-4bfa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2834,7 +2835,7 @@
     },
     "chat-inline-mcp-prompt-preview-9d297": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3372,7 +3373,7 @@
     },
     "queued-attachments-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3551,7 +3552,7 @@
     },
     "tabs-export-correction-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3870,7 +3871,7 @@
     },
     "streaming-status-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -4090,7 +4091,7 @@
     },
     "mcp-inline-font-correction-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["7af853406e1a80758a3762bafef510be19db4587"],
@@ -4802,7 +4803,7 @@
     },
     "suggested-chief-prompts-16ee80": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5063,7 +5064,7 @@
     },
     "automated-wake-header-f2b2a2": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5419,7 +5420,7 @@
     },
     "agent-pr-attribution-headers-73da5529": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5892,7 +5893,7 @@
     },
     "attachment-permission-support-05cc7db6": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -6530,7 +6531,7 @@
     },
     "attachment-file-replacement-ff9a4e35": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -7566,7 +7567,7 @@
     },
     "inline-permission-and-live-support-6a51a3da": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -8412,7 +8413,7 @@
     },
     "media-and-markdown-composition-dd6e5720": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -9616,7 +9617,7 @@
     },
     "full-markdown-and-reasoning-68a5ca85": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -11452,7 +11453,7 @@
     },
     "chat-image-and-video-wrapper-561fa08c": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -13288,7 +13289,7 @@
     },
     "message-actions-and-transcript-cards-2d310fed": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -16536,7 +16537,7 @@
     },
     "setup-script-and-edit-confirmation-3d7e81dc": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -21525,7 +21526,7 @@
     },
     "operational-window-and-panel-2d988e34": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -30686,7 +30687,7 @@
     },
     "response-group-and-cylinder-1cea8e2b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -49121,7 +49122,7 @@
     },
     "navigation-excerpt-and-image-caption-34161b6d": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -84275,7 +84276,7 @@
     },
     "response-group-reaction-correction-e46a388f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -85097,7 +85098,7 @@
     },
     "detected-scripts-and-neutral-indicator-0afebba9": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -86276,7 +86277,7 @@
     },
     "markdown-image-owner-correction-35e676aa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -87094,7 +87095,7 @@
     },
     "static-toast-containment-support-8f0bbcda": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "inspectedCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -88052,7 +88053,2177 @@
       },
       "sourceDriftPolicy": "Original003/inventory1430/1890 unchanged. All19invalidations and original inspected/source profiles retained. CSS supporting-only correction adds no source-map or denominator unit.",
       "excludedLaterWork": "Later candidate preparation, native OW/notification/Markdown results and any moving source/test work excluded. No discovery, browser, service or maintained source/test edits.",
-      "userHelpImpact": "Internal unreleased preview and migration ledger; no released assistant-help impact."
+      "userHelpImpact": "Internal unreleased preview and migration ledger; no released assistant-help impact.",
+      "retainedReviewCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+    },
+    "canonical-anchor-and-agent-read-support-d4abc96f": {
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "inspectedCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "taskNoteIds": [
+        "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+        "57c641fd-a0d1-45f3-a297-86043b43a4f2",
+        "36ff68cc-2724-4588-84f2-dc0ebdd59df7",
+        "e54b1c44-a2bb-409b-8161-5342714fd4f9"
+      ],
+      "implementationCommits": [
+        "d47f4dc54d23956becbc898f6d61e490a385075a",
+        "d4abc96fec524af252cf914d37b0f6a4d789942d"
+      ],
+      "scope": "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved.",
+      "previousLedgerCommit": "dffc53dd313920bf54504dae254a319ec4ff4f68",
+      "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "sourceApiReview": {
+        "result": "PASS",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+        "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+        "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9",
+        "anchorCorrectionCommit": "d47f4dc54d23956becbc898f6d61e490a385075a",
+        "operational": {
+          "originalPanelSha256": "0695b5e390b30ef80c32bb8e433b378e9ad5028df925171271f5dd62dd97cf26",
+          "previousCoreSha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+          "coreSha256": "18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c",
+          "exactInverseToPort": true,
+          "portExtractsOriginal": true,
+          "unchangedTypesImportsReturnedApiWritePhase": true,
+          "scope": "Intentional shared canonical correction for both renderers: subtract owned scrollport top at capture and correction, with document scrollport top0. Existing same-scrollTop guard, measured-scale conversion and correction-adjusted anchor write phase unchanged. Source/runtime equivalence is not claimed; OW3 End is not repaired by this proof."
+        },
+        "agentRead": {
+          "originalFacadeSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "facadeSha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "factorySha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "bodyPreservation": [
+            {
+              "name": "loadAgentSessionSaga",
+              "sha256": "147effbd162907f041ed2a83ab2cf7f7642d899da57de6c7b73fad25ac092dfa",
+              "equal": true
+            },
+            {
+              "name": "matchesWorkspaceCleanup",
+              "sha256": "e7aa3feca0f8880956821ec78b72cbaebf125b3ee50c684d570019af0074c070",
+              "equal": true
+            },
+            {
+              "name": "matchesLaterAgentEnsure",
+              "sha256": "41f5ac6fcdb19af4d0c7804dd6c3ce6c8bdad4ab545bd1ac62ce0bf6ace536bd",
+              "equal": true
+            },
+            {
+              "name": "loadAgentSessionWorker",
+              "sha256": "5e392b2f37eb9e5d09955e98390d93a66e106b5401ffe3993e3a2e76bc11a3cf",
+              "equal": true
+            },
+            {
+              "name": "agentReadSaga",
+              "sha256": "af436ebaae9ab3b5dbb6cd3521b0ce609a49058962cc7daf1c2a423c39eaeb7e",
+              "equal": true
+            }
+          ],
+          "emittedFiveBodiesEqual": true,
+          "mandatoryDependencies": [
+            {
+              "name": "readAgentSession",
+              "type": "(agentId: string, workspaceId?: string) => Promise<AgentSession | null>"
+            },
+            {
+              "name": "selectAgentSession",
+              "type": "{\n    effect: StoreSelectorEffect<AgentSession | undefined, [agentId: string]>;\n  }"
+            },
+            {
+              "name": "cleanupDeletedAgentTabs",
+              "type": "(wsId: string, agentId: string) => SagaGenerator<void>"
+            }
+          ],
+          "sourceRootSha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+          "reactRootSha256": "2e49d3dca6d66fb49fbee6d93ad185d6ec264e37f85ca2590f6876f123539b58",
+          "sourceRootRegistrations": 1,
+          "reactActivated": false,
+          "compatibilitySunset": "Svelte renderer retirement",
+          "scope": "Reuses canonical worker/actions/selectors/helpers with host dependencies; no new Redux state, action or parallel receiver. Mandatory cleanup type does not prove future host behavior; no React binding/activation added."
+        },
+        "dependencies": [
+          {
+            "path": "src/lib/components/chat/operational-panel.svelte.ts",
+            "sha256": "9782a05976f967234e8fd32f256a364b4363d76fa468366e1bc1940fed2b6916",
+            "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9"
+          },
+          {
+            "path": "apps/react/src/features/chat/components/operational-panel.tsx",
+            "sha256": "29248fb6b435767749263b394728a7dba14e668674b4adc500cf2f6b94c013fc",
+            "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9"
+          },
+          {
+            "path": "apps/react/src/features/chat/components/operational-window.tsx",
+            "sha256": "79c1dd2df5a63099dae3c9b97e7628254e3e268f2d42493c96038cc73496da4a",
+            "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9"
+          },
+          {
+            "path": "src/features/agent/utils/pending-agent-deletions.ts",
+            "sha256": "094085b89385f5bf4518a721c1dd4fddcd2aa4641586adc2f0459f837317aa51",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/features/agent/utils/agent-not-found-error.ts",
+            "sha256": "899c12142ad2c33a81e0bc111fbb0600132b8fc95d8f622acd5269ced8fe80ca",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/features/agent/agent-read-service.ts",
+            "sha256": "51f1e8a37f447a65faea1889d11f8515c53d785ac0c2659f2980a46db9475cbf",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+            "sha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/store/renderer/slices/agent-session/agent-session-selectors.ts",
+            "sha256": "29e0424507e228e96671db61f450b6b66721531198f1f14e8aab6b16c30dd03d",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+            "sha256": "d119f76c20cde1072d69b3392e299688ccbf8030a632e65c22a0a0f631b4ce9f",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+            "sha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+            "sha256": "9337a77aed58fbf31e7bc9876d2c73ad17e81083829555ecb93b17fd6492b2e0",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          }
+        ],
+        "ownerSearch": "d4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/sagas.ts:125:import { agentReadSaga } from './slices/workspace-agents/sagas/agent-read-saga';\nd4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/sagas.ts:160:  agentReadSaga,\nd4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts:19:export function createAgentReadSaga({\nd4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts:30:  function* loadAgentSessionSaga(wsId: string, agentId: string) {\nd4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts:80:  return function* agentReadSaga() {\nd4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts:81:    yield* takeEvery(ensureAgentSessionLoaded, loadAgentSessionWorker);\nd4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts:3:import { createAgentReadSaga } from './agent-read-saga-factory';\nd4abc96fec524af252cf914d37b0f6a4d789942d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts:7:export const agentReadSaga = createAgentReadSaga({\n",
+        "closure": {
+          "files": [
+            {
+              "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+              "generated": false
+            },
+            {
+              "path": "src/lib/utils/client-logger.ts",
+              "sha256": "7b3832f47da39cda36fb1f5422a0810f866834939db89e1345a273dc2a26006e",
+              "generated": false
+            },
+            {
+              "path": "src/features/agent/utils/pending-agent-deletions.ts",
+              "sha256": "094085b89385f5bf4518a721c1dd4fddcd2aa4641586adc2f0459f837317aa51",
+              "generated": false
+            },
+            {
+              "path": "src/features/agent/utils/agent-not-found-error.ts",
+              "sha256": "899c12142ad2c33a81e0bc111fbb0600132b8fc95d8f622acd5269ced8fe80ca",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "sha256": "d119f76c20cde1072d69b3392e299688ccbf8030a632e65c22a0a0f631b4ce9f",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/agent-node.ts",
+              "sha256": "3a8765dc17d2f98d4415ba211b4646587bb27c1090fbd60dca03337d0c7c2d33",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-node.ts",
+              "sha256": "e3f74d09f0cdd79dc6b5980e109c40ae7a00b6b4135aca9f2e34965b8d95ef66",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent.types.ts",
+              "sha256": "22df1a3693692ad378a6a5b3e3e6259232772fde8b3d9ec0262a3e79521c055e",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/message-dedup.ts",
+              "sha256": "36cd85b775793b752cf3b8eaac8b4d7f912fe0cff6e4b7ae732c9a9a0e490314",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/content-block-helpers.ts",
+              "sha256": "b0aa9c63ca7fd596a2c2c7716e44d429460773b4f7d5a76c9d7151f26d335832",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/agent-attention.ts",
+              "sha256": "123f8418c9cbac230c4ba42b5583388e764b7db0b17b054a08d25b6796487b1d",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts",
+              "sha256": "3b005b39fe0504fe180fecb4c152a5918307c1d2c71c5362be2da63f2a6a0bc1",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/daemon-health/daemon-health-slice.ts",
+              "sha256": "16bd741af14e175b848f8c9ca91dbec8d71294513d296cd1106e8f71e965bb6b",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/utils/workspace-scoped.ts",
+              "sha256": "17bd07b066eb9b0645da899a7486d499c9049183edbdca4352fd103de4368210",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/utils/utils.ts",
+              "sha256": "a5b777be80a9cbce3566ea3d7b6e77fbf2e42c03886820c7ece22acbff2dd00a",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "sha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-events/workspace-events-sanitizer.ts",
+              "sha256": "d6c0b9af81e9f76ea340c226d364a74728f9d77099cdf98fda36cb4db7881c58",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "sha256": "ce06f4c7b6df07996ec32626c4efd96cfceb0f3af9c3aa9cbd2554bd81d6772e",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "sha256": "0b43c102f245d6a1a74bb16fd621aea7e60de866948584eb9ba1afdc2309fe04",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/principal/principal-slice.ts",
+              "sha256": "018460712262b8592968ab45ac432963daeb3c6878ceb2b59e5371ec619a5b46",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts",
+              "sha256": "f4db7066d61a9e325382096feec93afc4e0885c9fcb0d5c7bb92a1e8c60eb2c7",
+              "generated": false
+            },
+            {
+              "path": "src/shared/i18n/locale-matcher.ts",
+              "sha256": "11df016932f283d26eb6a0103fffe90fd19f1d2be28f44bd9cfe2c7354038192",
+              "generated": false
+            },
+            {
+              "path": "src/lib/utils/shortcut-bindings.ts",
+              "sha256": "f621ec01306dbca20eed1d928e9c164582ea085b1a42352401eebefc7c423348",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace/workspace-slice.ts",
+              "sha256": "2146c20cb2b001688136e7802fa37f81f0ecc3d7dce9126ba46bc6a466004021",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types.ts",
+              "sha256": "e8927e4daac2f8830db989ce88d2e93bbc53cabef0af2963751f90d2d41d7110",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/branded-ids.ts",
+              "sha256": "1e691c5f11ea59976a58e9cfb574a12262fde4fbfc60284d1d55255e5313fed4",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-session.ts",
+              "sha256": "3841e0480b674e58fa419ec8984a656da8c39eea305ab15f7c50b2b36fea9409",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/legacy-model-id.ts",
+              "sha256": "6c11e0a682d84d4008d684cc0162edc5ed9fb522488f59e66d2cb6d04a9355f6",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-session.guards.ts",
+              "sha256": "0035a11078661d86c5f43f4c1620b6865ce723855e368df9429a40bc26f3904c",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/proposal.ts",
+              "sha256": "c058e652976ebd5fcff74b81561ae656211d298738c90311c45569392f1a4158",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/content-block.ts",
+              "sha256": "d408ee99e1ab6d0d2653554c2c0ded96d751b4c39b12fa5543200b3d1564ba7e",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/content-block.guards.ts",
+              "sha256": "1c62debc9b640d243843188d4b7e2ebef975072eb888a826f059f46d95a6c451",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/content-block.migration.ts",
+              "sha256": "5ca1110aa85e5a8e11ca647d34e4f4da23df30676726e99defc6581a5b557b82",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/proposal-resource.ts",
+              "sha256": "60121bd06d13424666c7142e26f9205fd735be4f8c635ab024ba29e5c298bf33",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-message.ts",
+              "sha256": "49c182b4b84a621b758f23b849ff94e6c4692cb46c954afe68c861ef27c73401",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-message.conversion.ts",
+              "sha256": "6a7f15df4c4c48ba361c25e2555aac28b6833b2adeff556719a43f0e21914880",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/suggested-prompt.ts",
+              "sha256": "6e739ed4219db5d16e3b34f407aa94dbdc0211a6372a003f250f80114b9ff41b",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/pending-submissions/pending-submissions-model.ts",
+              "sha256": "2871dda09b833523f1e7af2940c6c096a5580a5eca7dc4ce6251c29183ebc53d",
+              "generated": false
+            },
+            {
+              "path": "src/features/agent/utils/build-recorded-attempt.ts",
+              "sha256": "8d373cbc2efa75dcd6cde7d97bc0e736da19e1fe8d9aec010798e0216fd50b28",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/chat-state/chat-state-types.ts",
+              "sha256": "2aa96f82500688764f79c31052ef6f76fc9b6f32b9d01db88935d399ca2c6a87",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/chat-state/chat-state-serialization.ts",
+              "sha256": "d8cceb614c0cf00ab1c091992a0a6f09ebc83495d5a9a3a9d846cb62c71a1287",
+              "generated": false
+            },
+            {
+              "path": "src/shared/paraglide/messages.js",
+              "sha256": "39a9ca36b7cde8ef89011723c3b137ef0db319ddf59d9481fc3ae6e634453347",
+              "generated": true
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-agents/workspace-agents-stream-slice.ts",
+              "sha256": "23e5747c4b012fb3e89d9a1dd131de4a1a3722f62e872e5c29e3e61eb32ba12d",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts",
+              "sha256": "6276d41d8327c97282cf06788888379a59680e8278e7a0dc8378433a9525a952",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/agent-queue/agent-queue-slice.ts",
+              "sha256": "ba8969187d12d37e86677163c75fe5adde1e600b9eda2c002fc054485938e8d0",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "sha256": "9337a77aed58fbf31e7bc9876d2c73ad17e81083829555ecb93b17fd6492b2e0",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/agent-scope.ts",
+              "sha256": "62ef482240afe85b68e6afeb5f165c808475c532bc4b21a4e4c5aa5b32eea916",
+              "generated": false
+            }
+          ],
+          "edges": [
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "specifier": "typed-redux-saga",
+              "external": "typed-redux-saga"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "specifier": "$lib/utils/client-logger",
+              "path": "src/lib/utils/client-logger.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "specifier": "../../../../../features/agent/utils/pending-agent-deletions",
+              "path": "src/features/agent/utils/pending-agent-deletions.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "specifier": "../../../../../features/agent/utils/agent-not-found-error",
+              "path": "src/features/agent/utils/agent-not-found-error.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "specifier": "../../agent-session/agent-session-slice",
+              "path": "src/store/renderer/slices/agent-session/agent-session-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "$shared/utils/agent-node",
+              "path": "src/shared/utils/agent-node.ts"
+            },
+            {
+              "from": "src/shared/utils/agent-node.ts",
+              "specifier": "../types/agent-node",
+              "path": "src/shared/types/agent-node.ts"
+            },
+            {
+              "from": "src/shared/types/agent-node.ts",
+              "specifier": "zod",
+              "external": "zod"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "fast-equals",
+              "external": "fast-equals"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "$shared/types/agent.types",
+              "path": "src/shared/types/agent.types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "$shared/utils/message-dedup",
+              "path": "src/shared/utils/message-dedup.ts"
+            },
+            {
+              "from": "src/shared/utils/message-dedup.ts",
+              "specifier": "fast-equals",
+              "external": "fast-equals"
+            },
+            {
+              "from": "src/shared/utils/message-dedup.ts",
+              "specifier": "./content-block-helpers",
+              "path": "src/shared/utils/content-block-helpers.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "$shared/utils/agent-attention",
+              "path": "src/shared/utils/agent-attention.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "../workspace-events/workspace-events-slice",
+              "path": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts",
+              "specifier": "../daemon-health/daemon-health-slice",
+              "path": "src/store/renderer/slices/daemon-health/daemon-health-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/daemon-health/daemon-health-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/daemon-health/daemon-health-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts",
+              "specifier": "../../utils/workspace-scoped",
+              "path": "src/store/renderer/utils/workspace-scoped.ts"
+            },
+            {
+              "from": "src/store/renderer/utils/workspace-scoped.ts",
+              "specifier": "fast-equals",
+              "external": "fast-equals"
+            },
+            {
+              "from": "src/store/renderer/utils/workspace-scoped.ts",
+              "specifier": "./utils",
+              "path": "src/store/renderer/utils/utils.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts",
+              "specifier": "./workspace-events-sanitizer",
+              "path": "src/store/renderer/slices/workspace-events/workspace-events-sanitizer.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "../chat-state/chat-state-slice",
+              "path": "src/store/renderer/slices/chat-state/chat-state-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../pending-submissions/pending-submissions-slice",
+              "path": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "../principal/principal-slice",
+              "path": "src/store/renderer/slices/principal/principal-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/principal/principal-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/principal/principal-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/principal/principal-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/principal/principal-slice.ts",
+              "specifier": "../user-preferences/user-preferences-slice",
+              "path": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts",
+              "specifier": "@themislib/themis/utils/store/boolean-preference",
+              "external": "@themislib/themis/utils/store/boolean-preference"
+            },
+            {
+              "from": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts",
+              "specifier": "$shared/i18n/locale-matcher",
+              "path": "src/shared/i18n/locale-matcher.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts",
+              "specifier": "$lib/utils/shortcut-bindings",
+              "path": "src/lib/utils/shortcut-bindings.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "../workspace/workspace-slice",
+              "path": "src/store/renderer/slices/workspace/workspace-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace/workspace-slice.ts",
+              "specifier": "$shared/types",
+              "path": "src/shared/types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent.types",
+              "path": "src/shared/types/agent.types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-session",
+              "path": "src/shared/types/agent-session.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "$shared/utils/legacy-model-id",
+              "path": "src/shared/utils/legacy-model-id.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "./agent.types",
+              "path": "src/shared/types/agent.types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-session.guards",
+              "path": "src/shared/types/agent-session.guards.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.guards.ts",
+              "specifier": "./agent.types",
+              "path": "src/shared/types/agent.types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.ts",
+              "specifier": "./proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/content-block.guards",
+              "path": "src/shared/types/content-block.guards.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/content-block.migration",
+              "path": "src/shared/types/content-block.migration.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.migration.ts",
+              "specifier": "./content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.migration.ts",
+              "specifier": "./proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.migration.ts",
+              "specifier": "./proposal-resource",
+              "path": "src/shared/types/proposal-resource.ts"
+            },
+            {
+              "from": "src/shared/types/proposal-resource.ts",
+              "specifier": "./proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-message",
+              "path": "src/shared/types/agent-message.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-message.conversion",
+              "path": "src/shared/types/agent-message.conversion.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.conversion.ts",
+              "specifier": "uuid",
+              "external": "uuid"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/suggested-prompt",
+              "path": "src/shared/types/suggested-prompt.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace/workspace-slice.ts",
+              "specifier": "fast-equals",
+              "external": "fast-equals"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace/workspace-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace/workspace-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace/workspace-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace/workspace-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "../user-preferences/user-preferences-slice",
+              "path": "src/store/renderer/slices/user-preferences/user-preferences-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-slice.ts",
+              "specifier": "./pending-submissions-model",
+              "path": "src/store/renderer/slices/pending-submissions/pending-submissions-model.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/pending-submissions/pending-submissions-model.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../pending-submissions/pending-submissions-model",
+              "path": "src/store/renderer/slices/pending-submissions/pending-submissions-model.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../../../../features/agent/utils/build-recorded-attempt",
+              "path": "src/features/agent/utils/build-recorded-attempt.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "./chat-state-types",
+              "path": "src/store/renderer/slices/chat-state/chat-state-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "./chat-state-serialization",
+              "path": "src/store/renderer/slices/chat-state/chat-state-serialization.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-serialization.ts",
+              "specifier": "$shared/paraglide/messages.js",
+              "path": "src/shared/paraglide/messages.js",
+              "generated": true
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../workspace-agents/workspace-agents-stream-slice",
+              "path": "src/store/renderer/slices/workspace-agents/workspace-agents-stream-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-stream-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../workspace-events/workspace-events-slice",
+              "path": "src/store/renderer/slices/workspace-events/workspace-events-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../unread-tracking/unread-tracking-slice",
+              "path": "src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "../agent-queue/agent-queue-slice",
+              "path": "src/store/renderer/slices/agent-queue/agent-queue-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-queue/agent-queue-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-queue/agent-queue-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-queue/agent-queue-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-queue/agent-queue-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/chat-state/chat-state-slice.ts",
+              "specifier": "$shared/paraglide/messages.js",
+              "path": "src/shared/paraglide/messages.js",
+              "generated": true
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "../workspace-agents/workspace-agents-stream-slice",
+              "path": "src/store/renderer/slices/workspace-agents/workspace-agents-stream-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+              "specifier": "$shared/utils/message-dedup",
+              "path": "src/shared/utils/message-dedup.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "specifier": "../../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "specifier": "../workspace-agents-slice",
+              "path": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "$shared/utils/agent-scope",
+              "path": "src/shared/utils/agent-scope.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "../../utils/workspace-scoped",
+              "path": "src/store/renderer/utils/workspace-scoped.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "../../utils/utils",
+              "path": "src/store/renderer/utils/utils.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "../agent-session/agent-session-slice",
+              "path": "src/store/renderer/slices/agent-session/agent-session-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+              "specifier": "./workspace-agents-stream-slice",
+              "path": "src/store/renderer/slices/workspace-agents/workspace-agents-stream-slice.ts"
+            }
+          ],
+          "external": [
+            "@themislib/themis/utils/collections/collection-utils",
+            "@themislib/themis/utils/store/boolean-preference",
+            "@themislib/themis/utils/store/create-action",
+            "@themislib/themis/utils/store/create-reducer",
+            "fast-equals",
+            "typed-redux-saga",
+            "uuid",
+            "zod"
+          ],
+          "missing": [],
+          "computed": [],
+          "forbidden": [],
+          "mode": "Frozen runtime import/export/literal dynamic-import walk; external packages and generated Paraglide are leaves."
+        },
+        "limits": [
+          "No core execution, DOM fabrication, Store initialization, application module execution, mock/native tests or network actions.",
+          "Prior root leases/scope adaptations and all source/runtime/native limitations remain; source-port baseline unchanged.",
+          "No React admission/replay/cleanup receiver/root integration. Real read cleanup/deletion/workspace/supersession/cancellation remains outside static acceptance."
+        ]
+      },
+      "supportingDependencies": [
+        {
+          "path": "src/lib/components/chat/operational-panel-core.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": null,
+          "change": "added",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/components/chat/operational-panel.svelte.ts",
+          "sha256": "9782a05976f967234e8fd32f256a364b4363d76fa468366e1bc1940fed2b6916",
+          "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "apps/react/src/features/chat/components/operational-panel.tsx",
+          "sha256": "29248fb6b435767749263b394728a7dba14e668674b4adc500cf2f6b94c013fc",
+          "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "apps/react/src/features/chat/components/operational-window.tsx",
+          "sha256": "79c1dd2df5a63099dae3c9b97e7628254e3e268f2d42493c96038cc73496da4a",
+          "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/features/agent/utils/pending-agent-deletions.ts",
+          "sha256": "094085b89385f5bf4518a721c1dd4fddcd2aa4641586adc2f0459f837317aa51",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/features/agent/utils/agent-not-found-error.ts",
+          "sha256": "899c12142ad2c33a81e0bc111fbb0600132b8fc95d8f622acd5269ced8fe80ca",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/features/agent/agent-read-service.ts",
+          "sha256": "51f1e8a37f447a65faea1889d11f8515c53d785ac0c2659f2980a46db9475cbf",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+          "sha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/store/renderer/slices/agent-session/agent-session-selectors.ts",
+          "sha256": "29e0424507e228e96671db61f450b6b66721531198f1f14e8aab6b16c30dd03d",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+          "sha256": "d119f76c20cde1072d69b3392e299688ccbf8030a632e65c22a0a0f631b4ce9f",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+          "sha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+          "sha256": "9337a77aed58fbf31e7bc9876d2c73ad17e81083829555ecb93b17fd6492b2e0",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        }
+      ],
+      "supportDelta": [
+        {
+          "path": "src/lib/components/chat/operational-panel-core.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": null,
+          "change": "added",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        }
+      ],
+      "retainedHistoricalCitations": [
+        {
+          "location": "/reviews/operational-window-and-panel-2d988e34/supportingDependencies/3",
+          "record": {
+            "path": "src/lib/components/chat/operational-panel-core.ts",
+            "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+            "sha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87"
+          }
+        },
+        {
+          "location": "/reviews/operational-window-and-panel-2d988e34/supportDelta/3",
+          "record": {
+            "path": "src/lib/components/chat/operational-panel-core.ts",
+            "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+            "sha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "previousCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
+            "supportOnly": true,
+            "referenceSha256": null,
+            "previousSha256": null
+          }
+        },
+        {
+          "location": "/reviews/operational-window-and-panel-2d988e34/sourceExtraction/neutralCore",
+          "record": {
+            "path": "src/lib/components/chat/operational-panel-core.ts",
+            "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+            "sha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87"
+          }
+        },
+        {
+          "location": "/boundedAudits/21/supportDelta/3",
+          "record": {
+            "path": "src/lib/components/chat/operational-panel-core.ts",
+            "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+            "sha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "previousCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
+            "supportOnly": true,
+            "referenceSha256": null,
+            "previousSha256": null
+          }
+        }
+      ],
+      "sourceInventoryBlindSpot": "All3changed support paths are outside the immutable1890-source inventory; CLI sourceDrift cannot flag their new/changed support bytes. Explicit records here invalidate any inference of unchanged support from unchanged coverage. Operational old sourcePort8a reviews remain historical; current shared algorithm intentionally differs. No original baseline or review acceptance refreshed.",
+      "supportInvalidationsOutsideInventory": [
+        {
+          "path": "src/lib/components/chat/operational-panel-core.ts",
+          "change": "modified",
+          "previousSha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+          "sha256": "18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting-code provenance; no view/denominator addition or native acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "change": "modified",
+          "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting-code provenance; no view/denominator addition or native acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "change": "added",
+          "previousSha256": null,
+          "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting-code provenance; no view/denominator addition or native acceptance."
+        }
+      ],
+      "historicalPinnedReports": [
+        {
+          "path": ".demo-artifacts/attachment-correction-ledger/status-05cc7db6.json",
+          "sha256": "2ecc7894e3222c77d621cdf844a3c59630ecede44ec74a1d2ae8a09a2908cb26",
+          "candidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c"
+        },
+        {
+          "path": ".demo-artifacts/attachment-identity-ledger/status-ff9a4e35.json",
+          "sha256": "3de6cfc20cd498cc1dd7d3ac9fab59d75bd652576e0122fe0f95add767dfbd03",
+          "candidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35"
+        },
+        {
+          "path": ".demo-artifacts/inline-permission-ledger/status-6a51a3da.json",
+          "sha256": "871f8ca4bf374cba9df3b5e761107cbd19664e38768848b1f5e74779ffe1f767",
+          "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9"
+        },
+        {
+          "path": ".demo-artifacts/media-composition-ledger/status-dd6e5720.json",
+          "sha256": "dcf0190b31084f48d746fe704bfb67a56fc9772e34cb338e074e0d902206a6bd",
+          "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980"
+        },
+        {
+          "path": ".demo-artifacts/markdown-reasoning-ledger/status-68a5ca85.json",
+          "sha256": "9211fb66cfc453cf98321757efa4db39aa4eb8ade6c45129197d3c8e51a5a44a",
+          "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a"
+        },
+        {
+          "path": ".demo-artifacts/chat-image-ledger/status-561fa08c.json",
+          "sha256": "2642d63ee8d4ca3bae4c17bb7cdb4f7024656cb04643a00feb3c9b9762ef71a3",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4"
+        },
+        {
+          "path": ".demo-artifacts/message-transcript-ledger/status-2d310fed.json",
+          "sha256": "ecc0ac8a7b46dfa6601457464565b8f1996e69a14033287d8adda09c7584de37",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c"
+        },
+        {
+          "path": ".demo-artifacts/setup-edit-ledger/status-3d7e81dc.json",
+          "sha256": "e5e8c3d4a9ef941fc5f1b26062494d378febae9a4838a0f6d8b6ae7e0728316c",
+          "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b"
+        },
+        {
+          "path": ".demo-artifacts/operational-window-ledger/status-2d988e34.json",
+          "sha256": "3fa6ae7f8796a1e82d038bbd7555f8754205395ac8cfe83337b104ec06a55c4d",
+          "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95"
+        },
+        {
+          "path": ".demo-artifacts/response-cylinder-ledger/status-1cea8e2b.json",
+          "sha256": "769abbca7d5dec89b703ed52afdb92e2d353b076012b8490c53a162a7da1a45e",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        },
+        {
+          "path": ".demo-artifacts/navigation-caption-ledger/status-34161b6d.json",
+          "sha256": "5ed08c94a1b379cdac0454e45cb3470a4cf7b7a0a60b90dea7ea06e88bf3ca0e",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/status-e46a388f.json",
+          "sha256": "de28615b813c3c9c480b8b786beaa3464943418a50794449c6e25f7193bbe30d",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/status-0afebba9.json",
+          "sha256": "e8adf3b398bb7dbf0e1ba3624a5de397fc4aca46b5b2acabaf5aa9852cdb86cb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7"
+        },
+        {
+          "path": ".demo-artifacts/markdown-lifetime-ledger/status-35e676aa.json",
+          "sha256": "667e04253ceba4d6b2262e308c0d9381555a0c53a06facd425c999ec79488d1e",
+          "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/status-8f0bbcda.json",
+          "sha256": "562e1869213851489babbd5e1f10be5c7bbd97dcf2379ffde3eead55ffac7ba5",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        }
+      ],
+      "staticEvidence": [
+        {
+          "path": ".demo-artifacts/shared-support-ledger/api-report.json",
+          "sha256": "ed9145ff203fdfded69ecd2faa671e2d84995eaae3457df566e56f812e0bcbf5"
+        },
+        {
+          "path": ".demo-artifacts/shared-support-ledger/static-report.json",
+          "sha256": "997c8bce8a580bf02a7426a93eace0c3a7ad47a64767aae0c8eb6f4083d05629"
+        },
+        {
+          "path": ".demo-artifacts/shared-support-ledger/OW4-original-capture.json",
+          "sha256": "90d441ede58a3e961121f6c104fa2e026b0aeb2827b518d3ecc3e06a52c8e1cf"
+        }
+      ],
+      "intentionalCanonicalDeviation": {
+        "sourcePortCommit": "8a05278b842cc4dd80c0d0913c576208e17eabb9",
+        "correctionCommit": "d47f4dc54d23956becbc898f6d61e490a385075a",
+        "appliesTo": "Canonical shared core consumed by both Svelte and React; wrappers and caller unchanged.",
+        "review": {
+          "originalPanelSha256": "0695b5e390b30ef80c32bb8e433b378e9ad5028df925171271f5dd62dd97cf26",
+          "previousCoreSha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+          "coreSha256": "18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c",
+          "exactInverseToPort": true,
+          "portExtractsOriginal": true,
+          "unchangedTypesImportsReturnedApiWritePhase": true,
+          "scope": "Intentional shared canonical correction for both renderers: subtract owned scrollport top at capture and correction, with document scrollport top0. Existing same-scrollTop guard, measured-scale conversion and correction-adjusted anchor write phase unchanged. Source/runtime equivalence is not claimed; OW3 End is not repaired by this proof."
+        },
+        "limits": "No new DOM or scrolling execution; exact inverse retains original sourcePort8a/003 profiles, not runtime equivalence. OW3 End and OW4 capture failures remainOPEN.",
+        "nativeCorrectionVerified": false
+      },
+      "agentReadExtraction": {
+        "review": {
+          "originalFacadeSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "facadeSha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "factorySha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "bodyPreservation": [
+            {
+              "name": "loadAgentSessionSaga",
+              "sha256": "147effbd162907f041ed2a83ab2cf7f7642d899da57de6c7b73fad25ac092dfa",
+              "equal": true
+            },
+            {
+              "name": "matchesWorkspaceCleanup",
+              "sha256": "e7aa3feca0f8880956821ec78b72cbaebf125b3ee50c684d570019af0074c070",
+              "equal": true
+            },
+            {
+              "name": "matchesLaterAgentEnsure",
+              "sha256": "41f5ac6fcdb19af4d0c7804dd6c3ce6c8bdad4ab545bd1ac62ce0bf6ace536bd",
+              "equal": true
+            },
+            {
+              "name": "loadAgentSessionWorker",
+              "sha256": "5e392b2f37eb9e5d09955e98390d93a66e106b5401ffe3993e3a2e76bc11a3cf",
+              "equal": true
+            },
+            {
+              "name": "agentReadSaga",
+              "sha256": "af436ebaae9ab3b5dbb6cd3521b0ce609a49058962cc7daf1c2a423c39eaeb7e",
+              "equal": true
+            }
+          ],
+          "emittedFiveBodiesEqual": true,
+          "mandatoryDependencies": [
+            {
+              "name": "readAgentSession",
+              "type": "(agentId: string, workspaceId?: string) => Promise<AgentSession | null>"
+            },
+            {
+              "name": "selectAgentSession",
+              "type": "{\n    effect: StoreSelectorEffect<AgentSession | undefined, [agentId: string]>;\n  }"
+            },
+            {
+              "name": "cleanupDeletedAgentTabs",
+              "type": "(wsId: string, agentId: string) => SagaGenerator<void>"
+            }
+          ],
+          "sourceRootSha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+          "reactRootSha256": "2e49d3dca6d66fb49fbee6d93ad185d6ec264e37f85ca2590f6876f123539b58",
+          "sourceRootRegistrations": 1,
+          "reactActivated": false,
+          "compatibilitySunset": "Svelte renderer retirement",
+          "scope": "Reuses canonical worker/actions/selectors/helpers with host dependencies; no new Redux state, action or parallel receiver. Mandatory cleanup type does not prove future host behavior; no React binding/activation added."
+        },
+        "reactActivation": false,
+        "mandatoryHostPrerequisites": [
+          "Real cleanup bound to canonical panel/tab receivers and real clear-agent-tabs transport.",
+          "Explicit admitted React host lifetime with pre-admission requests, context replacement/revocation, workspace teardown, supersession and cleanup before root registration."
+        ],
+        "scope": "Static canonical extraction only. Existing source facade supplies real read, selector.effect and deleted-tab cleanup. Source root registration unchanged; no no-op host or parallel watcher. Type contract alone cannot prove future host behavior."
+      },
+      "historicalOperationalRuns": [
+        {
+          "run": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-20-56.090Z-core-Dcm9cF",
+          "case": "operational-window OW1 ",
+          "productCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+          "testCommit": "1a6a28594b5d38840328b5eb9acc7278fdf68089",
+          "exitCode": 0,
+          "errors": [],
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-20-56.090Z-core-Dcm9cF/session.json",
+              "sha256": "bc32acd8200c31d7547daece0f6c53ec61c983567052398e9634d3e735ce33a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-20-56.090Z-core-Dcm9cF/completion.json",
+              "sha256": "8010f2c90926efa21a79875a3b6fab1149e793fd9de8c4352847d267853171ec"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-20-56.090Z-core-Dcm9cF/results.json",
+              "sha256": "278a3b257d443e97c2bac56dfd869dccbccc22d2be1a98747a2a02994cf89850"
+            }
+          ],
+          "scope": "Historical saved receipts only; no new manual image review, native execution or acceptance atd4/d47."
+        },
+        {
+          "run": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-21-44.436Z-core-W2qQQl",
+          "case": "operational-window OW2 ",
+          "productCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+          "testCommit": "1a6a28594b5d38840328b5eb9acc7278fdf68089",
+          "exitCode": 0,
+          "errors": [],
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-21-44.436Z-core-W2qQQl/session.json",
+              "sha256": "e42bd91433ce641b3c0903973c4261cf2b68bb7d4e459aa02987d38c5137f0ec"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-21-44.436Z-core-W2qQQl/completion.json",
+              "sha256": "a2c0f814e9565c139194397bcfd8c5930c5c3b6d31657d4b1fa1fb55fa46d21d"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-21-44.436Z-core-W2qQQl/results.json",
+              "sha256": "54aba4fd60faa43a56b9f8c2da93e4d4c81078e12e42b6ce0a020b64d08b0b63"
+            }
+          ],
+          "scope": "Historical saved receipts only; no new manual image review, native execution or acceptance atd4/d47."
+        },
+        {
+          "run": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-23-19.561Z-core-ZBEQWF",
+          "case": "operational-window OW3 ",
+          "productCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+          "testCommit": "1a6a28594b5d38840328b5eb9acc7278fdf68089",
+          "exitCode": 1,
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1596\u001b[39m\n\nCall Log:\n- Timeout 5000ms exceeded while waiting on the predicate",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1596\u001b[39m\n\nCall Log:\n- Timeout 5000ms exceeded while waiting on the predicate\n    at /home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/tests/operational-window.core.spec.mjs:105:6",
+              "location": {
+                "file": "/home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/tests/operational-window.core.spec.mjs",
+                "column": 6,
+                "line": 105
+              },
+              "snippet": "  103 |       return Math.abs(current.total - current.height - current.top);\n  104 |     })\n> 105 |     .toBeLessThanOrEqual(1);\n      |      ^\n  106 |   const finalOperational = rowByLabel(primary, 'scope-a:second row 59');\n  107 |   await expect(finalOperational).toHaveCount(1);\n  108 |   // The final content row remains outside operational admission; its immediate"
+            }
+          ],
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-23-19.561Z-core-ZBEQWF/session.json",
+              "sha256": "1eab58ff5cddf66fd55a9fbaf179d84ba614ac5ca49052086a5ead3892a971cd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-23-19.561Z-core-ZBEQWF/completion.json",
+              "sha256": "45e5f088b1bd7b399c9b4f63ba3c0ab97401644b32f4112c6becfd59dbe04b33"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-23-19.561Z-core-ZBEQWF/results.json",
+              "sha256": "3d663eaf86c785a40622b54cecc4c0589d77fe6c60d83e920f8b488c80e2223a"
+            }
+          ],
+          "scope": "Historical saved receipts only; no new manual image review, native execution or acceptance atd4/d47.",
+          "retainedEndGap": 1596,
+          "criterionMaximumGap": 1
+        },
+        {
+          "run": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-31-55.547Z-core-mV09oX",
+          "case": "operational-window OW3 ",
+          "productCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+          "testCommit": "f46dcc00bdea13fcc786038d9504b23bdd7dfdd6",
+          "exitCode": 1,
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1428\u001b[39m\n\nCall Log:\n- Timeout 5000ms exceeded while waiting on the predicate",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeLessThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: <= \u001b[32m1\u001b[39m\nReceived:    \u001b[31m1428\u001b[39m\n\nCall Log:\n- Timeout 5000ms exceeded while waiting on the predicate\n    at /home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/tests/operational-window.core.spec.mjs:106:6",
+              "location": {
+                "file": "/home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/tests/operational-window.core.spec.mjs",
+                "column": 6,
+                "line": 106
+              },
+              "snippet": "  104 |       return Math.abs(current.total - current.height - current.top);\n  105 |     })\n> 106 |     .toBeLessThanOrEqual(1);\n      |      ^\n  107 |   const finalOperational = rowByLabel(primary, 'scope-a:second row 59');\n  108 |   await expect(finalOperational).toHaveCount(1);\n  109 |   // The final content row remains outside operational admission; its immediate"
+            }
+          ],
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-31-55.547Z-core-mV09oX/session.json",
+              "sha256": "376e369aa996a8d0d52ca4fb1ea8b1cc528933e13722953b2e4af7afbe12d604"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-31-55.547Z-core-mV09oX/completion.json",
+              "sha256": "1345485d37a65cb121791b261bc54e4da276b919e9604bcbde43654f2012c410"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-31-55.547Z-core-mV09oX/results.json",
+              "sha256": "85e9347bfeaab6eb35e6ff1c5f122a162cd70089e2008051d93582419019c71b"
+            }
+          ],
+          "scope": "Historical saved receipts only; no new manual image review, native execution or acceptance atd4/d47.",
+          "retainedEndGap": 1428,
+          "criterionMaximumGap": 1
+        },
+        {
+          "run": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-33-43.896Z-extended-ZPIOcb",
+          "case": "operational-window OW4 ",
+          "productCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+          "testCommit": "f46dcc00bdea13fcc786038d9504b23bdd7dfdd6",
+          "exitCode": 1,
+          "errors": [
+            {
+              "message": "Error: Capture context changed on attempt 1 at http://127.0.0.1:5368/sandbox/operational-window?example=interactive&theme=light&motion=reduced&width=420: targetDocumentBounds.y. No later frame was attempted or accepted.",
+              "stack": "Error: Capture context changed on attempt 1 at http://127.0.0.1:5368/sandbox/operational-window?example=interactive&theme=light&motion=reduced&width=420: targetDocumentBounds.y. No later frame was attempted or accepted.\n    at stableLocatorScreenshot (/home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/lib/browser.mjs:329:13)\n    at capture (/home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/lib/operational-window.mjs:456:15)\n    at /home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/tests/operational-window.extended.spec.mjs:62:3",
+              "location": {
+                "file": "/home/sam/intent/workspaces/system-design/cloudlands-fe/packages/view-parity/lib/browser.mjs",
+                "column": 13,
+                "line": 329
+              },
+              "snippet": "\u001b[90m   at \u001b[39m../lib/browser.mjs:329\n\n  327 |     // Matching PNGs cannot establish stability when capture itself changes the context.\n  328 |     if (changes.length)\n> 329 |       throw new Error(\n      |             ^\n  330 |         `Capture context changed on attempt ${attempt + 1} at ${page.url()}: ${changes.join(\", \")}. No later frame was attempted or accepted.`,\n  331 |       );\n  332 |     if (previous?.equals(png)) return png;"
+            }
+          ],
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-33-43.896Z-extended-ZPIOcb/session.json",
+              "sha256": "340e6a064b8c0d11a63b62d204af719472e3e8523335b5a92e19a2c63a11141c"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-33-43.896Z-extended-ZPIOcb/completion.json",
+              "sha256": "5f8aa78c73e1e6b19f4b94950708b2806b29921f61869fb691d266ae5b656322"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/operational-window-native/2026-10-12T07-33-43.896Z-extended-ZPIOcb/results.json",
+              "sha256": "a6cf51a8e5838bf1905118fe9df676cd756f9d6792f26c9f01f0c2fcb4bfa39b"
+            }
+          ],
+          "scope": "Historical saved receipts only; no new manual image review, native execution or acceptance atd4/d47.",
+          "retainedCaptureDisplacement": 164,
+          "captureEvidence": {
+            "path": ".demo-artifacts/shared-support-ledger/OW4-original-capture.json",
+            "sha256": "90d441ede58a3e961121f6c104fa2e026b0aeb2827b518d3ecc3e06a52c8e1cf"
+          },
+          "capture": {
+            "attempt": 1,
+            "before": {
+              "scrollX": 0,
+              "scrollY": 776,
+              "layoutViewport": {
+                "width": 420,
+                "height": 900,
+                "clientWidth": 420,
+                "clientHeight": 900
+              },
+              "visualViewport": {
+                "width": 420,
+                "height": 900,
+                "offsetLeft": 0,
+                "offsetTop": 0,
+                "pageLeft": 0,
+                "pageTop": 776,
+                "scale": 1
+              },
+              "targetDocumentBounds": {
+                "x": 24,
+                "y": 1430,
+                "width": 372,
+                "height": 32
+              },
+              "activeFocus": {
+                "tag": "BUTTON",
+                "id": "",
+                "path": "HTML:0/BODY:1/DIV:0/DIV:0/DIV:0/MAIN:2/ARTICLE:0/SECTION:0/SECTION:12/DIV:0/SECTION:1/DIV:1/DIV:0/DIV:0/DIV:0/BUTTON:4"
+              }
+            },
+            "after": {
+              "scrollX": 0,
+              "scrollY": 776,
+              "layoutViewport": {
+                "width": 420,
+                "height": 900,
+                "clientWidth": 420,
+                "clientHeight": 900
+              },
+              "visualViewport": {
+                "width": 420,
+                "height": 900,
+                "offsetLeft": 0,
+                "offsetTop": 0,
+                "pageLeft": 0,
+                "pageTop": 776,
+                "scale": 1
+              },
+              "targetDocumentBounds": {
+                "x": 24,
+                "y": 1594,
+                "width": 372,
+                "height": 32
+              },
+              "activeFocus": {
+                "tag": "BUTTON",
+                "id": "",
+                "path": "HTML:0/BODY:1/DIV:0/DIV:0/DIV:0/MAIN:2/ARTICLE:0/SECTION:0/SECTION:12/DIV:0/SECTION:1/DIV:1/DIV:0/DIV:0/DIV:0/BUTTON:4"
+              }
+            },
+            "changes": ["targetDocumentBounds.y"],
+            "sha256": "8bd87ec7492374ac62e86422ef5a32e0f25dc323292c434d25249b4abf95ab1a"
+          },
+          "retainedRawPngSha256": "8bd87ec7492374ac62e86422ef5a32e0f25dc323292c434d25249b4abf95ab1a"
+        }
+      ],
+      "historicalNavigation": {
+        "case": "NC12",
+        "productCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+        "testCommit": "b34fb99f4e4a256399c542d02f7283d3d0b0a6a4",
+        "exitCode": 0,
+        "evidence": [
+          {
+            "path": ".demo-artifacts/view-parity/navigation-content-native/native-verification-index.json",
+            "sha256": "e3f62cbed9ebce5b03a237dd563ce75dc51829abf79fea06956371d846b6cb64"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/navigation-content-native/2026-10-12T07-39-53.040Z-extended-mk8zIT/session.json",
+            "sha256": "2f0ec73f9023f4a487dd2bbe5888aec879a46f29597c4b564ab8d109fa06129b"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/navigation-content-native/2026-10-12T07-39-53.040Z-extended-mk8zIT/completion.json",
+            "sha256": "f5758d6bc2ebc4fe4a4f970a6b950cccf162aefa5ee4ad8983cf92f5855a0491"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/navigation-content-native/2026-10-12T07-39-53.040Z-extended-mk8zIT/manual-review.json",
+            "sha256": "a72db07d7d9d5ce524ffd46db00bb95a64f14b468f764748e8f15890882698be"
+          }
+        ],
+        "scope": "Bounded owner-reported native/manual PASS on341/b34 retained only; no acceptance transfer to d4."
+      },
+      "ownerEvidence": {
+        "agentRead": [
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/gate-manifest.json",
+            "sha256": "91dca12a7c5695e27407bc89105764d1d8d541e49f7a09d91c7cb7db619fec34"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/architecture.json",
+            "sha256": "3932ec9ff1bbba425220f7901cb65794a8fd66fae08e55c5dcfaab44d59390cf"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/architecture.log",
+            "sha256": "14fc1972b758d8bf7f9cf7abdce9cbc0694776f940cda783e6bff480fe5e06ac"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/build-config.json",
+            "sha256": "d28d87aea3bdf91d08b4fab45dba055329e48837f7613850b0be9384038a12da"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/build-config.log",
+            "sha256": "9a6081f71c4dd27aeb77a3799c70a2544a8157ad92f3f7981e48f5165d7cf8c5"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/bundle-metafile.json",
+            "sha256": "4b20c065bc628683c03cf6e4a0e2ca658b6944a83f0846ee2835caf583e8ad6a"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/cheatsheet.json",
+            "sha256": "bb9b43b2e55b6df09eab9fb9af254bac0eee4bbcbe96814334254f3f56a265de"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/cheatsheet.log",
+            "sha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/dead-code.json",
+            "sha256": "9bc70c98e6088ea5504b272eb1e30dac25d138f3aebe075f66f57854fd3ee0eb"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/dead-code.log",
+            "sha256": "e8bf9fd2f239b045db0872189ba00400a2ca68282ad45ce8405ba61343934f71"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/emitted-body-proof.json",
+            "sha256": "cc5513c215e170d325b3589ec9191047aec65722dc9ab576bde408fb0b604862"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/emitted-import-proof.json",
+            "sha256": "3fa88826e0402a747dc5394f7c49f78c82778f1e6b2ab5bd66c8c45631802058"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/focused-saga-command-error.json",
+            "sha256": "d97a451a18b6450102fc67ea5420f1c7872c0e2b28895aff45fa764fcc1503f6"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/focused-saga-command-error.log",
+            "sha256": "ea78422db6df37e0113b96aa0445918c7d4d072a3d5c1a1869ed8893a3397cdf"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/focused-saga.json",
+            "sha256": "12aff5b3cfb9e60a4ecd5042f4a231d210b2dc8d184ba32df9086302acfd5536"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/focused-saga.log",
+            "sha256": "4db9cc1dacf535e2c0f4cce194b8525628ba6863a84131c30cab158570092af5"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/ipc-generation.json",
+            "sha256": "30d6e4dfcc4346994c9c52a55d478ef9b11d9688eef149f0cb476b61f92426dc"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/ipc-generation.log",
+            "sha256": "2bfa488c9d6825755f98b90e0a63a291b463383f757f01f70204ae1ba8fd8dda"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/main-types.json",
+            "sha256": "df0c8646242da8ffebf95a3740440251f57d5ab1558e40e26edb1c2d20f62fdf"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/main-types.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/preload-types.json",
+            "sha256": "53605c4664f4e2fe30c63f645b8380eb026e893a6d38fd069a716488cb4e40d7"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/preload-types.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/preservation-closure.json",
+            "sha256": "39c5656d8489a9189c90bdee8af07176204819561388de2665b8028937aabdea"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/published-static-proof.json",
+            "sha256": "e35ca413b30222a0e129233fde4ba605b848891985701378bd049e97f15ec4ae"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/published-static-proof.log",
+            "sha256": "3dd7813a0b26cbb6257e9462dadd1960ef98c7af3e8bc3b1f07199c2cc34ae2a"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/react-types.json",
+            "sha256": "3976f28a0cb50530d7cc3f8775f39173935cef59aec9628edecb43b8eccd8c3d"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/react-types.log",
+            "sha256": "dae9f56c542ace4ea08d5a527d5a3158e8eec9e0ce28176f56513c3ef8a5e919"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/scoped-browser-compilation-import-error.json",
+            "sha256": "39167f2987a5a1b5007c68c4518c0a59b469f6fed7c609b883ed0ab41ef2a405"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/scoped-browser-compilation-import-error.log",
+            "sha256": "d5f37e64742eeefe66887e416c3365ea8e93707ed19421484da066bace8baada"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/scoped-browser-compilation.json",
+            "sha256": "4ca10a16723f55a76950c59f95f451687ef2f53894327f74b9cc5dc491e1ced9"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/scoped-browser-compilation.log",
+            "sha256": "3fa88826e0402a747dc5394f7c49f78c82778f1e6b2ab5bd66c8c45631802058"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/source-format.json",
+            "sha256": "63287072b15fc59f40bc67ca79e28d62f572d17a65b9d48a93c7c680055d1b66"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/source-format.log",
+            "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/source-lint.json",
+            "sha256": "f8533409820463ffdafe682a96a360af200ae648870b0b1dcae10a9029c2dd96"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/source-lint.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/source-types.json",
+            "sha256": "2d3afd04d45c7308ea4a9b7464c1f3bb16cbfc230ab1630ea94e60edf9b882fe"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/source-types.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/static-proof.json",
+            "sha256": "fa262cb1a8ab0af68c52081a39fefc268d0264b8e49eb0998864105f8911dcb9"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/static-proof.log",
+            "sha256": "ba8877f49cc2ca75ce8e13fadaaa29b706cf55a2a40e9001f157f145ca0c30e2"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/svelte-check.json",
+            "sha256": "1c06b31c862971de189ac9220b4639f76b96c8a42c5ed11914a45425074df89d"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/published-checks/svelte-check.log",
+            "sha256": "52b112a79ec2089478db3e93d18109770c35089bfc10153ca7f9f0f546bf9dfc"
+          },
+          {
+            "path": ".demo-artifacts/agent-detail-ensure/ignored-preparation/api-proof.json",
+            "sha256": "7a13fad00de13570f4f759c8e8a8571498461b82c34424096ad4702351e537fa"
+          }
+        ],
+        "operational": [
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/publication-receipt.json",
+            "sha256": "94800491740d6ce77f839342b31ca334e3ff6ce36ba020e113bfa71395f06abb"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/publication-audit.json",
+            "sha256": "6ea2a0ceaab70a3bf6206a660d7332cb1b834f5e25a49aa0351211314e51b8b2"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/draft.diff",
+            "sha256": "6609eeffed90d2cf1d5b435f866267a2d9fad1d8fd68492d1766ecf5e4e919c0"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/architecture.log",
+            "sha256": "b1a4ddbc92998737c199a0f8cce31cc2716d97f915f805efc31c58db32d804ca"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/cheatsheet.log",
+            "sha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/dead-code.log",
+            "sha256": "9a65b34ae31f405ac4f28371e49e3449d931a99e78b4dfa56725d37459a71b55"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/eslint.log",
+            "sha256": "834d34a3eb78edf3ce031c897ed72d20a2ca81b54bca605487f40b0e87677e78"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/format.log",
+            "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/main-types.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/preload-types.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/publication-audit.log",
+            "sha256": "6ea2a0ceaab70a3bf6206a660d7332cb1b834f5e25a49aa0351211314e51b8b2"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/react-full.log",
+            "sha256": "245bc60e653df97563c4f20d616630ca88e1b90028bd4f7e18368156a80a3ac6"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/react-scoped.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/source-types.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": ".demo-artifacts/operational-panel/ancestor-coordinate/svelte-check.log",
+            "sha256": "9045dafefffc44798920befc976ae25b1667c6b8c5311a9d5b4543e2b9b1aec0"
+          }
+        ]
+      },
+      "ownerGateProvenance": {
+        "agentRead": {
+          "timestamp": "2026-10-12T07:46:55.713932+00:00",
+          "branch": "feat/react-design-system",
+          "precommitHead": "5aa48bbfb8d517a2b00e3b36e06cc42b433537f3",
+          "publicationBase": "d47f4dc54d23956becbc898f6d61e490a385075a",
+          "ownedFiles": [
+            {
+              "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+              "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee"
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+              "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3"
+            }
+          ],
+          "gateResults": [
+            {
+              "gate": "architecture",
+              "command": ["pnpm", "run", "lint:architecture"],
+              "startedAt": "2026-10-12T07:45:06.473639+00:00",
+              "finishedAt": "2026-10-12T07:46:20.472030+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "build-config",
+              "command": ["pnpm", "run", "generate:build-config"],
+              "startedAt": "2026-10-12T07:44:55.219169+00:00",
+              "finishedAt": "2026-10-12T07:44:55.380630+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "cheatsheet",
+              "command": ["pnpm", "run", "lint:design-cheatsheet"],
+              "startedAt": "2026-10-12T07:45:23.066852+00:00",
+              "finishedAt": "2026-10-12T07:45:23.631168+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "dead-code",
+              "command": ["pnpm", "run", "lint:dead-code"],
+              "startedAt": "2026-10-12T07:45:49.631942+00:00",
+              "finishedAt": "2026-10-12T07:45:56.702645+00:00",
+              "exitCode": 1
+            },
+            {
+              "gate": "focused-saga",
+              "command": [
+                "pnpm",
+                "run",
+                "test:unit",
+                "--",
+                "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.test.ts"
+              ],
+              "startedAt": "2026-10-12T07:45:06.471138+00:00",
+              "finishedAt": "2026-10-12T07:45:06.651989+00:00",
+              "exitCode": 2
+            },
+            {
+              "gate": "focused-saga",
+              "command": [
+                "pnpm",
+                "run",
+                "test:unit",
+                "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.test.ts",
+                "--maxWorkers=1"
+              ],
+              "startedAt": "2026-10-12T07:45:21.914696+00:00",
+              "finishedAt": "2026-10-12T07:45:29.137050+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "ipc-generation",
+              "command": ["pnpm", "run", "generate:ipc-channels"],
+              "startedAt": "2026-10-12T07:44:55.408001+00:00",
+              "finishedAt": "2026-10-12T07:44:55.856808+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "main-types",
+              "command": ["pnpm", "exec", "tsc", "-p", "tsconfig.main.json", "--noEmit"],
+              "startedAt": "2026-10-12T07:45:31.933967+00:00",
+              "finishedAt": "2026-10-12T07:45:39.703256+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "preload-types",
+              "command": ["pnpm", "exec", "tsc", "-p", "tsconfig.preload.json", "--noEmit"],
+              "startedAt": "2026-10-12T07:45:31.933182+00:00",
+              "finishedAt": "2026-10-12T07:45:32.565050+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "published-static-proof",
+              "command": [
+                "node",
+                ".demo-artifacts/agent-detail-ensure/published-checks/static-proof.cjs"
+              ],
+              "startedAt": "2026-10-12T07:45:49.413725+00:00",
+              "finishedAt": "2026-10-12T07:45:49.601927+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "react-types",
+              "command": ["pnpm", "run", "check:react"],
+              "startedAt": "2026-10-12T07:45:06.471672+00:00",
+              "finishedAt": "2026-10-12T07:45:10.263915+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "scoped-browser-compilation",
+              "command": [
+                "node",
+                ".demo-artifacts/agent-detail-ensure/published-checks/compile-proof.mjs"
+              ],
+              "startedAt": "2026-10-12T07:45:49.630502+00:00",
+              "finishedAt": "2026-10-12T07:45:49.648203+00:00",
+              "exitCode": 1
+            },
+            {
+              "gate": "scoped-browser-compilation",
+              "command": [
+                "node",
+                ".demo-artifacts/agent-detail-ensure/published-checks/compile-proof.mjs"
+              ],
+              "startedAt": "2026-10-12T07:46:05.593250+00:00",
+              "finishedAt": "2026-10-12T07:46:06.260832+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "source-format",
+              "command": [
+                "pnpm",
+                "exec",
+                "prettier",
+                "--check",
+                "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+                "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts"
+              ],
+              "startedAt": "2026-10-12T07:45:23.066836+00:00",
+              "finishedAt": "2026-10-12T07:45:23.381634+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "source-lint",
+              "command": [
+                "pnpm",
+                "exec",
+                "eslint",
+                "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+                "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts"
+              ],
+              "startedAt": "2026-10-12T07:45:06.473855+00:00",
+              "finishedAt": "2026-10-12T07:45:07.233627+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "source-types",
+              "command": ["pnpm", "exec", "tsc", "-p", "tsconfig.json", "--noEmit"],
+              "startedAt": "2026-10-12T07:45:06.469367+00:00",
+              "finishedAt": "2026-10-12T07:45:27.506800+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "static-proof",
+              "command": [
+                "node",
+                ".demo-artifacts/agent-detail-ensure/published-checks/static-proof.cjs"
+              ],
+              "startedAt": "2026-10-12T07:45:23.066977+00:00",
+              "finishedAt": "2026-10-12T07:45:23.316169+00:00",
+              "exitCode": 0
+            },
+            {
+              "gate": "svelte-check",
+              "command": ["pnpm", "run", "check"],
+              "startedAt": "2026-10-12T07:45:31.933636+00:00",
+              "finishedAt": "2026-10-12T07:46:12.761432+00:00",
+              "exitCode": 0
+            }
+          ],
+          "deadCodeOwnedPathsMentioned": false,
+          "fullApplicationBuild": false,
+          "scopedFactoryBrowserCompilation": true
+        },
+        "operationalChecks": [
+          {
+            "command": ["corepack", "pnpm", "run", "lint:architecture"],
+            "startedAt": "2026-10-12T07:42:30.772Z",
+            "finishedAt": "2026-10-12T07:43:39.768Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/architecture.log",
+            "logSha256": "b1a4ddbc92998737c199a0f8cce31cc2716d97f915f805efc31c58db32d804ca"
+          },
+          {
+            "command": ["corepack", "pnpm", "run", "lint:design-cheatsheet"],
+            "startedAt": "2026-10-12T07:42:30.767Z",
+            "finishedAt": "2026-10-12T07:42:31.596Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/cheatsheet.log",
+            "logSha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+          },
+          {
+            "command": ["corepack", "pnpm", "run", "lint:dead-code"],
+            "startedAt": "2026-10-12T07:42:30.765Z",
+            "finishedAt": "2026-10-12T07:42:40.676Z",
+            "exit": 1,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/dead-code.log",
+            "logSha256": "9a65b34ae31f405ac4f28371e49e3449d931a99e78b4dfa56725d37459a71b55"
+          },
+          {
+            "command": [
+              "corepack",
+              "pnpm",
+              "exec",
+              "eslint",
+              "--no-cache",
+              "src/lib/components/chat/operational-panel-core.ts"
+            ],
+            "startedAt": "2026-10-12T07:42:30.776Z",
+            "finishedAt": "2026-10-12T07:42:31.847Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/eslint.log",
+            "logSha256": "834d34a3eb78edf3ce031c897ed72d20a2ca81b54bca605487f40b0e87677e78"
+          },
+          {
+            "command": [
+              "corepack",
+              "pnpm",
+              "exec",
+              "prettier",
+              "--check",
+              "src/lib/components/chat/operational-panel-core.ts"
+            ],
+            "startedAt": "2026-10-12T07:42:30.759Z",
+            "finishedAt": "2026-10-12T07:42:31.379Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/format.log",
+            "logSha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+          },
+          {
+            "command": ["corepack", "pnpm", "exec", "tsc", "-p", "tsconfig.main.json", "--noEmit"],
+            "startedAt": "2026-10-12T07:42:30.759Z",
+            "finishedAt": "2026-10-12T07:42:38.160Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/main-types.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "command": [
+              "corepack",
+              "pnpm",
+              "exec",
+              "tsc",
+              "-p",
+              "tsconfig.preload.json",
+              "--noEmit"
+            ],
+            "startedAt": "2026-10-12T07:42:30.760Z",
+            "finishedAt": "2026-10-12T07:42:31.707Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/preload-types.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "command": [
+              "node",
+              ".demo-artifacts/operational-panel/ancestor-coordinate/publication-audit.cjs"
+            ],
+            "startedAt": "2026-10-12T07:42:55.067Z",
+            "finishedAt": "2026-10-12T07:42:56.095Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/publication-audit.log",
+            "logSha256": "6ea2a0ceaab70a3bf6206a660d7332cb1b834f5e25a49aa0351211314e51b8b2"
+          },
+          {
+            "command": ["corepack", "pnpm", "--filter", "@intent/react", "typecheck"],
+            "startedAt": "2026-10-12T07:42:30.756Z",
+            "finishedAt": "2026-10-12T07:42:35.707Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/react-full.log",
+            "logSha256": "245bc60e653df97563c4f20d616630ca88e1b90028bd4f7e18368156a80a3ac6"
+          },
+          {
+            "command": [
+              "apps/react/node_modules/.bin/tsc",
+              "-p",
+              ".demo-artifacts/operational-panel/tsconfig.scope.json",
+              "--noEmit"
+            ],
+            "startedAt": "2026-10-12T07:42:30.756Z",
+            "finishedAt": "2026-10-12T07:42:30.871Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/react-scoped.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "command": ["corepack", "pnpm", "exec", "tsc", "-p", "tsconfig.json", "--noEmit"],
+            "startedAt": "2026-10-12T07:42:30.756Z",
+            "finishedAt": "2026-10-12T07:42:55.010Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/source-types.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "command": ["corepack", "pnpm", "run", "check"],
+            "startedAt": "2026-10-12T07:42:30.776Z",
+            "finishedAt": "2026-10-12T07:43:15.812Z",
+            "exit": 0,
+            "signal": null,
+            "log": ".demo-artifacts/operational-panel/ancestor-coordinate/svelte-check.log",
+            "logSha256": "9045dafefffc44798920befc976ae25b1667c6b8c5311a9d5b4543e2b9b1aec0"
+          }
+        ],
+        "deadCode": "588 unsuppressed; no base comparison or CI-green claim. Earlier589/584/etc retained.",
+        "scope": "Owner logs and hashes inspected, not rerun by ledger auditor; reported focused existing10-test result is historical source-owner evidence only, not new native/modelled/runtime acceptance."
+      },
+      "nativeCorrectionStatus": "Corrected d47/5375 candidate built/file-ready only at assignment; unrun. OW3 both1596/1428 and OW4ZPIOcb164 capture failure remainOPEN. No React agent-read activation.",
+      "retainedHistory": {
+        "ledgerCommit": "dffc53dd313920bf54504dae254a319ec4ff4f68",
+        "ledgerSha256": "02c711c88289479e9a7eb04dfb24659c62f45e5ca047e9b09d7803538c1f14f3",
+        "preservedReviewCount": 90,
+        "meaning": "Full old1890rows/236mappings/230targets/90reviews/audits/history/limits/cases/29receipts and4oldcorecitations retained exactly. Original operational sourcePort8a and all actual runtime pins remain historical, not refreshed by commoncandidate update."
+      },
+      "testHandoff": {
+        "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+        "status": "not-run",
+        "scope": "No native, mock, discovery, browser, server, service or Store execution by this auditor. Owner source tests/build/types are retained provenance only; no liveReact agent hydration/cleanup/activation or current anchor acceptance."
+      },
+      "sourceDriftPolicy": "003/inventory1430/1890 fixed.19CLI invalidations retained; this review separately flags3support paths beyond inventory. Neither original helper extraction nor historical source/native review silently blesses the new shared anchoring algorithm.",
+      "skillCompliance": {
+        "guidance": [
+          ".agents/skills/themis/core/verifier/SKILL.md",
+          ".agents/skills/themis/core/core-policy/SKILL.md",
+          ".agents/skills/themis/core/state-integrity/SKILL.md",
+          ".agents/skills/themis/core/sagas/SKILL.md",
+          ".agents/skills/themis/core/import-boundaries/SKILL.md",
+          "node_modules/@themislib/themis/docs/ARCHITECTURE.md",
+          "node_modules/@themislib/themis/docs/SAGAS.md"
+        ],
+        "findings": "Instruction compliance evidence present for static scope. Reuses canonical state/actions/selectors/helpers; no new Redux state or duplicated utility/watcher. Typed effects retain yield*, named selector.effect and action-creator watcher. Sole source registration verified. Source facade is justified real dependency compatibility binding until Svelte renderer retirement. Public StoreSelectorEffect type and SagaGenerator; runtime closure47files110edges without configuredStore/Svelte dependencies. Owner architecture/source lint receipts retained; no newly run source tests per explicit ledger-only assignment."
+      },
+      "excludedLaterWork": "Any later root activation/cleanup/admission or new component ports, candidate/nativeruns and moving sharedHEAD remain outsidefinald4. No guard/config/baseline edits.",
+      "userHelpImpact": "Internal unreleased migration supporting audit; no released assistant-help impact."
     }
   },
   "sources": {
@@ -127621,6 +129792,116 @@
         "detected-scripts-and-neutral-indicator-0afebba9",
         "markdown-image-owner-correction-35e676aa"
       ]
+    },
+    {
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T07:23:03.385162+00:00",
+      "checkpointAdvance": {
+        "previousLedgerCommit": "774fddd6979970238bd3799cdc178bcae839bf2b",
+        "previousAuditCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+        "unchangedUniqueDirectTargets": 230,
+        "changedUniqueDirectTargets": 0,
+        "retainedHistoricalReviewCount": 89,
+        "meaning": "Common validation pin only; all mapping rows and their actual inspected/source/support/native pins unchanged. Add supporting-only CSS provenance; Toast remains unmapped."
+      },
+      "ledgerCommit": "dffc53dd313920bf54504dae254a319ec4ff4f68",
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10",
+        "chat-transcript-markers-fe630",
+        "chat-transcript-notices-fe630",
+        "chat-disclosure-rows-fb515",
+        "chat-recovery-notices-fb515",
+        "chat-stream-metadata-3230",
+        "chat-history-attribution-3230",
+        "chat-disclosure-corrections-3230",
+        "chat-queued-actions-command-3e894",
+        "chat-code-reference-context-4bfa",
+        "chat-inline-mcp-prompt-preview-9d297",
+        "queued-attachments-0a010",
+        "tabs-export-correction-0a010",
+        "streaming-status-840763",
+        "mcp-inline-font-correction-840763",
+        "suggested-chief-prompts-16ee80",
+        "automated-wake-header-f2b2a2",
+        "agent-pr-attribution-headers-73da5529",
+        "attachment-permission-support-05cc7db6",
+        "attachment-file-replacement-ff9a4e35",
+        "inline-permission-and-live-support-6a51a3da",
+        "media-and-markdown-composition-dd6e5720",
+        "full-markdown-and-reasoning-68a5ca85",
+        "chat-image-and-video-wrapper-561fa08c",
+        "message-actions-and-transcript-cards-2d310fed",
+        "setup-script-and-edit-confirmation-3d7e81dc",
+        "operational-window-and-panel-2d988e34",
+        "response-group-and-cylinder-1cea8e2b",
+        "navigation-excerpt-and-image-caption-34161b6d",
+        "response-group-reaction-correction-e46a388f",
+        "detected-scripts-and-neutral-indicator-0afebba9",
+        "markdown-image-owner-correction-35e676aa",
+        "static-toast-containment-support-8f0bbcda"
+      ]
     }
   ],
   "receipts": {
@@ -132485,6 +134766,77 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "Original003/inventory1430/1890 unchanged. All19invalidations and original inspected/source profiles retained. CSS supporting-only correction adds no source-map or denominator unit."
+    },
+    {
+      "id": "canonical-anchor-and-agent-read-support-d4abc96f",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "previousLedgerCommit": "dffc53dd313920bf54504dae254a319ec4ff4f68",
+      "previousCommonCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "reviewedAt": "2026-10-12T07:50:10.815187+00:00",
+      "method": "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved.",
+      "counts": {
+        "addedMappings": 0,
+        "addedSvelteComponents": 0,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "mappedViews": 236,
+        "mappedSvelteComponents": 231,
+        "mappedSvelteReactivityModules": 5,
+        "views": {
+          "unmapped": 1194,
+          "partial": 178,
+          "implemented": 58
+        }
+      },
+      "sourcePaths": [],
+      "targetedExistingSourcePaths": [],
+      "newUniqueDirectTargetCount": 0,
+      "priorUniqueDirectTargetCount": 230,
+      "allUniqueDirectTargetCount": 230,
+      "priorDirectTargetIdentity": {
+        "count": 230,
+        "unchanged": 230,
+        "changed": [],
+        "orderedPathAndHashSha256": "682b2051be5da1bf3bc5f36ff0a9e4a1cd234e82b4459a04732daccfeeea7d7a"
+      },
+      "supportDelta": [
+        {
+          "path": "src/lib/components/chat/operational-panel-core.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "18e4e0ce6e67b7c9311027579de1307c21581d1fbf4cf02b72f3ad52f4f11c2c",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": "21cb0aef67372a5c6aaeec60490c1d74114cbe46665043f17ec407021cf55c87",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "previousSha256": null,
+          "change": "added",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        }
+      ],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "003/inventory1430/1890 fixed.19CLI invalidations retained; this review separately flags3support paths beyond inventory. Neither original helper extraction nor historical source/native review silently blesses the new shared anchoring algorithm."
     }
   ]
 }
