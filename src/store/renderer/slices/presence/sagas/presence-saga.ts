@@ -27,7 +27,8 @@
  * of every open SHARED workspace tab (`memberCount > 1`) are read from
  * `workspace.members.list` (Member+) — on attach, when such a tab opens and
  * whenever the daemon's `workspace:updated` flags `members` or moves its
- * `memberCount`. Presence/typing pushes never invalidate membership. Reads
+ * `memberCount`. Hosts advertising workspaceMembershipEvents=1 need no roster
+ * invalidation; older hosts retain it for offline same-count role changes. Reads
  * are fenced like the snapshots (a backend switch or a newer read of the
  * same workspace supersedes).
  *
@@ -67,7 +68,7 @@ import {
   takeLatestInContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -384,11 +385,14 @@ function onMembershipKeysChanged(reads: RosterReads) {
 }
 
 type MembershipNotification =
-  ReturnType<typeof presenceMembershipChanged> | ReturnType<typeof presenceWorkspaceRemoved>;
+  | ReturnType<typeof presenceMembershipChanged>
+  | ReturnType<typeof presenceWorkspaceRemoved>
+  | ReturnType<typeof presenceRosterReceived>;
 type MembershipRefresh = { workspaceId: string; cancel: boolean };
 
 function membershipNotificationWorkspace(action: MembershipNotification): string {
-  return action.payload[0];
+  const payload = action.payload[0];
+  return typeof payload === 'string' ? payload : payload.workspaceId;
 }
 
 function* queueMembershipRefresh(
@@ -424,9 +428,13 @@ function* refreshNotifiedMembership(
 /** Refresh on an explicit workspace membership invalidation. Offline role
  * changes require workspace:updated changes.members=true too; an online-only
  * presence roster (even identical) cannot signal that distinction to guests.
+ * Hosts without the explicit hello capability retain roster-triggered reads.
  * Debounce bursts, serialize reads per workspace and discard pending work when
  * that workspace leaves the current admission. */
-function* watchMembershipNotifications(reads: RosterReads): SagaGenerator<void> {
+function* watchMembershipNotifications(
+  reads: RosterReads,
+  membershipEvents: boolean,
+): SagaGenerator<void> {
   const notifications = channel<MembershipRefresh>(buffers.expanding());
   const refresh = yield* takeSingleFlightInContext(
     notifications,
@@ -435,7 +443,9 @@ function* watchMembershipNotifications(reads: RosterReads): SagaGenerator<void> 
     reads,
   );
   const debounce = yield* takeLatestInContext(
-    [presenceMembershipChanged, presenceWorkspaceRemoved],
+    membershipEvents
+      ? [presenceMembershipChanged, presenceWorkspaceRemoved]
+      : [presenceMembershipChanged, presenceWorkspaceRemoved, presenceRosterReceived],
     membershipNotificationWorkspace,
     queueMembershipRefresh,
     notifications,
@@ -445,6 +455,18 @@ function* watchMembershipNotifications(reads: RosterReads): SagaGenerator<void> 
   } finally {
     yield* cancel([refresh, debounce]);
     notifications.close();
+  }
+}
+
+/** Observe the acknowledged hello once per admission, without another daemon RPC. */
+async function supportsMembershipEvents(): Promise<boolean> {
+  try {
+    const hello = (await observeBackendNodeCapabilities()) as {
+      server?: { capabilities?: { workspaceMembershipEvents?: unknown } };
+    } | null;
+    return hello?.server?.capabilities?.workspaceMembershipEvents === 1;
+  } catch {
+    return false;
   }
 }
 
@@ -464,9 +486,10 @@ function* runPresence({
   const sendReport = createReportSender();
   yield* put(presenceWorkspacesReceived(yield* select(selectPresenceWorkspaceIds.select)));
   try {
+    const membershipEvents = yield* call(supportsMembershipEvents);
     tasks.push(yield* fork(watchVisibility));
     tasks.push(yield* fork(watchTypingPulses, sendReport));
-    tasks.push(yield* fork(watchMembershipNotifications, memberReads));
+    tasks.push(yield* fork(watchMembershipNotifications, memberReads, membershipEvents));
     tasks.push(
       yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange(sendReport)),
     );

@@ -22,8 +22,11 @@ import { selectWorkspacePresencePeople, selectAgentTypingPeople } from '../prese
 import { presenceRosterReceived, presenceMembershipChanged } from '../presence-slice';
 import { presenceSaga } from './presence-saga';
 
-const wire = vi.hoisted(() => ({ request: vi.fn(), invoke: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: wire.request }));
+const wire = vi.hoisted(() => ({ request: vi.fn(), invoke: vi.fn(), capabilities: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: wire.request,
+  observeBackendNodeCapabilities: wire.capabilities,
+}));
 vi.mock('$lib/electron-bridge', () => ({ invoke: wire.invoke }));
 const member = (principalId: string, hostRole: HostRole) => ({
   principalId,
@@ -80,6 +83,9 @@ describe('presence admission and avatar policy', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     dispose = store.init();
+    wire.capabilities
+      .mockReset()
+      .mockResolvedValue({ server: { capabilities: { workspaceMembershipEvents: 1 } } });
     wire.invoke.mockReset().mockResolvedValue({ typingSource: 'own' });
     wire.request
       .mockReset()
@@ -370,6 +376,103 @@ describe('presence admission and avatar policy', () => {
     await vi.advanceTimersByTimeAsync(1600);
     expect(selectAgentTypingPeople.select(store.state, 'ws', 'agent')).toEqual([]);
     expect(wire.request).not.toHaveBeenCalled();
+    expect(wire.capabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([undefined, 0, true, '1'])(
+    'keeps legacy same-count membership recovery when capability is %s',
+    async (capability) => {
+      wire.capabilities.mockResolvedValue({
+        server: { capabilities: { workspaceMembershipEvents: capability } },
+      });
+      start(true, 'guest');
+      await settle();
+      wire.request.mockClear().mockResolvedValue({
+        members: accepted().map((p) => (p.principalId === 'guest' ? member('guest', 'member') : p)),
+      });
+      store.dispatch(presenceRosterReceived(roster()));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(wire.request.mock.calls).toEqual([['workspace.members.list', { workspaceId: 'ws' }]]);
+      expect(getItem(store.state.presence.members.ws, 'guest')?.hostRole).toBe('member');
+      expect(wire.capabilities).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['reconnect', 'backend', 'principal'] as const)(
+    'observes capability afresh after %s and accepts a downgrade',
+    async (change) => {
+      start();
+      await settle();
+      wire.request.mockClear();
+      store.dispatch(presenceRosterReceived(roster()));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(wire.request).not.toHaveBeenCalled();
+      wire.capabilities.mockResolvedValue({ server: { capabilities: {} } });
+      if (change === 'reconnect') store.dispatch(daemonEventsSubscribed());
+      if (change === 'backend')
+        store.dispatch(
+          connectionsListReceived({
+            connections: [],
+            activeId: 'remote',
+            windowBackendId: 'remote',
+          }),
+        );
+      if (change === 'principal') store.dispatch(principalContextChanged(null));
+      admit(2, change === 'principal' ? 'guest' : 'owner');
+      await settle();
+      expect(wire.capabilities).toHaveBeenCalledTimes(2);
+      wire.request.mockClear();
+      store.dispatch(presenceRosterReceived(roster()));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(wire.request.mock.calls).toEqual([['workspace.members.list', { workspaceId: 'ws' }]]);
+    },
+  );
+
+  it.each(['backend', 'principal'] as const)(
+    'discards a held capability observation after %s changes',
+    async (change) => {
+      let release!: (value: unknown) => void;
+      wire.capabilities.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      start();
+      await settle();
+      expect(wire.request).not.toHaveBeenCalled();
+      wire.capabilities.mockResolvedValue({ server: { capabilities: {} } });
+      if (change === 'backend')
+        store.dispatch(
+          connectionsListReceived({
+            connections: [],
+            activeId: 'remote',
+            windowBackendId: 'remote',
+          }),
+        );
+      else store.dispatch(principalContextChanged(null));
+      admit(2, change === 'principal' ? 'guest' : 'owner');
+      await settle();
+      expect(wire.capabilities).toHaveBeenCalledTimes(2);
+      wire.request.mockClear();
+      release({ server: { capabilities: { workspaceMembershipEvents: 1 } } });
+      await settle();
+      expect(wire.request).not.toHaveBeenCalled();
+      store.dispatch(presenceRosterReceived(roster()));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(wire.request.mock.calls).toEqual([['workspace.members.list', { workspaceId: 'ws' }]]);
+    },
+  );
+
+  it('keeps legacy refreshes when capability observation fails', async () => {
+    wire.capabilities.mockRejectedValue(new Error('connection retired'));
+    start();
+    await settle();
+    wire.request.mockClear();
+    store.dispatch(presenceRosterReceived(roster()));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wire.request.mock.calls).toEqual([['workspace.members.list', { workspaceId: 'ws' }]]);
+    expect(wire.capabilities).toHaveBeenCalledTimes(1);
   });
 
   it('reads once when explicit membership invalidation also changes the member count', async () => {

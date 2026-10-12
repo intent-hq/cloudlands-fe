@@ -9,9 +9,11 @@ import type { PresenceMember, PresenceRoster } from '$shared/types/presence';
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   invoke: vi.fn(),
+  capabilities: vi.fn(),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.request,
+  observeBackendNodeCapabilities: mocks.capabilities,
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
 }));
@@ -106,6 +108,9 @@ describe('presenceSaga lifecycle', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    mocks.capabilities
+      .mockReset()
+      .mockResolvedValue({ server: { capabilities: { workspaceMembershipEvents: 1 } } });
     mocks.invoke.mockReset().mockResolvedValue({ typingSource: 'ts-own' });
     mocks.request.mockReset().mockImplementation(async (method: string, params: unknown) => {
       if (method === 'principal.me') return { id: 'me' };

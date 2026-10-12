@@ -1320,13 +1320,21 @@ describe('captured repository socket dispatch', () => {
   it('observes acknowledged node capabilities without retiring the connection or sending hello', async () => {
     const { client, sockets } = await connected({
       clientId: 'confirmed-client',
-      server: { capabilities: { agentNodes: 1, localNodeIsolation: 1, agentPlatformRouting: 1 } },
+      server: {
+        capabilities: {
+          agentNodes: 1,
+          localNodeIsolation: 1,
+          agentPlatformRouting: 1,
+          workspaceMembershipEvents: 1,
+        },
+      },
     });
     const connection = client.getRepositoryConnection();
     expect(client.getNodeCapabilities()).toEqual({
       agentNodes: 1,
       localNodeIsolation: 1,
       agentPlatformRouting: 1,
+      workspaceMembershipEvents: 1,
     });
     expect(client.getRepositoryConnection()).toBe(connection);
     expect(sockets[0].writes).toHaveLength(1);
@@ -1334,13 +1342,14 @@ describe('captured repository socket dispatch', () => {
     expect(client.getNodeCapabilities()).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
-      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true}}}}\n',
+      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1"}}}}\n',
     );
     await hello;
     expect(client.getNodeCapabilities()).toEqual({
       agentNodes: 0,
       localNodeIsolation: 0,
       agentPlatformRouting: 0,
+      workspaceMembershipEvents: 0,
     });
     client.dispose();
     expect(client.getNodeCapabilities()).toBeNull();
