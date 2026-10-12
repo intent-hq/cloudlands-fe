@@ -226,7 +226,10 @@ function useObservations() {
           mountRevision,
           argumentCount: args.length,
           arguments: args.map(snapshotArgument),
-          lastCapturedEvent: captured.current ? snapshotEvent(captured.current) : null,
+          lastCapturedEvent:
+            captured.current && captured.current.eventPhase !== Event.NONE
+              ? snapshotEvent(captured.current)
+              : null,
           ...extra,
         },
       ];
@@ -475,14 +478,16 @@ function NavigationExercise() {
           callbackRevision,
           hostResult,
           holdNavigation,
-          pendingNavigations: pendingNavigations.map(
-            ({ id, target, callbackRevision, mountRevision }) => ({
+          pendingNavigationCount: pendingNavigations.length,
+          pendingNavigationLimit: callbackLimit,
+          pendingNavigations: pendingNavigations
+            .slice(-callbackLimit)
+            .map(({ id, target, callbackRevision, mountRevision }) => ({
               id,
               target,
               callbackRevision,
               mountRevision,
-            }),
-          ),
+            })),
         }}
       />
       <ObservationControls name="navigation" recorder={recorder} />
