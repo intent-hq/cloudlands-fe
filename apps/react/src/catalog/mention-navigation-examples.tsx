@@ -114,6 +114,13 @@ const lists: Record<string, (MentionCandidate | MentionGroup)[]> = {
     },
   ],
 };
+const originalMentionObjects = [
+  ...mixed,
+  ...flat,
+  ...(nestedFolder.items ?? []),
+  ...lists.many,
+  ...lists.replacement,
+];
 const skills: SkillInfo[] = [
   {
     name: 'fixture-review',
@@ -186,7 +193,13 @@ function Flag({
   );
 }
 
-type KeyRecord = { key: string; handled: boolean; defaultPrevented: boolean; native: boolean };
+type KeyRecord = {
+  key: string;
+  handled: boolean;
+  defaultPrevented: boolean;
+  native: boolean;
+  refPresent: boolean;
+};
 function forwardKey(
   event: ReactKeyboardEvent<HTMLInputElement>,
   handle: EnhancedMentionListHandle | SlashSkillSuggestionListHandle | null,
@@ -201,6 +214,7 @@ function forwardKey(
     handled,
     defaultPrevented: event.nativeEvent.defaultPrevented,
     native: event.nativeEvent instanceof KeyboardEvent,
+    refPresent: handle !== null,
   };
 }
 
@@ -212,6 +226,7 @@ function MentionExercise() {
   const [closed, setClosed] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [selections, setSelections] = useState<MentionCandidate[]>([]);
+  const [selectionIdentities, setSelectionIdentities] = useState<boolean[]>([]);
   const [closeCallbacks, setCloseCallbacks] = useState(0);
   const [keys, setKeys] = useState<KeyRecord[]>([]);
   const [activeOption, setActiveOption] = useState<string>();
@@ -280,21 +295,29 @@ function MentionExercise() {
           />
         )}
       />
-      {visible && (
-        <EnhancedMentionList
-          key={generation}
-          ref={list}
-          items={items}
-          loading={loading}
-          listboxId="exercise-mention-listbox"
-          onActiveOptionChange={activeChanged}
-          command={(item) => setSelections((current) => [...current, item])}
-          onClose={() => {
-            setClosed(true);
-            setCloseCallbacks((current) => current + 1);
-          }}
-        />
-      )}
+      <div className="min-w-0" data-testid="mention-list-display">
+        {visible && (
+          <EnhancedMentionList
+            key={generation}
+            ref={list}
+            items={items}
+            loading={loading}
+            listboxId="exercise-mention-listbox"
+            onActiveOptionChange={activeChanged}
+            command={(item) => {
+              setSelections((current) => [...current, item]);
+              setSelectionIdentities((current) => [
+                ...current,
+                originalMentionObjects.includes(item),
+              ]);
+            }}
+            onClose={() => {
+              setClosed(true);
+              setCloseCallbacks((current) => current + 1);
+            }}
+          />
+        )}
+      </div>
       <output
         aria-label="Mention callback state"
         data-testid="mention-callback-state"
@@ -309,6 +332,7 @@ function MentionExercise() {
             closed,
             generation,
             selections,
+            selectionIdentities,
             activeOption: visible ? (activeOption ?? null) : null,
             activeCallbacks,
             closeCallbacks,
@@ -328,6 +352,7 @@ function SkillExercise() {
   const [mounted, setMounted] = useState(true);
   const [closed, setClosed] = useState(false);
   const [selections, setSelections] = useState<SkillInfo[]>([]);
+  const [selectionIdentities, setSelectionIdentities] = useState<boolean[]>([]);
   const [dismissCallbacks, setDismissCallbacks] = useState(0);
   const [retryCallbacks, setRetryCallbacks] = useState(0);
   const [keys, setKeys] = useState<KeyRecord[]>([]);
@@ -369,25 +394,30 @@ function SkillExercise() {
           />
         )}
       />
-      {visible && (
-        <SlashSkillSuggestionList
-          ref={list}
-          items={items}
-          loading={mode === 'loading'}
-          error={mode === 'error' ? 'Deterministic error prop' : null}
-          listboxId="exercise-skill-listbox"
-          onActiveOptionChange={setActiveOption}
-          onSelect={(item) => setSelections((current) => [...current, item])}
-          onDismiss={() => {
-            setClosed(true);
-            setDismissCallbacks((current) => current + 1);
-          }}
-          onRetry={() => {
-            setRetryCallbacks((current) => current + 1);
-            setMode('ready');
-          }}
-        />
-      )}
+      <div className="min-w-0" data-testid="skill-list-display">
+        {visible && (
+          <SlashSkillSuggestionList
+            ref={list}
+            items={items}
+            loading={mode === 'loading'}
+            error={mode === 'error' ? 'Deterministic error prop' : null}
+            listboxId="exercise-skill-listbox"
+            onActiveOptionChange={setActiveOption}
+            onSelect={(item) => {
+              setSelections((current) => [...current, item]);
+              setSelectionIdentities((current) => [...current, skills.includes(item)]);
+            }}
+            onDismiss={() => {
+              setClosed(true);
+              setDismissCallbacks((current) => current + 1);
+            }}
+            onRetry={() => {
+              setRetryCallbacks((current) => current + 1);
+              setMode('ready');
+            }}
+          />
+        )}
+      </div>
       <output
         aria-label="Skill callback state"
         data-testid="skill-callback-state"
@@ -400,6 +430,7 @@ function SkillExercise() {
             mounted,
             closed,
             selections,
+            selectionIdentities,
             activeOption: visible ? (activeOption ?? null) : null,
             dismissCallbacks,
             retryCallbacks,
@@ -442,7 +473,7 @@ export function MentionNavigationExamples() {
         />
         <Flag label="Mount agent leaves" checked={mounted} onChange={setMounted} />
         {mounted && (
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2" data-testid="agent-leaf-display">
             <MentionAgentAvatar agentId="mention-preview-agent" />
             <AgentBadge count={Number(count)} />
           </div>
