@@ -133,6 +133,69 @@ export async function nativeArt(svg) {
   return box;
 }
 
+export async function settleAvatarMotion(surface, name, info) {
+  // original003's wrapper disables transitions, while the shared reduced-motion
+  // blanket can create a finite background transition on the inner SVG. Observe
+  // native Animation completion; never finish/cancel it or suppress descendants.
+  const evidence = await surface.evaluate(async (root) => {
+    const rect = (node) => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    const art = root.querySelector('svg[data-agent-avatar]');
+    const bounds = () => ({ surface: rect(root), art: art ? rect(art) : null });
+    const snapshot = (animation) => {
+      const timing = animation.effect?.getComputedTiming();
+      return {
+        type: animation.constructor.name,
+        property: animation.transitionProperty ?? null,
+        playState: animation.playState,
+        pending: animation.pending,
+        currentTime: animation.currentTime,
+        isAvatarArt: animation.effect?.target === art,
+        finiteOnce:
+          timing?.iterations === 1 &&
+          Number.isFinite(timing.activeDuration) &&
+          Number.isFinite(timing.endTime),
+      };
+    };
+    const own = root.getAnimations().map(snapshot);
+    const animations = root.getAnimations({ subtree: true });
+    const before = animations.map(snapshot);
+    const beforeBounds = bounds();
+    const allowed = before.every(
+      (item) =>
+        item.type === 'CSSTransition' &&
+        item.property === 'background-color' &&
+        item.isAvatarArt &&
+        item.finiteOnce,
+    );
+    if (own.length || !allowed) return { own, before, beforeBounds, allowed, settled: false };
+    await Promise.all(animations.map((animation) => animation.finished));
+    return {
+      own,
+      before,
+      after: animations.map(snapshot),
+      beforeBounds,
+      afterBounds: bounds(),
+      allowed,
+      settled: root.getAnimations({ subtree: true }).length === 0,
+    };
+  });
+  await info.attach(`${name}-motion.json`, {
+    body: JSON.stringify(evidence, null, 2),
+    contentType: 'application/json',
+  });
+  expect(evidence.own, 'Reduced motion must leave the state wrapper unanimated').toEqual([]);
+  expect(evidence.allowed, 'Only a finite native avatar SVG background transition is allowed').toBe(
+    true,
+  );
+  expect(evidence.settled, 'Observed native transitions must finish naturally').toBe(true);
+  expect(evidence.afterBounds, 'Natural settlement must preserve avatar geometry').toEqual(
+    evidence.beforeBounds,
+  );
+}
+
 export async function captureAvatar(page, target, name, info) {
   await target.scrollIntoViewIfNeeded();
   await page.evaluate(() => document.fonts.ready);

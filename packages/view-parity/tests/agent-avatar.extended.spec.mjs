@@ -10,6 +10,7 @@ import {
   expectStack,
   nativeArt,
   captureAvatar,
+  settleAvatarMotion,
 } from '../lib/agent-avatar.mjs';
 
 test('agent avatar extended: unmount detaches old nodes and remount responds to new widths', async ({
@@ -76,21 +77,20 @@ test('agent avatar extended: named and legacy sizing transitions retain accessib
   // between distinct source wrappers is a valid independent visual oracle.
 });
 
-test('agent avatar extended: reduced motion changes settle without active avatar animations', async ({
+test('agent avatar extended: reduced motion keeps the wrapper still and settles native artwork transitions', async ({
   page,
 }, info) => {
   const host = await openAvatar(page);
   await captureAvatar(page, display(host), 'reduced-before', info);
   await choose(page, host, 'Avatar state', 'running');
   await expect(surface(host)).toHaveAccessibleName('Running');
-  expect(await surface(host).evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(
-    0,
-  );
+  await settleAvatarMotion(surface(host), 'reduced-running', info);
+  const art = await nativeArt(surface(host).locator('svg'));
   await choose(page, host, 'Avatar state', 'waiting');
   await expect(surface(host)).toHaveAccessibleName('Waiting');
-  expect(await surface(host).evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(
-    0,
-  );
+  await settleAvatarMotion(surface(host), 'reduced-waiting', info);
+  await expect(surface(host)).toHaveAccessibleName('Waiting');
+  expect(await nativeArt(surface(host).locator('svg'))).toEqual(art);
   await captureAvatar(page, display(host), 'reduced-after', info);
 });
 
