@@ -1,4 +1,7 @@
-import { selectAllWorkspaceScriptEntries } from '../../scripts/scripts-selectors';
+import {
+  selectAllWorkspaceScriptEntries,
+  selectScriptListPageState,
+} from '../../scripts/scripts-selectors';
 import {
   beginScriptRead,
   isScriptReadCurrent,
@@ -76,13 +79,14 @@ import {
 } from '../../pr-status/pr-status-slice';
 import {
   refreshScripts,
+  loadMoreScripts,
+  setScriptPageCursor,
   setScriptsData,
   setScriptsInitialized,
   setScriptListState,
   setActiveScriptsData,
   scriptReadFinished,
   scriptReadReconciled,
-  removeScript,
 } from '../../scripts/scripts-slice';
 import { loadSkillsFailed, loadSkillsRequested, setSkills } from '../../skills/skills-slice';
 import {
@@ -1186,71 +1190,30 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
  * stable answer, not a failure, so these reads settle to an empty list
  * instead of logging an error on every refresh.
  */
-function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
-  const retainedBeforeRead = yield* selectAllWorkspaceScriptEntries.effect(workspaceId);
-  let context = yield* beginScriptRead(workspaceId);
-  function* isCurrent(): SagaGenerator<boolean> {
-    return yield* isScriptReadCurrent(context);
-  }
-  let scripts: Awaited<ReturnType<typeof appClient.scripts.list>>;
+function* refreshWorkspaceScripts(workspaceId: string, append = false): SagaGenerator<void> {
+  const previous = yield* selectAllWorkspaceScriptEntries.effect(workspaceId);
+  const ws = yield* selectScriptListPageState.effect(workspaceId);
+  if (append && (!ws.nextCursor || ws.loading)) return;
+  const context = yield* beginScriptRead(workspaceId);
   yield* put(setScriptListState(workspaceId, true));
   try {
-    const supported = appClient.scripts.supportsLifecycle
-      ? yield* call([appClient.scripts, appClient.scripts.supportsLifecycle])
-      : false;
-    if (!(yield* isCurrent())) return;
-    if (appClient.scripts.supportsLifecycle) {
-      yield* put(setScriptListState(workspaceId, true, undefined, supported));
-    }
-    scripts = supported
-      ? yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
-          archive: 'active' as const,
+    const page = append
+      ? yield* call([appClient.scripts, appClient.scripts.listPage], workspaceId, {
+          cursor: ws.nextCursor,
         })
-      : yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
-    const reconciled = yield* reconcileScriptRead(context, scripts);
+      : yield* call([appClient.scripts, appClient.scripts.listPage], workspaceId);
+    const entries = append
+      ? [...new Map([...previous, ...page.scripts].map((row) => [row.id, row])).values()]
+      : page.scripts;
+    const reconciled = yield* reconcileScriptRead(context, entries);
     if (!reconciled) return;
-    const changedIds = reconciled.definitionChanges;
-    scripts = reconciled.scripts;
-    yield* put(scriptReadReconciled(workspaceId, context.requestId, scripts));
-    yield* put(setScriptListState(workspaceId, false, undefined, supported));
-    if (supported) {
-      yield* put(setActiveScriptsData(workspaceId, scripts));
-      // Active omission cannot prove archive metadata or deletion. Reconcile
-      // retained rows with one all-list read, without populating unopened history.
-      const activeIds = new Set(
-        scripts.filter((script) => !script.archivedAt).map((script) => script.id),
-      );
-      const retained = retainedBeforeRead.filter(
-        (script) => !activeIds.has(script.id) && !changedIds.has(script.id),
-      );
-      if (retained.length) {
-        yield* put(scriptReadFinished(workspaceId, context.requestId));
-        context = yield* beginScriptRead(workspaceId);
-        const all = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
-          archive: 'all' as const,
-        });
-        const current = yield* reconcileScriptRead(context, all);
-        if (!current) return;
-        yield* put(scriptReadReconciled(workspaceId, context.requestId, current.scripts, true));
-        const known = new Set(
-          (yield* selectAllWorkspaceScriptEntries.effect(workspaceId)).map((script) => script.id),
-        );
-        const incoming = new Set(current.scripts.map((script) => script.id));
-        for (const script of retained) {
-          if (!incoming.has(script.id)) yield* put(removeScript(workspaceId, script.id));
-        }
-        yield* put(
-          setActiveScriptsData(
-            workspaceId,
-            current.scripts.filter((script) => !script.archivedAt || known.has(script.id)),
-          ),
-        );
-      }
-    } else {
-      yield* put(setScriptsData(workspaceId, scripts));
-    }
+    yield* put(scriptReadReconciled(workspaceId, context.requestId, reconciled.scripts));
+    yield* put(setActiveScriptsData(workspaceId, reconciled.scripts));
+    yield* put(setScriptPageCursor(workspaceId, page.nextCursor));
+    yield* put(setScriptListState(workspaceId, false, undefined, true));
+    yield* put(setScriptsInitialized(workspaceId, true));
   } catch (error) {
-    if (!(yield* isCurrent())) return;
+    if (!(yield* isScriptReadCurrent(context))) return;
     yield* put(
       setScriptListState(
         workspaceId,
@@ -1259,12 +1222,11 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
       ),
     );
     if (!isForbiddenErrorResponse(error)) throw error;
-    logger.debug(`Scripts are owner-only for ${workspaceId}; treating as empty`);
     yield* put(setScriptsData(workspaceId, []));
+    yield* put(setScriptsInitialized(workspaceId, true));
   } finally {
     yield* put(scriptReadFinished(workspaceId, context.requestId));
   }
-  yield* put(setScriptsInitialized(workspaceId, true));
 }
 
 function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
@@ -1448,7 +1410,10 @@ function* skillsWorker(
 }
 
 type ScriptsReadAction = ReturnType<
-  typeof refreshScripts | typeof workspaceDeleted | typeof workspaceUnmounted
+  | typeof refreshScripts
+  | typeof loadMoreScripts
+  | typeof workspaceDeleted
+  | typeof workspaceUnmounted
 >;
 
 function* scriptsWorker(scheduler: WorkspaceReadScheduler, action: ScriptsReadAction) {
@@ -1457,7 +1422,7 @@ function* scriptsWorker(scheduler: WorkspaceReadScheduler, action: ScriptsReadAc
       scheduler,
       'scripts',
       action.payload[0],
-      refreshWorkspaceScripts,
+      (workspaceId) => refreshWorkspaceScripts(workspaceId, action.type === loadMoreScripts.type),
       false,
     );
   }
@@ -1659,7 +1624,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       ),
       takeLeadingByWorkspace(loadSkillsRequested, skillsWorker, scheduler),
       takeSingleFlightInContext(
-        [refreshScripts, workspaceDeleted, workspaceUnmounted],
+        [refreshScripts, loadMoreScripts, workspaceDeleted, workspaceUnmounted],
         scriptsReadContext,
         scriptsWorker,
         scheduler,

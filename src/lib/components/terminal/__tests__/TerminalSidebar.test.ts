@@ -1,3 +1,4 @@
+import { scriptsClient } from '$features/scripts/scripts.client';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
@@ -22,7 +23,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 
 vi.mock('$lib/client', () => ({
-  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+  appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
 }));
 
 const {
@@ -87,6 +88,7 @@ const {
 
 vi.mock('$features/scripts/scripts.client', () => ({
   scriptsClient: {
+    list: vi.fn(async () => ({ success: true, data: scriptEntries.value })),
     detect: mockDetect,
     create: mockScriptCreate,
     update: mockScriptUpdate,
@@ -378,6 +380,39 @@ describe('TerminalSidebar detection flow', () => {
       'ws-1',
       expect.objectContaining({ purpose: 'saved' }),
     );
+  });
+
+  it('captures full definitions for detection Undo even when the visible rows are previews', async () => {
+    const full = {
+      id: 'old',
+      name: 'test',
+      command: 'complete command beyond the preview',
+      mode: 'command',
+      cwd: 'app',
+      env: { KEY: 'value' },
+      runtime: { status: 'idle' },
+    };
+    scriptEntries.value = [
+      {
+        id: full.id,
+        name: full.name,
+        mode: full.mode,
+        commandPreview: 'complete',
+        commandTruncated: true,
+        runtime: full.runtime,
+      },
+    ];
+    vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: true, data: [full as never] });
+    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
+    );
+    mockScriptRestoreSnapshot.mockResolvedValueOnce({ success: true });
+    await notify.success.mock.calls[0][1].action.onClick();
+    expect(mockScriptRestoreSnapshot).toHaveBeenCalledWith('ws-1', [
+      expect.objectContaining({ command: full.command, cwd: full.cwd, env: full.env }),
+    ]);
   });
 
   it.each(['saved', 'oneOff', undefined] as const)(
@@ -829,6 +864,9 @@ describe('sidebar inline rename deletion races', () => {
     mockScriptRestoreSnapshot.mockReset().mockImplementation(actual.scriptsClient.restoreSnapshot);
     mockWireRemove.mockReset().mockResolvedValue({ success: true });
     vi.mocked(appClient.scripts.list).mockImplementation(async () => scriptEntries.value);
+    vi.mocked(appClient.scripts.get).mockImplementation(async (_ws, id) =>
+      scriptEntries.value.find((s) => s.id === id),
+    );
     scriptEntries.value = [
       {
         id: scriptId,

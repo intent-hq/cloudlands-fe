@@ -5,7 +5,7 @@
 import { store } from '../../store';
 import { createDefaultRuntimeState } from '$features/scripts/types';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
-import type { ScriptOperationState, ScriptWithState } from './scripts-types';
+import type { ScriptOperationState, ScriptListEntry } from './scripts-types';
 import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
 import type { StoreState } from '$store/renderer/types';
 
@@ -24,20 +24,18 @@ export const selectScriptsInitialized = store.createSelector(
 
 /** Normal list membership excludes definitions recovered only for output viewers. */
 export const selectScriptEntries = store.createSelector(
-  (state, wsId: string | null): ScriptWithState[] => {
+  (state, wsId: string | null): ScriptListEntry[] => {
     const ws = getWs(state, wsId);
     if (ws.activeScriptIds) {
       return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
     }
-    return Object.values(ws.scripts).filter(
-      (script) => !ws.lifecycleSupported || !script.archivedAt,
-    );
+    return Object.values(ws.scripts).filter((script) => !script.archivedAt);
   },
 );
 
 /** Live scripts — running or restarting (active workspace). */
 export const selectRunningScripts = store.createSelector(
-  (state, wsId: string | null): ScriptWithState[] => {
+  (state, wsId: string | null): ScriptListEntry[] => {
     return selectScriptEntries
       .select(state, wsId)
       .filter((s) => isLiveScriptStatus((s.runtime ?? createDefaultRuntimeState()).status));
@@ -82,14 +80,12 @@ export const selectWorkspaceScriptsInitialized = store.createSelector(
 );
 
 export const selectWorkspaceScriptEntries = store.createSelector(
-  (state, wsId: string): ScriptWithState[] => {
+  (state, wsId: string): ScriptListEntry[] => {
     const ws = getWs(state, wsId);
     if (ws.activeScriptIds) {
       return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
     }
-    return Object.values(ws.scripts).filter(
-      (script) => !ws.lifecycleSupported || !script.archivedAt,
-    );
+    return Object.values(ws.scripts).filter((script) => !script.archivedAt);
   },
 );
 
@@ -117,9 +113,9 @@ export const selectWorkspaceScriptRuntime = store.createSelector(
   },
 );
 
-/** Includes history: retained definitions keep open output views alive. */
+/** Loaded script rows; output viewers retain their selected IDs separately. */
 export const selectAllWorkspaceScriptEntries = store.createSelector(
-  (state, wsId: string): ScriptWithState[] => Object.values(getWs(state, wsId).scripts),
+  (state, wsId: string): ScriptListEntry[] => Object.values(getWs(state, wsId).scripts),
 );
 
 /** Request-owned event journal; absence means the request was invalidated. */
@@ -139,3 +135,9 @@ export const selectCanDeleteScript = store.createSelector(
     );
   },
 );
+
+export const selectScriptListPageState = store.createSelector((state, wsId: string | null) => ({
+  nextCursor: getWs(state, wsId).nextCursor,
+  loading: getWs(state, wsId).loading,
+  error: getWs(state, wsId).loadError,
+}));

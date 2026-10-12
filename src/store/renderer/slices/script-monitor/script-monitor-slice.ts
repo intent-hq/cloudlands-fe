@@ -20,6 +20,10 @@ export const emptyScriptMonitors: ScriptMonitorWorkspace = {
   status: 'loading',
   operations: {},
 };
+export const scriptMonitorsLoadMoreRequested =
+  createAction<[workspaceId: string]>('scriptMonitor/loadMore');
+export const scriptMonitorDetailsRequested =
+  createAction<[workspaceId: string, monitorId: string]>('scriptMonitor/details');
 export const scriptMonitorsSubscribeRequested =
   createAction<[workspaceId: string]>('scriptMonitor/subscribe');
 export const scriptMonitorsUnsubscribeRequested = createAction<[workspaceId: string]>(

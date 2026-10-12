@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { selectScriptListPageState } from '$store/renderer/slices/scripts/scripts-selectors';
+  import { loadMoreScripts } from '$store/renderer/slices/scripts/scripts-slice';
+  import { scriptCommandLabel } from '$features/scripts/types';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
   import { prefersReducedMotion, spring } from '$lib/motion';
   import { scriptsClient } from '$features/scripts/scripts.client';
-  import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
+  import type { ScriptCategory, ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
@@ -125,7 +128,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let pendingScrollScriptId = $state<string | null>(null);
 
   async function handleDetectionResult(parsed: any): Promise<void> {
-    const snapshot = selectScriptEntries.select(appStore.state, workspaceId).map((s) => {
+    const requestWorkspaceId = workspaceId;
+    const complete = await scriptsClient.list(requestWorkspaceId);
+    if (workspaceId !== requestWorkspaceId) return;
+    if (!complete.success || !complete.data) return;
+    const snapshot = complete.data.map((s) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { runtime, ...scriptDef } = s;
       return { ...scriptDef };
@@ -140,7 +147,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let addedCount = 0;
       let updatedCount = 0;
       let removedCount = 0;
-      const scriptEntries = selectScriptEntries.select(appStore.state, workspaceId);
+      const scriptEntries = complete.data;
       const autoDetectedIds = new Set(
         scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
@@ -272,11 +279,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
     // Fallback: old flat array format — deduplicate
     if (Array.isArray(parsed)) {
-      const existingKeys = new Set(
-        selectScriptEntries
-          .select(appStore.state, workspaceId)
-          .map((s) => `${s.name}::${s.command}`),
-      );
+      const existingKeys = new Set(complete.data.map((s) => `${s.name}::${s.command}`));
 
       let createdCount = 0;
       for (const entry of parsed) {
@@ -436,8 +439,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     }
   }
 
-  function buildExistingScriptsContext(): string {
-    const existingScripts = selectScriptEntries.select(appStore.state, workspaceId).map((s) => ({
+  async function buildExistingScriptsContext(): Promise<string> {
+    const complete = await scriptsClient.list(workspaceId);
+    const existingScripts = (complete.data ?? []).map((s) => ({
       id: s.id,
       name: s.name,
       command: s.command,
@@ -505,7 +509,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const activeTerminalId = $derived($_sidebarActiveTerminalId);
 
   // ---- Sort function ----
-  function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
+  function sortScripts(scripts: ScriptListEntry[]): ScriptListEntry[] {
     return [...scripts].sort((a, b) => {
       // Priority: live (starting/running/restarting) > exited > idle
       const statusPriority = { starting: 0, running: 0, restarting: 0, exited: 1, idle: 2 };
@@ -520,7 +524,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   // ---- Status dot helpers ----
-  function getStatusColor(script: ScriptWithState): string {
+  function getStatusColor(script: ScriptListEntry): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
     if (kind === 'restarting') return 'bg-warning';
@@ -529,7 +533,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     return 'bg-muted-foreground/40';
   }
 
-  function getStatusLabel(script: ScriptWithState): string {
+  function getStatusLabel(script: ScriptListEntry): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running') return m.terminal_quakeOverlay_status_running();
     if (kind === 'restarting') return m.workspace_devScripts_restarting_label();
@@ -545,7 +549,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   // ---- Actions ----
-  function getScriptActions(script: ScriptWithState) {
+  function getScriptActions(script: ScriptListEntry) {
     const actions: Array<{
       icon: any;
       label: string;
@@ -638,7 +642,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
     try {
       await scriptDetectAgent.execute(workspace, {
-        message: SCRIPT_DETECT_PROMPT + buildExistingScriptsContext(),
+        message: SCRIPT_DETECT_PROMPT + (await buildExistingScriptsContext()),
       });
     } finally {
       detectFlow = 'idle';
@@ -896,7 +900,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     if (!contextMenuPos) return;
     return pushEscapeLayer(() => closeContextMenu());
   });
-  /* eslint-disable @typescript-eslint/no-unused-vars -- template-level vars used by Svelte runtime */
+
+  const scriptPage$ = selectScriptListPageState(workspaceIdStore);
 </script>
 
 <!-- Sidebar Container -->
@@ -1090,6 +1095,16 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           </div>
         {/if}
 
+        {#if $scriptPage$.nextCursor}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={$scriptPage$.loading}
+            onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
+            >{m.gitlabCheckout_loadMore_label()}</Button
+          >
+        {/if}
+        {#if $scriptPage$.error}<p role="alert">{$scriptPage$.error}</p>{/if}
         <!-- Script List -->
         {#if hasScripts}
           <ListContainer spacing="compact" class="py-1 px-1.5">
@@ -1108,7 +1123,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     selectedScriptIds.has(script.id) && 'bg-accent/50! hover:bg-accent/60!',
                   )}
                   title={editingScriptId === script.id ? '' : script.name}
-                  subtitle={editingScriptId === script.id ? '' : script.command}
+                  subtitle={editingScriptId === script.id ? '' : scriptCommandLabel(script)}
                   subtitleClass="leading-none"
                   active={selectedScriptId === script.id}
                   onclick={(e) => handleSelectScript(script.id, e as MouseEvent)}

@@ -37,6 +37,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { withScriptDefinitionEdits } from './with-script-definition-edits';
 import { runMutation } from '$lib/client/live/live-support';
 import { store } from '$store/renderer/store';
+import { selectScriptById } from '$store/renderer/slices/scripts/scripts-selectors';
 import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
 
 const logger = createLogger('ScriptsClient');
@@ -52,6 +53,8 @@ export interface CreateScriptInput {
   category?: string;
   source?: string;
   autoStart?: boolean;
+  healthUrl?: string;
+  readyPattern?: string;
 }
 
 /** Input for updating an existing script. */
@@ -123,6 +126,8 @@ export const scriptsClient = {
       env: script.env,
       category: script.category,
       autoStart: script.autoStart,
+      healthUrl: script.healthUrl,
+      readyPattern: script.readyPattern,
     });
     return result.success
       ? { success: true, data: result.script }
@@ -132,7 +137,7 @@ export const scriptsClient = {
   /**
    * Update an existing script definition. The daemon has no dedicated update
    * RPC; `script.create` with the existing `scriptId` replaces the definition
-   * (§5.8 upsert), so the current definition is read from `script.list` and
+   * (§5.8 upsert), so the current definition is read from `script.get` and
    * merged with the partial updates before the upsert. The reservation starts
    * before that read and owns the complete mutation; callers must not reserve again.
    */
@@ -142,8 +147,15 @@ export const scriptsClient = {
     updates: UpdateScriptInput,
   ): Promise<CommandResponse<WorkspaceScript>> {
     return withScriptDefinitionEdits(workspaceId, [scriptId], async () => {
-      const scripts = await appClient.scripts.list(workspaceId, { archive: 'all' });
-      const existing = scripts.find((script) => script.id === scriptId);
+      const beforeRead = selectScriptById.select(store.state, workspaceId, scriptId);
+      let existing: ScriptWithState;
+      try {
+        existing = await appClient.scripts.get(workspaceId, scriptId);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+      if (beforeRead !== selectScriptById.select(store.state, workspaceId, scriptId))
+        return { success: false, error: m.scripts_pendingChange_error() };
       if (!existing) {
         return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
       }
@@ -168,6 +180,8 @@ export const scriptsClient = {
         env: updates.env ?? existing.env,
         category: updates.category ?? existing.category,
         autoStart: updates.autoStart ?? existing.autoStart,
+        healthUrl: existing.healthUrl,
+        readyPattern: existing.readyPattern,
       });
       return result.success
         ? { success: true, data: result.script }
@@ -208,6 +222,8 @@ export const scriptsClient = {
             cwd: script.cwd,
             env: script.env,
             autoStart: script.autoStart,
+            healthUrl: script.healthUrl,
+            readyPattern: script.readyPattern,
           });
           if (!result.success) return { success: false, error: result.error };
         }
@@ -285,7 +301,7 @@ export const scriptsClient = {
           appClient.files,
           workspaceId,
         );
-        const existing = await appClient.scripts.list(workspaceId, { archive: 'all' });
+        const existing = await appClient.scripts.list(workspaceId, { archive: 'active' });
 
         const existingUserNames = new Set<string>();
         const existingAutoByName = new Map<string, ScriptWithState>();

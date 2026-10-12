@@ -77,3 +77,18 @@ test('long multiline commands remain selectable and copyable without widening th
   await expect(code).toHaveCount(0);
   await expect(row.getByRole('button', { name: 'Copied' })).toHaveCount(0);
 });
+
+test('a partial monitor page shows a bounded count and reachable Load more', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 420, height: 700 });
+  const component = await mount(Preview, { props: { paged: true } });
+  await expect(component.getByRole('heading', { name: 'Subscribed to 2+ events' })).toBeVisible();
+  const more = component.getByRole('button', { name: 'Load more' });
+  await more.focus();
+  await expect(more).toBeFocused();
+  const bounds = await more.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(420);
+});
