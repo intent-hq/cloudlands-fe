@@ -19,12 +19,14 @@ import {
   setWorkspaceEntity,
   workspaceReminderInvalidated,
 } from '../../workspace/workspace-slice';
-import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import {
+  selectWorkspaceById,
+  selectWorkspacePendingDeletions,
+} from '../../workspace/workspace-selectors';
 import { closeWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { principalReceived } from '../../principal/principal-slice';
 import { selectPrincipalSnapshot } from '../../principal/principal-selectors';
-import type { StoreState } from '$store/renderer/types';
 import { markWorkspaceNavigationInitialized } from '../../workspace-navigation/workspace-navigation-slice';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -253,8 +255,7 @@ export function* workspaceLoadSaga(): SagaGenerator<void> {
           selectedId !== (trigger as ReturnType<typeof workspaceReminderInvalidated>).payload[0]
         )
           continue;
-        if (yield* select((state: StoreState) => state.workspace.pendingDeletions[selectedId]))
-          continue;
+        if ((yield* selectWorkspacePendingDeletions.effect())[selectedId]) continue;
         if (latestRead?.workspaceId === selectedId && latestRead.read.isCurrent()) continue;
         action = workspaceLoadRequested(selectedId);
       }
