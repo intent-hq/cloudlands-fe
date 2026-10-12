@@ -1,4 +1,5 @@
 import { settingsClient, settingsRuntime } from '@/features/settings/settings-client';
+import { hasBackendRuntimeTarget } from '@/features/backend/backend-availability';
 import { store } from './index';
 import { connectionsIdentitySaga } from './connections/sagas/connections-identity-saga';
 import { daemonEventsSaga } from './workspace-events/sagas/daemon-events-saga';
@@ -24,7 +25,7 @@ export function startProviderRuntime() {
   settingsRuntime.start();
   const cancelOwners = [
     store.runSaga(modelNameCacheSaga),
-    store.runSaga(daemonEventsSaga),
+    ...(hasBackendRuntimeTarget() ? [store.runSaga(daemonEventsSaga)] : []),
     store.runSaga(principalSaga),
     store.runSaga(hostExecutionSaga),
     store.runSaga(settingsSaga),
