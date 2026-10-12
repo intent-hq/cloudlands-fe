@@ -85,7 +85,7 @@ export function AttachmentPreview({
     setObjectUrl({ file, url });
     return () => URL.revokeObjectURL(url);
   }, [file, usesFile]);
-  const thumbnailUrl = inlineUrl ?? (usesFile && objectUrl?.file === file ? objectUrl?.url : null);
+  const thumbnailUrl = inlineUrl ?? (usesFile && objectUrl ? objectUrl.url : null);
   usePresenceTransition(root, present, onExit, transition);
 
   const mimeType = type || imageMimeType || '';
