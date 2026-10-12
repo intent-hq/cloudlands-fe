@@ -393,6 +393,12 @@ vi.mock('$store/renderer/configured-store', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectNoteDeleteView: {
+    // This fixture has no pending deletion; version restore still waits for save ACK.
+    effect: function* () {
+      return undefined;
+    },
+  },
   selectRetainedNoteDraft: {
     effect: function* (workspaceId: string, noteId: string) {
       return mockSelectorStore.state.workspaceNotes.retainedDrafts[

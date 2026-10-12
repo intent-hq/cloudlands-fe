@@ -6,6 +6,7 @@ import {
 } from './note-publication-owner';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
+  actionChannel,
   call,
   cancelled,
   delay,
@@ -55,6 +56,7 @@ import {
   applyLocalNoteUpdate,
   applyNoteCreated,
   applyNoteDeleted,
+  noteDeleteViewChanged,
   applyNoteUpdated,
   createNote,
   createNotePersistRequested,
@@ -323,6 +325,20 @@ function* rebasePendingDrafts(
   return newest.content;
 }
 
+type ContentInvalidation = { type: string; payload?: unknown };
+type ContentPublicationOwner = {
+  workspace: NotePublicationOwner;
+  invalidations: Channel<ContentInvalidation>;
+  invalidated: boolean;
+};
+
+function* isContentPublicationOwnerCurrent(owner: ContentPublicationOwner) {
+  // This bounded channel remembers a target-note deletion even after its receipt
+  // retires or the same ID is recreated. Other notes do not invalidate this ACK.
+  if ((yield* flush(owner.invalidations)).length > 0) owner.invalidated = true;
+  return !owner.invalidated && (yield* isNotePublicationLifetimeCurrent(owner.workspace));
+}
+
 /**
  * Apply the daemon's `note.setContent` response as the authoritative local
  * state (mirrors `notes-write-service.ts`): the merged `newContent` replaces
@@ -336,13 +352,13 @@ function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
-  owner: NotePublicationOwner,
+  owner: ContentPublicationOwner,
 ): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId, seq } = command;
   const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
   // Acknowledgement settles its real request, but cannot republish into a later note lifetime.
-  if (!(yield* isNotePublicationOwnerCurrent(owner)))
+  if (!(yield* isContentPublicationOwnerCurrent(owner)))
     return nextRev === undefined ? { content: echoed } : { content: echoed, rev: nextRev };
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
@@ -372,8 +388,36 @@ function forgetDraft(key: string, draft: PendingContent): void {
 
 function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent | undefined> {
   const { workspaceId, noteId } = command;
-  const owner = yield* captureNotePublicationOwner(workspaceId);
-  if (!(yield* isNotePublicationOwnerCurrent(owner))) return;
+  const workspace = yield* captureNotePublicationOwner(workspaceId);
+  const deletion = yield* selectNoteDeleteView.effect(workspaceId, noteId);
+  if (deletion?.terminalAbsent || !(yield* isNotePublicationOwnerCurrent(workspace))) return;
+  const invalidations = yield* actionChannel((action: ContentInvalidation) => {
+    if (action.type === applyNoteDeleted.type) {
+      const [deletedWorkspaceId, deletedNoteId] = (action as ReturnType<typeof applyNoteDeleted>)
+        .payload;
+      return deletedWorkspaceId === workspaceId && deletedNoteId === noteId;
+    }
+    if (action.type !== noteDeleteViewChanged.type) return false;
+    const [view] = (action as ReturnType<typeof noteDeleteViewChanged>).payload;
+    return (
+      view.workspaceId === workspaceId &&
+      view.noteId === noteId &&
+      view.backendGeneration === (workspace.backendGeneration ?? 0) &&
+      !!view.terminalAbsent
+    );
+  }, buffers.sliding(1));
+  try {
+    return yield* call(saveOwnedContent, command, { workspace, invalidations, invalidated: false });
+  } finally {
+    invalidations.close();
+  }
+}
+
+function* saveOwnedContent(
+  command: ContentCommand,
+  owner: ContentPublicationOwner,
+): SagaGenerator<AppliedNoteContent | undefined> {
+  const { workspaceId, noteId } = command;
   const key = noteKey(workspaceId, noteId);
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   // The rev the draft is based on is always sent; it is absent only when the
@@ -409,7 +453,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
           owner,
         );
       } catch (error) {
-        if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
+        if (!(yield* isContentPublicationOwnerCurrent(owner))) return undefined;
         const failure = error instanceof Error ? error : new Error(String(error));
         const rpcCode = (error as { rpcCode?: number } | null)?.rpcCode;
         if (rpcCode !== -32005 && rev !== undefined) {
@@ -420,7 +464,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
             /* Keep the unacknowledged draft. */
           }
           if (
-            (yield* isNotePublicationOwnerCurrent(owner)) &&
+            (yield* isContentPublicationOwnerCurrent(owner)) &&
             current &&
             current.id === noteId &&
             current.workspaceId === workspaceId &&
@@ -443,7 +487,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
             );
           }
         }
-        if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
+        if (!(yield* isContentPublicationOwnerCurrent(owner))) return undefined;
         failed = true;
         const newest = (unackedDrafts.get(key) ?? []).at(-1) ?? command;
         pendingContent.set(key, newest);
@@ -468,24 +512,24 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       rev,
       workspaceId,
     );
-    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
+    if (!(yield* isContentPublicationOwnerCurrent(owner))) return undefined;
     if (!result.success) {
       logger.error('Failed to save note content', result.error);
       notify.error(m.notes_writeService_saveFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
-      yield* call(refetchWorkspaceNotes, workspaceId, owner);
+      yield* call(refetchWorkspaceNotes, workspaceId, owner.workspace);
       return undefined;
     }
     return yield* call(applyContentSaveResult, command, rev, result, owner);
   } catch (error) {
-    if (!(yield* isNotePublicationOwnerCurrent(owner))) return undefined;
+    if (!(yield* isContentPublicationOwnerCurrent(owner))) return undefined;
     logger.error('Failed to save note content', error);
-    yield* call(refetchWorkspaceNotes, workspaceId, owner);
+    yield* call(refetchWorkspaceNotes, workspaceId, owner.workspace);
     return undefined;
   } finally {
     // Cancellation is handled by workspace cleanup; it never acknowledges a write.
-    if (failed || (yield* cancelled()) || !(yield* isNotePublicationOwnerCurrent(owner))) return;
+    if (failed || (yield* cancelled()) || !(yield* isContentPublicationOwnerCurrent(owner))) return;
     forgetDraft(key, command);
     if (command.strict) {
       const newest = (unackedDrafts.get(key) ?? []).at(-1);
