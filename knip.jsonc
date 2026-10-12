@@ -117,6 +117,8 @@
     "src/store/renderer/slices/agent-session/agent-session-slice.typecheck.ts",
     "src/test/fixtures/admitted-legacy-principal.typecheck.ts",
     "src/test/fixtures/recent-repositories-client.typecheck.ts",
+    // Compiler assertions preserve the original renderer APIs during shared-code extraction.
+    "src/test/fixtures/legacy-renderer-compatibility.typecheck.ts",
   ],
   "ignore": [
     // Accordion namespace members are used in NavigationPrimitivesCatalogPreview.svelte markup; knip misses them.
