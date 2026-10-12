@@ -167,8 +167,44 @@ test('message actions MA4: votes remain controlled and report exact current vote
 
 test('message actions MA5: trusted Shift copy writes request ID and native paste observes it', async ({
   page,
+  context,
 }, info) => {
   const item = await openActions(page);
+  const observePermissions = async (phase) => {
+    const observation = await page.evaluate(async () => {
+      const permissions = Object.fromEntries(
+        await Promise.all(
+          ['clipboard-read', 'clipboard-write'].map(async (name) => [
+            name,
+            (await navigator.permissions.query({ name })).state,
+          ]),
+        ),
+      );
+      return {
+        origin: location.origin,
+        secureContext: isSecureContext,
+        documentFocused: document.hasFocus(),
+        userActivation: {
+          isActive: navigator.userActivation.isActive,
+          hasBeenActive: navigator.userActivation.hasBeenActive,
+        },
+        permissions,
+      };
+    });
+    await info.attach(`clipboard-permissions-${phase}.json`, {
+      body: JSON.stringify(
+        { phase, observedAt: 'query time, not click-time activation', ...observation },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+  };
+  await observePermissions('before-grant');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: new URL(process.env.PARITY_CANDIDATE_URL).origin,
+  });
+  await observePermissions('after-grant');
   await inline(item);
   const copy = action(item, 'copy');
   await activate(item, copy, 'onCopy');
