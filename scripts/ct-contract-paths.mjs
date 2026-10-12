@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
+import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CT_TEST_DIR, isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
 
@@ -23,6 +24,9 @@ import { CT_TEST_DIR, isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pa
 // paths: `verify:changed` keeps selecting the narrower `ct-related` lane for
 // them locally. cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped
 // on the PR and was ejected from the merge queue three times.
+// Hosted selection also covers direct local imports from discovered CT specs
+// (see ctSpecDependencies below). Keep those out of the global contract list:
+// a fixture edit should still select only related tests in verify:changed.
 export const CT_CONTRACT_FILES = Object.freeze([
   'src/app.css',
   'playwright-ct.config.ts',
@@ -70,8 +74,114 @@ export function isCtTestArtifact(file) {
   return isCtSpec(file) || isCtGeometryGolden(file);
 }
 
-export function ctRequired(files) {
-  return files.some((file) => isCtContractPath(file) || isCtTestArtifact(file));
+export function ctRequired(files, dependencies = new Set()) {
+  return files.some(
+    (file) =>
+      isCtContractPath(file) || isCtTestArtifact(file) || dependencies.has(normalizeCtPath(file)),
+  );
+}
+
+// Deliberately bounded to ONE import edge from each CT spec. This covers hosts,
+// previews and data/helpers regardless of their naming/location, including
+// production modules imported directly, without walking the application graph.
+// Like local findRelatedCtTests, scan literal import/from specifiers (including
+// side-effect imports, re-exports and literal dynamic imports). Relative paths
+// and the four frontend aliases support explicit paths, extensionless modules
+// and directory indexes. Candidate paths are conservative, not a Vite resolver:
+// comments/type imports can over-select. Computed imports, globs, require calls
+// and unknown $ aliases fail safe; transitive dependencies are outside this rule.
+const IMPORT_RE = /(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g;
+const IMPORT_ALIASES = {
+  '$features/': 'src/features/',
+  '$lib/': 'src/lib/',
+  '$shared/': 'src/shared/',
+  '$store/': 'src/store/',
+};
+const IMPORT_EXTENSIONS = ['.svelte', '.ts', '.tsx', '.js', '.mjs'];
+
+function ctSpecDependencies(base, head) {
+  const gitOptions = { stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 };
+  const specs = new Map();
+  // Read the requested Git trees, never the checkout: deleted/renamed fixtures
+  // must remain visible, and callers need not have either revision checked out.
+  for (const ref of new Set([base, head])) {
+    const tree = execFileSync('git', ['ls-tree', '-r', '-z', ref, '--', CT_TEST_DIR], {
+      ...gitOptions,
+      encoding: 'utf8',
+    });
+    for (const entry of tree.split('\0').filter(Boolean)) {
+      const tab = entry.indexOf('\t');
+      const file = entry.slice(tab + 1);
+      if (!isCtSpec(file)) continue;
+      const [mode, type, oid] = entry.slice(0, tab).split(' ');
+      if (type !== 'blob' || !mode.startsWith('100')) {
+        throw new Error(`cannot read CT spec ${ref}:${file}`);
+      }
+      specs.set(`${oid}:${file}`, { oid, file });
+    }
+  }
+  if (!specs.size) return new Set();
+
+  // One batch avoids spawning a process per spec. Use byte lengths from Git's
+  // headers so Unicode source and embedded newlines cannot corrupt framing.
+  const oids = [...new Set([...specs.values()].map(({ oid }) => oid))];
+  const batch = execFileSync('git', ['cat-file', '--batch'], {
+    ...gitOptions,
+    input: `${oids.join('\n')}\n`,
+  });
+  const sources = new Map();
+  let offset = 0;
+  for (const oid of oids) {
+    const newline = batch.indexOf(10, offset);
+    const header = batch.subarray(offset, newline).toString('utf8').split(' ');
+    const size = Number(header[2]);
+    if (
+      newline < offset ||
+      header[0] !== oid ||
+      header[1] !== 'blob' ||
+      !Number.isSafeInteger(size) ||
+      size < 0 ||
+      batch[newline + 1 + size] !== 10
+    )
+      throw new Error(`cannot read CT spec blob ${oid}`);
+    offset = newline + 1;
+    sources.set(oid, batch.subarray(offset, offset + size).toString('utf8'));
+    offset += size + 1;
+  }
+
+  const dependencies = new Set();
+  for (const { oid, file } of specs.values()) {
+    const source = sources.get(oid);
+    // The workflow runs before dependency installation, so there is no TS/Vite
+    // parser here. Reject forms this literal scan cannot resolve rather than
+    // treating an incomplete dependency set as evidence to skip CT.
+    if (
+      /\brequire\s*\(|\bimport\s*\.\s*meta\s*\.\s*glob/.test(source) ||
+      [...source.matchAll(/\bimport\s*\(/g)].some(
+        (match) => !/^import\s*\(\s*(['"])[^'"]+\1\s*(?:\)|,)/.test(source.slice(match.index)),
+      )
+    )
+      throw new Error(`unsupported CT dependency syntax in ${file}`);
+    for (const [, specifier] of source.matchAll(IMPORT_RE)) {
+      const alias = Object.entries(IMPORT_ALIASES).find(([prefix]) => specifier.startsWith(prefix));
+      if (specifier.startsWith('$') && !alias) {
+        throw new Error(`unsupported CT dependency alias in ${file}: ${specifier}`);
+      }
+      if (!specifier.startsWith('.') && !alias) continue;
+      const target = alias
+        ? posix.join(alias[1], specifier.slice(alias[0].length))
+        : posix.join(posix.dirname(file), specifier);
+      if (target.startsWith('../')) continue;
+      dependencies.add(target);
+      if (!IMPORT_EXTENSIONS.includes(posix.extname(target))) {
+        for (const extension of IMPORT_EXTENSIONS) {
+          dependencies.add(`${target}${extension}`);
+          dependencies.add(`${target}/index${extension}`);
+        }
+      }
+    }
+  }
+  return dependencies;
 }
 
 // `-z` keeps paths verbatim (no `core.quotePath` escaping of non-ASCII names) and
@@ -102,11 +212,21 @@ export function parseArgs(argv) {
 
 // Prints exactly one `ct_required=true|false` line and always exits 0: a failure
 // to compute relevance must run CT, never skip it.
-export function main(argv, { diff = changedFiles, log = console.log, warn = console.error } = {}) {
+export function main(
+  argv,
+  {
+    diff = changedFiles,
+    dependencies = ctSpecDependencies,
+    log = console.log,
+    warn = console.error,
+  } = {},
+) {
   let required = true;
   try {
     const { base, head } = parseArgs(argv);
-    required = ctRequired(diff(base, head));
+    const files = diff(base, head);
+    required =
+      ctRequired(files) || (files.length > 0 && ctRequired(files, dependencies(base, head)));
   } catch (error) {
     warn(
       `ct-contract-paths: ${error instanceof Error ? error.message : error}; requiring CT (fail-safe)`,

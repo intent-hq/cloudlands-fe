@@ -192,6 +192,7 @@ describe('ctRequired and main', () => {
           calls.push([base, head]);
           return files;
         },
+        dependencies: () => new Set(),
         log: (line: string) => logs.push(line),
         warn: () => {},
       });
@@ -316,5 +317,183 @@ describe('--diff against a git repository', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('ct_required=true\n');
     expect(result.stderr).toContain('fail-safe');
+  });
+});
+
+describe('CT spec fixture dependencies', () => {
+  const spec = 'src/lib/components/chat/input/__tests__/member-mentions.ct.spec.ts';
+  const host = 'src/lib/components/chat/input/__tests__/MemberMentionsHost.svelte';
+
+  function fixtureRepository(imports = "import Host from './MemberMentionsHost.svelte';") {
+    const root = gitRepository();
+    commitFile(root, host, '<div>original fixture</div>');
+    commitFile(root, spec, imports);
+    return root;
+  }
+
+  it('requires CT for a MemberMentionsHost-only modification, even on another checkout', () => {
+    const root = fixtureRepository();
+    branch(root, 'fixture-only', host);
+    git(root, 'checkout', '-q', '--orphan', 'unrelated-checkout');
+    git(root, 'rm', '-q', '-rf', '.');
+    commitFile(root, 'unrelated.txt');
+    expect(runCli(root, '--diff', 'main', 'fixture-only')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+    expect(isCtContractPath(host)).toBe(false);
+  });
+
+  it.each([
+    [
+      "import Host from './AddedHost.svelte';",
+      'src/lib/components/chat/input/__tests__/AddedHost.svelte',
+    ],
+    [
+      "import { data } from './fixture-data';",
+      'src/lib/components/chat/input/__tests__/fixture-data.ts',
+    ],
+    [
+      "import { data } from './fixtures';",
+      'src/lib/components/chat/input/__tests__/fixtures/index.ts',
+    ],
+    [
+      "import { preview } from './example.preview';",
+      'src/lib/components/chat/input/__tests__/example.preview.ts',
+    ],
+    ["import Host from '$lib/fixtures/Host.svelte';", 'src/lib/fixtures/Host.svelte'],
+    ["import Host from '$features/example/Host.svelte';", 'src/features/example/Host.svelte'],
+    ["import { data } from '$shared/fixture';", 'src/shared/fixture.ts'],
+    ["import { data } from '$store/fixture';", 'src/store/fixture.ts'],
+    ["import './fixture.css';", 'src/lib/components/chat/input/__tests__/fixture.css'],
+    [
+      "const host = import('./LazyHost.svelte');",
+      'src/lib/components/chat/input/__tests__/LazyHost.svelte',
+    ],
+    [
+      "export { default } from './ExportedHost.svelte';",
+      'src/lib/components/chat/input/__tests__/ExportedHost.svelte',
+    ],
+    ["import Host from\n './Hôte.svelte';", 'src/lib/components/chat/input/__tests__/Hôte.svelte'],
+  ])('requires CT when a direct dependency is added: %s', (imports, fixture) => {
+    const root = fixtureRepository(imports);
+    branch(root, 'added-fixture', fixture);
+    expect(runCli(root, '--diff', 'main', 'added-fixture')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+  });
+
+  it.each(['delete', 'rename'])(
+    'requires CT when a referenced fixture is removed by %s',
+    (change) => {
+      const root = fixtureRepository();
+      branch(root, 'removed-fixture');
+      if (change === 'rename') git(root, 'mv', host, 'src/moved.svelte');
+      else git(root, 'rm', '-q', host);
+      git(root, 'commit', '-q', '-m', change);
+      expect(runCli(root, '--diff', 'main', 'removed-fixture')).toEqual({
+        status: 0,
+        stdout: 'ct_required=true\n',
+        stderr: '',
+      });
+    },
+  );
+
+  it('ignores stale dependencies removed before the requested fixture-only diff', () => {
+    const root = fixtureRepository();
+    branch(root, 'new-spec', spec);
+    commitFile(root, spec, "import Host from './OtherHost.svelte';");
+    const base = git(root, 'rev-parse', 'HEAD');
+    commitFile(root, host, 'changed old dependency');
+    expect(runCli(root, '--diff', base, 'HEAD').stdout).toBe('ct_required=false\n');
+    expect(runCli(root, '--diff', 'main', 'HEAD').stdout).toBe('ct_required=true\n');
+  });
+
+  it.each([
+    'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte',
+    'src/lib/components/chat/input/__tests__/unit-only-fixture.ts',
+    'src/lib/components/chat/input/production.svelte',
+    'src/lib/components/chat/input/__tests__/nested.ts',
+    'src/lib/components/chat/input/__tests__/unused/index.ts',
+  ])('does not select unrelated files or traverse the application graph: %s', (file) => {
+    const root = fixtureRepository();
+    commitFile(root, host, "<script>import value from './nested';</script>");
+    commitFile(
+      root,
+      'src/lib/components/chat/input/__tests__/unit.test.ts',
+      "import './unit-only-fixture';",
+    );
+    commitFile(
+      root,
+      'test/not-discovered.ct.spec.ts',
+      "import '../src/lib/components/chat/input/production.svelte';",
+    );
+    branch(root, 'unrelated', file);
+    expect(runCli(root, '--diff', 'main', 'unrelated')).toEqual({
+      status: 0,
+      stdout: 'ct_required=false\n',
+      stderr: '',
+    });
+  });
+
+  it('recognizes dependencies of dot-directory and mixed-case discovered specs', () => {
+    const root = gitRepository();
+    commitFile(root, 'src/.tests/example.CT.SPEC.TS', "import './Fixture.svelte';");
+    branch(root, 'fixture', 'src/.tests/Fixture.svelte');
+    expect(runCli(root, '--diff', 'main', 'fixture').stdout).toBe('ct_required=true\n');
+  });
+
+  it.each(['delete', 'rename'])(
+    'keeps base-only references safe when the spec and fixture %s',
+    (change) => {
+      const root = fixtureRepository();
+      branch(root, 'removed-spec-and-fixture');
+      if (change === 'rename') {
+        git(root, 'mv', host, 'src/moved.svelte');
+        git(root, 'mv', spec, 'src/moved.test.ts');
+      } else git(root, 'rm', '-q', host, spec);
+      git(root, 'commit', '-q', '-m', change);
+      expect(runCli(root, '--diff', 'main', 'HEAD')).toEqual({
+        status: 0,
+        stdout: 'ct_required=true\n',
+        stderr: '',
+      });
+    },
+  );
+
+  it.each([
+    "const host = import('./' + name);",
+    'const host = import(`./${name}.svelte`);',
+    "const hosts = import.meta.glob('./*.svelte');",
+    "const host = require('./Host.svelte');",
+    "import Host from '$custom/Host.svelte';",
+  ])('fails safe for unsupported dependency syntax: %s', (imports) => {
+    const root = fixtureRepository(imports);
+    branch(root, 'fixture', host);
+    const result = runCli(root, '--diff', 'main', 'fixture');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('ct_required=true\n');
+    expect(result.stderr).toContain('unsupported CT dependency');
+    expect(result.stderr).toContain('fail-safe');
+  });
+
+  it('fails safe when dependency discovery fails', () => {
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const code = main(['--diff', 'base', 'head'], {
+      diff: () => [host],
+      dependencies: () => {
+        throw new Error('cannot read CT spec tree');
+      },
+      log: (line: string) => logs.push(line),
+      warn: (line: string) => warnings.push(line),
+    });
+    expect(code).toBe(0);
+    expect(logs).toEqual(['ct_required=true']);
+    expect(warnings.join('\n')).toContain('cannot read CT spec tree');
+    expect(warnings.join('\n')).toContain('fail-safe');
   });
 });
