@@ -8,20 +8,20 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+    "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
     "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved.",
+    "method": "Bounded static supporting deleted-agent cleanup extraction at0dd. No source mappings, direct-target refresh, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained:236/1430(231components+5modules),178partial58localimplemented;92reviews. Original003 generator/comments/emitted body and APIs retained; five script specifiers resolve identical canonical files, approved export wrap only. All4changed support paths outside fixedinventory have explicit old/new provenance. Source facade binds existing invoke; realReactreceivers/preload/admission/root integration remains separate. All19CLI invalidations/history/cases/receipts/failures retained.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T07:50:10.815187+00:00",
+    "reviewedAt": "2026-10-12T08:06:14.531453+00:00",
     "checkpointAdvance": {
-      "previousLedgerCommit": "dffc53dd313920bf54504dae254a319ec4ff4f68",
-      "previousAuditCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "previousLedgerCommit": "4eb2b5d3280376eb4e29abd6ba87854d694efbe7",
+      "previousAuditCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "unchangedUniqueDirectTargets": 230,
       "changedUniqueDirectTargets": 0,
-      "retainedHistoricalReviewCount": 90,
-      "meaning": "Common validation pin only; every source row and actual inspected/source/support/native pin retained. Explicit new supporting profiles cannot refresh historical operational/runtime acceptance."
+      "retainedHistoricalReviewCount": 91,
+      "meaning": "Common validation pin only; actual inspected/source/support/native pins unchanged. New supporting extraction review does not refresh historical component or runtime acceptance."
     }
   },
   "statusDefinitions": {
@@ -78,7 +78,8 @@
     "Bounded original003/final0afebba9 static audit adds only DetectedScriptsCard local implemented.236/1430(231components+5modules),178partial58localimplemented,230targets88reviews. All229prior directtargets byteequal;1889other rows and87historical reviews retained. Original/current class and compiled-source inverse, normal light/dark token proof and canonical icon/import/caller review. Support484 neutral tuple/type and metadata extraction explicitly reviewed without denominator inflation.18prior source invalidations/failures/receipts retained; new DetectedScripts source drift not waived. No native/visual/product acceptance transfer. Seven supporting deltas carry original/previous/current provenance;11458 historical citations preserved in unchanged old reviews, summarized as51 prior support profiles. Normal-theme compiled declaration proof is not source-runtime/pixel acceptance. No guard rewrites or released help impact.",
     "Bounded static35e MarkdownViewer image-owner correction only; zero new mappings/status promotions.236/1430(231components+5modules),178partial58localimplemented,230targets89reviews.230prior target identities audited:229byteequal, only MarkdownViewer target updated with full oldrow/hash/contract retained. One changed DOM adapter supporting profile. Original003/current source and all19invalidations unchanged. MV11automaticPASS/manualSTOP, MV10olderPASS and OW1configgrep failure/guard corrections retained without transfer. No native/visual/product acceptance. Native MV11 stale options placement remains a manual STOP; same-node resize remains uncorrected. Support callbacks and intentional React lifetime departure are code-review evidence only. Owner Knip589 unsuppressed with old584/579 retained and no baseline-CI comparison. No released user-help impact.",
     "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance. Saved SN2dJUuXv at d1/c668 remains automatic/manual FAIL with close hit=false and original6D2JWp crop-only ambiguity retained. This CSS departure has no8f native acceptance. SN1tZniJX remains its original default-host scope only. WholeCI/Knip pass unclaimed; prior Knip589 unsuppressed remains in history. No released user-help impact.",
-    "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved. No statusCLI drift warning can certify these3support paths because they are outside its immutableinventory. OW1/2 old2d passes, bothOW3End1596/1428failures and OW4ZPIOcb164capturefailure retain their exactpins; correctedcandidate builtbutunrun atassignment. NC12older341/b34PASS nottransferred. SourceKnip588unsuppressed/no baseCIcomparison; allpreviousfailures retained. No released helpimpact."
+    "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved. No statusCLI drift warning can certify these3support paths because they are outside its immutableinventory. OW1/2 old2d passes, bothOW3End1596/1428failures and OW4ZPIOcb164capturefailure retain their exactpins; correctedcandidate builtbutunrun atassignment. NC12older341/b34PASS nottransferred. SourceKnip588unsuppressed/no baseCIcomparison; allpreviousfailures retained. No released helpimpact.",
+    "Bounded static supporting deleted-agent cleanup extraction at0dd. No source mappings, direct-target refresh, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained:236/1430(231components+5modules),178partial58localimplemented;92reviews. Original003 generator/comments/emitted body and APIs retained; five script specifiers resolve identical canonical files, approved export wrap only. All4changed support paths outside fixedinventory have explicit old/new provenance. Source facade binds existing invoke; realReactreceivers/preload/admission/root integration remains separate. All19CLI invalidations/history/cases/receipts/failures retained. Four supportpaths outsideinventory cannot be flagged by CLI. Mandatory type and direct sourcebinding do not prove React cleanup/admission/native behavior. PriorOW3both1596/1428andOW4capturefailure retained; no currentOW4lane result imported. Owner54testsPASS, Svelte211warnings, Knip588FAIL unsuppressed/no baseCIcomparison; prior preparation failures retained. Internalunreleased/nohelpimpact."
   ],
   "reviews": {
     "foundation": {
@@ -88,7 +89,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -102,7 +103,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -116,7 +117,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -132,7 +133,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -146,7 +147,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -157,7 +158,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -168,7 +169,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -182,7 +183,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -193,7 +194,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -204,7 +205,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -215,7 +216,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -229,7 +230,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -240,7 +241,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -251,7 +252,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -266,7 +267,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -282,7 +283,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -293,7 +294,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -304,7 +305,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -322,7 +323,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -333,7 +334,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -344,7 +345,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -355,7 +356,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -369,7 +370,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -380,7 +381,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -394,7 +395,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -405,7 +406,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -420,7 +421,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -434,7 +435,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -448,7 +449,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -459,7 +460,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -467,7 +468,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -481,7 +482,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -495,7 +496,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -509,7 +510,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -520,7 +521,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -531,7 +532,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -542,7 +543,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -553,7 +554,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -564,7 +565,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -575,7 +576,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -589,7 +590,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -600,7 +601,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -611,7 +612,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -622,7 +623,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -633,7 +634,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -644,7 +645,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -652,7 +653,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -680,7 +681,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -703,7 +704,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -729,7 +730,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -755,7 +756,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -786,7 +787,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -815,7 +816,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -855,7 +856,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -888,7 +889,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -929,7 +930,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -974,7 +975,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -1032,7 +1033,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1077,7 +1078,7 @@
         "0f00a72202dce497991564f9fc6875db9f26c9e5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
       "inspectedCallsites": [
@@ -1175,7 +1176,7 @@
       ],
       "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
       "inspectedCallsites": [
@@ -1280,7 +1281,7 @@
     },
     "chat-disclosure-rows-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1476,7 +1477,7 @@
     },
     "chat-recovery-notices-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1680,7 +1681,7 @@
     },
     "chat-stream-metadata-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -1847,7 +1848,7 @@
     },
     "chat-history-attribution-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -2060,7 +2061,7 @@
     },
     "chat-disclosure-corrections-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2276,7 +2277,7 @@
     },
     "chat-queued-actions-command-3e894": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2470,7 +2471,7 @@
     },
     "chat-code-reference-context-4bfa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2835,7 +2836,7 @@
     },
     "chat-inline-mcp-prompt-preview-9d297": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3373,7 +3374,7 @@
     },
     "queued-attachments-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3552,7 +3553,7 @@
     },
     "tabs-export-correction-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3871,7 +3872,7 @@
     },
     "streaming-status-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -4091,7 +4092,7 @@
     },
     "mcp-inline-font-correction-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["7af853406e1a80758a3762bafef510be19db4587"],
@@ -4803,7 +4804,7 @@
     },
     "suggested-chief-prompts-16ee80": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5064,7 +5065,7 @@
     },
     "automated-wake-header-f2b2a2": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5420,7 +5421,7 @@
     },
     "agent-pr-attribution-headers-73da5529": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5893,7 +5894,7 @@
     },
     "attachment-permission-support-05cc7db6": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -6531,7 +6532,7 @@
     },
     "attachment-file-replacement-ff9a4e35": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -7567,7 +7568,7 @@
     },
     "inline-permission-and-live-support-6a51a3da": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -8413,7 +8414,7 @@
     },
     "media-and-markdown-composition-dd6e5720": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -9617,7 +9618,7 @@
     },
     "full-markdown-and-reasoning-68a5ca85": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -11453,7 +11454,7 @@
     },
     "chat-image-and-video-wrapper-561fa08c": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -13289,7 +13290,7 @@
     },
     "message-actions-and-transcript-cards-2d310fed": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -16537,7 +16538,7 @@
     },
     "setup-script-and-edit-confirmation-3d7e81dc": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -21526,7 +21527,7 @@
     },
     "operational-window-and-panel-2d988e34": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -30687,7 +30688,7 @@
     },
     "response-group-and-cylinder-1cea8e2b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -49122,7 +49123,7 @@
     },
     "navigation-excerpt-and-image-caption-34161b6d": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -84276,7 +84277,7 @@
     },
     "response-group-reaction-correction-e46a388f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -85098,7 +85099,7 @@
     },
     "detected-scripts-and-neutral-indicator-0afebba9": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -86277,7 +86278,7 @@
     },
     "markdown-image-owner-correction-35e676aa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -87095,7 +87096,7 @@
     },
     "static-toast-containment-support-8f0bbcda": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -88058,7 +88059,7 @@
     },
     "canonical-anchor-and-agent-read-support-d4abc96f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "inspectedCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -90223,6 +90224,2382 @@
         "findings": "Instruction compliance evidence present for static scope. Reuses canonical state/actions/selectors/helpers; no new Redux state or duplicated utility/watcher. Typed effects retain yield*, named selector.effect and action-creator watcher. Sole source registration verified. Source facade is justified real dependency compatibility binding until Svelte renderer retirement. Public StoreSelectorEffect type and SagaGenerator; runtime closure47files110edges without configuredStore/Svelte dependencies. Owner architecture/source lint receipts retained; no newly run source tests per explicit ledger-only assignment."
       },
       "excludedLaterWork": "Any later root activation/cleanup/admission or new component ports, candidate/nativeruns and moving sharedHEAD remain outsidefinald4. No guard/config/baseline edits.",
+      "userHelpImpact": "Internal unreleased migration supporting audit; no released assistant-help impact.",
+      "retainedReviewCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+    },
+    "deleted-agent-cleanup-support-0ddf543a": {
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+      "inspectedCandidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+      "taskNoteIds": [
+        "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+        "d8aa6be3-1906-4bcb-a267-8cb87482e8a3",
+        "36ff68cc-2724-4588-84f2-dc0ebdd59df7",
+        "e54b1c44-a2bb-409b-8161-5342714fd4f9"
+      ],
+      "implementationCommits": ["0ddf543ad843cc1ddd84f02c3ec972b15581592d"],
+      "scope": "Bounded static supporting deleted-agent cleanup extraction at0dd. No source mappings, direct-target refresh, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained:236/1430(231components+5modules),178partial58localimplemented;92reviews. Original003 generator/comments/emitted body and APIs retained; five script specifiers resolve identical canonical files, approved export wrap only. All4changed support paths outside fixedinventory have explicit old/new provenance. Source facade binds existing invoke; realReactreceivers/preload/admission/root integration remains separate. All19CLI invalidations/history/cases/receipts/failures retained.",
+      "previousLedgerCommit": "4eb2b5d3280376eb4e29abd6ba87854d694efbe7",
+      "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "sourceApiReview": {
+        "result": "PASS",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+        "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+        "cleanup": {
+          "originalSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "facadeSha256": "af7bc8ae0384aefe6c0b683efe0eaf6a85959a7779d5857bc1c6ffa79c5e5137",
+          "factorySha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "bodySha256": "caba64f8f37e0e849318576917d12d489520fdee4a1058dbce02711273546cab",
+          "originalBodyExactExceptIndent": true,
+          "emittedBodyEqual": true,
+          "exactInverseToOriginal": true,
+          "callerSignature": "wsId: string, agentId: string",
+          "mandatoryInvokeType": "(\n    channel: typeof IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS,\n    data: { agentId: string },\n  ) => Promise<unknown>",
+          "sourceInvokeSignature": "export async function invoke<T>(channel: string, ...args: unknown[]): Promise<T>",
+          "sourceFacadeBindsExistingInvoke": true,
+          "compatibilitySunset": "Svelte renderer retirement",
+          "semantics": "Unchanged warning, closeTabsByAgentId, destroyTabsByOwnerAgent, pruneRecentlyClosed, then invoke(browser:clear-agent-tabs,{agentId}); only invoke is caught and logged. No new Redux/action/policy/watcher."
+        },
+        "scriptProof": [
+          {
+            "path": "src/store/renderer/slices/scripts/scripts-slice.ts",
+            "originalSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+            "sha256": "261cf2295f30e4cc904a19911d8f9d3193469b2d1e8cf75ca3cae704fd9e8555",
+            "exactSourceInverse": true,
+            "emittedJavaScriptEqualAfterSpecifierInverse": true,
+            "replacements": [
+              {
+                "before": "$features/scripts/utils/script-change",
+                "after": "../../../../features/scripts/utils/script-change",
+                "target": "src/features/scripts/utils/script-change.ts",
+                "sha256": "e9382cda95fc6d9ad0434f6d5c68d2a7a0ad0be9a5ee2d6f2be57bfb30a1087c"
+              },
+              {
+                "before": "$features/scripts/types",
+                "after": "../../../../features/scripts/types",
+                "target": "src/features/scripts/types.ts",
+                "sha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1"
+              }
+            ]
+          },
+          {
+            "path": "src/store/renderer/slices/scripts/scripts-types.ts",
+            "originalSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+            "sha256": "1a119649ea1c27f61391e1169bd51cb0e8705aa84a4ac00e94bad60570ddd4a3",
+            "exactSourceInverse": true,
+            "emittedJavaScriptEqualAfterSpecifierInverse": true,
+            "replacements": [
+              {
+                "before": "$features/scripts/utils/script-change",
+                "after": "../../../../features/scripts/utils/script-change",
+                "target": "src/features/scripts/utils/script-change.ts",
+                "sha256": "e9382cda95fc6d9ad0434f6d5c68d2a7a0ad0be9a5ee2d6f2be57bfb30a1087c"
+              },
+              {
+                "before": "$features/scripts/types",
+                "after": "../../../../features/scripts/types",
+                "target": "src/features/scripts/types.ts",
+                "sha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1"
+              },
+              {
+                "before": "$features/scripts/types",
+                "after": "../../../../features/scripts/types",
+                "target": "src/features/scripts/types.ts",
+                "sha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1"
+              }
+            ]
+          }
+        ],
+        "dependencies": [
+          {
+            "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+            "sha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/features/scripts/types.ts",
+            "sha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/features/scripts/utils/script-change.ts",
+            "sha256": "e9382cda95fc6d9ad0434f6d5c68d2a7a0ad0be9a5ee2d6f2be57bfb30a1087c",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "e9382cda95fc6d9ad0434f6d5c68d2a7a0ad0be9a5ee2d6f2be57bfb30a1087c",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/shared/ipc-registry.ts",
+            "sha256": "aa9dc5e1e02d9537b6679b99d3db8f742d1630a467b0f1240e839c1a842124dd",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "aa9dc5e1e02d9537b6679b99d3db8f742d1630a467b0f1240e839c1a842124dd",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/lib/electron-bridge.ts",
+            "sha256": "289e08d2de8d94928904d1d1957461f351a2bf4db3cf92878a5c43219f9a89ae",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "289e08d2de8d94928904d1d1957461f351a2bf4db3cf92878a5c43219f9a89ae",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/chat-state/sagas/chat-read-saga.ts",
+            "sha256": "138121edcade5427af54efbcdc8abc3030079ea91f2bc6ec9471bc896576b65e",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "138121edcade5427af54efbcdc8abc3030079ea91f2bc6ec9471bc896576b65e",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/store/renderer/sagas.ts",
+            "sha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "apps/react/src/client.tsx",
+            "sha256": "2e49d3dca6d66fb49fbee6d93ad185d6ec264e37f85ca2590f6876f123539b58",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/tsconfig.json",
+            "sha256": "f32d4b2342f1488282c97bf816fef97661e601ddaabafe2b8bc51ea6437d11f4",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/vite.config.ts",
+            "sha256": "5ccd7113b695526c4c014c53c9a8f50e61d58c7fd4267c23a69cb87e12f0ef3e",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          }
+        ],
+        "ownerSearch": "0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/chat-state/sagas/chat-read-saga.ts:78:import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-agent-cleanup';\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/chat-state/sagas/chat-read-saga.ts:284:      yield* call(cleanupDeletedAgentTabs, wsId, agentId);\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts:22:  cleanupDeletedAgentTabs,\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts:28:  cleanupDeletedAgentTabs: (wsId: string, agentId: string) => SagaGenerator<void>;\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts:49:        yield* call(cleanupDeletedAgentTabs, wsId, agentId);\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts:4:import { cleanupDeletedAgentTabs } from './deleted-agent-cleanup';\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts:10:  cleanupDeletedAgentTabs,\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts:24:export function createDeletedAgentCleanup({\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts:32:  return function* cleanupDeletedAgentTabs(wsId: string, agentId: string) {\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts:2:import { createDeletedAgentCleanup } from './deleted-agent-cleanup-factory';\n0ddf543ad843cc1ddd84f02c3ec972b15581592d:src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts:5:export const cleanupDeletedAgentTabs = createDeletedAgentCleanup({ invoke });\n",
+        "runtimeClosure": {
+          "files": [
+            {
+              "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+              "generated": false
+            },
+            {
+              "path": "src/lib/utils/client-logger.ts",
+              "sha256": "7b3832f47da39cda36fb1f5422a0810f866834939db89e1345a273dc2a26006e",
+              "generated": false
+            },
+            {
+              "path": "src/shared/ipc-registry.ts",
+              "sha256": "aa9dc5e1e02d9537b6679b99d3db8f742d1630a467b0f1240e839c1a842124dd",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "sha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/utils/workspace-scoped.ts",
+              "sha256": "17bd07b066eb9b0645da899a7486d499c9049183edbdca4352fd103de4368210",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/utils/utils.ts",
+              "sha256": "a5b777be80a9cbce3566ea3d7b6e77fbf2e42c03886820c7ece22acbff2dd00a",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "sha256": "261cf2295f30e4cc904a19911d8f9d3193469b2d1e8cf75ca3cae704fd9e8555",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "sha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+              "generated": false
+            },
+            {
+              "path": "src/features/scripts/types.ts",
+              "sha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "sha256": "4d0c3469a407d3e976730aac162ead847c01436e7b9ff2b2a331772c2b513f3b",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/terminal-overlay-height.ts",
+              "sha256": "6b4ed466279458dc99742b16ded5b2746e431370e5cbd02f3427f487fd9d9b30",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "sha256": "7d8f068092e0d6f103058259e9b6b9203634c33cf767feaf113f81c82da05143",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts",
+              "sha256": "409dcb39415a18b3faddcb95ea4d72f8e0b6714951de352ace74faf8f24d0214",
+              "generated": false
+            },
+            {
+              "path": "src/shared/panel-layout-sizing.ts",
+              "sha256": "3e756fb1c36fcd82296c2ec0d955757ace0b85960af90c6c7f949879d47e2a52",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts",
+              "sha256": "77c0e1aae5f57982f010524d96eb40795efa76cfdcbdd0b63f31fc37951991c5",
+              "generated": false
+            },
+            {
+              "path": "src/shared/panel-default-width-tiers.ts",
+              "sha256": "34bc724c3fd4c4d524aefd259e70145e96e1b087d8e1e9508e7aa831af1e0c1b",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts",
+              "sha256": "c4889230c87e3fa20ed0c1b5adbe09a5e75925d0dd7adec8b06187e7e4b3aab2",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts",
+              "sha256": "ff81a539e7ee5426999ea0bd4d960f89b2915857c1f78d6f9985d6eb78947171",
+              "generated": false
+            },
+            {
+              "path": "src/shared/assistant-panel-layout.ts",
+              "sha256": "468511aea0f7e4da343f29777a9c8b01424e82667ae538210ee1da948de5b6df",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/branded-ids.ts",
+              "sha256": "1e691c5f11ea59976a58e9cfb574a12262fde4fbfc60284d1d55255e5313fed4",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/browser-tab-rehydration.ts",
+              "sha256": "b5faf8b3a77dbc4c47081cd630b8290c2728c7d30602a615ccc5bfb2f9341568",
+              "generated": false
+            }
+          ],
+          "edges": [
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "typed-redux-saga",
+              "external": "typed-redux-saga"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "../../../../../lib/utils/client-logger",
+              "path": "src/lib/utils/client-logger.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "../../../../../shared/ipc-registry",
+              "path": "src/shared/ipc-registry.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "../../panel-layout/panel-layout-slice",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../../utils/workspace-scoped",
+              "path": "src/store/renderer/utils/workspace-scoped.ts"
+            },
+            {
+              "from": "src/store/renderer/utils/workspace-scoped.ts",
+              "specifier": "fast-equals",
+              "external": "fast-equals"
+            },
+            {
+              "from": "src/store/renderer/utils/workspace-scoped.ts",
+              "specifier": "./utils",
+              "path": "src/store/renderer/utils/utils.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../scripts/scripts-slice",
+              "path": "src/store/renderer/slices/scripts/scripts-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "../../utils/workspace-scoped",
+              "path": "src/store/renderer/utils/workspace-scoped.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "../../../../features/scripts/types",
+              "path": "src/features/scripts/types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../terminals/terminals-slice",
+              "path": "src/store/renderer/slices/terminals/terminals-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "$shared/utils/terminal-overlay-height",
+              "path": "src/shared/utils/terminal-overlay-height.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "../scripts/scripts-slice",
+              "path": "src/store/renderer/slices/scripts/scripts-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-layout-types",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-dominant-expansion",
+              "path": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts",
+              "specifier": "../../../../shared/panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts",
+              "specifier": "./panel-layout-tabless",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts",
+              "specifier": "../../../../shared/panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts",
+              "specifier": "../../../../shared/panel-default-width-tiers",
+              "path": "src/shared/panel-default-width-tiers.ts"
+            },
+            {
+              "from": "src/shared/panel-default-width-tiers.ts",
+              "specifier": "./panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-layout-tabless",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../../../../shared/panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../../../../shared/panel-default-width-tiers",
+              "path": "src/shared/panel-default-width-tiers.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-tab-identity",
+              "path": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts",
+              "specifier": "./panel-layout-tabless",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts",
+              "specifier": "$shared/assistant-panel-layout",
+              "path": "src/shared/assistant-panel-layout.ts"
+            },
+            {
+              "from": "src/shared/assistant-panel-layout.ts",
+              "specifier": "./types/branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./browser-tab-rehydration",
+              "path": "src/store/renderer/slices/panel-layout/browser-tab-rehydration.ts"
+            }
+          ],
+          "external": [
+            "@themislib/themis/utils/collections/collection-utils",
+            "@themislib/themis/utils/store/create-action",
+            "@themislib/themis/utils/store/create-reducer",
+            "fast-equals",
+            "typed-redux-saga"
+          ],
+          "missing": [],
+          "computed": [],
+          "forbidden": []
+        },
+        "typeClosure": {
+          "files": [
+            {
+              "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+              "generated": false
+            },
+            {
+              "path": "src/lib/utils/client-logger.ts",
+              "sha256": "7b3832f47da39cda36fb1f5422a0810f866834939db89e1345a273dc2a26006e",
+              "generated": false
+            },
+            {
+              "path": "src/shared/ipc-registry.ts",
+              "sha256": "aa9dc5e1e02d9537b6679b99d3db8f742d1630a467b0f1240e839c1a842124dd",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "sha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/browser-clients.ts",
+              "sha256": "c53e7179d24b0507593bcecccc5bad561ea7d4807961d58ea3f32a018bca5982",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/principal.ts",
+              "sha256": "4ce3d696ffecb4565921c3638888f224d82b3465c6d704b4fc2ee93886dae7c4",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/utils/workspace-scoped.ts",
+              "sha256": "17bd07b066eb9b0645da899a7486d499c9049183edbdca4352fd103de4368210",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/utils/utils.ts",
+              "sha256": "a5b777be80a9cbce3566ea3d7b6e77fbf2e42c03886820c7ece22acbff2dd00a",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "sha256": "261cf2295f30e4cc904a19911d8f9d3193469b2d1e8cf75ca3cae704fd9e8555",
+              "generated": false
+            },
+            {
+              "path": "src/features/scripts/utils/script-change.ts",
+              "sha256": "e9382cda95fc6d9ad0434f6d5c68d2a7a0ad0be9a5ee2d6f2be57bfb30a1087c",
+              "generated": false
+            },
+            {
+              "path": "src/features/scripts/types.ts",
+              "sha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "sha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-types.ts",
+              "sha256": "12f68045478f581da8533394ee589138e4583f4fbe1f510d8db4cbbdcb593c57",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/scripts/scripts-types.ts",
+              "sha256": "1a119649ea1c27f61391e1169bd51cb0e8705aa84a4ac00e94bad60570ddd4a3",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "sha256": "4d0c3469a407d3e976730aac162ead847c01436e7b9ff2b2a331772c2b513f3b",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/terminal-overlay-height.ts",
+              "sha256": "6b4ed466279458dc99742b16ded5b2746e431370e5cbd02f3427f487fd9d9b30",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "sha256": "7d8f068092e0d6f103058259e9b6b9203634c33cf767feaf113f81c82da05143",
+              "generated": false
+            },
+            {
+              "path": "src/shared/ipc/workspace-command-payloads.ts",
+              "sha256": "8d43eb1c2d47dfefc953c0b9ac1d15b9bf9c1dceb0089d395d4559dcf74b4972",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts",
+              "sha256": "c4889230c87e3fa20ed0c1b5adbe09a5e75925d0dd7adec8b06187e7e4b3aab2",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts",
+              "sha256": "409dcb39415a18b3faddcb95ea4d72f8e0b6714951de352ace74faf8f24d0214",
+              "generated": false
+            },
+            {
+              "path": "src/shared/panel-layout-sizing.ts",
+              "sha256": "3e756fb1c36fcd82296c2ec0d955757ace0b85960af90c6c7f949879d47e2a52",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts",
+              "sha256": "77c0e1aae5f57982f010524d96eb40795efa76cfdcbdd0b63f31fc37951991c5",
+              "generated": false
+            },
+            {
+              "path": "src/shared/panel-default-width-tiers.ts",
+              "sha256": "34bc724c3fd4c4d524aefd259e70145e96e1b087d8e1e9508e7aa831af1e0c1b",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts",
+              "sha256": "ff81a539e7ee5426999ea0bd4d960f89b2915857c1f78d6f9985d6eb78947171",
+              "generated": false
+            },
+            {
+              "path": "src/shared/assistant-panel-layout.ts",
+              "sha256": "468511aea0f7e4da343f29777a9c8b01424e82667ae538210ee1da948de5b6df",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/branded-ids.ts",
+              "sha256": "1e691c5f11ea59976a58e9cfb574a12262fde4fbfc60284d1d55255e5313fed4",
+              "generated": false
+            },
+            {
+              "path": "src/store/renderer/slices/panel-layout/browser-tab-rehydration.ts",
+              "sha256": "b5faf8b3a77dbc4c47081cd630b8290c2728c7d30602a615ccc5bfb2f9341568",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types.ts",
+              "sha256": "e8927e4daac2f8830db989ce88d2e93bbc53cabef0af2963751f90d2d41d7110",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-node.ts",
+              "sha256": "e3f74d09f0cdd79dc6b5980e109c40ae7a00b6b4135aca9f2e34965b8d95ef66",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent.types.ts",
+              "sha256": "22df1a3693692ad378a6a5b3e3e6259232772fde8b3d9ec0262a3e79521c055e",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/model-triple.ts",
+              "sha256": "ef1cfd1f8011b5dd18c76625b063683936aa18d833fbae58eb0707963ce6d700",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-session.ts",
+              "sha256": "3841e0480b674e58fa419ec8984a656da8c39eea305ab15f7c50b2b36fea9409",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/legacy-model-id.ts",
+              "sha256": "6c11e0a682d84d4008d684cc0162edc5ed9fb522488f59e66d2cb6d04a9355f6",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-message.ts",
+              "sha256": "49c182b4b84a621b758f23b849ff94e6c4692cb46c954afe68c861ef27c73401",
+              "generated": false
+            },
+            {
+              "path": "src/features/workspace-sharing/types.ts",
+              "sha256": "b7a720a918ed49a19c1bcfb42c3039c16e624f34fdb6b1f5af89a37b1ebe613b",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/content-block.ts",
+              "sha256": "d408ee99e1ab6d0d2653554c2c0ded96d751b4c39b12fa5543200b3d1564ba7e",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/proposal.ts",
+              "sha256": "c058e652976ebd5fcff74b81561ae656211d298738c90311c45569392f1a4158",
+              "generated": false
+            },
+            {
+              "path": "src/shared/app-settings-schema.ts",
+              "sha256": "2f4227370df2d09e37fd54b16e9cf58ba0d9ffdd4db54326c3fa7e3ae2592d3d",
+              "generated": false
+            },
+            {
+              "path": "src/shared/theme-presets-manifest.ts",
+              "sha256": "c0fba9f3b34dbdd136b5821b9b42c5046ccd686d7dd6ae8e0fc642f087ee619d",
+              "generated": false
+            },
+            {
+              "path": "src/shared/paraglide/runtime.js",
+              "sha256": "666bf2dab0fb82cd0523f83eb6a43fece562f81ce172eddff3407122cb4b3584",
+              "generated": true
+            },
+            {
+              "path": "src/shared/i18n/locale-matcher.ts",
+              "sha256": "11df016932f283d26eb6a0103fffe90fd19f1d2be28f44bd9cfe2c7354038192",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/link-helpers.ts",
+              "sha256": "3cb306fc9b610e775649e42037a18e4da21a715eb4f185395b9d9ce8ecc7a263",
+              "generated": false
+            },
+            {
+              "path": "src/features/auto-update/types.ts",
+              "sha256": "f9d020064b887dd70452ee89182016598e42d5061e6c2d3f24ae2d9b9bc75b4b",
+              "generated": false
+            },
+            {
+              "path": "src/shared/specialist-file-types.ts",
+              "sha256": "361fb1fd46f6995016d1da7c1f01bc06fef0c7db878aa3aa4c01cf00ee58a18f",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/video-source.ts",
+              "sha256": "ace10dd7953ff65e9633c0ff71af7d66cee34088effb791bb976a919c0e08339",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-session.guards.ts",
+              "sha256": "0035a11078661d86c5f43f4c1620b6865ce723855e368df9429a40bc26f3904c",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/content-block.guards.ts",
+              "sha256": "1c62debc9b640d243843188d4b7e2ebef975072eb888a826f059f46d95a6c451",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/content-block.migration.ts",
+              "sha256": "5ca1110aa85e5a8e11ca647d34e4f4da23df30676726e99defc6581a5b557b82",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/proposal-resource.ts",
+              "sha256": "60121bd06d13424666c7142e26f9205fd735be4f8c635ab024ba29e5c298bf33",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/agent-message.conversion.ts",
+              "sha256": "6a7f15df4c4c48ba361c25e2555aac28b6833b2adeff556719a43f0e21914880",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/suggested-prompt.ts",
+              "sha256": "6e739ed4219db5d16e3b34f407aa94dbdc0211a6372a003f250f80114b9ff41b",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/change-detector.types.ts",
+              "sha256": "26025147b301950dc413c76ff7eff29fda3a313ee3251846f1c3aa318599c4d9",
+              "generated": false
+            },
+            {
+              "path": "src/features/events/types.ts",
+              "sha256": "c47333c94a0c9fd17b35176efc0dd67c749fb8824871cfd11c22758eac9e5ad6",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/repository-checkout.ts",
+              "sha256": "c50ca0fe5281c0735c1c3c4267b0b2c8bc15ba51a84e8ffb8597c2ee295e30c2",
+              "generated": false
+            },
+            {
+              "path": "src/shared/utils/gitlab-resource-link.ts",
+              "sha256": "83e701d0f01063ad0d70086fba3507d2a94576f1fbb0a98a3ae9fa6e38908256",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/repository-context.ts",
+              "sha256": "468a0bc98f91cf319f0d21631f7b2d9040f64d162554c6fa17a53542f1562211",
+              "generated": false
+            },
+            {
+              "path": "src/shared/types/comment.types.ts",
+              "sha256": "57cde4575b66061bbe8492512e91f169a47c2000fe1f4acfff667177e41647de",
+              "generated": false
+            }
+          ],
+          "edges": [
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "typed-redux-saga",
+              "external": "typed-redux-saga"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "../../../../../lib/utils/client-logger",
+              "path": "src/lib/utils/client-logger.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "../../../../../shared/ipc-registry",
+              "path": "src/shared/ipc-registry.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "specifier": "../../panel-layout/panel-layout-slice",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "$shared/types/browser-clients",
+              "path": "src/shared/types/browser-clients.ts"
+            },
+            {
+              "from": "src/shared/types/browser-clients.ts",
+              "specifier": "./principal",
+              "path": "src/shared/types/principal.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../../utils/workspace-scoped",
+              "path": "src/store/renderer/utils/workspace-scoped.ts"
+            },
+            {
+              "from": "src/store/renderer/utils/workspace-scoped.ts",
+              "specifier": "fast-equals",
+              "external": "fast-equals"
+            },
+            {
+              "from": "src/store/renderer/utils/workspace-scoped.ts",
+              "specifier": "./utils",
+              "path": "src/store/renderer/utils/utils.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../scripts/scripts-slice",
+              "path": "src/store/renderer/slices/scripts/scripts-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "../../../../features/scripts/utils/script-change",
+              "path": "src/features/scripts/utils/script-change.ts"
+            },
+            {
+              "from": "src/features/scripts/utils/script-change.ts",
+              "specifier": "zod",
+              "external": "zod"
+            },
+            {
+              "from": "src/features/scripts/utils/script-change.ts",
+              "specifier": "../types",
+              "path": "src/features/scripts/types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+              "specifier": "./workspace-lifecycle-types",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "../../utils/workspace-scoped",
+              "path": "src/store/renderer/utils/workspace-scoped.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "../../../../features/scripts/types",
+              "path": "src/features/scripts/types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "specifier": "./scripts-types",
+              "path": "src/store/renderer/slices/scripts/scripts-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-types.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-types.ts",
+              "specifier": "../../../../features/scripts/utils/script-change",
+              "path": "src/features/scripts/utils/script-change.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-types.ts",
+              "specifier": "../../../../features/scripts/types",
+              "path": "src/features/scripts/types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/scripts/scripts-types.ts",
+              "specifier": "../../../../features/scripts/types",
+              "path": "src/features/scripts/types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../terminals/terminals-slice",
+              "path": "src/store/renderer/slices/terminals/terminals-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-action",
+              "external": "@themislib/themis/utils/store/create-action"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "@themislib/themis/utils/store/create-reducer",
+              "external": "@themislib/themis/utils/store/create-reducer"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "$shared/utils/terminal-overlay-height",
+              "path": "src/shared/utils/terminal-overlay-height.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/terminals/terminals-slice.ts",
+              "specifier": "../scripts/scripts-slice",
+              "path": "src/store/renderer/slices/scripts/scripts-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../workspace-lifecycle/workspace-lifecycle-slice",
+              "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-layout-types",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "@themislib/themis/utils/collections/collection-utils",
+              "external": "@themislib/themis/utils/collections/collection-utils"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "../../../../shared/ipc/workspace-command-payloads",
+              "path": "src/shared/ipc/workspace-command-payloads.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "../../../../shared/ipc/workspace-command-payloads",
+              "path": "src/shared/ipc/workspace-command-payloads.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-layout-types",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-dominant-expansion",
+              "path": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts",
+              "specifier": "../../../../shared/panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts",
+              "specifier": "./panel-layout-types",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-dominant-expansion.ts",
+              "specifier": "./panel-layout-tabless",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts",
+              "specifier": "./panel-layout-types",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts",
+              "specifier": "../../../../shared/panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts",
+              "specifier": "../../../../shared/panel-default-width-tiers",
+              "path": "src/shared/panel-default-width-tiers.ts"
+            },
+            {
+              "from": "src/shared/panel-default-width-tiers.ts",
+              "specifier": "./panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-layout-tabless",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../../../../shared/panel-layout-sizing",
+              "path": "src/shared/panel-layout-sizing.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../../../../shared/panel-default-width-tiers",
+              "path": "src/shared/panel-default-width-tiers.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-layout-width-provenance",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-width-provenance.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./panel-tab-identity",
+              "path": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts",
+              "specifier": "./panel-layout-types",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts",
+              "specifier": "./panel-layout-tabless",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-tab-identity.ts",
+              "specifier": "$shared/assistant-panel-layout",
+              "path": "src/shared/assistant-panel-layout.ts"
+            },
+            {
+              "from": "src/shared/assistant-panel-layout.ts",
+              "specifier": "./types/branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "./browser-tab-rehydration",
+              "path": "src/store/renderer/slices/panel-layout/browser-tab-rehydration.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/browser-tab-rehydration.ts",
+              "specifier": "./panel-layout-types",
+              "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts"
+            },
+            {
+              "from": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+              "specifier": "../../../../shared/types",
+              "path": "src/shared/types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-node",
+              "path": "src/shared/types/agent-node.ts"
+            },
+            {
+              "from": "src/shared/types/agent-node.ts",
+              "specifier": "zod",
+              "external": "zod"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent.types",
+              "path": "src/shared/types/agent.types.ts"
+            },
+            {
+              "from": "src/shared/types/agent.types.ts",
+              "specifier": "./agent-node",
+              "path": "src/shared/types/agent-node.ts"
+            },
+            {
+              "from": "src/shared/types/agent.types.ts",
+              "specifier": "./model-triple",
+              "path": "src/shared/types/model-triple.ts"
+            },
+            {
+              "from": "src/shared/types/agent.types.ts",
+              "specifier": "./branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types/agent.types.ts",
+              "specifier": "./agent-session",
+              "path": "src/shared/types/agent-session.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "./branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "$shared/utils/legacy-model-id",
+              "path": "src/shared/utils/legacy-model-id.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "./agent-message",
+              "path": "src/shared/types/agent-message.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.ts",
+              "specifier": "$features/workspace-sharing/types",
+              "path": "src/features/workspace-sharing/types.ts"
+            },
+            {
+              "from": "src/features/workspace-sharing/types.ts",
+              "specifier": "$shared/types/principal",
+              "path": "src/shared/types/principal.ts"
+            },
+            {
+              "from": "src/features/workspace-sharing/types.ts",
+              "specifier": "$shared/types",
+              "path": "src/shared/types.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.ts",
+              "specifier": "./content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.ts",
+              "specifier": "./proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types/proposal.ts",
+              "specifier": "../app-settings-schema",
+              "path": "src/shared/app-settings-schema.ts"
+            },
+            {
+              "from": "src/shared/app-settings-schema.ts",
+              "specifier": "./theme-presets-manifest",
+              "path": "src/shared/theme-presets-manifest.ts"
+            },
+            {
+              "from": "src/shared/app-settings-schema.ts",
+              "specifier": "./paraglide/runtime.js",
+              "path": "src/shared/paraglide/runtime.js",
+              "generated": true
+            },
+            {
+              "from": "src/shared/app-settings-schema.ts",
+              "specifier": "./i18n/locale-matcher",
+              "path": "src/shared/i18n/locale-matcher.ts"
+            },
+            {
+              "from": "src/shared/app-settings-schema.ts",
+              "specifier": "./utils/link-helpers",
+              "path": "src/shared/utils/link-helpers.ts"
+            },
+            {
+              "from": "src/shared/utils/link-helpers.ts",
+              "specifier": "$shared/types/branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/app-settings-schema.ts",
+              "specifier": "../features/auto-update/types",
+              "path": "src/features/auto-update/types.ts"
+            },
+            {
+              "from": "src/shared/types/proposal.ts",
+              "specifier": "../specialist-file-types",
+              "path": "src/shared/specialist-file-types.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.ts",
+              "specifier": "./proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.ts",
+              "specifier": "./agent-message",
+              "path": "src/shared/types/agent-message.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.ts",
+              "specifier": "./video-source",
+              "path": "src/shared/types/video-source.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.ts",
+              "specifier": "./video-source",
+              "path": "src/shared/types/video-source.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.ts",
+              "specifier": "./branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "./agent.types",
+              "path": "src/shared/types/agent.types.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "./agent-node",
+              "path": "src/shared/types/agent-node.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.ts",
+              "specifier": "../types",
+              "path": "src/shared/types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-session",
+              "path": "src/shared/types/agent-session.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-session",
+              "path": "src/shared/types/agent-session.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-session.guards",
+              "path": "src/shared/types/agent-session.guards.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.guards.ts",
+              "specifier": "./agent-session",
+              "path": "src/shared/types/agent-session.ts"
+            },
+            {
+              "from": "src/shared/types/agent-session.guards.ts",
+              "specifier": "./agent.types",
+              "path": "src/shared/types/agent.types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/content-block.guards",
+              "path": "src/shared/types/content-block.guards.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.guards.ts",
+              "specifier": "./content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/content-block.migration",
+              "path": "src/shared/types/content-block.migration.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.migration.ts",
+              "specifier": "./content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.migration.ts",
+              "specifier": "./content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.migration.ts",
+              "specifier": "./proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types/content-block.migration.ts",
+              "specifier": "./proposal-resource",
+              "path": "src/shared/types/proposal-resource.ts"
+            },
+            {
+              "from": "src/shared/types/proposal-resource.ts",
+              "specifier": "./proposal",
+              "path": "src/shared/types/proposal.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-message",
+              "path": "src/shared/types/agent-message.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-message",
+              "path": "src/shared/types/agent-message.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/agent-message.conversion",
+              "path": "src/shared/types/agent-message.conversion.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.conversion.ts",
+              "specifier": "./agent-message",
+              "path": "src/shared/types/agent-message.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.conversion.ts",
+              "specifier": "./content-block",
+              "path": "src/shared/types/content-block.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.conversion.ts",
+              "specifier": "./branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types/agent-message.conversion.ts",
+              "specifier": "uuid",
+              "external": "uuid"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/suggested-prompt",
+              "path": "src/shared/types/suggested-prompt.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/suggested-prompt",
+              "path": "src/shared/types/suggested-prompt.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/branded-ids",
+              "path": "src/shared/types/branded-ids.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/change-detector.types",
+              "path": "src/shared/types/change-detector.types.ts"
+            },
+            {
+              "from": "src/shared/types/change-detector.types.ts",
+              "specifier": "$shared/types",
+              "path": "src/shared/types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "../features/events/types",
+              "path": "src/features/events/types.ts"
+            },
+            {
+              "from": "src/features/events/types.ts",
+              "specifier": "$shared/types/agent-message",
+              "path": "src/shared/types/agent-message.ts"
+            },
+            {
+              "from": "src/features/events/types.ts",
+              "specifier": "$shared/types/agent-node",
+              "path": "src/shared/types/agent-node.ts"
+            },
+            {
+              "from": "src/features/events/types.ts",
+              "specifier": "../../shared/types",
+              "path": "src/shared/types.ts"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/repository-checkout",
+              "path": "src/shared/types/repository-checkout.ts"
+            },
+            {
+              "from": "src/shared/types/repository-checkout.ts",
+              "specifier": "zod",
+              "external": "zod"
+            },
+            {
+              "from": "src/shared/types/repository-checkout.ts",
+              "specifier": "$shared/utils/gitlab-resource-link",
+              "path": "src/shared/utils/gitlab-resource-link.ts"
+            },
+            {
+              "from": "src/shared/utils/gitlab-resource-link.ts",
+              "specifier": "$shared/types/repository-context",
+              "path": "src/shared/types/repository-context.ts"
+            },
+            {
+              "from": "src/shared/types/repository-context.ts",
+              "specifier": "zod",
+              "external": "zod"
+            },
+            {
+              "from": "src/shared/types.ts",
+              "specifier": "./types/comment.types",
+              "path": "src/shared/types/comment.types.ts"
+            },
+            {
+              "from": "src/shared/types/comment.types.ts",
+              "specifier": "$features/workspace-sharing/types",
+              "path": "src/features/workspace-sharing/types.ts"
+            }
+          ],
+          "external": [
+            "@themislib/themis/utils/collections/collection-utils",
+            "@themislib/themis/utils/store/create-action",
+            "@themislib/themis/utils/store/create-reducer",
+            "fast-equals",
+            "typed-redux-saga",
+            "uuid",
+            "zod"
+          ],
+          "missing": [],
+          "computed": [],
+          "forbidden": []
+        },
+        "vite": {
+          "aliases": [
+            ["@", "apps/react/src"],
+            ["$shared", "src/shared"],
+            ["$lib", "src/lib"],
+            [
+              "$features/providers/host-execution-errors",
+              "src/features/providers/host-execution-errors.ts"
+            ],
+            [
+              "$features/agent/services/node-execution",
+              "src/features/agent/services/node-execution.ts"
+            ]
+          ],
+          "localRuntimeEdges": 29,
+          "allResolveToSameModules": true
+        },
+        "reactActivated": false,
+        "limits": [
+          "Static parsing and emitted comparison only; no imported application code or tests executed.",
+          "Source bridge is the existing invoke that delegates to ipcInvoke; direct binding does not establish real native transport execution or arbitrary host correctness.",
+          "Actual React cleanup action receivers/preload/admission/lifecycle/cancellation/root integration remains separate.",
+          "Generated Paraglide and external packages are declared closure leaves; hashes do not imply runtime acceptance."
+        ]
+      },
+      "supportingDependencies": [
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-slice.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "261cf2295f30e4cc904a19911d8f9d3193469b2d1e8cf75ca3cae704fd9e8555",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "originalSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-types.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "1a119649ea1c27f61391e1169bd51cb0e8705aa84a4ac00e94bad60570ddd4a3",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "originalSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "af7bc8ae0384aefe6c0b683efe0eaf6a85959a7779d5857bc1c6ffa79c5e5137",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "originalSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+          "sha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+          "unchangedFromOriginal": true,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/features/scripts/types.ts",
+          "sha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "94c4299204140dbac1adfd9eaa0ed1a367facf029e329bdf4654ef236a6a65a1",
+          "unchangedFromOriginal": true,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/features/scripts/utils/script-change.ts",
+          "sha256": "e9382cda95fc6d9ad0434f6d5c68d2a7a0ad0be9a5ee2d6f2be57bfb30a1087c",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "e9382cda95fc6d9ad0434f6d5c68d2a7a0ad0be9a5ee2d6f2be57bfb30a1087c",
+          "unchangedFromOriginal": true,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/shared/ipc-registry.ts",
+          "sha256": "aa9dc5e1e02d9537b6679b99d3db8f742d1630a467b0f1240e839c1a842124dd",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "aa9dc5e1e02d9537b6679b99d3db8f742d1630a467b0f1240e839c1a842124dd",
+          "unchangedFromOriginal": true,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/lib/electron-bridge.ts",
+          "sha256": "289e08d2de8d94928904d1d1957461f351a2bf4db3cf92878a5c43219f9a89ae",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "289e08d2de8d94928904d1d1957461f351a2bf4db3cf92878a5c43219f9a89ae",
+          "unchangedFromOriginal": true,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "unchangedFromOriginal": false,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": null,
+          "unchangedFromOriginal": false,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/store/renderer/slices/chat-state/sagas/chat-read-saga.ts",
+          "sha256": "138121edcade5427af54efbcdc8abc3030079ea91f2bc6ec9471bc896576b65e",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "138121edcade5427af54efbcdc8abc3030079ea91f2bc6ec9471bc896576b65e",
+          "unchangedFromOriginal": true,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "src/store/renderer/sagas.ts",
+          "sha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+          "unchangedFromOriginal": true,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "apps/react/src/client.tsx",
+          "sha256": "2e49d3dca6d66fb49fbee6d93ad185d6ec264e37f85ca2590f6876f123539b58",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": null,
+          "unchangedFromOriginal": false,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "apps/react/tsconfig.json",
+          "sha256": "f32d4b2342f1488282c97bf816fef97661e601ddaabafe2b8bc51ea6437d11f4",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": null,
+          "unchangedFromOriginal": false,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": "apps/react/vite.config.ts",
+          "sha256": "5ccd7113b695526c4c014c53c9a8f50e61d58c7fd4267c23a69cb87e12f0ef3e",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "originalSha256": null,
+          "unchangedFromOriginal": false,
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        }
+      ],
+      "supportDelta": [
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-slice.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "261cf2295f30e4cc904a19911d8f9d3193469b2d1e8cf75ca3cae704fd9e8555",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "originalSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-types.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "1a119649ea1c27f61391e1169bd51cb0e8705aa84a4ac00e94bad60570ddd4a3",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "originalSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "af7bc8ae0384aefe6c0b683efe0eaf6a85959a7779d5857bc1c6ffa79c5e5137",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "originalSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        }
+      ],
+      "retainedHistoricalCitations": [
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/sourceApiReview/dependencies/6",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+            "sha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/supportingDependencies/9",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+            "sha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+            "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+          }
+        }
+      ],
+      "sourceInventoryBlindSpot": "All four changed support paths are outside immutable1890-source inventory. CLI cannot flag their drift; explicit support records preserve old/new and original provenance without adding mappings or refreshing old acceptance.",
+      "supportInvalidationsOutsideInventory": [
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-slice.ts",
+          "change": "modified",
+          "originalSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "previousSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "sha256": "261cf2295f30e4cc904a19911d8f9d3193469b2d1e8cf75ca3cae704fd9e8555",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit support drift and exact original-body/specifier inverse; no addedview, denominator change or native acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-types.ts",
+          "change": "modified",
+          "originalSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "previousSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "sha256": "1a119649ea1c27f61391e1169bd51cb0e8705aa84a4ac00e94bad60570ddd4a3",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit support drift and exact original-body/specifier inverse; no addedview, denominator change or native acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "change": "added",
+          "originalSha256": null,
+          "previousSha256": null,
+          "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit support drift and exact original-body/specifier inverse; no addedview, denominator change or native acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+          "change": "modified",
+          "originalSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "previousSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "sha256": "af7bc8ae0384aefe6c0b683efe0eaf6a85959a7779d5857bc1c6ffa79c5e5137",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit support drift and exact original-body/specifier inverse; no addedview, denominator change or native acceptance."
+        }
+      ],
+      "historicalPinnedReports": [
+        {
+          "path": ".demo-artifacts/attachment-correction-ledger/status-05cc7db6.json",
+          "sha256": "2ecc7894e3222c77d621cdf844a3c59630ecede44ec74a1d2ae8a09a2908cb26",
+          "candidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c"
+        },
+        {
+          "path": ".demo-artifacts/attachment-identity-ledger/status-ff9a4e35.json",
+          "sha256": "3de6cfc20cd498cc1dd7d3ac9fab59d75bd652576e0122fe0f95add767dfbd03",
+          "candidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35"
+        },
+        {
+          "path": ".demo-artifacts/inline-permission-ledger/status-6a51a3da.json",
+          "sha256": "871f8ca4bf374cba9df3b5e761107cbd19664e38768848b1f5e74779ffe1f767",
+          "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9"
+        },
+        {
+          "path": ".demo-artifacts/media-composition-ledger/status-dd6e5720.json",
+          "sha256": "dcf0190b31084f48d746fe704bfb67a56fc9772e34cb338e074e0d902206a6bd",
+          "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980"
+        },
+        {
+          "path": ".demo-artifacts/markdown-reasoning-ledger/status-68a5ca85.json",
+          "sha256": "9211fb66cfc453cf98321757efa4db39aa4eb8ade6c45129197d3c8e51a5a44a",
+          "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a"
+        },
+        {
+          "path": ".demo-artifacts/chat-image-ledger/status-561fa08c.json",
+          "sha256": "2642d63ee8d4ca3bae4c17bb7cdb4f7024656cb04643a00feb3c9b9762ef71a3",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4"
+        },
+        {
+          "path": ".demo-artifacts/message-transcript-ledger/status-2d310fed.json",
+          "sha256": "ecc0ac8a7b46dfa6601457464565b8f1996e69a14033287d8adda09c7584de37",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c"
+        },
+        {
+          "path": ".demo-artifacts/setup-edit-ledger/status-3d7e81dc.json",
+          "sha256": "e5e8c3d4a9ef941fc5f1b26062494d378febae9a4838a0f6d8b6ae7e0728316c",
+          "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b"
+        },
+        {
+          "path": ".demo-artifacts/operational-window-ledger/status-2d988e34.json",
+          "sha256": "3fa6ae7f8796a1e82d038bbd7555f8754205395ac8cfe83337b104ec06a55c4d",
+          "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95"
+        },
+        {
+          "path": ".demo-artifacts/response-cylinder-ledger/status-1cea8e2b.json",
+          "sha256": "769abbca7d5dec89b703ed52afdb92e2d353b076012b8490c53a162a7da1a45e",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        },
+        {
+          "path": ".demo-artifacts/navigation-caption-ledger/status-34161b6d.json",
+          "sha256": "5ed08c94a1b379cdac0454e45cb3470a4cf7b7a0a60b90dea7ea06e88bf3ca0e",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/status-e46a388f.json",
+          "sha256": "de28615b813c3c9c480b8b786beaa3464943418a50794449c6e25f7193bbe30d",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/status-0afebba9.json",
+          "sha256": "e8adf3b398bb7dbf0e1ba3624a5de397fc4aca46b5b2acabaf5aa9852cdb86cb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7"
+        },
+        {
+          "path": ".demo-artifacts/markdown-lifetime-ledger/status-35e676aa.json",
+          "sha256": "667e04253ceba4d6b2262e308c0d9381555a0c53a06facd425c999ec79488d1e",
+          "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/status-8f0bbcda.json",
+          "sha256": "562e1869213851489babbd5e1f10be5c7bbd97dcf2379ffde3eead55ffac7ba5",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": ".demo-artifacts/shared-support-ledger/status-d4abc96f.json",
+          "sha256": "8d2a43e7f7b64e7087a72b3bb88c01f58babf8d4a834adbfb88b92ef1b45162e",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        }
+      ],
+      "staticEvidence": [
+        {
+          "path": ".demo-artifacts/cleanup-support-ledger/api-report.json",
+          "sha256": "c10661271533959d267fbc15c2128d4c9eb599450d79301707cd419e03b5399b"
+        },
+        {
+          "path": ".demo-artifacts/cleanup-support-ledger/static-report.json",
+          "sha256": "72472ce4da1ad8c8faace2dc6e063de6baf635010f040edaf96b095d7a240f4e"
+        }
+      ],
+      "cleanupExtraction": {
+        "originalBodyAndCommentsPreserved": true,
+        "emittedBodyPreserved": true,
+        "exactInverseToOriginal": true,
+        "mandatoryExistingInvoke": true,
+        "channel": "browser:clear-agent-tabs",
+        "payload": "{ agentId }",
+        "order": [
+          "warning",
+          "closeTabsByAgentId",
+          "destroyTabsByOwnerAgent",
+          "pruneRecentlyClosed",
+          "invoke clear-agent-tabs"
+        ],
+        "errorBoundary": "Only invoke is inside original catch; warning on clear failure. Existing owner suites do not directly exercise IPC rejection; no new runtime claim.",
+        "scriptSeams": "Two+three import/re-export specifiers resolve identical files; only approved type export wrapping otherwise. Entire source inverse and emitted JS identity checked. Actions/reducer bodies unchanged.",
+        "reactActivated": false,
+        "hostPrerequisites": [
+          "Real React panel/tab reducer receivers and genuine clear-tabs transport.",
+          "Explicit admitted host lifetime, context replacement/revocation, teardown and cancellation before root binding."
+        ],
+        "sourceBindingLimit": "Source facade directly uses existing electron-bridge invoke, which delegates to ipcInvoke. This is an ownership/assignability claim, not native transport execution or a guarantee about arbitrary async host callbacks."
+      },
+      "ownerEvidence": [
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/commit-receipt.json",
+          "sha256": "734d0d46b84e62f49e35c3440c008074ede68fbd4c1d7988e6c91405ede082fa"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/gate-manifest.json",
+          "sha256": "e05ac98529dca495a2a18aba1225369262c097e48107f01a116ffd6ed209c557"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-api.log",
+          "sha256": "9c9528e6a8fca916061e77a6539c90bc7e2cc3171b436e5a943f646d2c2cedc1"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-format.log",
+          "sha256": "dfa83da53d95c3ac24ee7ea09c40a0451bd5f09e329698f936f022dd1e53f20b"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-declarations.log",
+          "sha256": "3bdf83dd80e398a227df9643779a7f4d8ff4d63adcec2483fcfc41e08820935e"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-public-types.log",
+          "sha256": "d37ada5485db0577281f7ddfcbf98e3d14ac463e9a5157a64e472eeb9c046873"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-declarations-with-wrap.log",
+          "sha256": "6a980ff4f21adb42802093adef5dbe351fc74f5326f3c599141a1801c706934e"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/deps.log",
+          "sha256": "fc2754961b075ccaf7d55098f3cbc196af22cd0d88b3f253c2ccbcf12e78abf6"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/generate-ipc.log",
+          "sha256": "2bfa488c9d6825755f98b90e0a63a291b463383f757f01f70204ae1ba8fd8dda"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/generate-build-config.log",
+          "sha256": "e4f9c9a5de5e2246bc7a3c76e56cb325be6b2e3038a4081d69ae2ee5b4850dfe"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/react-types.log",
+          "sha256": "dae9f56c542ace4ea08d5a527d5a3158e8eec9e0ce28176f56513c3ef8a5e919"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/svelte-check.log",
+          "sha256": "39485d373ce6fe93750b04b69a0a663d2c41b88547e2170da312979f1c541482"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/main-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/preload-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/unit.log",
+          "sha256": "15f1363bb5d4faa95d9f26a8bb55908641c420cf33b64c7e325bf1565e5c5fd3"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/prettier.log",
+          "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/source-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/eslint.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/architecture.log",
+          "sha256": "d8b6a6b567c6167a96dfe9f115f0af10f0eaeea9c56bb81e4442779841831802"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/cheatsheet.log",
+          "sha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/scoped-browser-build.log",
+          "sha256": "baaa3e16f8b45a37168b4b5cead2e6615669a34863cb2d2d981ba99d5c5586ed"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/published-static-proof.log",
+          "sha256": "ea11b3e907fdcc34e86c80a485886603b47b298e1763bcda0b94695f3a0e5f94"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/dead-code.log",
+          "sha256": "e8bf9fd2f239b045db0872189ba00400a2ca68282ad45ce8405ba61343934f71"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/approved-preparation/api-proof.json",
+          "sha256": "9c9528e6a8fca916061e77a6539c90bc7e2cc3171b436e5a943f646d2c2cedc1"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/approved-preparation/public-types-proof.json",
+          "sha256": "12b8530c67e05f9ad43cfcbc48b651d51823823bce10e30923a290c7e91c21a3"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/approved-preparation/declaration-proof.json",
+          "sha256": "6a980ff4f21adb42802093adef5dbe351fc74f5326f3c599141a1801c706934e"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/approved-preparation/specifier-proof.json",
+          "sha256": "35997ac8fe9307baa65f242eb2c6198e6d3da220cdfb30e3e943733dcd4ff88a"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/approved-preparation/inverse-proof.json",
+          "sha256": "e3e8baea3142cdbee0f3dfa2791ecb8229ed3ef3729297f0cccd5e6db2bd5c6c"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/approved-preparation/manifest.json",
+          "sha256": "281f6003d355377723b2262aa2a4eed48aff0ede3ddce6a317c23e53eb01b827"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/static-proof.json",
+          "sha256": "a3aed4fc39ef7823be3cd87d376e90786fdda6f478de40dca41af26a20e44563"
+        },
+        {
+          "path": ".demo-artifacts/deleted-agent-cleanup/published-checks/emitted-import-proof.json",
+          "sha256": "baaa3e16f8b45a37168b4b5cead2e6615669a34863cb2d2d981ba99d5c5586ed"
+        }
+      ],
+      "ownerGateProvenance": {
+        "gates": [
+          {
+            "name": "approved-api",
+            "command": [
+              "node",
+              ".demo-artifacts/deleted-agent-cleanup/approved-preparation/api-proof.cjs"
+            ],
+            "startedAt": "2026-10-12T07:59:20.002130+00:00",
+            "finishedAt": "2026-10-12T07:59:26.578872+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-api.log",
+            "logSha256": "9c9528e6a8fca916061e77a6539c90bc7e2cc3171b436e5a943f646d2c2cedc1"
+          },
+          {
+            "name": "approved-format",
+            "command": [
+              "node",
+              ".demo-artifacts/deleted-agent-cleanup/approved-preparation/format-proof.cjs"
+            ],
+            "startedAt": "2026-10-12T07:59:20.002332+00:00",
+            "finishedAt": "2026-10-12T07:59:20.188760+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-format.log",
+            "logSha256": "dfa83da53d95c3ac24ee7ea09c40a0451bd5f09e329698f936f022dd1e53f20b"
+          },
+          {
+            "name": "approved-declarations",
+            "command": [
+              "node",
+              ".demo-artifacts/deleted-agent-cleanup/approved-preparation/declaration-proof.cjs"
+            ],
+            "startedAt": "2026-10-12T07:59:20.003088+00:00",
+            "finishedAt": "2026-10-12T07:59:21.091092+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 1,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-declarations.log",
+            "logSha256": "3bdf83dd80e398a227df9643779a7f4d8ff4d63adcec2483fcfc41e08820935e"
+          },
+          {
+            "name": "approved-public-types",
+            "command": [
+              "node",
+              ".demo-artifacts/deleted-agent-cleanup/approved-preparation/public-types-proof.cjs"
+            ],
+            "startedAt": "2026-10-12T07:59:20.003504+00:00",
+            "finishedAt": "2026-10-12T07:59:21.164029+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-public-types.log",
+            "logSha256": "d37ada5485db0577281f7ddfcbf98e3d14ac463e9a5157a64e472eeb9c046873"
+          },
+          {
+            "name": "approved-declarations-with-wrap",
+            "command": [
+              "node",
+              ".demo-artifacts/deleted-agent-cleanup/approved-preparation/declaration-proof.cjs"
+            ],
+            "startedAt": "2026-10-12T07:59:39.032595+00:00",
+            "finishedAt": "2026-10-12T07:59:39.907710+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/approved-declarations-with-wrap.log",
+            "logSha256": "6a980ff4f21adb42802093adef5dbe351fc74f5326f3c599141a1801c706934e"
+          },
+          {
+            "name": "deps",
+            "command": ["pnpm", "run", "deps:check"],
+            "startedAt": "2026-10-12T07:59:45.441858+00:00",
+            "finishedAt": "2026-10-12T07:59:45.608498+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/deps.log",
+            "logSha256": "fc2754961b075ccaf7d55098f3cbc196af22cd0d88b3f253c2ccbcf12e78abf6"
+          },
+          {
+            "name": "generate-ipc",
+            "command": ["pnpm", "run", "generate:ipc-channels"],
+            "startedAt": "2026-10-12T07:59:52.013899+00:00",
+            "finishedAt": "2026-10-12T07:59:52.470502+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/generate-ipc.log",
+            "logSha256": "2bfa488c9d6825755f98b90e0a63a291b463383f757f01f70204ae1ba8fd8dda"
+          },
+          {
+            "name": "generate-build-config",
+            "command": ["pnpm", "run", "generate:build-config"],
+            "startedAt": "2026-10-12T07:59:52.013903+00:00",
+            "finishedAt": "2026-10-12T07:59:52.180182+00:00",
+            "startHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "endHead": "c27c7925d6db1c2c4664bfb2a0d5998fde46b082",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/generate-build-config.log",
+            "logSha256": "e4f9c9a5de5e2246bc7a3c76e56cb325be6b2e3038a4081d69ae2ee5b4850dfe"
+          },
+          {
+            "name": "react-types",
+            "command": ["pnpm", "run", "check:react"],
+            "startedAt": "2026-10-12T08:00:15.056823+00:00",
+            "finishedAt": "2026-10-12T08:00:20.435371+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/react-types.log",
+            "logSha256": "dae9f56c542ace4ea08d5a527d5a3158e8eec9e0ce28176f56513c3ef8a5e919"
+          },
+          {
+            "name": "svelte-check",
+            "command": ["pnpm", "run", "check"],
+            "startedAt": "2026-10-12T08:00:15.057128+00:00",
+            "finishedAt": "2026-10-12T08:00:57.316333+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/svelte-check.log",
+            "logSha256": "39485d373ce6fe93750b04b69a0a663d2c41b88547e2170da312979f1c541482"
+          },
+          {
+            "name": "main-types",
+            "command": ["pnpm", "exec", "tsc", "-p", "tsconfig.main.json", "--noEmit"],
+            "startedAt": "2026-10-12T08:00:15.057152+00:00",
+            "finishedAt": "2026-10-12T08:00:27.769527+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/main-types.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "preload-types",
+            "command": ["pnpm", "exec", "tsc", "-p", "tsconfig.preload.json", "--noEmit"],
+            "startedAt": "2026-10-12T08:00:15.057156+00:00",
+            "finishedAt": "2026-10-12T08:00:15.891101+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/preload-types.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "unit",
+            "command": [
+              "pnpm",
+              "run",
+              "test:unit",
+              "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.test.ts",
+              "src/store/renderer/slices/chat-state/sagas/chat-read-saga.test.ts",
+              "src/store/renderer/slices/scripts/scripts-slice.test.ts",
+              "--maxWorkers=1"
+            ],
+            "startedAt": "2026-10-12T08:00:15.057211+00:00",
+            "finishedAt": "2026-10-12T08:00:28.346555+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/unit.log",
+            "logSha256": "15f1363bb5d4faa95d9f26a8bb55908641c420cf33b64c7e325bf1565e5c5fd3"
+          },
+          {
+            "name": "prettier",
+            "command": [
+              "pnpm",
+              "exec",
+              "prettier",
+              "--check",
+              "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+              "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "src/store/renderer/slices/scripts/scripts-types.ts"
+            ],
+            "startedAt": "2026-10-12T08:00:15.058165+00:00",
+            "finishedAt": "2026-10-12T08:00:15.522509+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/prettier.log",
+            "logSha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+          },
+          {
+            "name": "source-types",
+            "command": ["pnpm", "exec", "tsc", "-p", "tsconfig.json", "--noEmit"],
+            "startedAt": "2026-10-12T08:00:15.059884+00:00",
+            "finishedAt": "2026-10-12T08:00:38.634385+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/source-types.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "eslint",
+            "command": [
+              "pnpm",
+              "exec",
+              "eslint",
+              "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+              "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+              "src/store/renderer/slices/scripts/scripts-slice.ts",
+              "src/store/renderer/slices/scripts/scripts-types.ts"
+            ],
+            "startedAt": "2026-10-12T08:00:15.060411+00:00",
+            "finishedAt": "2026-10-12T08:00:16.075950+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/eslint.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "architecture",
+            "command": ["pnpm", "run", "lint:architecture"],
+            "startedAt": "2026-10-12T08:00:15.062409+00:00",
+            "finishedAt": "2026-10-12T08:01:25.074165+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/architecture.log",
+            "logSha256": "d8b6a6b567c6167a96dfe9f115f0af10f0eaeea9c56bb81e4442779841831802"
+          },
+          {
+            "name": "cheatsheet",
+            "command": ["pnpm", "run", "lint:design-cheatsheet"],
+            "startedAt": "2026-10-12T08:00:15.063757+00:00",
+            "finishedAt": "2026-10-12T08:00:15.806251+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/cheatsheet.log",
+            "logSha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+          },
+          {
+            "name": "scoped-browser-build",
+            "command": [
+              "node",
+              ".demo-artifacts/deleted-agent-cleanup/published-checks/compile-proof.mjs"
+            ],
+            "startedAt": "2026-10-12T08:00:52.592150+00:00",
+            "finishedAt": "2026-10-12T08:00:52.786283+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/scoped-browser-build.log",
+            "logSha256": "baaa3e16f8b45a37168b4b5cead2e6615669a34863cb2d2d981ba99d5c5586ed"
+          },
+          {
+            "name": "published-static-proof",
+            "command": [
+              "node",
+              ".demo-artifacts/deleted-agent-cleanup/published-checks/static-proof.cjs"
+            ],
+            "startedAt": "2026-10-12T08:00:52.829664+00:00",
+            "finishedAt": "2026-10-12T08:00:53.098309+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 0,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/published-static-proof.log",
+            "logSha256": "ea11b3e907fdcc34e86c80a485886603b47b298e1763bcda0b94695f3a0e5f94"
+          },
+          {
+            "name": "dead-code",
+            "command": ["pnpm", "run", "lint:dead-code"],
+            "startedAt": "2026-10-12T08:01:41.767203+00:00",
+            "finishedAt": "2026-10-12T08:01:47.981996+00:00",
+            "startHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "endHead": "f2ee9a693758fb9f3b7c7f7938532ae7b40db3a9",
+            "exitCode": 1,
+            "log": ".demo-artifacts/deleted-agent-cleanup/published-checks/dead-code.log",
+            "logSha256": "e8bf9fd2f239b045db0872189ba00400a2ca68282ad45ce8405ba61343934f71"
+          }
+        ],
+        "existingTests": {
+          "files": 3,
+          "passed": 54,
+          "scope": "Owner-run existing agent-read, chat-read and scripts-slice tests; not rerun by ledger auditor and no native acceptance."
+        },
+        "svelte": {
+          "errors": 0,
+          "warnings": 211,
+          "scope": "Owner reported"
+        },
+        "deadCode": {
+          "exitCode": 1,
+          "findings": 588,
+          "unusedFiles": 24,
+          "unusedDependencies": 1,
+          "unusedExports": 398,
+          "unusedTypes": 165,
+          "scope": "Unsuppressed owner result; no base-CI or equal-baseline claim."
+        },
+        "apiContracts": {
+          "positive": 1,
+          "negative": 7,
+          "allExpected": true
+        },
+        "scopedCompile": {
+          "inputs": 33,
+          "warnings": 0,
+          "applicationExecuted": false
+        },
+        "retainedPreparationLimits": "Initial two-path React alias failure, audit-host path setup error, optional full-reducer declaration TS2883, canonical re-export printer spelling and trailing-comma inverse failures retained in owner task/artifacts; final corrected static gates reported, no product behavior test retry."
+      },
+      "excludedNonProductDelta": [
+        "M\tpackages/view-parity/lib/operational-window.mjs",
+        "M\tpackages/view-parity/lib/response-group.mjs",
+        "M\tpackages/view-parity/migration-targets.json",
+        "M\tpackages/view-parity/tests/operational-window.extended.spec.mjs",
+        "M\tpackages/view-parity/tests/response-group.core.spec.mjs",
+        "M\tpackages/view-parity/tests/response-group.extended.spec.mjs"
+      ],
+      "retainedHistory": {
+        "ledgerCommit": "4eb2b5d3280376eb4e29abd6ba87854d694efbe7",
+        "ledgerSha256": "76920d8d69cb5b2a1f6667aa4437740206d52186a50b2fbec1dcf5430faf2166",
+        "preservedReviewCount": 91,
+        "meaning": "All old1890rows/236mappings/230targets/91reviews/audits/history/limits/cases/29receipts retained. Both d4 cleanup citations keep olde464hash and original review pins. All prior OW/MV/SN/NC/runtime results remain separately pinned; no new native receipts imported."
+      },
+      "testHandoff": {
+        "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+        "status": "not-run",
+        "scope": "Static ledger only. No source/unit/mock/native/visual/browser/discovery/service/generator/Store execution. Owner54existingtests and compilation/gates retained as provenance only."
+      },
+      "sourceDriftPolicy": "Original003 and inventory1430/1890 fixed.19CLI invalidations retained;4support changes outsideinventory recorded explicitly. No statusCLI inference of unchanged supporting code, no review refresh or acceptance transfer.",
+      "skillCompliance": {
+        "guidance": [
+          ".agents/skills/themis/core/verifier/SKILL.md",
+          ".agents/skills/themis/core/core-policy/SKILL.md",
+          ".agents/skills/themis/core/state-integrity/SKILL.md",
+          ".agents/skills/themis/core/reducers/SKILL.md",
+          ".agents/skills/themis/core/testing/SKILL.md",
+          ".agents/skills/themis/core/sagas/SKILL.md",
+          ".agents/skills/themis/core/import-boundaries/SKILL.md",
+          "node_modules/@themislib/themis/docs/ARCHITECTURE.md",
+          "node_modules/@themislib/themis/docs/SAGAS.md"
+        ],
+        "findings": "Canonical action/selector/saga owners verified. No new state/actions/reducers/selectors/watcher or policy; original yield* cleanup uses three existing canonical actions and actual required invoke. Source facade has explicit Svelte-retirement compatibility purpose. Runtime21files/type57files and29local Vite edges close without sourcebridge/configuredStore/selectors/Svelte. Owner architecture/source lint passes inspected and log-hashed; new ledger checks do not regenerate inputs."
+      },
+      "excludedLaterWork": "End-key ignored draft, nativeOW4 lane, later React root/cleanup/admission work and movingHEAD outsidefinal0dd. No later runtime evidence import.",
       "userHelpImpact": "Internal unreleased migration supporting audit; no released assistant-help impact."
     }
   },
@@ -129902,6 +132279,117 @@
         "markdown-image-owner-correction-35e676aa",
         "static-toast-containment-support-8f0bbcda"
       ]
+    },
+    {
+      "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T07:50:10.815187+00:00",
+      "checkpointAdvance": {
+        "previousLedgerCommit": "dffc53dd313920bf54504dae254a319ec4ff4f68",
+        "previousAuditCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+        "unchangedUniqueDirectTargets": 230,
+        "changedUniqueDirectTargets": 0,
+        "retainedHistoricalReviewCount": 90,
+        "meaning": "Common validation pin only; every source row and actual inspected/source/support/native pin retained. Explicit new supporting profiles cannot refresh historical operational/runtime acceptance."
+      },
+      "ledgerCommit": "4eb2b5d3280376eb4e29abd6ba87854d694efbe7",
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10",
+        "chat-transcript-markers-fe630",
+        "chat-transcript-notices-fe630",
+        "chat-disclosure-rows-fb515",
+        "chat-recovery-notices-fb515",
+        "chat-stream-metadata-3230",
+        "chat-history-attribution-3230",
+        "chat-disclosure-corrections-3230",
+        "chat-queued-actions-command-3e894",
+        "chat-code-reference-context-4bfa",
+        "chat-inline-mcp-prompt-preview-9d297",
+        "queued-attachments-0a010",
+        "tabs-export-correction-0a010",
+        "streaming-status-840763",
+        "mcp-inline-font-correction-840763",
+        "suggested-chief-prompts-16ee80",
+        "automated-wake-header-f2b2a2",
+        "agent-pr-attribution-headers-73da5529",
+        "attachment-permission-support-05cc7db6",
+        "attachment-file-replacement-ff9a4e35",
+        "inline-permission-and-live-support-6a51a3da",
+        "media-and-markdown-composition-dd6e5720",
+        "full-markdown-and-reasoning-68a5ca85",
+        "chat-image-and-video-wrapper-561fa08c",
+        "message-actions-and-transcript-cards-2d310fed",
+        "setup-script-and-edit-confirmation-3d7e81dc",
+        "operational-window-and-panel-2d988e34",
+        "response-group-and-cylinder-1cea8e2b",
+        "navigation-excerpt-and-image-caption-34161b6d",
+        "response-group-reaction-correction-e46a388f",
+        "detected-scripts-and-neutral-indicator-0afebba9",
+        "markdown-image-owner-correction-35e676aa",
+        "static-toast-containment-support-8f0bbcda",
+        "canonical-anchor-and-agent-read-support-d4abc96f"
+      ]
     }
   ],
   "receipts": {
@@ -134837,6 +137325,91 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "003/inventory1430/1890 fixed.19CLI invalidations retained; this review separately flags3support paths beyond inventory. Neither original helper extraction nor historical source/native review silently blesses the new shared anchoring algorithm."
+    },
+    {
+      "id": "deleted-agent-cleanup-support-0ddf543a",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+      "previousLedgerCommit": "4eb2b5d3280376eb4e29abd6ba87854d694efbe7",
+      "previousCommonCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+      "reviewedAt": "2026-10-12T08:06:14.531453+00:00",
+      "method": "Bounded static supporting deleted-agent cleanup extraction at0dd. No source mappings, direct-target refresh, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained:236/1430(231components+5modules),178partial58localimplemented;92reviews. Original003 generator/comments/emitted body and APIs retained; five script specifiers resolve identical canonical files, approved export wrap only. All4changed support paths outside fixedinventory have explicit old/new provenance. Source facade binds existing invoke; realReactreceivers/preload/admission/root integration remains separate. All19CLI invalidations/history/cases/receipts/failures retained.",
+      "counts": {
+        "addedMappings": 0,
+        "addedSvelteComponents": 0,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "mappedViews": 236,
+        "mappedSvelteComponents": 231,
+        "mappedSvelteReactivityModules": 5,
+        "views": {
+          "unmapped": 1194,
+          "partial": 178,
+          "implemented": 58
+        }
+      },
+      "sourcePaths": [],
+      "targetedExistingSourcePaths": [],
+      "newUniqueDirectTargetCount": 0,
+      "priorUniqueDirectTargetCount": 230,
+      "allUniqueDirectTargetCount": 230,
+      "priorDirectTargetIdentity": {
+        "count": 230,
+        "unchanged": 230,
+        "changed": [],
+        "orderedPathAndHashSha256": "682b2051be5da1bf3bc5f36ff0a9e4a1cd234e82b4459a04732daccfeeea7d7a"
+      },
+      "supportDelta": [
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-slice.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "261cf2295f30e4cc904a19911d8f9d3193469b2d1e8cf75ca3cae704fd9e8555",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "originalSha256": "a0f91d1a68abf0adace4fae69652ec87f100e913697e1dbeedbcfafbce695c18",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/scripts/scripts-types.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "1a119649ea1c27f61391e1169bd51cb0e8705aa84a4ac00e94bad60570ddd4a3",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "originalSha256": "0db61f1d5e1c948820b58a5374e5cb484b9a3e7af8da90f0a66ffaf289532faa",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+          "sha256": "af7bc8ae0384aefe6c0b683efe0eaf6a85959a7779d5857bc1c6ffa79c5e5137",
+          "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+          "previousSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "originalSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "change": "modified",
+          "supportOnly": true,
+          "outsideImmutableInventory": true
+        }
+      ],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "Original003 and inventory1430/1890 fixed.19CLI invalidations retained;4support changes outsideinventory recorded explicitly. No statusCLI inference of unchanged supporting code, no review refresh or acceptance transfer."
     }
   ]
 }
