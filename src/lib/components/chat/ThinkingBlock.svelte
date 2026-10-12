@@ -16,6 +16,7 @@
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
+  import { REASONING_SHIMMER_SECONDS } from '$lib/motion/shimmer-timing';
 
   interface Props {
     saved?: { expanded?: boolean; userToggled?: boolean; searchOwnsExpansion?: boolean };
@@ -121,7 +122,7 @@
 {#snippet summaryText(label: string)}
   <span class="min-w-0 truncate whitespace-nowrap font-normal">
     {#if isStreaming}
-      <ShimmerOverlay duration={1.92}>{label}</ShimmerOverlay>
+      <ShimmerOverlay duration={REASONING_SHIMMER_SECONDS}>{label}</ShimmerOverlay>
     {:else}
       {label}
     {/if}

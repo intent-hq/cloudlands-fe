@@ -1,0 +1,23 @@
+/* The data attribute replaces Svelte's scope class with the same selector specificity. */
+.reasoning-expanded-body[data-reasoning-expanded-body] .markdown-viewer {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.5rem;
+}
+
+.reasoning-expanded-body[data-reasoning-expanded-body] .markdown-viewer > * {
+  margin-block: 0 !important;
+}
+
+.reasoning-expanded-body[data-reasoning-expanded-body]
+  .markdown-viewer
+  :is(h1, h2, h3, h4, h5, h6):not(:first-child) {
+  margin-block-start: 1.5rem !important;
+}
+
+.reasoning-expanded-body[data-reasoning-expanded-body]
+  .markdown-viewer
+  :is(br + strong, p > strong:only-child) {
+  display: block;
+  margin-block-start: 1.5rem;
+}
