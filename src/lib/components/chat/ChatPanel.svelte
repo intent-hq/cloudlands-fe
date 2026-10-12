@@ -2104,7 +2104,7 @@
     // Extract user messages and build history, excluding automated messages
     const userMessages = messages
       .filter((m) => m.role === 'user' && !isAutomatedMessage(m))
-      .map((m) => extractAllContent(m).trim())
+      .map((m) => getPresentedUserMessageText(m, workspace?.ownerPrincipalId).trim())
       .filter((text) => text.length > 0);
 
     if (userMessages.length > 0) {
