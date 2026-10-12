@@ -888,7 +888,6 @@
                             onopen={openWorkspace}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
-                            oncontextmenu={showWorkspaceMenu}
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}
