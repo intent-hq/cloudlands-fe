@@ -1,9 +1,28 @@
 import { store } from '../../store';
 import type { AgentId, AgentSession } from '$shared/types';
 import { classifyAgentScope } from '$shared/utils/agent-scope';
-import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
-import { emptyWorkspaceAgentState } from './workspace-agents-slice';
+// Svelte compatibility bindings remain until the renderer cutover; shared bodies have one owner.
+import {
+  getWorkspaceAgentState,
+  getActiveAgentId,
+  getWorkspaceAgentIds,
+  getAllWorkspaceAgents,
+  getRetiredAgentsLoaded,
+  getIsLoadingRetiredAgents,
+  getDelegatedAgentsLoaded,
+  getIsLoadingDelegatedAgents,
+  getBackgroundAgentsLoaded,
+  getIsLoadingBackgroundAgents,
+  getOrphanedDelegatedAgentsLoaded,
+  getIsLoadingOrphanedDelegatedAgents,
+  getDelegatedParentLoaded,
+  getIsLoadingDelegatedParent,
+  getLoadedDelegatedParentIds,
+  getScopeCounts,
+  getDelegatedCounts,
+  getScopeCountsGeneration,
+} from './workspace-agents-projections';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 export const selectAgentCreationOutcome = store.createSelector(
@@ -24,24 +43,8 @@ export const selectAgentRetirementSupported = store.createSelector((state) => {
   );
 });
 
-function getWorkspaceAgentState(state: StoreState, wsId: string) {
-  return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
-}
-
 /** Derives agent sessions from workspace agentIds + agent-session slice */
-export const selectAllWorkspaceAgents = store.createSelector(
-  (state, wsId?: string): AgentSession[] => {
-    if (!wsId) return [];
-
-    const agentIds = getWorkspaceAgentState(state, wsId).agentIds;
-    const result: AgentSession[] = [];
-    for (const id of agentIds) {
-      const session = selectAgentSession.select(state, id);
-      if (session) result.push(session);
-    }
-    return result;
-  },
-);
+export const selectAllWorkspaceAgents = store.createSelector(getAllWorkspaceAgents);
 
 /** Get reducer-maintained foreground agent IDs for a workspace. */
 export const selectWorkspaceForegroundAgentIds = store.createSelector(
@@ -101,77 +104,49 @@ export const selectRetiredCount = store.createSelector((state, wsId: string) => 
 });
 
 /** True once the on-demand retired-only read has hydrated the retired rows. */
-export const selectRetiredAgentsLoaded = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).retiredAgentsLoaded;
-});
+export const selectRetiredAgentsLoaded = store.createSelector(getRetiredAgentsLoaded);
 
 /** True while the on-demand retired-only read is in flight. */
-export const selectIsLoadingRetiredAgents = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).isLoadingRetiredAgents;
-});
+export const selectIsLoadingRetiredAgents = store.createSelector(getIsLoadingRetiredAgents);
 
 /**
  * Daemon-served per-bin counts (`scopeCounts`, §5.5 row scope) for the
  * Delegated / Background bin toggles; `null` when the daemon served none
  * (old daemon — the all-rows read, no lazy bins).
  */
-export const selectScopeCounts = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).scopeCounts;
-});
+export const selectScopeCounts = store.createSelector(getScopeCounts);
 
 /**
  * Bumped each time a hydration read installs an authoritative count baseline
  * (`setScopeCounts`); a deferred count adjustment captured under an older
  * generation is stale and must be dropped.
  */
-export const selectScopeCountsGeneration = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).scopeCountsGeneration;
-});
+export const selectScopeCountsGeneration = store.createSelector(getScopeCountsGeneration);
 
 /** True once the on-demand `scope: "delegated"` read has hydrated the delegated rows. */
-export const selectDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).delegatedAgentsLoaded;
-});
+export const selectDelegatedAgentsLoaded = store.createSelector(getDelegatedAgentsLoaded);
 
 /** True while the on-demand delegated read is in flight. */
-export const selectIsLoadingDelegatedAgents = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).isLoadingDelegatedAgents;
-});
+export const selectIsLoadingDelegatedAgents = store.createSelector(getIsLoadingDelegatedAgents);
 
 /**
  * Daemon-served per-parent delegated counts (`delegatedCounts`, §5.5) for the
  * collapsed per-parent delegated groups; `null` when the daemon served none.
  */
-export const selectDelegatedCounts = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).delegatedCounts;
-});
+export const selectDelegatedCounts = store.createSelector(getDelegatedCounts);
 
 /**
  * True once one parent's direct children are hydrated — by the per-parent
  * read (`scope: "delegated"` + `parentAgentId`) or by the whole-bin read,
  * which covers every parent.
  */
-export const selectDelegatedParentLoaded = store.createSelector(
-  (state, wsId: string, parentAgentId: string) => {
-    const workspaceState = getWorkspaceAgentState(state, wsId);
-    return (
-      workspaceState.delegatedAgentsLoaded ||
-      workspaceState.loadedDelegatedParentIds[parentAgentId] === true
-    );
-  },
-);
+export const selectDelegatedParentLoaded = store.createSelector(getDelegatedParentLoaded);
 
 /** True while that parent's per-parent delegated read is in flight. */
-export const selectIsLoadingDelegatedParent = store.createSelector(
-  (state, wsId: string, parentAgentId: string) => {
-    return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds[parentAgentId] === true;
-  },
-);
+export const selectIsLoadingDelegatedParent = store.createSelector(getIsLoadingDelegatedParent);
 
 /** The parents whose per-parent delegated read has landed (not the whole-bin flag). */
-export const selectLoadedDelegatedParentIds = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).loadedDelegatedParentIds;
-});
+export const selectLoadedDelegatedParentIds = store.createSelector(getLoadedDelegatedParentIds);
 
 /** The parents whose per-parent delegated read is in flight. */
 export const selectLoadingDelegatedParentIds = store.createSelector((state, wsId: string) => {
@@ -184,9 +159,9 @@ export const selectLoadingDelegatedParentIds = store.createSelector((state, wsId
  * readers that only need "are the orphans hydrated" check
  * `selectDelegatedAgentsLoaded` first.
  */
-export const selectOrphanedDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).orphanedDelegatedAgentsLoaded;
-});
+export const selectOrphanedDelegatedAgentsLoaded = store.createSelector(
+  getOrphanedDelegatedAgentsLoaded,
+);
 
 /** The rows the latest orphan-only read served (the Delegated bin's membership). */
 export const selectOrphanedDelegatedAgentIds = store.createSelector((state, wsId: string) => {
@@ -195,20 +170,14 @@ export const selectOrphanedDelegatedAgentIds = store.createSelector((state, wsId
 
 /** True while the on-demand orphan-only delegated read is in flight. */
 export const selectIsLoadingOrphanedDelegatedAgents = store.createSelector(
-  (state, wsId: string) => {
-    return getWorkspaceAgentState(state, wsId).isLoadingOrphanedDelegatedAgents;
-  },
+  getIsLoadingOrphanedDelegatedAgents,
 );
 
 /** True once the on-demand `scope: "background"` read has hydrated the background rows. */
-export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;
-});
+export const selectBackgroundAgentsLoaded = store.createSelector(getBackgroundAgentsLoaded);
 
 /** True while the on-demand background read is in flight. */
-export const selectIsLoadingBackgroundAgents = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).isLoadingBackgroundAgents;
-});
+export const selectIsLoadingBackgroundAgents = store.createSelector(getIsLoadingBackgroundAgents);
 
 function byCreatedOrder(left: AgentSession, right: AgentSession): number {
   const leftTime = new Date(left.createdAt).getTime();
@@ -358,18 +327,14 @@ export const selectRecentlyCreatedAgents = store.createSelector((state, wsId: st
 });
 
 /** Get agent IDs tracked for a workspace. */
-export const selectWorkspaceAgentIds = store.createSelector((state, wsId: string): string[] => {
-  return getWorkspaceAgentState(state, wsId).agentIds;
-});
+export const selectWorkspaceAgentIds = store.createSelector(getWorkspaceAgentIds);
 
 // --------------------------------------------------------------------------
 // Selectors delegating to agent-session slice
 // --------------------------------------------------------------------------
 
 /** Get the active agent ID for a workspace */
-export const selectActiveAgentId = store.createSelector((state, wsId: string): string | null => {
-  return getWorkspaceAgentState(state, wsId).activeAgentId;
-});
+export const selectActiveAgentId = store.createSelector(getActiveAgentId);
 
 /**
  * Get a workspace-scoped agent session. Use this instead of bridge read helpers

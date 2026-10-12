@@ -1,3 +1,6 @@
+import type { AgentSessionProjectionState } from '../agent-session/agent-session-projections';
+import type { WorkspaceAgentsState } from './workspace-agents-slice';
+
 /** Mount-scoped consumer identity plus the resource whose creation is single-flight. */
 export interface AgentCreationConsumer {
   id: string;
@@ -15,3 +18,8 @@ export interface AgentCreationOutcome {
   error?: string;
   completedAt?: string;
 }
+
+/** Shared projection input; canonical slice state remains owned by its existing reducers. */
+export type WorkspaceAgentsProjectionState = AgentSessionProjectionState & {
+  workspaceAgents: WorkspaceAgentsState;
+};
