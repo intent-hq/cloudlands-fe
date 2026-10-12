@@ -482,13 +482,23 @@ export async function expectArtwork(container, name, info) {
 }
 
 export async function expectIconSize(item, size, info, name) {
-  const measured = await toolIcon(item).evaluate((node) => {
-    const rect = (element) => {
-      const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
-      return { left, right, top, bottom, width, height };
-    };
-    return { wrapper: rect(node), artwork: rect(node.querySelector('svg')) };
-  });
+  const measure = () =>
+    toolIcon(item).evaluate((node) => {
+      const rect = (element) => {
+        const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+        return { left, right, top, bottom, width, height };
+      };
+      return { wrapper: rect(node), artwork: rect(node.querySelector('svg')) };
+    });
+  // Native input completion can precede the next rendered size. Wait on actual
+  // production geometry, retaining the requested-size contract and its bound.
+  let measured;
+  await expect
+    .poll(async () => {
+      measured = await measure();
+      return { width: measured.wrapper.width, height: measured.wrapper.height };
+    })
+    .toEqual({ width: size, height: size });
   await info.attach(`${name}-icon-geometry.json`, {
     body: JSON.stringify(measured, null, 2),
     contentType: 'application/json',
