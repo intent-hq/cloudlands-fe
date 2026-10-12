@@ -7,7 +7,11 @@
  * the `presence:report` sends; see `sagas/presence-saga.ts`.
  */
 
-import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  updateItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { effectivePresenceRows, type PresenceRoster } from '$shared/types/presence';
@@ -47,6 +51,11 @@ export const presenceWorkspaceRemoved = createAction<[workspaceId: string]>(
 /** A pushed `presence:changed` event — a full roster replacement, newer than any read in flight. */
 export const presenceRosterReceived =
   createAction<[roster: PresenceRoster]>('presence/rosterReceived');
+
+/** An authorized workspace:updated delta explicitly changed accepted membership. */
+export const presenceMembershipChanged = createAction<[workspaceId: string]>(
+  'presence/membershipChanged',
+);
 
 /** A `presence.snapshot` result the saga has fenced as current — the same full replacement. */
 export const presenceSnapshotReceived = createAction<[roster: PresenceRoster]>(
@@ -115,8 +124,30 @@ function foldLiveTyping(
 
 function replaceRoster(state: PresenceState, roster: PresenceRoster): PresenceState {
   if (!state.context || !state.workspaceIds.includes(roster.workspaceId)) return state;
+  // Online profile fields are authoritative for accepted people too (mentions
+  // and offline avatars). Never invent a membership or copy transient typing.
+  let members = state.members[roster.workspaceId];
+  if (members) {
+    for (const online of effectivePresenceRows(roster.members)) {
+      const member = getItem(members, online.principalId);
+      if (!member) continue;
+      const next = {
+        ...member,
+        login: online.login,
+        displayName: online.displayName,
+        avatarUrl: online.avatarUrl,
+        ...(online.hostRole ? { hostRole: online.hostRole } : {}),
+        ...(online.identity ? { identity: online.identity } : {}),
+      };
+      if (JSON.stringify(next) !== JSON.stringify(member)) members = updateItem(members, next);
+    }
+  }
   return {
     ...state,
+    members:
+      members && members !== state.members[roster.workspaceId]
+        ? { ...state.members, [roster.workspaceId]: members }
+        : state.members,
     rosters: {
       ...state.rosters,
       [roster.workspaceId]: createCollection('principalId', effectivePresenceRows(roster.members)),

@@ -18,8 +18,8 @@ import {
   principalReceived,
 } from '../../principal/principal-slice';
 import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
-import { selectWorkspacePresencePeople } from '../presence-selectors';
-import { presenceRosterReceived } from '../presence-slice';
+import { selectWorkspacePresencePeople, selectAgentTypingPeople } from '../presence-selectors';
+import { presenceRosterReceived, presenceMembershipChanged } from '../presence-slice';
 import { presenceSaga } from './presence-saga';
 
 const wire = vi.hoisted(() => ({ request: vi.fn(), invoke: vi.fn() }));
@@ -193,8 +193,9 @@ describe('presence admission and avatar policy', () => {
       update.members[1] = {
         ...update.members[1],
         focus: [{ workspaceId: 'ws', agentId: 'agent' }],
-        typing: [{ agentId: 'agent', source: 'remote', pulse: 1 }],
+        typing: [{ agentId: 'agent', source: 'remote', pulse: 1, since: '2026-10-12T08:00:00Z' }],
       };
+      store.dispatch(presenceMembershipChanged('ws'));
       store.dispatch(presenceRosterReceived(update));
       await vi.advanceTimersByTimeAsync(300);
       expect(
@@ -304,7 +305,7 @@ describe('presence admission and avatar policy', () => {
       selectWorkspacePresencePeople.select(store.state, 'ws').map((p) => p.principalId),
     ).toEqual(['host', 'guest']);
   });
-  it('a guest consumes an injected workspace notification; daemon delivery remains a separate dependency', async () => {
+  it('a guest refreshes an offline same-count role change from explicit membership invalidation', async () => {
     store.dispatch(
       replaceWorkspaceList([
         {
@@ -337,17 +338,68 @@ describe('presence admission and avatar policy', () => {
           }
         : roster(),
     );
-    store.dispatch(presenceRosterReceived(roster()));
+    store.dispatch(presenceMembershipChanged('ws'));
     await vi.advanceTimersByTimeAsync(300);
     expect(
       selectWorkspacePresencePeople.select(store.state, 'ws').map((p) => p.principalId),
     ).toEqual(['me', 'host']);
   });
+  it('uses typing and focus pushes without membership reads, preserving offline people', async () => {
+    start();
+    await settle();
+    wire.request.mockClear();
+    for (let pulse = 1; pulse <= 5; pulse++) {
+      const update: PresenceRoster = roster();
+      update.members[1] = {
+        ...update.members[1],
+        focus: [{ workspaceId: 'ws', agentId: 'agent' }],
+        typing: [{ agentId: 'agent', source: 'remote', pulse, since: '2026-10-12T08:00:00Z' }],
+      };
+      store.dispatch(presenceRosterReceived(update));
+      store.dispatch(presenceRosterReceived(roster('hidden')));
+      await vi.advanceTimersByTimeAsync(1500);
+    }
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(selectWorkspacePresencePeople.select(store.state, 'ws')).toMatchObject([
+      { principalId: 'host', online: true, viewing: true },
+      { principalId: 'guest', online: false },
+    ]);
+    expect(selectAgentTypingPeople.select(store.state, 'ws', 'agent')).toMatchObject([
+      { principalId: 'host' },
+    ]);
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(selectAgentTypingPeople.select(store.state, 'ws', 'agent')).toEqual([]);
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+
+  it('reads once when explicit membership invalidation also changes the member count', async () => {
+    start();
+    await settle();
+    wire.request.mockClear().mockImplementation(async () => ({
+      members: accepted().filter((m) => m.principalId !== 'guest'),
+    }));
+    store.dispatch(presenceMembershipChanged('ws'));
+    store.dispatch(
+      replaceWorkspaceList([
+        {
+          id: WorkspaceId('ws'),
+          memberCount: 3,
+          ownerPrincipalId: 'me',
+          myRole: 'owner',
+          canManage: true,
+        } as Workspace,
+      ]),
+    );
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wire.request.mock.calls).toEqual([['workspace.members.list', { workspaceId: 'ws' }]]);
+    expect(getItem(store.state.presence.members.ws, 'guest')).toBeUndefined();
+  });
+
   it('drops a debounced notification when the workspace is removed before rejoining', async () => {
     start();
     await settle();
     wire.request.mockClear();
-    store.dispatch(presenceRosterReceived(roster()));
+    store.dispatch(presenceMembershipChanged('ws'));
     store.dispatch(replaceWorkspaceList([]));
     await settle();
     await vi.advanceTimersByTimeAsync(300);
@@ -362,10 +414,10 @@ describe('presence admission and avatar policy', () => {
       release = resolve;
     });
     wire.request.mockClear().mockImplementationOnce(() => held);
-    store.dispatch(presenceRosterReceived(roster()));
+    store.dispatch(presenceMembershipChanged('ws'));
     await vi.advanceTimersByTimeAsync(300);
     expect(wire.request).toHaveBeenCalledTimes(1);
-    for (let i = 0; i < 4; i++) store.dispatch(presenceRosterReceived(roster()));
+    for (let i = 0; i < 4; i++) store.dispatch(presenceMembershipChanged('ws'));
     await vi.advanceTimersByTimeAsync(300);
     expect(wire.request).toHaveBeenCalledTimes(1);
     release({ members: accepted() });
@@ -386,8 +438,8 @@ describe('presence admission and avatar policy', () => {
     start();
     await settle();
     wire.request.mockClear();
-    for (let i = 0; i < 5; i++) store.dispatch(presenceRosterReceived(roster()));
-    store.dispatch(presenceRosterReceived(roster('hidden')));
+    for (let i = 0; i < 5; i++) store.dispatch(presenceMembershipChanged('ws'));
+    store.dispatch(presenceMembershipChanged('hidden'));
     await vi.advanceTimersByTimeAsync(300);
     expect(wire.request.mock.calls.filter(([m]) => m === 'workspace.members.list')).toEqual([
       ['workspace.members.list', { workspaceId: 'ws' }],

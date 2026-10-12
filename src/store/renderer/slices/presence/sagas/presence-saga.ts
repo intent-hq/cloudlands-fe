@@ -26,7 +26,8 @@
  * Membership: the roster only lists who is online, so the accepted members
  * of every open SHARED workspace tab (`memberCount > 1`) are read from
  * `workspace.members.list` (Member+) — on attach, when such a tab opens and
- * whenever the daemon's `workspace:updated` moves its `memberCount`. Reads
+ * whenever the daemon's `workspace:updated` flags `members` or moves its
+ * `memberCount`. Presence/typing pushes never invalidate membership. Reads
  * are fenced like the snapshots (a backend switch or a newer read of the
  * same workspace supersedes).
  *
@@ -82,6 +83,7 @@ import type { WorkspaceMembersListResult } from '../../guest-sessions/guest-sess
 import { selectPrincipalSnapshot } from '../../principal/principal-selectors';
 import {
   presenceMembersReceived,
+  presenceMembershipChanged,
   presenceContextReceived,
   presenceWorkspaceRemoved,
   presenceWorkspacesReceived,
@@ -183,15 +185,29 @@ function createVisibilityChannel(): EventChannel<boolean> {
   }, buffers.sliding<boolean>(1));
 }
 
-function* sendReport(): SagaGenerator<void> {
-  const params = yield* select(selectOwnPresenceReport.select);
-  try {
-    const result = yield* call(invokeReport, params);
-    yield* put(presenceOwnTypingSourceReceived(result.typingSource));
-  } catch (error) {
-    logger.debug('presence:report failed', { error: String(error) });
-  }
+/** Successful idle reports belong to one admitted connection lifetime only. */
+function createReportSender() {
+  let lastSuccessfulKey: string | null = null;
+  let ordinal = 0;
+  return function* sendReport(): SagaGenerator<void> {
+    const params = yield* select(selectOwnPresenceReport.select);
+    const key = JSON.stringify(params);
+    if (!params.typing && key === lastSuccessfulKey) return;
+    const current = ++ordinal;
+    lastSuccessfulKey = null;
+    try {
+      const result = yield* call(invokeReport, params);
+      if (current !== ordinal) return;
+      // A null source can mean a failed send; leave the next report retryable.
+      if (result.typingSource !== null) lastSuccessfulKey = params.typing ? null : key;
+      yield* put(presenceOwnTypingSourceReceived(result.typingSource));
+    } catch (error) {
+      logger.debug('presence:report failed', { error: String(error) });
+    }
+  };
 }
+
+type ReportSender = ReturnType<typeof createReportSender>;
 
 function* watchVisibility(): SagaGenerator<void> {
   const channel = createVisibilityChannel();
@@ -211,12 +227,14 @@ function* watchVisibility(): SagaGenerator<void> {
 /**
  * Debounced report: every change restarts the delay; only the last one sends.
  * The channel's initial emission is skipped — the boot report is owned by
- * `restartAttach`.
+ * `runPresence`.
  */
-function* reportOnChange({ prevPayload }: SelectorChannelPayload<string>): SagaGenerator<void> {
-  if (prevPayload == null) return;
-  yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
-  yield* sendReport();
+function reportOnChange(sendReport: ReportSender) {
+  return function* ({ prevPayload }: SelectorChannelPayload<string>): SagaGenerator<void> {
+    if (prevPayload == null) return;
+    yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
+    yield* sendReport();
+  };
 }
 
 /**
@@ -226,7 +244,7 @@ function* reportOnChange({ prevPayload }: SelectorChannelPayload<string>): SagaG
  * advancing for the receivers' 3 s timers. Idle for PRESENCE_TYPING_IDLE_MS
  * ends the episode.
  */
-function* watchTypingPulses(): SagaGenerator<void> {
+function* watchTypingPulses(sendReport: ReportSender): SagaGenerator<void> {
   let lastPulseAt = 0;
   let episodeAgentId: string | null = null;
   let generation = 0;
@@ -366,12 +384,11 @@ function onMembershipKeysChanged(reads: RosterReads) {
 }
 
 type MembershipNotification =
-  ReturnType<typeof presenceRosterReceived> | ReturnType<typeof presenceWorkspaceRemoved>;
+  ReturnType<typeof presenceMembershipChanged> | ReturnType<typeof presenceWorkspaceRemoved>;
 type MembershipRefresh = { workspaceId: string; cancel: boolean };
 
 function membershipNotificationWorkspace(action: MembershipNotification): string {
-  const value = action.payload[0];
-  return typeof value === 'string' ? value : value.workspaceId;
+  return action.payload[0];
 }
 
 function* queueMembershipRefresh(
@@ -382,7 +399,12 @@ function* queueMembershipRefresh(
   const removed = action.type === presenceWorkspaceRemoved.type;
   if (!removed) {
     if (!(yield* select(selectPresenceWorkspaceIds.select)).includes(workspaceId)) return;
+    const membershipKey = (yield* select(selectPresenceMembershipKeys.select)).find(
+      (key) => membershipKeyWorkspaceId(key) === workspaceId,
+    );
     yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
+    // A count change in the same workspace delta already started hydration.
+    if (!(yield* select(selectPresenceMembershipKeys.select)).includes(membershipKey ?? '')) return;
   }
   yield* put(notifications, { workspaceId, cancel: removed });
 }
@@ -399,10 +421,11 @@ function* refreshNotifiedMembership(
     yield* call(hydrateMembership, reads, workspaceId);
 }
 
-/** Refresh on an authorized workspace notification. Offline role changes also
- * require the daemon to emit that notification; host-global events cannot stand
- * in for delivery to guests. Debounce bursts, serialize reads per workspace and
- * discard pending work when that workspace leaves the current admission. */
+/** Refresh on an explicit workspace membership invalidation. Offline role
+ * changes require workspace:updated changes.members=true too; an online-only
+ * presence roster (even identical) cannot signal that distinction to guests.
+ * Debounce bursts, serialize reads per workspace and discard pending work when
+ * that workspace leaves the current admission. */
 function* watchMembershipNotifications(reads: RosterReads): SagaGenerator<void> {
   const notifications = channel<MembershipRefresh>(buffers.expanding());
   const refresh = yield* takeSingleFlightInContext(
@@ -412,7 +435,7 @@ function* watchMembershipNotifications(reads: RosterReads): SagaGenerator<void> 
     reads,
   );
   const debounce = yield* takeLatestInContext(
-    [presenceRosterReceived, presenceWorkspaceRemoved],
+    [presenceMembershipChanged, presenceWorkspaceRemoved],
     membershipNotificationWorkspace,
     queueMembershipRefresh,
     notifications,
@@ -438,12 +461,15 @@ function* runPresence({
   const reads: RosterReads = new Map();
   const memberReads: RosterReads = new Map();
   const tasks: Task[] = [];
+  const sendReport = createReportSender();
   yield* put(presenceWorkspacesReceived(yield* select(selectPresenceWorkspaceIds.select)));
   try {
     tasks.push(yield* fork(watchVisibility));
-    tasks.push(yield* fork(watchTypingPulses));
+    tasks.push(yield* fork(watchTypingPulses, sendReport));
     tasks.push(yield* fork(watchMembershipNotifications, memberReads));
-    tasks.push(yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange));
+    tasks.push(
+      yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange(sendReport)),
+    );
     tasks.push(yield* takeEveryFromSelector(selectPresenceLiveTyping, armTypingTimers));
     tasks.push(
       yield* takeEveryFromSelector(

@@ -56,6 +56,34 @@ describe('presence slice', () => {
     expect(initialState.windowVisible).toBe(true);
   });
 
+  it('uses pushed identities for known accepted members without inventing membership or persisting typing', () => {
+    let state = presenceReducer(initialState, presenceMembersReceived('ws-1', [accepted('other')]));
+    state = presenceReducer(
+      state,
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            login: 'renamed',
+            displayName: 'New name',
+            hostRole: 'member',
+            typing: [typing('remote', 1)],
+          }),
+          member('unknown'),
+        ]),
+      ),
+    );
+    expect(getItems(state.members['ws-1'])).toEqual([
+      {
+        ...accepted('other'),
+        login: 'renamed',
+        displayName: 'New name',
+        hostRole: 'member',
+      },
+    ]);
+    state = presenceReducer(state, presenceRosterReceived(roster([])));
+    expect(getItem(state.members['ws-1'], 'other')?.login).toBe('renamed');
+  });
+
   it('replaces a workspace roster and keeps other workspaces', () => {
     let state = presenceReducer(initialState, presenceRosterReceived(roster([member('a')])));
     state = presenceReducer(state, presenceRosterReceived(roster([member('b')], 'ws-2')));
