@@ -8,19 +8,19 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+    "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
     "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded static support-only audit at815eba26 of exact7 workspace-origin cancellation/async-observation paths:4production and3tests. All seven lie outside immutable inventory. No new view maps, target refresh, implementation promotion or native acceptance. All1890rows/230targets/101historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented. Prior63 files are unchanged in the combined70 profile.",
+    "method": "Bounded static support-only audit at bd099f6e of exactly12 canonical scripts/skills/terminals read factory, source facade, React binding and test paths (9production/3tests). All12 lie outside immutable inventory. No new view mapping, target refresh, implementation promotion or native acceptance. All1890rows/230targets/102historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T15:43:32.692611+00:00",
+    "reviewedAt": "2026-10-12T16:54:17.868148+00:00",
     "checkpointAdvance": {
-      "previousLedgerCommit": "7914b817fca838043ca7220d7ee1ec33fbed0e02",
-      "previousAuditCandidateCommit": "45505af388a28ec42fc08b0e744146994e7d3af7",
+      "previousLedgerCommit": "e439db65d54e797b1f740c5170168c490f7745fb",
+      "previousAuditCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
       "unchangedUniqueDirectTargets": 230,
       "changedUniqueDirectTargets": 0,
-      "retainedHistoricalReviewCount": 101,
+      "retainedHistoricalReviewCount": 102,
       "meaning": "Common validation pin only; all historical inspected/source/support/native pins and acceptance boundaries retained."
     }
   },
@@ -89,7 +89,8 @@
     "Bounded static support-only audit of renderer4, physical5 and hydration13 at c3f8566. No maps, target refresh, local-status promotion or native acceptance. All22 support paths are outside the immutable inventory. Existing236/1430 views,230 direct targets,1890 source rows,98 prior reviews and29 receipts retained. Published after explicit coordinator release; static support provenance only, with no runtime or native acceptance. Renderer bridge continuity requires an observation; unseen A→B→A is not detected. No route registry/startup or real physical-to-route composition; main settlement is not later renderer delivery attestation. Physical capture by itself does not join legacy untracked teardown. P10 diagnostic join is not generalized ownership proof. No endpoint/sidecar/child attestation, no guarantees inside still-ID-keyed cleanup helper descendants. Hydration immediate put fanout retains synchronous reentry limit; generation fences protect path-wait/deferred work, not all branch settlements. Largely unversioned branch settlement and restart with retained hydrated Redux flags remain inherited; no receiver rewrite accepted. No React hydration receiver/root/host activation at this pin; later955 seven-file work excluded. Counts matching another owner run do not prove isolated baseline or green CI. Earlier908 invitation19 failures/Knip597 and all earlier setup/settings/root/mock failures remain historical evidence; current593 is not a waiver. Internal unreleased support-only migration; no released assistant-help impact.",
     "Bounded static support-only audit at02caf1ee of50 receiver/client/selector/physical-route prerequisite paths (24 committed before059 plus28 final committed paths, with two overlaps). No new view mappings, target refresh, local-status promotion or native acceptance. All1890rows/230directtargets/99historicalreviews and29receipts retained;236/1430 views remain231components+5modules,178partial58localimplemented. Three unmapped fixed-inventory support rows have explicit source drift;47 paths fall outside that inventory. Source development-only IPC startup now exists, without actual runtime or React receiver/root/host activation evidence. All historic native/visual/source-pair results and failures remain at their recorded pins. Source inverses and literal API/AST/import proofs are not native or timing parity. The canonical receiver remains unbound in the React root/host. Source saga root and React client/store roots are unchanged. Development-only source IPC startup is additive support code, not proof of actual startup/authorization/physical execution. No deployed endpoint/file.exists/sidecar/child attestation, later renderer delivery guarantee, or unseen A-to-B-to-A continuity claim. Detached legacy work is not made joined by physical capture alone. Main startup installation/enrollment disposal is terminal, not hot restart or tab/window cleanup. Physical READY/currentness, cancellation drain and owned reconnect behavior are intentional canonical support changes; default inverses preserve their original source history. Inherited largely unversioned branch settlement, synchronous hydration reentry and retained hydrated flags remain. Source call-time export lookup corrections are explicit; no blanket source runtime equivalence claim. Full1358 related files:1303pass54fail1skip;25162passed301failed8skipped tests and2unhandled. Declared10/164PASS; UI17/223PASS and direct4/88PASS retain summary-only membership limits.1379selection accounted,1368exact JSON file records. No causal/base-CI or whole-branch green claim. Knip595 FAIL unsuppressed, matching final24 rendered findings only. All production typing passed with211Svelte warnings; scopedlint15warnings and MaxListeners warnings retained. Earlier825related108failedfiles296failedcases2unhandled and all receiver/fixture/startup/type failures remain preserved. Related comparison:55oldfailedfiles now nonfailed,53persist;31oldfailedcases pass,265same diagnostic header (246samefirstprojectframe,19changedframe).19newlyobserved failures inoldfiles and17new-selectioncases remain failures, without causal attribution. Coordinator manifest helper false warning is withdrawn: it compared SHA string to the entire metadata object. All33owned+21reference hashes and sizes match; no artifact/source/test drift or rerun. Pending settings14,selectors17,script/skill clients,cancellation/async-origin and other future drafts are excluded. No published assistant-help impact for this internal unreleased support migration.",
     "Bounded static support-only audit at45505af3 of63 committed model/settings/source-transport/unit-runner paths:14production,43tests,2configs,3tooling,1shared fixture. No new view maps, direct-target refresh, implementation promotion or native acceptance. All1890source rows/230targets/100historical reviews/29receipts retained;236/1430 views remain231components+5modules with178partial58localimplemented. One already-unmapped and already-drifted permission selector support row advances its current hash;62support paths fall outside the fixed inventory. All historical source-pair/native/visual failures and receipts remain at their original pins. Original003 inventory, source hashes,1430denominator, all19invalidations and old acceptance meanings are unchanged. Prepared63 snapshot equals exact committed45505af3 and disk bytes.37original paths plus26disjoint applied paths with one subsequent async-wrapper correction inside37 are distinct evidence profiles, not64paths.22patch and26whole-file inverse proofs are retained without rerunning owner tests. Canonical behavior corrections are intentional: async effort/public model adoption, idle host-reset state, original transport lookup timing/optional-argument arity and model receipt ownership. No blanket source runtime or byte-equivalence claim; actual original/previous/current hashes and source-facade receiver relationships retained. The existing permission selector support drift advances ca315ebb to07abfa72, original169c437f retained. Four lazy select getters preserve actual selector receivers; canonical recovery projection bodies and root registrations are unchanged. No new inventory row or view count. All43 test changes are represented by exact committed hashes and approved patch profiles. Admission/lifetime/receipt oracle corrections are not described as unchanged assertions; full historical failures remain visible. Original37 full2313:2286pass26fail1whollyskip files;41720passed250failed40skipped cases, zero reported actual unhandled/hygiene. No full current63 rerun. Later26unique focused files1021PASS/1oldskip cover190 targeted historical failures; four tooling files60historical failures remain. No causal exclusivity or whole-branch green claim. Initial269PASS/1later legacy-write failure preceded source public async wrapper restoration and subsequent281PASS. Settings11 complete JSON133PASS retains separate proc observer failure/uncaptured child exit/lost observed-PID list. Recovery proves unchanged inputs and absent group, not exhaustive escaped-child cleanup. No test rerun. Final React4files42casesPASS has captured exit0, exact prior identities/no newly skipped cases,8801stable inputs and no remaining observed groups. This is owner regression evidence only, not auditor runtime execution, native acceptance or a new full-suite pass. Normal renderer/React/main/preload and Reactexplicit3PASS; Svelte0errors211warnings and UI17/223PASS with summary-only membership. Canonicalchanged63 selects the same2313files; format/ESLint0errors34warnings/architecturePASS thenKnip595FAIL before unit execution. No findings suppressed or baselineCI claim. Sourceexplicit43 remains522diagnosticsFAIL. Paired pre-repair37 control523 to current63:521exact plus1 individually reviewed two-space TS2322 reindent,1old lifecycle-mock diagnostic removed,0new within27repair overlays. Canonical/current105764-byte logs match721af2e3. This is not original003, earlier37 baseline or CI equivalence; both failing exits retained. Vite diagnostic is outside committed63: original timeout and first generated-child syntax UNRUN retained; v2 reaches assertions with1FAIL24filtered, firststdout675ms/parent30694ms and timeout still present. Whole1bcc file restored at15:22:27,8798+108inputs stable/all known processes closed per owner. Final owner narrative pending; no product source claim from instrumentation. MacPython3.9 missing hashlib.file_digest, CT apt-getENOENT and original selected-shell failures stay separate. Diagnostic shell passes do not close all historical tooling failures. No installation or environment repair performed. Source saga and React client/store roots and three canonical helper/facade bodies remain byte-identical. React receiver/root/real-host activation and actual service/physical route delivery remain outside this audit. Held migration7 and future ignored work excluded. Auditor only read immutable Git blobs, parsed syntax/imports and checked saved evidence/JSON hashes. No semantic compiler, test, discovery, product import, Store/IPC, browser, service or native execution. Internal unreleased support/test migration has no released assistant-help impact.",
-    "Bounded static support-only audit at815eba26 of exact7 workspace-origin cancellation/async-observation paths:4production and3tests. All seven lie outside immutable inventory. No new view maps, target refresh, implementation promotion or native acceptance. All1890rows/230targets/101historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented. Prior63 files are unchanged in the combined70 profile. Original003 inventory/1430denominator and every prior source/target/case/receipt/failure remain. All19 review invalidations and historical actual inspected pins retain their original meaning; shared helpers add no view units. The committed7 matches frozen70/source snapshots exactly. Independent whole-file forward/inverse proof restores7914, including removal of the new test. Original003 default cleanup worker body equals current after indentation only; current source branch/facades/root registrations and canonical origin owner/loader are unchanged. Observation AbortSignal is optional. Pre-transfer cancellation settles null and drains original native invocation; a late known origin releases once through captured original receiver. Unknown main allocation remains late-reply/TTL/document-bound until its ID exists. Transferred authority is independent of later observation abort. Optional async observation adds single-flight/trailing-coalesced capture, accepted tab ordinal/focus and irreversible unpublished principal freshness, exact-intent parking/refocus and owned teardown. Status is only a wake hint, not physical readiness. Existing synchronous submit refuses in this mode. The canonical loader retains post-publication admission. These intentional support semantics are not source-wide native parity. Actual source/React facades still use the existing default option; React root/real-host observation activation and physical route/receiver product composition are not implemented by this slice. No compiler/static/test evidence transfers to service or native acceptance. Owner focused293PASS spans source6/175,React2/57,main3/61 with43new cases. Final related19/252 and declared5/63 have exact JSON membership; direct3/112 is a subset of related, not another run. UI17/223 is reused summary-only evidence; selected union41 and fresh24 JSON315 plus UI223 are qualified accordingly. Focused293 overlaps and is not summed again. All250 historical full2313 failed cases are NOT SELECTED in these new lanes. Their prior26failedfiles250failedcases and earlier repair63/tooling/runtime/native failures remain; no full current70 rerun or whole-branch/baseCI claim. Source6 test-inclusive compiler still fails oneTS2352. Four7914 source preimages produce the identical diagnostic on the same2538roots/7626-source/8210-read graph. This paired control is not prior522/original003/baseCI equivalence and does not suppress it. Initial ReactTS2353 and rejected type-removal proposal retained; approved fixture annotation has identical emittedJS/assertion proof and later React compilerPASS. Normal source/React/main/preload and Svelte0errors211warnings pass in owner receipts. Knip595FAIL plus103duplicate warnings retain an identical normalized predecessor multiset, not a clean gate. SourceESLint3warnings and two physical Socket MaxListeners warnings remain. Existing settings unknown-child-exit and Vite timing qualification remain historical limits. Final broader owner closure reports8779 stable inputs and closed recorded processes. Auditor rehashed74manifest artifacts/references plus prior preparation evidence; no owner test/compiler/discovery/runtime reruns. During preparation HEAD advanced from7914 to815eba26; the initial helper assumption failure is retained as publication timing, not a product/evidence failure. Final explicit release and committed-byte checks now bind815eba26; no silent adoption or acceptance transfer. All seven syntax files and five source/React import graphs were read from finalGit blobs. External packages/generated leaves are static boundaries, not executed. No browser/services/Store/IPC/native operations. Internal unactivated support work has no released assistant-help impact; future work outside exact7 excluded."
+    "Bounded static support-only audit at815eba26 of exact7 workspace-origin cancellation/async-observation paths:4production and3tests. All seven lie outside immutable inventory. No new view maps, target refresh, implementation promotion or native acceptance. All1890rows/230targets/101historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented. Prior63 files are unchanged in the combined70 profile. Original003 inventory/1430denominator and every prior source/target/case/receipt/failure remain. All19 review invalidations and historical actual inspected pins retain their original meaning; shared helpers add no view units. The committed7 matches frozen70/source snapshots exactly. Independent whole-file forward/inverse proof restores7914, including removal of the new test. Original003 default cleanup worker body equals current after indentation only; current source branch/facades/root registrations and canonical origin owner/loader are unchanged. Observation AbortSignal is optional. Pre-transfer cancellation settles null and drains original native invocation; a late known origin releases once through captured original receiver. Unknown main allocation remains late-reply/TTL/document-bound until its ID exists. Transferred authority is independent of later observation abort. Optional async observation adds single-flight/trailing-coalesced capture, accepted tab ordinal/focus and irreversible unpublished principal freshness, exact-intent parking/refocus and owned teardown. Status is only a wake hint, not physical readiness. Existing synchronous submit refuses in this mode. The canonical loader retains post-publication admission. These intentional support semantics are not source-wide native parity. Actual source/React facades still use the existing default option; React root/real-host observation activation and physical route/receiver product composition are not implemented by this slice. No compiler/static/test evidence transfers to service or native acceptance. Owner focused293PASS spans source6/175,React2/57,main3/61 with43new cases. Final related19/252 and declared5/63 have exact JSON membership; direct3/112 is a subset of related, not another run. UI17/223 is reused summary-only evidence; selected union41 and fresh24 JSON315 plus UI223 are qualified accordingly. Focused293 overlaps and is not summed again. All250 historical full2313 failed cases are NOT SELECTED in these new lanes. Their prior26failedfiles250failedcases and earlier repair63/tooling/runtime/native failures remain; no full current70 rerun or whole-branch/baseCI claim. Source6 test-inclusive compiler still fails oneTS2352. Four7914 source preimages produce the identical diagnostic on the same2538roots/7626-source/8210-read graph. This paired control is not prior522/original003/baseCI equivalence and does not suppress it. Initial ReactTS2353 and rejected type-removal proposal retained; approved fixture annotation has identical emittedJS/assertion proof and later React compilerPASS. Normal source/React/main/preload and Svelte0errors211warnings pass in owner receipts. Knip595FAIL plus103duplicate warnings retain an identical normalized predecessor multiset, not a clean gate. SourceESLint3warnings and two physical Socket MaxListeners warnings remain. Existing settings unknown-child-exit and Vite timing qualification remain historical limits. Final broader owner closure reports8779 stable inputs and closed recorded processes. Auditor rehashed74manifest artifacts/references plus prior preparation evidence; no owner test/compiler/discovery/runtime reruns. During preparation HEAD advanced from7914 to815eba26; the initial helper assumption failure is retained as publication timing, not a product/evidence failure. Final explicit release and committed-byte checks now bind815eba26; no silent adoption or acceptance transfer. All seven syntax files and five source/React import graphs were read from finalGit blobs. External packages/generated leaves are static boundaries, not executed. No browser/services/Store/IPC/native operations. Internal unactivated support work has no released assistant-help impact; future work outside exact7 excluded.",
+    "Bounded static support-only audit at bd099f6e of exactly12 canonical scripts/skills/terminals read factory, source facade, React binding and test paths (9production/3tests). All12 lie outside immutable inventory. No new view mapping, target refresh, implementation promotion or native acceptance. All1890rows/230targets/102historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented. Original003 inventory/1430denominator and every prior source/target/case/receipt/failure remain. All19invalidations and historical inspected pins retain their meanings. Shared read factories and bindings add no view units. Committed12 exactly matches prepared snapshots/full forward-inverse proof. Three source preimages equal original003; four moved async method bodies and two helper blocks are exact after indentation. Source other methods/subscriptions/public classes and existing roots remain unchanged. Added nine paths were absent at original003/e439. Scripts capability is strict client.hello scriptLifecycle===1. Original archive-partition error/default/legacy omission and malformed-array rejection remain. Source list.call(this,...) preserves dynamic supportsLifecycle receiver. Typed rest forwarding resolves the source backendRequest export at call time; factory captures the injected function. No general Promise/native timing equivalence claimed. Skills retains original bare-array handling, resourceDirectory truthiness, allowedTools/compatibility stripping and nonarray fallback. Source private fetch delegates; public list, reconnect and notification ownership remain source-owned. Terminals preserves array/envelope/daemonBootId normalization, terminalId/id precedence and invalid-entry behavior; mutation/output/subscription lifetime methods remain unchanged. Three React bindings use genuine existing backend/configured Store getters, but remain unreferenced and inactive. No lifecycle-read composition, root startup, host/Store/IPC activation or service acceptance added. Neutral runtime factories and framework-bound React import graphs are explicitly distinguished. Owner final related828+declared5 yields833 unique fresh JSON files:832passed/1wholly skipped;15293passed cases/7unchanged skips/0failures or collection errors. All72new cases and selected170 original250 failures pass;80original failures NOT SELECTED. Separate earlier repair190:170selected pass/20not selected. No fresh full-suite/baseCI/causal claim. Earlier focused source5/208 and scripts4/199 overlap135lifecycle cases;272unique focused identities now pass in final broad source selection. Do not sum these historical lanes. UI17/223 reused summary-only evidence with7related overlap; union843. Direct3/72 is an exact related subset. Both root projects enabled, actual selected React files0; no React runtime coverage inferred. Source test-inclusive11FAIL retained: identical diagnostics/canonical text under a limited e439 three-source-facade overlay, with new factories/tests in both arms. Not original003/whole historical branch/baseCI equivalence. Initial12-error compiler and rejected alternative fixture type proposal remain; approved erased tuple asconst correction removed the new skill error without changing assertions/emittedJS per owner proof. Knip598FAIL includes595 retained findings plus3NEW unused React binding files,103duplicate warnings unchanged. Initial ignored position-normalization helper correction is diagnostic only, no gate rerun or exclusion. Normal production boundaries/React-inclusive compiler pass; Svelte0errors211warnings76files retained from prerequisite phase before erased fixture correction. All earlier native/tooling/runtime failures, original full250/repair190 profiles, source522 history, settings unknown child exit and Vite timing qualification remain unchanged. Broad current successes do not refresh old component/native reviews or waive failures outside selection. Final broader owner closure records8947stable inputs/829observed identities and complete owned groups absent, watcher canceled. One-second sampling is not exhaustive proof about every short-lived process. Auditor rehashed90final manifest/reference entries and bound previously verified610owner artifacts through immutable preparation evidence; no owner test/compiler/discovery/runtime rerun. Twelve syntax files and nine pinned import profiles checked using actual source/React aliases. Neutral factories have2/1/1runtime and73type files; React bindings each108runtime/183type files. No unresolved/computed/forbidden edges. External packages/generated leaves are static boundaries, not executed. Future combined19/selector17/composition3 and ignored drafts excluded. Internal unactivated support has no released assistant-help impact. No product/sourcepair/native/visual/fullmotion acceptance or broad status promotion."
   ],
   "reviews": {
     "foundation": {
@@ -99,7 +100,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -113,7 +114,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -127,7 +128,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -143,7 +144,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -157,7 +158,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -168,7 +169,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -179,7 +180,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -193,7 +194,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -204,7 +205,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -215,7 +216,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -226,7 +227,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -240,7 +241,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -251,7 +252,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -262,7 +263,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -277,7 +278,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -293,7 +294,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -304,7 +305,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -315,7 +316,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -333,7 +334,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -344,7 +345,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -355,7 +356,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -366,7 +367,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -380,7 +381,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -391,7 +392,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -405,7 +406,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -416,7 +417,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -431,7 +432,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -445,7 +446,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -459,7 +460,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -470,7 +471,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -478,7 +479,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -492,7 +493,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -506,7 +507,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -520,7 +521,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -531,7 +532,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -542,7 +543,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -553,7 +554,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -564,7 +565,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -575,7 +576,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -586,7 +587,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -600,7 +601,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -611,7 +612,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -622,7 +623,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -633,7 +634,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -644,7 +645,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -655,7 +656,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -663,7 +664,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -691,7 +692,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -714,7 +715,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -740,7 +741,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -766,7 +767,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -797,7 +798,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -826,7 +827,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -866,7 +867,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -899,7 +900,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -940,7 +941,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -985,7 +986,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -1043,7 +1044,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1088,7 +1089,7 @@
         "0f00a72202dce497991564f9fc6875db9f26c9e5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
       "inspectedCallsites": [
@@ -1186,7 +1187,7 @@
       ],
       "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
       "inspectedCallsites": [
@@ -1291,7 +1292,7 @@
     },
     "chat-disclosure-rows-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1487,7 +1488,7 @@
     },
     "chat-recovery-notices-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1691,7 +1692,7 @@
     },
     "chat-stream-metadata-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -1858,7 +1859,7 @@
     },
     "chat-history-attribution-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -2071,7 +2072,7 @@
     },
     "chat-disclosure-corrections-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2287,7 +2288,7 @@
     },
     "chat-queued-actions-command-3e894": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2481,7 +2482,7 @@
     },
     "chat-code-reference-context-4bfa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2846,7 +2847,7 @@
     },
     "chat-inline-mcp-prompt-preview-9d297": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3384,7 +3385,7 @@
     },
     "queued-attachments-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3563,7 +3564,7 @@
     },
     "tabs-export-correction-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3882,7 +3883,7 @@
     },
     "streaming-status-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -4102,7 +4103,7 @@
     },
     "mcp-inline-font-correction-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["7af853406e1a80758a3762bafef510be19db4587"],
@@ -4814,7 +4815,7 @@
     },
     "suggested-chief-prompts-16ee80": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5075,7 +5076,7 @@
     },
     "automated-wake-header-f2b2a2": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5431,7 +5432,7 @@
     },
     "agent-pr-attribution-headers-73da5529": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5904,7 +5905,7 @@
     },
     "attachment-permission-support-05cc7db6": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -6542,7 +6543,7 @@
     },
     "attachment-file-replacement-ff9a4e35": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -7578,7 +7579,7 @@
     },
     "inline-permission-and-live-support-6a51a3da": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -8424,7 +8425,7 @@
     },
     "media-and-markdown-composition-dd6e5720": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -9628,7 +9629,7 @@
     },
     "full-markdown-and-reasoning-68a5ca85": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -11464,7 +11465,7 @@
     },
     "chat-image-and-video-wrapper-561fa08c": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -13300,7 +13301,7 @@
     },
     "message-actions-and-transcript-cards-2d310fed": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -16548,7 +16549,7 @@
     },
     "setup-script-and-edit-confirmation-3d7e81dc": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -21537,7 +21538,7 @@
     },
     "operational-window-and-panel-2d988e34": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -30698,7 +30699,7 @@
     },
     "response-group-and-cylinder-1cea8e2b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -49133,7 +49134,7 @@
     },
     "navigation-excerpt-and-image-caption-34161b6d": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -84287,7 +84288,7 @@
     },
     "response-group-reaction-correction-e46a388f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -85109,7 +85110,7 @@
     },
     "detected-scripts-and-neutral-indicator-0afebba9": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -86288,7 +86289,7 @@
     },
     "markdown-image-owner-correction-35e676aa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -87106,7 +87107,7 @@
     },
     "static-toast-containment-support-8f0bbcda": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -88069,7 +88070,7 @@
     },
     "canonical-anchor-and-agent-read-support-d4abc96f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -90239,7 +90240,7 @@
     },
     "deleted-agent-cleanup-support-0ddf543a": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -92615,7 +92616,7 @@
     },
     "canonical-focused-end-support-df98264e": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -93630,7 +93631,7 @@
     },
     "react-panel-cleanup-prerequisites-8220d33b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -94778,7 +94779,7 @@
     },
     "admitted-agent-read-and-lifetime-support-785d3b4e": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -96957,7 +96958,7 @@
     },
     "workspace-tab-and-load-support-c360548b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "c360548b6e5c35730109d933f71953097735ad4c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -98769,7 +98770,7 @@
     },
     "workspace-load-guards-support-b0d11298": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "b0d112984be794ee3a43453a43195446bef0c977",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -101184,7 +101185,7 @@
     },
     "workspace-origin-captured-route-support-90875515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "90875515050c0e1bf7209ea1749808567c1b44b7",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -103642,7 +103643,7 @@
     },
     "renderer-physical-hydration-support-c3f85664": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "c3f8566458f5b021e9beff2fdb51959ee278869f",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -107417,7 +107418,7 @@
     },
     "receiver-client-physical-prerequisites-02caf1ee": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "02caf1eedfac6c47858d44c816651d98de94ec5b",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": [
@@ -114557,7 +114558,7 @@
     },
     "model-settings-unit-runner-support-45505af3": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "45505af388a28ec42fc08b0e744146994e7d3af7",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["45505af388a28ec42fc08b0e744146994e7d3af7"],
@@ -121396,7 +121397,7 @@
     },
     "workspace-origin-cancellation-async-support-815eba26": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
       "inspectedCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["815eba26b8a1b1b33a09ac4511893f473c29e4d7"],
@@ -124150,6 +124151,1773 @@
         "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
         "status": "not-run-by-ledger-auditor",
         "scope": "Pinned static source/API/import/inverse/hash/JSON verification only. Owner regression evidence retains failures; no runtime/native promotion."
+      },
+      "retainedReviewCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7"
+    },
+    "canonical-client-read-support-bd099f6e": {
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+      "inspectedCandidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+      "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
+      "implementationCommits": ["bd099f6eddb255074f84a5476ce85dcfab9740c3"],
+      "scope": "Bounded static support-only audit at bd099f6e of exactly12 canonical scripts/skills/terminals read factory, source facade, React binding and test paths (9production/3tests). All12 lie outside immutable inventory. No new view mapping, target refresh, implementation promotion or native acceptance. All1890rows/230targets/102historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented.",
+      "previousLedgerCommit": "e439db65d54e797b1f740c5170168c490f7745fb",
+      "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "sourceApiReview": {
+        "result": "PASS",
+        "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+        "parsedSupportPaths": 12,
+        "api": [
+          {
+            "path": "src/lib/client/live/backend-scripts-client.ts",
+            "sha256": "b81a92bdd6ad206565e65a0fa5f19ee0c4a57a56c919c8e26ce86a0b3ae8f2c6",
+            "exportedDeclarations": [
+              {
+                "kind": "FunctionDeclaration",
+                "name": "createBackendScriptsClient",
+                "signature": "export function createBackendScriptsClient(\n  backend: Pick<BackendRuntime, 'backendRequest'>,\n): Required<ScriptsReadClient> "
+              }
+            ]
+          },
+          {
+            "path": "src/lib/client/live/live-scripts-client.ts",
+            "sha256": "bea2fb2c411d8748a398981193aba4a5a2f0727e923b39b395ed7e40f9892939",
+            "exportedDeclarations": [
+              {
+                "kind": "ClassDeclaration",
+                "name": "LiveScriptsClient",
+                "signature": "LiveScriptsClient"
+              }
+            ]
+          },
+          {
+            "path": "apps/react/src/features/scripts/scripts-client.ts",
+            "sha256": "7da6ab27ca64a57898b1160fd439fb7f8e54692b69dce86b56dbd57554799b97",
+            "exportedDeclarations": [
+              {
+                "kind": "FirstStatement",
+                "name": "scriptsClient",
+                "signature": "export const scriptsClient = createBackendScriptsClient(backend);"
+              }
+            ]
+          },
+          {
+            "path": "src/lib/client/live/backend-scripts-client.test.ts",
+            "sha256": "2d06c5e69cbf811af813d9e5ef434b475ad4391e0e10a882ac9c22242af15256",
+            "exportedDeclarations": []
+          },
+          {
+            "path": "src/lib/client/live/backend-skills-client.ts",
+            "sha256": "f0ede59fcb8b15776b82e38c783a8f4ec419c6553d267f9bfd20295545ffdf84",
+            "exportedDeclarations": [
+              {
+                "kind": "FunctionDeclaration",
+                "name": "createBackendSkillsClient",
+                "signature": "export function createBackendSkillsClient(\n  backend: Pick<BackendRuntime, 'backendRequest'>,\n): SkillsReadClient "
+              }
+            ]
+          },
+          {
+            "path": "src/lib/client/live/live-skills-client.ts",
+            "sha256": "943f8751707d83133cd29211eda874ac3cf80057483200ae2acd97149804ac8f",
+            "exportedDeclarations": [
+              {
+                "kind": "ClassDeclaration",
+                "name": "LiveSkillsClient",
+                "signature": "LiveSkillsClient"
+              }
+            ]
+          },
+          {
+            "path": "apps/react/src/features/skills/skills-client.ts",
+            "sha256": "0ee2fb256d0cd3a8fe1498859acb6dd959882f56807e27d490649125aedd9c0a",
+            "exportedDeclarations": [
+              {
+                "kind": "FirstStatement",
+                "name": "skillsClient",
+                "signature": "export const skillsClient = createBackendSkillsClient(backend);"
+              }
+            ]
+          },
+          {
+            "path": "src/lib/client/live/backend-skills-client.test.ts",
+            "sha256": "23a60e03665449857f1ea96d919f3d314a1cf7738205e7a4b3af56c719b31c25",
+            "exportedDeclarations": []
+          },
+          {
+            "path": "src/lib/client/live/backend-terminals-client.ts",
+            "sha256": "6f3ba2002f0172a09c8d39ff2aef02178abed6c273e226269bade321e8087108",
+            "exportedDeclarations": [
+              {
+                "kind": "FunctionDeclaration",
+                "name": "createBackendTerminalsClient",
+                "signature": "export function createBackendTerminalsClient(\n  backend: Pick<BackendRuntime, 'backendRequest'>,\n): TerminalsReadClient "
+              }
+            ]
+          },
+          {
+            "path": "src/lib/client/live/live-terminals-client.ts",
+            "sha256": "ea0661de79922d9d176bd6f7b022566f0c4ae6fda7821010c6bbeff984438be0",
+            "exportedDeclarations": [
+              {
+                "kind": "ClassDeclaration",
+                "name": "LiveTerminalsClient",
+                "signature": "LiveTerminalsClient"
+              }
+            ]
+          },
+          {
+            "path": "apps/react/src/features/terminals/terminals-client.ts",
+            "sha256": "07990986a925d5f54de210f8a79c3037df21d58289981d0845eaae44f4012983",
+            "exportedDeclarations": [
+              {
+                "kind": "FirstStatement",
+                "name": "terminalsClient",
+                "signature": "export const terminalsClient = createBackendTerminalsClient(backend);"
+              }
+            ]
+          },
+          {
+            "path": "src/lib/client/live/backend-terminals-client.test.ts",
+            "sha256": "e0249fe611e2a93fa6dbea62d048d2020e1a6c0cd66a9899cbc7ecc9a784881e",
+            "exportedDeclarations": []
+          }
+        ],
+        "canonicalApiReview": {
+          "scripts": "Canonical factory exposes required supportsLifecycle/list read subset. Exact original003 bodies: client.hello capability strict numeric1; list uses this.supportsLifecycle, rejects explicit partition without support, uses active default only when supported, preserves legacy omitted archive and rejects malformed scripts array. Source facade list.call(this,...) preserves dynamic subclass receiver; call-time rest forwarding retains source transport export lookup. Mutations/archive/restore/subscription remain unchanged source-owned methods.",
+          "skills": "Canonical skill.list fetch and normalization copied verbatim. Bare array shape, resourceDirectory truthiness and stripping optional allowedTools/compatibility remain inherited; nonarray still becomes []. Source private fetchList delegates; public async list and all notification/reconnect subscriptions unchanged. React exposes read subset only; no new subscription ownership or refetch behavior claimed.",
+          "terminals": "Canonical list and toTerminalTab helper copied verbatim. Preserve legacy array vs envelope, optional daemonBootId omission/string value, terminalId/id precedence, invalid-entry skipping, fallback workspaceId/name/createdAt and isExecutingCommand mapping. Source creates/writes/resizes/kills/buffer/output/subscription generation and encoding bodies unchanged. React list is same canonical read subset; terminal session state remains existing owner.",
+          "bindings": "Three new React files pass the existing real backend instance to the factories. That backend supplies actual configured React Store preference/generation getters and canonical transport runtime. No root, lifecycle-read composition, reducer registration or consumer is added. These files are intentionally unreferenced in this checkpoint and are three NEW Knip errors, not baseline findings.",
+          "ownership": "Each source wrapper supplies a typed rest arrow that resolves backendRequest at call time. Factory captures that supplied function; source receivers/later overrides remain as moved original bodies require. No extra subscription, persistence, state clone or parallel domain algorithm added. Promise-returning delegation is not a general native timing equivalence claim.",
+          "helpersAndTypes": "Read interface contracts and actual helpers/types remain canonical. Script localized error messages resolve at read time. New factories use relative type-only source paths and shared runtime type; original source facade types/public classes retained. Themis Store imports are renderer binding dependencies, not neutral factory ownership."
+        },
+        "graphSummary": [
+          {
+            "entry": "src/lib/client/live/backend-scripts-client.ts",
+            "config": "tsconfig.json",
+            "ownership": "canonical factory; runtime-neutral",
+            "runtimeFiles": 2,
+            "typeFiles": 73,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": []
+          },
+          {
+            "entry": "src/lib/client/live/backend-skills-client.ts",
+            "config": "tsconfig.json",
+            "ownership": "canonical factory; runtime-neutral",
+            "runtimeFiles": 1,
+            "typeFiles": 73,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": []
+          },
+          {
+            "entry": "src/lib/client/live/backend-terminals-client.ts",
+            "config": "tsconfig.json",
+            "ownership": "canonical factory; runtime-neutral",
+            "runtimeFiles": 1,
+            "typeFiles": 73,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": []
+          },
+          {
+            "entry": "src/lib/client/live/backend-scripts-client.ts",
+            "config": "apps/react/tsconfig.json",
+            "ownership": "canonical factory; runtime-neutral",
+            "runtimeFiles": 2,
+            "typeFiles": 73,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": []
+          },
+          {
+            "entry": "src/lib/client/live/backend-skills-client.ts",
+            "config": "apps/react/tsconfig.json",
+            "ownership": "canonical factory; runtime-neutral",
+            "runtimeFiles": 1,
+            "typeFiles": 73,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": []
+          },
+          {
+            "entry": "src/lib/client/live/backend-terminals-client.ts",
+            "config": "apps/react/tsconfig.json",
+            "ownership": "canonical factory; runtime-neutral",
+            "runtimeFiles": 1,
+            "typeFiles": 73,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": []
+          },
+          {
+            "entry": "apps/react/src/features/scripts/scripts-client.ts",
+            "config": "apps/react/tsconfig.json",
+            "ownership": "React configured Store binding; intentionally framework-bound",
+            "runtimeFiles": 108,
+            "typeFiles": 183,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": [
+              "@tanstack/react-start/client-only",
+              "@themislib/themis/react-store",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/boolean-preference",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "uuid",
+              "zod"
+            ]
+          },
+          {
+            "entry": "apps/react/src/features/skills/skills-client.ts",
+            "config": "apps/react/tsconfig.json",
+            "ownership": "React configured Store binding; intentionally framework-bound",
+            "runtimeFiles": 108,
+            "typeFiles": 183,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": [
+              "@tanstack/react-start/client-only",
+              "@themislib/themis/react-store",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/boolean-preference",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "uuid",
+              "zod"
+            ]
+          },
+          {
+            "entry": "apps/react/src/features/terminals/terminals-client.ts",
+            "config": "apps/react/tsconfig.json",
+            "ownership": "React configured Store binding; intentionally framework-bound",
+            "runtimeFiles": 108,
+            "typeFiles": 183,
+            "unresolved": [],
+            "computed": [],
+            "runtimeBoundaries": [],
+            "typeBoundaries": [],
+            "externalPackages": [
+              "@tanstack/react-start/client-only",
+              "@themislib/themis/react-store",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/boolean-preference",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "uuid",
+              "zod"
+            ]
+          }
+        ],
+        "graphEvidence": {
+          "path": ".demo-artifacts/client-read-ledger-preparation/import-graphs.json",
+          "sha256": "fdcf5cfa5b2524ff708f26bfce3f9e373df106fcc3e12cfc59be8af219f6ee4e"
+        },
+        "limits": [
+          "Syntax/parser and static import traversal only; no semantic compiler or product/test/runtime execution.",
+          "Canonical factories traced under actual source and React aliases. React bindings intentionally reach the existing configured React Store/backend; they are not neutral ownership and no root consumer is introduced.",
+          "Generated Paraglide/build leaves are hashed terminal boundaries; external packages are not executed. Static closure does not prove transport/service/native behavior.",
+          "Source facades retain original mutation/subscription owners; no whole original/current native equivalence inferred."
+        ]
+      },
+      "supportingDependencies": [
+        {
+          "path": "src/lib/client/live/backend-scripts-client.ts",
+          "sha256": "b81a92bdd6ad206565e65a0fa5f19ee0c4a57a56c919c8e26ce86a0b3ae8f2c6",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "src/lib/client/live/live-scripts-client.ts",
+          "sha256": "bea2fb2c411d8748a398981193aba4a5a2f0727e923b39b395ed7e40f9892939",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "apps/react/src/features/scripts/scripts-client.ts",
+          "sha256": "7da6ab27ca64a57898b1160fd439fb7f8e54692b69dce86b56dbd57554799b97",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "src/lib/client/live/backend-skills-client.ts",
+          "sha256": "f0ede59fcb8b15776b82e38c783a8f4ec419c6553d267f9bfd20295545ffdf84",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "src/lib/client/live/live-skills-client.ts",
+          "sha256": "943f8751707d83133cd29211eda874ac3cf80057483200ae2acd97149804ac8f",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "apps/react/src/features/skills/skills-client.ts",
+          "sha256": "0ee2fb256d0cd3a8fe1498859acb6dd959882f56807e27d490649125aedd9c0a",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "src/lib/client/live/backend-terminals-client.ts",
+          "sha256": "6f3ba2002f0172a09c8d39ff2aef02178abed6c273e226269bade321e8087108",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "src/lib/client/live/live-terminals-client.ts",
+          "sha256": "ea0661de79922d9d176bd6f7b022566f0c4ae6fda7821010c6bbeff984438be0",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        },
+        {
+          "path": "apps/react/src/features/terminals/terminals-client.ts",
+          "sha256": "07990986a925d5f54de210f8a79c3037df21d58289981d0845eaae44f4012983",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3"
+        }
+      ],
+      "supportDelta": [
+        {
+          "path": "src/lib/client/live/backend-scripts-client.ts",
+          "sha256": "b81a92bdd6ad206565e65a0fa5f19ee0c4a57a56c919c8e26ce86a0b3ae8f2c6",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-scripts-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-scripts-client.ts",
+          "sha256": "bea2fb2c411d8748a398981193aba4a5a2f0727e923b39b395ed7e40f9892939",
+          "baseSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-scripts-client.ts",
+          "originalSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "previousAuditedSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/scripts/scripts-client.ts",
+          "sha256": "7da6ab27ca64a57898b1160fd439fb7f8e54692b69dce86b56dbd57554799b97",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/scripts/scripts-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-scripts-client.test.ts",
+          "sha256": "2d06c5e69cbf811af813d9e5ef434b475ad4391e0e10a882ac9c22242af15256",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-scripts-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-skills-client.ts",
+          "sha256": "f0ede59fcb8b15776b82e38c783a8f4ec419c6553d267f9bfd20295545ffdf84",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-skills-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-skills-client.ts",
+          "sha256": "943f8751707d83133cd29211eda874ac3cf80057483200ae2acd97149804ac8f",
+          "baseSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-skills-client.ts",
+          "originalSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "previousAuditedSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/skills/skills-client.ts",
+          "sha256": "0ee2fb256d0cd3a8fe1498859acb6dd959882f56807e27d490649125aedd9c0a",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/skills/skills-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-skills-client.test.ts",
+          "sha256": "23a60e03665449857f1ea96d919f3d314a1cf7738205e7a4b3af56c719b31c25",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-skills-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-terminals-client.ts",
+          "sha256": "6f3ba2002f0172a09c8d39ff2aef02178abed6c273e226269bade321e8087108",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-terminals-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-terminals-client.ts",
+          "sha256": "ea0661de79922d9d176bd6f7b022566f0c4ae6fda7821010c6bbeff984438be0",
+          "baseSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-terminals-client.ts",
+          "originalSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "previousAuditedSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/terminals/terminals-client.ts",
+          "sha256": "07990986a925d5f54de210f8a79c3037df21d58289981d0845eaae44f4012983",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/terminals/terminals-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-terminals-client.test.ts",
+          "sha256": "e0249fe611e2a93fa6dbea62d048d2020e1a6c0cd66a9899cbc7ecc9a784881e",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-terminals-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        }
+      ],
+      "retainedHistoricalCitations": [],
+      "sourceInventoryProfile": {
+        "inside": [],
+        "outside": [
+          "src/lib/client/live/backend-scripts-client.ts",
+          "src/lib/client/live/live-scripts-client.ts",
+          "apps/react/src/features/scripts/scripts-client.ts",
+          "src/lib/client/live/backend-scripts-client.test.ts",
+          "src/lib/client/live/backend-skills-client.ts",
+          "src/lib/client/live/live-skills-client.ts",
+          "apps/react/src/features/skills/skills-client.ts",
+          "src/lib/client/live/backend-skills-client.test.ts",
+          "src/lib/client/live/backend-terminals-client.ts",
+          "src/lib/client/live/live-terminals-client.ts",
+          "apps/react/src/features/terminals/terminals-client.ts",
+          "src/lib/client/live/backend-terminals-client.test.ts"
+        ],
+        "sourceRowsUnchanged": true,
+        "newViewMappings": 0
+      },
+      "supportInvalidationsOutsideInventory": [
+        {
+          "path": "src/lib/client/live/backend-scripts-client.ts",
+          "sha256": "b81a92bdd6ad206565e65a0fa5f19ee0c4a57a56c919c8e26ce86a0b3ae8f2c6",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-scripts-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-scripts-client.ts",
+          "sha256": "bea2fb2c411d8748a398981193aba4a5a2f0727e923b39b395ed7e40f9892939",
+          "baseSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-scripts-client.ts",
+          "originalSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "previousAuditedSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/scripts/scripts-client.ts",
+          "sha256": "7da6ab27ca64a57898b1160fd439fb7f8e54692b69dce86b56dbd57554799b97",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/scripts/scripts-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-scripts-client.test.ts",
+          "sha256": "2d06c5e69cbf811af813d9e5ef434b475ad4391e0e10a882ac9c22242af15256",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-scripts-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-skills-client.ts",
+          "sha256": "f0ede59fcb8b15776b82e38c783a8f4ec419c6553d267f9bfd20295545ffdf84",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-skills-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-skills-client.ts",
+          "sha256": "943f8751707d83133cd29211eda874ac3cf80057483200ae2acd97149804ac8f",
+          "baseSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-skills-client.ts",
+          "originalSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "previousAuditedSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/skills/skills-client.ts",
+          "sha256": "0ee2fb256d0cd3a8fe1498859acb6dd959882f56807e27d490649125aedd9c0a",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/skills/skills-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-skills-client.test.ts",
+          "sha256": "23a60e03665449857f1ea96d919f3d314a1cf7738205e7a4b3af56c719b31c25",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-skills-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-terminals-client.ts",
+          "sha256": "6f3ba2002f0172a09c8d39ff2aef02178abed6c273e226269bade321e8087108",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-terminals-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-terminals-client.ts",
+          "sha256": "ea0661de79922d9d176bd6f7b022566f0c4ae6fda7821010c6bbeff984438be0",
+          "baseSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-terminals-client.ts",
+          "originalSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "previousAuditedSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/terminals/terminals-client.ts",
+          "sha256": "07990986a925d5f54de210f8a79c3037df21d58289981d0845eaae44f4012983",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/terminals/terminals-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-terminals-client.test.ts",
+          "sha256": "e0249fe611e2a93fa6dbea62d048d2020e1a6c0cd66a9899cbc7ecc9a784881e",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-terminals-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        }
+      ],
+      "historicalPinnedReports": [
+        {
+          "path": ".demo-artifacts/attachment-correction-ledger/status-05cc7db6.json",
+          "sha256": "2ecc7894e3222c77d621cdf844a3c59630ecede44ec74a1d2ae8a09a2908cb26",
+          "candidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c"
+        },
+        {
+          "path": ".demo-artifacts/attachment-identity-ledger/status-ff9a4e35.json",
+          "sha256": "3de6cfc20cd498cc1dd7d3ac9fab59d75bd652576e0122fe0f95add767dfbd03",
+          "candidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35"
+        },
+        {
+          "path": ".demo-artifacts/inline-permission-ledger/status-6a51a3da.json",
+          "sha256": "871f8ca4bf374cba9df3b5e761107cbd19664e38768848b1f5e74779ffe1f767",
+          "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9"
+        },
+        {
+          "path": ".demo-artifacts/media-composition-ledger/status-dd6e5720.json",
+          "sha256": "dcf0190b31084f48d746fe704bfb67a56fc9772e34cb338e074e0d902206a6bd",
+          "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980"
+        },
+        {
+          "path": ".demo-artifacts/markdown-reasoning-ledger/status-68a5ca85.json",
+          "sha256": "9211fb66cfc453cf98321757efa4db39aa4eb8ade6c45129197d3c8e51a5a44a",
+          "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a"
+        },
+        {
+          "path": ".demo-artifacts/chat-image-ledger/status-561fa08c.json",
+          "sha256": "2642d63ee8d4ca3bae4c17bb7cdb4f7024656cb04643a00feb3c9b9762ef71a3",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4"
+        },
+        {
+          "path": ".demo-artifacts/message-transcript-ledger/status-2d310fed.json",
+          "sha256": "ecc0ac8a7b46dfa6601457464565b8f1996e69a14033287d8adda09c7584de37",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c"
+        },
+        {
+          "path": ".demo-artifacts/setup-edit-ledger/status-3d7e81dc.json",
+          "sha256": "e5e8c3d4a9ef941fc5f1b26062494d378febae9a4838a0f6d8b6ae7e0728316c",
+          "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b"
+        },
+        {
+          "path": ".demo-artifacts/operational-window-ledger/status-2d988e34.json",
+          "sha256": "3fa6ae7f8796a1e82d038bbd7555f8754205395ac8cfe83337b104ec06a55c4d",
+          "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95"
+        },
+        {
+          "path": ".demo-artifacts/response-cylinder-ledger/status-1cea8e2b.json",
+          "sha256": "769abbca7d5dec89b703ed52afdb92e2d353b076012b8490c53a162a7da1a45e",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        },
+        {
+          "path": ".demo-artifacts/navigation-caption-ledger/status-34161b6d.json",
+          "sha256": "5ed08c94a1b379cdac0454e45cb3470a4cf7b7a0a60b90dea7ea06e88bf3ca0e",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/status-e46a388f.json",
+          "sha256": "de28615b813c3c9c480b8b786beaa3464943418a50794449c6e25f7193bbe30d",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/status-0afebba9.json",
+          "sha256": "e8adf3b398bb7dbf0e1ba3624a5de397fc4aca46b5b2acabaf5aa9852cdb86cb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7"
+        },
+        {
+          "path": ".demo-artifacts/markdown-lifetime-ledger/status-35e676aa.json",
+          "sha256": "667e04253ceba4d6b2262e308c0d9381555a0c53a06facd425c999ec79488d1e",
+          "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/status-8f0bbcda.json",
+          "sha256": "562e1869213851489babbd5e1f10be5c7bbd97dcf2379ffde3eead55ffac7ba5",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": ".demo-artifacts/shared-support-ledger/status-d4abc96f.json",
+          "sha256": "8d2a43e7f7b64e7087a72b3bb88c01f58babf8d4a834adbfb88b92ef1b45162e",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": ".demo-artifacts/cleanup-support-ledger/status-0ddf543a.json",
+          "sha256": "48f79c5648f29450049ea6b741f21a77643bb079ef4e60e7389d1bccff6ed3b9",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": ".demo-artifacts/end-intent-ledger/status-df98264e.json",
+          "sha256": "68927e2d91c0c0c3a6012c43e8be185b8cde63777811cf82e89806e35bb0a1b6",
+          "candidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53"
+        },
+        {
+          "path": ".demo-artifacts/react-cleanup-ledger/status-8220d33b.json",
+          "sha256": "6d2e7e0d32b3344efd71703ff8672ebd9d1c2ebdf0e6b746a9adfb153b13bc4c",
+          "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05"
+        },
+        {
+          "path": ".demo-artifacts/admitted-read-ledger/status-785d3b4e.json",
+          "sha256": "3b18ce23bed403912db4e66b4d52b6d8ed8cde3c5bee5daf5547d7698c1feb3f",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9"
+        },
+        {
+          "path": ".demo-artifacts/workspace-support-ledger/status-c360548b.json",
+          "sha256": "90a717efea96e25203823ae1754a7099b1b7f95c5f2994096730581ffe92ae77",
+          "candidateCommit": "c360548b6e5c35730109d933f71953097735ad4c"
+        },
+        {
+          "path": ".demo-artifacts/load-guard-ledger/status-b0d11298.json",
+          "sha256": "de45f6d1a830484e26964a41de1c11f11d7a80ce6007067e83adf6a43899a1c2",
+          "candidateCommit": "b0d112984be794ee3a43453a43195446bef0c977"
+        },
+        {
+          "path": ".demo-artifacts/origin-route-ledger/status-90875515.json",
+          "sha256": "f4cf5078a69a97ab55ac747e634e85e7e74325648336410d300824b8cf8d40dc",
+          "candidateCommit": "90875515050c0e1bf7209ea1749808567c1b44b7"
+        },
+        {
+          "path": ".demo-artifacts/connection-hydration-ledger-preparation/status-c3f85664.json",
+          "sha256": "5c108c8c048ffc3a7530e366d309dbccf89af9ceb3cce53eb03593b320d8a49a",
+          "candidateCommit": "c3f8566458f5b021e9beff2fdb51959ee278869f"
+        },
+        {
+          "path": ".demo-artifacts/prerequisite-ledger-preparation/status-02caf1ee.json",
+          "sha256": "a25b63c6e14a2f9beefe3fa201fa0c43ef3166123880ff7034578524831304cd",
+          "candidateCommit": "02caf1eedfac6c47858d44c816651d98de94ec5b"
+        },
+        {
+          "path": ".demo-artifacts/post-full-repair-ledger-preparation/status-45505af3.json",
+          "sha256": "ba83aef905a85ffa2012cc2f817c4a259409bc276a5ea040f92674c49c23850c",
+          "candidateCommit": "45505af388a28ec42fc08b0e744146994e7d3af7"
+        },
+        {
+          "path": ".demo-artifacts/workspace-origin-ledger-preparation/status-815eba26.json",
+          "sha256": "64ddac6330bcab9cafcf7762597bc7746811cdce0191493ee75e3feb779978f8",
+          "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7"
+        }
+      ],
+      "staticEvidence": [
+        {
+          "path": ".demo-artifacts/client-read-ledger-preparation/preparation.json",
+          "sha256": "3e377ee1ecd8834a03e46783d117b3e6fd078e1f44108d6d7684c86a1968cd8c"
+        },
+        {
+          "path": ".demo-artifacts/client-read-ledger-preparation/audit-plan.json",
+          "sha256": "9e758c18a02d1b824cb07b02c3e1474c80c45c95f3852e9219018534c018131f"
+        },
+        {
+          "path": ".demo-artifacts/client-read-ledger-preparation/handoff.json",
+          "sha256": "aeb76dee3c70304ec18ac0827ec24f22558188e03a686edbf99d966364335181"
+        },
+        {
+          "path": ".demo-artifacts/client-read-ledger-preparation/final-proof.json",
+          "sha256": "26ba90787436f126758b535dd356a3ec02b31a91a23c33251b0256a20cba1c39"
+        },
+        {
+          "path": ".demo-artifacts/client-read-ledger-preparation/api-report.json",
+          "sha256": "ce27fbaf1cb619c6d170ce355d5a80639fe92aad0b539ca80389673c081223af"
+        },
+        {
+          "path": ".demo-artifacts/client-read-ledger-preparation/import-graphs.json",
+          "sha256": "fdcf5cfa5b2524ff708f26bfce3f9e373df106fcc3e12cfc59be8af219f6ee4e"
+        }
+      ],
+      "canonicalOwnerReview": {
+        "scripts": "Canonical factory exposes required supportsLifecycle/list read subset. Exact original003 bodies: client.hello capability strict numeric1; list uses this.supportsLifecycle, rejects explicit partition without support, uses active default only when supported, preserves legacy omitted archive and rejects malformed scripts array. Source facade list.call(this,...) preserves dynamic subclass receiver; call-time rest forwarding retains source transport export lookup. Mutations/archive/restore/subscription remain unchanged source-owned methods.",
+        "skills": "Canonical skill.list fetch and normalization copied verbatim. Bare array shape, resourceDirectory truthiness and stripping optional allowedTools/compatibility remain inherited; nonarray still becomes []. Source private fetchList delegates; public async list and all notification/reconnect subscriptions unchanged. React exposes read subset only; no new subscription ownership or refetch behavior claimed.",
+        "terminals": "Canonical list and toTerminalTab helper copied verbatim. Preserve legacy array vs envelope, optional daemonBootId omission/string value, terminalId/id precedence, invalid-entry skipping, fallback workspaceId/name/createdAt and isExecutingCommand mapping. Source creates/writes/resizes/kills/buffer/output/subscription generation and encoding bodies unchanged. React list is same canonical read subset; terminal session state remains existing owner.",
+        "bindings": "Three new React files pass the existing real backend instance to the factories. That backend supplies actual configured React Store preference/generation getters and canonical transport runtime. No root, lifecycle-read composition, reducer registration or consumer is added. These files are intentionally unreferenced in this checkpoint and are three NEW Knip errors, not baseline findings.",
+        "ownership": "Each source wrapper supplies a typed rest arrow that resolves backendRequest at call time. Factory captures that supplied function; source receivers/later overrides remain as moved original bodies require. No extra subscription, persistence, state clone or parallel domain algorithm added. Promise-returning delegation is not a general native timing equivalence claim.",
+        "helpersAndTypes": "Read interface contracts and actual helpers/types remain canonical. Script localized error messages resolve at read time. New factories use relative type-only source paths and shared runtime type; original source facade types/public classes retained. Themis Store imports are renderer binding dependencies, not neutral factory ownership."
+      },
+      "originalSourceProof": {
+        "sourceThreeOriginal003EqualPredecessor": true,
+        "independentWholeTwelveForwardInverse": {
+          "forward": {
+            "path": ".demo-artifacts/client-read-combined12-preparation/corrected-twelve/full.patch",
+            "sha256": "e008a48d2b85d07d84cbaf793a9972a303db3540665093734ce506c0e45463e4"
+          },
+          "inverse": {
+            "path": ".demo-artifacts/client-read-combined12-preparation/corrected-twelve/full.inverse.patch",
+            "sha256": "69a72a1ad5d4d75c20f9a8dda99e51dd52eb84133e4ab189d896733779875fb7"
+          },
+          "exact": true
+        },
+        "movedMethodBodyProofs": [
+          {
+            "source": "src/lib/client/live/live-scripts-client.ts",
+            "factory": "src/lib/client/live/backend-scripts-client.ts",
+            "method": "supportsLifecycle",
+            "bodySha256": "47b6303ae5b3469fa6d94180477214b05347b62756d1f977979289ced4be0331",
+            "movedBodyEqualAfterIndent": true,
+            "original003AndE439PredecessorBodiesEqual": true
+          },
+          {
+            "source": "src/lib/client/live/live-scripts-client.ts",
+            "factory": "src/lib/client/live/backend-scripts-client.ts",
+            "method": "list",
+            "bodySha256": "91e9dd402403f3b6049fd23f4c5c327fe71450b547b7d93815dc6ff432aeb6bc",
+            "movedBodyEqualAfterIndent": true,
+            "original003AndE439PredecessorBodiesEqual": true
+          },
+          {
+            "source": "src/lib/client/live/live-skills-client.ts",
+            "factory": "src/lib/client/live/backend-skills-client.ts",
+            "method": "fetchList",
+            "bodySha256": "87ce2166ef18e6a25aaa838858a0004275f8c6b5d801f678fd80915ad3be4085",
+            "movedBodyEqualAfterIndent": true,
+            "original003AndE439PredecessorBodiesEqual": true
+          },
+          {
+            "source": "src/lib/client/live/live-terminals-client.ts",
+            "factory": "src/lib/client/live/backend-terminals-client.ts",
+            "method": "list",
+            "bodySha256": "52ead58ffcde06a384b8b7908445ba8ea7db4cec8cc3678f02e1cb641c604686",
+            "movedBodyEqualAfterIndent": true,
+            "original003AndE439PredecessorBodiesEqual": true
+          }
+        ],
+        "movedHelperBlockProofs": [
+          {
+            "kind": "skills",
+            "helperBlockSha256": "6c46ac96673503ede46c0361449e0a1c06b8a71c557144e9e67a686c581b4293",
+            "exactOriginalHelperBlock": true
+          },
+          {
+            "kind": "terminals",
+            "helperBlockSha256": "9ad7a955505c50d6a67a47ba3faf4c6cd0f89760764d9a5f7ead993a868eed7e",
+            "exactOriginalHelperBlock": true
+          }
+        ],
+        "sourceOtherMethodsAndSubscriptionsByteEqual": true,
+        "protectedRootsAndHelpers": [
+          {
+            "path": "src/store/renderer/sagas.ts",
+            "sha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+            "unchangedFromAcceptedLedger": true
+          },
+          {
+            "path": "apps/react/src/client.tsx",
+            "sha256": "2e49d3dca6d66fb49fbee6d93ad185d6ec264e37f85ca2590f6876f123539b58",
+            "unchangedFromAcceptedLedger": true
+          },
+          {
+            "path": "apps/react/src/store/index.ts",
+            "sha256": "925202fcbf78bddfb1d56161854527cd5f4816a92b0d15482332e3c066c089a7",
+            "unchangedFromAcceptedLedger": true
+          },
+          {
+            "path": "apps/react/src/features/backend/backend-transport.ts",
+            "sha256": "a851ca9aa078a47f314fb80298fa0f4b209990bfbf8d954b68e113a5e9ad6851",
+            "unchangedFromAcceptedLedger": true
+          },
+          {
+            "path": "src/lib/client/lifecycle-read-client-types.ts",
+            "sha256": "e6ecca2fa2ab4a4b9ce7189e0190ee813fd30c616a1c05b148853ff856cea8cd",
+            "unchangedFromAcceptedLedger": true
+          },
+          {
+            "path": "src/lib/client/live/backend-transport-runtime.ts",
+            "sha256": "3e64e1702ff9354d28102a9703cebee77bad7b4adf5a9057dd8cf1cc5c725ad1",
+            "unchangedFromAcceptedLedger": true
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga-factory.ts",
+            "sha256": "ac167374e5d83b8f76780703ef16223716d6f87e9046add0e3ad9d1512a8bf5a",
+            "unchangedFromAcceptedLedger": true
+          }
+        ]
+      },
+      "ownerEvidence": [
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/final-report.json",
+          "sha256": "2e154c00527e854accb0ec41fb3184268cb8969419ec048a3f5b045723d6f996"
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/final-manifest.json",
+          "sha256": "e5f45255f66bd6680ab1f4c5dafd683896b2e258f64f6eace20c77297c73fc6a"
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/manifest.json",
+          "sha256": "51f42ea168d443b7ffbdf46750edff01e8161d5099a1a294942b6f3f6423842e"
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/all-lane-index.json",
+          "sha256": "01901239e6eff118789b7bff4d1a0397a69f594804dc94fdaea45c5cce014029"
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.json",
+          "sha256": "d6385397493e72e6bce637813dccaeff2d2a0015075d092ad9696dab14a7b869"
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.json",
+          "sha256": "23d70e766212b20735f0824ee1e71cdaf16239fdc927c1fa23a1b825e849d645"
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/final-verification-closure.json",
+          "sha256": "08c99592ddb5e7fccf58e97a439817ae7ffabe92881e1fdaa600c2f3247881b5"
+        },
+        {
+          "path": ".demo-artifacts/client-read-coordinator-checkpoint/commit-receipt.json",
+          "sha256": "57803fb0037a71ef7c60c0d0fce109f1adb90a78ee917f12518fe86253646381"
+        }
+      ],
+      "ownerReceipts": [
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/account_lane.py",
+          "sha256": "63e84e870543aa2cdb55f07e9485a895be2cf41ee4f32d153dd012d5f037bb60",
+          "bytes": 6485
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/all-lane-index.json",
+          "sha256": "01901239e6eff118789b7bff4d1a0397a69f594804dc94fdaea45c5cce014029",
+          "bytes": 143005
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/comparator-config.json",
+          "sha256": "a5f5cd60beadd9b6ceb863774fd9df5f1781d3f73492580d11c89e12e6372403",
+          "bytes": 60683
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/comparison/new72-exact.json",
+          "sha256": "5331340f161e9c8e9d49d29a93363f24a75e6b40e46678d8ca12020d908cb684",
+          "bytes": 76447
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/comparison/original-case-transitions-exact.json",
+          "sha256": "7f33542b486eccc4a5535c183cbbf4fd8c3ca9886b8a20806f9b47c52a07700e",
+          "bytes": 32669244
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/comparison/original250-exact.json",
+          "sha256": "9c5c151d33cc706697f6c2d453114729d625e2732017dc1005c23dceb8d757ad",
+          "bytes": 859665
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/comparison/summary.json",
+          "sha256": "546dc63499128b6cab72374559497a103440dd8ddafd96247248a6e49340fa27",
+          "bytes": 1207
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/current-only74-exact.json",
+          "sha256": "2ee3180287a04b73b7e3f334c567d8495cf984c63f4eaee606b6b83cb04c316c",
+          "bytes": 45797
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.accounting.json",
+          "sha256": "85fa550c9bd890f256d35d57e440d765c9e8251ff6a9764a27a7253bc43e9e1c",
+          "bytes": 1604
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.case-transitions.json",
+          "sha256": "e8f68e0013b320453c5bf04d8b5a96bde9f187ffa31901deb737932a9d3bea88",
+          "bytes": 23079
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.diagnostics.json",
+          "sha256": "472caa9a1eb8d58a21587b5cb4258062781c90ef67ce21c05969d016c052905c",
+          "bytes": 419
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.failed-exact.json",
+          "sha256": "ca2e9188e6cbce63ce96c65a4045bd40a0dbf6360a7b3ec3228f32b4a72bfb90",
+          "bytes": 83
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.final-closure.json",
+          "sha256": "b3c29b7cbb65843d024d85b057ebd0c915d8a16d9d96c7554c362408b60dae99",
+          "bytes": 317
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.json",
+          "sha256": "23d70e766212b20735f0824ee1e71cdaf16239fdc927c1fa23a1b825e849d645",
+          "bytes": 19754
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.log",
+          "sha256": "c902b841d21e880f33e5da1964f568012435d64056914d20b81605230b9b4ce2",
+          "bytes": 1420
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.observed-processes.json",
+          "sha256": "9452cda677e5b33b61b806ab4f618ed0026e91093f99027ebc097ec2bae31cfa",
+          "bytes": 2195
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.process-closure.json",
+          "sha256": "7f32ca73e0cb13133cee4c6978b24e2e7fbf0711d7d6d0ea09e9b8c7c900b7c6",
+          "bytes": 199
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.progress.json",
+          "sha256": "81e1a2ea235ce18239b8a767cf573fd03203fc3c1e5bd80a5dd7cec167adb3df",
+          "bytes": 710
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/declared.receipt.json",
+          "sha256": "e9f92bd64dd714892d1a0cf7aa4efcdc5a48f1bb71b2973f2a1f0505d3ad1aa3",
+          "bytes": 1458
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/direct-subset-exact.json",
+          "sha256": "9ce305821f603613fa0848fbab136293fe242e6d7a2f516643efeca9a1a54cb8",
+          "bytes": 33742
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/execution-plan.json",
+          "sha256": "f3ee5602c36fc4c71cf373ff60e579b6b9b449ed6279a654f5fcd95fc675aaab",
+          "bytes": 64916
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/final-verification-closure.json",
+          "sha256": "08c99592ddb5e7fccf58e97a439817ae7ffabe92881e1fdaa600c2f3247881b5",
+          "bytes": 1916
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/finalize.py",
+          "sha256": "49200d2318a4293e0a96234fec625eb030ca883e507686fbdf93d7a28c0ee7f1",
+          "bytes": 13561
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/input-freeze-before.json",
+          "sha256": "6753bbf31a4f488f4e2a00bff8030926de52e5ade4be8f2e12b68636fc2723f4",
+          "bytes": 2376280
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/preflight.json",
+          "sha256": "b8b1b925db142620062d76b329c98dbd53bf659d84bba7963d652bb9e8ce5ff3",
+          "bytes": 2022
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/prepare.py",
+          "sha256": "149d8b5a51c356c361fa4e454d200469f7f91deee7744aae8cb6dd04528c4db9",
+          "bytes": 7267
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.accounting.json",
+          "sha256": "2c1ff9386344fef56eb692a88fbd129fcea47bebdf5d7711b9cd3ad587490b0a",
+          "bytes": 120602
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.case-transitions.json",
+          "sha256": "5f05ff061cc454f5fc6ec59de965c231ebb6a780868121efaede9bf1f93a09b9",
+          "bytes": 6938657
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.diagnostics.json",
+          "sha256": "472caa9a1eb8d58a21587b5cb4258062781c90ef67ce21c05969d016c052905c",
+          "bytes": 419
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.failed-exact.json",
+          "sha256": "299bb1a770c4ba864ebddc1aaaf6458f862b83e86e6d8894bff05fea2b6a2c4b",
+          "bytes": 4359
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.final-closure.json",
+          "sha256": "49ddd00d2b2ffa459e73effa53a602cd578e07da71d58ab950047c78c22a6bbb",
+          "bytes": 319
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.json",
+          "sha256": "d6385397493e72e6bce637813dccaeff2d2a0015075d092ad9696dab14a7b869",
+          "bytes": 5764423
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.log",
+          "sha256": "af039d1fec3f6d1966afa99e23aa6d7e42ccef53d21e0c70dc6e8a3107e88f46",
+          "bytes": 2064043
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.observed-processes.json",
+          "sha256": "7401f56e8f8b32090dce1d6ee15114c58e2997c1ae0e41ac5a6b8fa798f91cbf",
+          "bytes": 244549
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.process-closure.json",
+          "sha256": "4e863700b063ed3a924a1e10f187d5aed27e998bd5aaa2684e837149da4036b2",
+          "bytes": 201
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.progress.json",
+          "sha256": "429a9ed028f40b3b05ecc4dd882793f1a1d1334abb78949ba330575c8e19bcc7",
+          "bytes": 771
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/related.receipt.json",
+          "sha256": "13070dd51ceafaf7c53f6320f3ac3c5890b89e1e2bca203adb945cdc4057ab61",
+          "bytes": 1711
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/resolved-selection.json",
+          "sha256": "ded26ab0b14902d0322c7ff19c5cda0874bd1f084670b0729c2ec7d688f6ee78",
+          "bytes": 131581
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/run_lane.py",
+          "sha256": "13e04b5686452f4bebf9b8c3a48ae1551d6729da65ceaf925deaf9aed11defa4",
+          "bytes": 5548
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-verification-1576/skipped-exact.json",
+          "sha256": "bd8a8508f3e56bf29302d502235a9134734a7b7e3f7cdba18a1700d42c217641",
+          "bytes": 11131
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-preparation-1576/compare_reports.py",
+          "sha256": "6db52df544ec8c231b2d60e7d0a2f2cddbdcfe07d8e2877741627804f94cbe1e",
+          "bytes": 4877
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-preparation-1576/expected-new72.json",
+          "sha256": "f597963f566d6c19bfea765504c4baded7c9693b2833b5fe22846ae235e0d073",
+          "bytes": 38989
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-preparation-1576/handoff.txt",
+          "sha256": "9df00d28d9a3608ac458122b4a89ce980986b2772d796c470bf8b4230ea377ed",
+          "bytes": 829
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-preparation-1576/manifest.json",
+          "sha256": "a0caa7e778a2ed7511b31388a9ec4b4b76d65f8cd537da2bf8b92ea87d87d8c8",
+          "bytes": 3036
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-preparation-1576/plan.json",
+          "sha256": "5ceb8b46a1883ba6a39ae7529324d32b6c91065d0ba815b6848e3e66d57f6b0e",
+          "bytes": 8966
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-preparation-1576/repair190-historical-identities.json",
+          "sha256": "4a0cc256c49be02e7bd837171bbc94b2fd87415ad201fb3ef28e8ccc0c791b93",
+          "bytes": 54811
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-resolved-1576/commands.json",
+          "sha256": "850670a545b8ed8017dc7eb6283ae1533077b20df7dc2fb14a1e1c25251ee287",
+          "bytes": 67593
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-resolved-1576/comparator-config.template.json",
+          "sha256": "e95e947058388d154c1f354e244240f624e3154b60bb4e0d66afe00c24f1aa2e",
+          "bytes": 60697
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-resolved-1576/handoff.txt",
+          "sha256": "404ae86ba2144a8ca56fbc2829955e2e47df447293b48a26f91b5dc26f0da810",
+          "bytes": 821
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-resolved-1576/manifest.json",
+          "sha256": "f4aafce4b41196887f1a0d65ebc6311c5ff728bfe55689c86be429d0af07c84c",
+          "bytes": 2841
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-resolved-1576/original250-membership-only.json",
+          "sha256": "70de7de716dcd8d3de8b86e066efdde5807962474774fdb178b76caf62c4a2c3",
+          "bytes": 791446
+        },
+        {
+          "path": ".demo-artifacts/client-read-broader-resolved-1576/resolved-coverage.json",
+          "sha256": "ded26ab0b14902d0322c7ff19c5cda0874bd1f084670b0729c2ec7d688f6ee78",
+          "bytes": 131581
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/combined-source-control-round2/gates/combined-facade-control.receipt.json",
+          "sha256": "4f7355a214b527fbb6d55c3d47438b778b7ad2529ce4a24553a926ee2d949c42",
+          "bytes": 969
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/combined-source-control-round2/results/compact-proof.json",
+          "sha256": "ce2688998d6d5111dfe8f2c9a483fe625f990612d963b43bfb2b72c351962ede",
+          "bytes": 2540
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/corrected-twelve/files.json",
+          "sha256": "63a0a1b3a4fa9fb7a61926bfc5ec341e870e385feb29d09222a38ff9d3f04e15",
+          "bytes": 2312
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/corrected-twelve/full.patch",
+          "sha256": "e008a48d2b85d07d84cbaf793a9972a303db3540665093734ce506c0e45463e4",
+          "bytes": 45500
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/final-manifest.json",
+          "sha256": "e5f45255f66bd6680ab1f4c5dafd683896b2e258f64f6eace20c77297c73fc6a",
+          "bytes": 113835
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/final-report.json",
+          "sha256": "2e154c00527e854accb0ec41fb3184268cb8969419ec048a3f5b045723d6f996",
+          "bytes": 17610
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/skill-fixture-const-correction/proof.json",
+          "sha256": "61d5f8acb0ec60640d71a3de7df6f7e58ded66ee4a7a8b06141a2134bea2a763",
+          "bytes": 3576
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification/gates/source5.receipt.json",
+          "sha256": "6eb971605d6898d31f324729c480192cfbba685f5cb2b905ad57b4e2a220c333",
+          "bytes": 2464
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification/gates/types-source-tests.receipt.json",
+          "sha256": "9798f30898580af5b791aa9416d494cff0206724c0b1f9ccbcb4d789262785a9",
+          "bytes": 1237
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification/source5.json",
+          "sha256": "470835ef3d8d3a447c53b8112e6f56a13be969ce0a6e9811147bcda9d6ac9690",
+          "bytes": 76083
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/closure.json",
+          "sha256": "8326bdaf2c34781d93ca87741eaf542d21aef21af9b50f822b69509c83abf443",
+          "bytes": 1683
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/architecture.receipt.json",
+          "sha256": "64ccc3d3227fada3ff13585b5e11ab9ac441c9e90dba675b9cb9a7156276df96",
+          "bytes": 4136
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/cheatsheet.receipt.json",
+          "sha256": "5b574d55875029bd19ba1826729da311f737ad19e89cb83c60723fcb8ff7c3b1",
+          "bytes": 1189
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/knip.log",
+          "sha256": "86fbbb250800111c074a4417276720b63d6d191b054ca9f7e2436d10216b72e5",
+          "bytes": 55590
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/knip.receipt.json",
+          "sha256": "fd86531a6ee5a09ab4600573e30f88b4d5ff954bc2b8c7566923b0bb0eaffb07",
+          "bytes": 1169
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/main-production.receipt.json",
+          "sha256": "7ff764b952cbbff3ec9d17e38cfac19c37a1bb9c93c9669c0cef21372b5a4efc",
+          "bytes": 1279
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/preload-production.receipt.json",
+          "sha256": "c89d492bd3541e9c03e1aa250c457561908e8ca3442cb818b2d2dfd0f75700e7",
+          "bytes": 1291
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/react-format.receipt.json",
+          "sha256": "fc055184c0e937a9607f424d112690fb29bc2f0f6d22059adde7b3ebc4e55264",
+          "bytes": 1229
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/react-oxlint.receipt.json",
+          "sha256": "13659cdad6f37cd94e54d50ab5771c16e69c5693d1ca6dddfeeacb97b85cac3e",
+          "bytes": 1238
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/react-production.receipt.json",
+          "sha256": "a5ff10a4c4427b08ed8a32e68ce042d9d517a09a8c6a3ab09a300beb4ebabd3f",
+          "bytes": 1257
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/resolved-plan.log",
+          "sha256": "d7bdc697c832cc12a1d1b130b1891a656e7e82e7354ded6cb6e555931b0b7f68",
+          "bytes": 163804
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/resolved-plan.receipt.json",
+          "sha256": "6740401d8e888839067314367d0737b21d8012c5a5074758a1fb1f5635bbf318",
+          "bytes": 2348
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/source-eslint.receipt.json",
+          "sha256": "6ce6cca7eb272cbb6d8712342fd7550190cac8885e8cc39d8647c2348218c067",
+          "bytes": 1599
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/source-format.receipt.json",
+          "sha256": "6e9478c224ac2f5801750fd927bbb579fb3773fe619a0e4e4fc97e0da99dda9c",
+          "bytes": 1616
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/source-production.receipt.json",
+          "sha256": "dba1ed4d64c07cf8f8a36b93bb2344e86f98f77d40286cdc4c4d66ca862cba63",
+          "bytes": 1165
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/types-react-tests.receipt.json",
+          "sha256": "e8e6bf6e5c7ec5e8e52d40f55fbc476c939d868fdbbb753c96529da644b1d76b",
+          "bytes": 1241
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/types-source-tests.receipt.json",
+          "sha256": "7d30dd505b4df612ed6252cec2b1c13170a0371d298c87bb302cf94c3c4d3fc8",
+          "bytes": 1244
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/ui-invariants.log",
+          "sha256": "bc6e4e46093a037c0f772b029f9026dc0e78999b8d71b1b6a4b33b2c70db83dc",
+          "bytes": 425
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/ui-invariants.receipt.json",
+          "sha256": "5a90b73e6196fdb5412594c9097b8ee7e2b053a632f33db8941d349b041a86e2",
+          "bytes": 3804
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/input-freeze.json",
+          "sha256": "62d39f319b398611531f5f2c0cd68de4b73eb1d51dc183d8858f1707f7958930",
+          "bytes": 1763592
+        },
+        {
+          "path": ".demo-artifacts/client-read-combined12-preparation/verification-round2/resolved-plan-membership.json",
+          "sha256": "ac8f5fccc18a92d9eed8086a74498c4deea4194d8add8f8d94a75c03357fc80e",
+          "bytes": 126007
+        },
+        {
+          "path": ".demo-artifacts/client-read-coordinator-release.json",
+          "sha256": "f71c3c172b6c93de74e978767268c1110ddad459e8374edb771221a2f437ebc9",
+          "bytes": 1462
+        },
+        {
+          "path": ".demo-artifacts/final-full-unit-1576/full-all.json",
+          "sha256": "711dd1f0234d1b9944622a47813aae4d59fbdb6f9fa196580e26ce8f125f39b3",
+          "bytes": 15756776
+        },
+        {
+          "path": ".demo-artifacts/final-full-unit-1576/manifest.json",
+          "sha256": "f4d057a407fac2e00d2a39a4082f0ba8fe4cfcc93070f9d18f079b3a19a61ee9",
+          "bytes": 12393
+        },
+        {
+          "path": ".demo-artifacts/post-full-repair-publication/focused-repair-summary.json",
+          "sha256": "20fff2e7924ecf54ab6b8a1e88a71bc1ab2043c07431dc3598c1884a6bdd94a2",
+          "bytes": 56500
+        },
+        {
+          "path": ".demo-artifacts/scripts-read-publication-preparation/verification/source4.json",
+          "sha256": "3275a02601b92e29fa1afc0d0ea52b8d756b84579439730dd64dca23e52085c5",
+          "bytes": 71046
+        },
+        {
+          "path": ".demo-artifacts/shared-contract-checkout-receipt.json",
+          "sha256": "59b22ca18407907accfe3cdc247e016e39484c6b01ca5dad00da161f5e40c627",
+          "bytes": 910
+        },
+        {
+          "path": ".demo-artifacts/workspace-origin-broader-verification-1576/manifest.json",
+          "sha256": "b46aa2a7883838a1742165da770358513d9e0566cef1a22e75cd520767fa3edf",
+          "bytes": 15312
+        }
+      ],
+      "ownerGateProvenance": {
+        "freshSummary": {
+          "currentReports": [
+            {
+              "path": ".demo-artifacts/client-read-broader-verification-1576/related.json",
+              "sha256": "d6385397493e72e6bce637813dccaeff2d2a0015075d092ad9696dab14a7b869"
+            },
+            {
+              "path": ".demo-artifacts/client-read-broader-verification-1576/declared.json",
+              "sha256": "23d70e766212b20735f0824ee1e71cdaf16239fdc927c1fa23a1b825e849d645"
+            }
+          ],
+          "originalReports": [
+            {
+              "path": ".demo-artifacts/final-full-unit-1576/full-all.json",
+              "sha256": "711dd1f0234d1b9944622a47813aae4d59fbdb6f9fa196580e26ce8f125f39b3"
+            }
+          ],
+          "expectedFiles": 833,
+          "actualFiles": 833,
+          "missingFiles": [],
+          "extraFiles": [],
+          "rawFileStatus": {
+            "passed": 833
+          },
+          "effectiveFileStatus": {
+            "passed": 832,
+            "skipped": 1
+          },
+          "caseStatus": {
+            "passed": 15293,
+            "skipped": 7
+          },
+          "original250Transitions": {
+            "not_selected": 80,
+            "passed": 170
+          },
+          "repair190SeparateTransitions": {
+            "not_selected": 20,
+            "passed": 170
+          },
+          "new72Transitions": {
+            "passed": 72
+          },
+          "limits": "Different pins and scopes. Not-selected is not pass; repair-focused historical success is not current coverage. No causal or full-CI assertion."
+        },
+        "historicalComparisons": {
+          "originalFull2313": {
+            "head": "bdd3c7deed87a0ff005ae529259f5eac33564131",
+            "manifestSha256": "f4d057a407fac2e00d2a39a4082f0ba8fe4cfcc93070f9d18f079b3a19a61ee9",
+            "failedCases": 250,
+            "currentSelectedPassed": 170,
+            "currentNotSelected": 80,
+            "currentFailed": 0,
+            "currentMissingIdentity": 0,
+            "membershipQualification": "Both fresh833 JSON membership and all-lane843 select the same170 original failed identities; UI-only10 include no original failed identities. Not-selected80 are not observed or claimed passing."
+          },
+          "separateRepair190": {
+            "summary": ".demo-artifacts/post-full-repair-publication/focused-repair-summary.json",
+            "currentSelectedPassed": 170,
+            "currentNotSelected": 20,
+            "qualification": "Separate focused repair history at earlier pins, not a current full-run result or controlled base-green claim."
+          },
+          "focusedCases": {
+            "historicalUnique": 272,
+            "freshPassed": 272,
+            "historicalStages": "Scripts4=199 and source5=208 with135 lifecycle overlap. Source5 preceded erased tuple-only annotation; fresh runtime uses corrected bytes."
+          },
+          "currentOnlySinceOriginalFull": {
+            "count": 74,
+            "artifact": "current-only74-exact.json"
+          },
+          "allOriginalCaseTransitions": "comparison/original-case-transitions-exact.json",
+          "original250Exact": "comparison/original250-exact.json"
+        },
+        "ownerGateLimits": {
+          "sourceTestTypeCheck": {
+            "status": "FAIL11",
+            "newSkillErrorResolved": true,
+            "control": ".demo-artifacts/client-read-combined12-preparation/combined-source-control-round2/results/compact-proof.json",
+            "detail": "Exact same11 serialized diagnostics and canonical CLI output,7626sources/8205reads with only3 source facades overlaid from e439. All non-overlay reads/graph equal. Actual source include/exclude inherited;8 explicit test files added. New factory/test roots present both arms. Limited facade control, not whole historical branch or CI baseline."
+          },
+          "knip": {
+            "time": "2026-10-12T16:03:54.254939+00:00",
+            "status": "FAIL",
+            "beforeCounts": {
+              "Unused files": 29,
+              "Unused dependencies": 1,
+              "Unused exports": 401,
+              "Unused exported types": 164,
+              "Duplicate exports": 103
+            },
+            "afterCounts": {
+              "Unused files": 32,
+              "Unused dependencies": 1,
+              "Unused exports": 401,
+              "Unused exported types": 164,
+              "Duplicate exports": 103
+            },
+            "errorCount": 598,
+            "previousLog": ".demo-artifacts/workspace-origin-publication/verification-round2/gates/knip.log",
+            "previousLogSha256": "e5d13b8b9cfa82f30846b5afb58c4c065a8668101fdc894803ec61523a0c83f4",
+            "currentLog": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/knip.log",
+            "currentLogSha256": "86fbbb250800111c074a4417276720b63d6d191b054ca9f7e2436d10216b72e5",
+            "normalization": "Category/path/symbol and namespace suffix preserved; remove diagnostic :line:column before whitespace or end, normalize whitespace, compare multisets. Parser reproduces historical canonical normalization exactly. Heading counts checked.",
+            "parserHistory": "Initial ignored normalization removed only end-of-line positions, so namespace-suffixed rows differed artificially. Retained initial-position-parser artifacts; current analysis removes positions before namespace suffix too, confirmed against canonical historical data. No commands rerun.",
+            "normalizedDelta": {
+              "Unused files": {
+                "added": [
+                  "apps/react/src/features/scripts/scripts-client.ts",
+                  "apps/react/src/features/skills/skills-client.ts",
+                  "apps/react/src/features/terminals/terminals-client.ts"
+                ],
+                "removed": []
+              },
+              "Unused dependencies": {
+                "added": [],
+                "removed": []
+              },
+              "Unused exports": {
+                "added": [],
+                "removed": []
+              },
+              "Unused exported types": {
+                "added": [],
+                "removed": []
+              },
+              "Duplicate exports": {
+                "added": [],
+                "removed": []
+              }
+            },
+            "interpretation": "Retained595 unchanged plus3 new unreferenced React binding files. No exclusions/root activation added; FAIL retained."
+          },
+          "reactTestTypeCheck": "PASS actual React configuration with9 added factory/test/binding roots; source facade tests remain source-only",
+          "svelte": {
+            "exitCode": 0,
+            "errors": 0,
+            "warnings": 211,
+            "warningFiles": 76,
+            "checkedFiles": 9010,
+            "log": ".demo-artifacts/client-read-combined12-preparation/generated-phase/phase-4.log",
+            "detail": "Executed during prerequisites before final freeze; not repeated after erased test-only correction."
+          },
+          "controlQualification": "Source11 matches only a three-facade same-config overlay control; new factory/test roots exist in both arms. Not a full historical base or CI baseline.",
+          "knipQualification": "598 retained as FAIL:595 prior plus3 new currently unreferenced React bindings; no exclusions or root activation."
+        },
+        "diagnostics": {
+          "failedCases": 0,
+          "collectionFailures": 0,
+          "unhandledDiagnosticSections": 0,
+          "tempHygieneDiagnosticLines": 0,
+          "freshSkippedCases": 7,
+          "whollySkippedFiles": 1,
+          "unexpectedNativeStops": 0,
+          "artifact": "skipped-exact.json",
+          "qualification": "No matching diagnostic sections/error fields in complete logs/JSON; no failed test stderr removed."
+        },
+        "selectedCoverage": {
+          "uniqueFiles": 843,
+          "freshJsonFiles": 833,
+          "rootProjects": "Both canonical root projects enabled without project filter; actual selected files are source-only (0 React test files).",
+          "direct": {
+            "files": [
+              "src/lib/client/live/backend-scripts-client.test.ts",
+              "src/lib/client/live/backend-skills-client.test.ts",
+              "src/lib/client/live/backend-terminals-client.test.ts"
+            ],
+            "passedCases": 72,
+            "coverage": "Exact subset of fresh related JSON; no repeated direct lane",
+            "artifact": "direct-subset-exact.json"
+          },
+          "ui": {
+            "files": [
+              "scripts/css-has-invalidation-audit.test.ts",
+              "scripts/css-has-invalidation-built-audit.test.ts",
+              "scripts/design-token-audit.test.ts",
+              "scripts/neutral-border-audit.test.ts",
+              "scripts/ui-component-audit.test.ts",
+              "scripts/ui-component-integration.test.ts",
+              "scripts/ui-invariant-suites.test.ts",
+              "src/features/agent/components/agent-avatar/avatar-state-gate-inventory.test.ts",
+              "src/lib/component-catalog/renderers/ContentFieldCatalogPreview.test.ts",
+              "src/lib/components/__tests__/disclosure-chevron-inventory.test.ts",
+              "src/lib/components/ui/__tests__/ProductCompatibilityInventory.test.ts",
+              "src/lib/components/ui/button/button.test.ts",
+              "src/lib/components/ui/combobox/combobox.test.ts",
+              "src/lib/components/ui/component-metadata.test.ts",
+              "src/lib/components/ui/dialog/dialog.test.ts",
+              "src/lib/components/ui/dropdown/Dropdown.test.ts",
+              "src/lib/components/ui/toggle/toggle-caller-regression.test.ts"
+            ],
+            "passedCases": 223,
+            "coverage": "Reused successful canonical owner test:ui-invariants on identical frozen inputs. Membership derived from saved canonical plan/scanner; log has summary only, not observed per-file execution.",
+            "receipt": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/ui-invariants.receipt.json",
+            "log": ".demo-artifacts/client-read-combined12-preparation/verification-round2/gates/ui-invariants.log",
+            "logSha256": "bc6e4e46093a037c0f772b029f9026dc0e78999b8d71b1b6a4b33b2c70db83dc",
+            "overlapWithFreshJson": [
+              "scripts/ui-component-integration.test.ts",
+              "src/lib/component-catalog/renderers/ContentFieldCatalogPreview.test.ts",
+              "src/lib/components/ui/button/button.test.ts",
+              "src/lib/components/ui/combobox/combobox.test.ts",
+              "src/lib/components/ui/component-metadata.test.ts",
+              "src/lib/components/ui/dialog/dialog.test.ts",
+              "src/lib/components/ui/dropdown/Dropdown.test.ts"
+            ],
+            "uiOnlyFilesWithoutFreshJson": [
+              "scripts/css-has-invalidation-audit.test.ts",
+              "scripts/css-has-invalidation-built-audit.test.ts",
+              "scripts/design-token-audit.test.ts",
+              "scripts/neutral-border-audit.test.ts",
+              "scripts/ui-component-audit.test.ts",
+              "scripts/ui-invariant-suites.test.ts",
+              "src/features/agent/components/agent-avatar/avatar-state-gate-inventory.test.ts",
+              "src/lib/components/__tests__/disclosure-chevron-inventory.test.ts",
+              "src/lib/components/ui/__tests__/ProductCompatibilityInventory.test.ts",
+              "src/lib/components/ui/toggle/toggle-caller-regression.test.ts"
+            ],
+            "doNotAddCases": "UI223 overlaps fresh related results; no synthetic JSON rows or naive addition of case totals."
+          },
+          "unionEquation": "828 related + 5 declared + 17 UI - 7 related/UI overlap = 843. Direct3 subset of related.",
+          "ctOrBrowserSelected": false,
+          "fullFallbackSelected": false
+        },
+        "independentRawJsonAccounting": {
+          "files": 833,
+          "lanes": {
+            "related": {
+              "files": 828,
+              "jsonSha256": "d6385397493e72e6bce637813dccaeff2d2a0015075d092ad9696dab14a7b869"
+            },
+            "declared": {
+              "files": 5,
+              "jsonSha256": "23d70e766212b20735f0824ee1e71cdaf16239fdc927c1fa23a1b825e849d645"
+            }
+          },
+          "caseStatus": {
+            "passed": 15293,
+            "skipped": 7
+          },
+          "effectiveFileStatus": {
+            "passed": 832,
+            "skipped": 1
+          },
+          "new72AllPassed": true,
+          "selectedUnion": 843,
+          "uiReuse": "17files/223cases summary-only;7 overlap, do not add case counts",
+          "actualReactFiles": 0
+        }
+      },
+      "ownerInputProcessClosure": {
+        "time": "2026-10-12T16:50:08.719521+00:00",
+        "headAsTested": "e439db65d54e797b1f740c5170168c490f7745fb",
+        "inputs": 8947,
+        "inputChanges": {},
+        "ownerInputCount": 8929,
+        "gitStatusUnchanged": true,
+        "exact12StatusRows": [
+          " M src/lib/client/live/live-scripts-client.ts",
+          " M src/lib/client/live/live-skills-client.ts",
+          " M src/lib/client/live/live-terminals-client.ts",
+          "?? apps/react/src/features/scripts/scripts-client.ts",
+          "?? apps/react/src/features/skills/skills-client.ts",
+          "?? apps/react/src/features/terminals/terminals-client.ts",
+          "?? src/lib/client/live/backend-scripts-client.test.ts",
+          "?? src/lib/client/live/backend-scripts-client.ts",
+          "?? src/lib/client/live/backend-skills-client.test.ts",
+          "?? src/lib/client/live/backend-skills-client.ts",
+          "?? src/lib/client/live/backend-terminals-client.test.ts",
+          "?? src/lib/client/live/backend-terminals-client.ts"
+        ],
+        "symlinksAndGeneratedMembershipUnchanged": true,
+        "observedIdentities": 829,
+        "remainingOwnedProcesses": [],
+        "runnerPidsAbsent": [3122672, 3830871],
+        "rootPidsAndGroupsAbsent": [3122920, 3830929],
+        "sessionsReaped": {
+          "75486": 0,
+          "8311": 0
+        },
+        "fullAndCtLockPathsAbsent": {
+          "vitest-full": "/tmp/intent-fd8a768d8bd7.lock",
+          "ct-3100": "/tmp/intent-cd622814f0b1.lock"
+        },
+        "locksAcquired": [],
+        "lockQualification": "Canonical related/declared have no lockKind; no lock acquisition, bypass or claimed release. Full/CT paths absent before/after.",
+        "knipCanariesAbsent": true,
+        "watcherCancelled": "9484ccc0-983d-45bb-85a6-83d0a8c3364d",
+        "processObservationLimit": "One-second process/descendant sampling; absence applies to observed identities and complete owned groups at closure. No unexpected native executable observed; not exhaustive proof about every short-lived service.",
+        "maintainedWrites": false,
+        "commits": false
+      },
+      "inheritedLimitations": [
+        "Original003 inventory/1430denominator and every prior source/target/case/receipt/failure remain. All19invalidations and historical inspected pins retain their meanings. Shared read factories and bindings add no view units.",
+        "Committed12 exactly matches prepared snapshots/full forward-inverse proof. Three source preimages equal original003; four moved async method bodies and two helper blocks are exact after indentation. Source other methods/subscriptions/public classes and existing roots remain unchanged. Added nine paths were absent at original003/e439.",
+        "Scripts capability is strict client.hello scriptLifecycle===1. Original archive-partition error/default/legacy omission and malformed-array rejection remain. Source list.call(this,...) preserves dynamic supportsLifecycle receiver. Typed rest forwarding resolves the source backendRequest export at call time; factory captures the injected function. No general Promise/native timing equivalence claimed.",
+        "Skills retains original bare-array handling, resourceDirectory truthiness, allowedTools/compatibility stripping and nonarray fallback. Source private fetch delegates; public list, reconnect and notification ownership remain source-owned. Terminals preserves array/envelope/daemonBootId normalization, terminalId/id precedence and invalid-entry behavior; mutation/output/subscription lifetime methods remain unchanged.",
+        "Three React bindings use genuine existing backend/configured Store getters, but remain unreferenced and inactive. No lifecycle-read composition, root startup, host/Store/IPC activation or service acceptance added. Neutral runtime factories and framework-bound React import graphs are explicitly distinguished.",
+        "Owner final related828+declared5 yields833 unique fresh JSON files:832passed/1wholly skipped;15293passed cases/7unchanged skips/0failures or collection errors. All72new cases and selected170 original250 failures pass;80original failures NOT SELECTED. Separate earlier repair190:170selected pass/20not selected. No fresh full-suite/baseCI/causal claim.",
+        "Earlier focused source5/208 and scripts4/199 overlap135lifecycle cases;272unique focused identities now pass in final broad source selection. Do not sum these historical lanes. UI17/223 reused summary-only evidence with7related overlap; union843. Direct3/72 is an exact related subset. Both root projects enabled, actual selected React files0; no React runtime coverage inferred.",
+        "Source test-inclusive11FAIL retained: identical diagnostics/canonical text under a limited e439 three-source-facade overlay, with new factories/tests in both arms. Not original003/whole historical branch/baseCI equivalence. Initial12-error compiler and rejected alternative fixture type proposal remain; approved erased tuple asconst correction removed the new skill error without changing assertions/emittedJS per owner proof.",
+        "Knip598FAIL includes595 retained findings plus3NEW unused React binding files,103duplicate warnings unchanged. Initial ignored position-normalization helper correction is diagnostic only, no gate rerun or exclusion. Normal production boundaries/React-inclusive compiler pass; Svelte0errors211warnings76files retained from prerequisite phase before erased fixture correction.",
+        "All earlier native/tooling/runtime failures, original full250/repair190 profiles, source522 history, settings unknown child exit and Vite timing qualification remain unchanged. Broad current successes do not refresh old component/native reviews or waive failures outside selection.",
+        "Final broader owner closure records8947stable inputs/829observed identities and complete owned groups absent, watcher canceled. One-second sampling is not exhaustive proof about every short-lived process. Auditor rehashed90final manifest/reference entries and bound previously verified610owner artifacts through immutable preparation evidence; no owner test/compiler/discovery/runtime rerun.",
+        "Twelve syntax files and nine pinned import profiles checked using actual source/React aliases. Neutral factories have2/1/1runtime and73type files; React bindings each108runtime/183type files. No unresolved/computed/forbidden edges. External packages/generated leaves are static boundaries, not executed.",
+        "Future combined19/selector17/composition3 and ignored drafts excluded. Internal unactivated support has no released assistant-help impact. No product/sourcepair/native/visual/fullmotion acceptance or broad status promotion."
+      ],
+      "nativeBoundary": "No source/native/visual/runtime acceptance transferred. Saved owner results remain tied to explicit profiles; this review records provenance and static support only.",
+      "retainedHistory": {
+        "ledgerSha256": "8ee8745805757aafd3273b3c6f743695f5c3d092db775f775673b0d1a546c600",
+        "sourceRows": 1890,
+        "mappedViews": 236,
+        "viewDenominator": 1430,
+        "targets": 230,
+        "reviews": 102,
+        "receipts": 29,
+        "invalidations": 19,
+        "sourceRowsCanonicalSha256": "5c96210f83603a6a450572c4cf53504cbfee1bdb645461d11fcde6e7c18100bc",
+        "casesCanonicalSha256": "8c175aa57ff09841a38de9eccc4a2147e50b6022e590082ef314ee45749d2b22",
+        "receiptsCanonicalSha256": "a81a9db5baafe3f90190c81190afce02ef70a567a60e2156ad7245b80905b763",
+        "targetOrderedPathHashSha256": "682b2051be5da1bf3bc5f36ff0a9e4a1cd234e82b4459a04732daccfeeea7d7a"
+      },
+      "sourceDriftPolicy": "Original003 inventory and all19invalidations unchanged. All12support paths lie outside fixed inventory and are explicitly hash-profiled. No source-row or direct target/status refresh; common validation pin advances while inspected pins remain retained.",
+      "excludedLaterWork": [
+        "Combined19/selector17/composition3 and all ignored future drafts.",
+        "Real React composition/root/host/native activation."
+      ],
+      "userHelpImpact": "Internal inactive read bindings; no released assistant-help impact.",
+      "publicationAuthorization": {
+        "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+        "coordinatorRelease": "NAMED SOLE-JSON PUBLICATION GO2026-10-12T16:53:05Z",
+        "acceptedPreparationHandoffSha256": "aeb76dee3c70304ec18ac0827ec24f22558188e03a686edbf99d966364335181",
+        "onePinnedStatusAuthorized": true
+      },
+      "testHandoff": {
+        "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+        "status": "not-run-by-ledger-auditor",
+        "scope": "Pinned static source/API/import/inverse/hash/JSON verification. Owner saved regression reports reviewed only for bounded provenance; no acceptance transfer."
       }
     }
   },
@@ -165105,6 +166873,128 @@
         "receiver-client-physical-prerequisites-02caf1ee",
         "model-settings-unit-runner-support-45505af3"
       ]
+    },
+    {
+      "candidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded static support-only audit at815eba26 of exact7 workspace-origin cancellation/async-observation paths:4production and3tests. All seven lie outside immutable inventory. No new view maps, target refresh, implementation promotion or native acceptance. All1890rows/230targets/101historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented. Prior63 files are unchanged in the combined70 profile.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T15:43:32.692611+00:00",
+      "checkpointAdvance": {
+        "previousLedgerCommit": "7914b817fca838043ca7220d7ee1ec33fbed0e02",
+        "previousAuditCandidateCommit": "45505af388a28ec42fc08b0e744146994e7d3af7",
+        "unchangedUniqueDirectTargets": 230,
+        "changedUniqueDirectTargets": 0,
+        "retainedHistoricalReviewCount": 101,
+        "meaning": "Common validation pin only; all historical inspected/source/support/native pins and acceptance boundaries retained."
+      },
+      "ledgerCommit": "e439db65d54e797b1f740c5170168c490f7745fb",
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10",
+        "chat-transcript-markers-fe630",
+        "chat-transcript-notices-fe630",
+        "chat-disclosure-rows-fb515",
+        "chat-recovery-notices-fb515",
+        "chat-stream-metadata-3230",
+        "chat-history-attribution-3230",
+        "chat-disclosure-corrections-3230",
+        "chat-queued-actions-command-3e894",
+        "chat-code-reference-context-4bfa",
+        "chat-inline-mcp-prompt-preview-9d297",
+        "queued-attachments-0a010",
+        "tabs-export-correction-0a010",
+        "streaming-status-840763",
+        "mcp-inline-font-correction-840763",
+        "suggested-chief-prompts-16ee80",
+        "automated-wake-header-f2b2a2",
+        "agent-pr-attribution-headers-73da5529",
+        "attachment-permission-support-05cc7db6",
+        "attachment-file-replacement-ff9a4e35",
+        "inline-permission-and-live-support-6a51a3da",
+        "media-and-markdown-composition-dd6e5720",
+        "full-markdown-and-reasoning-68a5ca85",
+        "chat-image-and-video-wrapper-561fa08c",
+        "message-actions-and-transcript-cards-2d310fed",
+        "setup-script-and-edit-confirmation-3d7e81dc",
+        "operational-window-and-panel-2d988e34",
+        "response-group-and-cylinder-1cea8e2b",
+        "navigation-excerpt-and-image-caption-34161b6d",
+        "response-group-reaction-correction-e46a388f",
+        "detected-scripts-and-neutral-indicator-0afebba9",
+        "markdown-image-owner-correction-35e676aa",
+        "static-toast-containment-support-8f0bbcda",
+        "canonical-anchor-and-agent-read-support-d4abc96f",
+        "deleted-agent-cleanup-support-0ddf543a",
+        "canonical-focused-end-support-df98264e",
+        "react-panel-cleanup-prerequisites-8220d33b",
+        "admitted-agent-read-and-lifetime-support-785d3b4e",
+        "workspace-tab-and-load-support-c360548b",
+        "workspace-load-guards-support-b0d11298",
+        "workspace-origin-captured-route-support-90875515",
+        "renderer-physical-hydration-support-c3f85664",
+        "receiver-client-physical-prerequisites-02caf1ee",
+        "model-settings-unit-runner-support-45505af3",
+        "workspace-origin-cancellation-async-support-815eba26"
+      ]
     }
   ],
   "receipts": {
@@ -173684,6 +175574,202 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "Original003 inventory and all19invalidations unchanged; all seven supporting paths are outside fixed inventory and explicitly hash-profiled. No source-row or target/status refresh. Currentness report should differ only in its two candidate fields."
+    },
+    {
+      "id": "canonical-client-read-support-bd099f6e",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+      "previousLedgerCommit": "e439db65d54e797b1f740c5170168c490f7745fb",
+      "previousCommonCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+      "reviewedAt": "2026-10-12T16:54:17.868148+00:00",
+      "method": "Bounded static support-only audit at bd099f6e of exactly12 canonical scripts/skills/terminals read factory, source facade, React binding and test paths (9production/3tests). All12 lie outside immutable inventory. No new view mapping, target refresh, implementation promotion or native acceptance. All1890rows/230targets/102historical reviews/29receipts retained;236/1430=231components+5modules,178partial58localimplemented.",
+      "counts": {
+        "addedMappings": 0,
+        "addedSvelteComponents": 0,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "mappedViews": 236,
+        "mappedSvelteComponents": 231,
+        "mappedSvelteReactivityModules": 5,
+        "views": {
+          "unmapped": 1194,
+          "partial": 178,
+          "implemented": 58
+        }
+      },
+      "sourcePaths": [],
+      "targetedExistingSourcePaths": [],
+      "newUniqueDirectTargetCount": 0,
+      "priorUniqueDirectTargetCount": 230,
+      "allUniqueDirectTargetCount": 230,
+      "priorDirectTargetIdentity": {
+        "count": 230,
+        "unchanged": 230,
+        "orderedPathAndHashSha256": "682b2051be5da1bf3bc5f36ff0a9e4a1cd234e82b4459a04732daccfeeea7d7a"
+      },
+      "supportDelta": [
+        {
+          "path": "src/lib/client/live/backend-scripts-client.ts",
+          "sha256": "b81a92bdd6ad206565e65a0fa5f19ee0c4a57a56c919c8e26ce86a0b3ae8f2c6",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-scripts-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-scripts-client.ts",
+          "sha256": "bea2fb2c411d8748a398981193aba4a5a2f0727e923b39b395ed7e40f9892939",
+          "baseSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-scripts-client.ts",
+          "originalSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "previousAuditedSha256": "69bd29aac1c3c6f5dbe7c94ee80779c6d1123dcba1a76b3798d5fcb6078641f1",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/scripts/scripts-client.ts",
+          "sha256": "7da6ab27ca64a57898b1160fd439fb7f8e54692b69dce86b56dbd57554799b97",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/scripts/scripts-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-scripts-client.test.ts",
+          "sha256": "2d06c5e69cbf811af813d9e5ef434b475ad4391e0e10a882ac9c22242af15256",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-scripts-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-skills-client.ts",
+          "sha256": "f0ede59fcb8b15776b82e38c783a8f4ec419c6553d267f9bfd20295545ffdf84",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-skills-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-skills-client.ts",
+          "sha256": "943f8751707d83133cd29211eda874ac3cf80057483200ae2acd97149804ac8f",
+          "baseSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-skills-client.ts",
+          "originalSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "previousAuditedSha256": "6482b5aaa78bdc635b58cfd976ea4063149d07aec4930840f30ce699f6fd6a0d",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/skills/skills-client.ts",
+          "sha256": "0ee2fb256d0cd3a8fe1498859acb6dd959882f56807e27d490649125aedd9c0a",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/skills/skills-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-skills-client.test.ts",
+          "sha256": "23a60e03665449857f1ea96d919f3d314a1cf7738205e7a4b3af56c719b31c25",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-skills-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-terminals-client.ts",
+          "sha256": "6f3ba2002f0172a09c8d39ff2aef02178abed6c273e226269bade321e8087108",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-terminals-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/live-terminals-client.ts",
+          "sha256": "ea0661de79922d9d176bd6f7b022566f0c4ae6fda7821010c6bbeff984438be0",
+          "baseSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/live-terminals-client.ts",
+          "originalSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "previousAuditedSha256": "4e64d4facc60f4f48fe099d31a52b8589b4811f842b493fc58cc68f4232c4222",
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "apps/react/src/features/terminals/terminals-client.ts",
+          "sha256": "07990986a925d5f54de210f8a79c3037df21d58289981d0845eaae44f4012983",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/apps/react/src/features/terminals/terminals-client.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "production",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        },
+        {
+          "path": "src/lib/client/live/backend-terminals-client.test.ts",
+          "sha256": "e0249fe611e2a93fa6dbea62d048d2020e1a6c0cd66a9899cbc7ecc9a784881e",
+          "baseSha256": null,
+          "snapshot": ".demo-artifacts/client-read-ledger-preparation/snapshot/src/lib/client/live/backend-terminals-client.test.ts",
+          "originalSha256": null,
+          "previousAuditedSha256": null,
+          "insideImmutableInventory": false,
+          "role": "test",
+          "candidateCommit": "bd099f6eddb255074f84a5476ce85dcfab9740c3",
+          "previousCandidateCommit": "815eba26b8a1b1b33a09ac4511893f473c29e4d7",
+          "outsideImmutableInventory": true
+        }
+      ],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "Original003 inventory and all19invalidations unchanged. All12support paths lie outside fixed inventory and are explicitly hash-profiled. No source-row or direct target/status refresh; common validation pin advances while inspected pins remain retained."
     }
   ]
 }
