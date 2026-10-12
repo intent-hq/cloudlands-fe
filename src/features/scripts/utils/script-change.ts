@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ScriptRuntimeState, ScriptWithState } from '../types';
+import type { ScriptRuntimeState, ScriptWithState, ScriptListEntry } from '../types';
 
 const runtimeSchema = z
   .object({
@@ -64,26 +64,24 @@ export function scriptChangeSnapshot(
 
 export type ScriptReadChange =
   | { kind: 'snapshot'; script: ScriptWithState }
-  | { kind: 'read'; script: ScriptWithState }
-  | { kind: 'allIds'; ids: string[] }
+  | { kind: 'read'; script: ScriptListEntry }
   | { kind: 'removed'; scriptId: string }
   | { kind: 'runtime'; scriptId: string; partial: Partial<ScriptRuntimeState>; replace?: boolean };
 
 /** Replay only events observed after the read began, in live publication order. */
 export function replayScriptRead(
-  entries: ScriptWithState[],
+  entries: ScriptListEntry[],
   changes: ScriptReadChange[],
-): ScriptWithState[] {
+): ScriptListEntry[] {
   const rows = new Map(entries.map((entry) => [entry.id, entry]));
   for (const change of changes) {
-    if (change.kind === 'snapshot') rows.set(change.script.id, change.script);
-    else if (change.kind === 'read') {
+    if (change.kind === 'snapshot') {
+      if (change.script.archivedAt) rows.delete(change.script.id);
+      else rows.set(change.script.id, change.script);
+    } else if (change.kind === 'read') {
       // A newer viewer read can replace a returned row, but cannot invent
       // membership in an older active-list response that omitted it.
       if (rows.has(change.script.id)) rows.set(change.script.id, change.script);
-    } else if (change.kind === 'allIds') {
-      const ids = new Set(change.ids);
-      for (const id of rows.keys()) if (!ids.has(id)) rows.delete(id);
     } else if (change.kind === 'removed') rows.delete(change.scriptId);
     else {
       const row = rows.get(change.scriptId);

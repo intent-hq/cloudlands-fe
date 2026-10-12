@@ -7,6 +7,7 @@
   const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   const currentHostRole$ = selectHostRole();
   /* eslint-disable max-lines */
+  import { selectHomeWorkspaceRepository } from '$features/home/home-workspaces-selectors';
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
@@ -220,9 +221,19 @@
   const PREFILL_KEY = 'workspace-prefill';
   const UNKNOWN_SPECIALIST_ERROR_PREFIX = 'unknown specialist:'; // i18n-ignore (daemon error prefix)
 
-  function hasWorkspacePrefillData(): boolean {
+  function hasWorkspacePrefillData({ repositoryOnly = false } = {}): boolean {
     try {
-      return typeof sessionStorage !== 'undefined' && !!sessionStorage.getItem(PREFILL_KEY);
+      const prefill = typeof sessionStorage !== 'undefined' && sessionStorage.getItem(PREFILL_KEY);
+      if (!prefill) return false;
+      if (!repositoryOnly) return true;
+      const data = JSON.parse(prefill);
+      return !!(
+        data &&
+        (data.repoPath ||
+          data.githubUrl ||
+          data.repositoryCheckoutDraft !== undefined ||
+          data.environmentType === 'remote')
+      );
     } catch {
       return false;
     }
@@ -316,6 +327,8 @@
   interface Props {
     isExpanded: boolean;
     initialRepo?: InitialRepoInfo;
+    /** Use the sidebar repository once when mounting the New Workspace dialog. */
+    defaultToSidebarRepository?: boolean;
     oncreate?: () => void;
     /** Let a containing dialog own initial focus instead of focusing the prompt. */
     autoFocus?: boolean;
@@ -325,6 +338,7 @@
   let {
     isExpanded = $bindable(false),
     initialRepo,
+    defaultToSidebarRepository = false,
     oncreate,
     autoFocus = true,
     showFirstTimeHints = false,
@@ -519,8 +533,39 @@
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const pendingGitHubPrefill$ = selectWorkspaceInitializerPendingGitHubPrefill();
 
-  const savedState = $compactFormState$;
-  const savedAgentSettings = savedState ?? $lastSubmittedAgent$;
+  const savedState = untrack(() => {
+    const saved = $compactFormState$;
+    if (
+      !defaultToSidebarRepository ||
+      initialRepo ||
+      hasWorkspacePrefillData({ repositoryOnly: true }) ||
+      $pendingGitHubPrefill$
+    )
+      return saved;
+    const repo = selectHomeWorkspaceRepository.select(appStore.state);
+    if (!repo?.repoPath) return saved;
+    const repoType =
+      repo.isGithub && repo.repoPath === `${repo.owner}/${repo.name}` ? 'github' : 'local';
+    if (saved?.repoPath === repo.repoPath && saved.repoType === repoType && !saved.isNewRepo)
+      return saved;
+    const githubUrl =
+      repo.owner && repo.name ? `https://github.com/${repo.owner}/${repo.name}` : '';
+    return {
+      ...saved,
+      repositoryCheckoutDraft: undefined,
+      repoPath: repo.repoPath,
+      repoType,
+      skipIsolation: repoType === 'github' ? false : readSkipIsolation(saved),
+      githubUrl,
+      isNewRepo: false,
+      isValidPath: true,
+      branch: '',
+      scope: '',
+      scopeRepoPath: undefined,
+      remoteSetup: null,
+    } satisfies CompactWorkspaceInitializerFormState;
+  });
+  const savedAgentSettings = $compactFormState$ ?? $lastSubmittedAgent$;
 
   // Form state - initialize from saved state if available
   let repoPath = $state(savedState?.repoPath ?? '');

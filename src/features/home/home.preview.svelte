@@ -29,6 +29,8 @@
       | 'status-icons'
       | 'board'
       | 'pr-ready'
+      | 'board-long-content'
+      | 'board-repositories'
       | 'empty'
       | 'assistant'
       | 'assistant-streaming'
@@ -54,6 +56,8 @@
       'status-icons': { props: { scenario: 'status-icons' } },
       board: { props: { scenario: 'board' } },
       'pr-ready': { props: { scenario: 'pr-ready' } },
+      'board-long-content': { props: { scenario: 'board-long-content' } },
+      'board-repositories': { props: { scenario: 'board-repositories' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
@@ -412,6 +416,18 @@
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
+              ...(scenario === 'board-long-content'
+                ? {
+                    title: `${workspace.title} ${'workspace'.repeat(12)}`,
+                    statusMessage: 'InvestigatingAnUnbrokenStatusMessage'.repeat(4),
+                    repositoryName: 'repository'.repeat(10),
+                  }
+                : scenario === 'board-repositories'
+                  ? {
+                      repositoryName: `${workspace.id}-${'repository'.repeat(10)}`,
+                      repositoryPath: `/repos/${workspace.id}`,
+                    }
+                  : {}),
             })),
       ),
     );
@@ -506,7 +522,14 @@
       store.dispatch(setChiefActiveAgentId(id));
       store.dispatch(openPanel('chief'));
     }
-    if (scenario === 'board') store.dispatch(updateHomeWorkspaceView({ view: scenario }));
+    if (scenario.startsWith('board')) {
+      store.dispatch(
+        updateHomeWorkspaceView({
+          view: 'board',
+          ...(scenario === 'board-repositories' ? { groupBy: 'repository' } : {}),
+        }),
+      );
+    }
     if (scenario === 'status-icons') store.dispatch(updateHomeWorkspaceView({ groupBy: 'none' }));
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))

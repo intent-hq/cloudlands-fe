@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { appClient } from '$lib/client';
+  import { scriptCommandLabel } from '$features/scripts/types';
   /**
    * ScriptOutputViewer — Renders script output using xterm.js in read-only mode.
    *
@@ -276,6 +278,22 @@
       return;
     }
 
+    const requestWorkspaceId = workspaceId;
+    const requestScriptId = scriptId;
+    const authority = $outputAuthority;
+    let command: string;
+    try {
+      command = (await appClient.scripts.get(workspaceId, scriptId)).command;
+    } catch {
+      notify.error(m.scripts_client_notFound_error({ scriptId }));
+      return;
+    }
+    if (
+      workspaceId !== requestWorkspaceId ||
+      scriptId !== requestScriptId ||
+      $outputAuthority !== authority
+    )
+      return;
     const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
     const lastLines =
       buffer.chunks.length > 0
@@ -286,7 +304,7 @@
       exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
 
     // i18n-ignore (agent-facing prompt, kept in English)
-    const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${$script$?.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
+    const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
 
     try {
       appStore.dispatch(
@@ -403,7 +421,8 @@
       <div class="flex items-center gap-3 text-sm">
         <span class="text-subtle font-mono">$</span>
         {#if $script$}
-          <code class="text-muted-foreground font-mono text-xs">{$script$.command}</code>
+          <code class="text-muted-foreground font-mono text-xs">{scriptCommandLabel($script$)}</code
+          >
         {/if}
         <Button
           variant="ghost"

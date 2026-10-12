@@ -43,7 +43,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 
 vi.mock('$lib/client', () => ({
   appClient: {
-    scripts: { list: vi.fn(), create: vi.fn() },
+    scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() },
     files: { read: vi.fn() },
   },
 }));
@@ -72,6 +72,12 @@ function deferred<T>() {
 let stop: () => void;
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(appClient.scripts.get).mockImplementation(async (workspaceId, id) => {
+    const rows = await appClient.scripts.list(workspaceId);
+    const row = rows.find((s) => s.id === id);
+    if (!row) throw new Error('Unknown script');
+    return row;
+  });
   store.dispose();
   store.init();
   admitLegacyPrincipal();
@@ -364,7 +370,7 @@ describe('public definition writes and deletion', () => {
     const saved = save();
     await vi.waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
     vi.mocked(appClient.scripts.list).mockRejectedValueOnce(new Error('offline'));
-    await expect(save('other')).rejects.toThrow('offline');
+    await expect(save('other')).resolves.toEqual({ success: false, error: 'offline' });
     expect(selectCanDeleteScript.select(store.state, 'other', 'check')).toBe(true);
     expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(false);
     pending.resolve({ success: true });

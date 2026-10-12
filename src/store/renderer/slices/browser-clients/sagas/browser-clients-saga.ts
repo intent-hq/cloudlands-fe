@@ -62,6 +62,7 @@ import {
   refreshLiveClientsRequested,
   setWorkspaceBrowserClientRequested,
   workspaceBrowserClientReceived,
+  workspaceBrowserClientPinReceived,
 } from '../browser-clients-slice';
 
 const logger = createLogger('BrowserClientsSaga');
@@ -74,9 +75,10 @@ type BrowserConnection = {
 };
 
 /**
- * Saga-local, per-workspace pin-write epoch, bumped when a pin write starts
- * and again when it settles. A resolution read captures it before its RPC; a
- * different value afterwards means a write started or settled while the read
+ * Saga-local, per-workspace pin epoch, bumped when a pin write starts,
+ * when it settles, and when a committed pin-change event arrives. A resolution
+ * read captures it before its RPC; a different value afterwards means the pin
+ * may have changed while the read
  * was in flight, so the reply may predate the write's commit and must not be
  * stored. A read that started mid-write is invalidated by the settlement
  * bump, not only a read that predates the write.
@@ -256,12 +258,17 @@ function* writeWorkspaceBrowserClient(
 ): SagaGenerator<void> {
   const [wsId, clientId] = action.payload;
   epochs[wsId] = (epochs[wsId] ?? 0) + 1;
+  const epoch = epochs[wsId];
   try {
     const write = yield* untilWorkspaceCleanup(
       wsId,
       call([appClient.workspaces, appClient.workspaces.setBrowserClient], wsId, clientId),
     );
     if (write.cleanup) return;
+    if (epochs[wsId] !== epoch) {
+      yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+      return;
+    }
     yield* put(workspaceBrowserClientReceived(wsId, write.result));
   } catch (error) {
     logger.warn('workspace.setBrowserClient failed', {
@@ -361,6 +368,11 @@ function* watchClientConnection(connection: BrowserConnection) {
 
 export function* browserClientsSaga(): SagaGenerator<void> {
   const pinWriteEpochs: PinWriteEpochs = {};
+  // A committed server event wins over reads and write echoes already in flight.
+  yield* takeEvery(workspaceBrowserClientPinReceived, function* (action) {
+    const [wsId] = action.payload;
+    pinWriteEpochs[wsId] = (pinWriteEpochs[wsId] ?? 0) + 1;
+  });
   // Warm phases are cleared on reconnect even while a workspace stays mounted.
   // Keep the mount lifetime independently; never infer it from cached tab rows.
   const connection: BrowserConnection = {

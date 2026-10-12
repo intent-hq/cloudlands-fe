@@ -41,21 +41,28 @@ const DEV_SCRIPT: ScriptWithState = {
 };
 
 describe('LiveScriptsClient (fake transport)', () => {
-  beforeEach(() =>
-    vi.spyOn(LiveScriptsClient.prototype, 'supportsLifecycle').mockResolvedValue(false),
-  );
+  beforeEach(() => {
+    vi.spyOn(LiveScriptsClient.prototype, 'supportsLifecycle').mockResolvedValue(true);
+  });
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
   it('list forwards script.list with workspaceId and returns scripts verbatim', async () => {
-    mockedRequest.mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
+    mockedRequest
+      .mockResolvedValueOnce({
+        server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } },
+      })
+      .mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
     const client = new LiveScriptsClient();
 
     const scripts = await client.list('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith('script.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+    });
     expect(scripts).toEqual([DEV_SCRIPT]);
   });
 
@@ -64,12 +71,19 @@ describe('LiveScriptsClient (fake transport)', () => {
       ...DEV_SCRIPT,
       runtime: { status: 'idle', restartCount: 0, previouslyRunning: true },
     };
-    mockedRequest.mockResolvedValueOnce({ scripts: [previouslyRunning] });
+    mockedRequest
+      .mockResolvedValueOnce({
+        server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } },
+      })
+      .mockResolvedValueOnce({ scripts: [previouslyRunning] });
     const client = new LiveScriptsClient();
 
     const scripts = await client.list('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith('script.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+    });
     expect(scripts).toEqual([previouslyRunning]);
     expect(scripts[0].runtime.previouslyRunning).toBe(true);
   });
