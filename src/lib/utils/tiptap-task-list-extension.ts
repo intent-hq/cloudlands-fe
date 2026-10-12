@@ -19,16 +19,17 @@ const EMPTY_TASK_REGEX = /^\[([ xX])\]\s*$/;
  * Normalize list item tokens for rendering as block content.
  *
  * Marked 18 removed the parser-level paragraph wrapping of top-level text
- * tokens (tight list items now render without <p>) and prepends a "checkbox"
- * token to task item tokens. Tiptap expects block-level (<p>-wrapped) content
- * inside list items, so this helper drops checkbox tokens and wraps runs of
+ * tokens (tight list items now render without <p>) and inserts a "checkbox"
+ * token at the top level for tight items or inside the first paragraph for
+ * loose items. Tiptap renders its own checkbox and expects block-level
+ * (<p>-wrapped) content, so drop those generated tokens and wrap runs of
  * top-level text tokens into synthetic paragraph tokens.
  */
 function normalizeListItemTokens(tokens: any[]): any[] {
   const normalized: any[] = [];
   let currentParagraph: any = null;
 
-  for (const token of tokens) {
+  for (const [index, token] of tokens.entries()) {
     if (token.type === 'checkbox') {
       continue;
     }
@@ -49,7 +50,11 @@ function normalizeListItemTokens(tokens: any[]): any[] {
       }
     } else {
       currentParagraph = null;
-      normalized.push(token);
+      if (index === 0 && token.type === 'paragraph' && token.tokens?.[0]?.type === 'checkbox') {
+        normalized.push({ ...token, tokens: token.tokens.slice(1) });
+      } else {
+        normalized.push(token);
+      }
     }
   }
 
