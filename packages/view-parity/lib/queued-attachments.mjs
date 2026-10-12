@@ -253,7 +253,7 @@ export async function expectAttachmentsContained(frame, info, name) {
 }
 
 export function attachmentExercise(host) {
-  const section = host.getByTestId('queued-attachments');
+  const section = host;
   const frame = section.getByTestId('queued-attachments-frame');
   return {
     section,
