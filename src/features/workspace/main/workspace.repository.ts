@@ -5,6 +5,7 @@
  * (PROTOCOL.md §5.1) — no local filesystem probing of workspace roots.
  */
 
+import type { WorkspaceOpenReads } from './workspace-open-reads';
 import { type Workspace, type WorkspaceId, WorkspaceStatus } from '../../../shared/types';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { WorkspaceConfig } from '../../../shared/main/config';
@@ -52,7 +53,11 @@ export interface WorkspaceRepository {
   cleanup(id: WorkspaceId): Promise<void>;
   saveContext(workspaceId: WorkspaceId, context: any): Promise<void>;
   readContext(workspaceId: WorkspaceId): Promise<any | null>;
-  readGitConfig(repoPath: string, workspaceId?: WorkspaceId): Promise<string>;
+  readGitConfig(
+    repoPath: string,
+    workspaceId?: WorkspaceId,
+    request?: WorkspaceOpenReads['request'],
+  ): Promise<string>;
   cleanCache(id: WorkspaceId): Promise<void>;
 }
 
@@ -214,15 +219,21 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
     }
   }
 
-  async readGitConfig(repoPath: string, workspaceId?: WorkspaceId): Promise<string> {
+  async readGitConfig(
+    repoPath: string,
+    workspaceId?: WorkspaceId,
+    request?: WorkspaceOpenReads['request'],
+  ): Promise<string> {
     // Use git.getConfig RPC (PROTOCOL.md §5.6, intentd#159); workspaceId is required
     if (!workspaceId) {
       // i18n-ignore (developer-facing programming error)
       throw new Error('DaemonWorkspaceRepository.readGitConfig requires a workspaceId');
     }
 
-    const { getBackendClient } = await import('../../backend/main/backend.ipc');
-    const response = (await getBackendClient().request('git.getConfig', {
+    const backend = request
+      ? { request }
+      : (await import('../../backend/main/backend.ipc')).getBackendClient();
+    const response = (await backend.request('git.getConfig', {
       workspaceId,
     })) as { config?: string } | undefined;
 

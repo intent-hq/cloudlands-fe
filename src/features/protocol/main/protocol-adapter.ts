@@ -1,3 +1,4 @@
+import type { WorkspaceOpenReads } from '../../workspace/main/workspace-open-reads';
 import { v4 as uuidv4 } from 'uuid';
 import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceId as createWorkspaceId } from '$shared/types/branded-ids';
@@ -108,7 +109,7 @@ export class ProtocolAdapter {
     return result as Result<any[], string>;
   }
 
-  async getWorkspace(id: string | WorkspaceId): Promise<any> {
+  async getWorkspace(id: string | WorkspaceId, reads?: WorkspaceOpenReads): Promise<any> {
     // Removed debug log - too frequent
 
     // Validate id parameter
@@ -117,7 +118,9 @@ export class ProtocolAdapter {
       return null;
     }
 
-    const result = await this.workspaceService.getWorkspace(id as WorkspaceId);
+    const result = await (reads
+      ? this.workspaceService.getWorkspace(id as WorkspaceId, reads)
+      : this.workspaceService.getWorkspace(id as WorkspaceId));
 
     // For MCP compatibility, return the data directly or null
     // IPC calls will still work as they check the result structure

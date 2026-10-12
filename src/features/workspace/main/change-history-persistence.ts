@@ -9,6 +9,7 @@
  * electron-store is retired.
  */
 
+import type { WorkspaceOpenReads } from './workspace-open-reads';
 import type { DiffChunk } from '$shared/types/change-detector.types';
 import { Logger } from '../../../shared/logger';
 
@@ -22,9 +23,13 @@ let cache: ChangeHistoryMap = {};
 let initPromise: Promise<void> | null = null;
 let initialized = false;
 
-async function fetchChangeHistory(): Promise<ChangeHistoryMap> {
-  const { getBackendClient } = await import('../../backend/main/backend.ipc');
-  const result = (await getBackendClient().request('settings.get', {
+async function fetchChangeHistory(
+  request?: WorkspaceOpenReads['request'],
+): Promise<ChangeHistoryMap> {
+  const backend = request
+    ? { request }
+    : (await import('../../backend/main/backend.ipc')).getBackendClient();
+  const result = (await backend.request('settings.get', {
     path: SETTING_PATH,
   })) as { value?: unknown } | null;
   const raw = result?.value;
@@ -94,9 +99,19 @@ async function ensureInitialized(): Promise<void> {
  * Get diff chunks for a single workspace from the in-memory cache.
  * Waits for initialization if it's in progress.
  */
-export async function getChangeHistoryForWorkspace(workspaceId: string): Promise<DiffChunk[]> {
-  await ensureInitialized();
-  const entry = cache[workspaceId];
+export async function getChangeHistoryForWorkspace(
+  workspaceId: string,
+  request?: WorkspaceOpenReads['request'],
+): Promise<DiffChunk[]> {
+  let history: ChangeHistoryMap;
+  if (request) {
+    // A captured read never joins or updates the global local cache/initPromise.
+    history = await fetchChangeHistory(request);
+  } else {
+    await ensureInitialized();
+    history = cache;
+  }
+  const entry = history[workspaceId];
   return Array.isArray(entry) ? entry : [];
 }
 

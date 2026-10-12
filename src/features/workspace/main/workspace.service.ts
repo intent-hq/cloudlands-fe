@@ -5,6 +5,7 @@
  * Uses repository pattern for data access and event bus for notifications.
  */
 
+import type { WorkspaceOpenReads } from './workspace-open-reads';
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 
@@ -85,12 +86,16 @@ export class WorkspaceService {
    * daemon round-trip. Returns `null` when the daemon has no such workspace (parity
    * with the retired disk repository `findById`).
    */
-  private async fetchWorkspaceFromDaemon(id: WorkspaceId): Promise<Workspace | null> {
+  private async fetchWorkspaceFromDaemon(
+    id: WorkspaceId,
+    reads?: WorkspaceOpenReads,
+  ): Promise<Workspace | null> {
     if (id === CHIEF_WORKSPACE_ID) {
       return getChiefWorkspace();
     }
     try {
-      const response = (await getBackendClient().request('workspace.get', {
+      const backend = reads ?? getBackendClient();
+      const response = (await backend.request('workspace.get', {
         workspaceId: id,
       })) as { workspace?: unknown } | unknown;
       const raw =
@@ -227,9 +232,14 @@ export class WorkspaceService {
   /**
    * Get diffs for a workspace from the changeHistory
    */
-  private async getWorkspaceDiffs(workspaceId: string): Promise<DiffChunk[]> {
+  private async getWorkspaceDiffs(
+    workspaceId: string,
+    reads?: WorkspaceOpenReads,
+  ): Promise<DiffChunk[]> {
     try {
-      return (await getChangeHistoryForWorkspace(workspaceId)) as unknown as DiffChunk[];
+      return (await (reads
+        ? getChangeHistoryForWorkspace(workspaceId, reads.request)
+        : getChangeHistoryForWorkspace(workspaceId))) as unknown as DiffChunk[];
     } catch (error) {
       logger.error('Error loading diffs', error as Error, { workspaceId });
       return [];
@@ -282,11 +292,14 @@ export class WorkspaceService {
       isRemote: boolean;
       workspaceId?: string;
     },
+    reads?: WorkspaceOpenReads,
   ): Promise<{ owner?: string; name?: string; url?: string }> {
     try {
       // Use git.getConfig RPC when workspaceId is available (STAB-10b, intentd#159)
       const workspaceId = remoteContext?.workspaceId as WorkspaceId | undefined;
-      const configContent = await this.repository.readGitConfig(repoPath, workspaceId);
+      const configContent = await (reads
+        ? this.repository.readGitConfig(repoPath, workspaceId, reads.request)
+        : this.repository.readGitConfig(repoPath, workspaceId));
 
       // Empty/missing config is the normal "no remote configured" case — not an error
       if (configContent === '' || configContent == null) {
@@ -657,7 +670,10 @@ export class WorkspaceService {
   /**
    * Get a single workspace
    */
-  async getWorkspace(id: WorkspaceId): Promise<Result<Workspace, string>> {
+  async getWorkspace(
+    id: WorkspaceId,
+    reads?: WorkspaceOpenReads,
+  ): Promise<Result<Workspace, string>> {
     try {
       // Validate id parameter
       if (!id) {
@@ -684,7 +700,7 @@ export class WorkspaceService {
 
       // Daemon `workspace.get` (PROTOCOL.md §5.1) is the source of truth; the
       // retired disk repository `findById()` is no longer consulted here.
-      let workspace = await this.fetchWorkspaceFromDaemon(id);
+      let workspace = await this.fetchWorkspaceFromDaemon(id, reads);
 
       if (!workspace) {
         return {
@@ -701,7 +717,8 @@ export class WorkspaceService {
         workspace.environmentConfig?.type !== 'remote'
       ) {
         try {
-          await fs.access(workspace.worktreePath);
+          if (reads) await reads.accessWorktree(workspace.worktreePath);
+          else await fs.access(workspace.worktreePath);
           logger.debug('Worktree path exists', { worktreePath: workspace.worktreePath });
         } catch {
           logger.warn('Worktree path does not exist, clearing it', {
@@ -725,10 +742,14 @@ export class WorkspaceService {
 
       // Enrich with git info if missing and repositoryPath exists
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
-        const gitInfo = await this.getGitRepoInfo(workspace.repositoryPath, {
-          isRemote: !!workspace.isRemote,
-          workspaceId: id as string,
-        });
+        const gitInfo = await this.getGitRepoInfo(
+          workspace.repositoryPath,
+          {
+            isRemote: !!workspace.isRemote,
+            workspaceId: id as string,
+          },
+          reads,
+        );
         if (gitInfo.owner || gitInfo.name) {
           const newOwner = workspace.repositoryOwner || gitInfo.owner;
           const newName = workspace.repositoryName || gitInfo.name;
@@ -745,7 +766,7 @@ export class WorkspaceService {
       }
 
       // Load diffs from changeHistory
-      const diffs = await this.getWorkspaceDiffs(workspace.id);
+      const diffs = await this.getWorkspaceDiffs(workspace.id, reads);
 
       // Only update if diffs have actually changed
       const existingDiffsLength = workspace.diffs?.length || 0;

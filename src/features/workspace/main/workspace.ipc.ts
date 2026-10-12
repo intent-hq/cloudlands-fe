@@ -5,6 +5,7 @@
  * Handles communication between renderer and main process.
  */
 
+import { createWorkspaceOpenHandler } from './workspace-open-handler';
 import { createRequire } from 'module';
 import { ipcMain, BrowserWindow } from 'electron';
 import { getFocusedWindowWorkspaceId } from '../../system/main/system.ipc';
@@ -361,52 +362,11 @@ export function setupWorkspaceIPC(): void {
     WORKSPACE_CHANNELS.OPEN,
     createSafeValidatedHandler(
       WorkspaceOpenSchema,
-      async (_, validated) => {
-        const id = validated.id;
-        const startTime = Date.now();
-        logger.info('[WorkspaceIPC] Opening workspace', { workspaceId: id });
-
-        // Get workspace - protocol adapter now returns data directly for MCP compatibility
-        const getWorkspaceStart = Date.now();
-        const workspace = await protocolAdapter.getWorkspace(id);
-        logger.info('[WorkspaceIPC] Got workspace', {
-          workspaceId: id,
-          hasWorkspace: !!workspace,
-          worktreePath: workspace?.worktreePath,
-          repositoryPath: workspace?.repositoryPath,
-          durationMs: Date.now() - getWorkspaceStart,
-        });
-
-        // Check if workspace exists (not null)
-        if (workspace) {
-          // Attribution is owned by the daemon (§17.4 / §5.19); no FE-side
-          // agent-writes cache to warm here.
-
-          // Metadata watcher retired alongside the workspace disk-read path;
-          // workspace metadata is served by the daemon (`workspace.get`).
-
-          // System prompts are assembled by the daemon harness; the FE no
-          // longer pre-warms a prompt cache on workspace open.
-
-          // Spec-note seeding is owned by the daemon (`workspace.create` runs
-          // `ensure_spec_note`); the FE no longer performs FS-level orphan
-          // recovery on open.
-
-          logger.info('[WorkspaceIPC] Workspace open returning immediately', {
-            workspaceId: id,
-            totalDurationMs: Date.now() - startTime,
-          });
-
-          // Return in Result format for the frontend
-          return resultToCommandResponse({ ok: true, data: workspace });
-        } else {
-          // Workspace not found or error
-          return resultToCommandResponse({
-            ok: false,
-            error: m.workspaceIpc_workspaceNotFound_error(),
-          });
-        }
-      },
+      createWorkspaceOpenHandler({
+        getWorkspace: (id) => protocolAdapter.getWorkspace(id),
+        logger,
+        resultToCommandResponse,
+      }),
       WORKSPACE_CHANNELS.OPEN,
     ),
   );
