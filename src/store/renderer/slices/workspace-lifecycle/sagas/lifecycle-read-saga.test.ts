@@ -1728,6 +1728,67 @@ describe('lifecycleReadSaga', () => {
   });
 
   describe('pushed file and history state', () => {
+    it('explicit refresh adopts a newer immutable history without a delivered status push', async () => {
+      const run = start(state(WS));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base-A',
+        historyIdentity: 'A',
+      });
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      mocks.git.commitsWithBoundary.mockClear();
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'B' }],
+        boundarySha: 'base-B',
+        historyIdentity: 'B',
+      });
+      run.channel.put(refreshRequested(WS));
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData').at(-1)).toMatchObject({
+        payload: { wsId: WS, commits: [{ hash: 'B' }], boundarySha: 'base-B' },
+      });
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      run.channel.put(push('B'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+    });
+
+    it('explicit refresh still rejects a response superseded by a newer push', async () => {
+      const run = start(state(WS));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base-A',
+        historyIdentity: 'A',
+      });
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'C' }],
+        boundarySha: 'base-C',
+        historyIdentity: 'C',
+      });
+      run.channel.put(push('C'));
+      resolve({ commits: [{ hash: 'B' }], boundarySha: 'base-B', historyIdentity: 'B' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(
+        run.actions.filter((a) => a.type === 'changes/setCommitsData').map((a) => a.payload),
+      ).toEqual([
+        { wsId: WS, commits: [{ hash: 'A' }], boundarySha: 'base-A' },
+        { wsId: WS, commits: [{ hash: 'C' }], boundarySha: 'base-C' },
+      ]);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(3);
+    });
+
     it('does not spin or accept missing response identity as a known pushed history', async () => {
       const run = start(state(WS));
       run.channel.put(push('A'));

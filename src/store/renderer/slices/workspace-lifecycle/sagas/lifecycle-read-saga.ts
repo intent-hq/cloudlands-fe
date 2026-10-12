@@ -507,6 +507,11 @@ function* refreshChanges(
   const entry = changesEntry(reads, workspaceId, context);
   if (explicit) {
     entry.historyRevision++;
+    // A manual/initial read establishes fresh correspondence, including when
+    // the status push announcing a newer history was missed. Later pushes
+    // still advance the revision and reject this response if superseded.
+    entry.historyIdentity = undefined;
+    entry.loadedHistoryIdentity = undefined;
     entry.historyRecoveryAttempted = false;
     entry.filesDirty = true;
     entry.historyDirty = true;
