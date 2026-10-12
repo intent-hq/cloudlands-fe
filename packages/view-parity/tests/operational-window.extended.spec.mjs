@@ -535,11 +535,151 @@ test('operational-window OW10 independent provider survives neighbor teardown an
   page,
 }, info) => {
   const { host, primary, independent } = await openOperational(page);
+  const framePanel = async (item, name) => {
+    const observation = await item.scroll.evaluateHandle((root) => {
+      const exercise = root.closest('[data-functional-example="operational-window"]');
+      const documentRoot = document.scrollingElement;
+      if (!exercise || !documentRoot)
+        throw new Error('Actual panel and document roots are required');
+      const ownerRoots = Array.from(
+        exercise.querySelectorAll('[data-testid="operational-panel-scroll"]'),
+      ).filter((node) => node.isConnected);
+      const focused = document.activeElement;
+      const read = () => {
+        const currentRoots = Array.from(
+          exercise.querySelectorAll('[data-testid="operational-panel-scroll"]'),
+        ).filter((node) => node.isConnected);
+        const { left, top, right, bottom, width, height } = root.getBoundingClientRect();
+        const maximum = documentRoot.scrollHeight - documentRoot.clientHeight;
+        const requestedCenterDelta = (top + bottom - innerHeight) / 2;
+        const delta = Math.min(Math.max(requestedCenterDelta, -scrollY), maximum - scrollY);
+        const point = { x: left / 2, y: innerHeight / 2 };
+        const hit = document.elementFromPoint(point.x, point.y);
+        const hitPath = [];
+        let documentWheel = Boolean(
+          hit &&
+          point.x > 0 &&
+          point.x < innerWidth &&
+          !ownerRoots.some((node) => node.contains(hit)),
+        );
+        for (let node = hit; node && node !== document.documentElement; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          hitPath.push({
+            tag: node.localName,
+            testId: node.getAttribute('data-testid'),
+            overflowY: style.overflowY,
+            clientHeight: node.clientHeight,
+            scrollHeight: node.scrollHeight,
+          });
+          if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight)
+            documentWheel = false;
+        }
+        return {
+          bounds: { left, top, right, bottom, width, height },
+          viewport: { width: innerWidth, height: innerHeight },
+          document: { x: scrollX, y: scrollY, maximum },
+          ownerRoots: ownerRoots.map((node) => ({
+            connected: node.isConnected,
+            top: node.scrollTop,
+            left: node.scrollLeft,
+          })),
+          sameOwnerNodes:
+            currentRoots.length === ownerRoots.length &&
+            ownerRoots.every((node, index) => currentRoots[index] === node),
+          sameTarget: root.isConnected && currentRoots.includes(root),
+          sameFocus: document.activeElement === focused,
+          point,
+          hitPath,
+          documentWheel,
+          requestedCenterDelta,
+          delta,
+          contained:
+            width > 0 &&
+            height > 0 &&
+            left >= 0 &&
+            top >= 0 &&
+            right <= innerWidth &&
+            bottom <= innerHeight,
+        };
+      };
+      return { read };
+    });
+    let before;
+    try {
+      const read = () => observation.evaluate((observer) => observer.read());
+      before = await read();
+      await info.attach(name + '-plan.json', {
+        body: JSON.stringify(before, null, 2),
+        contentType: 'application/json',
+      });
+      expect(before.sameTarget).toBe(true);
+      expect(before.sameOwnerNodes).toBe(true);
+      expect(before.ownerRoots.length).toBeGreaterThan(0);
+      expect(before.ownerRoots.every((root) => root.connected)).toBe(true);
+      expect(before.bounds.width).toBeGreaterThan(0);
+      expect(before.bounds.height).toBeGreaterThan(0);
+      expect(before.bounds.height).toBeLessThanOrEqual(before.viewport.height);
+      expect(before.bounds.left).toBeGreaterThanOrEqual(0);
+      expect(before.bounds.right).toBeLessThanOrEqual(before.viewport.width);
+      if (!before.contained) {
+        expect(before.documentWheel).toBe(true);
+        expect(Math.abs(before.delta)).toBeGreaterThan(0);
+        expect(before.bounds.top - before.delta).toBeGreaterThanOrEqual(0);
+        expect(before.bounds.bottom - before.delta).toBeLessThanOrEqual(before.viewport.height);
+        expect(before.document.y + before.delta).toBeGreaterThanOrEqual(0);
+        expect(before.document.y + before.delta).toBeLessThanOrEqual(before.document.maximum);
+        await observeNativeScroll(
+          page.locator('html'),
+          item.scroll,
+          info,
+          name,
+          async (readNative) => {
+            await page.mouse.move(before.point.x, before.point.y);
+            await page.mouse.wheel(0, before.delta);
+            await expect.poll(async () => (await read()).contained).toBe(true);
+            const receipt = await readNative();
+            const wheels = receipt.events.filter((event) => event.type === 'wheel');
+            expect(wheels).toHaveLength(1);
+            expect(wheels[0]).toMatchObject({
+              trusted: true,
+              targetInside: true,
+              sameCurrentTarget: true,
+              delta: { x: 0, y: before.delta, mode: 0 },
+            });
+            expect(receipt.current.document.y).not.toBe(before.document.y);
+            expect(receipt.current.active).toEqual(receipt.armed.state.active);
+          },
+        );
+      }
+      const after = await read();
+      expect(after.contained).toBe(true);
+      expect(after.sameTarget).toBe(true);
+      expect(after.sameOwnerNodes).toBe(true);
+      expect(after.ownerRoots).toEqual(before.ownerRoots);
+      expect(after.sameFocus).toBe(true);
+      expect(after.document.x).toBe(before.document.x);
+    } finally {
+      try {
+        await info.attach(name + '-geometry.json', {
+          body: JSON.stringify(
+            { before, after: await observation.evaluate((observer) => observer.read()) },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        });
+      } finally {
+        await observation.dispose();
+      }
+    }
+  };
   await toggle(host, 'Independent panel mounted', true);
+  await framePanel(primary, 'OW10-primary-initial-framing');
   await focusScroll(primary.scroll);
   const first = await visibleRow(primary);
   await activate(primary, first);
   const oldPrimary = await primary.scroll.elementHandle();
+  await framePanel(independent, 'OW10-independent-initial-framing');
   await focusScroll(independent.scroll);
   const independentRow = await visibleRow(independent);
   expect(JSON.parse(independentRow.key)[1]).toMatch(/^independent:scope-a:/);
@@ -551,6 +691,7 @@ test('operational-window OW10 independent provider survives neighbor teardown an
     await disconnected(oldPrimary);
     await expect(primary.windows).toHaveCount(0);
     await sameNode(independent.scroll, independentRoot);
+    await framePanel(independent, 'OW10-independent-surviving-framing');
     await focusScroll(independent.scroll);
     const previousKeys = await independent.rows.evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute('data-caller-row-key')),
@@ -564,6 +705,7 @@ test('operational-window OW10 independent provider survives neighbor teardown an
     await activate(independent, surviving);
     await capture(page, independent, 'OW10-neighbor-absent', info);
     await button(host, 'Remount provider').click();
+    await framePanel(primary, 'OW10-primary-remounted-framing');
     await focusScroll(primary.scroll);
     const fresh = await visibleRow(primary);
     await activate(primary, fresh);
