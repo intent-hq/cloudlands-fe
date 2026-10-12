@@ -37,6 +37,9 @@
   --color-permission-execute: var(--color-emerald-500);
   --color-permission-read: var(--color-blue-500);
   --color-permission-other: var(--color-violet-500);
+  /* Detected script service badges retain their source colors across renderers. */
+  --color-script-service: var(--color-blue-500);
+  --color-script-service-foreground: var(--color-blue-600);
   /* Media controls retain contrast over arbitrary image and video content. */
   --color-media-scrim: var(--color-black);
   --color-media-foreground: var(--color-white);
@@ -638,6 +641,7 @@
 
 .dark {
   color-scheme: dark;
+  --color-script-service-foreground: var(--color-blue-400);
   --elevation-raised: var(--theme-dark-elevation-raised);
   --elevation-overlay: var(--theme-dark-elevation-overlay);
   --theme-background: var(--theme-dark-background);

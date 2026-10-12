@@ -35,7 +35,7 @@
             <!-- Mode badge -->
             {#if script.mode === 'service'}
               <span
-                class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-script-service/15 text-script-service-foreground"
               >
                 {m.chat_detectedScripts_service_badge()}
               </span>
