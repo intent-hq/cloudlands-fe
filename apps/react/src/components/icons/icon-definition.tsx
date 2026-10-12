@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import {
   AppleLogoIcon,
   ArchiveIcon,
@@ -366,6 +367,8 @@ export interface IconDefinitionIconProps {
   icon: IconDefinition;
   /** Passed directly to the SVG without adding or merging classes. */
   className?: string;
+  /** Forwarded to the SVG only when supplied, preserving inherited icon context otherwise. */
+  style?: CSSProperties;
   /** SVG size in pixels for numbers, or a CSS length. Defaults to one text em. */
   size?: number | string;
   /** Overrides the canonical regular weight (bold for Apple, GitHub and GitLab). */
@@ -378,6 +381,7 @@ export interface IconDefinitionIconProps {
 export function IconDefinitionIcon({
   icon,
   className,
+  style,
   size = '1em',
   weight,
   title,
@@ -388,6 +392,7 @@ export function IconDefinitionIcon({
   return (
     <Icon
       className={className}
+      {...(style === undefined ? {} : { style })}
       size={size}
       weight={iconWeight}
       // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Preserve the source inline SVG image role and currentColor paths.

@@ -1,4 +1,0 @@
-/* FaWrapper receives this font size on its one-em SVG in the source. */
-.react-mcp-icon-glyph {
-  font-size: var(--mcp-icon-glyph-size);
-}

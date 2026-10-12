@@ -1,5 +1,5 @@
 // Source: src/lib/components/settings/mcp/McpIcon.svelte.
-import { useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 import { IconDefinitionIcon } from '@/components/icons/icon-definition';
 import {
   simpleIconsMap,
@@ -8,7 +8,6 @@ import {
   invertInDarkMode,
   faIconMap,
 } from '$lib/components/settings/mcp/mcp-icon-data';
-import './mcp-icon.css';
 
 export interface McpIconProps {
   iconName: string;
@@ -33,13 +32,7 @@ export function McpIcon({ iconName, label, size = 20, className = '' }: McpIconP
   return (
     <div
       className={`flex items-center justify-center shrink-0 ${className}`}
-      style={
-        {
-          width: size,
-          height: size,
-          '--mcp-icon-glyph-size': `${size * 0.7}px`,
-        } as CSSProperties
-      }
+      style={{ width: size, height: size }}
     >
       {inlineSvg ? (
         <div
@@ -66,7 +59,7 @@ export function McpIcon({ iconName, label, size = 20, className = '' }: McpIconP
           )}
         </>
       ) : faIconMap[normalizedName] ? (
-        <IconDefinitionIcon icon={faIcon} className="text-ghost react-mcp-icon-glyph" />
+        <IconDefinitionIcon icon={faIcon} className="text-ghost" style={{ fontSize: size * 0.7 }} />
       ) : (
         <span className="type-caption text-subtle font-medium" style={{ fontSize: size * 0.45 }}>
           {label.charAt(0)}
