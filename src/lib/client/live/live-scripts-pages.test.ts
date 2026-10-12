@@ -1,0 +1,49 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { backendRequest } from './backend-transport';
+import { LiveScriptsClient } from './live-scripts-client';
+vi.mock('./backend-transport', () => ({ backendRequest: vi.fn() }));
+const hello = { server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } } };
+beforeEach(() => vi.resetAllMocks());
+describe('active script discovery', () => {
+  it('reads one bounded page and leaves the next cursor to the caller', async () => {
+    vi.mocked(backendRequest)
+      .mockResolvedValueOnce(hello)
+      .mockResolvedValueOnce({ view: 'summary', scripts: [], nextCursor: 'next' });
+    const result = await new LiveScriptsClient().listPage('ws');
+    expect(result.nextCursor).toBe('next');
+    expect(backendRequest).toHaveBeenLastCalledWith('script.list', {
+      workspaceId: 'ws',
+      archive: 'active',
+      view: 'summary',
+      limit: 100,
+    });
+    expect(backendRequest).toHaveBeenCalledTimes(2);
+  });
+  it('does not fall back when an old daemon lacks active lists', async () => {
+    vi.mocked(backendRequest).mockResolvedValue({
+      server: { protocolVersion: '13.10', capabilities: { scriptLifecycle: 1 } },
+    });
+    await expect(new LiveScriptsClient().listPage('ws')).rejects.toThrow();
+    expect(backendRequest).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a missing summary discriminator without a full-list retry', async () => {
+    vi.mocked(backendRequest).mockResolvedValueOnce(hello).mockResolvedValueOnce({ scripts: [] });
+    await expect(new LiveScriptsClient().listPage('ws')).rejects.toThrow();
+    expect(backendRequest).toHaveBeenCalledTimes(2);
+  });
+  it('gets only the selected complete definition', async () => {
+    vi.mocked(backendRequest)
+      .mockResolvedValueOnce(hello)
+      .mockResolvedValueOnce({
+        id: 'selected',
+        command: 'complete command',
+        env: { KEY: 'value' },
+      });
+    const result = await new LiveScriptsClient().get('ws', 'selected');
+    expect(result.command).toBe('complete command');
+    expect(backendRequest).toHaveBeenLastCalledWith('script.get', {
+      workspaceId: 'ws',
+      scriptId: 'selected',
+    });
+  });
+});
