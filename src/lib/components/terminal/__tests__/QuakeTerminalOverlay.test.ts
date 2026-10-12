@@ -146,8 +146,10 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOrigina
     await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>();
   const readable = <T>(read: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
-      listener(read());
-      return () => {};
+      const emit = () => listener(read());
+      emit();
+      selectorSubscribers.add(emit);
+      return () => selectorSubscribers.delete(emit);
     },
   });
   return {
@@ -294,6 +296,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     const newer = { ...runningScript, command: 'newer committed command' };
     scriptEntries.value = [newer];
     await notifyTerminalState();
+    expect(screen.getByText(newer.command)).toBeTruthy();
     resolve({ ...runningScript });
     await tick();
     await new Promise((done) => setTimeout(done, 0));
