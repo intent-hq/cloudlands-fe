@@ -175,18 +175,17 @@ function PreviewContent({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const presentRef = useRef(present);
+  const transitionRef = useRef(transition);
   useLayoutEffect(() => {
-    presentRef.current = present;
-  }, [present]);
+    transitionRef.current = transition;
+  }, [transition]);
   const outro = useCallback(
     (node: HTMLElement) =>
-      presentRef.current
-        ? { duration: 0 }
-        : (transition?.(node, undefined, { direction: 'out' }) ?? { duration: 0 }),
-    [transition],
+      transitionRef.current?.(node, {}, { direction: 'out' }) ?? { duration: 0 },
+    [],
   );
-  usePresenceTransition(ref, present, onExit, outro, true, false);
+  // An out-only source directive aborts and restores immediately on re-entry.
+  usePresenceTransition(ref, present, onExit, outro, !present, false);
   return (
     <div ref={ref} className={className} data-operational-preview-content="" inert={!present}>
       {children}
@@ -280,7 +279,13 @@ function TransitionDetails({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  usePresenceTransition(ref, present, onExit, detailsTransition);
+  const transitionRef = useRef(detailsTransition);
+  useLayoutEffect(() => {
+    transitionRef.current = detailsTransition;
+  }, [detailsTransition]);
+  // Prop updates affect the next transition, without restarting one in flight.
+  const transition = useCallback((node: HTMLElement) => transitionRef.current(node), []);
+  usePresenceTransition(ref, present, onExit, transition);
   useLayoutEffect(() => bindDetails?.(ref.current!), [bindDetails]);
   return (
     <div
