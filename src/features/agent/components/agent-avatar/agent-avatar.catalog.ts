@@ -1,4 +1,4 @@
-import type { AvatarState } from './avatar-state';
+import type { AvatarState } from './avatar-state-core';
 import {
   builtinAgentAvatarDesigns,
   fallbackAgentAvatarDesigns,
