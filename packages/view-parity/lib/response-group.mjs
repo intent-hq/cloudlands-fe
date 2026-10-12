@@ -150,7 +150,10 @@ export const test = base.extend({
       expect(caseId).toMatch(/^RG(?:[1-9]|1[0-3])$/);
       expect(info.title.startsWith(`response-group ${caseId} `)).toBe(true);
       expect(process.env.PARITY_GREP).toBe(`response-group ${caseId} `);
-      expect(info.config.grep.source).toBe(`response-group ${caseId} `);
+      const session = JSON.parse(
+        readFileSync(path.join(process.env.PARITY_RUN_DIR, 'session.json'), 'utf8'),
+      );
+      expect(session.grep).toBe(`response-group ${caseId} `);
       expect(info.retry).toBe(0);
       expect(info.project.retries).toBe(0);
       expect(info.config.workers).toBe(1);
