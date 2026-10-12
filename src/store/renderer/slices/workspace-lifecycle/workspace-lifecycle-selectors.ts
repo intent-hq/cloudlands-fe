@@ -1,6 +1,7 @@
 import {
   createIsWorkspaceSessionLiveProjection,
   getMountedWorkspaceIds,
+  getWorkspaceLoadState,
   getWorkspaceSessionPhase,
 } from './workspace-lifecycle-projections';
 import { store } from '../../store';
@@ -8,13 +9,8 @@ import type { Workspace } from '$shared/types';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { WorkspaceLoadError, WorkspaceLoadState } from './workspace-lifecycle-types';
 
-const INITIAL_WORKSPACE_LOAD_STATE: WorkspaceLoadState = {
-  status: 'idle',
-  error: null,
-};
-
 export const selectWorkspaceLoadState = store.createSelector<[wsId: string], WorkspaceLoadState>(
-  (state, wsId) => state.workspaceLifecycle.loadByWorkspaceId[wsId] ?? INITIAL_WORKSPACE_LOAD_STATE,
+  getWorkspaceLoadState,
 );
 
 export const selectWorkspaceLoadError = store.createSelector<

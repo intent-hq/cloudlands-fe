@@ -1,5 +1,9 @@
 import type { StoreSelectorSelect } from '@themislib/themis/types';
-import type { WorkspaceLifecycleState, WorkspaceSessionPhase } from './workspace-lifecycle-types';
+import type {
+  WorkspaceLifecycleState,
+  WorkspaceLoadState,
+  WorkspaceSessionPhase,
+} from './workspace-lifecycle-types';
 /** Existing mounted lifetime: hydration completed or the workspace is live. */
 export const getMountedWorkspaceIds = (state: {
   workspaceLifecycle: WorkspaceLifecycleState;
@@ -22,3 +26,14 @@ export function createIsWorkspaceSessionLiveProjection<State>(selectWorkspaceSes
 }) {
   return (state: State, wsId: string) => selectWorkspaceSessionPhase.select(state, wsId) === 'live';
 }
+
+const INITIAL_WORKSPACE_LOAD_STATE: WorkspaceLoadState = {
+  status: 'idle',
+  error: null,
+};
+
+export const getWorkspaceLoadState = (
+  state: { workspaceLifecycle: WorkspaceLifecycleState },
+  wsId: string,
+): WorkspaceLoadState =>
+  state.workspaceLifecycle.loadByWorkspaceId[wsId] ?? INITIAL_WORKSPACE_LOAD_STATE;
