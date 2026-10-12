@@ -24,6 +24,7 @@ import type {
   WorkspaceScript,
   ScriptRuntimeState,
   ScriptWithState,
+  ScriptListEntry,
   ScriptsState,
   ScriptsWorkspaceState,
   ScriptOutputBuffer,
@@ -90,6 +91,9 @@ export const setScriptListState =
     'scripts/setListState',
   );
 /** Refresh scripts for a workspace (triggers saga) */
+export const loadMoreScripts = createAction<[wsId: string]>('scripts/loadMore');
+export const setScriptPageCursor =
+  createAction<[wsId: string, nextCursor?: string]>('scripts/pageCursor');
 export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
 
 export const startScriptRequested = createAction<
@@ -132,11 +136,11 @@ export const setScriptsInitialized =
 /** Bulk set script entries (from list response) */
 export const setScriptsData = createAction(
   'scripts/setScriptsData',
-  (wsId: string, scripts: ScriptWithState[]) => ({ wsId, scripts }),
+  (wsId: string, scripts: ScriptListEntry[]) => ({ wsId, scripts }),
 );
 
 export const setActiveScriptsData =
-  createAction<[wsId: string, scripts: ScriptWithState[]]>('scripts/setActiveData');
+  createAction<[wsId: string, scripts: ScriptListEntry[]]>('scripts/setActiveData');
 export const scriptSnapshotReceived = createAction<[wsId: string, script: ScriptWithState]>(
   'scripts/snapshotReceived',
 );
@@ -145,7 +149,7 @@ export const scriptReadStarted =
 export const scriptReadFinished =
   createAction<[wsId: string, requestId: string]>('scripts/readFinished');
 export const scriptReadReconciled =
-  createAction<[wsId: string, requestId: string, scripts: ScriptWithState[], all?: boolean]>(
+  createAction<[wsId: string, requestId: string, scripts: ScriptListEntry[]]>(
     'scripts/readReconciled',
   );
 /** Upsert a single script definition */
@@ -175,11 +179,6 @@ export const scriptOutputSnapshotReceived = createAction<
   [wsId: string, scriptId: string, viewerId: string, text: string]
 >('scripts/outputSnapshotReceived');
 
-/** Apply a fenced viewer read, including deletion, without populating unopened history. */
-export const scriptOutputDefinitionReceived = createAction<
-  [wsId: string, scriptId: string, script: ScriptWithState | undefined, viewerId: string]
->('scripts/outputDefinitionReceived');
-
 /** Append one raw output chunk for a script */
 export const appendScriptOutput =
   createAction<[wsId: string, scriptId: string, chunk: ScriptOutputChunk]>('scripts/appendOutput');
@@ -208,7 +207,7 @@ scriptsReducer.with(scriptReadStarted, (state, { payload: [wsId, requestId] }) =
     pendingReads: { ...ws.pendingReads, [requestId]: createCollection('sequence') },
   });
 });
-scriptsReducer.with(scriptReadReconciled, (state, { payload: [wsId, requestId, scripts, all] }) => {
+scriptsReducer.with(scriptReadReconciled, (state, { payload: [wsId, requestId, scripts] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (!ws.pendingReads?.[requestId]) return state;
   // UUID request keys retain insertion order. Only reads begun before this
@@ -216,12 +215,6 @@ scriptsReducer.with(scriptReadReconciled, (state, { payload: [wsId, requestId, s
   const pendingReads = { ...ws.pendingReads };
   for (const id of Object.keys(pendingReads)) {
     if (id === requestId) break;
-    if (all)
-      pendingReads[id] = addItem(pendingReads[id], {
-        kind: 'allIds',
-        ids: scripts.map((script) => script.id),
-        sequence: String(getItems(pendingReads[id]).length),
-      });
     const offset = getItems(pendingReads[id]).length;
     pendingReads[id] = addItems(
       pendingReads[id],
@@ -264,7 +257,9 @@ scriptsReducer.with(scriptSnapshotReceived, (state, { payload: [wsId, script] })
       .map((row) => row.id);
   return setWorkspaceState(state, wsId, {
     ...ws,
-    scripts: { ...ws.scripts, [script.id]: script },
+    scripts: script.archivedAt
+      ? Object.fromEntries(Object.entries(ws.scripts).filter(([id]) => id !== script.id))
+      : { ...ws.scripts, [script.id]: script },
     activeScriptIds: script.archivedAt
       ? activeIds.filter((id) => id !== script.id)
       : [...new Set([...activeIds, script.id])],
@@ -353,7 +348,7 @@ scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized
 });
 scriptsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
   const ws = getWorkspaceState(state, wsId);
-  const scriptsById: Record<string, ScriptWithState> = {};
+  const scriptsById: Record<string, ScriptListEntry> = {};
   for (const script of scripts) {
     scriptsById[script.id] = script;
   }
@@ -416,25 +411,6 @@ scriptsReducer.with(scriptOutputRequested, (state, { payload: [wsId, scriptId, v
     retainedOutputs: { ...ws.retainedOutputs, [viewerId]: { scriptId, status: 'loading' } },
   });
 });
-scriptsReducer.with(
-  scriptOutputDefinitionReceived,
-  (state, { payload: [wsId, scriptId, script, viewerId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (ws.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
-    const { [scriptId]: _previous, ...otherScripts } = ws.scripts;
-    const activeScriptIds = ws.activeScriptIds ?? Object.keys(ws.scripts);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      scripts: script ? { ...otherScripts, [scriptId]: script } : otherScripts,
-      // Reconcile an existing member, but never add membership from a viewer read.
-      // Keep its output/selection even when the retained definition has disappeared.
-      activeScriptIds:
-        !script || script.archivedAt
-          ? activeScriptIds.filter((id) => id !== scriptId)
-          : activeScriptIds,
-    });
-  },
-);
 scriptsReducer.with(scriptOutputReleased, (state, { payload: [wsId, scriptId, viewerId] }) => {
   const ws = state.byWorkspaceId[wsId];
   if (ws?.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
@@ -493,7 +469,12 @@ scriptsReducer.with(setActiveScriptsData, (state, { payload: [wsId, entries] }) 
   const incoming = Object.fromEntries(entries.map((script) => [script.id, script]));
   return setWorkspaceState(state, wsId, {
     ...ws,
-    scripts: { ...ws.scripts, ...incoming },
+    scripts: incoming,
     activeScriptIds: entries.filter((script) => !script.archivedAt).map((script) => script.id),
   });
+});
+
+scriptsReducer.with(setScriptPageCursor, (state, { payload: [wsId, nextCursor] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, nextCursor });
 });

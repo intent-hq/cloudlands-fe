@@ -40,7 +40,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 
 vi.mock('$lib/client', () => ({
-  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+  appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
 }));
 import { scriptsReducer } from '$store/renderer/slices/scripts/scripts-slice';
 import { confirm } from '$lib/components/patterns/confirm';
@@ -150,9 +150,9 @@ describe('script panel deletion', () => {
         (store as any).emitState();
       });
       let finish!: (value: { success: boolean }) => void;
-      vi.mocked(appClient.scripts.list).mockResolvedValue([
+      vi.mocked(appClient.scripts.get).mockResolvedValue(
         mockState.scripts.byWorkspaceId['workspace-1'].scripts.check,
-      ]);
+      );
       vi.mocked(appClient.scripts.create).mockReturnValueOnce(
         new Promise((resolve) => {
           finish = resolve;
@@ -191,9 +191,9 @@ describe('script panel deletion', () => {
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
     let finish!: (value: { success: boolean }) => void;
-    vi.mocked(appClient.scripts.list).mockResolvedValue([
+    vi.mocked(appClient.scripts.get).mockResolvedValue(
       mockState.scripts.byWorkspaceId['workspace-1'].scripts.check,
-    ]);
+    );
     vi.mocked(appClient.scripts.create).mockReturnValueOnce(
       new Promise((resolve) => {
         finish = resolve;
