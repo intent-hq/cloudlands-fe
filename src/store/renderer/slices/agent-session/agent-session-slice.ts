@@ -1,3 +1,5 @@
+import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
 import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
@@ -1747,6 +1749,14 @@ agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   next = removeDetailHydrated(next, agentId);
   return next;
 });
+// Detail metadata from a previous connection/principal is not authoritative
+// for notification flags or detail-only UI fields after re-admission.
+function invalidateAgentDetail(state: AgentSessionState): AgentSessionState {
+  return state.detailHydrated ? { ...state, detailHydrated: undefined } : state;
+}
+agentSessionReducer.with(principalContextChanged, invalidateAgentDetail);
+agentSessionReducer.with(principalIdentityChanged, invalidateAgentDetail);
+agentSessionReducer.with(connectionStatusChanged, invalidateAgentDetail);
 agentSessionReducer.with(markAgentDetailHydrated, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId] || state.detailHydrated?.[agentId]) return state;
   return { ...state, detailHydrated: { ...state.detailHydrated, [agentId]: true } };

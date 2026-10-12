@@ -1,3 +1,5 @@
+import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { describe, expect, it } from 'vitest';
 import {
   AgentStatus,
@@ -3436,6 +3438,22 @@ describe('agent-session-slice reducer', () => {
   // §5.5 list projection: the marker records that the detail read landed, so
   // an absent detail-only field is "none" rather than "not loaded yet".
   describe('markAgentDetailHydrated', () => {
+    it.each([
+      principalContextChanged('next'),
+      principalIdentityChanged('other'),
+      connectionStatusChanged('disconnected'),
+    ])('invalidates accepted detail at boundary $type', (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(state.detailHydrated?.a1).toBe(true);
+      state = agentSessionReducer(state, action);
+      expect(state.detailHydrated).toBeUndefined();
+      expect(state.byAgentId.a1).toBeDefined();
+    });
+
     it('is unset on initial state and set only for a stored session', () => {
       expect(initialState.detailHydrated).toBeUndefined();
 

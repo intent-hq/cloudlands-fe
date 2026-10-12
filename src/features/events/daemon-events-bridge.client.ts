@@ -4511,7 +4511,6 @@ export async function refreshDaemonEventsAfterReconnect(
   activeWorkspaceId: string | null,
 ): Promise<void> {
   agentRefreshGeneration += 1;
-  void activeStreamsTracker.fetchActiveStreams();
   const state = appStore.state as {
     scripts?: { byWorkspaceId: Record<string, unknown> };
     workspaceAgents?: {

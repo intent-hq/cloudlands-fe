@@ -5,21 +5,10 @@ const bridge = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('$lib/electron-bridge', () => ({
-  on: vi.fn((event: string, handler: (data: unknown) => void) => {
-    bridge.handlers.set(event, handler);
-    return `listener-${event}`;
-  }),
-  off: vi.fn((event: string) => bridge.handlers.delete(event)),
-}));
-
-vi.mock('../../../shared/generated/ipc-client', () => ({
-  invoke: bridge.invoke,
-}));
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: bridge.invoke }));
 
 interface ActiveStreamsResponse {
-  success: boolean;
-  data: Array<{
+  streams: Array<{
     agentId: string;
     sessionId: string;
     workspaceId: string;
@@ -57,14 +46,14 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     const firstScan = deferred<ActiveStreamsResponse>();
     bridge.invoke
       .mockImplementationOnce(() => firstScan.promise)
-      .mockResolvedValue({ success: true, data: [] });
+      .mockResolvedValue({ streams: [] });
 
     const fetches = Array.from({ length: 12 }, () => tracker.fetchActiveStreams());
 
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
-    expect(bridge.invoke).toHaveBeenCalledWith('agent:get-active-streams');
+    expect(bridge.invoke).toHaveBeenCalledWith('agent.listActive', {});
 
-    firstScan.resolve({ success: true, data: [] });
+    firstScan.resolve({ streams: [] });
     await Promise.all(fetches);
     expect(bridge.invoke.mock.calls.length).toBeLessThanOrEqual(2);
   });
@@ -86,8 +75,7 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     push('agent:deleted', 'deleted', 'ws-1');
     expect(tracker.getStreamingAgentIdsForWorkspace('ws-2')).toEqual(['live']);
     firstScan.resolve({
-      success: true,
-      data: [
+      streams: [
         { agentId: 'finished', sessionId: 'finished', workspaceId: 'ws-1', startTime: 1 },
         { agentId: 'deleted', sessionId: 'deleted', workspaceId: 'ws-1', startTime: 1 },
         { agentId: 'other', sessionId: 'other', workspaceId: 'ws-3', startTime: 1 },
@@ -102,16 +90,48 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the browser backend and fences a delayed previous admission baseline', async () => {
+    delete (window as any).electronAPI;
+    const old = deferred<ActiveStreamsResponse>();
+    bridge.invoke
+      .mockImplementationOnce(() => old.promise)
+      .mockResolvedValue({
+        streams: [
+          { agentId: 'remote', sessionId: 'remote', workspaceId: 'remote-ws', startTime: 1 },
+        ],
+      });
+    tracker.startPolling();
+    expect(bridge.invoke).toHaveBeenCalledWith('agent.listActive', {});
+    tracker.applyEvent({
+      type: 'agent:status-changed',
+      workspaceId: 'old-ws',
+      timestamp: '2026-10-12T00:00:00Z',
+      data: { agentId: 'old', isActive: true },
+    });
+    tracker.stopPolling();
+    tracker.startPolling();
+    await vi.waitFor(() => expect(tracker.isAgentStreaming('remote')).toBe(true));
+    expect(tracker.isAgentStreaming('old')).toBe(false);
+    old.resolve({
+      streams: [{ agentId: 'old', sessionId: 'old', workspaceId: 'old-ws', startTime: 1 }],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(tracker.getStreamingAgentIdsForWorkspace('old-ws')).toEqual([]);
+    expect(tracker.isAgentStreaming('remote')).toBe(true);
+    expect(bridge.invoke).toHaveBeenCalledTimes(2);
+  });
+
   it('does not multiply the initial scan across startPolling callers', async () => {
     const firstScan = deferred<ActiveStreamsResponse>();
     bridge.invoke
       .mockImplementationOnce(() => firstScan.promise)
-      .mockResolvedValue({ success: true, data: [] });
+      .mockResolvedValue({ streams: [] });
 
     for (let index = 0; index < 12; index++) tracker.startPolling();
 
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
-    firstScan.resolve({ success: true, data: [] });
+    firstScan.resolve({ streams: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
   });
@@ -120,7 +140,7 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     const firstScan = deferred<ActiveStreamsResponse>();
     bridge.invoke
       .mockImplementationOnce(() => firstScan.promise)
-      .mockResolvedValue({ success: true, data: [] });
+      .mockResolvedValue({ streams: [] });
 
     tracker.startPolling();
     // An explicit recovery request during hydration queues one trailing read.
@@ -130,8 +150,7 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     tracker.stopPolling();
 
     firstScan.resolve({
-      success: true,
-      data: [{ agentId: 'agent-1', sessionId: 'agent-1', workspaceId: 'ws-1', startTime: 1 }],
+      streams: [{ agentId: 'agent-1', sessionId: 'agent-1', workspaceId: 'ws-1', startTime: 1 }],
     });
     await inFlight;
     await new Promise((resolve) => setTimeout(resolve, 0));

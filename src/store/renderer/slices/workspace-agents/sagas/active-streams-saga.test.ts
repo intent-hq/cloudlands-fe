@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import type { WorkspaceEvent } from '$features/events/types';
@@ -14,9 +15,22 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
 import { activeStreamsSaga } from './active-streams-saga';
 
 describe('activeStreamsSaga', () => {
-  it('keeps the tracker alive for admitted pushes until the root owner stops', () => {
+  it('restarts and clears the tracker on admission changes and keeps pushes scan-free', async () => {
     const channel = stdChannel();
-    const task = runSaga({ channel }, activeStreamsSaga);
+    let state = withLegacyPrincipal({});
+    const listeners = new Set<() => void>();
+    const reduxStore = {
+      getState: () => state,
+      subscribe: (fn: () => void) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+    };
+    const task = runSaga(
+      { channel, getState: reduxStore.getState, context: { reduxStore } },
+      activeStreamsSaga,
+    );
+    await vi.waitFor(() => expect(tracker.startPolling).toHaveBeenCalledTimes(1));
     const event = {
       type: 'agent:status-changed',
       workspaceId: 'ws-1',
@@ -29,7 +43,15 @@ describe('activeStreamsSaga', () => {
     expect(tracker.applyEvent).toHaveBeenCalledTimes(2);
     expect(tracker.applyEvent).toHaveBeenNthCalledWith(1, event);
     expect(tracker.stopPolling).not.toHaveBeenCalled();
+    state = { ...state, principal: { ...state.principal, status: 'loading' } };
+    listeners.forEach((fn) => fn());
+    await vi.waitFor(() => expect(tracker.stopPolling).toHaveBeenCalledTimes(1));
+    channel.put(eventReceived('ws-1', event));
+    expect(tracker.applyEvent).toHaveBeenCalledTimes(2);
+    state = withLegacyPrincipal({ daemonHealth: { connectionGeneration: 2 } });
+    listeners.forEach((fn) => fn());
+    await vi.waitFor(() => expect(tracker.startPolling).toHaveBeenCalledTimes(2));
     task.cancel();
-    expect(tracker.stopPolling).toHaveBeenCalledTimes(1);
+    expect(tracker.stopPolling).toHaveBeenCalledTimes(2);
   });
 });

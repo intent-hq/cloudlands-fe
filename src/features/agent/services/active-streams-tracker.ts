@@ -11,7 +11,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import { invoke as invokeIpc } from '../../../shared/generated/ipc-client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 
 const logger = createLogger('ActiveStreamsTracker');
 
@@ -72,6 +72,7 @@ class ActiveStreamsTracker {
     if (!this.isListening) return;
 
     this.pendingRefresh = false;
+    this.inFlight = null;
     this.refreshGeneration++;
     this.scanUpdates = null;
     this.updateStreams([]);
@@ -127,14 +128,12 @@ class ActiveStreamsTracker {
    * Fetch active streams from the backend
    */
   fetchActiveStreams(): Promise<void> {
-    if (typeof window === 'undefined' || !window.electronAPI) return Promise.resolve();
-
     if (this.inFlight) {
       this.pendingRefresh = true;
       return this.inFlight;
     }
 
-    const refresh = this.drainRefreshes();
+    const refresh = this.drainRefreshes(this.refreshGeneration);
     this.inFlight = refresh;
     refresh.then(
       () => {
@@ -147,11 +146,11 @@ class ActiveStreamsTracker {
     return refresh;
   }
 
-  private async drainRefreshes(): Promise<void> {
+  private async drainRefreshes(generation: number): Promise<void> {
     do {
       this.pendingRefresh = false;
       await this.fetchActiveStreamsOnce();
-    } while (this.pendingRefresh);
+    } while (generation === this.refreshGeneration && this.pendingRefresh);
   }
 
   private async fetchActiveStreamsOnce(): Promise<void> {
@@ -159,16 +158,12 @@ class ActiveStreamsTracker {
     const updates = new Map<string, ActiveStream | null>();
     this.scanUpdates = updates;
     try {
-      const result = await invokeIpc<{ success: boolean; data?: unknown }>(
-        'agent:get-active-streams',
-      );
+      const result = await backendRequest<{ streams: ActiveStream[] }>('agent.listActive', {});
 
       if (generation !== this.refreshGeneration) return;
 
-      if (result.success && Array.isArray(result.data)) {
-        const streams = new Map(
-          (result.data as ActiveStream[]).map((stream) => [stream.agentId, stream]),
-        );
+      if (Array.isArray(result.streams)) {
+        const streams = new Map(result.streams.map((stream) => [stream.agentId, stream]));
         for (const [id, stream] of updates) {
           if (stream) streams.set(id, stream);
           else streams.delete(id);
