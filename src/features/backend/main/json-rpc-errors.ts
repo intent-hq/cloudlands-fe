@@ -179,3 +179,15 @@ export function relayErrorMessage(error: unknown): string {
     ? `${text.slice(0, MAX_RELAY_DIAGNOSTIC_LENGTH - 1)}…`
     : text;
 }
+
+/** Normalize a thrown error into a serializable IPC error payload. */
+export function toErrorPayload(error: unknown): {
+  code: string;
+  message: string;
+  data: unknown;
+  rpcCode?: number;
+} {
+  if (error instanceof JsonRpcError) return error.toErrorPayload();
+  const message = error instanceof Error ? error.message : String(error);
+  return { code: 'TRANSPORT_ERROR', message, data: { code: 'TRANSPORT_ERROR' } };
+}

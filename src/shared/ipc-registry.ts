@@ -17,6 +17,15 @@ export const IPC_CHANNELS = {
     CLEAR: 'dev-console:clear',
     SELECT: 'dev-console:select',
   },
+  // Development workspace-load capture. These names are the renderer bridge contract.
+  WORKSPACE_LOAD: {
+    OBSERVE_ORIGIN: 'workspace-load:observe-origin',
+    PREPARE: 'workspace-load:prepare',
+    READ: 'workspace-load:read',
+    RELEASE: 'workspace-load:release',
+    RELEASE_ORIGIN: 'workspace-load:release-origin',
+    RETIRED: 'workspace-load:retired',
+  },
   // Workspace Management
   WORKSPACE: {
     LIST: 'workspace:list',
@@ -1090,6 +1099,7 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.WORKSPACE_LOAD.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

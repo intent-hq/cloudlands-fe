@@ -106,6 +106,33 @@ Object.defineProperty(ipcMain, 'handle', {
   configurable: true,
 });
 
+// Install after IPC authorization, before allocation-capable boot helpers. Earlier
+// path/log setup and static imports keep their order; prior allocation is refused.
+let disposeDevelopmentWorkspaceLoad: (() => void) | undefined;
+if (!app.isPackaged && process.env.INTENT_DEV_REACT === '1') {
+  const origins = enrollBackendConnectionOrigins();
+  try {
+    const disposeRoutes = setupWorkspaceLoadIPC({
+      origins,
+      readBackend: getBackendClientForConnection,
+    });
+    let disposed = false;
+    disposeDevelopmentWorkspaceLoad = () => {
+      if (disposed) return;
+      disposed = true;
+      try {
+        disposeRoutes();
+      } finally {
+        origins.dispose();
+      }
+    };
+    app.once('will-quit', disposeDevelopmentWorkspaceLoad);
+  } catch (error) {
+    origins.dispose();
+    throw error;
+  }
+}
+
 // Log handler count summary after startup
 setTimeout(() => {
   // Import Logger dynamically to avoid circular dependencies
@@ -327,6 +354,8 @@ import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc
 import { setupReleaseNotesIPC } from '../features/release-notes/main/release-notes.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
+  enrollBackendConnectionOrigins,
+  getBackendClientForConnection,
   registerBackendHandlers,
   connectBackendClient,
   disconnectBackendClient,
@@ -363,7 +392,7 @@ import { setupPowerStateIPC } from '../features/system/main/power-state';
 import { cleanupTerminals, setupTerminalIPC } from '../features/terminal/main/terminal.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
-import { setupWorkspaceIPC } from '../features/workspace/main/workspace.ipc';
+import { setupWorkspaceIPC, setupWorkspaceLoadIPC } from '../features/workspace/main/workspace.ipc';
 import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import type { CdpMcpBridge } from './cdp-mcp-bridge';
@@ -472,6 +501,7 @@ async function gracefulShutdown() {
     return;
   }
   isShuttingDown = true;
+  disposeDevelopmentWorkspaceLoad?.();
 
   // Quit-time window closes (performGracefulShutdown's mainWindow.close())
   // are not deliberate per-backend closes: without this mark, closing the
@@ -1857,6 +1887,7 @@ const bootFlow = app.whenReady().then(async () => {
 // rejection observable by the process-level unhandled-rejection handler, as
 // before.
 void bootFlow.catch((error: unknown) => {
+  disposeDevelopmentWorkspaceLoad?.();
   logger.error(
     'Boot flow rejected before window creation; releasing renderer-window gate fail-open',
     error instanceof Error ? error : new Error(String(error)),

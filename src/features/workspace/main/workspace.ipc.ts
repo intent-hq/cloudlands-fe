@@ -6,8 +6,22 @@
  */
 
 import { createWorkspaceOpenHandler } from './workspace-open-handler';
+import { createWorkspaceLoadRoutes } from './workspace-load-route';
+import type { BackendConnectionOrigins } from '../../backend/main/backend.ipc';
+import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
+import { toErrorPayload } from '../../backend/main/json-rpc-errors';
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import { getStrictBackendBindingForWebContents } from '../../../main/window-backend';
+import {
+  WorkspaceLoadOriginRefSchema,
+  WorkspaceLoadPrepareSchema,
+  WorkspaceLoadReadSchema,
+  WorkspaceLoadReleaseSchema,
+} from '../../../shared/types/workspace-load-route';
 import { createRequire } from 'module';
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, webContents } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
+import { z } from 'zod';
 import { getFocusedWindowWorkspaceId } from '../../system/main/system.ipc';
 import { m } from '$shared/paraglide/messages.js';
 import type { Result, CommandResponse, WorkspaceId } from '../../../shared/types';
@@ -118,6 +132,104 @@ function resultToCommandResponse<T>(result: Result<T, string>): CommandResponse<
 // ============================================================================
 // Main Process Handlers
 // ============================================================================
+
+let workspaceLoadIPCInstalled = false;
+
+/** Install only the physical route owner. Ordinary workspace startup stays separate. */
+export function setupWorkspaceLoadIPC({
+  origins,
+  readBackend,
+}: {
+  origins: BackendConnectionOrigins;
+  readBackend(id: string): JsonRpcClient | undefined;
+}): () => void {
+  if (workspaceLoadIPCInstalled) throw new Error('Workspace load IPC already installed'); // i18n-ignore (internal diagnostic)
+  workspaceLoadIPCInstalled = true;
+  const channels = IPC_CHANNELS.WORKSPACE_LOAD;
+  const registered: string[] = [];
+  let disposed = false;
+  const routes = createWorkspaceLoadRoutes({
+    originAdmission: { kind: 'physical', origins },
+    readBackend,
+    errorPayload: toErrorPayload,
+    open: (event, id, reads) =>
+      createSafeValidatedHandler(
+        WorkspaceOpenSchema,
+        createWorkspaceOpenHandler({
+          getWorkspace: (id) => protocolAdapter.getWorkspace(id, reads),
+          logger,
+          resultToCommandResponse,
+        }),
+        WORKSPACE_CHANNELS.OPEN,
+      )(event, { id }),
+    notify(frame, notice) {
+      const sender = webContents.fromFrame(frame);
+      if (!sender) return;
+      const binding = getStrictBackendBindingForWebContents(sender);
+      if (!binding || binding.frame !== frame) return;
+      const send = frame.send;
+      // Reading the send method may reenter; recheck the exact document afterward.
+      if (getStrictBackendBindingForWebContents(sender) !== binding) return;
+      Reflect.apply(send, frame, [channels.RETIRED, notice]);
+    },
+  });
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    try {
+      routes.dispose();
+    } finally {
+      for (const channel of registered.splice(0)) ipcMain.removeHandler(channel);
+    }
+  };
+  function register<T>(
+    channel: string,
+    schema: z.ZodType<T>,
+    handle: (event: IpcMainInvokeEvent, input: T) => unknown,
+  ) {
+    ipcMain.handle(channel, async (event, input) => {
+      try {
+        const value = schema.parse(input);
+        if (disposed) throw new Error('WORKSPACE_LOAD_ROUTE_UNAVAILABLE'); // i18n-ignore (internal diagnostic)
+        return { ok: true, result: await handle(event, value) };
+      } catch (error) {
+        if (error instanceof z.ZodError)
+          return {
+            ok: false,
+            // i18n-ignore (internal bridge validation diagnostic)
+            error: { code: 'INVALID_PARAMS', message: 'Invalid workspace load parameters' },
+          };
+        if (error instanceof Error && error.message === 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE')
+          return {
+            ok: false,
+            // i18n-ignore (internal route diagnostic)
+            error: { code: 'WORKSPACE_LOAD_ROUTE_UNAVAILABLE', message: error.message },
+          };
+        return { ok: false, error: toErrorPayload(error) };
+      }
+    });
+    registered.push(channel);
+  }
+  try {
+    register(channels.OBSERVE_ORIGIN, z.undefined(), (event) => routes.observeOrigin(event));
+    register(channels.PREPARE, WorkspaceLoadPrepareSchema, (event, input) =>
+      routes.prepare(event, input),
+    );
+    register(channels.READ, WorkspaceLoadReadSchema, (event, input) => routes.read(event, input));
+    register(channels.RELEASE, WorkspaceLoadReleaseSchema, (event, input) => {
+      routes.release(event, input);
+      return null;
+    });
+    register(channels.RELEASE_ORIGIN, WorkspaceLoadOriginRefSchema, (event, input) => {
+      routes.releaseOrigin(event, input);
+      return null;
+    });
+    return dispose;
+  } catch (error) {
+    dispose();
+    throw error;
+  }
+}
 
 export function setupWorkspaceIPC(): void {
   // Initialize the persistent repo registry

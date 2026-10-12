@@ -12,7 +12,7 @@ import { promises as fs } from 'fs';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
-import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
+import { getBackendClient, onBackendReconnectedOwned } from '../../backend/main/backend.ipc';
 
 import type {
   DiffChunk,
@@ -145,7 +145,7 @@ export class WorkspaceService {
 
   private ensureBackendReconnectListener(): void {
     if (this.disposeBackendReconnect) return;
-    this.disposeBackendReconnect = onBackendReconnected(() => {
+    this.disposeBackendReconnect = onBackendReconnectedOwned(() => {
       this.workspaceListCache.clear();
     });
   }

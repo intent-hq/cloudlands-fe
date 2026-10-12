@@ -36,6 +36,7 @@ const requestMock = vi.hoisted(() =>
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock }),
   onBackendReconnected: () => () => {},
+  onBackendReconnectedOwned: () => () => {},
 }));
 
 import { WorkspaceService } from '../workspace.service';

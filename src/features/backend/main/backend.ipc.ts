@@ -58,7 +58,7 @@ import {
   requestOverTransferConnection,
   shouldUseTransferConnection,
 } from './transfer-connections';
-import { JsonRpcError } from './json-rpc-errors';
+import { JsonRpcError, toErrorPayload } from './json-rpc-errors';
 import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import { createRepositoryResourceFeed } from './repository-resource-feed';
 import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
@@ -486,6 +486,7 @@ interface PoolLifecycle {
   members: Map<JsonRpcClient, PoolMember>;
   retiringIds: Set<string>;
   listeners: Set<() => void>;
+  reconnectStops: Set<() => void>;
   failures: Array<{ kind: string; error: unknown }>;
   exclusions: Set<string>;
   generation: number;
@@ -505,6 +506,13 @@ export interface BackendConnectionOrigin {
   subscribeChanged(wake: () => void): () => void;
 }
 export interface BackendConnectionOrigins {
+  /**
+   * Terminal ownership only: seal this enrollment and retire its captured handles.
+   * Does not dispose clients or reset the enrollment. Future enrolled allocations
+   * refuse insertion under the existing closed-scope policy. Never use for tab
+   * teardown or a hot restart; the ordinary pool owner still owns client shutdown.
+   */
+  readonly dispose: () => void;
   capture(backendId: string): BackendConnectionOrigin | null;
   subscribeChanged(wake: () => void): () => void;
 }
@@ -603,8 +611,7 @@ function beginPhysicalDetach(client: JsonRpcClient): (() => void) | undefined {
   if (member) retirePhysicalMember(scope, member);
   return release;
 }
-function closePhysicalOrigins(): (() => void) | undefined {
-  const scope = backendConnectionOrigins;
+function closePhysicalOrigins(scope = backendConnectionOrigins): (() => void) | undefined {
   if (!scope) return undefined;
   const release = holdPhysicalOrigins(scope);
   scope.closed = true;
@@ -777,6 +784,17 @@ export function enrollBackendConnectionOrigins(): BackendConnectionOrigins {
   };
   backendConnectionOrigins = scope;
   return Object.freeze({
+    dispose() {
+      if (scope.closed) return;
+      // Closing latches before notification, including reentrant dispose calls.
+      let release: (() => void) | undefined;
+      try {
+        scope.changedPool = true;
+        release = closePhysicalOrigins(scope);
+      } finally {
+        release?.();
+      }
+    },
     capture(id: string) {
       const origin = scope.slots.get(id)?.origin;
       if (!origin || readPhysicalOrigin(scope, origin).state === 'retired') return null;
@@ -1181,6 +1199,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
     members: new Map(),
     retiringIds: new Set(),
     listeners: new Set(),
+    reconnectStops: new Set(),
     failures: [],
     exclusions: new Set(),
     generation: 0,
@@ -1210,6 +1229,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
           reject = no;
         });
         scope.phase = 'stopping';
+        for (const stop of [...scope.reconnectStops]) stop();
         const unsubscribers: Array<() => void> = [];
         let checking = false;
         let prepared = false;
@@ -2593,6 +2613,63 @@ export function onBackendReconnected(handler: () => void, backendId?: string): (
 }
 
 /**
+ * Opt-in service listener whose disposal and returned callback work join the pool.
+ * Unenrolled callers retain the ordinary reconnect API's behavior. The callback
+ * must return all asynchronous work it owns; detached work is not joined here.
+ */
+export function onBackendReconnectedOwned(
+  handler: () => void | Promise<void>,
+  backendId?: string,
+): () => void {
+  const scope = poolLifecycle;
+  if (!scope) return onBackendReconnected(handler, backendId);
+  const requireAdmission = () => {
+    if (scope.phase !== 'active') {
+      // i18n-ignore: private lifecycle invariant, never rendered.
+      throw new Error('Owned reconnect subscription admission is closed');
+    }
+  };
+  requireAdmission();
+  // Preserve the ordinary local-client acquisition before listener attachment.
+  getLocalBackendClient();
+  // Allocation observers may have synchronously started retirement.
+  requireAdmission();
+  let disposed = false;
+  const listener = (emittingBackendId: string): void | Promise<void> => {
+    if (
+      disposed ||
+      scope.phase !== 'active' ||
+      emittingBackendId !== (backendId ?? LOCAL_CONNECTION_ID) ||
+      scope.retiringIds.has(emittingBackendId)
+    )
+      return;
+    const client = backendClients.get(emittingBackendId);
+    if (!client || !scope.members.has(client)) return;
+    return poolWork(
+      'owned-reconnect-callback',
+      undefined,
+      () => {
+        // The owner observer can dispose this subscription or retire the pool.
+        if (disposed || scope.phase !== 'active' || scope.retiringIds.has(emittingBackendId))
+          return;
+        const result = handler();
+        return result === undefined ? undefined : Promise.resolve(result);
+      },
+      client,
+    );
+  };
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    backendReconnectForwarder.off('reconnected', listener);
+    scope.reconnectStops.delete(dispose);
+  };
+  scope.reconnectStops.add(dispose);
+  backendReconnectForwarder.on('reconnected', listener);
+  return dispose;
+}
+
+/**
  * Register a main-process listener for reconnects on ANY backend, receiving
  * the emitting backend id. For consumers whose state is partitioned per
  * backend (e.g. the user-activity cache) rather than pinned to one id.
@@ -2780,18 +2857,6 @@ function handleHelloProtocolVersion(
  */
 function resolveLocalProtocolBaseline(): string | null {
   return localProtocolVersion ?? getLocalDaemonProtocolVersion();
-}
-
-/** Normalize a thrown error into a serializable IPC error payload. */
-function toErrorPayload(error: unknown): {
-  code: string;
-  message: string;
-  data: unknown;
-  rpcCode?: number;
-} {
-  if (error instanceof JsonRpcError) return error.toErrorPayload();
-  const message = error instanceof Error ? error.message : String(error);
-  return { code: 'TRANSPORT_ERROR', message, data: { code: 'TRANSPORT_ERROR' } };
 }
 
 // ============================================================================
@@ -5753,6 +5818,7 @@ export function disposeAllBackendClients(): void {
   const originals = backendConnectionOrigins ? [...backendClients] : backendClients;
   const releaseOrigins = closePhysicalOrigins();
   try {
+    for (const stop of [...(poolLifecycle?.reconnectStops ?? [])]) stop();
     repositoryRoutes?.dispose();
     resourceRoutes?.dispose();
     checkoutRoutes?.dispose();

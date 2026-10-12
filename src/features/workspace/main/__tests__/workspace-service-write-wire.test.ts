@@ -117,6 +117,10 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
     reconnectHandlers.add(handler);
     return () => reconnectHandlers.delete(handler);
   },
+  onBackendReconnectedOwned: (handler: () => void) => {
+    reconnectHandlers.add(handler);
+    return () => reconnectHandlers.delete(handler);
+  },
 }));
 
 import { WorkspaceService } from '../workspace.service';
