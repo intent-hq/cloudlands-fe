@@ -11557,12 +11557,12 @@ describe('daemonEventsBridge (persisted message pushes)', () => {
     expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('hydrates an unknown lifecycle target once through the shared read owner', async () => {
+  it('hydrates an unknown lifecycle target through bounded recovery', async () => {
     await primeBridge();
     capturedHandlers[0]!(
       notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
     );
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 });
 

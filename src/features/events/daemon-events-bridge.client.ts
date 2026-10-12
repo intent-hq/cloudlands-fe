@@ -3960,7 +3960,10 @@ export function routeDaemonEventsNotification(
         !appStore.state.agentSessions?.byAgentId[agentId] &&
         isAgentReadWorkspaceCurrent(agentId, event.workspaceId)
       ) {
-        void ensureAgentSession(agentId, event.workspaceId);
+        // An absent row cannot consume deltas while its initial read is pending.
+        // Coalesce that burst into one trailing read so a stale busy snapshot
+        // cannot swallow an idle event. Known rows stay push-only below.
+        void refreshAgentSessionAfterEvent(agentId, event.workspaceId);
       } else if (
         type === 'agent:status-changed' &&
         typeof data?.status === 'string' &&
