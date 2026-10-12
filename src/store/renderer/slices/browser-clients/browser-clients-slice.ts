@@ -100,6 +100,11 @@ export const liveClientsReceived = createAction<[clients: LiveClient[], workspac
   'browserClients/liveClientsReceived',
 );
 
+/** Authoritative saved selection; the event does not report routing availability. */
+export const workspaceBrowserClientPinReceived = createAction<
+  [wsId: string, clientId: string | null]
+>('browserClients/workspaceBrowserClientPinReceived');
+
 export const workspaceBrowserClientReceived = createAction<
   [wsId: string, browserClient: WorkspaceBrowserClient]
 >('browserClients/workspaceBrowserClientReceived');
@@ -172,6 +177,7 @@ browserClientsReducer.with(browserConnectionInvalidated, (state) => ({
       {
         ...entry,
         browserClient: null,
+        pinnedClientId: undefined,
         liveClients: createLiveClientCollection(),
         liveClientsLoaded: false,
       },
@@ -196,7 +202,21 @@ browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients, wor
 browserClientsReducer.with(
   workspaceBrowserClientReceived,
   (state, { payload: [wsId, browserClient] }) =>
-    setWorkspaceState(state, wsId, { ...getWorkspaceState(state, wsId), browserClient }),
+    setWorkspaceState(state, wsId, {
+      ...getWorkspaceState(state, wsId),
+      browserClient,
+      pinnedClientId: browserClient.source === 'workspace' ? browserClient.clientId : null,
+    }),
+);
+browserClientsReducer.with(
+  workspaceBrowserClientPinReceived,
+  (state, { payload: [wsId, pinnedClientId] }) =>
+    setWorkspaceState(state, wsId, {
+      ...getWorkspaceState(state, wsId),
+      pinnedClientId,
+      // Selection is already known; resolution still needs its own read.
+      browserClient: null,
+    }),
 );
 function bumpTabsRevision(state: BrowserClientsState, wsId: string): BrowserClientsState {
   const ws = getWorkspaceState(state, wsId);
