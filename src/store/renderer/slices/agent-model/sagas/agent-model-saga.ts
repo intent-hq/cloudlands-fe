@@ -226,21 +226,20 @@ export function* agentModelSaga() {
       }
     }
     const current = yield* snapshot(write);
+    const updates = {
+      model: op.model,
+      ...(op.providerId
+        ? {
+            provider: op.providerId,
+            metadata: { ...current.session?.metadata, provider: op.providerId },
+            ...(current.providerId !== op.providerId ? { effortLevels: undefined } : {}),
+          }
+        : {}),
+    };
     yield* put(
-      updateSession(
-        request.agentId,
-        {
-          model: op.model,
-          ...(op.providerId
-            ? {
-                provider: op.providerId,
-                metadata: { ...current.session?.metadata, provider: op.providerId },
-                ...(current.providerId !== op.providerId ? { effortLevels: undefined } : {}),
-              }
-            : {}),
-        },
-        op.providerId ? { projectedMetadataKeys: ['provider'] } : undefined,
-      ),
+      op.providerId
+        ? updateSession(request.agentId, updates, { projectedMetadataKeys: ['provider'] })
+        : updateSession(request.agentId, updates),
     );
     if (op.kind === 'session') return { status: 'success' } satisfies AgentModelOutcome;
     const accepted = yield* snapshot(write);
