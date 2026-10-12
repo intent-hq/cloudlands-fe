@@ -1,4 +1,4 @@
-import { reasoningEffortLabel } from '$features/agent/utils/reasoning-effort-label';
+import { reasoningEffortLabel } from '../../../features/agent/utils/reasoning-effort-label';
 import { m } from '$shared/paraglide/messages.js';
 
 export interface EffortChangeNoticeInfo {
