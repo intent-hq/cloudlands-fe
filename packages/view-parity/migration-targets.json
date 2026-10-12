@@ -8,20 +8,20 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+    "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
     "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded static supporting React panel-layout registration and real preload cleanup binding at8220d33b. No new maps, target refresh, implementation-status promotion or native acceptance. All1890source rows and230targets retained:236/1430(231components+5modules),178partial58localimplemented;94reviews. Exact two-line Store inverse, unchanged original003 canonical reducer/types/body, call-time preload invocation and closed local runtime/type graphs reviewed. No cleanup consumer or saga activation. Two supporting paths outside fixedinventory explicitly tracked;8oldcitations/19invalidations/allhistory retained.",
+    "method": "Bounded static supporting canonical admission, workspace-tab lifetime extraction, deferred settings dispatch and inert React agent-read binding at785d3b4e. No new maps, direct-target refresh, status promotion or native acceptance. All1890rows/230targets retained:236/1430(231components+5modules),178partial58localimplemented;95reviews. Original003 policy inverses and new principal boundaries explicitly reviewed, no unchanged-current-source byte claim. Eight production support paths plus two regression-test evidence paths outside fixedinventory;27oldcitations/19invalidations/history/failures retained.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T08:31:54.252423+00:00",
+    "reviewedAt": "2026-10-12T08:53:44.488785+00:00",
     "checkpointAdvance": {
-      "previousLedgerCommit": "e1b4a53e9f048ffbd4e85a70cbd610ea2948da61",
-      "previousAuditCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+      "previousLedgerCommit": "33a4bd3063839f5cfe227ffea6da612fb7e35cff",
+      "previousAuditCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
       "unchangedUniqueDirectTargets": 230,
       "changedUniqueDirectTargets": 0,
-      "retainedHistoricalReviewCount": 93,
-      "meaning": "Common validation pin only; old actual inspected/source/support/native review pins and all original acceptance boundaries retained."
+      "retainedHistoricalReviewCount": 94,
+      "meaning": "Common validation pin only; actual historical inspected/source/support/native pins and all previous acceptance boundaries retained."
     }
   },
   "statusDefinitions": {
@@ -81,7 +81,8 @@
     "Bounded staticd4 supporting canonical anchor correction and agent-read saga extraction. No source mappings, direct target edits, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained.236/1430(231components+5modules),178partial58localimplemented,91reviews. All3changedsupport paths are outside fixedinventory: explicit drift recorded because CLI cannotflag them. Operational current algorithm deliberately differs from original003/sourcePort8a; five canonical saga bodies exact with required real hostdependencies and noReactactivation. All19existinginvalidations/history/receipts/failures preserved. No statusCLI drift warning can certify these3support paths because they are outside its immutableinventory. OW1/2 old2d passes, bothOW3End1596/1428failures and OW4ZPIOcb164capturefailure retain their exactpins; correctedcandidate builtbutunrun atassignment. NC12older341/b34PASS nottransferred. SourceKnip588unsuppressed/no baseCIcomparison; allpreviousfailures retained. No released helpimpact.",
     "Bounded static supporting deleted-agent cleanup extraction at0dd. No source mappings, direct-target refresh, implementation-status promotion or native acceptance. All1890source rows and230direct target hashes retained:236/1430(231components+5modules),178partial58localimplemented;92reviews. Original003 generator/comments/emitted body and APIs retained; five script specifiers resolve identical canonical files, approved export wrap only. All4changed support paths outside fixedinventory have explicit old/new provenance. Source facade binds existing invoke; realReactreceivers/preload/admission/root integration remains separate. All19CLI invalidations/history/cases/receipts/failures retained. Four supportpaths outsideinventory cannot be flagged by CLI. Mandatory type and direct sourcebinding do not prove React cleanup/admission/native behavior. PriorOW3both1596/1428andOW4capturefailure retained; no currentOW4lane result imported. Owner54testsPASS, Svelte211warnings, Knip588FAIL unsuppressed/no baseCIcomparison; prior preparation failures retained. Internalunreleased/nohelpimpact.",
     "Bounded static supporting canonical focused End intent and actual follower caller atdf98264e. No newmaps, direct-target refresh, implementation-status promotion or native acceptance. All1890source rows and230targets retained:236/1430(231components+5modules),178partial58localimplemented;93reviews. Intentional shared canonical source behavior departure from003: only enabled/live/unprevented/unmodified End with target+activeElement exactlycontainer enters existing follower and cancels native default. Entire old fallback remains; caller layout-owned canonical action initiallyfalse/capturedcleanup/currentoptions. Both support paths outside fixedinventory explicitly tracked; all9oldcitations/19invalidations/history/failures retained. Exactsource/caller inverses and publicAPI equality cannot prove qualifiedEnd nativebehavior. Grid-gap anchor neutrality and activefollower/corecompensation competition unverified. EarlierOW3gaps1596/1428failures retained; OW4CINHGiPASSonlyd47/f2ee,RG1 1JFIfXframingfailure c27/e46pending; no acceptance transfer. OwnerKnip588FAIL/Svelte211warnings retained,no baselineCIclaim. Internalunreleased/no newhelpimpact.",
-    "Bounded static supporting React panel-layout registration and real preload cleanup binding at8220d33b. No new maps, target refresh, implementation-status promotion or native acceptance. All1890source rows and230targets retained:236/1430(231components+5modules),178partial58localimplemented;94reviews. Exact two-line Store inverse, unchanged original003 canonical reducer/types/body, call-time preload invocation and closed local runtime/type graphs reviewed. No cleanup consumer or saga activation. Two supporting paths outside fixedinventory explicitly tracked;8oldcitations/19invalidations/allhistory retained. Static registration/binding proof cannot establish admitted cleanup, actual preload failure, daemon recovery, registry/persistence/native webview destruction, reconnect or root integration. Existing logger/schema/Set construction is not cleanup execution. OwnerKnip589FAIL includes unused prerequisite;Svelte211warnings retained,no baselineCIclaim. All oldOW/RG failures/results remain separatelypinned. Internalunreleased/no newhelpimpact."
+    "Bounded static supporting React panel-layout registration and real preload cleanup binding at8220d33b. No new maps, target refresh, implementation-status promotion or native acceptance. All1890source rows and230targets retained:236/1430(231components+5modules),178partial58localimplemented;94reviews. Exact two-line Store inverse, unchanged original003 canonical reducer/types/body, call-time preload invocation and closed local runtime/type graphs reviewed. No cleanup consumer or saga activation. Two supporting paths outside fixedinventory explicitly tracked;8oldcitations/19invalidations/allhistory retained. Static registration/binding proof cannot establish admitted cleanup, actual preload failure, daemon recovery, registry/persistence/native webview destruction, reconnect or root integration. Existing logger/schema/Set construction is not cleanup execution. OwnerKnip589FAIL includes unused prerequisite;Svelte211warnings retained,no baselineCIclaim. All oldOW/RG failures/results remain separatelypinned. Internalunreleased/no newhelpimpact.",
+    "Bounded static supporting canonical admission, workspace-tab lifetime extraction, deferred settings dispatch and inert React agent-read binding at785d3b4e. No new maps, direct-target refresh, status promotion or native acceptance. All1890rows/230targets retained:236/1430(231components+5modules),178partial58localimplemented;95reviews. Original003 policy inverses and new principal boundaries explicitly reviewed, no unchanged-current-source byte claim. Eight production support paths plus two regression-test evidence paths outside fixedinventory;27oldcitations/19invalidations/history/failures retained. Atomic authority guards assume synchronous actual dispatch; already-started effects are not rolled back, null-to-null pre-admission replacement still needs real host lifetime. No React activation/nativeacceptance. Final owner92-pass sole-middleware result retained alongside prior missing-redux/type/interim duplicate-middleware failures. Original root Store.dispatch import failure and7b correction13PASS retained; two settings suites still fail collection on missing mockcaptureBackendRepositoryCheckout. Knip590FAIL/Svelte211warnings unsuppressed,no baselineCIclaim. Internalunreleased/nohelpimpact."
   ],
   "reviews": {
     "foundation": {
@@ -91,7 +92,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -105,7 +106,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -119,7 +120,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -135,7 +136,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -149,7 +150,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -160,7 +161,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -171,7 +172,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -185,7 +186,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -196,7 +197,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -207,7 +208,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -218,7 +219,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -232,7 +233,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -243,7 +244,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -254,7 +255,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -269,7 +270,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -285,7 +286,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -296,7 +297,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -307,7 +308,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -325,7 +326,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -336,7 +337,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -347,7 +348,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -358,7 +359,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -372,7 +373,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -383,7 +384,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -397,7 +398,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -408,7 +409,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -423,7 +424,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -437,7 +438,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -451,7 +452,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -462,7 +463,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -470,7 +471,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -484,7 +485,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -498,7 +499,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -512,7 +513,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -523,7 +524,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -534,7 +535,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -545,7 +546,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -556,7 +557,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -567,7 +568,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -578,7 +579,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -592,7 +593,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -603,7 +604,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -614,7 +615,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -625,7 +626,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -636,7 +637,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -647,7 +648,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -655,7 +656,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -683,7 +684,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -706,7 +707,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -732,7 +733,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -758,7 +759,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -789,7 +790,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -818,7 +819,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -858,7 +859,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -891,7 +892,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -932,7 +933,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -977,7 +978,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -1035,7 +1036,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1080,7 +1081,7 @@
         "0f00a72202dce497991564f9fc6875db9f26c9e5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
       "inspectedCallsites": [
@@ -1178,7 +1179,7 @@
       ],
       "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
       "inspectedCallsites": [
@@ -1283,7 +1284,7 @@
     },
     "chat-disclosure-rows-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1479,7 +1480,7 @@
     },
     "chat-recovery-notices-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1683,7 +1684,7 @@
     },
     "chat-stream-metadata-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -1850,7 +1851,7 @@
     },
     "chat-history-attribution-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -2063,7 +2064,7 @@
     },
     "chat-disclosure-corrections-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2279,7 +2280,7 @@
     },
     "chat-queued-actions-command-3e894": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2473,7 +2474,7 @@
     },
     "chat-code-reference-context-4bfa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2838,7 +2839,7 @@
     },
     "chat-inline-mcp-prompt-preview-9d297": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3376,7 +3377,7 @@
     },
     "queued-attachments-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3555,7 +3556,7 @@
     },
     "tabs-export-correction-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3874,7 +3875,7 @@
     },
     "streaming-status-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -4094,7 +4095,7 @@
     },
     "mcp-inline-font-correction-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["7af853406e1a80758a3762bafef510be19db4587"],
@@ -4806,7 +4807,7 @@
     },
     "suggested-chief-prompts-16ee80": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5067,7 +5068,7 @@
     },
     "automated-wake-header-f2b2a2": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5423,7 +5424,7 @@
     },
     "agent-pr-attribution-headers-73da5529": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5896,7 +5897,7 @@
     },
     "attachment-permission-support-05cc7db6": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -6534,7 +6535,7 @@
     },
     "attachment-file-replacement-ff9a4e35": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -7570,7 +7571,7 @@
     },
     "inline-permission-and-live-support-6a51a3da": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -8416,7 +8417,7 @@
     },
     "media-and-markdown-composition-dd6e5720": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -9620,7 +9621,7 @@
     },
     "full-markdown-and-reasoning-68a5ca85": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -11456,7 +11457,7 @@
     },
     "chat-image-and-video-wrapper-561fa08c": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -13292,7 +13293,7 @@
     },
     "message-actions-and-transcript-cards-2d310fed": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -16540,7 +16541,7 @@
     },
     "setup-script-and-edit-confirmation-3d7e81dc": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -21529,7 +21530,7 @@
     },
     "operational-window-and-panel-2d988e34": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -30690,7 +30691,7 @@
     },
     "response-group-and-cylinder-1cea8e2b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -49125,7 +49126,7 @@
     },
     "navigation-excerpt-and-image-caption-34161b6d": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -84279,7 +84280,7 @@
     },
     "response-group-reaction-correction-e46a388f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -85101,7 +85102,7 @@
     },
     "detected-scripts-and-neutral-indicator-0afebba9": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -86280,7 +86281,7 @@
     },
     "markdown-image-owner-correction-35e676aa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -87098,7 +87099,7 @@
     },
     "static-toast-containment-support-8f0bbcda": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -88061,7 +88062,7 @@
     },
     "canonical-anchor-and-agent-read-support-d4abc96f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -90231,7 +90232,7 @@
     },
     "deleted-agent-cleanup-support-0ddf543a": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -92607,7 +92608,7 @@
     },
     "canonical-focused-end-support-df98264e": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -93622,7 +93623,7 @@
     },
     "react-panel-cleanup-prerequisites-8220d33b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
       "inspectedCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -94765,7 +94766,2186 @@
       },
       "sourceDriftPolicy": "003 and inventory1430/1890 unchanged;19CLI invalidations retained. Both changed supporting paths outsideinventory explicitlyflagged; no direct-target bytes changed. No sourcebaseline, statusdefinition or guard relaxed.",
       "excludedLaterWork": "New shared admission184/5f2544fa ignored preparation and later sources excluded. OW3 active and RG1-3 finalPASS4cef remain separate evidence; no native evidence imported/refreshed/transferred.",
-      "userHelpImpact": "Internal unreleased migration prerequisite only; no released control/label/path/prerequisite changes, so no affected assistant-help section or companion PR."
+      "userHelpImpact": "Internal unreleased migration prerequisite only; no released control/label/path/prerequisite changes, so no affected assistant-help section or companion PR.",
+      "retainedReviewCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05"
+    },
+    "admitted-agent-read-and-lifetime-support-785d3b4e": {
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+      "inspectedCandidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+      "taskNoteIds": [
+        "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+        "5f2544fa-aa4f-4e6f-bc76-084f5981388e",
+        "8315476b-4939-48c2-a032-875782543a90",
+        "ad5af90e-2fde-431a-a0a5-da82b01c70de"
+      ],
+      "implementationCommits": [
+        "3c2d9949781143e1316a4686bac999ddb894f58d",
+        "8ce3d560395f0297d01ecb949af5a2ba80bf60f1",
+        "7b05c3a432e0d9c76ce47c88be01d8b67e025b93",
+        "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9"
+      ],
+      "scope": "Bounded static supporting canonical admission, workspace-tab lifetime extraction, deferred settings dispatch and inert React agent-read binding at785d3b4e. No new maps, direct-target refresh, status promotion or native acceptance. All1890rows/230targets retained:236/1430(231components+5modules),178partial58localimplemented;95reviews. Original003 policy inverses and new principal boundaries explicitly reviewed, no unchanged-current-source byte claim. Eight production support paths plus two regression-test evidence paths outside fixedinventory;27oldcitations/19invalidations/history/failures retained.",
+      "previousLedgerCommit": "33a4bd3063839f5cfe227ffea6da612fb7e35cff",
+      "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "sourceApiReview": {
+        "result": "PASS",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+        "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+        "sourcePolicy": {
+          "inverseProof": [
+            {
+              "name": "loadAgentSessionSaga",
+              "originalBodySha256": "147effbd162907f041ed2a83ab2cf7f7642d899da57de6c7b73fad25ac092dfa",
+              "candidateBodySha256": "acd519c70cd477e4d8fd710a15bce164cd7833a6a96e75e7146a3f54b9b41868",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "matchesWorkspaceCleanup",
+              "originalBodySha256": "e7aa3feca0f8880956821ec78b72cbaebf125b3ee50c684d570019af0074c070",
+              "candidateBodySha256": "15c0b8f89dbe0244d459fc5278f15fa5644b168715fc900d7af0c8a5b77ccba4",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "matchesLaterAgentEnsure",
+              "originalBodySha256": "41f5ac6fcdb19af4d0c7804dd6c3ce6c8bdad4ab545bd1ac62ce0bf6ace536bd",
+              "candidateBodySha256": "4ab0a1c32eef2df9018441fb8e671abdbf8d84c31687d3f530aed8cc200b4d11",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "loadAgentSessionWorker",
+              "originalBodySha256": "5e392b2f37eb9e5d09955e98390d93a66e106b5401ffe3993e3a2e76bc11a3cf",
+              "candidateBodySha256": "156320e4d694603bd35cd6fe97d13a3372d234e34bacdaeb53b073f37fb639f1",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "agentReadSaga",
+              "originalBodySha256": "af436ebaae9ab3b5dbb6cd3521b0ce609a49058962cc7daf1c2a423c39eaeb7e",
+              "candidateBodySha256": "02c08d98404d74ebc671415acf216a39a9c96c00e16ca065d8929284e3500786",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "cleanupDeletedAgentTabs",
+              "originalBodySha256": "caba64f8f37e0e849318576917d12d489520fdee4a1058dbce02711273546cab",
+              "candidateBodySha256": "b273a448a17958dd8aa7c18d909dd74ff4cd99145946c0dfdb871f0e6188179c",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            }
+          ],
+          "sourceFacadeOnlyExplicitPolicyAdded": true,
+          "mandatoryAdmission": true,
+          "cleanupTwoArgumentSourceDefault": true,
+          "meaning": "Original003 bodies token-equal only after explicit removal of principal fences/branch and extra scope argument. Current source text/effect structure is intentionally different; no byte-equivalence or runtime acceptance asserted."
+        },
+        "admission": {
+          "atomicCheckThenDispatch": true,
+          "sourcePutPreserved": true,
+          "guards": [
+            "raw read inside callable",
+            "after fulfilled read",
+            "catch entry",
+            "each of three read writes",
+            "cleanup entry and each of three cleanup writes",
+            "inside cleanup invoke callable"
+          ],
+          "authority": "Direct current projection; selector channel only wakes/cancels. Captured context includes canonical connection/principal/revision/role/invalidation/presentation identity.",
+          "channelLifetime": "Created only for principal; wait until direct context non-null, authority-loss/read race, finally closes. Outer original workspace-unmount/same-agent-supersession race and single takeEvery retained.",
+          "limits": "Already authorized dispatch/invoke not rolled back. Synchronous host dispatch required; deferred middleware requires review. Pre-admission null-to-null backend replacement depends on host lifetime. No actual host/runtime acceptance."
+        },
+        "workspaceLifetime": {
+          "originalBodySha256": "2252e03420c89fbb7bdfa0999a2a0bdf9930443d462a6c3df4c45697934397ef",
+          "candidateBodySha256": "1f7e6b9aa0aa3fe1dd5621ed083d998210d04ea819a8273d705f860133a85883",
+          "bodyByteEqualAfterIndentRemoval": true,
+          "signature": "workspaceTabCleanupSaga(): SagaGenerator<void>",
+          "mandatoryNamedSelectorEffects": true,
+          "policy": "Original expanding actionChannel, initial load only if not live, tab-disappearance/deletion teardown, warm focus changes, dedupe, refocus load and finally close preserved.",
+          "scope": "Source compatibility composition only, existing roots/selectors unchanged; no React lifecycle binding atpin."
+        },
+        "settingsRepair": {
+          "path": "src/features/settings/settings-hydration-service.ts",
+          "previousSha256": "c325c5349d568cc1917a67a52764519160e5864ef0e9b3e7a3220dd1f440bda6",
+          "sha256": "d7d47350e40dbc2e43b6acb6c3873b01bbde850e08a76f0a16667f6aeffa2b04",
+          "exactOneLineInverse": true,
+          "meaning": "Defers genuine Store.dispatch lookup until hydrator calls it; same canonical action and sync result/error propagation. Import-time access failure corrected; no settings semantics/body/test changes."
+        },
+        "binding": {
+          "path": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "sha256": "57cfd1d57a7a002c76eeb6d0b401f17f06aef3ad3cd8d5b696d739d15f275387",
+          "principalPolicy": true,
+          "directCurrentSnapshot": true,
+          "lazyExactDispatchGetter": true,
+          "sameCanonicalReadSelectorCleanup": true,
+          "importLifetime": "Existing singleton/factory/selector/schema/logger/Map/Set allocations remain. No state/dispatch getter, initialization, saga run, subscription/read, IPC or listener activated by new binding. Getter evaluated only after admission in worker.",
+          "activated": false
+        },
+        "dependencies": [
+          {
+            "path": "apps/react/src/client.tsx",
+            "sha256": "2e49d3dca6d66fb49fbee6d93ad185d6ec264e37f85ca2590f6876f123539b58",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/src/store/index.ts",
+            "sha256": "925202fcbf78bddfb1d56161854527cd5f4816a92b0d15482332e3c066c089a7",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/src/store/workspace-agents/sagas/deleted-agent-cleanup.ts",
+            "sha256": "9a9779f698513149e5bb895bf585862e295bacdc8944e3f3f6e141687f0f6720",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/src/features/agent/agent-read-service.ts",
+            "sha256": "2ec18f73bdb42ed425908b6d6d075e34b3c28e029d42a75ed9fcc36d4e9b7526",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/src/store/principal/principal-selectors.ts",
+            "sha256": "2c6570609fd9c5068e48477ea38930e5c6c2d68937cd8d4801a9ec04f15a3fd7",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/src/store/agent-session/agent-session-selectors.ts",
+            "sha256": "b70cdc0cf7375587eae786afd42dcc27492008740884d238810ae890034ad796",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/principal/principal-projections.ts",
+            "sha256": "903dd350df7781131242b153d2c330f25c7a8a7ce205032264d7b4df3122cf98",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/principal/principal-slice.ts",
+            "sha256": "018460712262b8592968ab45ac432963daeb3c6878ceb2b59e5371ec619a5b46",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "018460712262b8592968ab45ac432963daeb3c6878ceb2b59e5371ec619a5b46",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+            "sha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+            "sha256": "7d8f068092e0d6f103058259e9b6b9203634c33cf767feaf113f81c82da05143",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "7d8f068092e0d6f103058259e9b6b9203634c33cf767feaf113f81c82da05143",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+            "sha256": "d119f76c20cde1072d69b3392e299688ccbf8030a632e65c22a0a0f631b4ce9f",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "78c6c137467338a3ac3d19e54fbbbe71340aa07aa24f14fe2805ee204171088b",
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+            "sha256": "9337a77aed58fbf31e7bc9876d2c73ad17e81083829555ecb93b17fd6492b2e0",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "0fffb3ecf0087479dcb3e4657b93cf15b9f9c3fbdf69814a91880d06b8a78436",
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/tab-state/tab-state-slice.ts",
+            "sha256": "77978df5a9474c4a37dbc6e75a66c5ab971f7b07953597832edb25df8fe0e210",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "77978df5a9474c4a37dbc6e75a66c5ab971f7b07953597832edb25df8fe0e210",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+            "sha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/store/renderer/slices/tab-state/tab-state-selectors.ts",
+            "sha256": "284bb487bed234d80831b3d900d08ffcc759e588f2561e1bdbde634668eb4e7f",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "91993f21752dd51d84d95173c48321e715780f9c2ff70666e17702c86693abf1",
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors.ts",
+            "sha256": "fc68398e79e74984f47150a30044dc70f4dc96c4c9e49c4fa9eed9e8255019c5",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "4979f77fe0bd0d8c5e981a2d88385619e890a4d530d514d9a192f5bf4056c10e",
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/sagas.ts",
+            "sha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+            "unchangedFromOriginal": true
+          },
+          {
+            "path": "src/features/settings/settings-hydrator.ts",
+            "sha256": "269b1700c56ff168a58ea2cd9866c7a9bffd8ffa175ce3c83a15484d756e4106",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+            "sha256": "af7bc8ae0384aefe6c0b683efe0eaf6a85959a7779d5857bc1c6ffa79c5e5137",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/tsconfig.json",
+            "sha256": "f32d4b2342f1488282c97bf816fef97661e601ddaabafe2b8bc51ea6437d11f4",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          },
+          {
+            "path": "apps/react/vite.config.ts",
+            "sha256": "5ccd7113b695526c4c014c53c9a8f50e61d58c7fd4267c23a69cb87e12f0ef3e",
+            "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          }
+        ],
+        "installedPublicApi": [
+          {
+            "path": "node_modules/@themislib/themis/dist/react-store.d.ts",
+            "sha256": "7737bf2a36c258b90cd9b6c21107f0815ad5eb0e5af386ded379657c9c220bfc"
+          },
+          {
+            "path": "node_modules/@themislib/themis/dist/store-runtime.d.ts",
+            "sha256": "a3f7d39b63bee39228d0a4a60efbcf099b76017bc675a5058940b8bf159a181f"
+          },
+          {
+            "path": "node_modules/@themislib/themis/dist/store-runtime.js",
+            "sha256": "d4086299e589a67db3c8dba555977194f2d9589a2922ae68614a0c2c73d04f31"
+          },
+          {
+            "path": "node_modules/@themislib/themis/dist/utils/react-selectors/create-selector.js",
+            "sha256": "4d416f9aaf843f041c50baa8ef073519fda4a640468f425c0ff1e6f39d861342"
+          },
+          {
+            "path": "node_modules/@themislib/themis/package.json",
+            "sha256": "14a21021014712e31988d5df4b4d9784068d55efd3282e5500744ab155d0cdd8"
+          }
+        ],
+        "graphSummary": [
+          {
+            "entry": "src/store/renderer/slices/workspace-agents/sagas/agent-read-admission.ts",
+            "runtimeFiles": 1,
+            "typeFiles": 1,
+            "runtimeEdges": 1,
+            "typeEdges": 3,
+            "unresolved": [],
+            "forbidden": [],
+            "computedImports": [],
+            "runtimeExternals": ["typed-redux-saga"],
+            "typeExternals": [
+              "@themislib/themis/saga",
+              "@themislib/themis/types",
+              "typed-redux-saga"
+            ]
+          },
+          {
+            "entry": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "runtimeFiles": 48,
+            "typeFiles": 79,
+            "runtimeEdges": 113,
+            "typeEdges": 229,
+            "unresolved": [],
+            "forbidden": [],
+            "computedImports": [],
+            "runtimeExternals": [
+              "@themislib/themis/saga",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/boolean-preference",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "typed-redux-saga",
+              "uuid",
+              "zod"
+            ],
+            "typeExternals": [
+              "@themislib/themis/saga",
+              "@themislib/themis/types",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/boolean-preference",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "redux-saga",
+              "typed-redux-saga",
+              "uuid",
+              "zod"
+            ]
+          },
+          {
+            "entry": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "runtimeFiles": 22,
+            "typeFiles": 58,
+            "runtimeEdges": 44,
+            "typeEdges": 145,
+            "unresolved": [],
+            "forbidden": [],
+            "computedImports": [],
+            "runtimeExternals": [
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "typed-redux-saga"
+            ],
+            "typeExternals": [
+              "@themislib/themis/saga",
+              "@themislib/themis/types",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "typed-redux-saga",
+              "uuid",
+              "zod"
+            ]
+          },
+          {
+            "entry": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+            "runtimeFiles": 4,
+            "typeFiles": 6,
+            "runtimeEdges": 9,
+            "typeEdges": 12,
+            "unresolved": [],
+            "forbidden": [],
+            "computedImports": [],
+            "runtimeExternals": [
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "redux-saga",
+              "typed-redux-saga"
+            ],
+            "typeExternals": [
+              "@themislib/themis/types",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "redux-saga",
+              "typed-redux-saga"
+            ]
+          },
+          {
+            "entry": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+            "runtimeFiles": 131,
+            "typeFiles": 194,
+            "runtimeEdges": 344,
+            "typeEdges": 617,
+            "unresolved": [],
+            "forbidden": [],
+            "computedImports": [],
+            "runtimeExternals": [
+              "@tanstack/react-start/client-only",
+              "@themislib/themis/react-store",
+              "@themislib/themis/saga",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/boolean-preference",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "typed-redux-saga",
+              "uuid",
+              "zod"
+            ],
+            "typeExternals": [
+              "@tanstack/react-start/client-only",
+              "@themislib/themis/react-store",
+              "@themislib/themis/saga",
+              "@themislib/themis/types",
+              "@themislib/themis/utils/collections/collection-utils",
+              "@themislib/themis/utils/store/boolean-preference",
+              "@themislib/themis/utils/store/create-action",
+              "@themislib/themis/utils/store/create-reducer",
+              "fast-equals",
+              "redux-saga",
+              "typed-redux-saga",
+              "uuid",
+              "zod"
+            ]
+          }
+        ],
+        "graphEvidence": {
+          "path": ".demo-artifacts/admitted-read-ledger/import-graphs.json",
+          "sha256": "cff0de3c6f22c77d1eac72716541e6b6b88f598372cdbed776e8fe655d133e74"
+        },
+        "vite": {
+          "localRuntimeEdges": 338,
+          "allResolveToSameModules": true,
+          "aliases": [
+            ["@", "apps/react/src"],
+            ["$shared", "src/shared"],
+            ["$lib", "src/lib"],
+            [
+              "$features/providers/host-execution-errors",
+              "src/features/providers/host-execution-errors.ts"
+            ],
+            [
+              "$features/agent/services/node-execution",
+              "src/features/agent/services/node-execution.ts"
+            ]
+          ]
+        },
+        "reactConsumerSearch": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9:apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts:5:import { createAgentReadSaga } from '../../../../../../src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory';\n785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9:apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts:9:export const agentReadSaga = createAgentReadSaga({\n",
+        "limits": [
+          "Static compiler AST/hash analysis only; no application imports/tests/Store/IPC execution.",
+          "Closed local graphs stop at explicit external package/generated i18n leaves. Ambient globals rely on owner typecheck evidence.",
+          "No production startup, host/workspace admission lifecycle, actual service/transport/native/pixel acceptance."
+        ]
+      },
+      "supportingDependencies": [
+        {
+          "path": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "57cfd1d57a7a002c76eeb6d0b401f17f06aef3ad3cd8d5b696d739d15f275387",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9"
+        },
+        {
+          "path": "src/features/settings/settings-hydration-service.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "d7d47350e40dbc2e43b6acb6c3873b01bbde850e08a76f0a16667f6aeffa2b04",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "c325c5349d568cc1917a67a52764519160e5864ef0e9b3e7a3220dd1f440bda6",
+          "originalSha256": "7b46266f1d436ee278eef9e9d7c391ed16490497f1e2e8d838bdf4f922259928",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "7b05c3a432e0d9c76ce47c88be01d8b67e025b93"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-admission.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "a89843aa5f04a34155dc7e5529fe04e16ffe9bfeec50331de545822fc392f463",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.test.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "6340b2c4a8eaa82b3173a69687b8331b1751017982c6638279a2c75244822e8b",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "regression-test-evidence",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "b001ebedf6f62cd65f5e8f1d7a7695d709743c9333286d049cc431637f95dd98",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "originalSha256": null,
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "b9fae177250b4507883b343933fafbfdac37bde2508ed948c780bc4afad1a2a4",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.test.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "1f85ccd61dbac364f8cc54a14d12d1ac3c7b5b1d3b57d39cb2276d44e8e914da",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "regression-test-evidence",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "57f39c56c4ebc5f1df00f72a212030667df4099ba08705bc164c2711d98be5b9",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "originalSha256": null,
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "c9c53fb08f338ccd5d63aed11521508fe712e97b6a6dae33b2cd334b8c4d8b61",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "5d383bf8605b5a5cf2b18c1d772e748bf3bafe603334f1ee4e57a71a3da4c4ea",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "originalSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1"
+        },
+        {
+          "path": "apps/react/src/client.tsx",
+          "sha256": "2e49d3dca6d66fb49fbee6d93ad185d6ec264e37f85ca2590f6876f123539b58",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "apps/react/src/store/index.ts",
+          "sha256": "925202fcbf78bddfb1d56161854527cd5f4816a92b0d15482332e3c066c089a7",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "apps/react/src/store/workspace-agents/sagas/deleted-agent-cleanup.ts",
+          "sha256": "9a9779f698513149e5bb895bf585862e295bacdc8944e3f3f6e141687f0f6720",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "apps/react/src/features/agent/agent-read-service.ts",
+          "sha256": "2ec18f73bdb42ed425908b6d6d075e34b3c28e029d42a75ed9fcc36d4e9b7526",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "apps/react/src/store/principal/principal-selectors.ts",
+          "sha256": "2c6570609fd9c5068e48477ea38930e5c6c2d68937cd8d4801a9ec04f15a3fd7",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "apps/react/src/store/agent-session/agent-session-selectors.ts",
+          "sha256": "b70cdc0cf7375587eae786afd42dcc27492008740884d238810ae890034ad796",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "src/store/renderer/slices/principal/principal-projections.ts",
+          "sha256": "903dd350df7781131242b153d2c330f25c7a8a7ce205032264d7b4df3122cf98",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "src/store/renderer/slices/principal/principal-slice.ts",
+          "sha256": "018460712262b8592968ab45ac432963daeb3c6878ceb2b59e5371ec619a5b46",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "018460712262b8592968ab45ac432963daeb3c6878ceb2b59e5371ec619a5b46",
+          "unchangedFromOriginal": true
+        },
+        {
+          "path": "src/store/renderer/slices/panel-layout/panel-layout-slice.ts",
+          "sha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "fe1dd2c6e29c9cd0349ee684f07185b73f3cb084b7bff1883905f8bbe2d7a3c9",
+          "unchangedFromOriginal": true
+        },
+        {
+          "path": "src/store/renderer/slices/panel-layout/panel-layout-types.ts",
+          "sha256": "7d8f068092e0d6f103058259e9b6b9203634c33cf767feaf113f81c82da05143",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "7d8f068092e0d6f103058259e9b6b9203634c33cf767feaf113f81c82da05143",
+          "unchangedFromOriginal": true
+        },
+        {
+          "path": "src/store/renderer/slices/agent-session/agent-session-slice.ts",
+          "sha256": "d119f76c20cde1072d69b3392e299688ccbf8030a632e65c22a0a0f631b4ce9f",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "78c6c137467338a3ac3d19e54fbbbe71340aa07aa24f14fe2805ee204171088b",
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts",
+          "sha256": "9337a77aed58fbf31e7bc9876d2c73ad17e81083829555ecb93b17fd6492b2e0",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "0fffb3ecf0087479dcb3e4657b93cf15b9f9c3fbdf69814a91880d06b8a78436",
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "src/store/renderer/slices/tab-state/tab-state-slice.ts",
+          "sha256": "77978df5a9474c4a37dbc6e75a66c5ab971f7b07953597832edb25df8fe0e210",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "77978df5a9474c4a37dbc6e75a66c5ab971f7b07953597832edb25df8fe0e210",
+          "unchangedFromOriginal": true
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts",
+          "sha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "85bb99b943307f529ee4c9b5bb17ae10f0c34275f0015430dbba55201f4b2f17",
+          "unchangedFromOriginal": true
+        },
+        {
+          "path": "src/store/renderer/slices/tab-state/tab-state-selectors.ts",
+          "sha256": "284bb487bed234d80831b3d900d08ffcc759e588f2561e1bdbde634668eb4e7f",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "91993f21752dd51d84d95173c48321e715780f9c2ff70666e17702c86693abf1",
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors.ts",
+          "sha256": "fc68398e79e74984f47150a30044dc70f4dc96c4c9e49c4fa9eed9e8255019c5",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "4979f77fe0bd0d8c5e981a2d88385619e890a4d530d514d9a192f5bf4056c10e",
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "src/store/renderer/sagas.ts",
+          "sha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "d1a38be6cef3ad9ed520e8b1bf796e2ad473373dee4b8ed02167915434b98b6e",
+          "unchangedFromOriginal": true
+        },
+        {
+          "path": "src/features/settings/settings-hydrator.ts",
+          "sha256": "269b1700c56ff168a58ea2cd9866c7a9bffd8ffa175ce3c83a15484d756e4106",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup.ts",
+          "sha256": "af7bc8ae0384aefe6c0b683efe0eaf6a85959a7779d5857bc1c6ffa79c5e5137",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": "e4649d7d355392f9db69ab07da2fb20e42d0b769ba293ea54c6b9e7b9d02d82d",
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "apps/react/tsconfig.json",
+          "sha256": "f32d4b2342f1488282c97bf816fef97661e601ddaabafe2b8bc51ea6437d11f4",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        },
+        {
+          "path": "apps/react/vite.config.ts",
+          "sha256": "5ccd7113b695526c4c014c53c9a8f50e61d58c7fd4267c23a69cb87e12f0ef3e",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "originalSha256": null,
+          "unchangedFromOriginal": false
+        }
+      ],
+      "supportDelta": [
+        {
+          "path": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "57cfd1d57a7a002c76eeb6d0b401f17f06aef3ad3cd8d5b696d739d15f275387",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9"
+        },
+        {
+          "path": "src/features/settings/settings-hydration-service.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "d7d47350e40dbc2e43b6acb6c3873b01bbde850e08a76f0a16667f6aeffa2b04",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "c325c5349d568cc1917a67a52764519160e5864ef0e9b3e7a3220dd1f440bda6",
+          "originalSha256": "7b46266f1d436ee278eef9e9d7c391ed16490497f1e2e8d838bdf4f922259928",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "7b05c3a432e0d9c76ce47c88be01d8b67e025b93"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-admission.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "a89843aa5f04a34155dc7e5529fe04e16ffe9bfeec50331de545822fc392f463",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.test.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "6340b2c4a8eaa82b3173a69687b8331b1751017982c6638279a2c75244822e8b",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "regression-test-evidence",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "b001ebedf6f62cd65f5e8f1d7a7695d709743c9333286d049cc431637f95dd98",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "originalSha256": null,
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "b9fae177250b4507883b343933fafbfdac37bde2508ed948c780bc4afad1a2a4",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.test.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "1f85ccd61dbac364f8cc54a14d12d1ac3c7b5b1d3b57d39cb2276d44e8e914da",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "regression-test-evidence",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "57f39c56c4ebc5f1df00f72a212030667df4099ba08705bc164c2711d98be5b9",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "originalSha256": null,
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "c9c53fb08f338ccd5d63aed11521508fe712e97b6a6dae33b2cd334b8c4d8b61",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "5d383bf8605b5a5cf2b18c1d772e748bf3bafe603334f1ee4e57a71a3da4c4ea",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "originalSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1"
+        }
+      ],
+      "retainedHistoricalCitations": [
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/sourceApiReview/closure/files/0",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "generated": false
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/supportingDependencies/1",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+            "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "change": "modified",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/supportingDependencies/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+            "previousSha256": null,
+            "change": "added",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/supportDelta/1",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+            "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "change": "modified",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/supportDelta/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+            "previousSha256": null,
+            "change": "added",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/supportInvalidationsOutsideInventory/1",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "change": "modified",
+            "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "originalInventoryContainsPath": false,
+            "cliDriftCanFlag": false,
+            "reviewScope": "Explicit supporting-code provenance; no view/denominator addition or native acceptance."
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/supportInvalidationsOutsideInventory/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "change": "added",
+            "previousSha256": null,
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "originalInventoryContainsPath": false,
+            "cliDriftCanFlag": false,
+            "reviewScope": "Explicit supporting-code provenance; no view/denominator addition or native acceptance."
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/ownerGateProvenance/agentRead/ownedFiles/0",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee"
+          }
+        },
+        {
+          "location": "/reviews/canonical-anchor-and-agent-read-support-d4abc96f/ownerGateProvenance/agentRead/ownedFiles/1",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3"
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/sourceApiReview/dependencies/5",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/sourceApiReview/dependencies/6",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/sourceApiReview/runtimeClosure/files/0",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "generated": false
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/sourceApiReview/typeClosure/files/0",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "generated": false
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/supportingDependencies/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "previousSha256": null,
+            "originalSha256": null,
+            "change": "added",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/supportingDependencies/9",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "unchangedFromOriginal": false,
+            "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/supportingDependencies/10",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "originalSha256": null,
+            "unchangedFromOriginal": false,
+            "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/supportDelta/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "previousSha256": null,
+            "originalSha256": null,
+            "change": "added",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/reviews/deleted-agent-cleanup-support-0ddf543a/supportInvalidationsOutsideInventory/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "change": "added",
+            "originalSha256": null,
+            "previousSha256": null,
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "originalInventoryContainsPath": false,
+            "cliDriftCanFlag": false,
+            "reviewScope": "Explicit support drift and exact original-body/specifier inverse; no addedview, denominator change or native acceptance."
+          }
+        },
+        {
+          "location": "/reviews/react-panel-cleanup-prerequisites-8220d33b/sourceApiReview/dependencies/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "previousCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/reviews/react-panel-cleanup-prerequisites-8220d33b/sourceApiReview/dependencies/4",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/reviews/react-panel-cleanup-prerequisites-8220d33b/sourceApiReview/dependencies/5",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+            "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/reviews/react-panel-cleanup-prerequisites-8220d33b/supportingDependencies/4",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "previousCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/reviews/react-panel-cleanup-prerequisites-8220d33b/supportingDependencies/6",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+            "originalSha256": null,
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/reviews/react-panel-cleanup-prerequisites-8220d33b/supportingDependencies/7",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+            "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "unchangedFromOriginal": false
+          }
+        },
+        {
+          "location": "/boundedAudits/28/supportDelta/1",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+            "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "sha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+            "previousSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+            "change": "modified",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/boundedAudits/28/supportDelta/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+            "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "sha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+            "previousCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+            "previousSha256": null,
+            "change": "added",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        },
+        {
+          "location": "/boundedAudits/29/supportDelta/2",
+          "record": {
+            "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+            "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d",
+            "sha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+            "previousCandidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d",
+            "previousSha256": null,
+            "originalSha256": null,
+            "change": "added",
+            "supportOnly": true,
+            "outsideImmutableInventory": true
+          }
+        }
+      ],
+      "sourceInventoryBlindSpot": "All eight changed production support paths plus two new regression-test evidence paths are outside fixed1890-source inventory and230direct targets. Explicit original/prior/current hashes preserve drift even though CLI cannot flag it; zero new coverage units.",
+      "supportInvalidationsOutsideInventory": [
+        {
+          "path": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "kind": "supporting-production",
+          "change": "added",
+          "originalSha256": null,
+          "previousSha256": null,
+          "sha256": "57cfd1d57a7a002c76eeb6d0b401f17f06aef3ad3cd8d5b696d739d15f275387",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/features/settings/settings-hydration-service.ts",
+          "kind": "supporting-production",
+          "change": "modified",
+          "originalSha256": "7b46266f1d436ee278eef9e9d7c391ed16490497f1e2e8d838bdf4f922259928",
+          "previousSha256": "c325c5349d568cc1917a67a52764519160e5864ef0e9b3e7a3220dd1f440bda6",
+          "sha256": "d7d47350e40dbc2e43b6acb6c3873b01bbde850e08a76f0a16667f6aeffa2b04",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-admission.ts",
+          "kind": "supporting-production",
+          "change": "added",
+          "originalSha256": null,
+          "previousSha256": null,
+          "sha256": "a89843aa5f04a34155dc7e5529fe04e16ffe9bfeec50331de545822fc392f463",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.test.ts",
+          "kind": "regression-test-evidence",
+          "change": "added",
+          "originalSha256": null,
+          "previousSha256": null,
+          "sha256": "6340b2c4a8eaa82b3173a69687b8331b1751017982c6638279a2c75244822e8b",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "kind": "supporting-production",
+          "change": "modified",
+          "originalSha256": null,
+          "previousSha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "sha256": "b001ebedf6f62cd65f5e8f1d7a7695d709743c9333286d049cc431637f95dd98",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "kind": "supporting-production",
+          "change": "modified",
+          "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "previousSha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "sha256": "b9fae177250b4507883b343933fafbfdac37bde2508ed948c780bc4afad1a2a4",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.test.ts",
+          "kind": "regression-test-evidence",
+          "change": "added",
+          "originalSha256": null,
+          "previousSha256": null,
+          "sha256": "1f85ccd61dbac364f8cc54a14d12d1ac3c7b5b1d3b57d39cb2276d44e8e914da",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "kind": "supporting-production",
+          "change": "modified",
+          "originalSha256": null,
+          "previousSha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "sha256": "57f39c56c4ebc5f1df00f72a212030667df4099ba08705bc164c2711d98be5b9",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+          "kind": "supporting-production",
+          "change": "added",
+          "originalSha256": null,
+          "previousSha256": null,
+          "sha256": "c9c53fb08f338ccd5d63aed11521508fe712e97b6a6dae33b2cd334b8c4d8b61",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts",
+          "kind": "supporting-production",
+          "change": "modified",
+          "originalSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "previousSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "sha256": "5d383bf8605b5a5cf2b18c1d772e748bf3bafe603334f1ee4e57a71a3da4c4ea",
+          "originalInventoryContainsPath": false,
+          "cliDriftCanFlag": false,
+          "reviewScope": "Explicit supporting/test provenance only. Original003 and older facade/factory profiles remain historical; no extra view or promoted acceptance."
+        }
+      ],
+      "historicalPinnedReports": [
+        {
+          "path": ".demo-artifacts/attachment-correction-ledger/status-05cc7db6.json",
+          "sha256": "2ecc7894e3222c77d621cdf844a3c59630ecede44ec74a1d2ae8a09a2908cb26",
+          "candidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c"
+        },
+        {
+          "path": ".demo-artifacts/attachment-identity-ledger/status-ff9a4e35.json",
+          "sha256": "3de6cfc20cd498cc1dd7d3ac9fab59d75bd652576e0122fe0f95add767dfbd03",
+          "candidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35"
+        },
+        {
+          "path": ".demo-artifacts/inline-permission-ledger/status-6a51a3da.json",
+          "sha256": "871f8ca4bf374cba9df3b5e761107cbd19664e38768848b1f5e74779ffe1f767",
+          "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9"
+        },
+        {
+          "path": ".demo-artifacts/media-composition-ledger/status-dd6e5720.json",
+          "sha256": "dcf0190b31084f48d746fe704bfb67a56fc9772e34cb338e074e0d902206a6bd",
+          "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980"
+        },
+        {
+          "path": ".demo-artifacts/markdown-reasoning-ledger/status-68a5ca85.json",
+          "sha256": "9211fb66cfc453cf98321757efa4db39aa4eb8ade6c45129197d3c8e51a5a44a",
+          "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a"
+        },
+        {
+          "path": ".demo-artifacts/chat-image-ledger/status-561fa08c.json",
+          "sha256": "2642d63ee8d4ca3bae4c17bb7cdb4f7024656cb04643a00feb3c9b9762ef71a3",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4"
+        },
+        {
+          "path": ".demo-artifacts/message-transcript-ledger/status-2d310fed.json",
+          "sha256": "ecc0ac8a7b46dfa6601457464565b8f1996e69a14033287d8adda09c7584de37",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c"
+        },
+        {
+          "path": ".demo-artifacts/setup-edit-ledger/status-3d7e81dc.json",
+          "sha256": "e5e8c3d4a9ef941fc5f1b26062494d378febae9a4838a0f6d8b6ae7e0728316c",
+          "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b"
+        },
+        {
+          "path": ".demo-artifacts/operational-window-ledger/status-2d988e34.json",
+          "sha256": "3fa6ae7f8796a1e82d038bbd7555f8754205395ac8cfe83337b104ec06a55c4d",
+          "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95"
+        },
+        {
+          "path": ".demo-artifacts/response-cylinder-ledger/status-1cea8e2b.json",
+          "sha256": "769abbca7d5dec89b703ed52afdb92e2d353b076012b8490c53a162a7da1a45e",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        },
+        {
+          "path": ".demo-artifacts/navigation-caption-ledger/status-34161b6d.json",
+          "sha256": "5ed08c94a1b379cdac0454e45cb3470a4cf7b7a0a60b90dea7ea06e88bf3ca0e",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/status-e46a388f.json",
+          "sha256": "de28615b813c3c9c480b8b786beaa3464943418a50794449c6e25f7193bbe30d",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/status-0afebba9.json",
+          "sha256": "e8adf3b398bb7dbf0e1ba3624a5de397fc4aca46b5b2acabaf5aa9852cdb86cb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7"
+        },
+        {
+          "path": ".demo-artifacts/markdown-lifetime-ledger/status-35e676aa.json",
+          "sha256": "667e04253ceba4d6b2262e308c0d9381555a0c53a06facd425c999ec79488d1e",
+          "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/status-8f0bbcda.json",
+          "sha256": "562e1869213851489babbd5e1f10be5c7bbd97dcf2379ffde3eead55ffac7ba5",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": ".demo-artifacts/shared-support-ledger/status-d4abc96f.json",
+          "sha256": "8d2a43e7f7b64e7087a72b3bb88c01f58babf8d4a834adbfb88b92ef1b45162e",
+          "candidateCommit": "d4abc96fec524af252cf914d37b0f6a4d789942d"
+        },
+        {
+          "path": ".demo-artifacts/cleanup-support-ledger/status-0ddf543a.json",
+          "sha256": "48f79c5648f29450049ea6b741f21a77643bb079ef4e60e7389d1bccff6ed3b9",
+          "candidateCommit": "0ddf543ad843cc1ddd84f02c3ec972b15581592d"
+        },
+        {
+          "path": ".demo-artifacts/end-intent-ledger/status-df98264e.json",
+          "sha256": "68927e2d91c0c0c3a6012c43e8be185b8cde63777811cf82e89806e35bb0a1b6",
+          "candidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53"
+        },
+        {
+          "path": ".demo-artifacts/react-cleanup-ledger/status-8220d33b.json",
+          "sha256": "6d2e7e0d32b3344efd71703ff8672ebd9d1c2ebdf0e6b746a9adfb153b13bc4c",
+          "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05"
+        }
+      ],
+      "staticEvidence": [
+        {
+          "path": ".demo-artifacts/admitted-read-ledger/api-report.json",
+          "sha256": "71f6838f7f0dbac3340268fbc0f08faf990e7622d80ffdebdac10fb93eb6af72"
+        },
+        {
+          "path": ".demo-artifacts/admitted-read-ledger/import-graphs.json",
+          "sha256": "cff0de3c6f22c77d1eac72716541e6b6b88f598372cdbed776e8fe655d133e74"
+        },
+        {
+          "path": ".demo-artifacts/admitted-read-ledger/static-report.json",
+          "sha256": "a9ccbbc0427a0fd554f70b45c634896107213e5b6b200c11a8276fb82fef5e65"
+        }
+      ],
+      "canonicalOwnerReview": {
+        "sourcePolicy": {
+          "inverseProof": [
+            {
+              "name": "loadAgentSessionSaga",
+              "originalBodySha256": "147effbd162907f041ed2a83ab2cf7f7642d899da57de6c7b73fad25ac092dfa",
+              "candidateBodySha256": "acd519c70cd477e4d8fd710a15bce164cd7833a6a96e75e7146a3f54b9b41868",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "matchesWorkspaceCleanup",
+              "originalBodySha256": "e7aa3feca0f8880956821ec78b72cbaebf125b3ee50c684d570019af0074c070",
+              "candidateBodySha256": "15c0b8f89dbe0244d459fc5278f15fa5644b168715fc900d7af0c8a5b77ccba4",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "matchesLaterAgentEnsure",
+              "originalBodySha256": "41f5ac6fcdb19af4d0c7804dd6c3ce6c8bdad4ab545bd1ac62ce0bf6ace536bd",
+              "candidateBodySha256": "4ab0a1c32eef2df9018441fb8e671abdbf8d84c31687d3f530aed8cc200b4d11",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "loadAgentSessionWorker",
+              "originalBodySha256": "5e392b2f37eb9e5d09955e98390d93a66e106b5401ffe3993e3a2e76bc11a3cf",
+              "candidateBodySha256": "156320e4d694603bd35cd6fe97d13a3372d234e34bacdaeb53b073f37fb639f1",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "agentReadSaga",
+              "originalBodySha256": "af436ebaae9ab3b5dbb6cd3521b0ce609a49058962cc7daf1c2a423c39eaeb7e",
+              "candidateBodySha256": "02c08d98404d74ebc671415acf216a39a9c96c00e16ca065d8929284e3500786",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            },
+            {
+              "name": "cleanupDeletedAgentTabs",
+              "originalBodySha256": "caba64f8f37e0e849318576917d12d489520fdee4a1058dbce02711273546cab",
+              "candidateBodySha256": "b273a448a17958dd8aa7c18d909dd74ff4cd99145946c0dfdb871f0e6188179c",
+              "tokensEqualAfterExplicitSourcePolicyInverse": true
+            }
+          ],
+          "sourceFacadeOnlyExplicitPolicyAdded": true,
+          "mandatoryAdmission": true,
+          "cleanupTwoArgumentSourceDefault": true,
+          "meaning": "Original003 bodies token-equal only after explicit removal of principal fences/branch and extra scope argument. Current source text/effect structure is intentionally different; no byte-equivalence or runtime acceptance asserted."
+        },
+        "principalAdmission": {
+          "atomicCheckThenDispatch": true,
+          "sourcePutPreserved": true,
+          "guards": [
+            "raw read inside callable",
+            "after fulfilled read",
+            "catch entry",
+            "each of three read writes",
+            "cleanup entry and each of three cleanup writes",
+            "inside cleanup invoke callable"
+          ],
+          "authority": "Direct current projection; selector channel only wakes/cancels. Captured context includes canonical connection/principal/revision/role/invalidation/presentation identity.",
+          "channelLifetime": "Created only for principal; wait until direct context non-null, authority-loss/read race, finally closes. Outer original workspace-unmount/same-agent-supersession race and single takeEvery retained.",
+          "limits": "Already authorized dispatch/invoke not rolled back. Synchronous host dispatch required; deferred middleware requires review. Pre-admission null-to-null backend replacement depends on host lifetime. No actual host/runtime acceptance."
+        },
+        "workspaceLifetime": {
+          "originalBodySha256": "2252e03420c89fbb7bdfa0999a2a0bdf9930443d462a6c3df4c45697934397ef",
+          "candidateBodySha256": "1f7e6b9aa0aa3fe1dd5621ed083d998210d04ea819a8273d705f860133a85883",
+          "bodyByteEqualAfterIndentRemoval": true,
+          "signature": "workspaceTabCleanupSaga(): SagaGenerator<void>",
+          "mandatoryNamedSelectorEffects": true,
+          "policy": "Original expanding actionChannel, initial load only if not live, tab-disappearance/deletion teardown, warm focus changes, dedupe, refocus load and finally close preserved.",
+          "scope": "Source compatibility composition only, existing roots/selectors unchanged; no React lifecycle binding atpin."
+        },
+        "settingsRepair": {
+          "path": "src/features/settings/settings-hydration-service.ts",
+          "previousSha256": "c325c5349d568cc1917a67a52764519160e5864ef0e9b3e7a3220dd1f440bda6",
+          "sha256": "d7d47350e40dbc2e43b6acb6c3873b01bbde850e08a76f0a16667f6aeffa2b04",
+          "exactOneLineInverse": true,
+          "meaning": "Defers genuine Store.dispatch lookup until hydrator calls it; same canonical action and sync result/error propagation. Import-time access failure corrected; no settings semantics/body/test changes."
+        },
+        "reactBinding": {
+          "path": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "sha256": "57cfd1d57a7a002c76eeb6d0b401f17f06aef3ad3cd8d5b696d739d15f275387",
+          "principalPolicy": true,
+          "directCurrentSnapshot": true,
+          "lazyExactDispatchGetter": true,
+          "sameCanonicalReadSelectorCleanup": true,
+          "importLifetime": "Existing singleton/factory/selector/schema/logger/Map/Set allocations remain. No state/dispatch getter, initialization, saga run, subscription/read, IPC or listener activated by new binding. Getter evaluated only after admission in worker.",
+          "activated": false
+        },
+        "sourceCleanupBinding8220Unchanged": true,
+        "rootsUnchanged": true,
+        "nativeCorrectionVerified": false,
+        "meaning": "Explicit source/principal API extends canonical owners. Svelte facade chooses source; principal checks live authority before reads/writes/cleanup. No new state, action, reducer, watcher owner, policy copy or root startup. Genuine host/workspace lifetime and admitted runtime activation remain separate."
+      },
+      "ownerEvidence": [
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/architecture-1.log",
+          "sha256": "b6fcbab498b9531fb3e30f50e78a605c3668ffa6480d18fe0bb3e1f65bbaef91"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/audit-published.log",
+          "sha256": "cb2be5f4a15dedba6140c757cf7536fc4354414f60c70fa1252e61efea1d4291"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/audit.log",
+          "sha256": "358b5eb958fc8ba01191a66d0778849d3c82b02aabcd69e7c40302d9868b655a"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/cheatsheet-1.log",
+          "sha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/dead-code-1.log",
+          "sha256": "5b83d299ea7795bdafe752ba981e6e2749ec996df5983929ff89d25119f32629"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/eslint-1.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/eslint-2.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/eslint-3.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/format-1.log",
+          "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/format-2.log",
+          "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/main-types-1.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/preload-types-1.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/react-types-1.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/react-types-2.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/renderer-types-1.log",
+          "sha256": "e712287c9e9df87dd104200fa1076881a35da59619815af921f15dd8624f27c9"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/renderer-types-2.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/renderer-types-3.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/svelte-check-1.log",
+          "sha256": "87312e59b7ebe1468b6ed81c7b7228d00c2edb7763d8ec98db5dad2e2e5d04f0"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/svelte-check-2.log",
+          "sha256": "2ca90e01b76d74d079c10dbef5b931c33a25d7902a47b2401a6c9703289f9244"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/ui-invariants-1.log",
+          "sha256": "014ee9a6f12734b1e3292f2e32756d4786d7c213bb1e2cfab9ad41d7389824fe"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/unit-1.log",
+          "sha256": "5b1593ff1555bf805d94ee26c6019b20cbf8f7f60ae92b6795b9ea90ffd4e237"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/unit-2.log",
+          "sha256": "0abd3cbc5f92b3006c4a5fabfbbe97769e58b0b4b1009e46a3cc2c2c1632aa27"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/unit-3.log",
+          "sha256": "108dacb51e8fe735e9783844aef9b08f7cfc1db7a0ecb83d44d568ef819b2d95"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/architecture.log",
+          "sha256": "e28c82e3890c14f6c144ec9afd77d38e8346f56407d335190793531669e2f628"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/build-config.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/cheatsheet.log",
+          "sha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/dead-code.log",
+          "sha256": "5b83d299ea7795bdafe752ba981e6e2749ec996df5983929ff89d25119f32629"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/format.log",
+          "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/ipc-generation.log",
+          "sha256": "2bfa488c9d6825755f98b90e0a63a291b463383f757f01f70204ae1ba8fd8dda"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/lint.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/main-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/preload-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/react-types.log",
+          "sha256": "dae9f56c542ace4ea08d5a527d5a3158e8eec9e0ce28176f56513c3ef8a5e919"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/renderer-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/svelte.log",
+          "sha256": "adc516aa0a71481fc9138914d2458ac10c5919a00ee7c9cec46627e4f1878d2f"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/ui-invariants.log",
+          "sha256": "17003eda8d8f1c9da028137f17e6cb451efbdb163d7487e42508367e1f18da9d"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/unit.log",
+          "sha256": "34b71921b18006beec87271a3b021ee144819c3d98d031b2bef42eef34ad081f"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/whitespace.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/architecture.log",
+          "sha256": "e28c82e3890c14f6c144ec9afd77d38e8346f56407d335190793531669e2f628"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/cheatsheet.log",
+          "sha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/format.log",
+          "sha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/lint.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/root-cleanup.log",
+          "sha256": "6893f6e56be4fd4ece4c208ebdcc17d3d25d7aa915fd884e5d6f2ea6fa928606"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/unit.log",
+          "sha256": "a95b139b2b0c80b73e9a989291cce2f84c599fdb847a40b628334ca52d846796"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/architecture.log",
+          "sha256": "e28c82e3890c14f6c144ec9afd77d38e8346f56407d335190793531669e2f628"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/cheatsheet.log",
+          "sha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/dead-code.log",
+          "sha256": "4b064e9033c99ceb8f05f615560ffc002fccd25bb3c3f7d74b55f92651b8ebd9"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/oxfmt.log",
+          "sha256": "6f61611972edba82a6830a45a82f8a0b25253095349e7f1ce75e074e0d064c86"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/oxlint.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/react-full-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/react-scoped-types.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/audit-published.json",
+          "sha256": "0c1803c9d5b131262a032d5223e2b27abc67bbf2048c220a552f4e73369163ff"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/audit-initial-relative-paths.json",
+          "sha256": "706c92ddfd88fcf2f99a6ef844f6e75388a83dc17de445c6f07238da0c02bb13"
+        },
+        {
+          "path": ".demo-artifacts/agent-read-admission-preparation/diff-stat.json",
+          "sha256": "75608efc13a5a0f96df40ac923796ddcf09835494def1b49001562d2830db9b9"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/final.json",
+          "sha256": "b7a257e199257e446f35def4ec1723ae84b2727540b78d447721270fb2da22ba"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/gates.json",
+          "sha256": "7892373da2a27ef37c595945bf7597ca372f722bba897d575cf2bcebefd533db"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/import-api-proof.json",
+          "sha256": "abd1dca3df2c0f646891525c985a68553323836bd82923a8167b31d62aab93f8"
+        },
+        {
+          "path": ".demo-artifacts/workspace-tab-cleanup-preparation/unchanged-boundaries.json",
+          "sha256": "c6b8014cd73f077f84fa90616d11cdd95f67307d8aa2f7de75781264ea60ccb0"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/publication-proof.json",
+          "sha256": "f9a02877835d45eedd4bf83e871cf695b1593c227dc8e9a5c951e7b75ee230a6"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/gates.json",
+          "sha256": "9d6d1a07e4ed6f87172af9adb206cea5f6a87304c9ca15a1d72501fdbff2bbba"
+        },
+        {
+          "path": ".demo-artifacts/settings-import-boundary-repair/draft-proof.json",
+          "sha256": "ae777a0914e7c1e6ca13dc149ea2578510f466844bcbac149933c2ce695126d2"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/gate-results.json",
+          "sha256": "7eb6ccd77dbce0244b50d883a99560c72300a113fdd582f001097641c4a85f72"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/audit-published.json",
+          "sha256": "912ed21b62fa028c07ac58cd663b1b4c6efe19aaa20bb575666e044cbb679004"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/manifest.json",
+          "sha256": "e0a0eb5e8e6418009568bed61069919d9c5215f1ccde37d68393c47cca1a50b5"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/manifest-provisional.json",
+          "sha256": "69ff8b33d8538dec084533fe8432751777fa1a81495c5af33095c9cff12c39b0"
+        },
+        {
+          "path": ".demo-artifacts/react-agent-read-binding-preparation/publication-start.json",
+          "sha256": "dd7669650a292747ef403e4cc9a997307b4099eb26e94d942f97115318a1adc1"
+        }
+      ],
+      "ownerGateProvenance": {
+        "admission": {
+          "commit": "3c2d9949781143e1316a4686bac999ddb894f58d",
+          "sourceHashes": {
+            "agent-read-admission.ts": "a89843aa5f04a34155dc7e5529fe04e16ffe9bfeec50331de545822fc392f463",
+            "agent-read-saga-factory.test.ts": "6340b2c4a8eaa82b3173a69687b8331b1751017982c6638279a2c75244822e8b",
+            "agent-read-saga-factory.ts": "b001ebedf6f62cd65f5e8f1d7a7695d709743c9333286d049cc431637f95dd98",
+            "agent-read-saga.ts": "b9fae177250b4507883b343933fafbfdac37bde2508ed948c780bc4afad1a2a4",
+            "deleted-agent-cleanup-factory.test.ts": "1f85ccd61dbac364f8cc54a14d12d1ac3c7b5b1d3b57d39cb2276d44e8e914da",
+            "deleted-agent-cleanup-factory.ts": "57f39c56c4ebc5f1df00f72a212030667df4099ba08705bc164c2711d98be5b9"
+          },
+          "finalExistingAndNewTests": 92,
+          "sourceInverseProof": {
+            "loadAgentSessionSaga": true,
+            "matchesWorkspaceCleanup": true,
+            "matchesLaterAgentEnsure": true,
+            "loadAgentSessionWorker": true,
+            "agentReadSaga": true,
+            "cleanupDeletedAgentTabs": true
+          },
+          "finalOnly": "unit-3 after sole-middleware correction;28newadmission+64existingregressions. Auditor did not run tests."
+        },
+        "workspaceLifetime": {
+          "at": "2026-10-12T08:45:33.759200+00:00",
+          "parent": "998be0eef036c067550f1fdc5c3412985da6759a",
+          "gates": [
+            {
+              "name": "format",
+              "command": [
+                "corepack",
+                "pnpm",
+                "exec",
+                "prettier",
+                "--check",
+                "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+                "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts"
+              ],
+              "startedAt": "2026-10-12T08:41:57.291656+00:00",
+              "pid": 3482711,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:41:57.549113+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/format.log",
+              "logSha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+            },
+            {
+              "name": "lint",
+              "command": [
+                "corepack",
+                "pnpm",
+                "exec",
+                "eslint",
+                "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+                "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts"
+              ],
+              "startedAt": "2026-10-12T08:41:57.549462+00:00",
+              "pid": 3482811,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:41:58.104652+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/lint.log",
+              "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "name": "unit",
+              "command": [
+                "corepack",
+                "pnpm",
+                "run",
+                "test:unit",
+                "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.test.ts",
+                "src/store/renderer/sagas.test.ts",
+                "--maxWorkers=1"
+              ],
+              "startedAt": "2026-10-12T08:41:58.105003+00:00",
+              "pid": 3483000,
+              "exitCode": 1,
+              "finishedAt": "2026-10-12T08:42:09.227385+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/unit.log",
+              "logSha256": "34b71921b18006beec87271a3b021ee144819c3d98d031b2bef42eef34ad081f"
+            },
+            {
+              "name": "svelte",
+              "command": ["corepack", "pnpm", "run", "check"],
+              "startedAt": "2026-10-12T08:42:43.030773+00:00",
+              "pid": 3496242,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:43:20.409379+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/svelte.log",
+              "logSha256": "adc516aa0a71481fc9138914d2458ac10c5919a00ee7c9cec46627e4f1878d2f"
+            },
+            {
+              "name": "renderer-types",
+              "command": [
+                "corepack",
+                "pnpm",
+                "exec",
+                "tsc",
+                "-p",
+                "tsconfig.json",
+                "--noEmit",
+                "--pretty",
+                "false"
+              ],
+              "startedAt": "2026-10-12T08:43:20.409833+00:00",
+              "pid": 3507132,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:43:38.696047+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/renderer-types.log",
+              "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "name": "react-types",
+              "command": ["corepack", "pnpm", "run", "check:react"],
+              "startedAt": "2026-10-12T08:43:38.696414+00:00",
+              "pid": 3512395,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:43:42.006478+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/react-types.log",
+              "logSha256": "dae9f56c542ace4ea08d5a527d5a3158e8eec9e0ce28176f56513c3ef8a5e919"
+            },
+            {
+              "name": "build-config",
+              "command": ["node", "scripts/generate-build-config.cjs", "--if-missing"],
+              "startedAt": "2026-10-12T08:43:42.006868+00:00",
+              "pid": 3513433,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:43:42.024377+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/build-config.log",
+              "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "name": "main-types",
+              "command": [
+                "corepack",
+                "pnpm",
+                "exec",
+                "tsc",
+                "-p",
+                "tsconfig.main.json",
+                "--noEmit",
+                "--pretty",
+                "false"
+              ],
+              "startedAt": "2026-10-12T08:43:42.024618+00:00",
+              "pid": 3513445,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:43:48.927663+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/main-types.log",
+              "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "name": "ipc-generation",
+              "command": ["corepack", "pnpm", "run", "generate:ipc-channels"],
+              "startedAt": "2026-10-12T08:43:48.928064+00:00",
+              "pid": 3515458,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:43:49.370011+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/ipc-generation.log",
+              "logSha256": "2bfa488c9d6825755f98b90e0a63a291b463383f757f01f70204ae1ba8fd8dda"
+            },
+            {
+              "name": "preload-types",
+              "command": [
+                "corepack",
+                "pnpm",
+                "exec",
+                "tsc",
+                "-p",
+                "tsconfig.preload.json",
+                "--noEmit",
+                "--pretty",
+                "false"
+              ],
+              "startedAt": "2026-10-12T08:43:49.370408+00:00",
+              "pid": 3515623,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:43:49.824703+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/preload-types.log",
+              "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "name": "architecture",
+              "command": ["corepack", "pnpm", "run", "lint:architecture"],
+              "startedAt": "2026-10-12T08:43:49.825127+00:00",
+              "pid": 3515776,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:44:53.358220+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/architecture.log",
+              "logSha256": "e28c82e3890c14f6c144ec9afd77d38e8346f56407d335190793531669e2f628"
+            },
+            {
+              "name": "cheatsheet",
+              "command": ["corepack", "pnpm", "run", "lint:design-cheatsheet"],
+              "startedAt": "2026-10-12T08:44:53.358657+00:00",
+              "pid": 3534560,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:44:53.818116+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/cheatsheet.log",
+              "logSha256": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+            },
+            {
+              "name": "ui-invariants",
+              "command": ["corepack", "pnpm", "run", "test:ui-invariants"],
+              "startedAt": "2026-10-12T08:44:53.818582+00:00",
+              "pid": 3534734,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:45:13.784008+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/ui-invariants.log",
+              "logSha256": "17003eda8d8f1c9da028137f17e6cb451efbdb163d7487e42508367e1f18da9d"
+            },
+            {
+              "name": "dead-code",
+              "command": ["corepack", "pnpm", "run", "lint:dead-code"],
+              "startedAt": "2026-10-12T08:45:13.784432+00:00",
+              "pid": 3540851,
+              "exitCode": 1,
+              "finishedAt": "2026-10-12T08:45:19.843012+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/dead-code.log",
+              "logSha256": "5b83d299ea7795bdafe752ba981e6e2749ec996df5983929ff89d25119f32629"
+            },
+            {
+              "name": "whitespace",
+              "command": ["git", "diff", "--check"],
+              "startedAt": "2026-10-12T08:45:19.843553+00:00",
+              "pid": 3542663,
+              "exitCode": 0,
+              "finishedAt": "2026-10-12T08:45:19.848716+00:00",
+              "log": ".demo-artifacts/workspace-tab-cleanup-preparation/whitespace.log",
+              "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ],
+          "liveOwnedGatePids": [],
+          "approvedDraftsMatchMaintained": true,
+          "ownedFiles": {
+            "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts": "c9c53fb08f338ccd5d63aed11521508fe712e97b6a6dae33b2cd334b8c4d8b61",
+            "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts": "5d383bf8605b5a5cf2b18c1d772e748bf3bafe603334f1ee4e57a71a3da4c4ea"
+          },
+          "proofSha256": "abd1dca3df2c0f646891525c985a68553323836bd82923a8167b31d62aab93f8",
+          "head": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1",
+          "completedAt": "2026-10-12T08:45:47.122148+00:00",
+          "cleanStatus": true,
+          "committedPaths": [
+            "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+            "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts"
+          ],
+          "commitHashesMatchApproved": true
+        },
+        "settingsRepair": {
+          "publication": {
+            "path": "src/features/settings/settings-hydration-service.ts",
+            "before": "c325c5349d568cc1917a67a52764519160e5864ef0e9b3e7a3220dd1f440bda6",
+            "after": "d7d47350e40dbc2e43b6acb6c3873b01bbde850e08a76f0a16667f6aeffa2b04",
+            "inverse": true,
+            "cause": "Module-scope access to uninitialized Store.dispatch throws before root saga test collection",
+            "scope": "Deferred access only; canonical hydrator body, call timing, action, synchronous result, errors and all tests unchanged",
+            "state": "Publication closed; all owned gate subprocesses exited",
+            "headBefore": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1",
+            "sourceMatchesReviewedDraft": true,
+            "onlyOwnedPath": ["src/features/settings/settings-hydration-service.ts"],
+            "logHashes": {
+              "architecture.log": "e28c82e3890c14f6c144ec9afd77d38e8346f56407d335190793531669e2f628",
+              "format.log": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+              "types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "unit.log": "a95b139b2b0c80b73e9a989291cce2f84c599fdb847a40b628334ca52d846796",
+              "root-cleanup.log": "6893f6e56be4fd4ece4c208ebdcc17d3d25d7aa915fd884e5d6f2ea6fa928606",
+              "cheatsheet.log": "f5b61a0abb8fd2b50b8c1666a36fd00a232ee0550bd7d67ef065c58a3695d5c8"
+            },
+            "commit": "7b05c3a432e0d9c76ce47c88be01d8b67e025b93",
+            "committedBytesMatch": true,
+            "guideImpact": "Internal unreleased migration support; no user-facing feature or help change"
+          },
+          "gates": {
+            "timestamp": "2026-10-12 08:47:51 UTC",
+            "gates": [
+              {
+                "name": "unit",
+                "command": "corepack pnpm run test:unit src/store/renderer/sagas.test.ts src/features/settings/settings-hydration-service.test.ts src/features/settings/notification-volume-hydration.test.ts --maxWorkers=1",
+                "exitCode": 1,
+                "sessionId": 57411
+              },
+              {
+                "name": "types",
+                "command": "corepack pnpm exec tsc -p tsconfig.json --noEmit --pretty false",
+                "exitCode": 0,
+                "sessionId": 43782
+              },
+              {
+                "name": "lint",
+                "command": "corepack pnpm exec eslint src/features/settings/settings-hydration-service.ts",
+                "exitCode": 0,
+                "sessionId": null
+              },
+              {
+                "name": "format",
+                "command": "corepack pnpm exec prettier --check src/features/settings/settings-hydration-service.ts",
+                "exitCode": 0,
+                "sessionId": null
+              },
+              {
+                "name": "cheatsheet",
+                "command": "corepack pnpm run lint:design-cheatsheet",
+                "exitCode": 0,
+                "sessionId": null
+              },
+              {
+                "name": "architecture",
+                "command": "corepack pnpm run lint:architecture",
+                "exitCode": 0,
+                "sessionId": 58784
+              },
+              {
+                "name": "root-cleanup",
+                "command": "corepack pnpm run test:unit src/store/renderer/sagas.test.ts src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.test.ts --maxWorkers=1",
+                "exitCode": 0,
+                "sessionId": 96313
+              }
+            ],
+            "scope": "One deferred-dispatch line. Root/cleanup 13 pass. Broader settings attempt preserved: root3 pass, two suites fail collection because existing backend-transport mocks omit captureBackendRepositoryCheckout.",
+            "knownUnresolved": "Repository Knip589 remains unsuppressed; no baseline or whole-CI claim; no browser/runtime service actions."
+          }
+        },
+        "reactBinding": {
+          "completedAt": "2026-10-12T08:50:01.349086+00:00",
+          "publicationBase": "7b05c3a432e0d9c76ce47c88be01d8b67e025b93",
+          "ownedFile": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "sha256": "57cfd1d57a7a002c76eeb6d0b401f17f06aef3ad3cd8d5b696d739d15f275387",
+          "gates": {
+            "deps:check": 0,
+            "react-scoped-types": 0,
+            "react-full-types": 0,
+            "oxlint": 0,
+            "oxfmt": 0,
+            "architecture": 0,
+            "cheatsheet": 0,
+            "staged-whitespace": 0,
+            "dead-code": 1
+          },
+          "deadCode": {
+            "errors": 590,
+            "unusedFiles": 26,
+            "unusedDependencies": 1,
+            "unusedExports": 398,
+            "unusedTypes": 165,
+            "duplicateExportWarnings": 103,
+            "ownedFinding": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+            "suppressed": false,
+            "baseCiLink": null
+          },
+          "regressions": {
+            "runBy": "admission owner184",
+            "commit": "3c2d9949781143e1316a4686bac999ddb894f58d",
+            "passed": 92,
+            "rerunByThisTask": false,
+            "fiveTestFilesAndDependenciesVerifiedUnchanged": true
+          },
+          "closure": {
+            "runtime": 131,
+            "types": 194,
+            "unresolved": 0,
+            "forbidden": 0,
+            "reviewedGraphHashesMatch": true,
+            "limits": "Explicit13 external packages and generated i18n boundary; no product runtime import."
+          },
+          "processes": "All owned checks exited; no server/browser started."
+        },
+        "svelte": {
+          "errors": 0,
+          "warnings": 211
+        },
+        "uiInvariants": 223,
+        "deadCode": {
+          "errors": 590,
+          "unusedFiles": 26,
+          "unusedDependencies": 1,
+          "unusedExports": 398,
+          "unusedTypes": 165,
+          "duplicateExportWarnings": 103,
+          "ownedFinding": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "suppressed": false,
+          "baseCiLink": null
+        },
+        "retainedFailures": [
+          {
+            "scope": "admission preparation",
+            "evidence": [
+              ".demo-artifacts/agent-read-admission-preparation/unit-1.log",
+              ".demo-artifacts/agent-read-admission-preparation/renderer-types-1.log",
+              ".demo-artifacts/agent-read-admission-preparation/svelte-check-1.log",
+              ".demo-artifacts/agent-read-admission-preparation/unit-2.log",
+              ".demo-artifacts/agent-read-admission-preparation/unit-3.log"
+            ],
+            "meaning": "Missing direct redux import and Promise|null type failure retained. Interim92-pass fixture duplicated saga middleware; final3c sole-Themis-middleware fixture passes92. No interim acceptance."
+          },
+          {
+            "scope": "workspace source root import",
+            "evidence": [
+              ".demo-artifacts/workspace-tab-cleanup-preparation/unit.log",
+              ".demo-artifacts/settings-import-boundary-repair/root-cleanup.log"
+            ],
+            "meaning": "Initial combined root/cleanup exit1: cleanup10PASS, settings module read Store.dispatch before init. Exact7b one-line deferral then root+cleanup13PASS. No baseline-CI inference."
+          },
+          {
+            "scope": "settings broader collection",
+            "evidence": [".demo-artifacts/settings-import-boundary-repair/unit.log"],
+            "meaning": "Two settings suites still fail collection: existing backend transport mocks lack captureBackendRepositoryCheckout; root3PASS in same failed command. Tests unchanged; no baseline claim."
+          },
+          {
+            "scope": "Knip",
+            "evidence": [
+              ".demo-artifacts/agent-read-admission-preparation/dead-code-1.log",
+              ".demo-artifacts/workspace-tab-cleanup-preparation/dead-code.log",
+              ".demo-artifacts/react-agent-read-binding-preparation/dead-code.log"
+            ],
+            "meaning": "589 prior wave and590 final findings unsuppressed; final26files+1dependency+398exports+165types and103duplicatewarnings includes inactive React binding. No comparable-base scan or whole-CI claim."
+          }
+        ]
+      },
+      "nativeBoundary": "No native evidence imported/refreshed/transferred. RunningE1, OW3df/998 progress and priorRG/OW receipts remain separatelypinned. New Reactworkspace binding455 outsidepin/ignored excluded.",
+      "auditorPreparationIssue": "Ignored audit initially reused runtime as both string variable and scanner function; renamed installedRuntime before any ledger mutation. No application code executed; final static proof passes.",
+      "retainedHistory": {
+        "ledgerCommit": "33a4bd3063839f5cfe227ffea6da612fb7e35cff",
+        "ledgerSha256": "db0124640ae358a4785b1da39f287303749f8dfd461f349f2ee6276fe9833118",
+        "preservedReviewCount": 94,
+        "meaning": "Full old1890rows/236mappings/230targets/94reviews/audits/limits/cases/29receipts retained. All27 historical changed-support citations keep original hashes and actual review pins. Original003, sourcePort8a/coreCorrectiond47, cleanup0dd, Enddf, prerequisite8220 and all native profiles remain distinct."
+      },
+      "testHandoff": {
+        "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+        "status": "not-run",
+        "scope": "Auditor static AST/hash/ledger only. Saved owner92tests (final corrected sole middleware), source lifetime10 and corrected root+cleanup13,UI223/typecheck receipts are provenance, not actual React startup/read/Store/service/IPC/native acceptance. No tests or discovery rerun."
+      },
+      "sourceDriftPolicy": "003 and inventory1430/1890 unchanged;19CLI invalidations retained. All10changed supporting/test paths outsideinventory explicitly tracked; unchanged direct targets/CLI totals do not imply unchanged source/factory behavior. No baseline/status/guard change.",
+      "excludedLaterWork": "Ignored-only workspace React binding455/bcbf2eac and future activation excluded. ActiveE1/OW3df998 and separate RG results not imported or transferred.",
+      "userHelpImpact": "Internal unreleased migration orchestration/binding support only; no released control, label, path or prerequisite changes, so no affected assistant-help section or companion PR."
     }
   },
   "sources": {
@@ -134780,6 +136960,120 @@
         "deleted-agent-cleanup-support-0ddf543a",
         "canonical-focused-end-support-df98264e"
       ]
+    },
+    {
+      "candidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded static supporting React panel-layout registration and real preload cleanup binding at8220d33b. No new maps, target refresh, implementation-status promotion or native acceptance. All1890source rows and230targets retained:236/1430(231components+5modules),178partial58localimplemented;94reviews. Exact two-line Store inverse, unchanged original003 canonical reducer/types/body, call-time preload invocation and closed local runtime/type graphs reviewed. No cleanup consumer or saga activation. Two supporting paths outside fixedinventory explicitly tracked;8oldcitations/19invalidations/allhistory retained.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T08:31:54.252423+00:00",
+      "checkpointAdvance": {
+        "previousLedgerCommit": "e1b4a53e9f048ffbd4e85a70cbd610ea2948da61",
+        "previousAuditCandidateCommit": "df98264e99e861f43774c39a8b65de7597e01a53",
+        "unchangedUniqueDirectTargets": 230,
+        "changedUniqueDirectTargets": 0,
+        "retainedHistoricalReviewCount": 93,
+        "meaning": "Common validation pin only; old actual inspected/source/support/native review pins and all original acceptance boundaries retained."
+      },
+      "ledgerCommit": "33a4bd3063839f5cfe227ffea6da612fb7e35cff",
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10",
+        "chat-transcript-markers-fe630",
+        "chat-transcript-notices-fe630",
+        "chat-disclosure-rows-fb515",
+        "chat-recovery-notices-fb515",
+        "chat-stream-metadata-3230",
+        "chat-history-attribution-3230",
+        "chat-disclosure-corrections-3230",
+        "chat-queued-actions-command-3e894",
+        "chat-code-reference-context-4bfa",
+        "chat-inline-mcp-prompt-preview-9d297",
+        "queued-attachments-0a010",
+        "tabs-export-correction-0a010",
+        "streaming-status-840763",
+        "mcp-inline-font-correction-840763",
+        "suggested-chief-prompts-16ee80",
+        "automated-wake-header-f2b2a2",
+        "agent-pr-attribution-headers-73da5529",
+        "attachment-permission-support-05cc7db6",
+        "attachment-file-replacement-ff9a4e35",
+        "inline-permission-and-live-support-6a51a3da",
+        "media-and-markdown-composition-dd6e5720",
+        "full-markdown-and-reasoning-68a5ca85",
+        "chat-image-and-video-wrapper-561fa08c",
+        "message-actions-and-transcript-cards-2d310fed",
+        "setup-script-and-edit-confirmation-3d7e81dc",
+        "operational-window-and-panel-2d988e34",
+        "response-group-and-cylinder-1cea8e2b",
+        "navigation-excerpt-and-image-caption-34161b6d",
+        "response-group-reaction-correction-e46a388f",
+        "detected-scripts-and-neutral-indicator-0afebba9",
+        "markdown-image-owner-correction-35e676aa",
+        "static-toast-containment-support-8f0bbcda",
+        "canonical-anchor-and-agent-read-support-d4abc96f",
+        "deleted-agent-cleanup-support-0ddf543a",
+        "canonical-focused-end-support-df98264e",
+        "react-panel-cleanup-prerequisites-8220d33b"
+      ]
     }
   ],
   "receipts": {
@@ -139926,6 +142220,177 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "003 and inventory1430/1890 unchanged;19CLI invalidations retained. Both changed supporting paths outsideinventory explicitlyflagged; no direct-target bytes changed. No sourcebaseline, statusdefinition or guard relaxed."
+    },
+    {
+      "id": "admitted-agent-read-and-lifetime-support-785d3b4e",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+      "previousLedgerCommit": "33a4bd3063839f5cfe227ffea6da612fb7e35cff",
+      "previousCommonCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+      "reviewedAt": "2026-10-12T08:53:44.488785+00:00",
+      "method": "Bounded static supporting canonical admission, workspace-tab lifetime extraction, deferred settings dispatch and inert React agent-read binding at785d3b4e. No new maps, direct-target refresh, status promotion or native acceptance. All1890rows/230targets retained:236/1430(231components+5modules),178partial58localimplemented;95reviews. Original003 policy inverses and new principal boundaries explicitly reviewed, no unchanged-current-source byte claim. Eight production support paths plus two regression-test evidence paths outside fixedinventory;27oldcitations/19invalidations/history/failures retained.",
+      "counts": {
+        "addedMappings": 0,
+        "addedSvelteComponents": 0,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "mappedViews": 236,
+        "mappedSvelteComponents": 231,
+        "mappedSvelteReactivityModules": 5,
+        "views": {
+          "unmapped": 1194,
+          "partial": 178,
+          "implemented": 58
+        }
+      },
+      "sourcePaths": [],
+      "targetedExistingSourcePaths": [],
+      "newUniqueDirectTargetCount": 0,
+      "priorUniqueDirectTargetCount": 230,
+      "allUniqueDirectTargetCount": 230,
+      "priorDirectTargetIdentity": {
+        "count": 230,
+        "unchanged": 230,
+        "changed": [],
+        "orderedPathAndHashSha256": "682b2051be5da1bf3bc5f36ff0a9e4a1cd234e82b4459a04732daccfeeea7d7a"
+      },
+      "supportDelta": [
+        {
+          "path": "apps/react/src/store/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "57cfd1d57a7a002c76eeb6d0b401f17f06aef3ad3cd8d5b696d739d15f275387",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9"
+        },
+        {
+          "path": "src/features/settings/settings-hydration-service.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "d7d47350e40dbc2e43b6acb6c3873b01bbde850e08a76f0a16667f6aeffa2b04",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "c325c5349d568cc1917a67a52764519160e5864ef0e9b3e7a3220dd1f440bda6",
+          "originalSha256": "7b46266f1d436ee278eef9e9d7c391ed16490497f1e2e8d838bdf4f922259928",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "7b05c3a432e0d9c76ce47c88be01d8b67e025b93"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-admission.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "a89843aa5f04a34155dc7e5529fe04e16ffe9bfeec50331de545822fc392f463",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.test.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "6340b2c4a8eaa82b3173a69687b8331b1751017982c6638279a2c75244822e8b",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "regression-test-evidence",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "b001ebedf6f62cd65f5e8f1d7a7695d709743c9333286d049cc431637f95dd98",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "3c6cfdadfeecce2ede3229634e634e92bba9ef53cee105e23f8d7ec20cf0e5ee",
+          "originalSha256": null,
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/agent-read-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "b9fae177250b4507883b343933fafbfdac37bde2508ed948c780bc4afad1a2a4",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "550620e23e0dc385c60539fe61428a2385cfdb9d2e6e970defb8442bd1a10ca3",
+          "originalSha256": "f6daa0a7537910ecd8c66cc8d5df7d705d09812d23d82a75d49bbe7e525f734b",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.test.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "1f85ccd61dbac364f8cc54a14d12d1ac3c7b5b1d3b57d39cb2276d44e8e914da",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "regression-test-evidence",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-agents/sagas/deleted-agent-cleanup-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "57f39c56c4ebc5f1df00f72a212030667df4099ba08705bc164c2711d98be5b9",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "b91172d391fb0b2aa4fbcd8f887d17bf79016dc131fd42bcd1cb50bb1339eaba",
+          "originalSha256": null,
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "3c2d9949781143e1316a4686bac999ddb894f58d"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga-factory.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "c9c53fb08f338ccd5d63aed11521508fe712e97b6a6dae33b2cd334b8c4d8b61",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": null,
+          "originalSha256": null,
+          "change": "added",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1"
+        },
+        {
+          "path": "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga.ts",
+          "candidateCommit": "785d3b4efac023b8dd0fb57a20b8c13fe5d2abb9",
+          "sha256": "5d383bf8605b5a5cf2b18c1d772e748bf3bafe603334f1ee4e57a71a3da4c4ea",
+          "previousCandidateCommit": "8220d33b0e0f50e588c3579b21f15fac106b2a05",
+          "previousSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "originalSha256": "74e04e7c17303059b2aa5028d6c751320323f51fb76428a1817a77f2161f387a",
+          "change": "modified",
+          "kind": "supporting-production",
+          "supportOnly": true,
+          "outsideImmutableInventory": true,
+          "implementationCommit": "8ce3d560395f0297d01ecb949af5a2ba80bf60f1"
+        }
+      ],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "003 and inventory1430/1890 unchanged;19CLI invalidations retained. All10changed supporting/test paths outsideinventory explicitly tracked; unchanged direct targets/CLI totals do not imply unchanged source/factory behavior. No baseline/status/guard change."
     }
   ]
 }
