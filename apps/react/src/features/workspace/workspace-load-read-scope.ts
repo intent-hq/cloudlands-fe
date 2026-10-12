@@ -37,18 +37,38 @@ function unavailable() {
 /** Explicit ready-origin observation; import never allocates or initializes a product Store. */
 export async function observeWorkspaceLoadAuthority(
   dependencies: Dependencies,
+  observationSignal?: AbortSignal,
 ): Promise<(WorkspaceOriginAuthority & { release(): void }) | null> {
   let backend: BackendRuntime;
   let store: Dependencies['store'];
   let deletions: Dependencies['deletions'];
   let origin;
   try {
+    if (observationSignal?.aborted) return null;
     ({ backend, store, deletions } = dependencies);
-    origin = await dependencies.transport.observeOrigin();
+    origin = observationSignal
+      ? await dependencies.transport.observeOrigin(observationSignal)
+      : await dependencies.transport.observeOrigin();
   } catch {
     return null;
   }
   if (!origin) return null;
+  if (observationSignal) {
+    let refused = false;
+    try {
+      refused = observationSignal.aborted;
+    } catch {
+      refused = true;
+    }
+    if (refused) {
+      try {
+        origin.release();
+      } catch {
+        /* Refused handoff cannot transfer ownership, even when release throws. */
+      }
+      return null;
+    }
+  }
   const capturedOrigin = origin;
   const consumed = new WeakSet<object>();
 

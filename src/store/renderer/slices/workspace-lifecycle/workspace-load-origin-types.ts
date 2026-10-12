@@ -3,6 +3,7 @@ import type {
   StoreSelectorEffect,
   StoreSelectorSelect,
 } from '@themislib/themis/types';
+import type { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import type { AcquiredTabState } from '../tab-state/tab-state-acquisition-types';
 import type { workspaceLoadRequested } from './workspace-lifecycle-slice';
 import type {
@@ -33,8 +34,15 @@ export type WorkspaceOriginAuthority = {
   prepare(request: WorkspaceLoadRequestLifetime): Promise<PreparedWorkspaceLoadOrigin | null>;
 };
 
+/** Original physical capture; the async acquisition owner must transfer or release it. */
+export type OwnedWorkspaceOriginAuthority = WorkspaceOriginAuthority & {
+  /** Non-throwing, idempotent; releases only this captured origin. */
+  release(): void;
+};
+
 /** The only port given to producers and the b0 loader. No action/dispatch/publish capability. */
 export type WorkspaceLoadOriginPort = {
+  /** Existing synchronous producer port; optional async mode refuses external submissions. */
   submit(workspaceId: string, capturedAuthority: WorkspaceOriginAuthority): boolean;
   captureRequest(action: WorkspaceLoadAction): WorkspaceLoadRequestLifetime | null;
 };
@@ -78,8 +86,17 @@ export type OriginWorkspaceTabCleanupOptions<State extends WorkspaceOriginState>
   selectIsWorkspaceSessionLive: {
     select: StoreSelectorSelect<boolean, [wsId: string], State>;
   };
-  /** Pure synchronous lookup of an already captured handle. No lazy capture, await or I/O. */
+  /** Pure synchronous lookup only when observation is omitted. No lazy capture, await or I/O. */
   readReadyAuthority(workspaceId: string): WorkspaceOriginAuthority | null;
+  /** Opt-in observation; omitted preserves the existing synchronous option. */
+  observation?: {
+    /** Accepted cancellation API: prompt null on abort, original invocation drained. */
+    observe(signal: AbortSignal): Promise<OwnedWorkspaceOriginAuthority | null>;
+    /** Existing status action is only a wake hint, never physical authority. */
+    wakeAction: typeof connectionStatusChanged;
+    /** Pure canonical principal context. Freshness fence only; loader owns read admission. */
+    readCurrentContext(): string | null;
+  };
   /** Root-owned binding; disposer detaches producer access. A retained port refuses after teardown. */
   bind(port: WorkspaceLoadOriginPort): () => void;
 };

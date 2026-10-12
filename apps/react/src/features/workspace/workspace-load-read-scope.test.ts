@@ -663,3 +663,121 @@ describe('real canonical clients per workspace-load acquisition', () => {
     expect(authority.isCurrent()).toBe(true);
   });
 });
+
+describe('real React authority observation cancellation', () => {
+  function observe(f: ReturnType<typeof fixture>, signal: AbortSignal) {
+    return observeWorkspaceLoadAuthority(
+      {
+        transport: f.transport,
+        backend: f.backend,
+        store: f.actual,
+        deletions: f.deletions,
+      },
+      signal,
+    );
+  }
+
+  it('refuses pre-aborted observation before invoking the actual transport', async () => {
+    const f = fixture();
+    const observation = new AbortController();
+    observation.abort();
+    const capture = vi.spyOn(f.transport, 'observeOrigin');
+    expect(await observe(f, observation.signal)).toBeNull();
+    expect(capture).not.toHaveBeenCalled();
+    expect(f.api.on).not.toHaveBeenCalled();
+    expect(f.invoke).not.toHaveBeenCalled();
+    expect(f.actual.state.workspace.workspaces.ids).toHaveLength(0);
+  });
+
+  it.each(['success', 'outer', 'malformed', 'rejection'] as const)(
+    'forwards prompt cancellation and retains a successor after late %s',
+    async (settlement) => {
+      const f = fixture();
+      const held = deferred<unknown>();
+      f.invoke.mockImplementationOnce(() => held.promise);
+      const observation = new AbortController();
+      const capture = vi.spyOn(f.transport, 'observeOrigin');
+      const pending = observe(f, observation.signal);
+      const originalInvoke = f.invoke.mock.results[0]!.value;
+      observation.abort();
+      expect(await pending).toBeNull();
+      expect(capture).toHaveBeenCalledExactlyOnceWith(observation.signal);
+      expect(f.api.offById).toHaveBeenCalledOnce();
+      expect(f.invoke.mock.calls).toEqual([[channels.OBSERVE_ORIGIN]]);
+      const successor = await f.authority();
+      const owned = await f.acquire(successor);
+      if (settlement === 'rejection') held.reject(new Error('late observation failed'));
+      else if (settlement === 'outer')
+        held.resolve({ ok: false, error: { code: 'OFFLINE', message: 'old failure' } });
+      else if (settlement === 'malformed') held.resolve({ ok: true, result: { originId: 7 } });
+      else held.resolve({ ok: true, result: { originId: 'cancelled-origin' } });
+      await originalInvoke.catch(() => undefined);
+      expect(
+        f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE_ORIGIN),
+      ).toEqual(
+        settlement === 'success'
+          ? [[channels.RELEASE_ORIGIN, { originId: 'cancelled-origin' }]]
+          : [],
+      );
+      expect(successor.isCurrent()).toBe(true);
+      expect(owned.intent.authorizePublication()).toBe(true);
+      const opened = owned.scope.workspaceClient.open(workspaceId);
+      const got = owned.scope.appClient.workspaces.get(workspaceId);
+      f.settle(0, { ok: true, data: workspace() });
+      f.settle(1, { workspace: workspace() });
+      expect(await opened).toMatchObject({ ok: true, data: { id: workspaceId } });
+      expect(await got).toMatchObject({ id: workspaceId, status: WorkspaceStatus.Archived });
+      expect(owned.scope.isCurrent()).toBe(true);
+    },
+  );
+
+  it('releases the real origin when abort wins between transport and helper handoff', async () => {
+    const f = fixture();
+    const observation = new AbortController();
+    const originalRemove = observation.signal.removeEventListener;
+    vi.spyOn(observation.signal, 'removeEventListener').mockImplementation((...args) => {
+      Reflect.apply(originalRemove, observation.signal, args);
+      // Queued before the helper's await continuation, after transport's final check.
+      queueMicrotask(() => observation.abort());
+    });
+    const capture = vi.spyOn(f.transport, 'observeOrigin');
+    const pending = observe(f, observation.signal);
+    const originalTransport = capture.mock.results[0]!.value;
+    expect(await pending).toBeNull();
+    const refused = await originalTransport;
+    expect(refused).not.toBeNull();
+    expect(refused!.signal.aborted).toBe(true);
+    expect(f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE_ORIGIN)).toEqual([
+      [channels.RELEASE_ORIGIN, { originId: 'origin-2' }],
+    ]);
+    expect(f.reads).toHaveLength(0);
+    expect(f.actual.state.workspace.workspaces.ids).toHaveLength(0);
+    const successor = await f.authority();
+    const owned = await f.acquire(successor);
+    expect(owned.scope.isCurrent()).toBe(true);
+  });
+
+  it('hands off an independent authority that survives later observation abort', async () => {
+    const f = fixture();
+    const observation = new AbortController();
+    const authority = (await observe(f, observation.signal))!;
+    stops.push(authority.release);
+    observation.abort();
+    expect(authority.isCurrent()).toBe(true);
+    expect(authority.signal.aborted).toBe(false);
+    const owned = await f.acquire(authority);
+    const opened = owned.scope.workspaceClient.open(workspaceId);
+    const got = owned.scope.appClient.workspaces.get(workspaceId);
+    f.settle(0, { ok: true, data: workspace() });
+    f.settle(1, { workspace: workspace() });
+    expect(await opened).toMatchObject({ ok: true });
+    expect(await got).toMatchObject({ id: workspaceId });
+    expect(owned.scope.isCurrent()).toBe(true);
+    expect(f.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE_ORIGIN)).toEqual(
+      [],
+    );
+    authority.release();
+    expect(owned.scope.signal.aborted).toBe(true);
+    expect(owned.intent.authorizePublication()).toBe(false);
+  });
+});

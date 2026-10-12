@@ -569,3 +569,191 @@ describe('prompt pending preparation cancellation', () => {
     ]);
   });
 });
+
+describe('observation-only cancellation before origin handoff', () => {
+  it('refuses a pre-aborted observation before reading or registering the bridge', async () => {
+    const value = install();
+    const readApi = vi.fn(() => value.api);
+    const observation = new AbortController();
+    observation.abort();
+    const add = vi.spyOn(observation.signal, 'addEventListener');
+    expect(
+      await createElectronWorkspaceLoadTransport(channels, readApi).observeOrigin(
+        observation.signal,
+      ),
+    ).toBeNull();
+    expect(readApi).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(value.api.on).not.toHaveBeenCalled();
+    expect(value.invoke).not.toHaveBeenCalled();
+  });
+
+  it.each(['before-add', 'after-add', 'retirement-listener', 'throw-after-add'] as const)(
+    'cleans registration reentrancy at %s without invoking observation',
+    async (boundary) => {
+      const value = install();
+      const observation = new AbortController();
+      const originalAdd = observation.signal.addEventListener;
+      const remove = vi.spyOn(observation.signal, 'removeEventListener');
+      const add = vi.spyOn(observation.signal, 'addEventListener').mockImplementation((...args) => {
+        if (boundary === 'before-add') observation.abort();
+        Reflect.apply(originalAdd, observation.signal, args);
+        if (boundary === 'after-add') observation.abort();
+        if (boundary === 'throw-after-add') throw new Error('registered then failed');
+      });
+      if (boundary === 'retirement-listener') {
+        const originalOn = value.api.on;
+        value.api.on = vi.fn((...args) => {
+          observation.abort();
+          return Reflect.apply(originalOn, value.api, args);
+        });
+      }
+      expect(
+        await createElectronWorkspaceLoadTransport(channels).observeOrigin(observation.signal),
+      ).toBeNull();
+      expect(remove).toHaveBeenCalledExactlyOnceWith('abort', add.mock.calls[0]![1]);
+      expect(value.listeners.size).toBe(0);
+      expect(value.api.offById).toHaveBeenCalledTimes(boundary === 'retirement-listener' ? 1 : 0);
+      expect(value.invoke).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['success', 'outer', 'malformed', 'rejection'] as const)(
+    'settles before a held %s and drains only the cancelled original invocation',
+    async (settlement) => {
+      const value = install();
+      const held = deferred<unknown>();
+      value.invoke.mockImplementationOnce(() => held.promise);
+      const observation = new AbortController();
+      const add = vi.spyOn(observation.signal, 'addEventListener');
+      const remove = vi.spyOn(observation.signal, 'removeEventListener');
+      const transport = createElectronWorkspaceLoadTransport(channels);
+      const pending = transport.observeOrigin(observation.signal);
+      const originalInvoke = value.invoke.mock.results[0]!.value;
+      observation.abort();
+      // This await precedes releasing the controlled reply; native invoke stays pending.
+      expect(await pending).toBeNull();
+      expect(value.listeners.size).toBe(0);
+      expect(value.api.offById).toHaveBeenCalledExactlyOnceWith(channels.RETIRED, 'listener-1');
+      expect(remove).toHaveBeenCalledExactlyOnceWith('abort', add.mock.calls[0]![1]);
+      expect(value.invoke.mock.calls).toEqual([[channels.OBSERVE_ORIGIN]]);
+
+      value.invoke.mockResolvedValueOnce(envelope({ originId: 'successor-origin' }));
+      const successor = (await transport.observeOrigin())!;
+      expect(successor.isCurrent()).toBe(true);
+      if (settlement === 'rejection') held.reject(new Error('late observation rejection'));
+      else if (settlement === 'outer')
+        held.resolve({ ok: false, error: { code: 'OFFLINE', message: 'late failure' } });
+      else if (settlement === 'malformed') held.resolve(envelope({ originId: 7 }));
+      else held.resolve(envelope({ originId: 'cancelled-origin' }));
+      await originalInvoke.catch(() => undefined);
+      expect(
+        value.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE_ORIGIN),
+      ).toEqual(
+        settlement === 'success'
+          ? [[channels.RELEASE_ORIGIN, { originId: 'cancelled-origin' }]]
+          : [],
+      );
+      expect(successor.isCurrent()).toBe(true);
+      const route = (await successor.prepare(
+        'successor-request',
+        ref.workspaceId,
+        new AbortController().signal,
+      ))!;
+      const successorRef = { ...ref, originId: 'successor-origin', requestId: 'successor-request' };
+      value.invoke.mockResolvedValueOnce(fulfilled('successor-result', successorRef));
+      expect(await route.read('get')).toBe('successor-result');
+      expect(successor.signal.aborted).toBe(false);
+      successor.release();
+    },
+  );
+
+  it('releases a late valid origin once through the captured original function and receiver', async () => {
+    const original = install();
+    const held = deferred<unknown>();
+    const capturedInvoke = vi.fn(function (
+      this: Window['electronAPI'],
+      channel: string,
+      payload?: unknown,
+    ) {
+      expect(this).toBe(original.api);
+      if (channel === channels.OBSERVE_ORIGIN) return held.promise;
+      expect(channel).toBe(channels.RELEASE_ORIGIN);
+      expect(payload).toEqual({ originId: 'late-original' });
+      return Promise.resolve(envelope(undefined));
+    });
+    original.api.invoke = capturedInvoke;
+    const observation = new AbortController();
+    const pending = createElectronWorkspaceLoadTransport(channels).observeOrigin(
+      observation.signal,
+    );
+    observation.abort();
+    expect(await pending).toBeNull();
+    const substitute = vi.fn(async () => envelope(undefined));
+    original.api.invoke = substitute;
+    const replacement = install();
+    const successor = (await createElectronWorkspaceLoadTransport(channels).observeOrigin())!;
+    held.resolve(envelope({ originId: 'late-original' }));
+    await held.promise;
+    expect(capturedInvoke.mock.calls).toEqual([
+      [channels.OBSERVE_ORIGIN],
+      [channels.RELEASE_ORIGIN, { originId: 'late-original' }],
+    ]);
+    expect(substitute).not.toHaveBeenCalled();
+    expect(replacement.invoke.mock.calls).toEqual([[channels.OBSERVE_ORIGIN]]);
+    expect(successor.isCurrent()).toBe(true);
+    successor.release();
+  });
+
+  it('releases the resolved origin when abort occurs during successful listener cleanup', async () => {
+    const value = install();
+    const observation = new AbortController();
+    const originalRemove = observation.signal.removeEventListener;
+    vi.spyOn(observation.signal, 'removeEventListener').mockImplementation((...args) => {
+      Reflect.apply(originalRemove, observation.signal, args);
+      observation.abort();
+    });
+    expect(
+      await createElectronWorkspaceLoadTransport(channels).observeOrigin(observation.signal),
+    ).toBeNull();
+    expect(value.listeners.size).toBe(0);
+    expect(value.invoke.mock.calls).toEqual([
+      [channels.OBSERVE_ORIGIN],
+      [channels.RELEASE_ORIGIN, { originId: ref.originId }],
+    ]);
+  });
+
+  it.each(['normal', 'throwing-remove'] as const)(
+    'ends the observation signal ownership at successful transfer with %s cleanup',
+    async (cleanup) => {
+      const value = install();
+      const observation = new AbortController();
+      const remove = vi.spyOn(observation.signal, 'removeEventListener');
+      if (cleanup === 'throwing-remove')
+        remove.mockImplementation(() => {
+          throw new Error('remove failed');
+        });
+      const origin = (await createElectronWorkspaceLoadTransport(channels).observeOrigin(
+        observation.signal,
+      ))!;
+      expect(remove).toHaveBeenCalledOnce();
+      observation.abort();
+      expect(origin.isCurrent()).toBe(true);
+      expect(origin.signal.aborted).toBe(false);
+      const route = (await origin.prepare(
+        ref.requestId,
+        ref.workspaceId,
+        new AbortController().signal,
+      ))!;
+      value.invoke.mockResolvedValueOnce(fulfilled('retained-result'));
+      expect(await route.read('get')).toBe('retained-result');
+      expect(
+        value.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE_ORIGIN),
+      ).toEqual([]);
+      origin.release();
+      expect(
+        value.invoke.mock.calls.filter(([channel]) => channel === channels.RELEASE_ORIGIN),
+      ).toEqual([[channels.RELEASE_ORIGIN, { originId: ref.originId }]]);
+    },
+  );
+});

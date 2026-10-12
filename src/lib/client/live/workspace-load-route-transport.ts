@@ -101,7 +101,16 @@ export function createElectronWorkspaceLoadTransport(
   readApi: typeof electronAPI = electronAPI,
 ) {
   return {
-    async observeOrigin(): Promise<CapturedWorkspaceLoadOrigin | null> {
+    async observeOrigin(
+      observationSignal?: AbortSignal,
+    ): Promise<CapturedWorkspaceLoadOrigin | null> {
+      if (observationSignal) {
+        try {
+          if (observationSignal.aborted) return null;
+        } catch {
+          return null;
+        }
+      }
       let api: NonNullable<ReturnType<typeof electronAPI>>;
       let invoke: typeof api.invoke;
       let on: typeof api.on;
@@ -253,7 +262,49 @@ export function createElectronWorkspaceLoadTransport(
         }
       }
 
+      let observationCancelled = false;
+      let observationTransferred = false;
+      let stopObservation: (() => void) | undefined;
+      let cancellation: Promise<null> | undefined;
+      let settleCancellation: (() => void) | undefined;
+      function cancelObservation(): void {
+        if (observationCancelled || observationTransferred) return;
+        observationCancelled = true;
+        retire();
+        stopObservation?.();
+        settleCancellation?.();
+      }
+
       try {
+        if (observationSignal) {
+          cancellation = new Promise<null>((resolve) => {
+            settleCancellation = () => resolve(null);
+          });
+          const add = observationSignal.addEventListener;
+          const remove = observationSignal.removeEventListener;
+          let registered = false;
+          let removed = false;
+          stopObservation = () => {
+            if (!registered || removed) return;
+            removed = true;
+            try {
+              Reflect.apply(remove, observationSignal, ['abort', cancelObservation]);
+            } catch {
+              /* Transfer/cancellation still ends this signal's ownership. */
+            }
+          };
+          if (observationSignal.aborted) cancelObservation();
+          if (observationCancelled) return null;
+          try {
+            Reflect.apply(add, observationSignal, ['abort', cancelObservation, { once: true }]);
+          } finally {
+            // Registration can abort or throw before returning its installed listener.
+            registered = true;
+            if (observationCancelled) stopObservation();
+          }
+          if (observationSignal.aborted) cancelObservation();
+          if (observationCancelled) return null;
+        }
         const id = Reflect.apply(on, api, [names.RETIRED, observeRetirement]);
         if (typeof id !== 'string' || !id) throw unavailable();
         listenerId = id;
@@ -261,8 +312,19 @@ export function createElectronWorkspaceLoadTransport(
           detach();
           return null;
         }
-        const raw = unwrap(await Reflect.apply(invoke, api, [names.OBSERVE_ORIGIN]));
-        ref = Object.freeze(WorkspaceLoadOriginRefSchema.parse(raw));
+        if (cancellation) {
+          const invoked = Reflect.apply(invoke, api, [names.OBSERVE_ORIGIN]);
+          const drained = Promise.resolve(invoked).then((response) => {
+            ref = Object.freeze(WorkspaceLoadOriginRefSchema.parse(unwrap(response)));
+            // Native invoke cannot be cancelled; retain its original response cleanup.
+            if (observationCancelled) releaseKnownOrigin();
+          });
+          await Promise.race([drained, cancellation]);
+          if (observationCancelled) return null;
+        } else {
+          const raw = unwrap(await Reflect.apply(invoke, api, [names.OBSERVE_ORIGIN]));
+          ref = Object.freeze(WorkspaceLoadOriginRefSchema.parse(raw));
+        }
         const notices = [...early.values()];
         early.clear();
         for (const notice of notices) observeRetirement(notice);
@@ -274,6 +336,8 @@ export function createElectronWorkspaceLoadTransport(
         retire();
         releaseKnownOrigin();
         return null;
+      } finally {
+        stopObservation?.();
       }
 
       const origin: CapturedWorkspaceLoadOrigin = {
@@ -561,6 +625,15 @@ export function createElectronWorkspaceLoadTransport(
           return route;
         },
       };
+      if (observationSignal) {
+        try {
+          if (observationSignal.aborted) cancelObservation();
+        } catch {
+          cancelObservation();
+        }
+        if (observationCancelled) return null;
+        observationTransferred = true;
+      }
       return origin;
     },
   };
