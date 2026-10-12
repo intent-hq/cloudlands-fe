@@ -555,6 +555,7 @@
       repositoryCheckoutDraft: undefined,
       repoPath: repo.repoPath,
       repoType,
+      skipIsolation: repoType === 'github' ? false : readSkipIsolation(saved),
       githubUrl,
       isNewRepo: false,
       isValidPath: true,

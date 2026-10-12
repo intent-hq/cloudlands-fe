@@ -591,6 +591,70 @@ describe('NewSpaceModal model-picker composition', () => {
         }),
       );
     });
+
+    it.each(['skipIsolation', 'skipWorktree'] as const)(
+      'clears saved %s for a GitHub sidebar default and requests an isolated checkout',
+      async (flag) => {
+        mocks.compactFormState = {
+          repoPath: '/repos/saved',
+          repoType: 'local',
+          isValidPath: true,
+          [flag]: true,
+        };
+        selectSidebarRepo('acme/cloud');
+        sessionStorage.setItem(
+          'workspace-prefill',
+          JSON.stringify({ prompt: 'Work on the sidebar repository' }),
+        );
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(persistedStates().at(-1)).toMatchObject({
+            repoPath: 'acme/cloud',
+            repoType: 'github',
+            skipIsolation: false,
+          }),
+        );
+        const picker = (
+          window as unknown as {
+            __mockRepoAndBranchPicker: {
+              onBranchChange: (event: { detail: { branch: string } }) => void;
+            };
+          }
+        ).__mockRepoAndBranchPicker;
+        // Automatic branch selection does not emit a direct-work toggle change.
+        picker.onBranchChange({ detail: { branch: 'main' } });
+        const create = screen.getByRole('button', { name: /^Create workspace/ });
+        await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false));
+        await fireEvent.click(create);
+        await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+        expect(mocks.create.mock.calls[0][0]).toMatchObject({
+          githubUrl: 'https://github.com/acme/cloud',
+          repositoryPath: undefined,
+          baseRef: 'main',
+          skipIsolation: undefined,
+        });
+      },
+    );
+
+    it.each(['skipIsolation', 'skipWorktree'] as const)(
+      'preserves saved %s for a local sidebar default',
+      async (flag) => {
+        mocks.compactFormState = {
+          repoPath: '/repos/saved',
+          repoType: 'local',
+          isValidPath: true,
+          [flag]: true,
+        };
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(persistedStates().at(-1)).toMatchObject({
+            repoPath: '/repos/sidebar',
+            repoType: 'local',
+            skipIsolation: true,
+          }),
+        );
+      },
+    );
   });
 
   it('does not let initializer timers override modal focus, while inline prompts still autofocus', async () => {
