@@ -23,6 +23,14 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { createBackendEventsClient } from './backend-events-client';
+
+// Preserve legacy call-time transport lookup until the source renderer is retired.
+const eventReads = createBackendEventsClient({
+  get backendRequest() {
+    return backendRequest;
+  },
+});
 
 /** Boot snapshot size — matches the renderer event buffer cap (MAX_EVENTS). */
 const BOOT_SNAPSHOT_LIMIT = 300;
@@ -33,23 +41,12 @@ export class LiveEventsClient implements EventsClient {
     return [...events].reverse();
   }
 
-  async query(workspaceId: string, options: EventQueryOptions = {}): Promise<WorkspaceEvent[]> {
-    const result = await backendRequest<unknown>('event.query', {
-      workspaceId,
-      ...options,
-    });
-    return Array.isArray(result) ? (result as WorkspaceEvent[]) : [];
+  query(workspaceId: string, options: EventQueryOptions = {}): Promise<WorkspaceEvent[]> {
+    return eventReads.query(workspaceId, options);
   }
 
-  async queryPage(
-    workspaceId: string,
-    options: EventQueryPageOptions = {},
-  ): Promise<EventQueryPage> {
-    return backendRequest<EventQueryPage>('event.query', {
-      workspaceId,
-      ...options,
-      paginate: true,
-    });
+  queryPage(workspaceId: string, options: EventQueryPageOptions = {}): Promise<EventQueryPage> {
+    return eventReads.queryPage(workspaceId, options);
   }
 
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe {

@@ -1,4 +1,7 @@
-import { getDaemonEventsSubscriptionAttempt } from './workspace-events-projections';
+import {
+  getDaemonEventsSubscriptionAttempt,
+  getOlderEventsNextToken,
+} from './workspace-events-projections';
 import { store } from '../../store';
 import type { WorkspaceEvent } from '$features/events/types';
 import { emptyWorkspaceEventsState } from './workspace-events-slice';
@@ -27,9 +30,7 @@ export const selectEventsLoading = store.createSelector<[workspaceId: string], b
 export const selectOlderEventsNextToken = store.createSelector<
   [workspaceId: string],
   string | null
->((state, workspaceId) => {
-  return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState).nextToken;
-});
+>(getOlderEventsNextToken);
 
 export const selectOlderEventsLoading = store.createSelector<[workspaceId: string], boolean>(
   (state, workspaceId) => {
