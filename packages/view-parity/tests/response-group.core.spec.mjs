@@ -8,6 +8,7 @@ import {
   seed,
   expanded,
   capture,
+  captureGroupViews,
   detached,
   sameNode,
   owners,
@@ -28,7 +29,10 @@ test('response-group RG1 automatic streaming changes the live child branch', asy
   await choice(item.host, 'Primary isStreaming', 'true');
   await expanded(item.primary, true);
   const detailsChild = await item.primary.child.elementHandle();
-  await capture(page, item, 'RG1-streaming-details', info);
+  await captureGroupViews(page, item, 'RG1-streaming-details', info, [
+    { group: 'primary', view: 'controls' },
+    { group: 'primary', view: 'body-start' },
+  ]);
   await choice(item.host, 'Primary blocks', 'tool-result');
   await expanded(item.primary, false);
   await expect(item.primary.preview).toHaveCount(1);
@@ -38,13 +42,19 @@ test('response-group RG1 automatic streaming changes the live child branch', asy
   const previewChild = await item.primary.child.elementHandle();
   await choice(item.host, 'Primary blocks', 'mixed');
   await sameNode(item.primary.child, previewChild);
-  await capture(page, item, 'RG1-streaming-preview', info);
+  await captureGroupViews(page, item, 'RG1-streaming-preview', info, [
+    { group: 'primary', view: 'preview' },
+  ]);
   await choice(item.host, 'Primary blocks', 'empty');
   await expanded(item.primary, true);
   await expect(item.primary.preview).toHaveCount(0);
   await detached(previewChild);
   await expect(item.primary.child).toHaveCount(1);
-  await capture(page, item, 'RG1-current-details', info);
+  await captureGroupViews(page, item, 'RG1-current-details', info, [
+    { group: 'primary', view: 'controls' },
+    { group: 'primary', view: 'body-start' },
+    { group: 'neighbor', view: 'header' },
+  ]);
 });
 
 test('response-group RG2 terminal completion differs from an idle terminal edge', async ({
@@ -57,7 +67,9 @@ test('response-group RG2 terminal completion differs from an idle terminal edge'
   await expanded(item.primary, false);
   await button(item.host, 'Remount Primary').click();
   await expanded(item.primary, true);
-  await capture(page, item, 'RG2-initial-terminal-last', info);
+  await captureGroupViews(page, item, 'RG2-initial-terminal-last', info, [
+    { group: 'primary', view: 'controls' },
+  ]);
   await choice(item.host, 'Primary isTerminal', 'false');
   await expanded(item.primary, false); // Actual timer, eventual condition; no elapsed budget.
   await choice(item.host, 'Primary isTerminal', 'true');
@@ -67,7 +79,9 @@ test('response-group RG2 terminal completion differs from an idle terminal edge'
   await button(item.primary.child, 'Primary finish stream').click();
   await expanded(item.primary, true);
   await expect(item.primary.preview).toHaveCount(0);
-  await capture(page, item, 'RG2-stream-terminal-completion', info);
+  await captureGroupViews(page, item, 'RG2-stream-terminal-completion', info, [
+    { group: 'primary', view: 'controls' },
+  ]);
 });
 
 test('response-group RG3 manual overrides preserve their streaming lifetime', async ({
@@ -97,7 +111,9 @@ test('response-group RG3 manual overrides preserve their streaming lifetime', as
   await expanded(item.primary, false);
   await expect(item.primary.child).toHaveCount(0);
   expect((await owners(item)).at(-1).value.override).toBe('collapsed');
-  await capture(page, item, 'RG3-manual-terminal-collapse', info);
+  await captureGroupViews(page, item, 'RG3-manual-terminal-collapse', info, [
+    { group: 'primary', view: 'header' },
+  ]);
 });
 
 test('response-group RG4 retained seeds respect automatic and search ownership', async ({
@@ -108,7 +124,9 @@ test('response-group RG4 retained seeds respect automatic and search ownership',
   await expanded(item.primary, true);
   await button(item.host, 'Remount Primary').click();
   await expanded(item.primary, true);
-  await capture(page, item, 'RG4-retained-completed', info);
+  await captureGroupViews(page, item, 'RG4-retained-completed', info, [
+    { group: 'primary', view: 'controls' },
+  ]);
   await seed(item, { expanded: 'true', override: 'automatic' });
   await expanded(item.primary, false);
   expect((await owners(item)).at(-1).value.expanded).toBe(false);
@@ -121,7 +139,9 @@ test('response-group RG4 retained seeds respect automatic and search ownership',
     searchOwnsExpansion: false,
     override: 'automatic',
   });
-  await capture(page, item, 'RG4-search-owner-restored', info);
+  await captureGroupViews(page, item, 'RG4-search-owner-restored', info, [
+    { group: 'primary', view: 'header' },
+  ]);
 });
 
 test('response-group RG6 the real collapse timer returns focus from its child', async ({
@@ -132,14 +152,18 @@ test('response-group RG6 the real collapse timer returns focus from its child', 
   await choice(item.host, 'Primary isStreaming', 'true');
   await expanded(item.primary, true);
   const child = await item.primary.child.elementHandle();
-  await capture(page, item, 'RG6-before-completion', info);
+  await captureGroupViews(page, item, 'RG6-before-completion', info, [
+    { group: 'primary', view: 'controls' },
+  ]);
   const finish = button(item.primary.child, 'Primary finish stream');
   await finish.click();
   await expect(finish).toBeFocused();
   await expanded(item.primary, false);
   await expect(item.primary.trigger).toBeFocused();
   await detached(child);
-  await capture(page, item, 'RG6-eventual-collapse-focus', info);
+  await captureGroupViews(page, item, 'RG6-eventual-collapse-focus', info, [
+    { group: 'primary', view: 'header' },
+  ]);
   const log = await receipts(item, info, 'RG6-completion');
   expect(
     log.callbacks.filter((r) => r.kind === 'finish-stream' && r.label === 'Primary'),
@@ -171,7 +195,9 @@ test('response-group RG9 current summaries preserve source localization and artw
   await expect(snippet.getByRole('link')).toHaveCount(0);
   await expect(snippet.getByRole('button')).toHaveCount(0);
   await expectArtwork(item.primary, 'faArrowsInLineVertical', info);
-  await capture(page, item, 'RG9-first-eligible-summary', info);
+  await captureGroupViews(page, item, 'RG9-first-eligible-summary', info, [
+    { group: 'primary', view: 'header' },
+  ]);
   await item.primary.trigger.click();
   await expanded(item.primary, true);
   await expectArtwork(item.primary, 'faArrowsOutLineVertical', info);
@@ -181,7 +207,9 @@ test('response-group RG9 current summaries preserve source localization and artw
   await choice(item.host, 'Primary isStreaming', 'true');
   await expect(item.primary.trigger).toHaveAccessibleName(labels.thinking);
   await expect(item.primary.root.getByTestId('response-group-snippet')).toHaveCount(0);
-  await capture(page, item, 'RG9-reasoning-stream', info);
+  await captureGroupViews(page, item, 'RG9-reasoning-stream', info, [
+    { group: 'primary', view: 'preview' },
+  ]);
   await button(item.primary.child, 'Primary finish stream').click();
   await expect(item.primary.trigger).toHaveAccessibleName(labels.reasoning);
 });

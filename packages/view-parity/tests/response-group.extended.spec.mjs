@@ -8,6 +8,7 @@ import {
   button,
   expanded,
   capture,
+  captureGroupViews,
   sameNode,
   detached,
   owners,
@@ -53,7 +54,9 @@ test('response-group RG5 automatic manual and pending collapse writes use the cu
   });
   await sameNode(item.primary.root, automaticRoot);
   await expanded(item.primary, false);
-  await capture(page, item, 'RG5-automatic-owner-publication', info);
+  await captureGroupViews(page, item, 'RG5-automatic-owner-publication', info, [
+    { group: 'primary', view: 'header' },
+  ]);
   await item.primary.trigger.click();
   await expanded(item.primary, true);
   await item.primary.input.fill('retain this child while changing owner');
@@ -90,7 +93,9 @@ test('response-group RG5 automatic manual and pending collapse writes use the cu
   expect(afterDestroy.at(-1)).toEqual(current);
   await toggle(item.host, 'Mount Primary', true);
   await expanded(item.primary, true);
-  await capture(page, item, 'RG5-current-owner-remount', info);
+  await captureGroupViews(page, item, 'RG5-current-owner-remount', info, [
+    { group: 'primary', view: 'controls' },
+  ]);
 
   // Prepare the next owner before starting the real timer, using the untouched
   // neighbor so the manual primary override cannot change the source branch.
@@ -108,7 +113,9 @@ test('response-group RG5 automatic manual and pending collapse writes use the cu
     searchOwnsExpansion: false,
     override: 'automatic',
   });
-  await capture(page, item, 'RG5-before-pending-owner-replacement', info);
+  await captureGroupViews(page, item, 'RG5-before-pending-owner-replacement', info, [
+    { group: 'neighbor', view: 'controls' },
+  ]);
   await button(item.neighbor.child, 'Neighbor finish stream').click();
   await button(item.host, 'Replace Neighbor saved owner').click();
   await expanded(item.neighbor, false);
@@ -134,7 +141,10 @@ test('response-group RG5 automatic manual and pending collapse writes use the cu
   );
   expect(finishes).toHaveLength(1);
   expect(finishes[0].event).toMatchObject({ isTrusted: true, type: 'click' });
-  await capture(page, item, 'RG5-current-owner-after-collapse', info);
+  await captureGroupViews(page, item, 'RG5-current-owner-after-collapse', info, [
+    { group: 'neighbor', view: 'header' },
+    { group: 'primary', view: 'controls' },
+  ]);
   info.annotations.push({
     type: 'coverage-limit',
     description:
@@ -176,7 +186,10 @@ test('response-group RG7 canonical search requests preserve expansion ownership'
   await button(item.host, 'Neighbor search expand').click();
   await expanded(item.neighbor, true);
   await expanded(item.primary, false);
-  await capture(page, item, 'RG7-independent-search-owner', info);
+  await captureGroupViews(page, item, 'RG7-independent-search-owner', info, [
+    { group: 'primary', view: 'header' },
+    { group: 'neighbor', view: 'controls' },
+  ]);
   await choice(item.host, 'Neighbor isStreaming', 'true');
   await expanded(item.neighbor, false);
   expect((await owners(item, 'Neighbor')).at(-1).value.searchOwnsExpansion).toBe(false);
@@ -200,7 +213,10 @@ test('response-group RG8 closing retires children and re-expansion creates the c
     .filter((r) => r.kind === 'child-attached' && r.label === 'Primary')
     .at(-1);
   expect(attached).toBeTruthy();
-  await capture(page, item, 'RG8-before-close', info);
+  await captureGroupViews(page, item, 'RG8-before-close', info, [
+    { group: 'primary', view: 'controls' },
+    { group: 'neighbor', view: 'controls' },
+  ]);
   await item.primary.trigger.click();
   await expanded(item.primary, false);
   await detached(old);
@@ -227,7 +243,10 @@ test('response-group RG8 closing retires children and re-expansion creates the c
   await expect(item.primary.input).toHaveValue('Primary editable value');
   await sameNode(item.neighbor.child, neighborChild);
   await expect(item.neighbor.input).toHaveValue('independent neighbor value');
-  await capture(page, item, 'RG8-reexpanded-current-child', info);
+  await captureGroupViews(page, item, 'RG8-reexpanded-current-child', info, [
+    { group: 'primary', view: 'controls' },
+    { group: 'neighbor', view: 'controls' },
+  ]);
   await choice(item.host, 'Primary isStreaming', 'true');
   await expanded(item.primary, false);
   await expect(item.primary.preview).toHaveCount(1);
@@ -236,7 +255,9 @@ test('response-group RG8 closing retires children and re-expansion creates the c
   await expanded(item.primary, true);
   await expect(item.primary.preview).toHaveCount(0);
   await expect(item.primary.child).toHaveCount(1);
-  await capture(page, item, 'RG8-preview-details-current', info);
+  await captureGroupViews(page, item, 'RG8-preview-details-current', info, [
+    { group: 'primary', view: 'controls' },
+  ]);
 });
 
 test('response-group RG11 native scroll keys pause following while child editing does not', async ({
@@ -366,5 +387,8 @@ test('response-group RG13 nearby groups retain current callbacks and usable narr
   await item.primary.trigger.press('Space');
   await expanded(item.primary, true);
   await hittable(button(item.primary.child, 'Primary child action'), info, 'RG13-narrow-action');
-  await capture(page, item, 'RG13-narrow-current-groups', info);
+  await captureGroupViews(page, item, 'RG13-narrow-current-groups', info, [
+    { group: 'primary', view: 'controls' },
+    { group: 'neighbor', view: 'header' },
+  ]);
 });

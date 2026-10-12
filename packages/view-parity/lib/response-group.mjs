@@ -481,6 +481,290 @@ async function probe(frame) {
     ax: await frame.ariaSnapshot(),
   };
 }
+// Read-only DOM measurements; native input is issued outside this callback.
+async function measureGroupView(frame, targets, baseline, point = null) {
+  return frame.evaluate(
+    (root, { targets, baseline, point }) => {
+      const bounds = (node) => {
+        const { left, top, right, bottom, width, height } = node.getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      };
+      const describe = (node) => ({
+        tag: node?.localName ?? null,
+        id: node?.id ?? null,
+        testId: node?.getAttribute('data-testid') ?? null,
+      });
+      const selection = (node) =>
+        node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement
+          ? [node.selectionStart, node.selectionEnd, node.selectionDirection]
+          : null;
+      const same = (current, prior) =>
+        current.length === prior.length && current.every((node, index) => node === prior[index]);
+      const roots = [...root.querySelectorAll('[data-testid="response-group"]')];
+      const children = [...root.querySelectorAll('[data-response-group-child]')];
+      const cylinders = [...root.querySelectorAll('[role="group"]')];
+      const triggers = [...root.querySelectorAll('[data-testid="response-group-disclosure"]')];
+      const r = bounds(root);
+      const clip = {
+        left: Math.max(0, r.left + root.clientLeft),
+        top: Math.max(0, r.top + root.clientTop),
+        right: Math.min(innerWidth, r.left + root.clientLeft + root.clientWidth),
+        bottom: Math.min(innerHeight, r.top + root.clientTop + root.clientHeight),
+      };
+      const inside = (b) =>
+        b.width > 0 &&
+        b.height > 0 &&
+        b.left >= clip.left &&
+        b.right <= clip.right &&
+        b.top >= clip.top &&
+        b.bottom <= clip.bottom;
+      const boxes = targets.map((node) => {
+        const b = bounds(node);
+        const hit = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+        return {
+          ...describe(node),
+          bounds: b,
+          connected: node.isConnected,
+          contained: inside(b),
+          receivesPointer: hit !== null && node.contains(hit),
+        };
+      });
+      const union = {
+        left: Math.min(...boxes.map((b) => b.bounds.left)),
+        top: Math.min(...boxes.map((b) => b.bounds.top)),
+        right: Math.max(...boxes.map((b) => b.bounds.right)),
+        bottom: Math.max(...boxes.map((b) => b.bounds.bottom)),
+      };
+      const safeHit = (p) => {
+        if (p.x <= clip.left || p.x >= clip.right || p.y <= clip.top || p.y >= clip.bottom)
+          return null;
+        const hit = document.elementFromPoint(p.x, p.y);
+        if (!hit || !root.contains(hit) || cylinders.some((node) => node.contains(hit)))
+          return null;
+        return { ...p, hit: describe(hit) };
+      };
+      let wheelPoint = point ? safeHit(point) : null;
+      const contained = boxes.every((b) => b.connected && b.contained && b.receivesPointer);
+      if (!point && !contained) {
+        // Prefer headers or actual filler paragraphs; never wheel through a Cylinder.
+        for (const node of [...triggers, ...root.querySelectorAll('p')]) {
+          const b = bounds(node);
+          wheelPoint = safeHit({ x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2 });
+          if (wheelPoint) break;
+        }
+        for (let y = clip.top + 2; !wheelPoint && y < clip.bottom; y += 12) {
+          for (const x of [clip.left + 2, (clip.left + clip.right) / 2, clip.right - 2]) {
+            wheelPoint = safeHit({ x, y });
+            if (wheelPoint) break;
+          }
+        }
+      }
+      const desiredDelta =
+        union.top < clip.top
+          ? union.top - clip.top
+          : union.bottom > clip.bottom
+            ? union.bottom - clip.bottom
+            : 0;
+      return {
+        frame: r,
+        clip,
+        targets: boxes,
+        union,
+        contained,
+        wheelPoint,
+        outer: { top: root.scrollTop, total: root.scrollHeight, height: root.clientHeight },
+        deltaY: Math.max(
+          -root.scrollTop,
+          Math.min(desiredDelta, root.scrollHeight - root.clientHeight - root.scrollTop),
+        ),
+        inner: cylinders.map((node) => ({
+          ...describe(node),
+          top: node.scrollTop,
+          total: node.scrollHeight,
+          height: node.clientHeight,
+        })),
+        focus: {
+          ...describe(document.activeElement),
+          selection: selection(document.activeElement),
+        },
+        invariants: {
+          focus: document.activeElement === baseline.active,
+          selection:
+            JSON.stringify(selection(document.activeElement)) ===
+            JSON.stringify(baseline.selection),
+          roots: same(roots, baseline.roots),
+          children: same(children, baseline.children),
+          cylinders: same(
+            cylinders,
+            baseline.cylinders.map((entry) => entry.node),
+          ),
+          innerScroll: baseline.cylinders.every((entry) => entry.node.scrollTop === entry.top),
+          triggers: same(
+            triggers,
+            baseline.triggers.map((entry) => entry.node),
+          ),
+          disclosure: baseline.triggers.every(
+            (entry) =>
+              entry.node.getAttribute('aria-expanded') === entry.expanded &&
+              entry.node.getAttribute('aria-controls') === entry.controls,
+          ),
+        },
+      };
+    },
+    { targets, baseline, point },
+  );
+}
+
+function assertRevealState(observed) {
+  for (const [name, same] of Object.entries(observed.invariants))
+    expect(same, `Native framing changed ${name}`).toBe(true);
+  expect(observed.targets.every((target) => target.connected)).toBe(true);
+  expect(observed.union.right - observed.union.left).toBeGreaterThan(0);
+  expect(observed.union.bottom - observed.union.top).toBeGreaterThan(0);
+  expect(
+    observed.union.right - observed.union.left,
+    'Named targets must fit the existing scrollport width',
+  ).toBeLessThanOrEqual(observed.clip.right - observed.clip.left);
+  expect(
+    observed.union.bottom - observed.union.top,
+    'Named targets must fit the existing scrollport height',
+  ).toBeLessThanOrEqual(observed.clip.bottom - observed.clip.top);
+}
+
+export async function captureGroupViews(page, item, name, info, views) {
+  expect(Array.isArray(views) && views.length > 0, 'Explicit capture subjects are required').toBe(
+    true,
+  );
+  for (const view of views) {
+    const evidence = { group: view.group, view: view.view, inputs: [] };
+    const handles = [];
+    const outputName = `${name}-${view.group}-${view.view}`;
+    try {
+      expect(['primary', 'neighbor']).toContain(view.group);
+      expect(['header', 'controls', 'body-start', 'preview']).toContain(view.view);
+      const group = item[view.group];
+      const locators =
+        view.view === 'header'
+          ? [group.trigger]
+          : view.view === 'controls'
+            ? [
+                group.trigger,
+                group.input,
+                button(group.child, `${group.name} child action`),
+                button(group.child, `${group.name} finish stream`),
+              ]
+            : view.view === 'preview'
+              ? [group.trigger, group.preview]
+              : [group.child.locator('p').first()];
+      for (const locator of locators) {
+        await expect(locator).toHaveCount(1);
+        const handle = await locator.elementHandle();
+        expect(handle).not.toBeNull();
+        handles.push(handle);
+      }
+      const targets = [...handles];
+      const baseline = await item.frame.evaluateHandle((root) => {
+        const active = document.activeElement;
+        return {
+          active,
+          selection:
+            active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+              ? [active.selectionStart, active.selectionEnd, active.selectionDirection]
+              : null,
+          roots: [...root.querySelectorAll('[data-testid="response-group"]')],
+          children: [...root.querySelectorAll('[data-response-group-child]')],
+          cylinders: [...root.querySelectorAll('[role="group"]')].map((node) => ({
+            node,
+            top: node.scrollTop,
+          })),
+          triggers: [...root.querySelectorAll('[data-testid="response-group-disclosure"]')].map(
+            (node) => ({
+              node,
+              expanded: node.getAttribute('aria-expanded'),
+              controls: node.getAttribute('aria-controls'),
+            }),
+          ),
+        };
+      });
+      handles.push(baseline);
+      await item.frame.hover({ position: { x: 2, y: 2 } });
+      const visibleBox = await item.frame.boundingBox();
+      expect(visibleBox).not.toBeNull();
+      await item.frame.hover({ position: { x: 2, y: Math.max(1, visibleBox.height - 2) } });
+      await page.evaluate(() => document.fonts.ready);
+      let observed = await measureGroupView(item.frame, targets, baseline);
+      evidence.initial = observed;
+      assertRevealState(observed);
+      for (let input = 0; !observed.contained && input < 3; input += 1) {
+        const step = { input: input + 1, before: observed, settleSamples: 0 };
+        evidence.inputs.push(step);
+        expect(observed.wheelPoint, 'No safe non-Cylinder wheel point; stop').not.toBeNull();
+        const point = { x: observed.wheelPoint.x, y: observed.wheelPoint.y };
+        await page.mouse.move(point.x, point.y);
+        const ready = await measureGroupView(item.frame, targets, baseline, point);
+        step.ready = ready;
+        assertRevealState(ready);
+        expect(ready.wheelPoint, 'Wheel hit ownership changed; stop').not.toBeNull();
+        expect(ready.deltaY, 'No native outer-scroll progress is possible; stop').not.toBe(0);
+        await page.mouse.wheel(0, ready.deltaY);
+        step.sentDeltaY = ready.deltaY;
+        await expect
+          .poll(
+            async () => {
+              observed = await measureGroupView(item.frame, targets, baseline);
+              step.last = observed;
+              step.settleSamples += 1;
+              assertRevealState(observed);
+              const first = observed;
+              await page.evaluate(
+                () =>
+                  new Promise((resolve) =>
+                    requestAnimationFrame(() => requestAnimationFrame(resolve)),
+                  ),
+              );
+              observed = await measureGroupView(item.frame, targets, baseline);
+              step.last = observed;
+              assertRevealState(observed);
+              const movement = observed.outer.top - ready.outer.top;
+              if (movement !== 0)
+                expect(Math.sign(movement), 'Native wheel moved the wrong scroll direction').toBe(
+                  Math.sign(ready.deltaY),
+                );
+              return movement !== 0 && JSON.stringify(first) === JSON.stringify(observed);
+            },
+            { message: 'Real outer wheel must make progress and settle; stop otherwise' },
+          )
+          .toBe(true);
+      }
+      evidence.beforeCapture = observed;
+      assertRevealState(observed);
+      expect(
+        observed.contained,
+        'All named subjects must be contained and hittable before capture',
+      ).toBe(true);
+      await capture(page, item, outputName, info);
+      evidence.afterCapture = await measureGroupView(item.frame, targets, baseline);
+      assertRevealState(evidence.afterCapture);
+      expect(evidence.afterCapture.contained, 'Capture must leave named subjects contained').toBe(
+        true,
+      );
+      expect(evidence.afterCapture).toEqual(evidence.beforeCapture);
+    } catch (error) {
+      evidence.error = { name: error.name, message: error.message };
+      throw error;
+    } finally {
+      try {
+        await info.attach(`${outputName}-reveal.json`, {
+          body: JSON.stringify(evidence, null, 2),
+          contentType: 'application/json',
+        });
+      } finally {
+        await Promise.allSettled(handles.map((handle) => handle.dispose()));
+      }
+    }
+  }
+}
+
 export async function capture(page, item, name, info, frame = item.frame) {
   // A native pointer action may reveal this scrollport before the evidence probe.
   // No scroll offset, CSS, clock, event, observer or component state is injected.
