@@ -223,6 +223,7 @@ export function QueuedAttachmentExamples() {
     <section
       className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
       data-testid="queued-attachments"
+      data-functional-example="queued-attachments"
       aria-label="Queued attachments exercise"
     >
       <h2>Queued message attachments</h2>
