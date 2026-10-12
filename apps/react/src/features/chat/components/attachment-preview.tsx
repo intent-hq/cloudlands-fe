@@ -75,7 +75,11 @@ export function AttachmentPreview({
   const inlineUrl = imageData && imageMimeType ? `data:${imageMimeType};base64,${imageData}` : null;
   const usesFile = !inlineUrl && Boolean(file) && type.startsWith('image/');
   useEffect(() => {
-    if (!usesFile || !file) return;
+    if (!usesFile || !file) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Do not retain a revoked URL when leaving File mode.
+      setObjectUrl(null);
+      return;
+    }
     const url = URL.createObjectURL(file);
     // oxlint-disable-next-line react/set-state-in-effect -- Native object URLs are acquired after mount and released by this effect.
     setObjectUrl({ file, url });
@@ -148,7 +152,7 @@ export function AttachmentPreview({
               }}
               aria-label={m.chat_attachmentPreview_remove_ariaLabel({ name })}
             >
-              <XIcon size={10} />
+              <XIcon size={10} aria-hidden="true" weight="regular" />
             </Button>
           )}
         </div>
@@ -190,13 +194,13 @@ export function AttachmentPreview({
             )}
           </>
         ) : placementStatus === 'failed' ? (
-          <WarningCircleIcon size={15} className="shrink-0" />
+          <WarningCircleIcon size={15} aria-hidden="true" weight="regular" className="shrink-0" />
         ) : isImage && thumbnailUrl ? (
           <div className="w-4 h-4 rounded overflow-hidden shrink-0">
             <img src={thumbnailUrl} alt={name} className="w-full h-full object-cover" />
           </div>
         ) : (
-          <Icon size={15} className="opacity-30 shrink-0" />
+          <Icon size={15} aria-hidden="true" weight="regular" className="opacity-30 shrink-0" />
         )}
         <span className="font-medium truncate max-w-30">{name}</span>
         {placementStatus === 'failed' && onRetry && (
@@ -211,7 +215,7 @@ export function AttachmentPreview({
             aria-label={m.chat_attachmentPreview_retryPlacement_ariaLabel({ name })}
             data-testid="attachment-retry"
           >
-            <ArrowClockwiseIcon size={10} />
+            <ArrowClockwiseIcon size={10} aria-hidden="true" weight="regular" />
           </Button>
         )}
         {onRemove && (
@@ -226,7 +230,7 @@ export function AttachmentPreview({
             onClick={() => onRemove(id)}
             aria-label={m.chat_attachmentPreview_removeAttachment_ariaLabel()}
           >
-            <XIcon size={10} />
+            <XIcon size={10} aria-hidden="true" weight="regular" />
           </Button>
         )}
       </div>
