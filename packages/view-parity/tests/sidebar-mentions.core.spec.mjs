@@ -356,11 +356,22 @@ test('sidebar mentions S4: Escape closes child search before its dialog and rest
   await expect(trigger).toBeFocused();
   await expect(dialog).toBeVisible();
   await expect(input).toHaveCount(0);
+  // Original HeaderAction restores keyboard focus into a tooltip trigger. Both
+  // Bits and Radix open that tooltip on focus; it owns Escape before the dialog.
+  const tooltip = page.getByRole('tooltip', { name: 'Search agents...', exact: true });
+  await expect(tooltip).toBeVisible();
   const state = () => outputJson(host.getByTestId('sidebar-callback-state'));
   expect((await state()).callbacks.filter((entry) => entry.callback === 'dialog-close')).toEqual(
     [],
   );
   await captureLeaf(page, surface, 'nested-after', info);
+  await trigger.press('Escape');
+  await expect(tooltip).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(dialog).toBeVisible();
+  expect((await state()).callbacks.filter((entry) => entry.callback === 'dialog-close')).toEqual(
+    [],
+  );
   await trigger.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(open).toBeFocused();
