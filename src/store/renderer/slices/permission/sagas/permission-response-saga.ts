@@ -1,76 +1,17 @@
 import { permissionRecoverySaga } from './permission-recovery-saga';
-import { call, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
-
-import { appClient, type PermissionOutcome } from '$lib/client';
+import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import {
-  approvePermission,
-  cancelPermission,
-  denyPermission,
-  removePermissionRequest,
-  selectPermissionOption,
-} from '../permission-slice';
 import { selectWorkspacePermissionContext } from '../../workspace/workspace-selectors';
 import { selectPermissionRequestsCollection } from '../permission-selectors';
+import { createPermissionResponseSaga } from './permission-response-saga-factory';
 
 const logger = createLogger('PermissionResponseSaga');
 
-function* respond(requestId: string, outcome: PermissionOutcome): SagaGenerator<void> {
-  const requests = yield* selectPermissionRequestsCollection.effect();
-  const request = getItem(requests, requestId);
-  if (!request?.workspaceId) return;
-  const context = yield* selectWorkspacePermissionContext.effect(request.workspaceId);
-  if (!context) return;
-  try {
-    const result = yield* call(
-      [appClient.agents, appClient.agents.respondPermission],
-      requestId,
-      outcome,
-      request.workspaceId,
-    );
-    if (context !== (yield* selectWorkspacePermissionContext.effect(request.workspaceId))) return;
-    if (getItem(yield* selectPermissionRequestsCollection.effect(), requestId) !== request) return;
-    if (result.success) yield* put(removePermissionRequest(requestId));
-    else logger.error('Permission response failed', { requestId, outcome, error: result.error });
-  } catch (error) {
-    logger.error('Permission response threw', { requestId, outcome, error });
-  }
-}
-
-function* approve(action: ReturnType<typeof approvePermission>): SagaGenerator<void> {
-  const [requestId] = action.payload;
-  const requests = yield* selectPermissionRequestsCollection.effect();
-  const request = getItem(requests, requestId);
-  if (!request) return;
-  const option = request.options.find((item) => !item.destructive) ?? request.options[0];
-  yield* respond(requestId, { outcome: 'selected', optionId: option?.id ?? 'allow_once' });
-}
-
-function* deny(action: ReturnType<typeof denyPermission>): SagaGenerator<void> {
-  const [requestId] = action.payload;
-  const requests = yield* selectPermissionRequestsCollection.effect();
-  const request = getItem(requests, requestId);
-  if (!request) return;
-  const option = request.options.find((item) => item.destructive) ?? request.options.at(-1);
-  yield* respond(requestId, { outcome: 'selected', optionId: option?.id ?? 'reject_once' });
-}
-
-function* cancelRequest(action: ReturnType<typeof cancelPermission>): SagaGenerator<void> {
-  yield* respond(action.payload[0], { outcome: 'cancelled' });
-}
-
-function* handleOptionSelection(
-  action: ReturnType<typeof selectPermissionOption>,
-): SagaGenerator<void> {
-  const [requestId, optionId] = action.payload;
-  yield* respond(requestId, { outcome: 'selected', optionId });
-}
-
-export function* permissionResponseSaga(): SagaGenerator<void> {
-  yield* fork(permissionRecoverySaga);
-  yield* takeEvery(approvePermission, approve);
-  yield* takeEvery(denyPermission, deny);
-  yield* takeEvery(cancelPermission, cancelRequest);
-  yield* takeEvery(selectPermissionOption, handleOptionSelection);
-}
+// Compatibility binding for the existing root saga until the Svelte renderer is retired.
+export const permissionResponseSaga = createPermissionResponseSaga({
+  permissionRecoverySaga,
+  appClient,
+  logger,
+  selectWorkspacePermissionContext,
+  selectPermissionRequestsCollection,
+});

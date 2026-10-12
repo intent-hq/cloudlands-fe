@@ -10,6 +10,11 @@ export type AgentSessionProjectionState = ProviderReadState & { agentSessions: A
 const LEGACY_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
 const LEGACY_CODEX_EFFORT_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
 
+/** Select the canonical session map for dynamic component-owned ID sets. */
+export const getAgentSessionsById = (
+  state: AgentSessionProjectionState,
+): Readonly<Record<string, AgentSession>> => state.agentSessions?.byAgentId ?? {};
+
 export const getAgentSession = (
   state: AgentSessionProjectionState,
   agentId?: string,

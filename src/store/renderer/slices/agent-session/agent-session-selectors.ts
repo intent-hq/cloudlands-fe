@@ -185,9 +185,7 @@ export const selectAgentSessionsByIds = store.createSelector(
 );
 
 /** Select the canonical session map for dynamic component-owned ID sets. */
-export const selectAgentSessionsById = store.createSelector(
-  (state): Readonly<Record<string, AgentSession>> => state.agentSessions?.byAgentId ?? {},
-);
+export const selectAgentSessionsById = store.createSelector(projections.getAgentSessionsById);
 
 /** Select messages for a given agent (ordered array) */
 export const selectAgentMessages = store.createSelector(

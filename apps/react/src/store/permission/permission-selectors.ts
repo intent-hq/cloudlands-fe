@@ -1,4 +1,11 @@
 import { store } from '../index';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import {
+  selectWorkspaceManagementDenied,
+  selectWorkspaceListLoadedForBackend,
+  selectWorkspacePermissionContext,
+} from '../workspace/workspace-selectors';
+import { createPermissionRecoveryProjections } from '../../../../../src/store/renderer/slices/permission/permission-recovery-projections';
 import * as projections from '../../../../../src/store/renderer/slices/permission/permission-projections';
 
 export const selectPermissionRequestsCollection = store.createSelector(
@@ -16,3 +23,18 @@ const selectRequestsForSession = store.createSelector((state, sessionId: string)
 export const selectPendingCount = store.createSelector((state, sessionId: string) => {
   return projections.getPendingCount(selectRequestsForSession.select(state, sessionId));
 });
+
+const recoveryProjections = createPermissionRecoveryProjections({
+  selectPrincipalActionContext,
+  selectWorkspaceListLoadedForBackend,
+  selectWorkspacePermissionContext,
+  selectWorkspaceManagementDenied,
+});
+
+export const selectPermissionRecoveryScope = store.createSelector(
+  recoveryProjections.getPermissionRecoveryScope,
+);
+
+export const selectPermissionRecoveryAgents = store.createSelector(
+  recoveryProjections.getPermissionRecoveryAgents,
+);
