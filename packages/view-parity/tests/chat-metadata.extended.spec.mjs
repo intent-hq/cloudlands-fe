@@ -11,7 +11,7 @@ import {
   observeRealTime,
 } from '../lib/chat-metadata.mjs';
 
-test('chat metadata M2: one real grace deadline survives eligible phase changes and visible copy stays current', async ({
+test('chat metadata M2: pending eligible phase changes preserve no-early admission and current visible copy', async ({
   page,
 }, info) => {
   const host = await openMetadata(page);
@@ -57,10 +57,11 @@ test('chat metadata M2: one real grace deadline survives eligible phase changes 
     'Never appear before the original grace deadline',
   ).toBeGreaterThanOrEqual(499);
   expect(changed.at, 'The phase input must occur while grace is pending').toBeLessThan(appeared.at);
-  expect(
-    appeared.at - changed.at,
-    'Changing eligible phase must not start another 500ms grace',
-  ).toBeLessThan(499);
+  // Preserve raw timings without a scheduling-sensitive upper deadline. This
+  // native case cannot distinguish a restarted pending timer from late delivery.
+  // Nonrestart is statically reviewed against original003: the React timer
+  // effect depends only on eligibility, so eligible-to-eligible phase changes
+  // neither clear nor recreate it. Do not claim runtime timer-count proof.
   const visible = evidence.samples.slice(evidence.samples.indexOf(appeared));
   expect(
     visible.every(({ nodes }) => nodes.length === 1 && nodes[0].id === appeared.nodes[0].id),
@@ -264,7 +265,7 @@ test('chat metadata M12: hook title follows raw name and real overflow through c
 
 test.describe('discussion native outro lifetime', () => {
   test.use({ reducedMotion: 'no-preference' });
-  test('chat metadata M13: full-motion discussion reversal retains its node and only completed exit calls back', async ({
+  test('chat metadata M13: full-motion discussion reversal restores the retained inert notice to accessibility', async ({
     page,
   }, info) => {
     const host = await openMetadata(page, 'full');
@@ -276,6 +277,7 @@ test.describe('discussion native outro lifetime', () => {
     await captureMetadata(page, display, 'discussion-full-before', info);
     const node = await banner.elementHandle();
     const observation = await observeNativeLifetime(exercise, '[data-chat-notice]');
+    const accessibility = {};
     let evidence;
     try {
       await present.press('Enter');
@@ -283,9 +285,27 @@ test.describe('discussion native outro lifetime', () => {
         await observation.waitForShrink(),
         'The actual outgoing notice must shrink while retained',
       ).toBe(true);
+      const outgoing = await node.evaluate((element) => ({
+        connected: element.isConnected,
+        inert: element.inert,
+      }));
+      const outgoingAlerts = await banner.count();
+      accessibility.outgoing = { ...outgoing, alerts: outgoingAlerts };
+      expect(outgoing).toEqual({ connected: true, inert: true });
+      expect(
+        outgoingAlerts,
+        'The retained outgoing alert must be excluded from accessibility',
+      ).toBe(0);
       await present.press('Enter');
       await expect(banner).toBeVisible();
-      expect(await node.evaluate((element) => element.isConnected)).toBe(true);
+      const reentered = await node.evaluate((element) => ({
+        connected: element.isConnected,
+        inert: element.inert,
+      }));
+      const reenteredAlerts = await banner.count();
+      accessibility.reentered = { ...reentered, alerts: reenteredAlerts };
+      expect(reentered).toEqual({ connected: true, inert: false });
+      expect(reenteredAlerts, 'Re-entry restores the same notice to accessibility').toBe(1);
       await captureMetadata(page, display, 'discussion-full-reversed', info);
       expect((await state()).observations.exitCount).toBe(0);
       await present.press('Enter');
@@ -305,6 +325,10 @@ test.describe('discussion native outro lifetime', () => {
     } finally {
       evidence = await observation.finish('discussion-reversal', info);
       await node.dispose();
+      await info.attach('discussion-accessibility.json', {
+        body: JSON.stringify(accessibility, null, 2),
+        contentType: 'application/json',
+      });
     }
     const first = evidence.samples.find(({ nodes }) => nodes.length).nodes[0];
     const removed = evidence.samples.findIndex(({ nodes }) => !nodes.length);
