@@ -1,0 +1,20 @@
+.inline-markdown-snippet {
+  display: inline;
+}
+
+.inline-markdown-snippet strong {
+  font-weight: 600;
+}
+
+.inline-markdown-snippet em {
+  font-style: italic;
+}
+
+.inline-markdown-snippet code {
+  border-radius: 0.2rem;
+  background: hsl(var(--muted));
+  padding-inline: 0.2em;
+  font-family: var(--font-code);
+  font-size: inherit;
+  line-height: inherit;
+}
