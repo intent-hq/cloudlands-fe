@@ -186,13 +186,6 @@ export function TranscriptCardExamples() {
             Remount plan
           </Button>
         </div>
-        <div
-          className="min-w-0 max-w-full"
-          style={{ width: Number(width) }}
-          data-testid="transcript-plan-frame"
-        >
-          {planMounted && <ExecutionPlanCard key={planMount} entries={entries} />}
-        </div>
       </section>
       <section className="grid min-w-0 max-w-full grid-cols-1 gap-3" aria-label="Digest inputs">
         <FormField
@@ -244,14 +237,19 @@ export function TranscriptCardExamples() {
             Remount digest
           </Button>
         </div>
-        <div
-          className="min-w-0 max-w-full"
-          style={{ width: Number(width) }}
-          data-testid="transcript-digest-frame"
-        >
+      </section>
+      <div
+        className="grid min-w-0 max-w-full grid-cols-1"
+        style={{ width: Number(width) }}
+        data-testid="transcript-cards-stack"
+      >
+        <div className="min-w-0 max-w-full" data-testid="transcript-plan-frame">
+          {planMounted && <ExecutionPlanCard key={planMount} entries={entries} />}
+        </div>
+        <div className="min-w-0 max-w-full" data-testid="transcript-digest-frame">
           {digestMounted && <DigestCard key={digestMount} digest={digest} />}
         </div>
-      </section>
+      </div>
     </section>
   );
 }
