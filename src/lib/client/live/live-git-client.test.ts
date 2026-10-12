@@ -608,6 +608,7 @@ describe('LiveGitClient reads (fake transport)', () => {
       ],
       boundarySha: 'boundary-sha-123',
       nextToken: 'page-2-token',
+      historyIdentity: 'immutable-history-A',
     });
     const client = new LiveGitClient();
 
@@ -620,6 +621,7 @@ describe('LiveGitClient reads (fake transport)', () => {
     expect(result.commits[0].hash).toBe('abc123');
     expect(result.boundarySha).toBe('boundary-sha-123');
     expect(result.nextToken).toBe('page-2-token');
+    expect(result.historyIdentity).toBe('immutable-history-A');
   });
 
   it('commitsWithBoundary returns null boundarySha when daemon returns null', async () => {

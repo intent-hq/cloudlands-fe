@@ -463,13 +463,20 @@ type ChangesEntry = {
   tracked?: TrackedChange[];
   historyIdentity?: string;
   loadedHistoryIdentity?: string;
+  historyRecoveryAttempted?: boolean;
 };
 type ChangesReads = Map<string, ChangesEntry>;
-type ChangesDemand = Map<string, number>;
+type ChangesDemand = Map<string, { files: number; history: number }>;
 
-function* hasChangesDemand(demand: ChangesDemand, workspaceId: string): SagaGenerator<boolean> {
+function* hasChangesDemand(
+  demand: ChangesDemand,
+  workspaceId: string,
+  scope?: 'files' | 'history',
+): SagaGenerator<boolean> {
   return (
-    (demand.get(workspaceId) ?? 0) > 0 &&
+    (scope
+      ? (demand.get(workspaceId)?.[scope] ?? 0) > 0
+      : (demand.get(workspaceId)?.files ?? 0) + (demand.get(workspaceId)?.history ?? 0) > 0) &&
     (yield* selectCurrentWorkspaceTabId.effect()) === workspaceId
   );
 }
@@ -500,6 +507,7 @@ function* refreshChanges(
   const entry = changesEntry(reads, workspaceId, context);
   if (explicit) {
     entry.historyRevision++;
+    entry.historyRecoveryAttempted = false;
     entry.filesDirty = true;
     entry.historyDirty = true;
     entry.status = undefined;
@@ -508,11 +516,13 @@ function* refreshChanges(
   const filesRevision = entry.filesRevision;
   const historyRevision = entry.historyRevision;
   const historyIdentity = entry.historyIdentity;
-  const filesDirty = entry.filesDirty;
-  const historyDirty = entry.historyDirty;
+  const filesDirty =
+    entry.filesDirty && (explicit || (yield* hasChangesDemand(demand, workspaceId, 'files')));
+  const historyDirty =
+    entry.historyDirty && (explicit || (yield* hasChangesDemand(demand, workspaceId, 'history')));
   if (!filesDirty && !historyDirty) return;
-  entry.filesDirty = false;
-  entry.historyDirty = false;
+  if (filesDirty) entry.filesDirty = false;
+  if (historyDirty) entry.historyDirty = false;
   const { status, trackedChanges, commitsEnvelope } = yield* call(function* (): SagaGenerator<{
     status: GitStatus | null;
     trackedChanges: TrackedChange[] | null;
@@ -553,13 +563,30 @@ function* refreshChanges(
       entry.historyDirty ||= historyDirty;
       return;
     }
+    entry.status = status;
+    entry.tracked = trackedChanges;
     const changes = reconcileGitStatusChanges(status.files, trackedChanges);
     yield* put(setChangesData(workspaceId, changes, false, changes.length));
   }
   if (commitsEnvelope && historyRevision === entry.historyRevision) {
-    yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
-    entry.loadedHistoryIdentity = historyIdentity;
-    entry.historyDirty = false;
+    const responseIdentity = commitsEnvelope.historyIdentity;
+    if (historyIdentity && responseIdentity !== historyIdentity) {
+      // A status push cannot prove which immutable snapshot the history read
+      // captured (including A -> B -> A). Retry once, then keep the dirty
+      // marker for the next demand/event rather than looping on missing data.
+      entry.historyDirty = true;
+      entry.loadedHistoryIdentity = undefined;
+      if (!entry.historyRecoveryAttempted) {
+        entry.historyRecoveryAttempted = true;
+        yield* put(reconcileChangesRequested(workspaceId));
+      }
+    } else {
+      yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
+      entry.loadedHistoryIdentity = responseIdentity;
+      entry.historyIdentity = responseIdentity;
+      entry.historyDirty = false;
+      entry.historyRecoveryAttempted = false;
+    }
   }
   if (explicit) yield* put(setHasLoadedInitialData(workspaceId, true));
 }
@@ -577,6 +604,7 @@ function* receiveChangesEvent(
   if (type === 'workspace:updated' && !Object.hasOwn(data.changes ?? {}, 'branch')) {
     entry.historyRevision++;
     entry.historyIdentity = undefined;
+    entry.historyRecoveryAttempted = false;
     entry.historyDirty = true;
     if (yield* hasChangesDemand(demand, workspaceId))
       yield* put(reconcileChangesRequested(workspaceId));
@@ -587,8 +615,14 @@ function* receiveChangesEvent(
     const tracked = data.changes.map(toTrackedChange);
     if (tracked.every((change): change is TrackedChange => change !== null)) {
       entry.tracked = tracked;
-      entry.filesDirty = false;
-      yield* put(setChangesData(workspaceId, tracked, false, tracked.length));
+      // This push contains attribution, not an as-of working-tree snapshot.
+      // Read only membership/stage; never infer that untracked paths vanished
+      // or that the previously read index still matches this new attribution.
+      entry.status = undefined;
+      entry.filesDirty = true;
+      if (yield* hasChangesDemand(demand, workspaceId, 'files')) {
+        yield* put(reconcileChangesRequested(workspaceId));
+      }
       return;
     }
   }
@@ -605,7 +639,10 @@ function* receiveChangesEvent(
       typeof status?.historyIdentity === 'string' && status.historyIdentity
         ? status.historyIdentity
         : undefined;
-    if (!identity || identity !== entry.historyIdentity) entry.historyRevision++;
+    if (!identity || identity !== entry.historyIdentity) {
+      entry.historyRevision++;
+      entry.historyRecoveryAttempted = false;
+    }
     entry.historyIdentity = identity;
     entry.historyDirty ||= !identity || entry.loadedHistoryIdentity !== identity;
   }
@@ -625,9 +662,12 @@ function* changeChangesDemand(
   demand: ChangesDemand,
   action: ReturnType<typeof changesConsumerMounted | typeof changesConsumerUnmounted>,
 ): SagaGenerator<void> {
-  const workspaceId = action.payload[0];
+  const [workspaceId, scope = 'all'] = action.payload;
   const delta = action.type === changesConsumerMounted.type ? 1 : -1;
-  demand.set(workspaceId, Math.max(0, (demand.get(workspaceId) ?? 0) + delta));
+  const counts = demand.get(workspaceId) ?? { files: 0, history: 0 };
+  if (scope !== 'history') counts.files = Math.max(0, counts.files + delta);
+  if (scope !== 'files') counts.history = Math.max(0, counts.history + delta);
+  demand.set(workspaceId, counts);
   yield* reconcileVisibleChanges(reads, demand);
 }
 
@@ -641,6 +681,7 @@ function* reconnectChanges(reads: ChangesReads, demand: ChangesDemand): SagaGene
     entry.tracked = undefined;
     entry.historyIdentity = undefined;
     entry.loadedHistoryIdentity = undefined;
+    entry.historyRecoveryAttempted = false;
   }
   yield* reconcileVisibleChanges(reads, demand);
 }
@@ -661,8 +702,18 @@ function* refreshOlderCommits(reads: ChangesReads, workspaceId: string): SagaGen
       (yield* admittedWorkspaceRead(workspaceId)) === context &&
       reads.get(workspaceId) === entry &&
       entry?.historyRevision === revision
-    )
-      yield* put(appendOlderCommits(workspaceId, envelope.commits));
+    ) {
+      if (
+        entry?.loadedHistoryIdentity &&
+        envelope.historyIdentity !== entry.loadedHistoryIdentity
+      ) {
+        entry.historyDirty = true;
+        entry.loadedHistoryIdentity = undefined;
+        yield* put(reconcileChangesRequested(workspaceId));
+      } else {
+        yield* put(appendOlderCommits(workspaceId, envelope.commits));
+      }
+    }
   } finally {
     if ((yield* admittedWorkspaceRead(workspaceId)) === context)
       yield* put(setLoadingOlderCommits(workspaceId, false));

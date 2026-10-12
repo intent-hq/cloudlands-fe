@@ -1474,7 +1474,12 @@ export interface GitClient {
   commitsWithBoundary(
     workspaceId: string,
     includeOlder?: boolean,
-  ): Promise<{ commits: CommitInfo[]; boundarySha: string | null; nextToken: string | null }>;
+  ): Promise<{
+    commits: CommitInfo[];
+    boundarySha: string | null;
+    nextToken: string | null;
+    historyIdentity?: string;
+  }>;
   /**
    * `git.commitDetails` — metadata + per-file `(additions, deletions)` for one
    * commit. Returns `null` on transport failure so callers degrade gracefully.

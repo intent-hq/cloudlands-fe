@@ -151,8 +151,12 @@ export const changesEventReceived =
     'changes/eventReceived',
   );
 export const reconcileChangesRequested = createAction<[wsId: string]>('changes/reconcileRequested');
-export const changesConsumerMounted = createAction<[wsId: string]>('changes/consumerMounted');
-export const changesConsumerUnmounted = createAction<[wsId: string]>('changes/consumerUnmounted');
+type ChangesReadScope = 'files' | 'history' | 'all';
+export const changesConsumerMounted =
+  createAction<[wsId: string, scope?: ChangesReadScope]>('changes/consumerMounted');
+export const changesConsumerUnmounted = createAction<[wsId: string, scope?: ChangesReadScope]>(
+  'changes/consumerUnmounted',
+);
 export const loadWorkspaceDataRequested = createAction<[wsId: string]>(
   'changes/loadWorkspaceDataRequested',
 );

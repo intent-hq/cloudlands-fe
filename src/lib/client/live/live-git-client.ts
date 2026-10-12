@@ -488,11 +488,13 @@ export class LiveGitClient implements GitClient {
     commits: CommitInfo[];
     boundarySha: string | null;
     nextToken: string | null;
+    historyIdentity?: string;
   }> {
     const result = await backendRequest<{
       commits?: unknown[];
       boundarySha?: unknown;
       nextToken?: unknown;
+      historyIdentity?: unknown;
     }>('file-tracking.loadCommits', {
       workspaceId,
       ...(includeOlder !== undefined ? { includeOlder } : {}),
@@ -510,6 +512,9 @@ export class LiveGitClient implements GitClient {
       commits: commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null),
       boundarySha,
       nextToken,
+      ...(typeof result?.historyIdentity === 'string' && result.historyIdentity
+        ? { historyIdentity: result.historyIdentity }
+        : {}),
     };
   }
 

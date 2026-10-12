@@ -111,6 +111,10 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   const logger = createLogger('CommandPalette');
   interface Props {
     isOpen: boolean;
@@ -972,6 +976,12 @@
         searchQuery = currentInitialQuery;
       });
     }
+  });
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!wsId || !isOpen) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'files'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'files'));
   });
 </script>
 
