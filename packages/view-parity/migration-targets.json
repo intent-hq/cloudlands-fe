@@ -8,20 +8,20 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+    "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
     "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded static35e MarkdownViewer image-owner correction only; zero new mappings/status promotions.236/1430(231components+5modules),178partial58localimplemented,230targets89reviews.230prior target identities audited:229byteequal, only MarkdownViewer target updated with full oldrow/hash/contract retained. One changed DOM adapter supporting profile. Original003/current source and all19invalidations unchanged. MV11automaticPASS/manualSTOP, MV10olderPASS and OW1configgrep failure/guard corrections retained without transfer. No native/visual/product acceptance.",
+    "method": "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T07:10:52.312166+00:00",
+    "reviewedAt": "2026-10-12T07:23:03.385162+00:00",
     "checkpointAdvance": {
-      "previousLedgerCommit": "c055860f6a3dd73b6e3fef321e79553f4d7bc8a8",
-      "previousAuditCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
-      "unchangedUniqueDirectTargets": 229,
-      "changedUniqueDirectTargets": 1,
-      "retainedHistoricalReviewCount": 88,
-      "meaning": "Common validation pin only; retain full236-view checkpoint and all actual historical inspected/source/support/native evidence pins. Exactly one existing target review and one support correction, no new maps or status promotion."
+      "previousLedgerCommit": "774fddd6979970238bd3799cdc178bcae839bf2b",
+      "previousAuditCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "unchangedUniqueDirectTargets": 230,
+      "changedUniqueDirectTargets": 0,
+      "retainedHistoricalReviewCount": 89,
+      "meaning": "Common validation pin only; all mapping rows and their actual inspected/source/support/native pins unchanged. Add supporting-only CSS provenance; Toast remains unmapped."
     }
   },
   "statusDefinitions": {
@@ -76,7 +76,8 @@
     "Bounded original003/frozen34161b6d static audit: NavLink partial and AugmentCodeSnippet local implemented; targeted existing ChatImageBlock caption-only correction.235/1430(230components+5modules),178partial57localimplemented,229targets86reviews.227previous target identities checked:226byteequal, only authorized caption target changed with exact inverse/fulloldrow preserved.85old reviews/history/cases/29receipts/failures/17invalidations retained. NavLink helper extraction adds explicit source drift; support adds no denominator. Response saved-owner gap open; native/visual/product acceptance remains separate. Three changed support paths preserve original/previous/current hashes and all5710 historical citations. NavLink source drift exact inverse is not a runtime waiver. Original I8 remounted title failure remains, final overflow unmeasured; no I6/I7 transfer. Later ResponseGroup owner fix excluded. No released user-help impact.",
     "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer. Current unsuppressed UIinvariants3fail/Knip579 retained as source-owner reports, no baselineCI or all-gates-green claim. Original gap is historical; no additional static mismatch found, but runtime/current-owner/deadline/source-pair/fullmotion/StrictMode closure remains separate. Candidate preparation receipt/log hashes only; later native image successes not transferred.",
     "Bounded original003/final0afebba9 static audit adds only DetectedScriptsCard local implemented.236/1430(231components+5modules),178partial58localimplemented,230targets88reviews. All229prior directtargets byteequal;1889other rows and87historical reviews retained. Original/current class and compiled-source inverse, normal light/dark token proof and canonical icon/import/caller review. Support484 neutral tuple/type and metadata extraction explicitly reviewed without denominator inflation.18prior source invalidations/failures/receipts retained; new DetectedScripts source drift not waived. No native/visual/product acceptance transfer. Seven supporting deltas carry original/previous/current provenance;11458 historical citations preserved in unchanged old reviews, summarized as51 prior support profiles. Normal-theme compiled declaration proof is not source-runtime/pixel acceptance. No guard rewrites or released help impact.",
-    "Bounded static35e MarkdownViewer image-owner correction only; zero new mappings/status promotions.236/1430(231components+5modules),178partial58localimplemented,230targets89reviews.230prior target identities audited:229byteequal, only MarkdownViewer target updated with full oldrow/hash/contract retained. One changed DOM adapter supporting profile. Original003/current source and all19invalidations unchanged. MV11automaticPASS/manualSTOP, MV10olderPASS and OW1configgrep failure/guard corrections retained without transfer. No native/visual/product acceptance. Native MV11 stale options placement remains a manual STOP; same-node resize remains uncorrected. Support callbacks and intentional React lifetime departure are code-review evidence only. Owner Knip589 unsuppressed with old584/579 retained and no baseline-CI comparison. No released user-help impact."
+    "Bounded static35e MarkdownViewer image-owner correction only; zero new mappings/status promotions.236/1430(231components+5modules),178partial58localimplemented,230targets89reviews.230prior target identities audited:229byteequal, only MarkdownViewer target updated with full oldrow/hash/contract retained. One changed DOM adapter supporting profile. Original003/current source and all19invalidations unchanged. MV11automaticPASS/manualSTOP, MV10olderPASS and OW1configgrep failure/guard corrections retained without transfer. No native/visual/product acceptance. Native MV11 stale options placement remains a manual STOP; same-node resize remains uncorrected. Support callbacks and intentional React lifetime departure are code-review evidence only. Owner Knip589 unsuppressed with old584/579 retained and no baseline-CI comparison. No released user-help impact.",
+    "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance. Saved SN2dJUuXv at d1/c668 remains automatic/manual FAIL with close hit=false and original6D2JWp crop-only ambiguity retained. This CSS departure has no8f native acceptance. SN1tZniJX remains its original default-host scope only. WholeCI/Knip pass unclaimed; prior Knip589 unsuppressed remains in history. No released user-help impact."
   ],
   "reviews": {
     "foundation": {
@@ -86,7 +87,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -100,7 +101,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -114,7 +115,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -130,7 +131,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -144,7 +145,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -155,7 +156,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -166,7 +167,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -180,7 +181,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -191,7 +192,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -202,7 +203,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -213,7 +214,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -227,7 +228,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -238,7 +239,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -249,7 +250,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -264,7 +265,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -280,7 +281,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -291,7 +292,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -302,7 +303,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -320,7 +321,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -331,7 +332,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -342,7 +343,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -353,7 +354,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -367,7 +368,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -378,7 +379,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -392,7 +393,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -403,7 +404,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -418,7 +419,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -432,7 +433,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -446,7 +447,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -457,7 +458,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -465,7 +466,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -479,7 +480,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -493,7 +494,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -507,7 +508,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -518,7 +519,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -529,7 +530,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -540,7 +541,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -551,7 +552,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -562,7 +563,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -573,7 +574,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -587,7 +588,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -598,7 +599,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -609,7 +610,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -620,7 +621,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -631,7 +632,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -642,7 +643,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -650,7 +651,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -678,7 +679,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -701,7 +702,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -727,7 +728,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -753,7 +754,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -784,7 +785,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -813,7 +814,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -853,7 +854,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -886,7 +887,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -927,7 +928,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -972,7 +973,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -1030,7 +1031,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1075,7 +1076,7 @@
         "0f00a72202dce497991564f9fc6875db9f26c9e5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
       "inspectedCallsites": [
@@ -1173,7 +1174,7 @@
       ],
       "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
       "inspectedCallsites": [
@@ -1278,7 +1279,7 @@
     },
     "chat-disclosure-rows-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1474,7 +1475,7 @@
     },
     "chat-recovery-notices-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1678,7 +1679,7 @@
     },
     "chat-stream-metadata-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -1845,7 +1846,7 @@
     },
     "chat-history-attribution-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -2058,7 +2059,7 @@
     },
     "chat-disclosure-corrections-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2274,7 +2275,7 @@
     },
     "chat-queued-actions-command-3e894": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2468,7 +2469,7 @@
     },
     "chat-code-reference-context-4bfa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2833,7 +2834,7 @@
     },
     "chat-inline-mcp-prompt-preview-9d297": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3371,7 +3372,7 @@
     },
     "queued-attachments-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3550,7 +3551,7 @@
     },
     "tabs-export-correction-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3869,7 +3870,7 @@
     },
     "streaming-status-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -4089,7 +4090,7 @@
     },
     "mcp-inline-font-correction-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["7af853406e1a80758a3762bafef510be19db4587"],
@@ -4801,7 +4802,7 @@
     },
     "suggested-chief-prompts-16ee80": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5062,7 +5063,7 @@
     },
     "automated-wake-header-f2b2a2": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5418,7 +5419,7 @@
     },
     "agent-pr-attribution-headers-73da5529": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5891,7 +5892,7 @@
     },
     "attachment-permission-support-05cc7db6": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -6529,7 +6530,7 @@
     },
     "attachment-file-replacement-ff9a4e35": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -7565,7 +7566,7 @@
     },
     "inline-permission-and-live-support-6a51a3da": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -8411,7 +8412,7 @@
     },
     "media-and-markdown-composition-dd6e5720": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -9615,7 +9616,7 @@
     },
     "full-markdown-and-reasoning-68a5ca85": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -11451,7 +11452,7 @@
     },
     "chat-image-and-video-wrapper-561fa08c": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -13287,7 +13288,7 @@
     },
     "message-actions-and-transcript-cards-2d310fed": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -16535,7 +16536,7 @@
     },
     "setup-script-and-edit-confirmation-3d7e81dc": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -21524,7 +21525,7 @@
     },
     "operational-window-and-panel-2d988e34": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -30685,7 +30686,7 @@
     },
     "response-group-and-cylinder-1cea8e2b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -49120,7 +49121,7 @@
     },
     "navigation-excerpt-and-image-caption-34161b6d": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -84274,7 +84275,7 @@
     },
     "response-group-reaction-correction-e46a388f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -85096,7 +85097,7 @@
     },
     "detected-scripts-and-neutral-indicator-0afebba9": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -86275,7 +86276,7 @@
     },
     "markdown-image-owner-correction-35e676aa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
       "inspectedCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -87088,7 +87089,970 @@
       },
       "sourceDriftPolicy": "Original003/inventory1430 unchanged. Full old sourceInspection retained because original/current MarkdownViewer bytes unchanged. All19invalidations remain; no source-baseline refresh. Direct target and DOM support have explicit old/new profiles only.",
       "excludedLaterWork": "Later MV11 test amendment1d477 and candidate5374/native execution excluded from final35e source audit; no guard/test/runtime/service work.",
-      "userHelpImpact": "Internal unreleased migration/ledger; no released assistant-help impact."
+      "userHelpImpact": "Internal unreleased migration/ledger; no released assistant-help impact.",
+      "retainedReviewCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e"
+    },
+    "static-toast-containment-support-8f0bbcda": {
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "inspectedCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "taskNoteIds": [
+        "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+        "e2989955-b89c-458d-a97a-07bc3ac0ced8"
+      ],
+      "implementationCommits": ["8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"],
+      "scope": "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance.",
+      "previousLedgerCommit": "774fddd6979970238bd3799cdc178bcae839bf2b",
+      "previousCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "previousSourceRows": {
+        "src/lib/components/ui/toast/Toast.svelte": {
+          "implementation": {
+            "status": "unmapped"
+          },
+          "targets": [],
+          "functional": {
+            "cases": []
+          },
+          "visual": {
+            "cases": []
+          },
+          "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+        },
+        "src/lib/component-catalog/renderers/ToastCatalogPreview.svelte": {
+          "implementation": {
+            "status": "unmapped"
+          },
+          "targets": [],
+          "functional": {
+            "cases": []
+          },
+          "visual": {
+            "cases": []
+          },
+          "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+        }
+      },
+      "mappingDecision": {
+        "status": "support-only",
+        "reason": "Both actual Toast source and catalog source rows are unmapped, with no targets. No direct target or previous CSS path/hash citation exists. This narrow one-declaration audit cannot establish complete Toast source/API parity. Preserve all source rows; record old/current supporting CSS profiles here only.",
+        "newMappings": 0,
+        "implementationStatusesChanged": false,
+        "caseStatusesChanged": false
+      },
+      "sourceApiReview": {
+        "result": "PASS",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+        "previousCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+        "sourcePath": "src/lib/components/ui/toast/Toast.svelte",
+        "sourceSha256": "09fde73cb0917667d62e6a387ad7b5d33a2d916a23ae27c4c7c2aa16da304317",
+        "targetPath": "apps/react/src/components/ui/toast/toast.tsx",
+        "targetSha256": "bc1945d80ab17cdf9ca7fbadb2ef7d1b7eb89db1028a0dbc3c35093f84975c5f",
+        "cssPath": "apps/react/src/components/ui/toast/toast.css",
+        "oldCssSha256": "ad6e61976932d88c486386b4131fa364565cf45e47e7db33993b772337f9a611",
+        "cssSha256": "52b3bd7e88c0502e02d74568de069532c9000cfff8a454e3e344e6bf2556d7ae",
+        "sourceProps": [
+          {
+            "name": "regionId",
+            "optional": true,
+            "type": "string"
+          },
+          {
+            "name": "toasterId",
+            "optional": true,
+            "type": "string"
+          },
+          {
+            "name": "position",
+            "optional": true,
+            "type": "ToasterProps['position']"
+          },
+          {
+            "name": "staticPosition",
+            "optional": true,
+            "type": "boolean"
+          },
+          {
+            "name": "staticToastCount",
+            "optional": true,
+            "type": "number"
+          },
+          {
+            "name": "onClearAll",
+            "optional": true,
+            "type": "() => void"
+          },
+          {
+            "name": "containerAriaLabel",
+            "optional": true,
+            "type": "string"
+          }
+        ],
+        "imports": [
+          "react",
+          "sonner",
+          "@phosphor-icons/react",
+          "@/components/ui/button",
+          "@/components/ui/surface-context",
+          "$shared/paraglide/messages.js",
+          "./toast-glyph",
+          "./toast.css"
+        ],
+        "support": [
+          {
+            "path": "apps/react/src/components/ui/toast/index.ts",
+            "sha256": "eec9544caa16e22d9369ed38382c725d830fd93019da5eb57108dfc34c37c32f",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "apps/react/src/catalog/toast-catalog-preview.tsx",
+            "sha256": "635112f105c140a9c0286436e3b67426be0d15341da6317ba979a45c53cd1c2b",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "apps/react/src/catalog/toast-catalog-preview.css",
+            "sha256": "61c4e5755e83e0d5f01784509c276b4e296f1e6fa0b3accf34432aa0efec9e30",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "apps/react/src/routes/sandbox.$.tsx",
+            "sha256": "a54824b342eef744c2611726ff7ea0a5ce7c7f507fa9f33666f46d1d6dd79df7",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "apps/react/src/routes/sandbox.index.tsx",
+            "sha256": "da42060bccd7912eaaa796f57edbb558b5d6ace3d864df53aaad40a662c62388",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "apps/react/package.json",
+            "sha256": "00bb7c63cb321b31427b205bf17fc5b3eab4404cb9e5f719d421067e7748a647",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "pnpm-lock.yaml",
+            "sha256": "9daf813f9651f3481e7f6601c399a15819e236f8f77e97d20fd463495b9677ab",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          },
+          {
+            "path": "src/lib/component-catalog/renderers/ToastCatalogPreview.svelte",
+            "sha256": "3327eab40679cbda8e33bcc85cabdae9b2cab8beae2316694af32677f9619bf5",
+            "originalSha256": "3327eab40679cbda8e33bcc85cabdae9b2cab8beae2316694af32677f9619bf5",
+            "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+          }
+        ],
+        "proofs": {
+          "originalAndCurrentSourceEqual": true,
+          "exactOneDeclarationByteAndAstInverse": true,
+          "originalStaticSelectorDeclarationsEqualOldReact": true,
+          "originalAndReactSevenPropNamesTypesOptionalityEqual": true,
+          "reactBodyImportsCallbacksEffectsUnchanged": true,
+          "sourceCatalogOriginalUnchanged": true,
+          "reactCallerCompositionUnchanged": true,
+          "onlyStaticSelectorOverridesWidth": true
+        },
+        "cascade": {
+          "selector": ".toast-static [data-sonner-toaster]",
+          "important": true,
+          "baseSelector": "[data-sonner-toaster]",
+          "baseWidth": "var(--app-toast-width)",
+          "staticWidth": "100%",
+          "wrapperWidth": "min(100%, 22rem)",
+          "specificityReason": "Both declarations important and unlayered; static class+attribute selector has greater specificity than base attribute selector.",
+          "meaning": "Static toaster percentage now resolves against the constrained wrapper; static cards already have width100%. Default host without a toast-static ancestor is outside the new selector. This is source/AST reasoning, not new measured layout or hit reachability."
+        },
+        "limits": [
+          "Intentional React-only CSS departure. No paired Svelte runtime or source pixel comparison.",
+          "No full Toast implementation mapping: only identical public prop shapes and unchanged body/import/callback/effect boundaries checked for this correction. Existing theme/default-host and framework-library differences are not adjudicated.",
+          "Native narrow-host close reachability, dynamic resizing, custom/stack toasts, motion and source pairs remain unverified at8f.",
+          "No native failure waived; existing cases/receipts and all mappings/statuses must stay unchanged."
+        ]
+      },
+      "supportingDependencies": [
+        {
+          "path": "src/lib/components/ui/toast/Toast.svelte",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "sha256": "09fde73cb0917667d62e6a387ad7b5d33a2d916a23ae27c4c7c2aa16da304317",
+          "originalSha256": "09fde73cb0917667d62e6a387ad7b5d33a2d916a23ae27c4c7c2aa16da304317"
+        },
+        {
+          "path": "apps/react/src/components/ui/toast/toast.tsx",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "sha256": "bc1945d80ab17cdf9ca7fbadb2ef7d1b7eb89db1028a0dbc3c35093f84975c5f"
+        },
+        {
+          "path": "apps/react/src/components/ui/toast/toast.css",
+          "previousCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+          "previousSha256": "ad6e61976932d88c486386b4131fa364565cf45e47e7db33993b772337f9a611",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "sha256": "52b3bd7e88c0502e02d74568de069532c9000cfff8a454e3e344e6bf2556d7ae",
+          "supportOnly": true,
+          "meaning": "Existing imported CSS receives one static-toaster containment declaration. No existing Toast mapping or CSS path/hash citation exists to advance; preserve unmapped source rows and create supporting-only review."
+        },
+        {
+          "path": "apps/react/src/components/ui/toast/index.ts",
+          "sha256": "eec9544caa16e22d9369ed38382c725d830fd93019da5eb57108dfc34c37c32f",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": "apps/react/src/catalog/toast-catalog-preview.tsx",
+          "sha256": "635112f105c140a9c0286436e3b67426be0d15341da6317ba979a45c53cd1c2b",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": "apps/react/src/catalog/toast-catalog-preview.css",
+          "sha256": "61c4e5755e83e0d5f01784509c276b4e296f1e6fa0b3accf34432aa0efec9e30",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": "apps/react/src/routes/sandbox.$.tsx",
+          "sha256": "a54824b342eef744c2611726ff7ea0a5ce7c7f507fa9f33666f46d1d6dd79df7",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": "apps/react/src/routes/sandbox.index.tsx",
+          "sha256": "da42060bccd7912eaaa796f57edbb558b5d6ace3d864df53aaad40a662c62388",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": "apps/react/package.json",
+          "sha256": "00bb7c63cb321b31427b205bf17fc5b3eab4404cb9e5f719d421067e7748a647",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": "pnpm-lock.yaml",
+          "sha256": "9daf813f9651f3481e7f6601c399a15819e236f8f77e97d20fd463495b9677ab",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        },
+        {
+          "path": "src/lib/component-catalog/renderers/ToastCatalogPreview.svelte",
+          "sha256": "3327eab40679cbda8e33bcc85cabdae9b2cab8beae2316694af32677f9619bf5",
+          "originalSha256": "3327eab40679cbda8e33bcc85cabdae9b2cab8beae2316694af32677f9619bf5",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1"
+        }
+      ],
+      "supportDelta": [
+        {
+          "path": "apps/react/src/components/ui/toast/toast.css",
+          "previousCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+          "previousSha256": "ad6e61976932d88c486386b4131fa364565cf45e47e7db33993b772337f9a611",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "sha256": "52b3bd7e88c0502e02d74568de069532c9000cfff8a454e3e344e6bf2556d7ae",
+          "supportOnly": true,
+          "meaning": "Existing imported CSS receives one static-toaster containment declaration. No existing Toast mapping or CSS path/hash citation exists to advance; preserve unmapped source rows and create supporting-only review."
+        }
+      ],
+      "historicalPinnedReports": [
+        {
+          "path": ".demo-artifacts/attachment-correction-ledger/status-05cc7db6.json",
+          "sha256": "2ecc7894e3222c77d621cdf844a3c59630ecede44ec74a1d2ae8a09a2908cb26",
+          "candidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c"
+        },
+        {
+          "path": ".demo-artifacts/attachment-identity-ledger/status-ff9a4e35.json",
+          "sha256": "3de6cfc20cd498cc1dd7d3ac9fab59d75bd652576e0122fe0f95add767dfbd03",
+          "candidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35"
+        },
+        {
+          "path": ".demo-artifacts/inline-permission-ledger/status-6a51a3da.json",
+          "sha256": "871f8ca4bf374cba9df3b5e761107cbd19664e38768848b1f5e74779ffe1f767",
+          "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9"
+        },
+        {
+          "path": ".demo-artifacts/media-composition-ledger/status-dd6e5720.json",
+          "sha256": "dcf0190b31084f48d746fe704bfb67a56fc9772e34cb338e074e0d902206a6bd",
+          "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980"
+        },
+        {
+          "path": ".demo-artifacts/markdown-reasoning-ledger/status-68a5ca85.json",
+          "sha256": "9211fb66cfc453cf98321757efa4db39aa4eb8ade6c45129197d3c8e51a5a44a",
+          "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a"
+        },
+        {
+          "path": ".demo-artifacts/chat-image-ledger/status-561fa08c.json",
+          "sha256": "2642d63ee8d4ca3bae4c17bb7cdb4f7024656cb04643a00feb3c9b9762ef71a3",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4"
+        },
+        {
+          "path": ".demo-artifacts/message-transcript-ledger/status-2d310fed.json",
+          "sha256": "ecc0ac8a7b46dfa6601457464565b8f1996e69a14033287d8adda09c7584de37",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c"
+        },
+        {
+          "path": ".demo-artifacts/setup-edit-ledger/status-3d7e81dc.json",
+          "sha256": "e5e8c3d4a9ef941fc5f1b26062494d378febae9a4838a0f6d8b6ae7e0728316c",
+          "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b"
+        },
+        {
+          "path": ".demo-artifacts/operational-window-ledger/status-2d988e34.json",
+          "sha256": "3fa6ae7f8796a1e82d038bbd7555f8754205395ac8cfe83337b104ec06a55c4d",
+          "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95"
+        },
+        {
+          "path": ".demo-artifacts/response-cylinder-ledger/status-1cea8e2b.json",
+          "sha256": "769abbca7d5dec89b703ed52afdb92e2d353b076012b8490c53a162a7da1a45e",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        },
+        {
+          "path": ".demo-artifacts/navigation-caption-ledger/status-34161b6d.json",
+          "sha256": "5ed08c94a1b379cdac0454e45cb3470a4cf7b7a0a60b90dea7ea06e88bf3ca0e",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/status-e46a388f.json",
+          "sha256": "de28615b813c3c9c480b8b786beaa3464943418a50794449c6e25f7193bbe30d",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/status-0afebba9.json",
+          "sha256": "e8adf3b398bb7dbf0e1ba3624a5de397fc4aca46b5b2acabaf5aa9852cdb86cb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7"
+        },
+        {
+          "path": ".demo-artifacts/markdown-lifetime-ledger/status-35e676aa.json",
+          "sha256": "667e04253ceba4d6b2262e308c0d9381555a0c53a06facd425c999ec79488d1e",
+          "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e"
+        }
+      ],
+      "staticEvidence": [
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/api-report.json",
+          "sha256": "83e7d000e27b6d073782acf1da1827d1111a1ca1560ba24cac592339b0744f39"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/static-report.json",
+          "sha256": "ddde3d418c842e9847d20ddc1f79d1b69f5309fedc806797e28074d7d73e3a65"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/original-compiled.js",
+          "sha256": "da05b1cf71a6e496e2885a9c1b517ac8db6a358f442208c7e49fe0f7d744c7e3"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/original-compiled.css",
+          "sha256": "822cd56c78cef2d66e0a613268b76f4361716958271f2b4c246ed5c4dc6f8f51"
+        },
+        {
+          "path": ".demo-artifacts/scoped-toast-ledger/audit-correction.json",
+          "sha256": "0285c874000270d858237fd3bbc97f59a6a5b151abb3e33cb140d51970498120"
+        }
+      ],
+      "intentionalReactDeviation": {
+        "approvedScope": "Coordinator authorizes React-only static-toaster containment correction; original Svelte unchanged and no source runtime waiver.",
+        "cascade": {
+          "selector": ".toast-static [data-sonner-toaster]",
+          "important": true,
+          "baseSelector": "[data-sonner-toaster]",
+          "baseWidth": "var(--app-toast-width)",
+          "staticWidth": "100%",
+          "wrapperWidth": "min(100%, 22rem)",
+          "specificityReason": "Both declarations important and unlayered; static class+attribute selector has greater specificity than base attribute selector.",
+          "meaning": "Static toaster percentage now resolves against the constrained wrapper; static cards already have width100%. Default host without a toast-static ancestor is outside the new selector. This is source/AST reasoning, not new measured layout or hit reachability."
+        },
+        "scopeLimits": [
+          "Intentional React-only CSS departure. No paired Svelte runtime or source pixel comparison.",
+          "No full Toast implementation mapping: only identical public prop shapes and unchanged body/import/callback/effect boundaries checked for this correction. Existing theme/default-host and framework-library differences are not adjudicated.",
+          "Native narrow-host close reachability, dynamic resizing, custom/stack toasts, motion and source pairs remain unverified at8f.",
+          "No native failure waived; existing cases/receipts and all mappings/statuses must stay unchanged."
+        ],
+        "nativeCorrectionVerified": false,
+        "sourceRuntimeCompared": false
+      },
+      "historicalNotifications": [
+        {
+          "run": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp",
+          "case": "SN2",
+          "productCommit": "d1d75922460e9bb521653519327befbb8b5f8aad",
+          "testCommit": "d16cbdfaa69dda748bb42011a79d5054d3a0e0a6",
+          "automaticResult": "passed",
+          "exitCode": 0,
+          "manualReview": {
+            "status": "STOP",
+            "reviewedAt": "2026-10-12T07:10:56.805135+00:00",
+            "distinctHashes": [
+              "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0",
+              "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599",
+              "1b73a4b84f95daf843cc2d78b9b40b7836e031451c2e797fc623d66e80552222",
+              "96a87c76377af91ba5bf5c5eb78b33cc9f33c0422e56166e3ab9a0d9960b579c",
+              "9470fb57c8fe6f8941e443d7d38ab2b3448d0b90dfe3f997c34f4d7823e9be06"
+            ],
+            "notes": "All five distinct raw/final PNG byte groups inspected. Named success preview PNG crops the toast at the right boundary and omits its AX Close notification button. Root x65,width290,right355; close x378,width24,right402. Both scoped states share identical cropped PNG. Geometry stable but screenshot target does not cover descendant control. Cannot distinguish page clipping from capture-boundary omission using these artifacts; no diagnostic browser or rerun authorized. Other four distinct PNGs readable. SN3/SN4 not run."
+          },
+          "savedFreezeSummary": {
+            "product": "d1d75922460e9bb521653519327befbb8b5f8aad",
+            "testSha": "d16cbdfaa69dda748bb42011a79d5054d3a0e0a6",
+            "case": "SN2",
+            "root": "/home/sam/intent/workspaces/system-design/cloudlands-fe/.demo-artifacts/view-parity/candidate-sandbox-toast-d1d759224",
+            "runnerSame": true,
+            "productSame": true,
+            "generatedSame": true,
+            "sourceSame": true,
+            "sourceSha": "315ce7c62bd809785759d98709c2f821afe77c1de4fca264dec99cd0ffc0cae0",
+            "sourceDirtyAfter": false
+          },
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/session.json",
+              "sha256": "8db670453a1d9012d3c76e0ff49ed7aa9a2be86ab34961dd6e041cc46e11ec49"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/completion.json",
+              "sha256": "457e661f23b3a8a4c3b15f20f5aa8e9df8182e3b77851de73ce00fac7942ff87"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/results.json",
+              "sha256": "cc536e66e515c9cfd3726f19c1bc84242220f8b8c56d39905a17585d763860e8"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/verifier-review.json",
+              "sha256": "cd03b6d92f91c2f25d63120a8b7661276136fb38cef2a52ba7b00827c45378c3"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/browser-errors.json",
+              "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/candidate-provenance.json",
+              "sha256": "027fc1d971a85e6d90ed8cf28c1639043735c79fceacaa9ab0c0c0a3e1d4310f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sandbox-notifications-freeze.json",
+              "sha256": "da705630fdd95c968fdbf2192fd9b1a9a24e5b85197f31d78bd3e90ecb5adfa5"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sandbox-notifications-network.json",
+              "sha256": "3fb5a7ed8bff7a89b3897989ddf4b1bea37bc7f098b675bc23e3d51ca566f0e0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-command-loaded-attempt-1.json",
+              "sha256": "90859e286d3fc2a09aa31cc88f740ac77b03977a40858abb45cbb0b4f71c5737"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-command-loaded-attempt-1.png",
+              "sha256": "9470fb57c8fe6f8941e443d7d38ab2b3448d0b90dfe3f997c34f4d7823e9be06"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-command-loaded-attempt-2.json",
+              "sha256": "308b097829c4bc803544f6503bae9af74801af7d24ae023cab4e9d29733db307"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-command-loaded-attempt-2.png",
+              "sha256": "9470fb57c8fe6f8941e443d7d38ab2b3448d0b90dfe3f997c34f4d7823e9be06"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-command-loaded-bounds.json",
+              "sha256": "bc32d7a71f1e5b7246513280a73001dc26c2d25a03297bbcc5704e2ab674cf99"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-command-loaded.png",
+              "sha256": "9470fb57c8fe6f8941e443d7d38ab2b3448d0b90dfe3f997c34f4d7823e9be06"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-image-loaded-attempt-1.json",
+              "sha256": "87efa999c0f29276696802291a0c093c66577de623f141adf8d9d92be8a98e40"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-image-loaded-attempt-1.png",
+              "sha256": "1b73a4b84f95daf843cc2d78b9b40b7836e031451c2e797fc623d66e80552222"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-image-loaded-attempt-2.json",
+              "sha256": "6ab7bd75d931ac22811c11578a6cb75ab40fc2da8cb631f9d6460cb8f675b201"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-image-loaded-attempt-2.png",
+              "sha256": "1b73a4b84f95daf843cc2d78b9b40b7836e031451c2e797fc623d66e80552222"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-image-loaded-bounds.json",
+              "sha256": "1289cc1a9744e307b24157f918e509469d28f9de6266a20a30995a0df46c8286"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-image-loaded.png",
+              "sha256": "1b73a4b84f95daf843cc2d78b9b40b7836e031451c2e797fc623d66e80552222"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-reference-loaded-attempt-1.json",
+              "sha256": "2c643f90c85e7d297d6d970cd051605f786800bc7ee99517361ec7e30daeae2e"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-reference-loaded-attempt-1.png",
+              "sha256": "96a87c76377af91ba5bf5c5eb78b33cc9f33c0422e56166e3ab9a0d9960b579c"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-reference-loaded-attempt-2.json",
+              "sha256": "1f73132c7660515545dfc0deb91c426a1c3aa40c51b77ce89d79819b595bacba"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-reference-loaded-attempt-2.png",
+              "sha256": "96a87c76377af91ba5bf5c5eb78b33cc9f33c0422e56166e3ab9a0d9960b579c"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-reference-loaded-bounds.json",
+              "sha256": "64deeab4e7fcd6ae97b5a32329cc540859eba2bcbe7f2f06bc5046d9e2bcd9dc"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-chat-reference-loaded.png",
+              "sha256": "96a87c76377af91ba5bf5c5eb78b33cc9f33c0422e56166e3ab9a0d9960b579c"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-notify-before-attempt-1.json",
+              "sha256": "81de71f552054c22f4f117787960e5fb4c6aa39b9c89582436c340d2373a6d2b"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-notify-before-attempt-1.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-notify-before-attempt-2.json",
+              "sha256": "4a409620be0e5454e7eb026eda81057bf18c9ce0be7735ca76da75a1cbbb4ffd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-notify-before-attempt-2.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-notify-before-bounds.json",
+              "sha256": "cd991d9f4740af999c4fa7c6d1e972b637b296ed9475db442880aaed31371ed3"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-notify-before.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-before-attempt-1.json",
+              "sha256": "f7da99fcf4813caddd989ac1bac7c075ca4128a3b7fc0f400ef6da643e169f7a"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-before-attempt-1.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-before-attempt-2.json",
+              "sha256": "c41c7eefccc43c14ae15d1663af418e2c3e5f78e7f92e118da8cf10a43b56a70"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-before-attempt-2.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-before-bounds.json",
+              "sha256": "bf4774f124b07fcaf1c6d8fe60c58b560b0d218bbb7e4b416ac02cdbf575f3b6"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-before.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-survives-default-dismiss-attempt-1.json",
+              "sha256": "9e5c52cf05248e70d47de81a61762e7607602429b017d29e79917efb2b2060dd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-survives-default-dismiss-attempt-1.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-survives-default-dismiss-attempt-2.json",
+              "sha256": "db5bcd6a07771d3c902232bc97303ab48fe5136effea1aa15f5a2a7ea201635e"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-survives-default-dismiss-attempt-2.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-survives-default-dismiss-bounds.json",
+              "sha256": "ecadc01d85847044b6ac472f7d4b30fe62769f043a1935165625c3815121a04f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-59.726Z-core-6D2JWp/offline-review/sn2-scoped-survives-default-dismiss.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            }
+          ],
+          "scope": "Saved evidence/provenance inspection only; original owner manual verdict retained, no new visual review or runtime acceptance at8f."
+        },
+        {
+          "run": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv",
+          "case": "SN2",
+          "productCommit": "d1d75922460e9bb521653519327befbb8b5f8aad",
+          "testCommit": "c668ebe6fddb157b24afe83af64e40c044cd5cbb",
+          "automaticResult": "failed",
+          "exitCode": 1,
+          "manualReview": {
+            "status": "FAIL",
+            "reviewedAt": "2026-10-12T07:17:40.421668+00:00",
+            "distinctHashes": [
+              "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0",
+              "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599",
+              "bf40344b9c05e55029f2d35677bf48e7f5dffe575bb7b3da6e080d5700947f42"
+            ],
+            "notes": "All three distinct PNGs (seven attachments including all raw captures) inspected. Full420x900 failure screenshot shows actual named-toast right edge clipped and close button absent, beyond the earlier section crop issue. Recorded message hit=true; close x378..402/y533..557 center390,545 hit=false although its bounds lie inside viewport and toast. This is actual named-preview control reachability failure on this frozen420px page, not evidence that default global toast or d1 introduction caused it. Supplemental capture did not execute because before probe failed; no after probe expected. Original crop retained; no further case."
+          },
+          "savedFreezeSummary": {
+            "product": "d1d75922460e9bb521653519327befbb8b5f8aad",
+            "testSha": "c668ebe6fddb157b24afe83af64e40c044cd5cbb",
+            "case": "SN2",
+            "root": "/home/sam/intent/workspaces/system-design/cloudlands-fe/.demo-artifacts/view-parity/candidate-sandbox-toast-d1d759224",
+            "runnerSame": true,
+            "productSame": true,
+            "generatedSame": true,
+            "sourceSame": true,
+            "sourceSha": "315ce7c62bd809785759d98709c2f821afe77c1de4fca264dec99cd0ffc0cae0",
+            "sourceDirtyAfter": false
+          },
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/session.json",
+              "sha256": "784dc89dbdbf0cdc20109d60a35d5d63de05e5f2f535d0c0804ee96ee7b1c0a8"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/completion.json",
+              "sha256": "cab9edccbbde0d78f2acbb8f3cf4604650ccc7298297bb23901f7a7e94c71acd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/results.json",
+              "sha256": "1800f55a6096f1284c255365c9bbf7271ad822c691cf1ad3b288e97d2933f1a6"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/verifier-review.json",
+              "sha256": "be8d787ab9b68d3680a82a26fdabce2a3113bbe70e4bf8efb4c91391667c1f57"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/browser-errors.json",
+              "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/candidate-provenance.json",
+              "sha256": "027fc1d971a85e6d90ed8cf28c1639043735c79fceacaa9ab0c0c0a3e1d4310f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/closure.json",
+              "sha256": "d2b3710035912c0deffeeb0edb354be81dbb0555d5800009f689be61855f346f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sandbox-notifications-freeze.json",
+              "sha256": "2679fc8bc2d64a7cb9ccdb61a51bad160bfe1f38c8ac30a09308bd93abcde817"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sandbox-notifications-network.json",
+              "sha256": "15e205913c1a53f468c62c6c28292753077b8e954b8c8122bf92ec314bbf4f12"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-complete-toast-before-viewport-before.json",
+              "sha256": "a3a35d6be28b42d2cd1ef597f1f62234adbe8f41f904200209b876cdcd11f158"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-notify-before-attempt-1.json",
+              "sha256": "81de71f552054c22f4f117787960e5fb4c6aa39b9c89582436c340d2373a6d2b"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-notify-before-attempt-1.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-notify-before-attempt-2.json",
+              "sha256": "4a409620be0e5454e7eb026eda81057bf18c9ce0be7735ca76da75a1cbbb4ffd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-notify-before-attempt-2.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-notify-before-bounds.json",
+              "sha256": "cd991d9f4740af999c4fa7c6d1e972b637b296ed9475db442880aaed31371ed3"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-notify-before.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-scoped-before-attempt-1.json",
+              "sha256": "f7da99fcf4813caddd989ac1bac7c075ca4128a3b7fc0f400ef6da643e169f7a"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-scoped-before-attempt-1.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-scoped-before-attempt-2.json",
+              "sha256": "c41c7eefccc43c14ae15d1663af418e2c3e5f78e7f92e118da8cf10a43b56a70"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-scoped-before-attempt-2.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-scoped-before-bounds.json",
+              "sha256": "bf4774f124b07fcaf1c6d8fe60c58b560b0d218bbb7e4b416ac02cdbf575f3b6"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/offline-review/sn2-scoped-before.png",
+              "sha256": "27402caa73c3e7ac32413b50c63680810c1077732f2f0f00eed9647913a85599"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/tests/sandbox-notifications.core-0cf57-d-previews-stay-independent-core/test-failed-1.png",
+              "sha256": "bf40344b9c05e55029f2d35677bf48e7f5dffe575bb7b3da6e080d5700947f42"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-17-10.148Z-core-dJUuXv/tests/sandbox-notifications.core-0cf57-d-previews-stay-independent-core/trace.zip",
+              "sha256": "35577d3d7e5328afd6f7b382ae9b5fa45fed996fd143d04d36c93a2e32edc013"
+            }
+          ],
+          "scope": "Saved evidence/provenance inspection only; original owner manual verdict retained, no new visual review or runtime acceptance at8f.",
+          "savedPreCaptureProbe": {
+            "probe": {
+              "viewport": {
+                "width": 420,
+                "height": 900,
+                "clientWidth": 420,
+                "clientHeight": 900,
+                "scrollX": 0,
+                "scrollY": 0
+              },
+              "toast": {
+                "left": 65,
+                "right": 417,
+                "top": 520,
+                "bottom": 570,
+                "width": 352,
+                "height": 50
+              },
+              "message": "Workspace saved",
+              "text": [
+                {
+                  "bounds": {
+                    "left": 106,
+                    "right": 216.28125,
+                    "top": 537.21875,
+                    "bottom": 552.21875,
+                    "width": 110.28125,
+                    "height": 15
+                  },
+                  "hit": true
+                }
+              ],
+              "close": {
+                "bounds": {
+                  "left": 378,
+                  "right": 402,
+                  "top": 533,
+                  "bottom": 557,
+                  "width": 24,
+                  "height": 24
+                },
+                "hit": false
+              },
+              "focus": {
+                "tag": "A",
+                "id": "",
+                "label": null
+              },
+              "focusPreserved": true
+            },
+            "aria": "- listitem:\n  - text: Workspace saved\n  - button \"Close notification\""
+          },
+          "failureImageSha256": "bf40344b9c05e55029f2d35677bf48e7f5dffe575bb7b3da6e080d5700947f42",
+          "savedScopedRoot": {
+            "x": 65,
+            "y": 478,
+            "width": 290,
+            "height": 92
+          }
+        },
+        {
+          "run": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX",
+          "case": "SN1",
+          "productCommit": "d1d75922460e9bb521653519327befbb8b5f8aad",
+          "testCommit": "d16cbdfaa69dda748bb42011a79d5054d3a0e0a6",
+          "automaticResult": "passed",
+          "exitCode": 0,
+          "manualReview": {
+            "status": "PASS",
+            "reviewedAt": "2026-10-12T07:09:56.730689+00:00",
+            "distinctHashes": [
+              "7932b88cd96f6f1caf9a77772f2c5f375ead797e28ce60ea0f46be71d1f5d209",
+              "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0",
+              "85b89ae3b37055d79b0251aafd52ea788bdd4109db6f8de826a9f4a2784ca89f",
+              "31d2c9caf0d7c94303c999bc8ba8c6cd72d788e576179c69bc417d2f85c0dfc8"
+            ],
+            "notes": "All four distinct original PNGs inspected at native resolution; raw/final duplicates SHA256-identical. Keyed first/replacement message and close button readable and contained; fixture controls usable and no overlapping/default duplicate notification. All eight raw capture attempts preserve focus, scroll and geometry; four geometry/AX pairs stable. No unexpected manual result."
+          },
+          "savedFreezeSummary": {
+            "product": "d1d75922460e9bb521653519327befbb8b5f8aad",
+            "testSha": "d16cbdfaa69dda748bb42011a79d5054d3a0e0a6",
+            "case": "SN1",
+            "root": "/home/sam/intent/workspaces/system-design/cloudlands-fe/.demo-artifacts/view-parity/candidate-sandbox-toast-d1d759224",
+            "runnerSame": true,
+            "productSame": true,
+            "generatedSame": true,
+            "sourceSame": true,
+            "sourceSha": "315ce7c62bd809785759d98709c2f821afe77c1de4fca264dec99cd0ffc0cae0",
+            "sourceDirtyAfter": false
+          },
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/session.json",
+              "sha256": "19d0ebdb52a3ceca81f612758dedab15c65f5e4b1bed70de332a0ebb39029a46"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/completion.json",
+              "sha256": "df6cac9c99ba5d7b38fb0d19e7072474fd71b07bb6f860c3dd4aee3cc75f4edc"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/results.json",
+              "sha256": "41b6c05ff045380de9462fbfc3c8ec17a222a499db7e25172a9d979e46932abf"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/verifier-review.json",
+              "sha256": "a8cf6a4caefe11178f9354ceb30feacb60fe1052779f17f574cb95bdda1b3407"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/browser-errors.json",
+              "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/candidate-provenance.json",
+              "sha256": "027fc1d971a85e6d90ed8cf28c1639043735c79fceacaa9ab0c0c0a3e1d4310f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sandbox-notifications-freeze.json",
+              "sha256": "51bf69687e07fb9b03de1bf755b705744a625de5853e2f5850a21921b4859f6f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sandbox-notifications-network.json",
+              "sha256": "a5c22940d4b6b867ba8a16585c2434e35c6f80577751a3f6a90f8e48b2f4acef"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-before-attempt-1.json",
+              "sha256": "82c21d649c628e4b240dcf5f26f87097938b2ba5a185175532f7d0f6c54c89fd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-before-attempt-1.png",
+              "sha256": "7932b88cd96f6f1caf9a77772f2c5f375ead797e28ce60ea0f46be71d1f5d209"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-before-attempt-2.json",
+              "sha256": "af958254b8d511b7d1807fd9877a695c9fbcc9080cace17d81ba797f1f4cf160"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-before-attempt-2.png",
+              "sha256": "7932b88cd96f6f1caf9a77772f2c5f375ead797e28ce60ea0f46be71d1f5d209"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-before-bounds.json",
+              "sha256": "6b16de7d9dbd3878a003e80f8674c8c306edf5bf1488907447769100ee90e062"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-before.png",
+              "sha256": "7932b88cd96f6f1caf9a77772f2c5f375ead797e28ce60ea0f46be71d1f5d209"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-dismissed-after-attempt-1.json",
+              "sha256": "df104b6a6c6cd6d21100aa4f54fd76421965e840f01a6cc1168a1db933f42aef"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-dismissed-after-attempt-1.png",
+              "sha256": "31d2c9caf0d7c94303c999bc8ba8c6cd72d788e576179c69bc417d2f85c0dfc8"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-dismissed-after-attempt-2.json",
+              "sha256": "030aa9345af32b18188f93d2243a255bc6bcde31ef7531789e424917221b9f3b"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-dismissed-after-attempt-2.png",
+              "sha256": "31d2c9caf0d7c94303c999bc8ba8c6cd72d788e576179c69bc417d2f85c0dfc8"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-dismissed-after-bounds.json",
+              "sha256": "c473e625652735121e2854c962d5b78db4b48c3ee855ae263bc0607901211f0f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-dismissed-after.png",
+              "sha256": "31d2c9caf0d7c94303c999bc8ba8c6cd72d788e576179c69bc417d2f85c0dfc8"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-before-attempt-1.json",
+              "sha256": "81de71f552054c22f4f117787960e5fb4c6aa39b9c89582436c340d2373a6d2b"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-before-attempt-1.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-before-attempt-2.json",
+              "sha256": "4a409620be0e5454e7eb026eda81057bf18c9ce0be7735ca76da75a1cbbb4ffd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-before-attempt-2.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-before-bounds.json",
+              "sha256": "cd991d9f4740af999c4fa7c6d1e972b637b296ed9475db442880aaed31371ed3"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-before.png",
+              "sha256": "a797453f3d647e1461d20321b34de14a2b3be026a3e355f95276e3fe84fec7a0"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-replaced-attempt-1.json",
+              "sha256": "717fb772eca1d9e066fcb7966700686fea94282c1c454ee2adba56f11bf3b803"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-replaced-attempt-1.png",
+              "sha256": "85b89ae3b37055d79b0251aafd52ea788bdd4109db6f8de826a9f4a2784ca89f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-replaced-attempt-2.json",
+              "sha256": "c43f5c8350409eef76a23f64655cbbf5bf902afa0af86665658d3964689ecaa5"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-replaced-attempt-2.png",
+              "sha256": "85b89ae3b37055d79b0251aafd52ea788bdd4109db6f8de826a9f4a2784ca89f"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-replaced-bounds.json",
+              "sha256": "5dac81a9beadd1a447305a1cd0da6e2d293668da7cf00d7a2bdc3dbdbe0451da"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T07-09-23.265Z-core-tZniJX/offline-review/sn1-keyed-replaced.png",
+              "sha256": "85b89ae3b37055d79b0251aafd52ea788bdd4109db6f8de826a9f4a2784ca89f"
+            }
+          ],
+          "scope": "Saved evidence/provenance inspection only; original owner manual verdict retained, no new visual review or runtime acceptance at8f."
+        }
+      ],
+      "ownerStaticProof": {
+        "path": ".demo-artifacts/scoped-toast-integration/static-proof.json",
+        "sha256": "94ecccab8d7b3f5e579bfd3126930d9f5ce1e33eeb0165ba97424b18b1fe367a",
+        "savedProof": {
+          "base": "c668ebe6fddb157b24afe83af64e40c044cd5cbb",
+          "file": "apps/react/src/components/ui/toast/toast.css",
+          "oldSha256": "ad6e61976932d88c486386b4131fa364565cf45e47e7db33993b772337f9a611",
+          "newSha256": "52b3bd7e88c0502e02d74568de069532c9000cfff8a454e3e344e6bf2556d7ae",
+          "exactOneDeclaration": true,
+          "originalSvelteUnchanged": true,
+          "native": "unverified correction; retain original SN2 failures"
+        }
+      },
+      "ownerGateClaims": {
+        "origin": "Coordinator assignment and sole70e scoped-toast containment correction entry",
+        "reported": ["full React types", "Oxfmt", "design cheatsheet", "whitespace"],
+        "independentlyRerun": false,
+        "wholeCiOrKnipPassClaimed": false
+      },
+      "retainedHistory": {
+        "ledgerCommit": "774fddd6979970238bd3799cdc178bcae839bf2b",
+        "ledgerSha256": "8216b4339172c30d5ca8496d091161294429d751ffb70e4b9a6846bfce5fb2c4",
+        "preservedReviewCount": 89,
+        "meaning": "Full original1890rows/236mappedviews/230targets/89reviews/audits/history/limits/cases/29receipts preserved. MV11STOP, original SN2crop ambiguity, corrected SN2native hit failure and older SN1default-host-only PASS are retained; none transfer to8f."
+      },
+      "testHandoff": {
+        "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+        "status": "not-run",
+        "scope": "Native8f scoped close hit/focus/text/containment, all sizes/customstack/reduced/fullmotion and sourcepairs remain separate. SN1 historical default-host acceptance is not broader coverage; SN3/SN4 not imported."
+      },
+      "sourceDriftPolicy": "Original003/inventory1430/1890 unchanged. All19invalidations and original inspected/source profiles retained. CSS supporting-only correction adds no source-map or denominator unit.",
+      "excludedLaterWork": "Later candidate preparation, native OW/notification/Markdown results and any moving source/test work excluded. No discovery, browser, service or maintained source/test edits.",
+      "userHelpImpact": "Internal unreleased preview and migration ledger; no released assistant-help impact."
     }
   },
   "sources": {
@@ -126548,6 +127512,115 @@
         "response-group-reaction-correction-e46a388f",
         "detected-scripts-and-neutral-indicator-0afebba9"
       ]
+    },
+    {
+      "candidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded static35e MarkdownViewer image-owner correction only; zero new mappings/status promotions.236/1430(231components+5modules),178partial58localimplemented,230targets89reviews.230prior target identities audited:229byteequal, only MarkdownViewer target updated with full oldrow/hash/contract retained. One changed DOM adapter supporting profile. Original003/current source and all19invalidations unchanged. MV11automaticPASS/manualSTOP, MV10olderPASS and OW1configgrep failure/guard corrections retained without transfer. No native/visual/product acceptance.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T07:10:52.312166+00:00",
+      "checkpointAdvance": {
+        "previousLedgerCommit": "c055860f6a3dd73b6e3fef321e79553f4d7bc8a8",
+        "previousAuditCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+        "unchangedUniqueDirectTargets": 229,
+        "changedUniqueDirectTargets": 1,
+        "retainedHistoricalReviewCount": 88,
+        "meaning": "Common validation pin only; retain full236-view checkpoint and all actual historical inspected/source/support/native evidence pins. Exactly one existing target review and one support correction, no new maps or status promotion."
+      },
+      "ledgerCommit": "774fddd6979970238bd3799cdc178bcae839bf2b",
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10",
+        "chat-transcript-markers-fe630",
+        "chat-transcript-notices-fe630",
+        "chat-disclosure-rows-fb515",
+        "chat-recovery-notices-fb515",
+        "chat-stream-metadata-3230",
+        "chat-history-attribution-3230",
+        "chat-disclosure-corrections-3230",
+        "chat-queued-actions-command-3e894",
+        "chat-code-reference-context-4bfa",
+        "chat-inline-mcp-prompt-preview-9d297",
+        "queued-attachments-0a010",
+        "tabs-export-correction-0a010",
+        "streaming-status-840763",
+        "mcp-inline-font-correction-840763",
+        "suggested-chief-prompts-16ee80",
+        "automated-wake-header-f2b2a2",
+        "agent-pr-attribution-headers-73da5529",
+        "attachment-permission-support-05cc7db6",
+        "attachment-file-replacement-ff9a4e35",
+        "inline-permission-and-live-support-6a51a3da",
+        "media-and-markdown-composition-dd6e5720",
+        "full-markdown-and-reasoning-68a5ca85",
+        "chat-image-and-video-wrapper-561fa08c",
+        "message-actions-and-transcript-cards-2d310fed",
+        "setup-script-and-edit-confirmation-3d7e81dc",
+        "operational-window-and-panel-2d988e34",
+        "response-group-and-cylinder-1cea8e2b",
+        "navigation-excerpt-and-image-caption-34161b6d",
+        "response-group-reaction-correction-e46a388f",
+        "detected-scripts-and-neutral-indicator-0afebba9",
+        "markdown-image-owner-correction-35e676aa"
+      ]
     }
   ],
   "receipts": {
@@ -131362,6 +132435,56 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "Original003/inventory1430 unchanged. Full old sourceInspection retained because original/current MarkdownViewer bytes unchanged. All19invalidations remain; no source-baseline refresh. Direct target and DOM support have explicit old/new profiles only."
+    },
+    {
+      "id": "static-toast-containment-support-8f0bbcda",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+      "previousLedgerCommit": "774fddd6979970238bd3799cdc178bcae839bf2b",
+      "previousCommonCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+      "reviewedAt": "2026-10-12T07:23:03.385162+00:00",
+      "method": "Bounded static8f supporting CSS containment review only. Actual Toast and ToastCatalogPreview rows are unmapped; no existing direct/support path-hash row can be advanced and no mapping or implementation status is invented. All1890source rows remain identical.236/1430(231components+5modules),178partial58localimplemented,230targets90reviews. All230prior directtargets byteequal. Exact one important width declaration intentionally changes React static-toaster containment; original003/current source unchanged. All19invalidations/history/cases/receipts/failures retained; no native/visual/product acceptance.",
+      "counts": {
+        "addedMappings": 0,
+        "addedSvelteComponents": 0,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "mappedViews": 236,
+        "mappedSvelteComponents": 231,
+        "mappedSvelteReactivityModules": 5,
+        "views": {
+          "unmapped": 1194,
+          "partial": 178,
+          "implemented": 58
+        }
+      },
+      "sourcePaths": [],
+      "targetedExistingSourcePaths": [],
+      "newUniqueDirectTargetCount": 0,
+      "priorUniqueDirectTargetCount": 230,
+      "allUniqueDirectTargetCount": 230,
+      "priorDirectTargetIdentity": {
+        "count": 230,
+        "unchanged": 230,
+        "changed": [],
+        "orderedPathAndHashSha256": "682b2051be5da1bf3bc5f36ff0a9e4a1cd234e82b4459a04732daccfeeea7d7a"
+      },
+      "supportDelta": [
+        {
+          "path": "apps/react/src/components/ui/toast/toast.css",
+          "previousCandidateCommit": "35e676aa23a6cd88ba0a94bd41d2313bc8d5cc1e",
+          "previousSha256": "ad6e61976932d88c486386b4131fa364565cf45e47e7db33993b772337f9a611",
+          "candidateCommit": "8f0bbcdafc0876674e6d28bf1207a0aa21cf74c1",
+          "sha256": "52b3bd7e88c0502e02d74568de069532c9000cfff8a454e3e344e6bf2556d7ae",
+          "supportOnly": true,
+          "meaning": "Existing imported CSS receives one static-toaster containment declaration. No existing Toast mapping or CSS path/hash citation exists to advance; preserve unmapped source rows and create supporting-only review."
+        }
+      ],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "Original003/inventory1430/1890 unchanged. All19invalidations and original inspected/source profiles retained. CSS supporting-only correction adds no source-map or denominator unit."
     }
   ]
 }
