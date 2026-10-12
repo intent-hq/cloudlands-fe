@@ -154,7 +154,6 @@ test('operational-window OW6 focused offscreen row survives then releases', asyn
     await capture(page, primary, 'OW6-pinned', info);
     await readSnapshot(primary);
     await disconnected(old);
-    await focusScroll(primary.scroll);
     const destination = await visibleRow(primary, [row.key]);
     await activate(primary, destination);
     await capture(page, primary, 'OW6-after', info);
