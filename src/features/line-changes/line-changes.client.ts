@@ -5,34 +5,20 @@
  * to the lifecycle read service, which folds them into request-state actions.
  */
 
+import { createBackendLineChangesClient } from '$lib/client/live/backend-line-changes-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 // Public compatibility for line-stat consumers until the Svelte renderer retires.
 import type { Metrics } from '../../lib/client/lifecycle-read-client-types';
 export type { Metrics } from '../../lib/client/lifecycle-read-client-types';
 
-/** Coerce a raw daemon `Metrics` payload; `null` when the daemon has no stats. */
-function toMetrics(raw: unknown): Metrics | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  return {
-    additions: typeof r.additions === 'number' ? r.additions : 0,
-    deletions: typeof r.deletions === 'number' ? r.deletions : 0,
-    filesChanged: typeof r.filesChanged === 'number' ? r.filesChanged : 0,
-    ...(r.byAgent && typeof r.byAgent === 'object'
-      ? { byAgent: r.byAgent as Metrics['byAgent'] }
-      : {}),
-  };
-}
+// Compatibility facade for existing Svelte consumers; remove when that renderer retires.
+const lineChangesClient = createBackendLineChangesClient({
+  // Resolve the legacy export at call time, matching the original client.
+  backendRequest: <T>(...args: Parameters<typeof backendRequest>): Promise<T> =>
+    backendRequest<T>(...args),
+});
 
 /** `metrics.getAgentStats` — one agent's line-change totals, or null when untracked. */
-export async function getAgentLineStats(
-  agentId: string,
-  workspaceId?: string,
-): Promise<Metrics | null> {
-  return toMetrics(
-    await backendRequest<unknown>('metrics.getAgentStats', {
-      agentId,
-      ...(workspaceId !== undefined ? { workspaceId } : {}),
-    }),
-  );
+export function getAgentLineStats(agentId: string, workspaceId?: string): Promise<Metrics | null> {
+  return lineChangesClient.getAgentLineStats(agentId, workspaceId);
 }
