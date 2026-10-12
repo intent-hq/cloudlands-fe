@@ -9,7 +9,7 @@
 // verifier passes missed it; the PR reviewer caught it
 // (https://github.com/intent-hq/cloudlands-fe/pull/2327#discussion_r3986358003).
 //
-// Rule: the `AvatarState` ladder in `avatar-state.ts` is a DISPLAY precedence,
+// Rule: the `AvatarState` ladder in `avatar-state-core.ts` is a DISPLAY precedence,
 // not an activity predicate. Visibility / inclusion decisions must use
 // `isSessionRunning` / `isAgentActivelyWorking` (or another activity
 // predicate), never `getAvatarState*(…) === '<literal>'`. Display mappings
@@ -60,7 +60,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const LADDER_PATH = 'src/features/agent/components/agent-avatar/avatar-state.ts';
+const LADDER_PATH = 'src/features/agent/components/agent-avatar/avatar-state-core.ts';
 const INVENTORY_PATH =
   'src/features/agent/components/agent-avatar/avatar-state-gate-inventory.test.ts';
 const LADDER_FUNCTION = /\bgetAvatarState(?:ForSession|FromStore)?\b/;
