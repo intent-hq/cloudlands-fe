@@ -22,6 +22,15 @@ const mocks = vi.hoisted(() => {
     models,
     availableProviderIds: ['auggie'],
     codexModels: [{ value: 'codex-model', label: 'Codex model', effortLevels: ['low', 'high'] }],
+    formPersistence: false,
+    compactFormState: null as
+      | import('$store/renderer/slices/workspace-initializer/workspace-initializer-types').CompactWorkspaceInitializerFormState
+      | null,
+    lastSelectedRepo: null as
+      | import('$store/renderer/slices/workspace-initializer/workspace-initializer-types').WorkspaceInitializerRepoSelection
+      | null,
+    recentRepos:
+      [] as import('$store/renderer/slices/workspace-initializer/workspace-initializer-types').WorkspaceInitializerRecentRepo[],
     dispatch: vi.fn(),
     onClose: vi.fn(),
     create: vi.fn(),
@@ -53,14 +62,14 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
     },
   }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
+  selectCompactWorkspaceInitializerFormState: () => mocks.readable(mocks.compactFormState),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
+  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(mocks.lastSelectedRepo),
   // A remembered orchestration choice: the modal opens in team mode so the
   // team card's picker is live from the start.
   selectWorkspaceInitializerLastSubmittedAgent: () =>
     mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
+  selectWorkspaceInitializerRecentRepos: () => mocks.readable(mocks.recentRepos),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
 }));
 
@@ -190,7 +199,11 @@ vi.mock('$features/setup-scripts', async (importOriginal) => ({
   resolveSetupScriptParam: vi.fn(() => undefined),
   REPO_CONFIG_SCRIPT_NAME: 'Repo config',
 }));
-vi.mock('$lib/config/debug', () => ({ debugConfig: { get: vi.fn(() => false) } }));
+vi.mock('$lib/config/debug', () => ({
+  debugConfig: {
+    get: vi.fn((key: string) => key === 'enableFormPersistence' && mocks.formPersistence),
+  },
+}));
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
   enhancePrompt: vi.fn(async (prompt: string) => ({ enhanced: prompt })),
   isEnhancePromptAvailable: vi.fn(() => false),
@@ -236,8 +249,7 @@ vi.mock('$lib/components/workspace/initializer/IssueSuggestions.svelte', async (
   preloadIssues: vi.fn(),
 }));
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
-  default: (await import('../../workspace/initializer/__tests__/mocks/MockComponent.svelte'))
-    .default,
+  default: (await import('../../workspace/__tests__/mocks/MockRepoAndBranchPicker.svelte')).default,
 }));
 vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
   default: (await import('../../workspace/initializer/__tests__/mocks/MockComponent.svelte'))
@@ -260,6 +272,8 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
 
+import { updateHomeWorkspaceView } from '$features/home/home-workspaces-slice';
+import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -318,6 +332,10 @@ let cancelCatalog: () => void;
 
 describe('NewSpaceModal model-picker composition', () => {
   beforeEach(() => {
+    mocks.formPersistence = false;
+    mocks.compactFormState = null;
+    mocks.lastSelectedRepo = null;
+    mocks.recentRepos = [];
     vi.clearAllMocks();
     sessionStorage.clear();
     mocks.availableProviderIds = ['auggie'];
@@ -397,6 +415,247 @@ describe('NewSpaceModal model-picker composition', () => {
       expect(mocks.onClose).not.toHaveBeenCalled();
     },
   );
+
+  describe('sidebar repository defaults', () => {
+    function selectSidebarRepo(key: string | null) {
+      appStore.dispatch(
+        setRepos([
+          { path: '/repos/sidebar', name: 'sidebar', owner: 'acme', addedAt: '', lastUsedAt: '' },
+          { path: '/repos/next', name: 'next', addedAt: '', lastUsedAt: '' },
+          {
+            path: 'acme/cloud',
+            name: 'cloud',
+            owner: 'acme',
+            githubUrl: 'https://github.com/acme/cloud',
+            addedAt: '',
+            lastUsedAt: '',
+          },
+        ]),
+      );
+      appStore.dispatch(updateHomeWorkspaceView({ repoKey: key }));
+    }
+
+    beforeEach(() => {
+      mocks.formPersistence = true;
+      mocks.lastSelectedRepo = { path: '/repos/last-used', type: 'local', isValidPath: true };
+      selectSidebarRepo('acme/sidebar');
+    });
+
+    it('uses the sidebar repository over the last-used repository', async () => {
+      render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/sidebar'),
+      );
+    });
+
+    it('replaces saved repository fields while retaining saved agent settings', async () => {
+      mocks.compactFormState = {
+        repoPath: '/repos/saved',
+        repoType: 'remote',
+        githubUrl: 'https://github.com/old/repo',
+        branch: 'old-branch',
+        scope: 'old-scope',
+        scopeRepoPath: '/repos/saved',
+        remoteSetup: {
+          id: 'remote',
+          name: 'Remote',
+          host: 'example.com',
+          port: 22,
+          username: 'user',
+          workspacePath: '/repos/remote',
+        },
+        selectedSpecialist: 'spec-writer',
+      };
+      render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          repoPath: '/repos/sidebar',
+          repoType: 'local',
+          branch: '',
+          scope: '',
+          remoteSetup: null,
+          selectedSpecialist: 'spec-writer',
+        }),
+      );
+    });
+
+    it('retains the saved branch for the same repository', async () => {
+      mocks.compactFormState = {
+        repoPath: '/repos/sidebar',
+        repoType: 'local',
+        isValidPath: true,
+        branch: 'feature',
+      };
+      render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          repoPath: '/repos/sidebar',
+          branch: 'feature',
+        }),
+      );
+    });
+
+    it.each(['last-used', 'recent', 'empty'] as const)(
+      'keeps the All repos %s fallback',
+      async (history) => {
+        selectSidebarRepo(null);
+        if (history !== 'last-used') mocks.lastSelectedRepo = null;
+        if (history === 'recent')
+          mocks.recentRepos = [{ path: '/repos/recent', type: 'local', name: 'recent' }];
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(screen.getByTestId('picker-repo-path').textContent).toBe(
+            history === 'empty' ? '' : `/repos/${history}`,
+          ),
+        );
+      },
+    );
+
+    it('uses the current selection on each opening without overwriting manual edits', async () => {
+      const view = render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/sidebar'),
+      );
+      const picker = (
+        window as unknown as {
+          __mockRepoAndBranchPicker: {
+            onRepoChange: (event: { detail: Record<string, unknown> }) => void;
+          };
+        }
+      ).__mockRepoAndBranchPicker;
+      picker.onRepoChange({ detail: { path: '/repos/manual', type: 'local', isValidPath: true } });
+      selectSidebarRepo('/repos/next');
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/manual'),
+      );
+      await view.rerender({ open: false });
+      await waitFor(() => expect(screen.queryByTestId('picker-repo-path')).toBeNull());
+      await view.rerender({ open: true });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/next'),
+      );
+    });
+
+    it('keeps prompt-only prefills while defaulting to the sidebar repository', async () => {
+      mocks.compactFormState = {
+        repoPath: '/repos/saved',
+        repoType: 'local',
+        isValidPath: true,
+        branch: 'old-branch',
+      };
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ title: 'Linear issue', prompt: 'ENG-123: Fix the issue' }),
+      );
+      render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/sidebar'),
+      );
+      expect(screen.getByTestId('mock-rich-textarea').textContent).toContain(
+        'ENG-123: Fix the issue',
+      );
+      expect(persistedStates().at(-1)).toMatchObject({ repoPath: '/repos/sidebar', branch: '' });
+    });
+
+    it('keeps explicit session repository and branch prefills', async () => {
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ repoPath: '/repos/explicit', branch: 'feature' }),
+      );
+      render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          repoPath: '/repos/explicit',
+          branch: 'feature',
+        }),
+      );
+    });
+
+    it('keeps standalone explicit initialRepo launches', async () => {
+      render(CompactWorkspaceInitializer, {
+        props: { isExpanded: true, initialRepo: { repoPath: '/repos/explicit' } },
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/explicit'),
+      );
+    });
+
+    it('preserves path-less GitHub selections', async () => {
+      selectSidebarRepo('acme/cloud');
+      render(NewSpaceModal, { props: { open: true } });
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          repoPath: 'acme/cloud',
+          repoType: 'github',
+          githubUrl: 'https://github.com/acme/cloud',
+        }),
+      );
+    });
+
+    it.each(['skipIsolation', 'skipWorktree'] as const)(
+      'clears saved %s for a GitHub sidebar default and requests an isolated checkout',
+      async (flag) => {
+        mocks.compactFormState = {
+          repoPath: '/repos/saved',
+          repoType: 'local',
+          isValidPath: true,
+          [flag]: true,
+        };
+        selectSidebarRepo('acme/cloud');
+        sessionStorage.setItem(
+          'workspace-prefill',
+          JSON.stringify({ prompt: 'Work on the sidebar repository' }),
+        );
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(persistedStates().at(-1)).toMatchObject({
+            repoPath: 'acme/cloud',
+            repoType: 'github',
+            skipIsolation: false,
+          }),
+        );
+        const picker = (
+          window as unknown as {
+            __mockRepoAndBranchPicker: {
+              onBranchChange: (event: { detail: { branch: string } }) => void;
+            };
+          }
+        ).__mockRepoAndBranchPicker;
+        // Automatic branch selection does not emit a direct-work toggle change.
+        picker.onBranchChange({ detail: { branch: 'main' } });
+        const create = screen.getByRole('button', { name: /^Create workspace/ });
+        await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false));
+        await fireEvent.click(create);
+        await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+        expect(mocks.create.mock.calls[0][0]).toMatchObject({
+          githubUrl: 'https://github.com/acme/cloud',
+          repositoryPath: undefined,
+          baseRef: 'main',
+          skipIsolation: undefined,
+        });
+      },
+    );
+
+    it.each(['skipIsolation', 'skipWorktree'] as const)(
+      'preserves saved %s for a local sidebar default',
+      async (flag) => {
+        mocks.compactFormState = {
+          repoPath: '/repos/saved',
+          repoType: 'local',
+          isValidPath: true,
+          [flag]: true,
+        };
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(persistedStates().at(-1)).toMatchObject({
+            repoPath: '/repos/sidebar',
+            repoType: 'local',
+            skipIsolation: true,
+          }),
+        );
+      },
+    );
+  });
 
   it('does not let initializer timers override modal focus, while inline prompts still autofocus', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
