@@ -7,9 +7,9 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { StreamingStatus } from '@/features/chat/components/streaming-status';
+import type { StatusEvent } from '$lib/components/chat/streaming-status-utils';
 
 type StatusProps = ComponentProps<typeof StreamingStatus>;
-type StatusEvent = NonNullable<StatusProps['statusEvents']>[number];
 type CallbackName =
   | 'onRetry'
   | 'onRetryWithModel'
@@ -41,6 +41,28 @@ const providers = [
   { id: 'codex', displayName: 'Codex' },
   { id: 'gemini', displayName: 'Gemini CLI' },
 ] as const;
+
+// Validate editable caller data without reordering events or projecting component status.
+function isStatusEvent(value: unknown): value is StatusEvent {
+  if (typeof value !== 'object' || value === null) return false;
+  const event = value as Record<string, unknown>;
+  return (
+    Object.keys(event).every((key) =>
+      ['phase', 'message', 'level', 'timestamp', 'silentMs'].includes(key),
+    ) &&
+    typeof event.phase === 'string' &&
+    event.phase.length <= 80 &&
+    typeof event.message === 'string' &&
+    event.message.length <= 500 &&
+    (event.level === 'info' || event.level === 'warn' || event.level === 'error') &&
+    typeof event.timestamp === 'number' &&
+    Number.isFinite(event.timestamp) &&
+    (event.silentMs === undefined ||
+      (typeof event.silentMs === 'number' &&
+        Number.isFinite(event.silentMs) &&
+        event.silentMs >= 0))
+  );
+}
 
 function BooleanField({
   label,
@@ -108,14 +130,19 @@ export function StreamingStatusExamples() {
   const [phase, setPhase] = useState<(typeof phases)[number]>('launch');
   const [eventMessage, setEventMessage] = useState('Launching the provider process…');
   const [statusEvents, setStatusEvents] = useState<StatusEvent[]>([]);
+  const [eventsDraft, setEventsDraft] = useState('[]');
+  const [eventsError, setEventsError] = useState('');
   const [eventRevision, setEventRevision] = useState(0);
   const [lastChunkTime, setLastChunkTime] = useState<number | null>(null);
+  const [chunkDraft, setChunkDraft] = useState('');
+  const [chunkError, setChunkError] = useState('');
   const [receivedFirstChunk, setReceivedFirstChunk] = useState(false);
   const [streamingContentLength, setContentLength] = useState(0);
   const [errorEnabled, setErrorEnabled] = useState(false);
   const [error, setError] = useState('The response stream ended before the agent finished.');
   const [sessionCorrupted, setSessionCorrupted] = useState(false);
   const [failedAt, setFailedAt] = useState<string | null>(null);
+  const [failureDraft, setFailureDraft] = useState('');
   const [authEnabled, setAuthEnabled] = useState(false);
   const [loginCommandHint, setLoginCommandHint] = useState('claude auth login');
   const [showClaudeDesktopNote, setClaudeDesktopNote] = useState(true);
@@ -203,6 +230,7 @@ export function StreamingStatusExamples() {
     <section
       className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
       data-testid="streaming-status-exercise"
+      data-functional-example="streaming-status"
       aria-label="Streaming status exercise"
     >
       <h2>Streaming status and recovery</h2>
@@ -254,7 +282,10 @@ export function StreamingStatusExamples() {
               level: phase === 'stalled' ? 'warn' : 'info',
               timestamp: Date.now(),
             };
-            setStatusEvents((current) => [...current.slice(-11), event]);
+            const next = [...statusEvents.slice(-11), event];
+            setStatusEvents(next);
+            setEventsDraft(JSON.stringify(next, null, 2));
+            setEventsError('');
             setEventRevision((current) => current + 1);
           }}
         >
@@ -262,7 +293,10 @@ export function StreamingStatusExamples() {
         </Button>
         <Button
           onClick={() => {
-            setLastChunkTime(Date.now());
+            const timestamp = Date.now();
+            setLastChunkTime(timestamp);
+            setChunkDraft(String(timestamp));
+            setChunkError('');
             setReceivedFirstChunk(true);
             setContentLength((current) => current + 1);
           }}
@@ -272,7 +306,11 @@ export function StreamingStatusExamples() {
         <Button
           onClick={() => {
             setStatusEvents([]);
+            setEventsDraft('[]');
+            setEventsError('');
             setLastChunkTime(null);
+            setChunkDraft('');
+            setChunkError('');
             setReceivedFirstChunk(false);
             setContentLength(0);
             setEventRevision((current) => current + 1);
@@ -281,6 +319,65 @@ export function StreamingStatusExamples() {
           Clear stream events
         </Button>
       </div>
+      <FormField
+        label="Status events JSON"
+        description="Up to 12 events in supplied order; equal timestamps and optional silentMs are preserved."
+        error={eventsError}
+        control={(field) => (
+          <Textarea
+            {...field}
+            value={eventsDraft}
+            maxLength={16000}
+            onChange={(event) => setEventsDraft(event.target.value)}
+          />
+        )}
+      />
+      <Button
+        onClick={() => {
+          try {
+            const events: unknown = JSON.parse(eventsDraft);
+            if (!Array.isArray(events) || events.length > 12 || !events.every(isStatusEvent)) {
+              setEventsError(
+                'Use up to 12 events with phase, message, level, finite timestamp and optional nonnegative silentMs.',
+              );
+              return;
+            }
+            setStatusEvents(events);
+            setEventsError('');
+            setEventRevision((current) => current + 1);
+          } catch {
+            setEventsError('Enter a valid JSON array of status events.');
+          }
+        }}
+      >
+        Apply status events
+      </Button>
+      <FormField
+        label="Last chunk timestamp"
+        description="A timestamp in milliseconds; empty clears it."
+        error={chunkError}
+        control={(field) => (
+          <Input
+            {...field}
+            value={chunkDraft}
+            maxLength={30}
+            onChange={(event) => setChunkDraft(event.target.value)}
+          />
+        )}
+      />
+      <Button
+        onClick={() => {
+          const timestamp = chunkDraft.trim() === '' ? null : Number(chunkDraft);
+          if (timestamp !== null && !Number.isFinite(timestamp)) {
+            setChunkError('Enter a finite timestamp in milliseconds, or leave empty.');
+            return;
+          }
+          setLastChunkTime(timestamp);
+          setChunkError('');
+        }}
+      >
+        Apply last chunk timestamp
+      </Button>
       <div className="flex min-w-0 flex-wrap items-end gap-3">
         <BooleanField label="Include error" value={errorEnabled} onChange={setErrorEnabled} />
         <BooleanField
@@ -307,9 +404,37 @@ export function StreamingStatusExamples() {
         )}
       />
       <div className="flex min-w-0 flex-wrap gap-3">
-        <Button onClick={() => setFailedAt(new Date().toISOString())}>Mark failure now</Button>
-        <Button onClick={() => setFailedAt(null)}>Clear failure timestamp</Button>
+        <Button
+          onClick={() => {
+            const timestamp = new Date().toISOString();
+            setFailedAt(timestamp);
+            setFailureDraft(timestamp);
+          }}
+        >
+          Mark failure now
+        </Button>
+        <Button
+          onClick={() => {
+            setFailedAt(null);
+            setFailureDraft('');
+          }}
+        >
+          Clear failure timestamp
+        </Button>
       </div>
+      <FormField
+        label="Failure timestamp"
+        description="Passes the entered string unchanged, including invalid dates; empty clears it."
+        control={(field) => (
+          <Input
+            {...field}
+            value={failureDraft}
+            maxLength={120}
+            onChange={(event) => setFailureDraft(event.target.value)}
+          />
+        )}
+      />
+      <Button onClick={() => setFailedAt(failureDraft || null)}>Apply failure timestamp</Button>
       <FormField
         label="Login command"
         control={(field) => (
