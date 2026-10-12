@@ -272,7 +272,7 @@ test('reasoning R5 original helper governs latest headings standalone rows and e
     'The final body turns these titles into disclosure content.',
   );
   await raw(thinking, '');
-  await expanded(thinking, true);
+  await expanded(thinking, true, { emptyBody: true });
   await expect(thinking.trigger).toHaveAccessibleName(label('chat_thinkingBlock_reasoning_label'));
   await expect(thinking.body).toHaveText('');
   await capture(page, thinking.frame, 'R5-after', info);

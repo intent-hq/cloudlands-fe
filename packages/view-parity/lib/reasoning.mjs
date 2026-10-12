@@ -382,7 +382,7 @@ export async function replaceSaved(item, flags = {}) {
 export async function remount(item) {
   await button(item, `Remount ${item.name}`).click();
 }
-export async function expanded(item, value) {
+export async function expanded(item, value, { emptyBody = false } = {}) {
   await expect(item.trigger).toHaveAttribute('aria-expanded', String(value));
   const detailsId = await item.trigger.getAttribute('aria-controls');
   expect(detailsId).toBeTruthy();
@@ -391,7 +391,12 @@ export async function expanded(item, value) {
   expect(await wrapper.evaluate((node) => node.inert)).toBe(!value);
   if (value) {
     await expect(wrapper).toHaveAttribute('id', detailsId);
-    await expect(item.body).toBeVisible();
+    if (emptyBody) {
+      await expect(item.body).toHaveCount(1);
+      await expect(item.body).toHaveText('');
+    } else {
+      await expect(item.body).toBeVisible();
+    }
   } else {
     await expect(wrapper).not.toHaveAttribute('id');
     await expect(item.body).toHaveCount(0);
