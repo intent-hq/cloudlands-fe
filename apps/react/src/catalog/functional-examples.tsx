@@ -32,6 +32,7 @@ import { MarkdownCompositionExamples } from './markdown-composition-examples';
 import { ChatVideoExamples } from './chat-video-examples';
 import { MarkdownViewerExamples } from './markdown-viewer-examples';
 import { ReasoningExamples } from './reasoning-examples';
+import { ChatImageExamples } from './chat-image-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -497,6 +498,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'chat-video' && <ChatVideoExamples />}
       {slug === 'markdown-viewer' && <MarkdownViewerExamples />}
       {slug === 'reasoning' && <ReasoningExamples />}
+      {slug === 'chat-image' && <ChatImageExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -579,6 +581,7 @@ export function hasFunctionalExample(slug: string) {
     'chat-video',
     'markdown-viewer',
     'reasoning',
+    'chat-image',
     'diagram-workbench',
     'toast',
     'notify',
