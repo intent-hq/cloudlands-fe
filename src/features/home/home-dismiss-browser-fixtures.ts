@@ -125,6 +125,8 @@ declare global {
       holdNextDetail: () => void;
       startDetailRead: () => void;
       startMissingEntityRead: () => void;
+      startActivityRead: () => void;
+      workspaceExists: () => boolean;
       releaseDetail: () => void;
       detailReads: AdmissionDetailRead[];
       detailResults: Array<{ principalId: string; workspace?: Workspace }>;
@@ -287,6 +289,15 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
         data: { workspaceId: 'dismiss-review', displayStatus: 'needs_attention' },
       });
     },
+    startActivityRead: () => {
+      store.dispatch(removeWorkspaceEntity('dismiss-review'));
+      routeDaemonEventsNotification('events.event', {
+        type: 'agent:idle',
+        workspaceId: 'dismiss-review',
+        data: { agentId: 'dismiss-agent', workspaceId: 'dismiss-review' },
+      });
+    },
+    workspaceExists: () => !!selectWorkspaceById.select(store.state, 'dismiss-review'),
     releaseDetail: () => releaseDetail(),
     addPendingCreation: () => {
       store.dispatch(

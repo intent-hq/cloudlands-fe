@@ -9,6 +9,19 @@ export interface WorkspaceReadContext {
   assertCurrent: () => void;
 }
 
+const identities = new WeakMap<object, number>();
+let identitySequence = 0;
+
+function identity(value: object | null | undefined): number | null {
+  if (!value) return null;
+  let token = identities.get(value);
+  if (token === undefined) {
+    token = ++identitySequence;
+    identities.set(value, token);
+  }
+  return token;
+}
+
 function rendererStore(): RendererStoreBridge | null {
   try {
     return getRendererStore();
@@ -44,12 +57,13 @@ export function captureWorkspaceReadContext(): WorkspaceReadContext {
   const store = rendererStore();
   const dispatch = store?.dispatch;
   const transport = resolveBackendTransport();
-  const key = readKey(store);
+  const admission = readKey(store);
+  const key = JSON.stringify([identity(store), identity(dispatch), identity(transport), admission]);
   const isCurrent = () =>
     rendererStore() === store &&
     store?.dispatch === dispatch &&
     resolveBackendTransport() === transport &&
-    readKey(store) === key;
+    readKey(store) === admission;
   return {
     key,
     isCurrent,
