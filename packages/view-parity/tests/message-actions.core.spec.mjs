@@ -16,6 +16,7 @@ import {
   tabTo,
   label,
   capture,
+  captureFocusedActionTooltip,
   geometry,
 } from '../lib/message-actions.mjs';
 
@@ -119,6 +120,7 @@ test('message actions MA3: loading previous action is disabled skipped and recov
   await page.keyboard.press('Tab');
   await expect(action(item, 'fork')).toBeFocused();
   await capture(item, 'loading-disabled', info);
+  await captureFocusedActionTooltip(item, 'fork', 'loading-disabled-fork-tooltip', info);
   await choice(item, 'Previous message loading', 'false');
   await expect(previous).toBeEnabled();
   await expect(previous).toHaveAccessibleName(

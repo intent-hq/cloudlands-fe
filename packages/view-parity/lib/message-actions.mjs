@@ -441,6 +441,115 @@ export async function activate(item, target, name, args = [], via = 'click') {
 export async function capture(item, name, info, target = item.frame) {
   return captureTranscript(item.page, target, name, info);
 }
+export async function captureFocusedActionTooltip(item, id, name, info) {
+  const trigger = action(item, id);
+  const tooltip = item.page.locator('[data-tooltip-content][role="tooltip"]');
+  await expect(trigger).toBeFocused();
+  await expect(tooltip).toHaveCount(1);
+  await expect(tooltip).toBeVisible();
+  const probe = () =>
+    tooltip.evaluate((node, actionId) => {
+      const rect = (element) => {
+        const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+        return { left, right, top, bottom, width, height };
+      };
+      const trigger = document.querySelector(
+        `[data-testid="message-actions"] [data-action-id="${actionId}"]`,
+      );
+      const frame = document.querySelector('[data-testid="message-actions-frame"]');
+      const text = [];
+      const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+      for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+        if (
+          !current.textContent.trim() ||
+          current.parentElement.closest('[role="tooltip"]') !== node ||
+          current.parentElement.closest('[aria-hidden="true"]')
+        )
+          continue;
+        const range = document.createRange();
+        range.selectNodeContents(current);
+        text.push({
+          text: current.textContent,
+          rects: [...range.getClientRects()].map(({ left, right, top, bottom, width, height }) => ({
+            left,
+            right,
+            top,
+            bottom,
+            width,
+            height,
+          })),
+        });
+      }
+      const describedBy = (trigger.getAttribute('aria-describedby') ?? '')
+        .split(/\s+/)
+        .filter(Boolean);
+      return {
+        viewport: {
+          width: innerWidth,
+          height: innerHeight,
+          clientWidth: document.documentElement.clientWidth,
+          clientHeight: document.documentElement.clientHeight,
+          scrollX,
+          scrollY,
+          visual: visualViewport && {
+            width: visualViewport.width,
+            height: visualViewport.height,
+            offsetLeft: visualViewport.offsetLeft,
+            offsetTop: visualViewport.offsetTop,
+            scale: visualViewport.scale,
+          },
+        },
+        frame: rect(frame),
+        trigger: { id: actionId, label: trigger.getAttribute('aria-label'), bounds: rect(trigger) },
+        focusedAction: document.activeElement?.getAttribute('data-action-id'),
+        focusPreserved: document.activeElement === trigger,
+        tooltip: { id: node.id, role: node.getAttribute('role'), bounds: rect(node), text },
+        describedBy: describedBy.map((id) => {
+          const target = document.getElementById(id);
+          return { id, role: target?.getAttribute('role'), text: target?.textContent };
+        }),
+      };
+    }, id);
+  const before = await probe();
+  const ariaBefore = {
+    trigger: await trigger.ariaSnapshot(),
+    tooltip: await tooltip.ariaSnapshot(),
+  };
+  await info.attach(`${name}-viewport-before.json`, {
+    body: JSON.stringify({ probe: before, aria: ariaBefore }, null, 2),
+    contentType: 'application/json',
+  });
+  const contained = (bounds) => {
+    expect(bounds.width).toBeGreaterThan(0);
+    expect(bounds.height).toBeGreaterThan(0);
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(before.viewport.clientWidth);
+    expect(bounds.top).toBeGreaterThanOrEqual(0);
+    expect(bounds.bottom).toBeLessThanOrEqual(before.viewport.clientHeight);
+  };
+  expect(before.focusPreserved).toBe(true);
+  expect(before.describedBy.map((target) => target.id)).toContain(before.tooltip.id);
+  contained(before.tooltip.bounds);
+  expect(before.tooltip.text.length).toBeGreaterThan(0);
+  for (const line of before.tooltip.text) {
+    expect(line.rects.length).toBeGreaterThan(0);
+    for (const bounds of line.rects) contained(bounds);
+  }
+  // Preserve the original frame crop; this additional capture targets the real portal.
+  await captureTranscript(item.page, tooltip, name, info);
+  const after = await probe();
+  const ariaAfter = {
+    trigger: await trigger.ariaSnapshot(),
+    tooltip: await tooltip.ariaSnapshot(),
+  };
+  await info.attach(`${name}-viewport-after.json`, {
+    body: JSON.stringify({ probe: after, aria: ariaAfter }, null, 2),
+    contentType: 'application/json',
+  });
+  expect(after, 'Tooltip capture preserves native focus, scroll and geometry').toEqual(before);
+  expect(ariaAfter).toEqual(ariaBefore);
+  await expect(trigger).toBeFocused();
+}
 export async function geometry(item, name, info) {
   const probe = await item.frame.evaluate((root) => {
     const rect = (node) => {
