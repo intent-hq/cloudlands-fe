@@ -349,7 +349,7 @@ export function nativeEvent(
     sameAsCapturedClick: true,
     defaultPrevented: true,
     cancelBubble: true,
-    eventPhase: 2,
+    eventPhase: event.target.testId === event.currentTarget.testId ? 2 : 3,
     detail: via === 'click' ? 1 : 0,
     button: 0,
     buttons: 0,
