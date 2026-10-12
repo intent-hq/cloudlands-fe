@@ -1,4 +1,4 @@
-import type { LiveStreamPhase } from '$store/renderer/slices/chat-state/chat-state-types';
+import type { LiveStreamPhase } from '../../../store/renderer/slices/chat-state/chat-state-types';
 import { m } from '$shared/paraglide/messages.js';
 
 /**
