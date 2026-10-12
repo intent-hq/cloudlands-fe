@@ -6,6 +6,10 @@ import {
   workspaceMembershipInvalidated,
   isWorkspaceMembershipRemoval,
 } from '../../../../../src/features/events/daemon-event-admission';
+import {
+  handlePermissionRequestEvent,
+  handlePermissionResolvedEvent,
+} from '../../../../../src/features/events/daemon-permission-events';
 import { routeAuthorityEvent } from '../../../../../src/features/events/daemon-authority-events';
 import { eventReceived } from '../../../../../src/store/renderer/slices/workspace-events/workspace-events-slice';
 import {
@@ -15,7 +19,7 @@ import {
 } from '../../../../../src/store/renderer/slices/workspace/workspace-slice';
 import type { AppliedSettingChange } from '$lib/client/settings-types';
 
-/** Only the admitted read/authority surface is mounted in this renderer. */
+/** Admitted read, authority, and permission events share the existing subscription. */
 export function routeDaemonEventsNotification(
   method: string,
   params: unknown,
@@ -44,6 +48,13 @@ export function routeDaemonEventsNotification(
   if (type === 'workspace:deleted') store.dispatch(removeWorkspaceEntity(workspaceId));
   if (type === 'workspace:created' || type === 'workspace:deleted')
     store.dispatch(loadWorkspacesRequested());
+  if (type === 'agent:permission:request') {
+    handlePermissionRequestEvent(event, store.dispatch);
+  }
+  if (type === 'agent:permission:resolved') {
+    handlePermissionResolvedEvent(event, store.dispatch);
+  }
+  // Permission events also fall through to the canonical timeline action.
   // Domain read owners consume the canonical event action; no stream or navigation owner is installed here.
   store.dispatch(eventReceived(workspaceId, event));
 }
