@@ -314,6 +314,7 @@ import {
   browserTabClosed,
   browserTabUpserted,
   fetchWorkspaceBrowserClientRequested,
+  workspaceBrowserClientPinReceived,
   refreshLiveClientsRequested,
 } from '$store/renderer/slices/browser-clients/browser-clients-slice';
 import { isBrowserTab, isLiveClientTransition } from '$shared/types/browser-clients';
@@ -2677,11 +2678,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   }
   // `browserClientId` (REV-2 pin, §5.17) is nullable on the wire the same way:
   // `workspace.setBrowserClient { clientId }` sends the pinned id, clearing
-  // sends an explicit JSON null. The pin change also moves the daemon's
-  // `resolved` driving client, so re-read `workspace.getBrowserClient` for
+  // sends an explicit JSON null. Apply the saved selection immediately; a
+  // failed resolution read must not retain the old checkmark. The change also
+  // moves the resolved driving client, so re-read `workspace.getBrowserClient` for
   // this one workspace (targeted, never a per-workspace fan-out).
   if (typeof raw.browserClientId === 'string' || raw.browserClientId === null) {
     changes.browserClientId = raw.browserClientId ?? undefined;
+    appStore.dispatch(workspaceBrowserClientPinReceived(workspaceId, raw.browserClientId));
     appStore.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
   }
   if (Object.keys(changes).length === 0) return;
