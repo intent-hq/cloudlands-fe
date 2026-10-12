@@ -23,6 +23,7 @@
 
 .toast-static [data-sonner-toaster] {
   position: relative !important;
+  width: 100% !important;
   inset: auto !important;
   transform: none !important;
   height: calc(var(--front-toast-height) + 1rem) !important;
