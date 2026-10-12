@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   CT_CONTRACT_PATHS,
@@ -479,6 +480,121 @@ describe('CT spec fixture dependencies', () => {
     expect(result.stderr).toContain('unsupported CT dependency');
     expect(result.stderr).toContain('fail-safe');
   });
+
+  it.each([
+    "import Host from /* fixture */ './MemberMentionsHost.svelte';",
+    "import Host from // fixture\n './MemberMentionsHost.svelte';",
+    "import /* fixture */ './MemberMentionsHost.svelte';",
+    "import // fixture\n './MemberMentionsHost.svelte';",
+    "export { default } from /* fixture */ './MemberMentionsHost.svelte';",
+    "export * from // fixture\n './MemberMentionsHost.svelte';",
+    "const host = import /* fixture */ ('./MemberMentionsHost.svelte');",
+    "const host = import // fixture\n ('./MemberMentionsHost.svelte');",
+    "const host = import( /* fixture */ './MemberMentionsHost.svelte');",
+    "const host = import('./MemberMentionsHost.svelte' /* fixture */);",
+    "const host = import /* before */ ( /* path */ './MemberMentionsHost.svelte' /* options */ , {});",
+  ])('handles comments between import tokens without broadening selection: %s', (imports) => {
+    const root = fixtureRepository(imports);
+    branch(root, 'fixture', host);
+    expect(runCli(root, '--diff', 'main', 'fixture')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+    branch(root, 'unrelated', 'src/lib/components/chat/input/__tests__/OtherHost.svelte');
+    expect(runCli(root, '--diff', 'main', 'unrelated')).toEqual({
+      status: 0,
+      stdout: 'ct_required=false\n',
+      stderr: '',
+    });
+  });
+
+  it.each([
+    "const host = import /* fixture */ ('./' + name);",
+    "const host = import // fixture\n ('./' + name);",
+    'const host = import /* fixture */ (`./${name}.svelte`);',
+    "const host = require /* fixture */ ('./MemberMentionsHost.svelte');",
+    "const hosts = import /* fixture */ .meta /* fixture */ .glob('./*.svelte');",
+    "import Host from /* fixture */ '$custom/Host.svelte';",
+    String.raw`import Host from './H\u006fst.svelte';`,
+  ])('fails safe for unsupported imports with comments or escapes: %s', (imports) => {
+    const root = fixtureRepository(imports);
+    branch(root, 'fixture', host);
+    const result = runCli(root, '--diff', 'main', 'fixture');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('ct_required=true\n');
+    expect(result.stderr).toContain('unsupported CT dependency');
+    expect(result.stderr).toContain('fail-safe');
+  });
+
+  it('preserves comment-like text and the other quote inside module strings', () => {
+    const root = fixtureRepository(`import Host from "./folder/* literal */Host's.svelte";`);
+    branch(
+      root,
+      'fixture',
+      "src/lib/components/chat/input/__tests__/folder/* literal */Host's.svelte",
+    );
+    expect(runCli(root, '--diff', 'main', 'fixture')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+    branch(root, 'unrelated', "src/lib/components/chat/input/__tests__/folder/Host's.svelte");
+    expect(runCli(root, '--diff', 'main', 'unrelated')).toEqual({
+      status: 0,
+      stdout: 'ct_required=false\n',
+      stderr: '',
+    });
+  });
+
+  it('recognizes query-suffixed fixture imports without treating other files as dependencies', () => {
+    const root = fixtureRepository("import data from './fixture.svg?raw';");
+    branch(root, 'fixture', 'src/lib/components/chat/input/__tests__/fixture.svg');
+    expect(runCli(root, '--diff', 'main', 'fixture')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+    branch(root, 'unrelated', 'src/lib/components/chat/input/__tests__/other.svg');
+    expect(runCli(root, '--diff', 'main', 'unrelated')).toEqual({
+      status: 0,
+      stdout: 'ct_required=false\n',
+      stderr: '',
+    });
+  });
+
+  it.each(['base-only', 'head-only', 'relocated'])(
+    'reads %s spec dependencies without the changed-spec shortcut',
+    (side) => {
+      const root = fixtureRepository(
+        side === 'head-only' ? '' : "import Host from './MemberMentionsHost.svelte';",
+      );
+      branch(root, 'feature');
+      let fixture = host;
+      if (side === 'base-only') git(root, 'rm', '-q', spec);
+      else if (side === 'head-only') {
+        commitFile(root, spec, "import Host from './MemberMentionsHost.svelte';");
+      } else {
+        // Same blob at a different path must resolve relative imports there too.
+        git(root, 'mv', spec, 'src/relocated.ct.spec.ts');
+        fixture = 'src/MemberMentionsHost.svelte';
+      }
+      commitFile(root, fixture, 'changed fixture');
+      // Inject only the fixture diff: changing a spec would otherwise select CT
+      // before either Git tree is read, hiding a broken dependency reader.
+      const result = spawnSync(process.execPath, ['--input-type=module'], {
+        cwd: root,
+        encoding: 'utf8',
+        input: `import { main } from ${JSON.stringify(pathToFileURL(CLI).href)};
+        main(['--diff', 'main', 'feature'], { diff: () => ${JSON.stringify([fixture])} });`,
+      });
+      expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toEqual({
+        status: 0,
+        stdout: 'ct_required=true\n',
+        stderr: '',
+      });
+    },
+  );
 
   it('fails safe when dependency discovery fails', () => {
     const logs: string[] = [];

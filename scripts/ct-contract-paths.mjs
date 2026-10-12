@@ -89,8 +89,23 @@ export function ctRequired(files, dependencies = new Set()) {
 // and the four frontend aliases support explicit paths, extensionless modules
 // and directory indexes. Candidate paths are conservative, not a Vite resolver:
 // comments/type imports can over-select. Computed imports, globs, require calls
-// and unknown $ aliases fail safe; transitive dependencies are outside this rule.
-const IMPORT_RE = /(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g;
+// and unknown $ aliases or escaped literals fail safe. Query/fragment suffixes
+// are ignored for path matching; transitive dependencies are outside this rule.
+// Match comment trivia at token boundaries instead of deleting comments from
+// source: comment markers and the opposite quote are valid inside module strings.
+const IMPORT_TRIVIA = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\r\n\u2028\u2029]*)*`;
+const IMPORT_LITERAL = String.raw`(?:"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*')`;
+const IMPORT_RE = new RegExp(
+  String.raw`(?:\bfrom${IMPORT_TRIVIA}|\bimport${IMPORT_TRIVIA}(?:\(${IMPORT_TRIVIA})?)(${IMPORT_LITERAL})`,
+  'g',
+);
+const DYNAMIC_IMPORT_RE = new RegExp(String.raw`\bimport${IMPORT_TRIVIA}\(`, 'g');
+const LITERAL_DYNAMIC_IMPORT_RE = new RegExp(
+  String.raw`^import${IMPORT_TRIVIA}\(${IMPORT_TRIVIA}${IMPORT_LITERAL}${IMPORT_TRIVIA}(?:\)|,)`,
+);
+const UNSUPPORTED_IMPORT_RE = new RegExp(
+  String.raw`\brequire${IMPORT_TRIVIA}\(|\bimport${IMPORT_TRIVIA}\.${IMPORT_TRIVIA}meta${IMPORT_TRIVIA}\.${IMPORT_TRIVIA}glob`,
+);
 const IMPORT_ALIASES = {
   '$features/': 'src/features/',
   '$lib/': 'src/lib/',
@@ -156,13 +171,20 @@ function ctSpecDependencies(base, head) {
     // parser here. Reject forms this literal scan cannot resolve rather than
     // treating an incomplete dependency set as evidence to skip CT.
     if (
-      /\brequire\s*\(|\bimport\s*\.\s*meta\s*\.\s*glob/.test(source) ||
-      [...source.matchAll(/\bimport\s*\(/g)].some(
-        (match) => !/^import\s*\(\s*(['"])[^'"]+\1\s*(?:\)|,)/.test(source.slice(match.index)),
+      UNSUPPORTED_IMPORT_RE.test(source) ||
+      [...source.matchAll(DYNAMIC_IMPORT_RE)].some(
+        (match) => !LITERAL_DYNAMIC_IMPORT_RE.test(source.slice(match.index)),
       )
     )
       throw new Error(`unsupported CT dependency syntax in ${file}`);
-    for (const [, specifier] of source.matchAll(IMPORT_RE)) {
+    for (const [, literal] of source.matchAll(IMPORT_RE)) {
+      // Do not silently treat an encoded JS string as a literal filesystem path.
+      // Resolving escapes needs a JS string decoder; fail safe until supported.
+      if (literal.includes('\\')) {
+        throw new Error(`unsupported CT dependency escape in ${file}: ${literal}`);
+      }
+      // Vite's ?raw/?inline (and other query/fragment forms) read the same file.
+      const specifier = literal.slice(1, -1).split(/[?#]/, 1)[0];
       const alias = Object.entries(IMPORT_ALIASES).find(([prefix]) => specifier.startsWith(prefix));
       if (specifier.startsWith('$') && !alias) {
         throw new Error(`unsupported CT dependency alias in ${file}: ${specifier}`);
