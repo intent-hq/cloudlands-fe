@@ -27,6 +27,7 @@ import { StreamingStatusExamples } from './streaming-status-examples';
 import { SuggestedPromptExamples } from './suggested-prompt-examples';
 import { AutomatedWakeExamples } from './automated-wake-examples';
 import { AttributionHeaderExamples } from './attribution-header-examples';
+import { InlinePermissionExamples } from './inline-permission-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -487,6 +488,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'suggested-prompts' && <SuggestedPromptExamples />}
       {slug === 'automated-wake' && <AutomatedWakeExamples />}
       {slug === 'attribution-headers' && <AttributionHeaderExamples />}
+      {slug === 'inline-permission' && <InlinePermissionExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -564,6 +566,7 @@ export function hasFunctionalExample(slug: string) {
     'suggested-prompts',
     'automated-wake',
     'attribution-headers',
+    'inline-permission',
     'diagram-workbench',
     'toast',
     'notify',
