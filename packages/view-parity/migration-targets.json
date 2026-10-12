@@ -8,21 +8,21 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
-    "taskNoteId": "81e847c7-8d0e-4e1c-9370-1ed09111958f",
+    "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+    "taskNoteId": "77f98aab-b38c-4837-b6a5-f70218b2e4aa",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded static review of seven original Svelte component bodies/APIs/callers and one breadcrumb reactivity facade against frozen8c10. Existing160 direct targets verified byte-identical to prior common audit pin; old source records, source-drift flags, inspected revisions, callsite hashes, cases, receipts and cd729 bounded audit retained. No runtime suite refresh or native/visual/product acceptance.",
+    "method": "Bounded static review of exactly eight original chat leaf APIs/bodies, frozen target bodies, neutral extraction and concrete callers. All170 prior direct targets byte-identical to8c10; retained reviews advance only their schema-required validation pin. Preserve original source hashes, prior source rows/drift flags, inspection metadata, cases, receipts, failures and bounded audits. No runtime/visual acceptance.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T01:59:59.793832+00:00",
+    "reviewedAt": "2026-10-12T02:58:16.749592+00:00",
     "changedPreviouslyMappedTargetsReviewed": [],
     "checkpointAdvance": {
-      "previousLedgerCommit": "4ca5d88e0a33744811dc03c326e51eb9c89a6e99",
-      "previousAuditCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
-      "unchangedUniqueDirectTargets": 160,
+      "previousLedgerCommit": "b7414d58045d3529973bc95e881c549d9adcc610",
+      "previousAuditCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "unchangedUniqueDirectTargets": 170,
       "changedUniqueDirectTargets": 0,
-      "retainedHistoricalReviewCount": 55,
-      "meaning": "For retained reviews, candidateCommit is only the schema-required direct-target byte-validation checkpoint. retainedReviewCandidateCommit stores the prior value; all other historical metadata, including any inspectedCandidateCommit and inspectedCallsites, is unchanged. This is not source/API rereview and does not refresh stale source reviews or runtime evidence. Prior prose that names an earlier cutoff remains historical."
+      "retainedHistoricalReviewCount": 58,
+      "meaning": "candidateCommit in retained reviews is only the common direct-target byte-validation checkpoint. Prior common checkpoint/review IDs are preserved in auditHistory; existing retainedReviewCandidateCommit and original inspectedCandidateCommit/callsites remain unchanged. No source/API rereview, stale-source refresh or runtime promotion."
     }
   },
   "statusDefinitions": {
@@ -52,7 +52,8 @@
     "ModelPicker evidence is limited to five empty-profile behaviors. Real catalog tuples, confirmation/write races, provider changes and actual settings-route navigation remain unverified; broad provider/metadata acceptance remains open.",
     "Rows strict 76-pixel failure and Mermaid 32-pixel failure remain open. Mermaid latest receipt uses an explicitly revised source profile, not original003.",
     "Later source/helper changes, all transitive dependencies, production routes and Electron runtime are outside this bounded review. No source absence is inferred from an unmapped record.",
-    "Bounded8c10 follow-up adds seven component mappings and one breadcrumb reactivity mapping only. Earlier limits and failed/planned/passed cases retain their recorded cutoff; no later native results were inspected. The changed source breadcrumb rune facade remains stale versus original003. Catalog caller props do not prove editor/service/session or visual acceptance; the full transitive runtime closure was not executed or certified."
+    "Bounded8c10 follow-up adds seven component mappings and one breadcrumb reactivity mapping only. Earlier limits and failed/planned/passed cases retain their recorded cutoff; no later native results were inspected. The changed source breadcrumb rune facade remains stale versus original003. Catalog caller props do not prove editor/service/session or visual acceptance; the full transitive runtime closure was not executed or certified.",
+    "Boundedfe630 adds exactly eight chat component source mappings (six implemented local contracts, two partial reactive notice audits), nine distinct new direct target files and no supporting/reactivity/catalog mappings. Ordinary-prop catalog states are not runtime evidence. Original source pixel, full-motion, real transcript/service and notice hydration/lifetime coverage remain unverified. All prior limits retain their historical cutoff."
   ],
   "reviews": {
     "foundation": {
@@ -62,7 +63,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -76,7 +77,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -90,7 +91,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -106,7 +107,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -120,7 +121,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -131,7 +132,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -142,7 +143,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -156,7 +157,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -167,7 +168,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -178,7 +179,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -189,7 +190,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -203,7 +204,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -214,7 +215,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -225,7 +226,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -240,7 +241,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -256,7 +257,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -267,7 +268,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -278,7 +279,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -296,7 +297,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -307,7 +308,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -318,7 +319,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -329,7 +330,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -343,7 +344,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -354,7 +355,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -368,7 +369,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -379,7 +380,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -394,7 +395,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -408,7 +409,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -422,7 +423,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -433,7 +434,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -441,7 +442,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -455,7 +456,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -469,7 +470,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -483,7 +484,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -494,7 +495,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -505,7 +506,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -516,7 +517,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -527,7 +528,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -538,7 +539,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -549,7 +550,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -563,7 +564,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -574,7 +575,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -585,7 +586,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -596,7 +597,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -607,7 +608,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -618,7 +619,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -626,7 +627,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -654,7 +655,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -677,7 +678,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -703,7 +704,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -729,7 +730,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -760,7 +761,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -789,7 +790,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -829,7 +830,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -862,7 +863,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -903,7 +904,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -938,7 +939,8 @@
         "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
         "status": "not-run",
         "scope": "Consumer SidebarActionsExamples in apps/react/src/catalog/sidebar-actions-examples.tsx, functional dispatcher slug sidebar-actions; verify query/external-prop updates, clear/blur/Escape focus ordering and nested dialog Escape ownership, native keydown, action refs/clicks, refresh disabled/busy and caller-owned group toggles. Native sidebar/mention test files are absent from this frozen candidate; later harness revisions require their own freeze/review and are not included here."
-      }
+      },
+      "retainedReviewCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117"
     },
     "mention-navigation-leaves-8c10": {
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
@@ -947,7 +949,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -998,13 +1000,14 @@
         "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
         "status": "not-run",
         "scope": "Consumer MentionNavigationExamples in apps/react/src/catalog/mention-navigation-examples.tsx, functional dispatcher slug mention-navigation; verify imperative native key return values, grouped/nested traversal, root Escape close, active-descendant callbacks, prop replacement/reset, scroll/focus ownership, loading/empty/remount and real session-driven avatar state. Fixture IDs/subtitles are not session evidence; existing SlashSkillSuggestionList/AgentBadge calls do not create new mappings. Native sidebar/mention test files are absent from this frozen candidate; later harness revisions require their own freeze/review and are not included here."
-      }
+      },
+      "retainedReviewCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117"
     },
     "mention-breadcrumb-facade-8c10": {
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1035,6 +1038,217 @@
         "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
         "status": "not-run",
         "scope": "Review nested push/pop/root/index navigation, invalid index handling, group.items-only behavior, manual subscribeTo checker semantics and destroy/remount cleanup in React and compatibility facade. Do not infer automatic subscriptions from subscribeTo method names. Native sidebar/mention test files are absent from this frozen candidate; later harness revisions require their own freeze/review and are not included here."
+      },
+      "retainedReviewCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117"
+    },
+    "chat-transcript-markers-fe630": {
+      "taskNoteIds": [
+        "77f98aab-b38c-4837-b6a5-f70218b2e4aa",
+        "dffe3f2d-6d84-45de-977b-ed1b2d4f7f3b",
+        "ca5ac8a8-0140-47e6-9492-4dedfee92af6"
+      ],
+      "implementationCommits": [
+        "238437568d4f217164c55c41d0043b53dfa1489f",
+        "0f00a72202dce497991564f9fc6875db9f26c9e5"
+      ],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+      "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+      "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/chat-transcript-examples.tsx",
+          "sha256": "2243fc16941ef56a8a551cd4ce515b6f76aceb0459692c3e3bcf4c1abea47801",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "sha256": "882e53cc352271178efc17ace73f1db5f24e16714119f6a2a96a5e91f7aa2723",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        }
+      ],
+      "supportingDependencies": [
+        {
+          "path": "src/lib/components/chat/operational-disclosure-classes.ts",
+          "sha256": "a35dc3035ee4e5e1e453677a2cfb1ddbe03275b1fc9150d4d0ed0ca511e264c8",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/operational-disclosure-row.ts",
+          "sha256": "356acca352162fecb9a40d517ce5c6ca86459305ea4a2a6c791f3a6bd8bf52df",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/subscription-card-spacing-types.ts",
+          "sha256": "014384fea600f0f9147e66d2c1fb5ab535b311f1017f5e17dbe153274ee25112",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/subscription-card-spacing.ts",
+          "sha256": "a92187df7fda5ed5d4efb80b01fc6e60fa4a90543d9fd3a221386d43ab5b9b22",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/chat-icon-size.ts",
+          "sha256": "d825b6c549dcd0a7d702e916d196fa491dde045174326408ee0c01f8a9c974a0",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "apps/react/src/styles/app.css",
+          "sha256": "e5f77ac9e9dba0151ad38ce7e4583fa1830af6d522d2f0fb3df131d8ada2274b",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "status": "not-run",
+        "route": "/sandbox/chat-transcript?example=interactive",
+        "namedStates": {
+          "NewMessagesDivider": ["default", "unmounted", "remounted"],
+          "ConversationTurnGap": [
+            "ordinary",
+            "current-event",
+            "current-event-with-assistant",
+            "next-user",
+            "event-over-user",
+            "compact-over-user",
+            "zero-over-compact",
+            "batched-over-zero",
+            "cards-over-batched",
+            "content-over-batched",
+            "attention-over-cards",
+            "unmounted",
+            "remounted"
+          ],
+          "QuestionsDismissedNotice": [
+            "title-present",
+            "title-replaced",
+            "title-omitted",
+            "unmounted",
+            "remounted"
+          ],
+          "ToolStatusIcon": ["running", "completed", "error", "unmounted", "remounted"],
+          "ScrollToBottomButton": [
+            "inline-enabled",
+            "inline-disabled",
+            "floating-enabled",
+            "floating-disabled",
+            "callback-replaced",
+            "unmounted",
+            "remounted"
+          ]
+        },
+        "scope": "Named states are ordinary caller inputs to review, not scene-manifest planned cases or executions. Native test/helper files were uncommitted at this audit start and are separately owned; no later native evidence is imported. Original-source pixel, full motion, service and hydration coverage remain pending."
+      }
+    },
+    "chat-transcript-notices-fe630": {
+      "taskNoteIds": [
+        "77f98aab-b38c-4837-b6a5-f70218b2e4aa",
+        "4e987625-1b97-4d11-82ca-e41837b62c55",
+        "ca5ac8a8-0140-47e6-9492-4dedfee92af6"
+      ],
+      "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+      "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+      "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/chat-transcript-examples.tsx",
+          "sha256": "2243fc16941ef56a8a551cd4ce515b6f76aceb0459692c3e3bcf4c1abea47801",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "sha256": "882e53cc352271178efc17ace73f1db5f24e16714119f6a2a96a5e91f7aa2723",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        }
+      ],
+      "supportingDependencies": [
+        {
+          "path": "src/lib/components/chat/model-change-notice-core.ts",
+          "sha256": "961e1451f032e24f598d9bbb9054ca641312c8db07e124e7432b46e70358ff92",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/model-change-notice.ts",
+          "sha256": "5ef6ea94df9428209047d2605cfa78a6eff1b77f6256c30962ec1c02f99bfd01",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/rehome-notice-core.ts",
+          "sha256": "c945b95c0f74d655572cf9a70514d02073577b77f8c2354128c9ac0011f0a8ae",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/rehome-notice.ts",
+          "sha256": "c73dcc90d79a61ed18b7123cd10bafbe8ee6ec2c9250f94437b0252fa0a3e4b7",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/lib/components/chat/effort-change-notice.ts",
+          "sha256": "a3acae0358f992b27c75d8ee857cbdfc1efc87a1c7815f2d048344f738498fb3",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "src/features/agent/utils/reasoning-effort-label.ts",
+          "sha256": "07d49f3ad0dc5ec8de51789db8147c5f6462bc7cd0d3193cb7f418bf00550de8",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "apps/react/src/store/model/model-selectors.ts",
+          "sha256": "b971cc03e1d00efac047a8c4b15b44ed835cc92d9abac6a261e5d0fa75c6464c",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        },
+        {
+          "path": "apps/react/src/store/provider-catalog/provider-catalog-selectors.ts",
+          "sha256": "cddd94b7ee683f4b56ed944e48fa52ea8d46a73ae4a736169472c6bd26e48b79",
+          "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "status": "not-run",
+        "route": "/sandbox/chat-transcript?example=interactive",
+        "namedStates": {
+          "ModelChangeNotice": [
+            "raw",
+            "canonical",
+            "unknown-providers",
+            "defaults",
+            "from-null",
+            "to-null",
+            "incomplete",
+            "custom-fallback",
+            "workspace-replaced",
+            "unmounted",
+            "remounted"
+          ],
+          "ProviderRehomedNotice": [
+            "disabled",
+            "unknown-providers",
+            "defaults",
+            "missing-from-provider",
+            "missing-to-provider",
+            "unknown-reason",
+            "custom-fallback",
+            "workspace-replaced",
+            "unmounted",
+            "remounted"
+          ],
+          "EffortChangeNotice": [
+            "auto",
+            "none",
+            "canonical-case",
+            "provider",
+            "incomplete-from",
+            "incomplete-to",
+            "custom-fallback",
+            "unmounted",
+            "remounted"
+          ]
+        },
+        "scope": "Named states are ordinary caller inputs to review, not scene-manifest planned cases or executions. Native test/helper files were uncommitted at this audit start and are separately owned; no later native evidence is imported. Original-source pixel, full motion, service and hydration coverage remain pending."
       }
     }
   },
@@ -9221,16 +9435,36 @@
     },
     "src/lib/components/chat/ConversationTurnGap.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "chat-transcript-markers-fe630",
+        "reviewedContract": "All nine props and optional false defaults retained. Exact precedence: attention, card boundary, batched, zero tool, compact operational, next event, next user, ordinary. Original data flags and aria-hidden retained; SubscriptionCardSeam union is extracted unchanged.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/conversation-turn-gap.tsx",
+          "sha256": "caf15b914d1fc369f85efbd2e3cd4ba219934d1d4abf5972a93f0865aab161d5",
+          "symbols": ["ConversationTurnGap"],
+          "lastChangedCommit": "238437568d4f217164c55c41d0043b53dfa1489f"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Parent-owned classification of actual transcript turns and scroll anchoring are outside this leaf mapping.",
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "654640ecf689b325476f3707d254cb9a2ea240beef15fadd367c689674f8c21b",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "654640ecf689b325476f3707d254cb9a2ea240beef15fadd367c689674f8c21b",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/CylinderScroller.svelte": {
       "implementation": {
@@ -9312,16 +9546,36 @@
     },
     "src/lib/components/chat/EffortChangeNotice.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "chat-transcript-notices-fe630",
+        "reviewedContract": "Required notice plus optional localized fallbackText retained. Canonical effort formatter is reused without body changes: null means Auto, undefined requires fallback, known levels are case-insensitive and unknown provider values preserve spelling. Source-equivalent status region, wrapping and Phosphor decoration retained.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/effort-change-notice.tsx",
+          "sha256": "aaa7ecd626a327499e45ca9901e22d924b4ea04531b2b134bd825d31c48fee28",
+          "symbols": ["EffortChangeNotice"],
+          "lastChangedCommit": "19bf7fffb0f48b960ac1efc27f1d1ac04359323e"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Real daemon effort-change delivery and production transcript integration remain unverified.",
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "a3f2686d165c2cf604e18bb9e6b973a853482dafd4fe44ac1e995ee462e1b2ce",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "a3f2686d165c2cf604e18bb9e6b973a853482dafd4fe44ac1e995ee462e1b2ce",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/EventSubscriptionsCard.svelte": {
       "implementation": {
@@ -9575,16 +9829,42 @@
     },
     "src/lib/components/chat/ModelChangeNotice.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "chat-transcript-notices-fe630",
+        "reviewedContract": "workspaceId, required notice and optional localized fallbackText retained. Shared neutral formatter preserves raw/default/incomplete metadata behavior; tracked React selector callbacks use the canonical model/provider owners. Model lookup receives workspaceId; provider lookup intentionally omits it, matching source.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/model-change-notice.tsx",
+          "sha256": "c5d4a0d3f9c3b807d3263b39fedc79b8e70bce1fe1f17a830df13abe64ca043f",
+          "symbols": ["ModelChangeNotice"],
+          "lastChangedCommit": "19bf7fffb0f48b960ac1efc27f1d1ac04359323e"
+        },
+        {
+          "path": "apps/react/src/features/chat/components/notice-display-name-reads.ts",
+          "sha256": "74d21aa0a5e54328a8fb7c3e5a747fd52c57e23a81906c97310195e0401bea35",
+          "symbols": ["noticeDisplayNameReads"],
+          "lastChangedCommit": "19bf7fffb0f48b960ac1efc27f1d1ac04359323e"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "The source reactive contract audit is incomplete: explicit useSignals and current-prop reads were inspected, but real catalog hydration, live name updates, workspace/provider rebinding and subscription disposal were not independently verified. Empty-store raw-name caller data does not establish these behaviors.",
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "1a38655801d56cb767f05865dc83a10efff631aa5d204d4330685d0d7b32b9d1",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "1a38655801d56cb767f05865dc83a10efff631aa5d204d4330685d0d7b32b9d1",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/ModelSwitchConfirmDialog.svelte": {
       "implementation": {
@@ -9652,16 +9932,35 @@
     },
     "src/lib/components/chat/NewMessagesDivider.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "chat-transcript-markers-fe630",
+        "reviewedContract": "No props. Localized separator role/name/text and unread-marker data attribute match the original; the parent owns transcript placement.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/new-messages-divider.tsx",
+          "sha256": "2aa55a8689d49d1290ff8ad41169e425e13afb5f2c29986342df456277eb4a5d",
+          "symbols": ["NewMessagesDivider"],
+          "lastChangedCommit": "238437568d4f217164c55c41d0043b53dfa1489f"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "5257116cf084cefb7fb040dbd07c988c9dcb0dcc9681b89e35ba557dea4b96b4",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "5257116cf084cefb7fb040dbd07c988c9dcb0dcc9681b89e35ba557dea4b96b4",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/OperationalWindow.svelte": {
       "implementation": {
@@ -9717,29 +10016,75 @@
     },
     "src/lib/components/chat/ProviderRehomedNotice.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "chat-transcript-notices-fe630",
+        "reviewedContract": "workspaceId, required notice and optional localized fallbackText retained. Shared neutral formatter preserves provider_disabled gating, missing-provider/unknown-reason fallback, null default-model label and old-model lookup. Real canonical provider/model selectors are read under explicit useSignals; no acquisition or writes.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/provider-rehomed-notice.tsx",
+          "sha256": "41f7900bf23358f5b19c757029739de90af848e2f69b3a0db2e3cd8c9c3b2eae",
+          "symbols": ["ProviderRehomedNotice"],
+          "lastChangedCommit": "19bf7fffb0f48b960ac1efc27f1d1ac04359323e"
+        },
+        {
+          "path": "apps/react/src/features/chat/components/notice-display-name-reads.ts",
+          "sha256": "74d21aa0a5e54328a8fb7c3e5a747fd52c57e23a81906c97310195e0401bea35",
+          "symbols": ["noticeDisplayNameReads"],
+          "lastChangedCommit": "19bf7fffb0f48b960ac1efc27f1d1ac04359323e"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "The source reactive contract audit is incomplete: explicit useSignals and current-prop reads were inspected, but live provider/model hydration, branch-dependent subscriptions, workspace rebinding and disposal remain independently unverified. Actual daemon provider rehome events are not simulated or accepted.",
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "f5699fcb469b6f8fc4e1de6c5e4a6b192a4c3fcbe263b3a94494daba789ac48c",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "f5699fcb469b6f8fc4e1de6c5e4a6b192a4c3fcbe263b3a94494daba789ac48c",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/QuestionsDismissedNotice.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "chat-transcript-markers-fe630",
+        "reviewedContract": "Optional title, localized dismissal label, status region and source-equivalent Phosphor ChatSlash decoration retained. Current title props are rendered directly.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/questions-dismissed-notice.tsx",
+          "sha256": "17bb2a8e635c9c40b466355c862861256f1fad9968b0695497ede38955625dda",
+          "symbols": ["QuestionsDismissedNotice"],
+          "lastChangedCommit": "238437568d4f217164c55c41d0043b53dfa1489f"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Daemon dismissal metadata parsing and delivery into production transcript rows are not covered by the ordinary title caller.",
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "96e07307a04ab617f58229a61911941c8d2129fc4b7f7f8eac3302464a08f65c",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "96e07307a04ab617f58229a61911941c8d2129fc4b7f7f8eac3302464a08f65c",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/QueuedMessageActions.svelte": {
       "implementation": {
@@ -9847,16 +10192,36 @@
     },
     "src/lib/components/chat/ScrollToBottomButton.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "chat-transcript-markers-fe630",
+        "reviewedContract": "onclick becomes onClick with the same zero-argument callback signature. disabled/floating default false; source variants, size, tooltip text/side/delay, native disabled forwarding and data attributes are retained through the existing public React Button.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/scroll-to-bottom-button.tsx",
+          "sha256": "377669d05b30efc8e19fed84d753aa70a80aea4b573c647cf055fb4692cee496",
+          "symbols": ["ScrollToBottomButton"],
+          "lastChangedCommit": "238437568d4f217164c55c41d0043b53dfa1489f"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Actual native disabled/keyboard/pointer callback delivery, tooltip behavior, and real transcript scrolling are not established by static forwarding or the callback recorder.",
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "dbae9b3b89df72bbff19537acb1712355fe4274c942c3bfd96f64cd408cae0ae",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "dbae9b3b89df72bbff19537acb1712355fe4274c942c3bfd96f64cd408cae0ae",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/SetupScriptCard.svelte": {
       "implementation": {
@@ -10016,16 +10381,36 @@
     },
     "src/lib/components/chat/ToolStatusIcon.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "chat-transcript-markers-fe630",
+        "reviewedContract": "Required running/completed/error status maps to the original localized label/title, image role and completed-to-success data attribute. Running reuses existing IntentMarkLoader; completed/error reuse source-equivalent Phosphor icons and exact extracted operational class constants.",
+        "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/tool-status-icon.tsx",
+          "sha256": "1430f6d7fc73ef24f9a56705f65b3562f112826e698e4c8c75dcf73d53e53879",
+          "symbols": ["ToolStatusIcon"],
+          "lastChangedCommit": "238437568d4f217164c55c41d0043b53dfa1489f"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Existing IntentMarkLoader is reused, not a new mapped source. Its full-motion/reduced-motion lifetime and forced-color appearance remain separately unverified by this audit.",
+        "Static source/API mapping only. Native interaction, original-source pixel comparison, full product transcript/service integration and release acceptance remain pending; functional/visual case arrays and receipts are not advanced."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "ee6a4d09d4cc7f31a35e687d2158c7f09a55dde4346d9bade684a9617f5c9c13",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "candidateSourceSha256": "ee6a4d09d4cc7f31a35e687d2158c7f09a55dde4346d9bade684a9617f5c9c13",
+        "changedSinceReference": false
+      }
     },
     "src/lib/components/chat/TurnFailureNotice.svelte": {
       "implementation": {
@@ -36559,6 +36944,89 @@
         "structural-audit-settings"
       ],
       "reviewCandidateCommitMeaning": "The listed reviews used this candidateCommit at ledgerCommit. Later checkpoint advancement validates direct-target bytes only; their original scope, inspectedCandidateCommit and callsite hashes retain their historical meaning."
+    },
+    {
+      "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "taskNoteId": "81e847c7-8d0e-4e1c-9370-1ed09111958f",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded static review of seven original Svelte component bodies/APIs/callers and one breadcrumb reactivity facade against frozen8c10. Existing160 direct targets verified byte-identical to prior common audit pin; old source records, source-drift flags, inspected revisions, callsite hashes, cases, receipts and cd729 bounded audit retained. No runtime suite refresh or native/visual/product acceptance.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T01:59:59.793832+00:00",
+      "changedPreviouslyMappedTargetsReviewed": [],
+      "checkpointAdvance": {
+        "previousLedgerCommit": "4ca5d88e0a33744811dc03c326e51eb9c89a6e99",
+        "previousAuditCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+        "unchangedUniqueDirectTargets": 160,
+        "changedUniqueDirectTargets": 0,
+        "retainedHistoricalReviewCount": 55,
+        "meaning": "For retained reviews, candidateCommit is only the schema-required direct-target byte-validation checkpoint. retainedReviewCandidateCommit stores the prior value; all other historical metadata, including any inspectedCandidateCommit and inspectedCallsites, is unchanged. This is not source/API rereview and does not refresh stale source reviews or runtime evidence. Prior prose that names an earlier cutoff remains historical."
+      },
+      "ledgerCommit": "b7414d58045d3529973bc95e881c549d9adcc610",
+      "mappedViewCount": 178,
+      "partialViewCount": 147,
+      "implementedViewCount": 31,
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10"
+      ],
+      "reviewCandidateCommitMeaning": "All listed reviews used this common candidateCommit at ledgerCommit. Later advancement validates direct-target bytes only; retainedReviewCandidateCommit, original inspected revisions, source inspections and callsite hashes remain historical."
     }
   ],
   "receipts": {
@@ -38592,6 +39060,81 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "Preserve all old drift and invalidated reviews. Added breadcrumb facade map is itself stale against original003 even though the facade extraction was statically inspected; the unchanged status schema cannot record source-refresh acceptance and this audit does not claim it."
+    },
+    {
+      "id": "chat-transcript-mappings-fe630",
+      "taskNoteId": "77f98aab-b38c-4837-b6a5-f70218b2e4aa",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+      "previousLedgerCommit": "b7414d58045d3529973bc95e881c549d9adcc610",
+      "previousCommonCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+      "reviewedAt": "2026-10-12T02:58:16.749592+00:00",
+      "method": "Bounded static review of exactly eight original chat leaf APIs/bodies, frozen target bodies, neutral extraction and concrete callers. All170 prior direct targets byte-identical to8c10; retained reviews advance only their schema-required validation pin. Preserve original source hashes, prior source rows/drift flags, inspection metadata, cases, receipts, failures and bounded audits. No runtime/visual acceptance.",
+      "counts": {
+        "addedMappings": 8,
+        "addedSvelteComponents": 8,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "addedStatuses": {
+          "implemented": 6,
+          "partial": 2
+        },
+        "mappedViews": 186,
+        "mappedSvelteComponents": 182,
+        "mappedSvelteReactivityModules": 4,
+        "views": {
+          "unmapped": 1244,
+          "partial": 149,
+          "implemented": 37
+        },
+        "svelteComponents": {
+          "unmapped": 1198,
+          "partial": 145,
+          "implemented": 37
+        },
+        "svelteReactivityModules": {
+          "unmapped": 46,
+          "partial": 4
+        },
+        "support": {
+          "unmapped": 455,
+          "implemented": 1,
+          "partial": 4
+        }
+      },
+      "sourcePaths": [
+        "src/lib/components/chat/NewMessagesDivider.svelte",
+        "src/lib/components/chat/ConversationTurnGap.svelte",
+        "src/lib/components/chat/QuestionsDismissedNotice.svelte",
+        "src/lib/components/chat/ToolStatusIcon.svelte",
+        "src/lib/components/chat/ScrollToBottomButton.svelte",
+        "src/lib/components/chat/ModelChangeNotice.svelte",
+        "src/lib/components/chat/ProviderRehomedNotice.svelte",
+        "src/lib/components/chat/EffortChangeNotice.svelte"
+      ],
+      "newUniqueDirectTargetCount": 9,
+      "priorUniqueDirectTargetCount": 170,
+      "priorDirectTargetsByteEquality": {
+        "fromCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+        "toCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "matching": 170,
+        "changed": [],
+        "orderedPathAndHashSha256": "9941f6bae04fd506a7c11fd29750f3ad30ea789b71fcf18d9537f7ce68987575"
+      },
+      "inspectedDispatcherChange": {
+        "path": "apps/react/src/catalog/functional-examples.tsx",
+        "previousInspectionCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+        "previousSha256": "051eb90570454ed1eaedffe1ef52f6bc4e97cd11143da2f64d852ecb71d52e1a",
+        "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "sha256": "882e53cc352271178efc17ace73f1db5f24e16714119f6a2a96a5e91f7aa2723",
+        "implementationCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+        "scope": "Callsite only, never a direct mapping target. Exactly three additions: ChatTranscriptExamples import, chat-transcript branch and availability entry. Older branches and historical inspectedCallsites unchanged."
+      },
+      "consumerPaths": ["apps/react/src/catalog/chat-transcript-examples.tsx"],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "All eight component source blobs equal original003. Authorized source helpers/compatibility facades changed; inventory hashes and prior stale-source records are retained and any support drift remains visible. No Svelte view/refacade/helper/indicator/catalog source is additionally counted."
     }
   ]
 }
