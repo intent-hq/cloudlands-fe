@@ -136,7 +136,10 @@ export const test = base.extend({
       const prefix = `detected scripts ${caseId}:`;
       expect(info.title.startsWith(prefix)).toBe(true);
       expect(process.env.PARITY_GREP, 'Exactly one case per invocation').toBe(prefix);
-      expect(info.config.grep.source).toBe(prefix);
+      const session = JSON.parse(
+        readFileSync(path.join(process.env.PARITY_RUN_DIR, 'session.json'), 'utf8'),
+      );
+      expect(session.grep).toBe(prefix);
       expect(info.retry).toBe(0);
       expect(info.project.retries).toBe(0);
       expect(info.config.workers).toBe(1);
