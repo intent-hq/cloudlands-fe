@@ -70,7 +70,7 @@ test('chat reference R4: native scrolling and code unmount remount preserve curr
   const long = `const long = "${'horizontal-content-'.repeat(45)}";`;
   await field(item.section, 'Code').fill(long);
   await expectCode(item.leaf, long);
-  const horizontal = item.leaf.locator('pre').locator('..');
+  const horizontal = item.leaf.locator('pre');
   await horizontal.scrollIntoViewIfNeeded();
   const box = await horizontal.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
