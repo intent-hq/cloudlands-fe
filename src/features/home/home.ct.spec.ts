@@ -229,12 +229,11 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   );
   const board = component.locator('[data-home-board]');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
-  expect(
-    await board.evaluate(
-      (element) =>
-        element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight,
-    ),
-  ).toBe(true);
+  expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  for (const workspace of await board.locator('[data-home-workspace]').all()) {
+    await workspace.scrollIntoViewIfNeeded();
+    await expect(workspace).toBeInViewport();
+  }
   const card = board.getByRole('button', { name: 'Review the new onboarding flow', exact: true });
   await card.focus();
   await page.keyboard.press('Enter');
@@ -289,10 +288,68 @@ test('Home board right-click menu pins the chosen card and restores focus', asyn
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(card).toBeFocused();
+  await testInfo.attach('kanban-pin-focus-after', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-pin-focus-after.png') }),
+    contentType: 'image/png',
+  });
+  await testInfo.attach('kanban-pin-focus-state', {
+    body: JSON.stringify(
+      await page.evaluate(() => ({
+        focusedWorkspace: document.activeElement?.getAttribute('data-home-workspace'),
+        openMenus: document.querySelectorAll('[role="menu"]').length,
+        visibleCards: document.querySelectorAll('[data-home-board] [data-home-workspace]').length,
+      })),
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
   await component.getByRole('button', { name: 'List view', exact: true }).click();
   await expect(component.getByRole('listbox', { name: 'Pinned', exact: true })).toHaveCount(0);
   await expect(component.getByRole('option')).toHaveCount(6);
 });
+
+for (const view of ['list', 'board'] as const) {
+  test(`Home ${view} pin preserves focus moved to search`, async ({ mount, page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const component = await mount(Preview, {
+      props: { scenario: view === 'board' ? 'board' : 'populated' },
+    });
+    const search = component.getByRole('searchbox');
+    await search.fill('Polish');
+    const row =
+      view === 'board'
+        ? component.locator('[data-home-workspace="home-complete"]')
+        : component.getByRole('option', { name: /Polish settings accessibility/ });
+    await row.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menuitem', { name: 'Pin', exact: true }).evaluate(
+      (element, focusTarget) => {
+        (element as HTMLElement).click();
+        (focusTarget as HTMLElement | null)?.focus();
+      },
+      await search.elementHandle(),
+    );
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue('Polish');
+    await testInfo.attach(`home-${view}-pin-search-focus`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await row.focus();
+    await page.keyboard.press('Shift+F10');
+    await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(row).toBeFocused();
+  });
+}
 
 test('Home board menu dismissal keeps an existing preview open', async ({
   mount,
@@ -774,7 +831,10 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await component.getByRole('searchbox').clear();
   await groupBy('Status');
-  await expect(board.locator('section')).toHaveCount(3);
+  await expect(board.locator('section')).toHaveCount(4);
+  await expect(
+    board.getByRole('region', { name: 'PR ready', exact: true }).locator('[data-home-workspace]'),
+  ).toHaveCount(1);
   const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);

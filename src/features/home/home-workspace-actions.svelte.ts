@@ -75,19 +75,25 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
     if (!pending || options.pinnedIds().includes(pending.workspaceId) !== pending.pinned) return;
     pendingPin = null;
     void tick().then(() => {
-      const row = options
-        .root()
-        ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(pending.workspaceId)}"]`);
-      const target = row?.closest<HTMLElement>('[role="option"]') ?? row;
-      const active = document.activeElement;
-      const ownsFocus =
-        active &&
-        (pending.sourceRow?.contains(active) ||
-          target?.contains(active) ||
-          pending.sourceMenu?.contains(active));
-      const removedRowLostFocus =
-        active === document.body && pending.sourceRow && !pending.sourceRow.isConnected;
-      if (ownsFocus || removedRowLostFocus) target?.focus();
+      requestAnimationFrame(() => {
+        const row = options
+          .root()
+          ?.querySelector<HTMLElement>(
+            `[data-home-workspace="${CSS.escape(pending.workspaceId)}"]`,
+          );
+        const target = row?.closest<HTMLElement>('[role="option"]') ?? row;
+        const active = document.activeElement;
+        const ownsFocus =
+          active &&
+          (pending.sourceRow?.contains(active) ||
+            target?.contains(active) ||
+            pending.sourceMenu?.contains(active));
+        const removedSourceLostFocus =
+          active === document.body &&
+          ((pending.sourceRow && !pending.sourceRow.isConnected) ||
+            (pending.sourceMenu && !pending.sourceMenu.isConnected));
+        if (ownsFocus || removedSourceLostFocus) target?.focus();
+      });
     });
   });
   function dismissReminder(workspace: Workspace, snapshot: ReminderMenuSnapshot) {
