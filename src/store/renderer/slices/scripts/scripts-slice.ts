@@ -10,7 +10,7 @@ import {
  * Workspace-scoped state for script entries and output.
  */
 
-import type { ScriptReadChange } from '$features/scripts/utils/script-change';
+import type { ScriptReadChange } from '../../../../features/scripts/utils/script-change';
 import {
   backendReconnected,
   workspaceDeleted,
@@ -19,7 +19,7 @@ import {
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
-import { createDefaultRuntimeState } from '$features/scripts/types';
+import { createDefaultRuntimeState } from '../../../../features/scripts/types';
 import type {
   WorkspaceScript,
   ScriptRuntimeState,

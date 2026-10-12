@@ -3,11 +3,15 @@
  */
 
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
-import type { ScriptReadChange } from '$features/scripts/utils/script-change';
-import type { ScriptWithState } from '$features/scripts/types';
+import type { ScriptReadChange } from '../../../../features/scripts/utils/script-change';
+import type { ScriptWithState } from '../../../../features/scripts/types';
 
 // Re-export types that consumers need
-export type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '$features/scripts/types';
+export type {
+  WorkspaceScript,
+  ScriptRuntimeState,
+  ScriptWithState,
+} from '../../../../features/scripts/types';
 
 /**
  * One decoded `script:output` chunk (PROTOCOL §6.5). `text` is the UTF-8
