@@ -5,7 +5,7 @@
  * This replaces the giant TOOL_CONFIGS mapping with pattern-based rules.
  */
 
-import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+import type { IconDefinition } from '$lib/icons/icon-definition';
 import {
   faFileLines,
   faPenToSquare,
@@ -20,7 +20,7 @@ import {
   faRobot,
   faDisplay,
   faBrain,
-} from '@fortawesome/free-solid-svg-icons';
+} from '$lib/icons/phosphor-icon-definitions';
 import { faNote } from '$lib/icons/faNote';
 import { m } from '$shared/paraglide/messages.js';
 

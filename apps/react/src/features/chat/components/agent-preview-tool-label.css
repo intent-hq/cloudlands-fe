@@ -1,0 +1,7 @@
+/* Match the source's compiled component scope specificity, including nested MCP SVGs. */
+.agent-preview-tool-icon.intent-agent-preview-tool-icon svg {
+  width: 100%;
+  height: 100%;
+  color: inherit;
+  opacity: inherit;
+}
