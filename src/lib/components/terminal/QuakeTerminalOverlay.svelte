@@ -37,6 +37,7 @@
     closeTerminalOverlay,
     selectTerminal,
     addTerminal,
+    createOverlayTerminalRequested,
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
@@ -45,8 +46,8 @@
     setTerminalPlacement,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
-  import { appClient } from '$lib/client';
 
+  import { appClient } from '$lib/client';
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
   import SetupScriptBanner from './SetupScriptBanner.svelte';
@@ -72,7 +73,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { confirmScriptDeletion } from '$features/scripts/confirm-script-deletion';
   import { selectCanDeleteScript } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptListEntry } from '$features/scripts/types';
   import {
     getScriptStatusKind,
@@ -90,11 +90,13 @@
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
-    refreshScripts,
+    detectScriptDefinitionsRequested,
     startScriptRequested,
     restartScriptRequested,
     stopScriptRequested,
+    updateScriptDefinitionRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
+  import type { ScriptDefinitionUpdate } from '$store/renderer/slices/scripts/scripts-types';
   import { cn } from '$lib/utils';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
@@ -207,15 +209,12 @@
     if (!workspaceId) return;
     isDetectingScripts = true;
     try {
-      const result = await scriptsClient.detect(workspaceId);
-      appStore.dispatch(refreshScripts(workspaceId));
-      if (!result.success) {
-        notify.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
-        return;
-      }
-      const detected = result.detected ?? 0;
-      const added = result.added ?? 0;
-      const removed = result.removed ?? 0;
+      const request = detectScriptDefinitionsRequested(workspaceId);
+      appStore.dispatch(request);
+      const result = await request.promise;
+      const detected = result.detected;
+      const added = result.added;
+      const removed = result.removed;
       const changeParts: string[] = [];
       if (added > 0) changeParts.push(m.terminal_quakeOverlay_detectAdded_part({ count: added }));
       if (removed > 0)
@@ -239,7 +238,7 @@
       } else {
         notify.success(summary);
       }
-      const skippedRunning = result.skippedRunning ?? [];
+      const skippedRunning = result.skippedRunning;
       if (skippedRunning.length > 0) {
         notify.warning(
           skippedRunning.length === 1
@@ -250,6 +249,12 @@
               }),
         );
       }
+    } catch (error) {
+      notify.error(
+        error instanceof Error && error.message
+          ? error.message
+          : m.terminal_quakeOverlay_detectFailed_error(),
+      );
     } finally {
       isDetectingScripts = false;
     }
@@ -359,18 +364,18 @@
   }
 
   async function runScriptMutation(
-    mutation: () => Promise<{ success: boolean; error?: string }>,
+    workspaceId: string,
+    scriptId: string,
+    updates: ScriptDefinitionUpdate,
     fallbackError: string,
   ): Promise<boolean> {
+    const request = updateScriptDefinitionRequested(workspaceId, scriptId, updates);
+    appStore.dispatch(request);
     try {
-      const result = await mutation();
-      if (!result.success) {
-        notify.error(result.error || fallbackError);
-        return false;
-      }
+      await request.promise;
       return true;
     } catch (error) {
-      notify.error(error instanceof Error ? error.message : fallbackError);
+      notify.error(error instanceof Error && error.message ? error.message : fallbackError);
       return false;
     }
   }
@@ -469,11 +474,12 @@
       const trimmed = mutationValue.trim();
       if (trimmed && trimmed !== selectedScript.name) {
         const succeeded = await runScriptMutation(
-          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name: trimmed }),
+          mutationWorkspaceId,
+          mutationScriptId,
+          { name: trimmed },
           m.terminal_quakeOverlay_renameScriptFailed_error(),
         );
         if (!succeeded) return;
-        appStore.dispatch(refreshScripts(mutationWorkspaceId));
         if (
           workspaceOwnership !== ownership ||
           selectedScriptId !== mutationScriptId ||
@@ -535,15 +541,16 @@
     const mutationScriptId = selectedScriptId;
     const mutationValue = editedScriptCommand;
     if (selectedScript && mutationScriptId && mutationWorkspaceId) {
-      const updates: Record<string, any> = {};
+      const updates: ScriptDefinitionUpdate = {};
       if (mutationValue !== originalScriptCommand) updates.command = mutationValue;
       if (Object.keys(updates).length > 0) {
         const succeeded = await runScriptMutation(
-          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
+          mutationWorkspaceId,
+          mutationScriptId,
+          updates,
           m.terminal_quakeOverlay_updateCommandFailed_error(),
         );
         if (!succeeded) return;
-        appStore.dispatch(refreshScripts(mutationWorkspaceId));
         if (
           workspaceOwnership !== ownership ||
           selectedScriptId !== mutationScriptId ||
@@ -750,14 +757,12 @@
     const mutationValue = editingScriptTabValue;
     if (mutationScriptId && mutationValue.trim() && mutationWorkspaceId) {
       const succeeded = await runScriptMutation(
-        () =>
-          scriptsClient.update(mutationWorkspaceId, mutationScriptId, {
-            name: mutationValue.trim(),
-          }),
+        mutationWorkspaceId,
+        mutationScriptId,
+        { name: mutationValue.trim() },
         m.terminal_quakeOverlay_renameScriptFailed_error(),
       );
       if (!succeeded) return;
-      appStore.dispatch(refreshScripts(mutationWorkspaceId));
       if (
         workspaceOwnership !== ownership ||
         editingScriptTabId !== mutationScriptId ||
@@ -855,27 +860,19 @@
     const createWorkspaceId = workspaceId;
     isCreatingTerminal = true;
     try {
-      const result = await appClient.terminals.create({
-        workspaceId: createWorkspaceId,
-        cols: 80,
-        rows: 24,
-      });
-      if (!result.success || !result.id) {
-        notify.error(m.terminal_adapter_openFailed_error());
-        return;
-      }
+      const terminalId = await appStore.dispatch(createOverlayTerminalRequested(createWorkspaceId));
       const stale = workspaceId !== createWorkspaceId;
       if (!stale) {
         appStore.dispatch(
           addTerminal(
             createWorkspaceId,
-            result.id,
+            terminalId,
             m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
           ),
         );
       }
       if (stale) return;
-      if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
+      if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, terminalId));
       requestAnimationFrame(() => overlayContainer?.focus());
     } catch {
       notify.error(m.terminal_adapter_openFailed_error());

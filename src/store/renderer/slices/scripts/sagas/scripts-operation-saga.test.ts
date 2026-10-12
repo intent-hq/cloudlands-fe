@@ -4,10 +4,15 @@ import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  detect: vi.fn(),
   start: vi.fn(),
   remove: vi.fn(),
+  restoreSnapshot: vi.fn(),
+  saveToRepo: vi.fn(),
   stop: vi.fn(),
   restart: vi.fn(),
+  update: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({ appClient: { scripts: mocks } }));
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -31,6 +36,9 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  applyScriptDefinitionChangesRequested,
+  createScriptDefinitionRequested,
+  detectScriptDefinitionsRequested,
   scriptsReducer,
   setScriptsData,
   deleteScriptRequested,
@@ -40,8 +48,11 @@ import {
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
+  restoreScriptDefinitionsRequested,
+  saveScriptDefinitionsToRepoRequested,
   startScriptRequested,
   stopScriptRequested,
+  updateScriptDefinitionRequested,
 } from '../scripts-slice';
 import { scriptsOperationSaga } from './scripts-operation-saga';
 
@@ -103,10 +114,15 @@ async function stop(task: Task) {
 describe('scriptsOperationSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.create.mockResolvedValue({ success: false, error: 'unexpected create' });
+    mocks.detect.mockResolvedValue({ success: false, error: 'unexpected detect' });
     mocks.remove.mockResolvedValue({ success: true });
+    mocks.restoreSnapshot.mockResolvedValue({ success: false, error: 'unexpected restore' });
+    mocks.saveToRepo.mockResolvedValue({ success: false, error: 'unexpected save' });
     mocks.start.mockResolvedValue({ success: true });
     mocks.stop.mockResolvedValue({ success: true });
     mocks.restart.mockResolvedValue({ success: true });
+    mocks.update.mockResolvedValue({ success: false, error: 'unexpected update' });
   });
 
   function seed(run: ReturnType<typeof start>, status = 'idle') {
@@ -229,6 +245,173 @@ describe('scriptsOperationSaga', () => {
       scriptOperationFailed(WS, 'a', 'stop', 'not running'),
       scriptOperationFailed(WS, 'b', 'restart', 'offline'),
     ]);
+    await stop(run.task);
+  });
+
+  it('creates and updates definitions through correlated saga requests', async () => {
+    const created = {
+      id: 'script-created',
+      workspaceId: WS,
+      name: 'Build',
+      command: 'pnpm build',
+      mode: 'command',
+      source: 'user',
+      createdAt: '2026-10-09',
+    };
+    const updated = { ...created, name: 'Production build' };
+    mocks.create.mockResolvedValueOnce({ success: true, data: created });
+    mocks.update.mockResolvedValueOnce({ success: true, data: updated });
+    const run = start();
+
+    const create = createScriptDefinitionRequested(WS, {
+      name: 'Build',
+      command: 'pnpm build',
+      mode: 'command',
+      purpose: 'saved',
+      source: 'user',
+    });
+    run.channel.put(create);
+    await expect(create.promise).resolves.toEqual(created);
+    expect(mocks.create).toHaveBeenCalledWith(WS, create.payload[1]);
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[created.id]?.name).toBe('Build');
+
+    const update = updateScriptDefinitionRequested(WS, created.id, {
+      name: 'Production build',
+    });
+    run.channel.put(update);
+    await expect(update.promise).resolves.toEqual(updated);
+    expect(mocks.update).toHaveBeenCalledWith(WS, created.id, update.payload[2]);
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[created.id]?.name).toBe('Production build');
+    await stop(run.task);
+  });
+
+  it('rejects a stale definition result after workspace authority changes', async () => {
+    const pending = deferred<{ success: true; data: Record<string, unknown> }>();
+    mocks.update.mockReturnValueOnce(pending.promise);
+    const run = start();
+    seed(run);
+    const request = updateScriptDefinitionRequested(WS, 'script-1', { name: 'Stale name' });
+    run.channel.put(request);
+    await settle();
+
+    run.state.principal.status = 'loading';
+    pending.resolve({
+      success: true,
+      data: {
+        ...run.state.scripts.byWorkspaceId[WS].scripts['script-1'],
+        name: 'Stale name',
+      },
+    });
+
+    await expect(request.promise).rejects.toThrow();
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']?.name).toBe('Check');
+    await stop(run.task);
+  });
+
+  it('returns detection counts and requests one authoritative refresh', async () => {
+    mocks.detect.mockResolvedValueOnce({
+      success: true,
+      detected: 3,
+      added: 1,
+      removed: 1,
+      skippedRunning: ['Dev'],
+      packageManager: 'pnpm',
+    });
+    const run = start();
+    const request = detectScriptDefinitionsRequested(WS);
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toEqual({
+      detected: 3,
+      added: 1,
+      updated: 0,
+      removed: 1,
+      skippedRunning: ['Dev'],
+      packageManager: 'pnpm',
+    });
+    expect(mocks.detect).toHaveBeenCalledWith(WS);
+    expect(run.actions.filter(({ type }) => type === refreshScripts.type)).toEqual([
+      refreshScripts(WS),
+    ]);
+    await stop(run.task);
+  });
+
+  it('applies agent definition changes sequentially and skips running auto-detected rows', async () => {
+    const auto = {
+      id: 'auto-idle',
+      workspaceId: WS,
+      name: 'Lint',
+      command: 'pnpm lint',
+      mode: 'command',
+      source: 'auto-detected',
+      createdAt: '2026-10-09',
+      runtime: { status: 'idle', restartCount: 0 },
+    } as const;
+    const running = {
+      ...auto,
+      id: 'auto-running',
+      name: 'Dev',
+      command: 'pnpm dev',
+      runtime: { status: 'running', restartCount: 0 },
+    } as const;
+    const created = { ...auto, id: 'new-id', name: 'Test', command: 'pnpm test' };
+    mocks.remove.mockResolvedValueOnce({ success: true });
+    mocks.create.mockResolvedValueOnce({ success: true, data: created });
+    const run = start();
+    run.dispatch(setScriptsData(WS, [auto, running] as never));
+    const changes = {
+      remove: [auto.id],
+      update: [{ id: running.id, updates: { command: 'pnpm dev --host' } }],
+      add: [
+        {
+          name: 'Test',
+          command: 'pnpm test',
+          mode: 'command' as const,
+          purpose: 'saved' as const,
+          source: 'auto-detected',
+        },
+      ],
+    };
+    const request = applyScriptDefinitionChangesRequested(WS, changes);
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toEqual({
+      detected: 1,
+      added: 1,
+      updated: 0,
+      removed: 1,
+      skippedRunning: ['Dev'],
+    });
+    expect(mocks.remove).toHaveBeenCalledWith(WS, auto.id);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.create).toHaveBeenCalledWith(WS, changes.add[0]);
+    await stop(run.task);
+  });
+
+  it('restores a snapshot and saves definitions to the repository through saga ownership', async () => {
+    mocks.restoreSnapshot.mockResolvedValueOnce({ success: true });
+    mocks.saveToRepo.mockResolvedValueOnce({ success: true });
+    const run = start();
+    const snapshot = [
+      {
+        id: 'script-1',
+        workspaceId: WS,
+        name: 'Check',
+        command: 'make check',
+        mode: 'command' as const,
+        source: 'user',
+        createdAt: '2026-10-09',
+      },
+    ];
+    const restore = restoreScriptDefinitionsRequested(WS, snapshot);
+    run.channel.put(restore);
+    await expect(restore.promise).resolves.toBeUndefined();
+    expect(mocks.restoreSnapshot).toHaveBeenCalledWith(WS, snapshot);
+
+    const save = saveScriptDefinitionsToRepoRequested(WS);
+    run.channel.put(save);
+    await expect(save.promise).resolves.toBeUndefined();
+    expect(mocks.saveToRepo).toHaveBeenCalledWith(WS);
     await stop(run.task);
   });
 

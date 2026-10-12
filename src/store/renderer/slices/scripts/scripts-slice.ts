@@ -16,7 +16,7 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { createDefaultRuntimeState } from '$features/scripts/types';
@@ -30,6 +30,11 @@ import type {
   ScriptOutputBuffer,
   ScriptOutputChunk,
   ScriptQuickAction,
+  ScriptDefinitionChanges,
+  ScriptDefinitionInput,
+  ScriptDefinitionSnapshot,
+  ScriptDefinitionUpdate,
+  ScriptDetectionOutcome,
 } from './scripts-types';
 
 // ============================================================================
@@ -111,6 +116,41 @@ export const restartScriptRequested = createAction<
 export const deleteScriptRequested = createAction<
   [wsId: string, scriptId: string, failureMessage: string]
 >('scripts/deleteScriptRequested');
+
+export const createScriptDefinitionRequested = createAsyncAction<
+  [wsId: string, input: ScriptDefinitionInput],
+  WorkspaceScript
+>('scripts/createScriptDefinition', 'scripts/createScriptDefinitionRequested');
+
+export const updateScriptDefinitionRequested = createAsyncAction<
+  [wsId: string, scriptId: string, updates: ScriptDefinitionUpdate],
+  WorkspaceScript
+>('scripts/updateScriptDefinition', 'scripts/updateScriptDefinitionRequested');
+
+export const removeScriptDefinitionRequested = createAsyncAction<
+  [wsId: string, scriptId: string],
+  void
+>('scripts/removeScriptDefinition', 'scripts/removeScriptDefinitionRequested');
+
+export const detectScriptDefinitionsRequested = createAsyncAction<
+  [wsId: string],
+  ScriptDetectionOutcome
+>('scripts/detectScriptDefinitions', 'scripts/detectScriptDefinitionsRequested');
+
+export const applyScriptDefinitionChangesRequested = createAsyncAction<
+  [wsId: string, changes: ScriptDefinitionChanges],
+  ScriptDetectionOutcome
+>('scripts/applyScriptDefinitionChanges', 'scripts/applyScriptDefinitionChangesRequested');
+
+export const restoreScriptDefinitionsRequested = createAsyncAction<
+  [wsId: string, snapshot: ScriptDefinitionSnapshot],
+  void
+>('scripts/restoreScriptDefinitions', 'scripts/restoreScriptDefinitionsRequested');
+
+export const saveScriptDefinitionsToRepoRequested = createAsyncAction<[wsId: string], void>(
+  'scripts/saveScriptDefinitionsToRepo',
+  'scripts/saveScriptDefinitionsToRepoRequested',
+);
 
 export const editScriptRequested = createAction<[wsId: string, scriptId: string]>(
   'scripts/editScriptRequested',

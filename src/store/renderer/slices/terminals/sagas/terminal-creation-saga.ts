@@ -1,8 +1,9 @@
-import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectFocusedPanelId } from '../../panel-layout/panel-layout-selectors';
 import { openTab } from '../../panel-layout/panel-layout-slice';
 import {
@@ -11,12 +12,59 @@ import {
 } from '../../workspace/workspace-selectors';
 import {
   createPanelTerminalRequested,
+  createOverlayTerminalRequested,
   hydrateTerminalsRequested,
   removeTerminal,
   saveTerminalMetadata,
 } from '../terminals-slice';
 
 const logger = createLogger('TerminalCreationSaga');
+
+function* createOverlayTerminalWorker(
+  action: ReturnType<typeof createOverlayTerminalRequested>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  let settled = false;
+  try {
+    const context =
+      workspaceId === ROOT_WORKSPACE_ID
+        ? ROOT_WORKSPACE_ID
+        : yield* selectWorkspaceActionContext.effect(workspaceId);
+    if (!context) {
+      settled = true;
+      yield* put(action.failure(new Error(m.terminal_adapter_openFailed_error())));
+      return;
+    }
+
+    const result: Awaited<ReturnType<typeof appClient.terminals.create>> = yield* call(
+      [appClient.terminals, appClient.terminals.create],
+      { workspaceId, cols: 80, rows: 24 },
+    );
+    const currentContext =
+      workspaceId === ROOT_WORKSPACE_ID
+        ? ROOT_WORKSPACE_ID
+        : yield* selectWorkspaceActionContext.effect(workspaceId);
+    if (context !== currentContext || !result.success || !result.id) {
+      settled = true;
+      yield* put(action.failure(new Error(result.error ?? m.terminal_adapter_openFailed_error())));
+      return;
+    }
+
+    settled = true;
+    yield* put(action.success(result.id));
+  } catch (error) {
+    settled = true;
+    yield* put(
+      action.failure(
+        error instanceof Error ? error : new Error(m.terminal_adapter_openFailed_error()),
+      ),
+    );
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.terminal_adapter_openFailed_error())));
+    }
+  }
+}
 
 function* createTerminalWorker(
   action: ReturnType<typeof createPanelTerminalRequested>,
@@ -63,5 +111,6 @@ function* createTerminalWorker(
 }
 
 export function* terminalCreationSaga(): SagaGenerator<void> {
+  yield* takeEvery(createOverlayTerminalRequested, createOverlayTerminalWorker);
   yield* takeEvery(createPanelTerminalRequested, createTerminalWorker);
 }

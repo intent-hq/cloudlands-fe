@@ -27,7 +27,7 @@ import {
 import { scriptsOutputSaga } from './scripts-output-saga';
 import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, cancelled, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { m } from '$shared/paraglide/messages.js';
 import { notify } from '$lib/components/patterns/notify';
@@ -42,6 +42,7 @@ import {
 } from '../utils/script-read-context';
 import {
   selectScriptById,
+  selectScriptEntries,
   selectWorkspaceScriptOperations,
   selectScriptDetectionOperation,
 } from '../scripts-selectors';
@@ -52,18 +53,27 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  applyScriptDefinitionChangesRequested,
   clearScriptOperations,
+  createScriptDefinitionRequested,
+  detectScriptDefinitionsRequested,
   deleteScriptRequested,
+  refreshScripts,
   removeScript,
+  removeScriptDefinitionRequested,
   restartScriptRequested,
+  restoreScriptDefinitionsRequested,
+  saveScriptDefinitionsToRepoRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
   scriptReadFinished,
   startScriptRequested,
   stopScriptRequested,
   updateRuntimeState,
+  updateScriptDefinitionRequested,
+  upsertScript,
 } from '../scripts-slice';
-import type { ScriptQuickAction } from '../scripts-types';
+import type { ScriptDetectionOutcome, ScriptQuickAction } from '../scripts-types';
 
 type ScriptOperationRequest = ReturnType<
   | typeof startScriptRequested
@@ -85,6 +95,18 @@ function matchesWorkspaceCleanup(workspaceId: string) {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function failure(error: unknown): Error {
+  return error instanceof Error ? error : new Error(errorMessage(error));
+}
+
+function* scriptAuthority(workspaceId: string, expected?: string): SagaGenerator<string> {
+  const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
+  if (!authority || (expected !== undefined && authority !== expected)) {
+    throw new Error(m.workspace_client_accessChanged_error());
+  }
+  return authority;
 }
 
 function operationFor(action: ScriptOperationRequest): Exclude<ScriptQuickAction, 'edit'> {
@@ -227,6 +249,230 @@ function* clearWorkspaceOperations(
   yield* put(clearScriptOperations(action.payload[0]));
 }
 
+function* createScriptDefinition(
+  action: ReturnType<typeof createScriptDefinitionRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const [workspaceId, input] = action.payload;
+    const authority = yield* scriptAuthority(workspaceId);
+    const result = yield* call([scriptsClient, scriptsClient.create], workspaceId, input);
+    yield* scriptAuthority(workspaceId, authority);
+    if (!result.success || !result.data) throw new Error(result.error ?? 'Script creation failed');
+    yield* put(upsertScript(workspaceId, result.data));
+    yield* put(action.success(result.data));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(failure(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Script creation cancelled')));
+  }
+}
+
+function* updateScriptDefinition(
+  action: ReturnType<typeof updateScriptDefinitionRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const [workspaceId, scriptId, updates] = action.payload;
+    const authority = yield* scriptAuthority(workspaceId);
+    const result = yield* call(
+      [scriptsClient, scriptsClient.update],
+      workspaceId,
+      scriptId,
+      updates,
+    );
+    yield* scriptAuthority(workspaceId, authority);
+    if (!result.success || !result.data) throw new Error(result.error ?? 'Script update failed');
+    yield* put(upsertScript(workspaceId, result.data));
+    yield* put(action.success(result.data));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(failure(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Script update cancelled')));
+  }
+}
+
+function* removeScriptDefinition(
+  action: ReturnType<typeof removeScriptDefinitionRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const [workspaceId, scriptId] = action.payload;
+    const authority = yield* scriptAuthority(workspaceId);
+    const result = yield* call([scriptsClient, scriptsClient.remove], workspaceId, scriptId);
+    yield* scriptAuthority(workspaceId, authority);
+    if (!result.success) throw new Error(result.error ?? 'Script removal failed');
+    yield* put(action.success(undefined as void));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(failure(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Script removal cancelled')));
+  }
+}
+
+function detectionOutcome(result: {
+  detected?: number;
+  added?: number;
+  removed?: number;
+  skippedRunning?: string[];
+  packageManager?: ScriptDetectionOutcome['packageManager'];
+}): ScriptDetectionOutcome {
+  return {
+    detected: result.detected ?? 0,
+    added: result.added ?? 0,
+    updated: 0,
+    removed: result.removed ?? 0,
+    skippedRunning: result.skippedRunning ?? [],
+    ...(result.packageManager ? { packageManager: result.packageManager } : {}),
+  };
+}
+
+function* detectScriptDefinitions(
+  action: ReturnType<typeof detectScriptDefinitionsRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const [workspaceId] = action.payload;
+    const authority = yield* scriptAuthority(workspaceId);
+    const result = yield* call([scriptsClient, scriptsClient.detect], workspaceId);
+    yield* scriptAuthority(workspaceId, authority);
+    if (!result.success) throw new Error(result.error ?? 'Script detection failed');
+    yield* put(refreshScripts(workspaceId));
+    yield* put(action.success(detectionOutcome(result)));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(failure(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Script detection cancelled')));
+  }
+}
+
+function* applyScriptDefinitionChanges(
+  action: ReturnType<typeof applyScriptDefinitionChangesRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const [workspaceId, changes] = action.payload;
+    const authority = yield* scriptAuthority(workspaceId);
+    const entries = yield* selectScriptEntries.effect(workspaceId);
+    const autoDetectedIds = new Set(
+      entries.filter((script) => script.source === 'auto-detected').map((script) => script.id),
+    );
+    const entriesById = new Map(entries.map((script) => [script.id, script]));
+    const skippedRunning = new Set<string>();
+    let added = 0;
+    let updated = 0;
+    let removed = 0;
+
+    for (const scriptId of changes.remove) {
+      const target = entriesById.get(scriptId);
+      if (!target || !autoDetectedIds.has(scriptId)) continue;
+      if (target.runtime?.status === 'running') {
+        skippedRunning.add(target.name);
+        continue;
+      }
+      yield* scriptAuthority(workspaceId, authority);
+      const result = yield* call([scriptsClient, scriptsClient.remove], workspaceId, scriptId);
+      if (result.success) removed += 1;
+    }
+    for (const { id, updates } of changes.update) {
+      const target = entriesById.get(id);
+      if (!target || !autoDetectedIds.has(id)) continue;
+      if (target.runtime?.status === 'running') {
+        skippedRunning.add(target.name);
+        continue;
+      }
+      yield* scriptAuthority(workspaceId, authority);
+      const result = yield* call([scriptsClient, scriptsClient.update], workspaceId, id, updates);
+      if (result.success) updated += 1;
+    }
+    for (const input of changes.add) {
+      yield* scriptAuthority(workspaceId, authority);
+      const result = yield* call([scriptsClient, scriptsClient.create], workspaceId, input);
+      if (result.success && result.data) {
+        added += 1;
+        yield* put(upsertScript(workspaceId, result.data));
+      }
+    }
+    yield* scriptAuthority(workspaceId, authority);
+    yield* put(refreshScripts(workspaceId));
+    yield* put(
+      action.success({
+        detected: changes.add.length,
+        added,
+        updated,
+        removed,
+        skippedRunning: [...skippedRunning],
+      }),
+    );
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(failure(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Applying script changes cancelled')));
+  }
+}
+
+function* restoreScriptDefinitions(
+  action: ReturnType<typeof restoreScriptDefinitionsRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const [workspaceId, snapshot] = action.payload;
+    const authority = yield* scriptAuthority(workspaceId);
+    const result = yield* call(
+      [scriptsClient, scriptsClient.restoreSnapshot],
+      workspaceId,
+      snapshot,
+    );
+    yield* scriptAuthority(workspaceId, authority);
+    if (!result.success) throw new Error(result.error ?? 'Script restore failed');
+    yield* put(refreshScripts(workspaceId));
+    yield* put(action.success(undefined as void));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(failure(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Script restore cancelled')));
+  }
+}
+
+function* saveScriptDefinitionsToRepo(
+  action: ReturnType<typeof saveScriptDefinitionsToRepoRequested>,
+): SagaGenerator<void> {
+  let settled = false;
+  try {
+    const [workspaceId] = action.payload;
+    const authority = yield* scriptAuthority(workspaceId);
+    const result = yield* call([scriptsClient, scriptsClient.saveToRepo], workspaceId);
+    yield* scriptAuthority(workspaceId, authority);
+    if (!result.success) throw new Error(result.error ?? 'Saving scripts failed');
+    yield* put(action.success(undefined as void));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(failure(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Saving scripts cancelled')));
+  }
+}
+
 export function* scriptsOperationSaga(): SagaGenerator<void> {
   yield* all([
     call(scriptsOutputSaga),
@@ -235,6 +481,13 @@ export function* scriptsOperationSaga(): SagaGenerator<void> {
       operationContext,
       runScriptOperation,
     ),
+    takeEvery(createScriptDefinitionRequested, createScriptDefinition),
+    takeEvery(updateScriptDefinitionRequested, updateScriptDefinition),
+    takeEvery(removeScriptDefinitionRequested, removeScriptDefinition),
+    takeEvery(detectScriptDefinitionsRequested, detectScriptDefinitions),
+    takeEvery(applyScriptDefinitionChangesRequested, applyScriptDefinitionChanges),
+    takeEvery(restoreScriptDefinitionsRequested, restoreScriptDefinitions),
+    takeEvery(saveScriptDefinitionsToRepoRequested, saveScriptDefinitionsToRepo),
     takeEvery(workspaceUnmounted, clearWorkspaceOperations),
     takeEvery(workspaceDeleted, clearWorkspaceOperations),
   ]);

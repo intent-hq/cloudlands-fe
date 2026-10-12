@@ -17,12 +17,16 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ScriptWithState } from '$features/scripts/types';
 
 const authority = vi.hoisted(() => ({ current: 'admitted' as string | null }));
+const asyncDefinitionActionHandlers = vi.hoisted(() => ({
+  update: null as ((action: any, complete: (script: unknown) => void) => void) | null,
+}));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActionContext: { select: () => authority.current },
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
+  const { scriptsReducer, editScriptRequested, scriptOperationSucceeded } =
+    await import('$store/renderer/slices/scripts/scripts-slice');
   const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
   let terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
@@ -46,6 +50,22 @@ vi.mock('$store/renderer/store', async () => {
       scriptsState = scriptsReducer(scriptsState, action);
       terminalsState = terminalsReducer(terminalsState, action);
       for (const notify of subscribers) notify();
+      if (action.type === 'scripts/updateScriptDefinitionRequested') {
+        const [workspaceId, scriptId, updates] = action.payload;
+        scriptsState = scriptsReducer(scriptsState, editScriptRequested(workspaceId, scriptId));
+        for (const notify of subscribers) notify();
+        const complete = (script: unknown) => {
+          action.success(script);
+          scriptsState = scriptsReducer(
+            scriptsState,
+            scriptOperationSucceeded(workspaceId, scriptId, 'edit'),
+          );
+          for (const notify of subscribers) notify();
+        };
+        if (asyncDefinitionActionHandlers.update)
+          asyncDefinitionActionHandlers.update(action, complete);
+        else complete({ id: scriptId, workspaceId, ...updates });
+      }
       return action;
     },
     createSelector: (fn: (state: any, ...args: any[]) => any) =>
@@ -228,6 +248,7 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authority.current = 'admitted';
+    asyncDefinitionActionHandlers.update = null;
     vi.mocked(confirm).mockResolvedValue(true);
     (appStore as any).__reset();
   });
@@ -442,6 +463,7 @@ describe('script definition and authority races', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authority.current = 'admitted';
+    asyncDefinitionActionHandlers.update = null;
     vi.mocked(confirm).mockResolvedValue(true);
     (appStore as any).__reset();
     seedWorkspace(WS_A, ['script-1'], 'script-1');
@@ -451,12 +473,11 @@ describe('script definition and authority races', () => {
   });
 
   it.each(['name', 'command'])('blocks deletion throughout a deferred %s save', async (field) => {
-    let finish!: (result: { success: boolean }) => void;
-    vi.mocked(appClient.scripts.create).mockReturnValue(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
+    let finish!: () => void;
+    asyncDefinitionActionHandlers.update = (action, complete) => {
+      const [workspaceId, scriptId, updates] = action.payload;
+      finish = () => complete({ id: scriptId, workspaceId, ...updates });
+    };
     const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
     if (field === 'name') {
       await fireEvent.click(screen.getByTitle('Click to rename script'));
@@ -473,11 +494,13 @@ describe('script definition and authority races', () => {
         ctrlKey: true,
       });
     }
-    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(dispatchedTypes()).toContain('scripts/updateScriptDefinitionRequested'),
+    );
     expect(
       (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    finish({ success: true });
+    finish();
     await waitFor(() =>
       expect(
         (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
@@ -514,27 +537,29 @@ describe('script definition and authority races', () => {
 
   it('rejects a save started while confirmation is open', async () => {
     let accept!: (value: boolean) => void;
-    let finish!: (result: { success: boolean }) => void;
+    let finish!: () => void;
     vi.mocked(confirm).mockReturnValue(
       new Promise((resolve) => {
         accept = resolve;
       }),
     );
-    vi.mocked(appClient.scripts.create).mockReturnValue(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
+    asyncDefinitionActionHandlers.update = (action, complete) => {
+      const [workspaceId, scriptId, updates] = action.payload;
+      finish = () => complete({ id: scriptId, workspaceId, ...updates });
+    };
     const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
     await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
     await fireEvent.click(screen.getByTitle('Click to rename script'));
     const input = view.container.querySelector('[data-edit-script-header-name]')!;
     await fireEvent.input(input, { target: { value: 'Renamed' } });
     await fireEvent.blur(input);
+    await waitFor(() =>
+      expect(dispatchedTypes()).toContain('scripts/updateScriptDefinitionRequested'),
+    );
     accept(true);
     await waitFor(() => expect(notify.error).toHaveBeenCalled());
     expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
-    finish({ success: true });
+    finish();
   });
 
   it('reports missing authority before opening a confirmation', async () => {
