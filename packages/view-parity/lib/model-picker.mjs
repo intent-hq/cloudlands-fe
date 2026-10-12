@@ -135,5 +135,5 @@ export async function openEmptyPanel(page, host) {
   await trigger(host).press('Enter');
   await expect(settingsAction(page)).toBeVisible();
   await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(0);
-  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByRole('dialog').getByRole('searchbox')).toHaveCount(0);
 }
