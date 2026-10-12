@@ -470,6 +470,31 @@ export async function decoded(target, index = 0) {
       ready: true,
       error: null,
     });
+  // Real decoder readiness does not prove that the frame has a rendered area.
+  const samples = [];
+  try {
+    await expect
+      .poll(
+        async () => {
+          const bounds = await target.evaluate((node) => {
+            const { x, y, width, height } = node.getBoundingClientRect();
+            return { x, y, width, height };
+          });
+          samples.push(bounds);
+          return bounds.width > 0 && bounds.height > 0;
+        },
+        { message: 'Decoded video must have positive rendered dimensions' },
+      )
+      .toBe(true);
+  } finally {
+    const info = test.info();
+    const prefix = 'chat-video-rendered-frame-';
+    const sequence = info.attachments.filter((item) => item.name.startsWith(prefix)).length + 1;
+    await info.attach(`${prefix}${sequence}.json`, {
+      body: JSON.stringify({ fixtureIndex: index, samples }, null, 2),
+      contentType: 'application/json',
+    });
+  }
 }
 export async function menuInfo(page, index = 0) {
   const record = videoContract(index);
