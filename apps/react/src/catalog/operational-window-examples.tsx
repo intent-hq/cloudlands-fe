@@ -24,6 +24,7 @@ import {
   type OperationalRowDescriptor,
   type OperationalRowSnapshot,
 } from '$lib/components/chat/operational-row-window';
+import { followBottom, type FollowBottomOptions } from '$lib/utils/smartScroll';
 import { cn } from '@/lib/utils';
 
 type ScrollMode = 'panel' | 'nested' | 'document';
@@ -199,6 +200,28 @@ function Windows({
   const lease = useRef<OperationalPanelLease | null>(null);
   const [snapshot, setSnapshot] = useState<OperationalRowSnapshot | null>(null);
   const [observations, setObservations] = useState<Observation[]>([]);
+  const [following, setFollowing] = useState(false);
+  const bottomFollower = useRef<ReturnType<typeof followBottom> | null>(null);
+  const followOptions = useRef<FollowBottomOptions>({ follow: false });
+  useLayoutEffect(() => {
+    followOptions.current = {
+      enabled: mode !== 'document',
+      follow: following,
+      layoutNeutralBottomAnchor: true,
+      onFollowChange: setFollowing,
+    };
+    bottomFollower.current?.update(followOptions.current);
+  }, [mode, following]);
+  useLayoutEffect(() => {
+    const container = scrollRoot.current;
+    if (!container) return;
+    const action = followBottom(container, followOptions.current);
+    bottomFollower.current = action;
+    return () => {
+      if (bottomFollower.current === action) bottomFollower.current = null;
+      action.destroy();
+    };
+  }, [scrollRoot]);
   useLayoutEffect(() => {
     if (!lifetime) throw new Error('Operational window exercise requires its panel provider.');
     const acquired = lifetime.acquire();
@@ -233,6 +256,7 @@ function Windows({
       <div
         ref={scrollRoot}
         data-testid="operational-panel-scroll"
+        data-following-bottom={following}
         role={mode === 'document' ? undefined : 'region'}
         aria-label={mode === 'document' ? undefined : 'Operational panel native scroll area'}
         tabIndex={mode === 'document' ? undefined : 0}

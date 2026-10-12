@@ -488,6 +488,22 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   // Handle keyboard events for scroll keys
   function handleKeyDown(e: KeyboardEvent) {
+    if (
+      enabled &&
+      !destroyed &&
+      e.key === 'End' &&
+      !e.defaultPrevented &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.shiftKey &&
+      e.target === container &&
+      document.activeElement === container
+    ) {
+      e.preventDefault();
+      follower.followAndScroll();
+      return;
+    }
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
       setFollowing(false);
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
