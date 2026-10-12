@@ -69,10 +69,14 @@ test('chat video V1 selected bytes produce genuine metadata and a decoded previe
   await captureVideo(page, frame(host), 'v1-selected-return-after', info);
 });
 
-test('chat video V2 pointer lightbox exposes real playback and restores focus on close', async ({
+test('chat video V2 functional playback and focus; preplay visual pending', async ({
   page,
   nativeMedia,
 }, info) => {
+  info.annotations.push({
+    type: 'acceptance-pending',
+    description: 'The initial paused lightbox stable-image criterion remains open.',
+  });
   const host = await openVideo(page);
   const file = videoFile();
   await pick(page, host, file);
@@ -98,7 +102,45 @@ test('chat video V2 pointer lightbox exposes real playback and restores focus on
     info,
   );
   await readyForInitialVideoCapture(player, info);
-  await captureVideo(page, surface, 'v2-open-before-play', info);
+  // Functional follow-up only: this observation does not replace or approve the failed visual gate.
+  const geometry = await surface.evaluate((root) => {
+    const rect = (node) => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    return {
+      viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+      root: rect(root),
+      nodes: [...root.querySelectorAll('button,video,svg,[role],[data-chat-video]')].map(
+        (node) => ({
+          tag: node.localName,
+          role: node.getAttribute('role'),
+          name: node.getAttribute('aria-label') || node.getAttribute('alt'),
+          bounds: rect(node),
+        }),
+      ),
+    };
+  });
+  await info.attach('v2-before-native-play-functional-observation.json', {
+    body: JSON.stringify(
+      {
+        geometry,
+        ax: await surface.ariaSnapshot(),
+        preplayVisualCriterion: {
+          status: 'pending',
+          criterion: 'Two identical paused lightbox images with unchanged capture context',
+          functionalPassDoesNotApproveVisualCriterion: true,
+          preservedFailures: [
+            '2026-10-12T05-55-11.443Z-core-Jw195O',
+            '2026-10-12T06-05-55.156Z-core-Z9e0Hw',
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
   // Native Chromium media keyboard handling; never call play(), assign time, or synthesize events.
   await player.press('Space');
   await expect
