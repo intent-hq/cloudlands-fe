@@ -294,11 +294,19 @@ function captureContextChanges(before, after, path = "") {
 
 export async function stableScreenshot(page, entry, onAttempt) {
   const frame = page.locator(entry ? captureSelector(entry) : frameSelector);
+  return stableLocatorScreenshot(page, frame, onAttempt, async () => {
+    if (entry?.kind !== "catalog-fixture")
+      await page.locator('[data-preview-ready="true"][data-preview-stable="true"]').waitFor();
+  });
+}
+
+// Direct mounts supply their real Locator and establish their own readiness.
+// Capture stability and context checks stay shared with catalog screenshots.
+export async function stableLocatorScreenshot(page, frame, onAttempt, beforeAttempt) {
   let previous;
   // Repeated real captures detect moving content without injecting CSS or freezing clocks.
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    if (entry?.kind !== "catalog-fixture")
-      await page.locator('[data-preview-ready="true"][data-preview-stable="true"]').waitFor();
+    await beforeAttempt?.();
     const before = await captureContext(frame);
     let png;
     let after;
