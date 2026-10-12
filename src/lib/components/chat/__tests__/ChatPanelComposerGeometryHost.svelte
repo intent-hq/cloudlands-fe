@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import {
+    createComposerDraftTransport,
+    type ComposerDraftRequest,
+  } from './mocks/composer-draft-transport';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import { AgentStatus, type AgentSession } from '$shared/types';
   import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -10,6 +14,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
+  import { clearDraftCacheForTests } from '../chat-draft-cache';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     createChatDraftFixture,
@@ -53,6 +58,9 @@
     chief = false,
     streaming = false,
     draft = '',
+    restoredDraft,
+    holdDraftRestore = false,
+    onDraftRequest,
     persistedDraft = '',
     attention = null,
     queued = false,
@@ -77,6 +85,9 @@
     chief?: boolean;
     streaming?: boolean;
     draft?: string;
+    restoredDraft?: string;
+    holdDraftRestore?: boolean;
+    onDraftRequest?: (request: ComposerDraftRequest) => void;
     persistedDraft?: string;
     attention?: 'blocker' | 'discussion' | null;
     queued?: boolean;
@@ -129,13 +140,35 @@
   const initialDraft = fixture.persistedDraft || fixture.draft;
   if (initialDraft) draftFixture.seed(workspaceId, agentId, initialDraft);
   const ownsStore = untrack(() => initializeStore);
+  // These fixed fixture IDs are reused across same-page preview/test mounts.
+  clearDraftCacheForTests({ workspaceId, agentId });
+  const drafts = untrack(() =>
+    createComposerDraftTransport(
+      workspaceId,
+      agentId,
+      restoredDraft ?? initialDraft,
+      holdDraftRestore,
+      (request) => {
+        draftRequests = [...draftRequests, request];
+        onDraftRequest?.(request);
+      },
+    ),
+  );
+  const draftTransport = untrack(() =>
+    restoredDraft !== undefined || holdDraftRestore || onDraftRequest
+      ? drafts.transport
+      : draftFixture.client,
+  );
+  const startFixtureSagas = (appStore: Parameters<typeof startChatFixtureSagas>[0]) =>
+    startChatFixtureSagas(appStore, draftTransport);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, {
-        startSagas: (appStore) => startChatFixtureSagas(appStore, draftFixture.client),
-      })
+    ? startRootStoreLifecycle(store, { startSagas: startFixtureSagas })
     : () => {};
-  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store, draftFixture.client);
+  const stopChatSagas = ownsStore ? [] : startFixtureSagas(store);
+  $effect(() => {
+    if (!holdDraftRestore) drafts.releaseRestore();
+  });
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -611,6 +644,8 @@
   onDestroy(() => {
     stopChatSagas.forEach((stop) => stop());
     disposeStore();
+    drafts.dispose();
+    clearDraftCacheForTests({ workspaceId, agentId });
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
     if (previousPrincipal.context && previousPrincipal.snapshot)
