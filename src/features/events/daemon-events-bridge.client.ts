@@ -236,6 +236,7 @@ import {
   refreshWorkspaceMembershipRequested,
   removeWorkspaceEntity,
   updateWorkspaceEntity,
+  workspaceReminderInvalidated,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   closeWorkspaceTabAndNavigateAway,
@@ -2406,7 +2407,7 @@ async function runHydrateMissingWorkspaceEntityFetch(
 }
 
 async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
-  const read = captureWorkspaceReadContext();
+  const read = captureWorkspaceReadContext(workspaceId);
   const key = JSON.stringify([read.key, workspaceId]);
   const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   if (!read.isCurrent()) return;
@@ -2514,7 +2515,7 @@ async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
 ): Promise<void> {
-  const read = captureWorkspaceReadContext();
+  const read = captureWorkspaceReadContext(workspaceId);
   const key = JSON.stringify([read.key, workspaceId]);
   const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   if (!read.isCurrent() || appStore.state.workspace.pendingDeletions[workspaceId]) return;
@@ -2594,7 +2595,7 @@ async function runReconcileWorkspaceAggregatesFetch(
  * Single-flight with one trailing read per burst, scoped to the affected workspace.
  */
 async function reconcileWorkspaceAggregates(workspaceId: string): Promise<void> {
-  const read = captureWorkspaceReadContext();
+  const read = captureWorkspaceReadContext(workspaceId);
   const key = JSON.stringify([read.key, workspaceId]);
   if (appStore.state.workspace.pendingDeletions[workspaceId]) return;
   if (aggregateFetchInFlightByWorkspace.has(key)) {
@@ -2632,7 +2633,10 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (!wireChanges || typeof wireChanges !== 'object') return;
   const raw = wireChanges as Record<string, unknown>;
   // Receipt-free invalidation: every recipient reads its own reminder projection.
-  if (raw.attentionReminder === true) void reconcileWorkspaceAggregates(workspaceId);
+  if (raw.attentionReminder === true) {
+    appStore.dispatch(workspaceReminderInvalidated(workspaceId));
+    void reconcileWorkspaceAggregates(workspaceId);
+  }
   // `mcpServerToggled` (§5.22 per-workspace disable) is a non-column delta —
   // a self-sufficient notification of a workspace-scoped `mcp.servers.toggle`,
   // never a `Workspace` field — so it routes to the mcp-settings slice and is

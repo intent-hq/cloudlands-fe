@@ -45,7 +45,7 @@ const inFlightByWorkspace = new Map<
  * unless you own the dispatch (sagas).
  */
 export function fetchWorkspaceDetail(workspaceId: string): Promise<Workspace | null> {
-  const read = captureWorkspaceReadContext();
+  const read = captureWorkspaceReadContext(workspaceId);
   const key = JSON.stringify([read.key, workspaceId]);
   const pending = inFlightByWorkspace.get(key);
   if (pending?.read.isCurrent()) return pending.promise;
@@ -74,7 +74,7 @@ function storedWorkspace(workspaceId: string): Workspace | undefined {
 }
 
 async function hydrateIntoStore(workspaceId: string): Promise<Workspace | undefined> {
-  const read = captureWorkspaceReadContext();
+  const read = captureWorkspaceReadContext(workspaceId);
   const workspace = await fetchWorkspaceDetail(workspaceId);
   if (workspace && read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId]) {
     appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));

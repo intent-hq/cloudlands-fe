@@ -73,6 +73,8 @@ export type WorkspaceState = {
    * the store.
    */
   detailHydrated: Record<string, true>;
+  attentionReadGeneration: number;
+  attentionReadRevisions: Record<string, number>;
   recency: WorkspaceRecencyState;
 };
 
@@ -93,6 +95,8 @@ export const initialState: WorkspaceState = {
   pendingCreations: {},
   pendingTitleMutations: {},
   detailHydrated: {},
+  attentionReadGeneration: 0,
+  attentionReadRevisions: {},
   recency: defaultWorkspaceRecencyState,
 };
 
@@ -143,6 +147,10 @@ export const setPendingCreation = createAction<[workspace: Workspace]>(
 export const clearPendingCreation = createAction<[wsId: string]>('workspace/clearPendingCreation');
 
 export const resetWorkspaceState = createAction('workspace/resetWorkspaceState');
+
+export const workspaceReminderInvalidated = createAction<[wsId: string]>(
+  'workspace/workspaceReminderInvalidated',
+);
 
 export type WorkspaceEntityUpsertOptions = {
   /**
@@ -526,6 +534,13 @@ function clearWorkspaceAttentionReminders(state: WorkspaceState): WorkspaceState
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
 workspaceReducer.with(principalContextChanged, clearWorkspaceAttentionReminders);
 workspaceReducer.with(backendReconnected, clearWorkspaceAttentionReminders);
+workspaceReducer.with(workspaceReminderInvalidated, (state, { payload: [wsId] }) => ({
+  ...state,
+  attentionReadRevisions: {
+    ...state.attentionReadRevisions,
+    [wsId]: (state.attentionReadRevisions[wsId] ?? 0) + 1,
+  },
+}));
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
   if (state.loading === loading) return state;
   return { ...state, loading };
@@ -862,5 +877,7 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   pendingCreations: {},
   pendingTitleMutations: {},
   detailHydrated: {},
+  attentionReadGeneration: state.attentionReadGeneration + 1,
+  attentionReadRevisions: {},
   recency: defaultWorkspaceRecencyState,
 }));

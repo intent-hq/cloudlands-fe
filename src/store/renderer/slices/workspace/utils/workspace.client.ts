@@ -148,7 +148,7 @@ export class WorkspaceClient {
   private async invoke<T>(channel: string, data?: any): Promise<Result<T, string>> {
     const read =
       channel === WORKSPACE_CHANNELS.LIST || channel === WORKSPACE_CHANNELS.OPEN
-        ? captureWorkspaceReadContext()
+        ? captureWorkspaceReadContext(channel === WORKSPACE_CHANNELS.OPEN ? data?.id : undefined)
         : null;
     try {
       const requestMutationCounter = this.mutationCounter;
@@ -209,7 +209,11 @@ export class WorkspaceClient {
           }
 
           const response = await invokeIpc(channel, serializedData);
-          if (read && !read.isCurrent()) return authorityFailure();
+          if (read && !read.isCurrent()) {
+            if (channel === WORKSPACE_CHANNELS.LIST && read.isAdmitted())
+              return this.invoke<T>(channel, data);
+            return authorityFailure();
+          }
           // Handle both Result and CommandResponse formats
           const result = this.normalizeResponse<T>(response);
 
@@ -237,7 +241,11 @@ export class WorkspaceClient {
           this.pendingRequests.delete(cacheKey);
       }
     } catch (error) {
-      if (read && !read.isCurrent()) return authorityFailure();
+      if (read && !read.isCurrent()) {
+        if (channel === WORKSPACE_CHANNELS.LIST && read.isAdmitted())
+          return this.invoke<T>(channel, data);
+        return authorityFailure();
+      }
       logger.error(`[WorkspaceClient] IPC error for ${channel}:`, error);
       return {
         ok: false,

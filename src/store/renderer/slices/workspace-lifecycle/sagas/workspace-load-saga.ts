@@ -1,5 +1,6 @@
-import type { Task } from 'redux-saga';
+import { buffers, type Task } from 'redux-saga';
 import {
+  actionChannel,
   call,
   cancel,
   delay,
@@ -16,9 +17,14 @@ import {
   loadWorkspacesRequested,
   removeWorkspaceEntity,
   setWorkspaceEntity,
+  workspaceReminderInvalidated,
 } from '../../workspace/workspace-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { closeWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { principalReceived } from '../../principal/principal-slice';
+import { selectPrincipalSnapshot } from '../../principal/principal-selectors';
+import type { StoreState } from '$store/renderer/types';
 import { markWorkspaceNavigationInitialized } from '../../workspace-navigation/workspace-navigation-slice';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -111,7 +117,7 @@ function* hydrateOptionalWorkspaceDetail(
   workspaceId: string,
   openedWorkspace: Workspace,
 ): SagaGenerator<void> {
-  const read = captureWorkspaceReadContext();
+  const read = captureWorkspaceReadContext(workspaceId);
   try {
     const { hydratedWorkspace, invalidated } = yield* race({
       hydratedWorkspace: call([appClient.workspaces, appClient.workspaces.get], workspaceId),
@@ -221,31 +227,64 @@ function* loadWorkspace(
 
 export function* workspaceLoadSaga(): SagaGenerator<void> {
   let active: ActiveWorkspaceLoad | undefined;
-  while (true) {
-    const action = yield* take(workspaceLoadRequested);
-    const workspaceId = action.payload[0];
-    const activeTask = active?.task;
-    if (active && activeTask?.isRunning()) {
-      if (active.workspaceId === workspaceId && active.read.isCurrent()) continue;
-      const stale = active;
-      yield* cancel(activeTask);
-      if (!stale.succeeded) yield* put(workspaceLoadCancelled(stale.workspaceId));
-    }
-
-    const slot: ActiveWorkspaceLoad = {
-      workspaceId,
-      succeeded: false,
-      read: captureWorkspaceReadContext(),
-    };
-    active = slot;
-    const task = yield* fork(function* activeWorkspaceLoad() {
-      try {
-        yield* loadWorkspace(action as ReturnType<typeof workspaceLoadRequested>, slot);
-      } finally {
-        if (active === slot) active = undefined;
+  let latestRead: { workspaceId: string; read: WorkspaceReadContext } | undefined;
+  const triggers = yield* actionChannel(
+    [workspaceLoadRequested, principalReceived, workspaceReminderInvalidated],
+    buffers.expanding(),
+  );
+  try {
+    while (true) {
+      const trigger = yield* take(triggers);
+      let action: ReturnType<typeof workspaceLoadRequested>;
+      if (trigger.type === workspaceLoadRequested.type) {
+        action = trigger as ReturnType<typeof workspaceLoadRequested>;
+      } else {
+        const principal = yield* select(selectPrincipalSnapshot.select);
+        if (!principal) continue;
+        if (
+          trigger.type === principalReceived.type &&
+          principal !== (trigger as ReturnType<typeof principalReceived>).payload[1]
+        )
+          continue;
+        const selectedId = yield* select(selectCurrentWorkspaceTabId.select);
+        if (!selectedId || selectedId === 'new') continue;
+        if (
+          trigger.type === workspaceReminderInvalidated.type &&
+          selectedId !== (trigger as ReturnType<typeof workspaceReminderInvalidated>).payload[0]
+        )
+          continue;
+        if (yield* select((state: StoreState) => state.workspace.pendingDeletions[selectedId]))
+          continue;
+        if (latestRead?.workspaceId === selectedId && latestRead.read.isCurrent()) continue;
+        action = workspaceLoadRequested(selectedId);
       }
-    });
-    slot.task = task;
-    if (!task.isRunning() && active === slot) active = undefined;
+      const workspaceId = action.payload[0];
+      const activeTask = active?.task;
+      if (active && activeTask?.isRunning()) {
+        if (active.workspaceId === workspaceId && active.read.isCurrent()) continue;
+        const stale = active;
+        yield* cancel(activeTask);
+        if (!stale.succeeded) yield* put(workspaceLoadCancelled(stale.workspaceId));
+      }
+
+      const slot: ActiveWorkspaceLoad = {
+        workspaceId,
+        succeeded: false,
+        read: captureWorkspaceReadContext(workspaceId),
+      };
+      latestRead = { workspaceId, read: slot.read };
+      active = slot;
+      const task = yield* fork(function* activeWorkspaceLoad() {
+        try {
+          yield* loadWorkspace(action as ReturnType<typeof workspaceLoadRequested>, slot);
+        } finally {
+          if (active === slot) active = undefined;
+        }
+      });
+      slot.task = task;
+      if (!task.isRunning() && active === slot) active = undefined;
+    }
+  } finally {
+    triggers.close();
   }
 }

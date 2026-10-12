@@ -43,7 +43,14 @@ import {
   selectPrincipalActionContext,
   selectPrincipalConnectionContext,
 } from '$store/renderer/slices/principal/principal-selectors';
-import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import {
+  daemonEventsSubscribed,
+  daemonEventsSubscribing,
+} from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import {
+  openWorkspaceTab,
+  closeWorkspaceTab,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
   selectHudWorkspaceCards,
   selectHudAttentionItems,
@@ -102,6 +109,7 @@ interface AdmissionDetailRead {
   context: string | null;
   status: 'held' | 'passed';
   workspace: Workspace;
+  notFound?: boolean;
 }
 declare global {
   interface Window {
@@ -141,6 +149,17 @@ declare global {
       releaseOpenReply: () => void;
       startOpenRead: () => void;
       startLoadRead: () => void;
+      beginBootLoad: (missing?: boolean) => void;
+      leaveSelectedWorkspace: () => void;
+      selectWorkspace: () => void;
+      bootLoadSnapshot: () => {
+        selectedId: string | null;
+        workspace: Workspace | null;
+        loadState: ReturnType<typeof selectWorkspaceLoadState.select>;
+        principalId: string | null;
+        detailReads: AdmissionDetailRead[];
+        openReplies: AdmissionDetailRead[];
+      };
       openReplies: AdmissionDetailRead[];
       openResults: Array<{ principalId: string; result: Result<Workspace, string> }>;
       addPendingCreation: () => void;
@@ -151,6 +170,7 @@ declare global {
         pendingCreation: Workspace | null;
         listReads: AdmissionListRead[];
         listError: string | null;
+        listLoading: boolean;
         loadState: ReturnType<typeof selectWorkspaceLoadState.select>;
         hudCard: ReturnType<typeof selectHudWorkspaceCards.select>[number] | undefined;
         attentionItems: ReturnType<typeof selectHudAttentionItems.select>;
@@ -189,6 +209,7 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
   let holdOpenReply = false;
   let releaseOpenReply = () => {};
   let stopLoads: (() => void) | null = null;
+  let missingFor: string | null = null;
   const heldLists = new Map<AdmissionListRead, () => void>();
   let holdList = false;
   let failList = false;
@@ -287,6 +308,26 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
       stopLoads ??= store.runSaga(workspaceLoadSaga);
       store.dispatch(workspaceLoadRequested('dismiss-review'));
     },
+    beginBootLoad: (missing = false) => {
+      saved.set('dismiss-review', { ...get() });
+      missingFor = missing ? 'person-b' : null;
+      store.dispatch(daemonEventsSubscribing());
+      store.dispatch(principalContextChanged(null));
+      store.dispatch(removeWorkspaceEntity('dismiss-review'));
+      store.dispatch(openWorkspaceTab('dismiss-review'));
+      stopLoads ??= store.runSaga(workspaceLoadSaga);
+      store.dispatch(workspaceLoadRequested('dismiss-review'));
+    },
+    leaveSelectedWorkspace: () => store.dispatch(closeWorkspaceTab('dismiss-review')),
+    selectWorkspace: () => store.dispatch(openWorkspaceTab('dismiss-review')),
+    bootLoadSnapshot: () => ({
+      selectedId: store.state.tabState.currentTabId,
+      workspace: selectWorkspaceById.select(store.state, 'dismiss-review') ?? null,
+      loadState: selectWorkspaceLoadState.select(store.state, 'dismiss-review'),
+      principalId: store.state.principal.snapshot?.principal.id ?? null,
+      detailReads,
+      openReplies,
+    }),
     changePrincipal: (caller, shouldFail = false) => {
       failList = shouldFail;
       admit(caller);
@@ -351,6 +392,7 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
       pendingCreation: store.state.workspace.pendingCreations['pending-reminder'] ?? null,
       listReads,
       listError: store.state.workspace.error,
+      listLoading: store.state.workspace.loading,
       loadState: selectWorkspaceLoadState.select(store.state, 'dismiss-review'),
       hudCard: selectHudWorkspaceCards
         .select(store.state)
@@ -461,9 +503,9 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
           principalId: caller,
           context: selectPrincipalActionContext.select(store.state),
           status: shouldHold ? 'held' : 'passed',
-          workspaces: initialWorkspaces.map((row) =>
-            projectWorkspace(saved.get(row.id) ?? row, caller),
-          ),
+          workspaces: initialWorkspaces
+            .filter((row) => caller !== missingFor || row.id !== 'dismiss-review')
+            .map((row) => projectWorkspace(saved.get(row.id) ?? row, caller)),
         };
         listReads.push(entry);
         if (shouldHold) {
@@ -494,6 +536,7 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
             context: selectPrincipalActionContext.select(store.state),
             status: shouldHold ? 'held' : 'passed',
             workspace,
+            ...(caller === missingFor ? { notFound: true } : {}),
           };
           detailReads.push(entry);
           if (shouldHold)
@@ -502,6 +545,8 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
             });
           entry.status = 'passed';
         }
+        if (caller === missingFor)
+          return { ok: false, error: { code: 'NOT_FOUND', message: 'Workspace not found' } };
         return {
           ok: true,
           result: {

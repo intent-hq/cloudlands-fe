@@ -202,13 +202,20 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     const request = backendRequest<{ workspaces?: unknown[] }>(
       'workspace.list',
       includeArchived ? { includeArchived: true } : undefined,
-    ).then((result) => {
-      read.assertCurrent();
-      const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
-      return workspaces.map((workspace) =>
-        normalizeWorkspace(workspace as Record<string, unknown>),
-      );
-    });
+    ).then(
+      (result) => {
+        if (!read.isCurrent() && read.isAdmitted()) return this.list(options);
+        read.assertCurrent();
+        const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
+        return workspaces.map((workspace) =>
+          normalizeWorkspace(workspace as Record<string, unknown>),
+        );
+      },
+      (error: unknown) => {
+        if (!read.isCurrent() && read.isAdmitted()) return this.list(options);
+        throw error;
+      },
+    );
     const entry = { read, promise: request };
     this.listRequests.set(key, entry);
     const clearRequest = () => {
@@ -228,7 +235,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    * way, so a rejected read never poisons later ones.
    */
   get(id: string): Promise<Workspace | null> {
-    const read = captureWorkspaceReadContext();
+    const read = captureWorkspaceReadContext(id);
     const key = JSON.stringify([read.key, id]);
     const existing = this.getRequests.get(key);
     if (existing?.read.isCurrent()) return existing.promise;

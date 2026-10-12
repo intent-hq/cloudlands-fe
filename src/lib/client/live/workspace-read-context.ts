@@ -5,6 +5,7 @@ import { BackendError } from './backend-transport-types';
 
 export interface WorkspaceReadContext {
   key: string;
+  isAdmitted: () => boolean;
   isCurrent: () => boolean;
   assertCurrent: () => void;
 }
@@ -53,19 +54,38 @@ function readKey(store: RendererStoreBridge | null): string {
 }
 
 /** Caller-relative workspace reads belong to one store, transport and admission. */
-export function captureWorkspaceReadContext(): WorkspaceReadContext {
+export function captureWorkspaceReadContext(workspaceId?: string): WorkspaceReadContext {
   const store = rendererStore();
   const dispatch = store?.dispatch;
   const transport = resolveBackendTransport();
   const admission = readKey(store);
-  const key = JSON.stringify([identity(store), identity(dispatch), identity(transport), admission]);
-  const isCurrent = () =>
+  const reminderKey = () => {
+    const workspace = store?.state.workspace;
+    return JSON.stringify([
+      workspace?.attentionReadGeneration ?? 0,
+      workspaceId === undefined
+        ? identity(workspace?.attentionReadRevisions)
+        : (workspace?.attentionReadRevisions?.[workspaceId] ?? 0),
+    ]);
+  };
+  const reminder = reminderKey();
+  const key = JSON.stringify([
+    identity(store),
+    identity(dispatch),
+    identity(transport),
+    admission,
+    workspaceId ?? null,
+    reminder,
+  ]);
+  const isAdmitted = () =>
     rendererStore() === store &&
     store?.dispatch === dispatch &&
     resolveBackendTransport() === transport &&
     readKey(store) === admission;
+  const isCurrent = () => isAdmitted() && reminderKey() === reminder;
   return {
     key,
+    isAdmitted,
     isCurrent,
     assertCurrent: () => {
       if (!isCurrent())
