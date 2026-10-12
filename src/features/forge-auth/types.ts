@@ -1,4 +1,4 @@
-import type { GitHubDeviceFlow } from '$features/github-auth/types';
+import type { GitHubDeviceFlow } from '../github-auth/types';
 
 /** Forge providers the daemon's `sourceControl.*` namespace accepts. */
 export type ForgeProvider = 'github' | 'gitlab';

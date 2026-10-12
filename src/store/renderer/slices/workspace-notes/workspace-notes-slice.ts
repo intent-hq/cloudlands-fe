@@ -1,8 +1,8 @@
 import type { Note, NoteVersion, TaskStatus } from '$shared/types';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
-import type { CommentAddParams, CommentRespondParams } from '$lib/client';
-import type { CommentV2 } from '$features/comments/comment-types-v2';
+import type { CommentAddParams, CommentRespondParams } from '../../../../lib/client/app-client';
+import type { CommentV2 } from '../../../../features/comments/comment-types-v2';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
@@ -21,7 +21,7 @@ import type {
   NotePresenceViewer,
   NoteUiRequestState,
 } from './workspace-notes-types';
-import type { LineAttributionData } from '$lib/client';
+import type { LineAttributionData } from '../../../../lib/client/app-client';
 import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
 
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };

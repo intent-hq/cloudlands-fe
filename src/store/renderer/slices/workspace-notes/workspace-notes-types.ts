@@ -1,6 +1,6 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Note, NoteVersion } from '$shared/types';
-import type { LineAttributionData } from '$lib/client';
+import type { LineAttributionData } from '../../../../lib/client/app-client';
 
 export type NoteUiRequestState = {
   consumerId: string;

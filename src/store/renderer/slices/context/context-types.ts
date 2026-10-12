@@ -5,7 +5,7 @@
  */
 
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
-import type { ContextItem } from '$features/context/types';
+import type { ContextItem } from '../../../../features/context/types';
 import type { ContentBlock } from '$shared/types';
 import type { HydratedBlockEntry } from '../chat-state/chat-state-types';
 

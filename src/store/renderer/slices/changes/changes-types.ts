@@ -14,7 +14,7 @@ import type {
   CommitInfo,
   FileListViewMode,
   MainPanelViewType,
-} from '$features/file-tracking/types';
+} from '../../../../features/file-tracking/types';
 
 // Re-export domain types for consumer convenience
 export type { TrackedChange, CommitInfo };

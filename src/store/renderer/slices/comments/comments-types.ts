@@ -5,7 +5,7 @@
  */
 
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
-import type { CommentV2 } from '$features/comments/comment-types-v2';
+import type { CommentV2 } from '../../../../features/comments/comment-types-v2';
 
 export type { CommentV2 };
 

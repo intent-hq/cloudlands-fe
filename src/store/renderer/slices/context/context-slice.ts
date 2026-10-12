@@ -8,7 +8,7 @@ import {
   removeItem as collectionRemoveItem,
   updateItem as collectionUpdateItem,
 } from '@themislib/themis/utils/collections/collection-utils';
-import type { ContextItem } from '$features/context/types';
+import type { ContextItem } from '../../../../features/context/types';
 import type { ContextState, ContextWorkspaceState } from './context-types';
 
 // ============================================================================

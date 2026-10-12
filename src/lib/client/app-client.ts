@@ -30,7 +30,7 @@ import type {
   ScriptArchiveFilter,
   ScriptArchiveResult,
   ScriptRestoreResult,
-} from '$features/scripts/types';
+} from '../../features/scripts/types';
 /**
  * AppClient — the single boundary the renderer uses to reach "the backend".
  *
@@ -64,23 +64,23 @@ import type {
   WorkspaceTask,
   WorkspaceTaskStats,
 } from '$shared/types';
-import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
+import type { CommitInfo, TrackedChange } from '../../features/file-tracking/types';
 import type { WorkspaceEvent } from '$features/events/types';
 import type {
   TaskAgentAssociation,
   TaskAgentAssociationsByTaskKey,
-} from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
-import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
+} from '../../store/renderer/slices/task-agent-associations/task-agent-associations-types';
+import type { TerminalTab } from '../../store/renderer/slices/terminals/terminals-slice';
 import type {
   ScriptRuntimeState,
   ScriptWithState,
   WorkspaceScript,
-} from '$store/renderer/slices/scripts/scripts-types';
-import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
-import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
-import type { AuggieModel } from '$features/auggie/auggie-models.client';
+} from '../../store/renderer/slices/scripts/scripts-types';
+import type { ScriptMode, ScriptPurpose } from '../../features/scripts/types';
+import type { SkillInfo } from '../../store/renderer/slices/skills/skills-types';
+import type { AuggieModel } from '../../features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
-import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
+import type { RecentUrl } from '../../store/renderer/slices/browser/browser-types';
 import type {
   BrowserActionEnvelope,
   BrowserTab,
@@ -89,16 +89,16 @@ import type {
   LiveClient,
 } from '$shared/types/browser-clients';
 
-import type { ReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-types';
-import type { SystemStatusState } from '$store/renderer/slices/system-status/system-status-slice';
-import type { AutoUpdateState } from '$store/renderer/slices/auto-update/auto-update-types';
-import type { CommentV2 } from '$store/renderer/slices/comments/comments-types';
-import type { AuthorType, CommentType } from '$features/comments/comment-types-v2';
+import type { ReleaseNotes } from '../../store/renderer/slices/release-notes/release-notes-types';
+import type { SystemStatusState } from '../../store/renderer/slices/system-status/system-status-slice';
+import type { AutoUpdateState } from '../../store/renderer/slices/auto-update/auto-update-types';
+import type { CommentV2 } from '../../store/renderer/slices/comments/comments-types';
+import type { AuthorType, CommentType } from '../../features/comments/comment-types-v2';
 import type {
   EditableText,
   RestorableSnapshot,
   FileContentEntry,
-} from '$store/renderer/slices/files/files-types';
+} from '../../store/renderer/slices/files/files-types';
 
 // Compatibility until all domain clients consume the neutral types directly.
 import type { MutationResult, SubscriptionHandler, Unsubscribe } from './client-types';
