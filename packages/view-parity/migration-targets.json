@@ -573,6 +573,274 @@
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
       "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units."
+    },
+    "structural-audit-accordion": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/structural-catalog-preview.tsx",
+          "sha256": "2c5673671989d00a0930c9d3700e73b683d3e5ba0826328ff748a30c23dd40ea",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-disclosure.tsx",
+          "sha256": "fc4a2ba2426ef41295d584eb3f4da2d8f14ad7f1bc386f19b71739a063a96504",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": ["packages/view-parity/tests/controls.core.spec.mjs"],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-breadcrumb": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/structural-catalog-preview.tsx",
+          "sha256": "2c5673671989d00a0930c9d3700e73b683d3e5ba0826328ff748a30c23dd40ea",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": [],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-card": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/structural-catalog-preview.tsx",
+          "sha256": "2c5673671989d00a0930c9d3700e73b683d3e5ba0826328ff748a30c23dd40ea",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": [],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-table": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": [
+        "56dd433d25efe90ac4efd594e639194eb4ce2c52",
+        "fb9a9040afb0e408f512290de17292af415a0a13"
+      ],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/structural-catalog-preview.tsx",
+          "sha256": "2c5673671989d00a0930c9d3700e73b683d3e5ba0826328ff748a30c23dd40ea",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": [],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-sheet": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": [
+        "3d32830af5c0034e51e04728a4737738e4796915",
+        "fb9a9040afb0e408f512290de17292af415a0a13"
+      ],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/sheet-catalog-preview.tsx",
+          "sha256": "93970aec7c1dcdd8bbf42c6f15db2b1715e7ab757bb8f28f1fbd57fc0e72c430",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/catalog/menu-focus-examples.tsx",
+          "sha256": "01c7afe1d69ca031f9d4e566a437c0374d7c5a57afc491b76423beb0ce6ffa3d",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": [
+          "packages/view-parity/tests/controls.core.spec.mjs",
+          "packages/view-parity/tests/overlay-focus.core.spec.mjs"
+        ],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-tabs": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/navigation-catalog-preview.tsx",
+          "sha256": "6ca582f53be5137b7f44cb98ae956bc5f1a41c1521fbfd4377f42e2433d7670a",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": [
+          "packages/view-parity/tests/core.spec.mjs",
+          "packages/view-parity/tests/catalog-matrix.core.spec.mjs"
+        ],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-form": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": [
+        "56dd433d25efe90ac4efd594e639194eb4ce2c52",
+        "f4f6547b52608c9e0b74615cff74878cc73f00a5"
+      ],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/pattern-catalog-preview.tsx",
+          "sha256": "e1a994d4f15f01f8cb373ae1e82f31ccd4aeec0de1417bb817cebe70932d1cb2",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "sha256": "9133f8261cd37e8b21293aa0cb0fc1b5ae9ecb723229f5f4a19a499ff57111fc",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/components/patterns/form/auto-save-field.tsx",
+          "sha256": "bdcd881039c9cfcf3fffc78b76b19bdbf6068e6e3b285b17ce01fb1c77a7746b",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": [
+          "packages/view-parity/tests/patterns.core.spec.mjs",
+          "packages/view-parity/tests/patterns.extended.spec.mjs"
+        ],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-screen": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": [
+        "56dd433d25efe90ac4efd594e639194eb4ce2c52",
+        "64c48df7de49a89b8c65e56ac663767c4e885ab9",
+        "f4f6547b52608c9e0b74615cff74878cc73f00a5"
+      ],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/catalog/pattern-catalog-preview.tsx",
+          "sha256": "e1a994d4f15f01f8cb373ae1e82f31ccd4aeec0de1417bb817cebe70932d1cb2",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "sha256": "9133f8261cd37e8b21293aa0cb0fc1b5ae9ecb723229f5f4a19a499ff57111fc",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": ["packages/view-parity/tests/patterns.extended.spec.mjs"],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
+    },
+    "structural-audit-settings": {
+      "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
+      "implementationCommits": [
+        "30fe675e249a66e199eede4486ba98826efd171a",
+        "99654e45d61b5d244095dd9fdb19a45d00f6109d",
+        "b2a51d425f590046a16534832f2823040b11d911",
+        "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
+      ],
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
+      "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
+      "inspectedCallsites": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-preview.tsx",
+          "sha256": "7338b9e179c8a89f4fd93ffd0cd2410c455d975226787b2e2fb9aac5736c4497",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/catalog/pattern-catalog-preview.tsx",
+          "sha256": "e1a994d4f15f01f8cb373ae1e82f31ccd4aeec0de1417bb817cebe70932d1cb2",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/catalog/settings-textarea-consumers-preview.tsx",
+          "sha256": "b701d8b128d305528818e1df0a80e1cccca51c13dd33a40c437251206e835426",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        },
+        {
+          "path": "apps/react/src/catalog/preview-discovery.tsx",
+          "sha256": "b4820bae57ce7987aa90778fecd57d003d5e2e4c1e002e2c536ad80f09ddb9b2",
+          "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
+        }
+      ],
+      "testHandoff": {
+        "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+        "paths": [
+          "packages/view-parity/tests/catalog-matrix.core.spec.mjs",
+          "packages/view-parity/tests/callback.core.spec.mjs"
+        ],
+        "status": "not-run",
+        "scope": "Existing test definitions/consumers are handoff pointers only. Review native cases against named gaps and obtain an independent freeze before execution. No test result or full-state coverage is inferred."
+      }
     }
   },
   "sources": {
@@ -17578,16 +17846,28 @@
     },
     "src/lib/components/patterns/form/FormActions.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-form",
+        "reviewedContract": "Required primary plus optional destructive/secondary/hint and className; density context, ShortcutChip condition and action slot order retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/form/form-actions.tsx",
+          "sha256": "3ead80d7b1480b96368e7d2d98aff8e56f17c4a89fd6e4646afce569fb802db7",
+          "symbols": ["FormActions"],
+          "lastChangedCommit": "f4f6547b52608c9e0b74615cff74878cc73f00a5"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/form/FormField.svelte": {
       "implementation": {
@@ -17649,55 +17929,106 @@
     },
     "src/lib/components/patterns/form/FormHarness.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-form",
+        "reviewedContract": "Compact provider, busy/error fields, Name/Notes controls and destructive/secondary/primary/hint form actions reproduce the fixture body.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/catalog/pattern-catalog-preview.tsx",
+          "sha256": "e1a994d4f15f01f8cb373ae1e82f31ccd4aeec0de1417bb817cebe70932d1cb2",
+          "symbols": ["FormHarness"],
+          "lastChangedCommit": "56dd433d25efe90ac4efd594e639194eb4ce2c52"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source onSubmit callback prop is omitted and replaced by a no-op in the appearance harness. FunctionalExamples/FormExample is separate behavior coverage, not proof this harness API is complete.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/form/FormRow.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-form",
+        "reviewedContract": "Required children and className; source grid container and min-width/wrapping recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/form/form-row.tsx",
+          "sha256": "361fdff3a39cb68d9d9e5bc51c35a6d66f05c54feb3bd5a05e33e5198c6fc20e",
+          "symbols": ["FormRow"],
+          "lastChangedCommit": "f4f6547b52608c9e0b74615cff74878cc73f00a5"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/form/UnsavedIndicator.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-form",
+        "reviewedContract": "status/optional label: idle renders nothing; labeled status vs hidden decoration; saving loader, saved SVG and unsaved/error dot branches retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/form/unsaved-indicator.tsx",
+          "sha256": "bb25a611f485d2d15a33e639b076040bf8b648ba0b138537326361d2b488ffc2",
+          "symbols": ["UnsavedIndicator"],
+          "lastChangedCommit": "f4f6547b52608c9e0b74615cff74878cc73f00a5"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "IntentMarkLoader and announcement/motion dependencies are not accepted here. This status-based form component is distinct from ui/indicators UnsavedIndicator.visible; AutoSaveField is the inspected consumer.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/form/create-form.svelte.ts": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-form",
+        "reviewedContract": "Initial structuredClone snapshot, JSON dirty comparison, sync/async validation/errors, duplicate-submit guard, reset and finally clearing pending state correspond.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/form/use-form.ts",
+          "sha256": "ed7416a7e908fb7831eb5ce8d6110af67fa85f65bc2eee6612404405957138e1",
+          "symbols": ["useForm"],
+          "lastChangedCommit": "f4f6547b52608c9e0b74615cff74878cc73f00a5"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "createForm is renamed useForm; direct mutation of source values becomes explicit setValues/setField. React returned values/errors/submitting are render snapshots, unlike immediate rune-backed getters. Existing mutable consumers need migration; no persistence/domain owner is added.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/form/form.fixtures.ts": {
       "implementation": {
@@ -17969,29 +18300,54 @@
     },
     "src/lib/components/patterns/screen/ScreenFooter.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-screen",
+        "reviewedContract": "Native footer attributes and required primary/optional destructive/secondary/hint slots forwarded into FormActions; source border/inset recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/screen/screen-footer.tsx",
+          "sha256": "753c67f72189847173d08462f5cdf3621b48321491ae9799561757527b421882",
+          "symbols": ["ScreenFooter"],
+          "lastChangedCommit": "f4f6547b52608c9e0b74615cff74878cc73f00a5"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/screen/ScreenHarness.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-screen",
+        "reviewedContract": "Screen, takeover, empty, error/error-danger and loading list/card-grid/form fixture branches retain source content and composition.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/catalog/pattern-catalog-preview.tsx",
+          "sha256": "e1a994d4f15f01f8cb373ae1e82f31ccd4aeec0de1417bb817cebe70932d1cb2",
+          "symbols": ["ScreenHarness"],
+          "lastChangedCommit": "56dd433d25efe90ac4efd594e639194eb4ce2c52"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source onRetry and inset props are absent; retry is a no-op. Target state has no standalone default and is supplied by catalog fixture. These branches are appearance inputs, not complete harness behavior.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/screen/ScreenHeader.svelte": {
       "implementation": {
@@ -18020,16 +18376,29 @@
     },
     "src/lib/components/patterns/screen/TakeoverScreen.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-screen",
+        "reviewedContract": "title/description/counter/leading/actions, primary/secondary/destructive/hint, native Screen ref, three class and attribute bags preserved; inner animated-height node and body-owned scrolling remain composed.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/screen/takeover-screen.tsx",
+          "sha256": "23de5b06f305450e9dd0d94c09e8396c9f77f8cd84686c5f5f9a055cface6a77",
+          "symbols": ["TakeoverScreen"],
+          "lastChangedCommit": "64c48df7de49a89b8c65e56ac663767c4e885ab9"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "useAnimatedHeight, Screen forwarded refs, dynamic growth and scroll/footer containment need independent browser evidence; component body correspondence does not accept motion/dependency closure.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/screen/TakeoverScrollHarness.svelte": {
       "implementation": {
@@ -18085,42 +18454,93 @@
     },
     "src/lib/components/patterns/settings/SettingsControl.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "switch/select/input/number/path/keybinding/action dispatch and label/description/error IDs, disabled and compact mapping; get/set or compatibility subscribe/set shape; native keydown listener keeps currentTarget.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-control.tsx",
+          "sha256": "74fa7ab11e9a703fff9d583e950ce70a6427d8c541a12977acf037e6cececd5e",
+          "symbols": ["SettingsControl"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        },
+        {
+          "path": "apps/react/src/components/patterns/settings/types.ts",
+          "sha256": "62a41707f1d2f85672b0eff9b9b425ff1980cf0eb9b45b589245e510be07a2e6",
+          "symbols": [],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source store contract is structural compatibility only; no Svelte runtime import is introduced. ReactStore signal/callback integration and subscription swaps are not fully verified. Number rendering maps non-number/NaN to empty; native formatting/blur/keyboard and disabled selection need execution.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/SettingsDisclosure.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "label, optional children, flush/muted and class/className aliases; multiple Accordion controls content value and explicit hidden child state.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-disclosure.tsx",
+          "sha256": "fc4a2ba2426ef41295d584eb3f4da2d8f14ad7f1bc386f19b71739a063a96504",
+          "symbols": ["SettingsDisclosure"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Only public barrel export found at the frozen revision; no live React callsite exercises this component. Accordion motion/focus and initial/repeated open behavior remain unverified.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/SettingsFieldRow.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "All source prop roles inspected: IDs, label/htmlFor/activateLabel, descriptionContent/control callbacks, disabled/busy/error/statusTone, compact/controlOnly, search/feature metadata and leading; label focus+click guarded by busy/disabled.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-field-row.tsx",
+          "sha256": "6d6162f04c5d4c2c6381c710cd23870570f46c770e0680f04b35617c0ad8ca88",
+          "symbols": ["SettingsFieldRow"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        },
+        {
+          "path": "apps/react/src/components/patterns/settings/settings.css",
+          "sha256": "4d78abd3d71d33f4b7d247841c3ace7560ae4e36a8bfd9bdeb43682af6e9ed93",
+          "symbols": [],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source p role=status becomes block output with implicit status role. Native composite-label activation, narrow container containment and assistive announcements require execution; string or function descriptions are React adaptations.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/SettingsFieldRowHarness.svelte": {
       "implementation": {
@@ -18137,55 +18557,124 @@
     },
     "src/lib/components/patterns/settings/SettingsForm.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "schema/searchQuery/custom/descriptions/embedded/compact, conditional section+entry filtering, empty-section removal, resolved flags and generated control IDs retained; custom/full-width vs ordinary controls compose canonical rows.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-form.tsx",
+          "sha256": "e66fdcbd6f6d50a12aeb0ec86c26248e4348b55aa9de1c04a3dddd993591a20c",
+          "symbols": ["SettingsForm"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        },
+        {
+          "path": "apps/react/src/components/patterns/settings/schema.ts",
+          "sha256": "efe2dcfa9e9f9cde2b77ccf309335ea585a91024b684d17d6b42337708ac3779",
+          "symbols": [],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        },
+        {
+          "path": "apps/react/src/components/patterns/settings/types.ts",
+          "sha256": "62a41707f1d2f85672b0eff9b9b425ff1980cf0eb9b45b589245e510be07a2e6",
+          "symbols": [],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Resolvable signal dependencies and embedded reconciliation/custom callback lifecycle require real owner/browser verification. Copied schema helper is byte-equivalent source logic but not evidence of domain integration.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/SettingsHarness.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "searchQuery, original local field defaults, ten schema entries, conditional reveal, reset-count action, custom/full-width content, rich description and local sidebar tab selection reproduced; additional formOnly/compact/hiddenTabs/state options.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-preview.tsx",
+          "sha256": "7338b9e179c8a89f4fd93ffd0cd2410c455d975226787b2e2fb9aac5736c4497",
+          "symbols": ["SettingsPreview"],
+          "lastChangedCommit": "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source raw specialist button becomes design-system Button; consumer contracts and state callbacks exist but no fresh native or image evidence was reviewed.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/SettingsPage.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "title/description/schema/search/custom/descriptions/navigation, activeTab/onSelect, agentsNavigation/hiddenTabs, sidebar slots and children override retained; section navigation feeds React SettingsPageShell.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-page.tsx",
+          "sha256": "7da3f530b78c765f9a37c4b38e5056b2a6a527a1b7e5a575485460a80adb9410",
+          "symbols": ["SettingsPage"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        },
+        {
+          "path": "apps/react/src/components/patterns/settings/settings.css",
+          "sha256": "4d78abd3d71d33f4b7d247841c3ace7560ae4e36a8bfd9bdeb43682af6e9ed93",
+          "symbols": [],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Sidebar/shell descendants and actual application navigation/settings persistence are outside this local contract audit; children ReactNode nullish presence differs from source snippet presence.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/SettingsSection.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "id/title/description/busy/error/actions/children plus class/className; conditional title/description/error IDs, unnamed fallback aria-label, alert and content grouping match.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-section.tsx",
+          "sha256": "6a76ef588044ae2aa333a4ea89f6b08d853558cf6f45a304e3ee3c6b08fca846",
+          "symbols": ["SettingsSection"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/SettingsSectionHarness.svelte": {
       "implementation": {
@@ -18202,16 +18691,29 @@
     },
     "src/lib/components/patterns/settings/SettingsTextarea.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "Underlying Textarea props/ref/value and card surface recipe forwarded; React native textarea ref supplies source imperative focus and blur capabilities.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-textarea.tsx",
+          "sha256": "d57b7ceb9dad8dc5ada4de303657eb57ec8a1663ec72680098df75486c837a39",
+          "symbols": ["SettingsTextarea"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source component bind:this focus/blur and bind:value become native ref and controlled callbacks. Full inherited Textarea behavior is not independently accepted here; named control/consumer scenes are separate evidence.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/custom-controls.ts": {
       "implementation": {
@@ -18319,16 +18821,41 @@
     },
     "src/lib/components/patterns/settings/settings-textarea.preview.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "controls state: draft plus input/focus/blur counters, imperative native focus/blur, placeholder/readonly/disabled/ordinary fields. Separate consumers component reproduces save/import/cancel outputs; preview-discovery maps both original state names.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/settings-textarea-preview.tsx",
+          "sha256": "bb3adb05487bbd5860940f5353c48ce0bdd8158aac9c5e69c780f6325f8e53f2",
+          "symbols": ["SettingsTextareaPreview"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        },
+        {
+          "path": "apps/react/src/catalog/settings-textarea-consumers-preview.tsx",
+          "sha256": "b701d8b128d305528818e1df0a80e1cccca51c13dd33a40c437251206e835426",
+          "symbols": [],
+          "lastChangedCommit": "30fe675e249a66e199eede4486ba98826efd171a"
+        },
+        {
+          "path": "apps/react/src/catalog/preview-discovery.tsx",
+          "sha256": "b4820bae57ce7987aa90778fecd57d003d5e2e4c1e002e2c536ad80f09ddb9b2",
+          "symbols": [],
+          "lastChangedCommit": "b2a51d425f590046a16534832f2823040b11d911"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Controls output omits source data-native-ref attribute. Components are separate and state dispatch is owned by preview-discovery. Existing historical textarea image failures remain unchanged; no new visual/native acceptance.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/settings/settings.fixtures.ts": {
       "implementation": {
@@ -18371,16 +18898,35 @@
     },
     "src/lib/components/patterns/settings/use-settings-search.svelte.ts": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-settings",
+        "reviewedContract": "initialQuery plus getter/setter query and matches entry; canonical matching fields and trim/lowercase logic reproduced; adds setQuery.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/patterns/settings/use-settings-search.ts",
+          "sha256": "419214a9357d08ef5346a9f2c199e18dcb8750bb0bfe8b39cd61429c220370e1",
+          "symbols": ["useSettingsSearch"],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        },
+        {
+          "path": "apps/react/src/components/patterns/settings/schema.ts",
+          "sha256": "efe2dcfa9e9f9cde2b77ccf309335ea585a91024b684d17d6b42337708ac3779",
+          "symbols": [],
+          "lastChangedCommit": "99654e45d61b5d244095dd9fdb19a45d00f6109d"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "After setting query, same-render query/matches closures still see the previous React value until rerender, unlike immediate Svelte getter. Only barrel export found; no live React consumer at freeze.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/patterns/state-geometry.ts": {
       "implementation": {
@@ -22290,55 +22836,107 @@
     },
     "src/lib/components/ui/accordion/accordion-content.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-accordion",
+        "reviewedContract": "inset=true; force-mounted content remains aria-hidden/inert when closed; separate inner animated-height node prevents primitive measurement styles from clobbering motion.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/accordion.tsx",
+          "sha256": "0b7316bb82859d4dddcca8236ab6ddca58104a223a8d8d2cd5cc380be3e71c75",
+          "symbols": ["AccordionContent"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Bits-to-Radix inherited API and nested/disabled/no-loop keyboard behavior are not fully audited. Catalog single-value consumer additionally hides closed content with a class, so it cannot independently prove retained-height exit motion or multiple mode.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/accordion/accordion-header.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-accordion",
+        "reviewedContract": "Heading level1..6 default3 and children/native props use a heading inside Radix Header asChild.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/accordion.tsx",
+          "sha256": "0b7316bb82859d4dddcca8236ab6ddca58104a223a8d8d2cd5cc380be3e71c75",
+          "symbols": ["AccordionHeader"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Bits-to-Radix inherited API and nested/disabled/no-loop keyboard behavior are not fully audited. Catalog single-value consumer additionally hides closed content with a class, so it cannot independently prove retained-height exit motion or multiple mode.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/accordion/accordion-item.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-accordion",
+        "reviewedContract": "Required value, disabled and native props delegate to Radix Item; open membership feeds the local content context.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/accordion.tsx",
+          "sha256": "0b7316bb82859d4dddcca8236ab6ddca58104a223a8d8d2cd5cc380be3e71c75",
+          "symbols": ["AccordionItem"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Bits-to-Radix inherited API and nested/disabled/no-loop keyboard behavior are not fully audited. Catalog single-value consumer additionally hides closed content with a class, so it cannot independently prove retained-height exit motion or multiple mode.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/accordion/accordion-trigger.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-accordion",
+        "reviewedContract": "inset=true, size-context density, caller/native button props and exact inline chevron path are retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/accordion.tsx",
+          "sha256": "0b7316bb82859d4dddcca8236ab6ddca58104a223a8d8d2cd5cc380be3e71c75",
+          "symbols": ["AccordionTrigger"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Bits-to-Radix inherited API and nested/disabled/no-loop keyboard behavior are not fully audited. Catalog single-value consumer additionally hides closed content with a class, so it cannot independently prove retained-height exit motion or multiple mode.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/accordion/accordion.fixtures.ts": {
       "implementation": {
@@ -22368,16 +22966,29 @@
     },
     "src/lib/components/ui/accordion/accordion.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-accordion",
+        "reviewedContract": "Single/multiple discriminated value and callbacks, disabled inheritance, default loop=true, controlled/uncontrolled state and collapsible single item.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/accordion.tsx",
+          "sha256": "0b7316bb82859d4dddcca8236ab6ddca58104a223a8d8d2cd5cc380be3e71c75",
+          "symbols": ["Accordion"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Bits-to-Radix inherited API and nested/disabled/no-loop keyboard behavior are not fully audited. Catalog single-value consumer additionally hides closed content with a class, so it cannot independently prove retained-height exit motion or multiple mode.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/accordion/index.ts": {
       "implementation": {
@@ -22562,81 +23173,156 @@
     },
     "src/lib/components/ui/breadcrumb/breadcrumb-ellipsis.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-breadcrumb",
+        "reviewedContract": "Hidden presentation span retains localized ui_breadcrumb_more_label and native props.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/breadcrumb.tsx",
+          "sha256": "27e5aa29eb3f77cd6ff1ad3380762e0435b21e86c40f2b695f879ad23284806d",
+          "symbols": ["BreadcrumbEllipsis"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Default artwork changes from source FontAwesome faEllipsis to Phosphor DotsThreeIcon; no exact visual equivalence is claimed.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/breadcrumb/breadcrumb-item.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-breadcrumb",
+        "reviewedContract": "li semantic container with native props/children and bounded inline item recipe.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/breadcrumb.tsx",
+          "sha256": "27e5aa29eb3f77cd6ff1ad3380762e0435b21e86c40f2b695f879ad23284806d",
+          "symbols": ["BreadcrumbItem"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/breadcrumb/breadcrumb-link.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-breadcrumb",
+        "reviewedContract": "Native anchor branch and asChild boolean are present; namespace alias Link exported.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/breadcrumb.tsx",
+          "sha256": "27e5aa29eb3f77cd6ff1ad3380762e0435b21e86c40f2b695f879ad23284806d",
+          "symbols": ["BreadcrumbLink"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source asChild returns its child unchanged and ignores remaining link props/classes; React Slot.Root merges them into the child. This is a concrete local contract difference; consumer navigation and event merging need review.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/breadcrumb/breadcrumb-list.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-breadcrumb",
+        "reviewedContract": "Ordered-list semantic container, native ol props/children and nonwrapping bounded list recipe.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/breadcrumb.tsx",
+          "sha256": "27e5aa29eb3f77cd6ff1ad3380762e0435b21e86c40f2b695f879ad23284806d",
+          "symbols": ["BreadcrumbList"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/breadcrumb/breadcrumb-page.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-breadcrumb",
+        "reviewedContract": "Current-page span defaults role=link, aria-disabled=true and aria-current=page; caller native props can override each default.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/breadcrumb.tsx",
+          "sha256": "27e5aa29eb3f77cd6ff1ad3380762e0435b21e86c40f2b695f879ad23284806d",
+          "symbols": ["BreadcrumbPage"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/breadcrumb/breadcrumb-separator.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-breadcrumb",
+        "reviewedContract": "Presentation-only hidden li supports custom children and a default directional icon.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/breadcrumb.tsx",
+          "sha256": "27e5aa29eb3f77cd6ff1ad3380762e0435b21e86c40f2b695f879ad23284806d",
+          "symbols": ["BreadcrumbSeparator"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Default artwork changes from source FontAwesome faChevronRight to Phosphor CaretRightIcon. Nullish-child fallback also differs from snippet presence. Exact appearance is unverified.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/breadcrumb/breadcrumb.fixtures.ts": {
       "implementation": {
@@ -22666,16 +23352,28 @@
     },
     "src/lib/components/ui/breadcrumb/breadcrumb.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-breadcrumb",
+        "reviewedContract": "nav with localized ui_breadcrumb_nav_ariaLabel default, caller overrides and children/native nav props.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/breadcrumb.tsx",
+          "sha256": "27e5aa29eb3f77cd6ff1ad3380762e0435b21e86c40f2b695f879ad23284806d",
+          "symbols": ["Breadcrumb"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/breadcrumb/index.ts": {
       "implementation": {
@@ -23239,55 +23937,103 @@
     },
     "src/lib/components/ui/card/card-action.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "Native div ref/props/children; card-action slot and separate header action cell retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["CardAction"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/card-content.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "Native div ref/props/children; flush=false and data-flush condition; canonical shared CARD_CONTENT_INSET_CLASS used unless flush.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["CardContent"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/card-description.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "Native paragraph ref/props/children; card-description slot and wrapping description recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["CardDescription"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/card-footer.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "Native div ref/props/children; footer slot and canonical shared text inset retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["CardFooter"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/card-group-context.ts": {
       "implementation": {
@@ -23304,29 +24050,60 @@
     },
     "src/lib/components/ui/card/card-group.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "orientation/card default, columns floor+clamp, border/none, separated=false, divided/fluidHover=true, selected=-1; context and direct-card MutationObserver registration/cleanup correspond.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["CardGroup"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        },
+        {
+          "path": "apps/react/src/components/ui/card.css",
+          "sha256": "ec6bc29b825812e0df79750e9b3310242e35760242a6960704790a7d7b02051f",
+          "symbols": [],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Replacement/reorder registration differs from source clearing every old item before registering; full hover/selection and observer cleanup remain unverified. Dynamic columns toggle from CardGroupHarness is not in the inspected catalog.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/card-header.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "Native div ref/props/children; canonical shared text inset and action-aware header grid retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["CardHeader"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/card-inset.ts": {
       "implementation": {
@@ -23343,16 +24120,28 @@
     },
     "src/lib/components/ui/card/card-title.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "Native div ref/props/children; card-title slot and wrapping title recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["CardTitle"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/card.fixtures.ts": {
       "implementation": {
@@ -23382,16 +24171,35 @@
     },
     "src/lib/components/ui/card/card.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-card",
+        "reviewedContract": "interactive, level, border, selected, inert, media and native ref/props retained; initial surface uses lazy useState like source untrack; group orientation/outlined policy and media wrapper correspond.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/card.tsx",
+          "sha256": "1148cdf436e5c9e1cee8098d7353d6027636b0ea571e66597cdda8fba1e34c11",
+          "symbols": ["Card"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        },
+        {
+          "path": "apps/react/src/components/ui/card.css",
+          "sha256": "ec6bc29b825812e0df79750e9b3310242e35760242a6960704790a7d7b02051f",
+          "symbols": [],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Group, proximity and descendant surface behavior need integration/motion review; media ReactNode presence is not a Svelte snippet API.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/card/index.ts": {
       "implementation": {
@@ -27221,107 +28029,215 @@
     },
     "src/lib/components/ui/sheet/sheet-close.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "Native ref and close primitive props forwarded with matching data-slot; source Close becomes Radix Close.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetClose"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Inherited Bits primitive props and child composition are not identical React types. Root context, portal/focus scope, outside dismissal, presence and ref lifecycle need independent native coverage; no blanket approval.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet-content.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "side variants/default right, portalProps, forceMount, showCloseButton, closeDisabled, localized closeLabel, native ref and lightbox onInteractOutside preventDefault/callback; body, surface+2 and header/footer inset CSS retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetContent"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        },
+        {
+          "path": "apps/react/src/components/ui/sheet.css",
+          "sha256": "3456284a6879d23713131c6bced937e7760603672e4b98e2d9e33d33a1639ee5",
+          "symbols": [],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "portalProps translates to Radix container/forceMount API; inherited focus/event APIs require consumer adaptation. All-side entry/exit reversal, forced mount, stacked lightbox dismissal and focus/scroll cleanup are not established by this source review.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet-description.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "Description primitive ref/props and source description recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetDescription"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Inherited Bits primitive props and child composition are not identical React types. Root context, portal/focus scope, outside dismissal, presence and ref lifecycle need independent native coverage; no blanket approval.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet-footer.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "Native div ref/props/children, matching data slot and source inset/flex recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetFooter"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet-header.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "Native div ref/props/children, matching data slot and source inset/flex recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetHeader"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet-overlay.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "Root-open/forceMount presence, backdrop transition and forwarded ref/native props implemented with React presence entries.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetOverlay"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Inherited Bits primitive props and child composition are not identical React types. Root context, portal/focus scope, outside dismissal, presence and ref lifecycle need independent native coverage; no blanket approval.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet-title.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "Title primitive ref/props and source title recipe retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetTitle"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Inherited Bits primitive props and child composition are not identical React types. Root context, portal/focus scope, outside dismissal, presence and ref lifecycle need independent native coverage; no blanket approval.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet-trigger.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-sheet",
+        "reviewedContract": "Native ref and trigger primitive props forwarded with matching data-slot; source child snippet becomes Radix asChild composition.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/sheet.tsx",
+          "sha256": "24f081bc263c1655a8e0db7b37701ed3960438d2941f4e70f345af8275939ed7",
+          "symbols": ["SheetTrigger"],
+          "lastChangedCommit": "3d32830af5c0034e51e04728a4737738e4796915"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Inherited Bits primitive props and child composition are not identical React types. Root context, portal/focus scope, outside dismissal, presence and ref lifecycle need independent native coverage; no blanket approval.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/sheet/sheet.fixtures.ts": {
       "implementation": {
@@ -28236,16 +29152,29 @@
     },
     "src/lib/components/ui/table/TableHarness.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Workspace usage table reproduces header, Alpha/42 and selected Beta/84 rows through real Table components. Catalog embeds it beside a separate long-content table.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/catalog/structural-catalog-preview.tsx",
+          "sha256": "2c5673671989d00a0930c9d3700e73b683d3e5ba0826328ff748a30c23dd40ea",
+          "symbols": ["StructuralCatalogPreview table branch"],
+          "lastChangedCommit": "56dd433d25efe90ac4efd594e639194eb4ce2c52"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "The equivalent fixture is a branch requiring componentId/fixture rather than a standalone harness; no per-harness runtime or image acceptance.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/index.ts": {
       "implementation": {
@@ -28262,94 +29191,178 @@
     },
     "src/lib/components/ui/table/table-body.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native tbody semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["TableBody"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/table-caption.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native caption semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["TableCaption"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/table-cell.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native td semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["TableCell"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/table-footer.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native tfoot semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["TableFooter"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/table-head.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native th semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["TableHead"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/table-header.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native thead semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["TableHeader"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/table-row.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native tr semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["TableRow"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/table/table.fixtures.ts": {
       "implementation": {
@@ -28379,16 +29392,28 @@
     },
     "src/lib/components/ui/table/table.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "structural-audit-table",
+        "reviewedContract": "Native table in independent horizontal-overflow container semantics, matching data slot, source recipe, children, native attributes/events and ref forwarding through React ComponentProps; all source namespace aliases retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/table.tsx",
+          "sha256": "b783f56a8faa611baaffebc3f6908a49e81977a09cef573b5a509c4063a684d4",
+          "symbols": ["Table"],
+          "lastChangedCommit": "fb9a9040afb0e408f512290de17292af415a0a13"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/tabs/TabsHarness.svelte": {
       "implementation": {
@@ -28431,68 +29456,145 @@
     },
     "src/lib/components/ui/tabs/tabs-content.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-tabs",
+        "reviewedContract": "Required value and children/native content props pass to Radix Content with source mt-3 recipe.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/tabs.tsx",
+          "sha256": "409d22a78efa0be8ab1233e7393dd01eed988b2229f6ec305e725588496aea31",
+          "symbols": ["TabsContent"],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Bits-to-Radix inherited content mount/focus semantics not fully reviewed; missing namespace Content alias is documented at root.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/tabs/tabs-indicator-motion.svelte.ts": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-tabs",
+        "reviewedContract": "Four moderate-tier springs initialize top/left/width/height; retarget uses instant reduced-motion preference and subscriptions clean up/destroy on unmount.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/choice-highlight.tsx",
+          "sha256": "12969bda8c1e38e64a07519bd0259163ee15b005a369f1d34e71d57021395af7",
+          "symbols": ["TabsIndicator layout effects"],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Standalone createTabsIndicatorSprings/retargetTabsIndicator exports and explicit instant parameter are folded into private React effects. Function-level API migration and motion timing are not equivalent by source alone.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/tabs/tabs-indicator.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-tabs",
+        "reviewedContract": "First selected rectangle is selected by ChoiceHighlight and passed to private TabsIndicator; exact transform/width/height writes, hidden decorative node and source tokens retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/choice-highlight.tsx",
+          "sha256": "12969bda8c1e38e64a07519bd0259163ee15b005a369f1d34e71d57021395af7",
+          "symbols": ["TabsIndicator / ChoiceHighlight"],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source public store/selectedIndexes input becomes private rect input; selection registration is a different owner. Motion and observer cleanup need execution evidence.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/tabs/tabs-list.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-tabs",
+        "reviewedContract": "List ref and loop context, variant layout and ChoiceHighlight binding to role=tab/data-state=active; horizontal/vertical axis preserved.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/tabs.tsx",
+          "sha256": "409d22a78efa0be8ab1233e7393dd01eed988b2229f6ec305e725588496aea31",
+          "symbols": ["TabsList"],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        },
+        {
+          "path": "apps/react/src/components/ui/choice-highlight.tsx",
+          "sha256": "12969bda8c1e38e64a07519bd0259163ee15b005a369f1d34e71d57021395af7",
+          "symbols": [],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "ChoiceGroupState allocation/update/register is replaced with DOM discovery and MutationObserver. Disabled, nested, reordered and live-orientation geometry/selection behavior is not fully reviewed.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/tabs/tabs-trigger.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-tabs",
+        "reviewedContract": "value, disabled plus root-disabled inheritance, size/variant and selected/proximity states retained; focus activation moves into ChoiceHighlight focusin listener.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/tabs.tsx",
+          "sha256": "409d22a78efa0be8ab1233e7393dd01eed988b2229f6ec305e725588496aea31",
+          "symbols": ["TabsTrigger"],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        },
+        {
+          "path": "apps/react/src/components/ui/choice-highlight.tsx",
+          "sha256": "12969bda8c1e38e64a07519bd0259163ee15b005a369f1d34e71d57021395af7",
+          "symbols": [],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Source ChoiceGroupState disabled-item registration/filtering is not explicitly represented by ChoiceHighlight selector; keyboard/proximity semantics and callback ordering require native review.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/tabs/tabs.fixtures.ts": {
       "implementation": {
@@ -28522,16 +29624,29 @@
     },
     "src/lib/components/ui/tabs/tabs.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "partial",
+        "reviewId": "structural-audit-tabs",
+        "reviewedContract": "value/onValueChange, orientation, activationMode via primitive props; loop/disabled, variant default/subtle/underline and size context retained.",
+        "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/components/ui/tabs.tsx",
+          "sha256": "409d22a78efa0be8ab1233e7393dd01eed988b2229f6ec305e725588496aea31",
+          "symbols": ["Tabs"],
+          "lastChangedCommit": "c0f315b807a61b68b6b82235884949f4257dd616"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Target exports only Tabs/TabsList/TabsTrigger/TabsContent; source Root/List/Trigger/Content aliases and exported TabsVariant type are absent. React callers use named imports. Controlled/uncontrolled, manual activation and orientation/loop behavior remain native handoff.",
+        "Static local correspondence only; class/snippet/event/ref syntax is adapted to React className/ReactNode/camelCase callbacks/native refs. No current functional, native, visual or product-route acceptance is established."
+      ]
     },
     "src/lib/components/ui/text-entry-focus.preview.svelte": {
       "implementation": {
@@ -36827,5 +37942,121 @@
         "agent-avatar.core.spec.mjs::agent avatar: state changes retain the image node and its single accessible name"
       ]
     }
-  }
+  },
+  "boundedAudits": [
+    {
+      "id": "structural-component-mappings-cd729",
+      "taskNoteId": "81e847c7-8d0e-4e1c-9370-1ed09111958f",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+      "legacyLedgerCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254",
+      "reviewedAt": "2026-10-12T01:53:49.428819+00:00",
+      "method": "Read original source bodies/APIs/barrels and frozen React target bodies with explicit consumers; hash all new target blobs at cd729 and prove byte identity at legacy ac68 for status-tool compatibility. No blanket rehash or historical-review refresh. Only previously unmapped source records are updated; original109 view and5 supporting mappings and all cases/receipts remain unchanged.",
+      "counts": {
+        "addedMappings": 61,
+        "addedSvelteComponents": 58,
+        "addedSvelteReactivityModules": 3,
+        "addedStatuses": {
+          "partial": 37,
+          "implemented": 24
+        },
+        "views": {
+          "unmapped": 1260,
+          "partial": 142,
+          "implemented": 28
+        },
+        "support": {
+          "unmapped": 455,
+          "implemented": 1,
+          "partial": 4
+        }
+      },
+      "sourcePaths": [
+        "src/lib/components/patterns/form/FormActions.svelte",
+        "src/lib/components/patterns/form/FormHarness.svelte",
+        "src/lib/components/patterns/form/FormRow.svelte",
+        "src/lib/components/patterns/form/UnsavedIndicator.svelte",
+        "src/lib/components/patterns/form/create-form.svelte.ts",
+        "src/lib/components/patterns/screen/ScreenFooter.svelte",
+        "src/lib/components/patterns/screen/ScreenHarness.svelte",
+        "src/lib/components/patterns/screen/TakeoverScreen.svelte",
+        "src/lib/components/patterns/settings/SettingsControl.svelte",
+        "src/lib/components/patterns/settings/SettingsDisclosure.svelte",
+        "src/lib/components/patterns/settings/SettingsFieldRow.svelte",
+        "src/lib/components/patterns/settings/SettingsForm.svelte",
+        "src/lib/components/patterns/settings/SettingsHarness.svelte",
+        "src/lib/components/patterns/settings/SettingsPage.svelte",
+        "src/lib/components/patterns/settings/SettingsSection.svelte",
+        "src/lib/components/patterns/settings/SettingsTextarea.svelte",
+        "src/lib/components/patterns/settings/settings-textarea.preview.svelte",
+        "src/lib/components/patterns/settings/use-settings-search.svelte.ts",
+        "src/lib/components/ui/accordion/accordion-content.svelte",
+        "src/lib/components/ui/accordion/accordion-header.svelte",
+        "src/lib/components/ui/accordion/accordion-item.svelte",
+        "src/lib/components/ui/accordion/accordion-trigger.svelte",
+        "src/lib/components/ui/accordion/accordion.svelte",
+        "src/lib/components/ui/breadcrumb/breadcrumb-ellipsis.svelte",
+        "src/lib/components/ui/breadcrumb/breadcrumb-item.svelte",
+        "src/lib/components/ui/breadcrumb/breadcrumb-link.svelte",
+        "src/lib/components/ui/breadcrumb/breadcrumb-list.svelte",
+        "src/lib/components/ui/breadcrumb/breadcrumb-page.svelte",
+        "src/lib/components/ui/breadcrumb/breadcrumb-separator.svelte",
+        "src/lib/components/ui/breadcrumb/breadcrumb.svelte",
+        "src/lib/components/ui/card/card-action.svelte",
+        "src/lib/components/ui/card/card-content.svelte",
+        "src/lib/components/ui/card/card-description.svelte",
+        "src/lib/components/ui/card/card-footer.svelte",
+        "src/lib/components/ui/card/card-group.svelte",
+        "src/lib/components/ui/card/card-header.svelte",
+        "src/lib/components/ui/card/card-title.svelte",
+        "src/lib/components/ui/card/card.svelte",
+        "src/lib/components/ui/sheet/sheet-close.svelte",
+        "src/lib/components/ui/sheet/sheet-content.svelte",
+        "src/lib/components/ui/sheet/sheet-description.svelte",
+        "src/lib/components/ui/sheet/sheet-footer.svelte",
+        "src/lib/components/ui/sheet/sheet-header.svelte",
+        "src/lib/components/ui/sheet/sheet-overlay.svelte",
+        "src/lib/components/ui/sheet/sheet-title.svelte",
+        "src/lib/components/ui/sheet/sheet-trigger.svelte",
+        "src/lib/components/ui/table/TableHarness.svelte",
+        "src/lib/components/ui/table/table-body.svelte",
+        "src/lib/components/ui/table/table-caption.svelte",
+        "src/lib/components/ui/table/table-cell.svelte",
+        "src/lib/components/ui/table/table-footer.svelte",
+        "src/lib/components/ui/table/table-head.svelte",
+        "src/lib/components/ui/table/table-header.svelte",
+        "src/lib/components/ui/table/table-row.svelte",
+        "src/lib/components/ui/table/table.svelte",
+        "src/lib/components/ui/tabs/tabs-content.svelte",
+        "src/lib/components/ui/tabs/tabs-indicator-motion.svelte.ts",
+        "src/lib/components/ui/tabs/tabs-indicator.svelte",
+        "src/lib/components/ui/tabs/tabs-list.svelte",
+        "src/lib/components/ui/tabs/tabs-trigger.svelte",
+        "src/lib/components/ui/tabs/tabs.svelte"
+      ],
+      "inspectedButUnmapped": {
+        "src/lib/components/ui/accordion/AccordionHarness.svelte": "Catalog has a fixed single-value example; source multiple prop and first/second panels are not faithfully ported, and its hidden class masks content motion.",
+        "src/lib/components/ui/breadcrumb/BreadcrumbHarness.svelte": "Catalog links/current label and outer bound differ; original project-path fixture is not mapped solely from similar composition.",
+        "src/lib/components/ui/card/CardHarness.svelte": "Catalog shows inert/flush/pressed samples but lacks source interactive activation counter/callback and long-title fixture.",
+        "src/lib/components/ui/card/CardGroupHarness.svelte": "Catalog groups have fixed columns; source Change layout control toggles columns and has no equivalent fixture.",
+        "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte": "Combined patterns/menu/dialog/sheet view switch and exact source composition have no complete corresponding React harness in this scope.",
+        "src/lib/components/ui/sheet/SheetHarness.svelte": "Catalog right/left sheets are different fixtures; original longContent rows and destructive callback counter are absent.",
+        "src/lib/components/ui/tabs/TabsHarness.svelte": "Catalog default/subtle groups do not expose original subtle/compact props and source panel fixture together.",
+        "src/lib/components/patterns/form/AutoSaveFieldHarness.svelte": "Functional AutosaveExample is a different consumer; original value/onSave harness API and 20/50 debounce/flash inputs are not directly ported.",
+        "src/lib/components/patterns/screen/TakeoverScrollHarness.svelte": "Functional TakeoverExample toggles one/40 paragraphs and extra callbacks, not original count prop and row fixture.",
+        "src/lib/components/patterns/settings/SettingsFieldRowHarness.svelte": "Other row fixtures exist, but exact disabled+busy+compact volume/error control body is not mapped.",
+        "src/lib/components/patterns/settings/SettingsSectionHarness.svelte": "Other section fixtures exist, but exact notifications busy/error/actions composition is not mapped."
+      },
+      "limits": [
+        "No browser, app runtime, service, build, install or new test execution. Native/product/visual acceptance remain separate.",
+        "All source states and framework-specific APIs are not presumed equivalent from filenames, catalog state labels or existence.",
+        "The three new .svelte.ts mappings are reactivity modules, not components. Denominator stays1380 components plus50 reactivity modules=1430.",
+        "Existing historical failures and cutoff-specific limits remain unedited, including avatar, rows, Mermaid and textarea failures; later reports in70e are not imported by this audit.",
+        "The ledger status command validates old global audit hashes at ac68 and requested targets at cd729. Legacy target drift is reported rather than silently rewritten.",
+        "Direct targets and selected callsites are hashed, not a complete transitive runtime closure. No Svelte runtime or shared state owner was added or edited.",
+        "This internal unreleased inventory audit has no released assistant-app-guide impact."
+      ]
+    }
+  ]
 }
