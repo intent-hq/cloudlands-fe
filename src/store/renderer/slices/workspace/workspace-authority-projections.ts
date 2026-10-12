@@ -121,3 +121,21 @@ export const getWorkspacePermissionContext = (
 
 export const getWorkspaceDeletionTokens = (state: WorkspaceAuthorityProjectionState) =>
   state.workspace.deletionTokens;
+
+/** workspace.update collaborator fields from the frozen daemon capability contract. */
+export const getWorkspaceUpdateContext = (
+  state: WorkspaceAuthorityProjectionState,
+  wsId: string,
+  fields: string[],
+): string | null => {
+  const context = getWorkspaceParticipationContext(state, wsId);
+  if (!context) return null;
+  // workspace.update has a scoped owner/manager gate, independently of the
+  // host-execution gate on scripts, terminals and direct lifecycle methods.
+  if (getWorkspaceManagementVisible(state, wsId)) return context;
+  return fields.every((field) =>
+    ['id', 'title', 'tags', 'statusMessage', 'statusImageAssetId'].includes(field),
+  )
+    ? context
+    : null;
+};

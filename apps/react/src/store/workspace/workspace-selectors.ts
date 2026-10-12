@@ -30,3 +30,7 @@ export const selectWorkspacePermissionContext = store.createSelector(
 export const selectWorkspaceDeletionTokens = store.createSelector(
   authority.getWorkspaceDeletionTokens,
 );
+
+export const selectWorkspaceUpdateContext = store.createSelector(
+  authority.getWorkspaceUpdateContext,
+);

@@ -185,11 +185,6 @@ export const selectWorkspaceManagementDenied = store.createSelector(
   authority.getWorkspaceManagementDenied,
 );
 
-/** Existing owner controls remain ordinary UI; member management is an experimental surface. */
-const selectWorkspaceManagementVisible = store.createSelector(
-  authority.getWorkspaceManagementVisible,
-);
-
 /** Compatibility name for existing workspace-management consumers. */
 export const selectIsWorkspaceCollaborator = store.createSelector(
   authority.getIsWorkspaceCollaborator,
@@ -791,18 +786,7 @@ export const selectWorkspacePermissionContext = store.createSelector(
 export const selectWorkspaceUpdateContext = store.createSelector<
   [wsId: string, fields: string[]],
   string | null
->((state, wsId, fields) => {
-  const context = selectWorkspaceParticipationContext.select(state, wsId);
-  if (!context) return null;
-  // workspace.update has a scoped owner/manager gate, independently of the
-  // host-execution gate on scripts, terminals and direct lifecycle methods.
-  if (selectWorkspaceManagementVisible.select(state, wsId)) return context;
-  return fields.every((field) =>
-    ['id', 'title', 'tags', 'statusMessage', 'statusImageAssetId'].includes(field),
-  )
-    ? context
-    : null;
-});
+>(authority.getWorkspaceUpdateContext);
 
 export const selectWorkspaceDeletionTokens = store.createSelector(
   authority.getWorkspaceDeletionTokens,
