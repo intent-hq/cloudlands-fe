@@ -6,6 +6,246 @@ const observedReasons = [
   { id: 'agent:question', revision: 'question-1' },
 ];
 
+for (const surface of ['home', 'sidebar'] as const) {
+  for (const refresh of ['delayed', 'failed'] as const) {
+    test(
+      surface + ' discards another person’s dismissal while their list is ' + refresh,
+      async ({ mount, page }, testInfo) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+        await page.evaluate(() => document.documentElement.classList.remove('dark'));
+        const component = await mount(Preview, {
+          props: { sidebar: surface === 'sidebar', admissions: true },
+        });
+        const row =
+          surface === 'home'
+            ? component.getByRole('option', { name: 'Review onboarding' })
+            : component.locator('[data-workspace-card-trigger]');
+        const status =
+          surface === 'home'
+            ? row.locator('[data-home-status]')
+            : component.locator('[data-workspace-status]');
+        const attribute = surface === 'home' ? 'data-home-status' : 'data-workspace-status';
+        const pending = surface === 'home' && refresh === 'delayed';
+        await row.focus();
+        await page.keyboard.press('Shift+F10');
+        await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+        await expect(status).toHaveAttribute(attribute, surface === 'home' ? 'idle' : 'waiting');
+        if (pending) await page.evaluate(() => window.__homeDismiss!.addPendingCreation());
+        const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+        expect(before.workspace.attentionReminder?.dismissed).toBe(true);
+        expect(before.hudCard?.stateKey).toBe('idle');
+        expect(
+          before.tabStatus?.categories.some((item) => item.category === 'review') ?? false,
+        ).toBe(false);
+        await testInfo.attach(surface + '-account-before', {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        });
+        await page.evaluate(
+          (fail) => window.__homeDismiss!.changePrincipal('person-b', fail),
+          refresh === 'failed',
+        );
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                window
+                  .__homeDismiss!.admissionSnapshot()
+                  .listReads.filter((read) => read.status === 'held').length,
+            ),
+          )
+          .toBeGreaterThan(0);
+        await expect(status).toHaveAttribute(
+          attribute,
+          surface === 'home' ? 'needs-you' : 'needs_attention',
+        );
+        const held = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+        expect(held.principalId).toBe('person-b');
+        expect(held.context).not.toBe(before.context);
+        expect(held.workspace.attentionReminder).toBeUndefined();
+        expect(held.hudCard).toMatchObject({ stateKey: 'wait', attention: 'review_required' });
+        expect(held.attentionItems.length).toBeGreaterThan(0);
+        expect(held.tabStatus?.categories.map((item) => item.category)).toEqual(
+          expect.arrayContaining(['review', 'needs_input']),
+        );
+        expect(held.workspace).toMatchObject({
+          id: before.workspace.id,
+          title: before.workspace.title,
+          displayStatus: 'needs_attention',
+          attention: 'review_required',
+          createdAt: before.workspace.createdAt,
+          updatedAt: before.workspace.updatedAt,
+        });
+        if (surface === 'home') {
+          await expect(
+            component
+              .locator('[data-home-status-filters]')
+              .getByRole('button', { name: /Needs you/ }),
+          ).toContainText(pending ? '5' : '4');
+          await expect(
+            component.getByRole('option', { name: 'Ready to merge' }).locator('[data-home-status]'),
+          ).toHaveAttribute('data-home-status', 'pr-ready');
+        }
+        if (pending) expect(held.pendingCreation?.attentionReminder).toBeUndefined();
+        await testInfo.attach(surface + '-account-after', {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        });
+        await page.evaluate(() => window.__homeDismiss!.releaseList());
+        let failed;
+        if (refresh === 'failed') {
+          await expect
+            .poll(() => page.evaluate(() => window.__homeDismiss!.admissionSnapshot().listError))
+            .toContain('Workspace list unavailable');
+          failed = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+          expect(failed.workspace.attentionReminder).toBeUndefined();
+          await expect(status).toHaveAttribute(
+            attribute,
+            surface === 'home' ? 'needs-you' : 'needs_attention',
+          );
+          await page.evaluate(() => window.__homeDismiss!.refreshAdmission());
+        }
+        await expect
+          .poll(() =>
+            page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.dismissed),
+          )
+          .toBe(false);
+        const fresh = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+        if (pending) {
+          expect(fresh.pendingCreation?.attentionReminder).toBeUndefined();
+          await expect(
+            component.getByRole('option', { name: 'Pending review' }).locator('[data-home-status]'),
+          ).toHaveAttribute('data-home-status', 'needs-you');
+        }
+        await row.focus();
+        await page.keyboard.press('Shift+F10');
+        await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+        await expect(status).toHaveAttribute(attribute, surface === 'home' ? 'idle' : 'waiting');
+        const after = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+        expect(after.workspace.attentionReminder?.dismissed).toBe(true);
+        await testInfo.attach(surface + '-account-' + refresh + '-proof', {
+          body: JSON.stringify({ before, held, failed, fresh, after }, null, 2),
+          contentType: 'application/json',
+        });
+      },
+    );
+  }
+
+  test(
+    surface + ' restores the same person’s saved dismissal after reconnect admission',
+    async ({ mount, page }, testInfo) => {
+      const component = await mount(Preview, {
+        props: { sidebar: surface === 'sidebar', admissions: true },
+      });
+      const row =
+        surface === 'home'
+          ? component.getByRole('option', { name: 'Review onboarding' })
+          : component.locator('[data-workspace-card-trigger]');
+      const status =
+        surface === 'home'
+          ? row.locator('[data-home-status]')
+          : component.locator('[data-workspace-status]');
+      const attribute = surface === 'home' ? 'data-home-status' : 'data-workspace-status';
+      await row.focus();
+      await page.keyboard.press('Shift+F10');
+      await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+      await expect(status).toHaveAttribute(attribute, surface === 'home' ? 'idle' : 'waiting');
+      const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      await page.evaluate(() => window.__homeDismiss!.reconnect());
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window
+                .__homeDismiss!.admissionSnapshot()
+                .listReads.filter((read) => read.status === 'held').length,
+          ),
+        )
+        .toBeGreaterThan(0);
+      await expect(status).toHaveAttribute(
+        attribute,
+        surface === 'home' ? 'needs-you' : 'needs_attention',
+      );
+      const held = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      expect(held.workspace.attentionReminder).toBeUndefined();
+      expect(held.principalId).toBe(before.principalId);
+      expect(held.context).not.toBe(before.context);
+      await page.evaluate(() => window.__homeDismiss!.releaseList());
+      await expect(status).toHaveAttribute(attribute, surface === 'home' ? 'idle' : 'waiting');
+      const after = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      expect(after.workspace.attentionReminder?.dismissed).toBe(true);
+      expect(after.hudCard?.stateKey).toBe('idle');
+      expect(after.tabStatus?.categories.some((item) => item.category === 'review') ?? false).toBe(
+        false,
+      );
+      await testInfo.attach(surface + '-reconnect-person-proof', {
+        body: JSON.stringify({ before, held, after }, null, 2),
+        contentType: 'application/json',
+      });
+    },
+  );
+
+  test(
+    surface + ' ignores an old person’s dismissal response after new admission',
+    async ({ mount, page }, testInfo) => {
+      const component = await mount(Preview, {
+        props: { sidebar: surface === 'sidebar', admissions: true },
+      });
+      const row =
+        surface === 'home'
+          ? component.getByRole('option', { name: 'Review onboarding' })
+          : component.locator('[data-workspace-card-trigger]');
+      const status =
+        surface === 'home'
+          ? row.locator('[data-home-status]')
+          : component.locator('[data-workspace-status]');
+      const attribute = surface === 'home' ? 'data-home-status' : 'data-workspace-status';
+      await row.focus();
+      await page.keyboard.press('Shift+F10');
+      await page.evaluate(() => window.__homeDismiss!.holdNextResponse());
+      await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+      await expect.poll(() => page.evaluate(() => window.__homeDismiss!.calls.length)).toBe(1);
+      const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      await page.evaluate(() => window.__homeDismiss!.changePrincipal('person-b'));
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window
+                .__homeDismiss!.admissionSnapshot()
+                .listReads.filter((read) => read.status === 'held').length,
+          ),
+        )
+        .toBeGreaterThan(0);
+      await page.evaluate(() => window.__homeDismiss!.release());
+      await expect.poll(() => page.evaluate(() => window.__homeDismiss!.responses.length)).toBe(1);
+      await expect(status).toHaveAttribute(
+        attribute,
+        surface === 'home' ? 'needs-you' : 'needs_attention',
+      );
+      const afterReply = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      expect(afterReply.workspace.attentionReminder).toBeUndefined();
+      expect(afterReply.hudCard?.stateKey).toBe('wait');
+      await page.evaluate(() => window.__homeDismiss!.releaseList());
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.dismissed),
+        )
+        .toBe(false);
+      await expect(status).toHaveAttribute(
+        attribute,
+        surface === 'home' ? 'needs-you' : 'needs_attention',
+      );
+      const afterList = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+      await testInfo.attach(surface + '-old-person-reply-proof', {
+        body: JSON.stringify({ before, afterReply, afterList }, null, 2),
+        contentType: 'application/json',
+      });
+    },
+  );
+}
+
 test('Board dismissal keeps selected details and focus when the card moves', async ({
   mount,
   page,

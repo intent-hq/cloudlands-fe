@@ -4,6 +4,7 @@
     sidebar?: boolean;
     collaborator?: boolean;
     micro?: boolean;
+    admissions?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'home-dismiss',
@@ -24,8 +25,13 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { startHomeDismissPreview } from './home-preview-lifecycle';
   import { setupHomeMicroPreview } from './home-micro-preview-fixture';
-  let { sidebar = false, collaborator = false, micro = false }: Props = $props();
-  const dispose = startHomeDismissPreview(collaborator);
+  let {
+    sidebar = false,
+    collaborator = false,
+    micro = false,
+    admissions = false,
+  }: Props = $props();
+  const dispose = startHomeDismissPreview(collaborator, admissions);
   const microFixture = untrack(() => (micro ? setupHomeMicroPreview(true) : null));
   const workspace$ = selectWorkspaceById('dismiss-review');
   onDestroy(() => {

@@ -1,13 +1,18 @@
 import type { PullRequestInfo, Workspace, WorkspaceDiffSummary } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { principalContextChanged } from '../principal/principal-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
   getItem,
+  getItems,
   type Collection,
   removeItem,
   replaceItem,
@@ -492,11 +497,35 @@ function getWorkspaceById(
   return wsId ? getItem(collection, wsId as Workspace['id']) : undefined;
 }
 
+function clearWorkspaceAttentionReminders(state: WorkspaceState): WorkspaceState {
+  const clear = (workspace: Workspace): Workspace =>
+    workspace.attentionReminder === undefined
+      ? workspace
+      : { ...workspace, attentionReminder: undefined };
+  const previous = getItems(state.workspaces);
+  const next = previous.map(clear);
+  const changed = next.some((workspace, index) => workspace !== previous[index]);
+  const pending = Object.entries(state.pendingCreations).map(
+    ([id, workspace]) => [id, clear(workspace)] as const,
+  );
+  const pendingChanged = pending.some(
+    ([id, workspace]) => workspace !== state.pendingCreations[id],
+  );
+  if (!changed && !pendingChanged) return state;
+  return {
+    ...state,
+    workspaces: changed ? createCollection('id', next) : state.workspaces,
+    pendingCreations: pendingChanged ? Object.fromEntries(pending) : state.pendingCreations,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
+workspaceReducer.with(principalContextChanged, clearWorkspaceAttentionReminders);
+workspaceReducer.with(backendReconnected, clearWorkspaceAttentionReminders);
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
   if (state.loading === loading) return state;
   return { ...state, loading };

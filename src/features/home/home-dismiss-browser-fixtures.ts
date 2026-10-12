@@ -1,5 +1,6 @@
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import {
   WorkspaceStatus,
   type Workspace,
@@ -11,6 +12,8 @@ import { store } from '$store/renderer/store';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   replaceWorkspaceList,
+  loadWorkspacesRequested,
+  setPendingCreation,
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
@@ -18,6 +21,22 @@ import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
 import { resetHomeWorkspaceView } from './home-workspaces-slice';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { workspaceOperationsSaga } from '$store/renderer/slices/workspace-operations/sagas/workspace-operations-saga';
+import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalConnectionContext,
+} from '$store/renderer/slices/principal/principal-selectors';
+import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import {
+  selectHudWorkspaceCards,
+  selectHudAttentionItems,
+  selectWorkspaceTabStatuses,
+} from '$store/renderer/slices/hud/hud-selectors';
 
 const observedReasons = [
   { id: 'workspace:review', revision: 'review-1' },
@@ -60,6 +79,12 @@ interface DismissCall {
   method: string;
   params: { workspaceId: string; reasons: AttentionReminderReason[] };
 }
+interface AdmissionListRead {
+  principalId: string;
+  context: string | null;
+  status: 'held' | 'passed' | 'failed';
+  workspaces?: Workspace[];
+}
 declare global {
   interface Window {
     __homeDismiss?: {
@@ -78,23 +103,38 @@ declare global {
       snapshot: () => Workspace;
       setStatus: (status: 'blocked' | 'failed' | 'in_progress') => void;
       setActivity: (activity: 'idle' | 'agent_running') => void;
+      changePrincipal: (principalId: string, failList?: boolean) => void;
+      reconnect: () => void;
+      releaseList: () => void;
+      refreshAdmission: () => void;
+      addPendingCreation: () => void;
+      admissionSnapshot: () => {
+        principalId: string | null;
+        context: string | null;
+        workspace: Workspace;
+        pendingCreation: Workspace | null;
+        listReads: AdmissionListRead[];
+        listError: string | null;
+        hudCard: ReturnType<typeof selectHudWorkspaceCards.select>[number] | undefined;
+        attentionItems: ReturnType<typeof selectHudAttentionItems.select>;
+        tabStatus: ReturnType<typeof selectWorkspaceTabStatuses.select>[string] | undefined;
+      };
     };
   }
 }
 
-export function setupHomeDismissFixtures(collaborator = false) {
+export function setupHomeDismissFixtures(collaborator = false, admissions = false) {
   const previous = window.electronAPI;
   if (!previous) throw new Error('Home preview bridge is unavailable');
   admitLegacyPrincipal(collaborator ? 'guest' : 'owner');
+  const originalPrincipal = store.state.principal.snapshot!;
+  let principalId = originalPrincipal.principal.id;
+  const initialWorkspaces = dismissalWorkspaces.map((workspace) => ({
+    ...workspace,
+    myRole: collaborator ? ('collaborator' as const) : ('owner' as const),
+  }));
   store.dispatch(resetHomeWorkspaceView());
-  store.dispatch(
-    replaceWorkspaceList(
-      dismissalWorkspaces.map((workspace) => ({
-        ...workspace,
-        myRole: collaborator ? 'collaborator' : 'owner',
-      })),
-    ),
-  );
+  store.dispatch(replaceWorkspaceList(initialWorkspaces));
   store.dispatch(setWorkspaceHasLoaded(true));
   store.dispatch(setRepos([]));
   const calls: DismissCall[] = [];
@@ -102,6 +142,10 @@ export function setupHomeDismissFixtures(collaborator = false) {
   const reads: string[] = [];
   const saved = new Map<string, Workspace>();
   const acknowledged = new Map<string, AttentionReminderReason[]>();
+  const listReads: AdmissionListRead[] = [];
+  let holdList = false;
+  let failList = false;
+  let releaseList = () => {};
   let hold = false,
     fail = false,
     holdResponse = false;
@@ -116,8 +160,14 @@ export function setupHomeDismissFixtures(collaborator = false) {
     if (!reminder) throw new Error(`Missing reminder projection: ${workspace.id}`);
     return reminder;
   };
-  const projectReminder = (workspace: Workspace, reasons: AttentionReminderReason[]) => {
-    const receipt = acknowledged.get(workspace.id) ?? [];
+  const receiptKey = (workspaceId: string, caller = principalId) =>
+    JSON.stringify([caller, workspaceId]);
+  const projectReminder = (
+    workspace: Workspace,
+    reasons: AttentionReminderReason[],
+    caller = principalId,
+  ) => {
+    const receipt = acknowledged.get(receiptKey(workspace.id, caller)) ?? [];
     const dismissed = reasons.every((reason) =>
       receipt.some((pair) => pair.id === reason.id && pair.revision === reason.revision),
     );
@@ -131,11 +181,70 @@ export function setupHomeDismissFixtures(collaborator = false) {
         : ('needs_attention' as const),
     };
   };
+  const projectWorkspace = (workspace: Workspace, caller = principalId): Workspace =>
+    workspace.displayStatus === 'needs_attention' && workspace.attentionReminder
+      ? {
+          ...workspace,
+          attentionReminder: projectReminder(
+            workspace,
+            workspace.attentionReminder.reasons,
+            caller,
+          ),
+        }
+      : workspace;
   const patch = (workspace: Workspace) => store.dispatch(setWorkspaceEntity(workspace));
+  const admit = (caller: string, reconnect = false) => {
+    principalId = caller;
+    holdList = true;
+    if (reconnect) store.dispatch(backendReconnected());
+    store.dispatch(daemonEventsSubscribed());
+    const context = selectPrincipalConnectionContext.select(store.state)!;
+    store.dispatch(principalContextChanged(context));
+    store.dispatch(
+      principalReceived(
+        { context, invalidation: 0, presentationVersion: 0 },
+        { ...originalPrincipal, principal: { ...originalPrincipal.principal, id: caller } },
+      ),
+    );
+    store.dispatch(loadWorkspacesRequested());
+  };
   window.__homeDismiss = {
     calls,
     responses,
     reads,
+    changePrincipal: (caller, shouldFail = false) => {
+      failList = shouldFail;
+      admit(caller);
+    },
+    reconnect: () => admit(principalId, true),
+    releaseList: () => releaseList(),
+    refreshAdmission: () => {
+      failList = false;
+      store.dispatch(loadWorkspacesRequested());
+    },
+    addPendingCreation: () =>
+      store.dispatch(
+        setPendingCreation({
+          ...get(),
+          id: WorkspaceId('pending-reminder'),
+          title: 'Pending review',
+        }),
+      ),
+    admissionSnapshot: () => ({
+      principalId: store.state.principal.snapshot?.principal.id ?? null,
+      context: selectPrincipalActionContext.select(store.state),
+      workspace: get(),
+      pendingCreation: store.state.workspace.pendingCreations['pending-reminder'] ?? null,
+      listReads,
+      listError: store.state.workspace.error,
+      hudCard: selectHudWorkspaceCards
+        .select(store.state)
+        .find((card) => card.workspaceId === get().id),
+      attentionItems: selectHudAttentionItems
+        .select(store.state)
+        .filter((item) => item.workspaceId === get().id),
+      tabStatus: selectWorkspaceTabStatuses.select(store.state)[get().id],
+    }),
     unchangedEvents: () => {
       routeDaemonEventsNotification('events.event', {
         type: 'workspace:displayStatus-changed',
@@ -224,6 +333,30 @@ export function setupHomeDismissFixtures(collaborator = false) {
     ...previous,
     invoke: async (channel, payload) => {
       const request = payload as { method?: string; params?: DismissCall['params'] };
+      const caller = principalId;
+      if (admissions && channel === WORKSPACE_CHANNELS.LIST) {
+        const entry: AdmissionListRead = {
+          principalId: caller,
+          context: selectPrincipalActionContext.select(store.state),
+          status: 'held',
+        };
+        listReads.push(entry);
+        if (holdList) {
+          holdList = false;
+          await new Promise<void>((resolve) => {
+            releaseList = resolve;
+          });
+        }
+        if (failList) {
+          entry.status = 'failed';
+          return { ok: false, error: 'Workspace list unavailable' };
+        }
+        entry.status = 'passed';
+        entry.workspaces = initialWorkspaces.map((row) =>
+          projectWorkspace(saved.get(row.id) ?? row, caller),
+        );
+        return { ok: true, data: entry.workspaces };
+      }
       if (channel === IPC_CHANNELS.BACKEND.REQUEST && request?.method === 'workspace.get') {
         const params = request.params;
         if (!params) throw new Error('Missing workspace.get parameters');
@@ -231,7 +364,10 @@ export function setupHomeDismissFixtures(collaborator = false) {
         return {
           ok: true,
           result: {
-            workspace: saved.get(params.workspaceId) ?? get(params.workspaceId),
+            workspace: projectWorkspace(
+              saved.get(params.workspaceId) ?? get(params.workspaceId),
+              caller,
+            ),
           },
         };
       }
@@ -255,7 +391,8 @@ export function setupHomeDismissFixtures(collaborator = false) {
         return { ok: false, error: { code: 'DISMISS_REJECTED', message: 'Dismiss unavailable' } };
       const current = saved.get(params.workspaceId) ?? get(params.workspaceId);
       const reasons = reminderOf(current).reasons;
-      const receipt = [...(acknowledged.get(current.id) ?? [])];
+      const key = receiptKey(current.id, caller);
+      const receipt = [...(acknowledged.get(key) ?? [])];
       for (const reason of reasons) {
         if (
           params.reasons.some(
@@ -265,10 +402,10 @@ export function setupHomeDismissFixtures(collaborator = false) {
         )
           receipt.push({ ...reason });
       }
-      acknowledged.set(current.id, receipt);
+      acknowledged.set(key, receipt);
       const workspace: Workspace = {
         ...current,
-        attentionReminder: projectReminder(current, reasons),
+        attentionReminder: projectReminder(current, reasons, caller),
       };
       saved.set(workspace.id, workspace);
       if (holdResponse) {
@@ -282,8 +419,11 @@ export function setupHomeDismissFixtures(collaborator = false) {
     },
   };
   const stopSaga = store.runSaga(workspaceOperationsSaga);
+  const stopReads = admissions ? store.runSaga(lifecycleReadSaga) : null;
   return () => {
+    stopReads?.();
     stopSaga();
+    releaseList();
     release();
     window.electronAPI = previous;
     delete window.__homeDismiss;

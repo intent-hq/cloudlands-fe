@@ -43,6 +43,6 @@ export function startHomePreview(startSagas: () => Array<() => void>) {
   return () => stops.forEach((stop) => stop());
 }
 
-export function startHomeDismissPreview(collaborator: boolean) {
-  return startHomePreviewFixtures(() => [setupHomeDismissFixtures(collaborator)]);
+export function startHomeDismissPreview(collaborator: boolean, admissions = false) {
+  return startHomePreviewFixtures(() => [setupHomeDismissFixtures(collaborator, admissions)]);
 }
