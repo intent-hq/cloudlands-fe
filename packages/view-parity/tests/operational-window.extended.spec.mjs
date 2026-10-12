@@ -396,6 +396,115 @@ test('operational-window OW9 actual content growth reflows at fixed width', asyn
     });
     await activate(primary, row);
     await assertRetained();
+    const finalControl = button(row.node, `Observe ${row.label}`);
+    await expect(finalControl).toBeFocused();
+    await sameNode(row.node, old);
+    const readFinalFrame = () =>
+      primary.scroll.evaluate((root) => {
+        const { left, top, right, bottom, width, height } = root.getBoundingClientRect();
+        const documentRoot = document.scrollingElement;
+        if (!documentRoot) throw new Error('A native document scroll root is required');
+        const documentY = scrollY;
+        const maximum = documentRoot.scrollHeight - documentRoot.clientHeight;
+        const requestedCenterDelta = (top + bottom - innerHeight) / 2;
+        const delta = Math.min(Math.max(requestedCenterDelta, -documentY), maximum - documentY);
+        const point = { x: left / 2, y: innerHeight / 2 };
+        const hit = document.elementFromPoint(point.x, point.y);
+        let documentWheel = Boolean(hit && point.x > 0 && !root.contains(hit));
+        const hitPath = [];
+        for (let node = hit; node && node !== document.documentElement; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          hitPath.push({
+            tag: node.tagName.toLowerCase(),
+            testId: node.getAttribute('data-testid'),
+            overflowY: style.overflowY,
+            clientHeight: node.clientHeight,
+            scrollHeight: node.scrollHeight,
+          });
+          if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight)
+            documentWheel = false;
+        }
+        return {
+          bounds: { left, top, right, bottom, width, height },
+          viewport: { width: innerWidth, height: innerHeight },
+          rootTop: root.scrollTop,
+          document: {
+            x: scrollX,
+            y: documentY,
+            maximum,
+            height: documentRoot.clientHeight,
+            total: documentRoot.scrollHeight,
+          },
+          point,
+          documentWheel,
+          hitPath,
+          requestedCenterDelta,
+          delta,
+          contained:
+            width > 0 &&
+            height > 0 &&
+            left >= 0 &&
+            top >= 0 &&
+            right <= innerWidth &&
+            bottom <= innerHeight,
+        };
+      });
+    const finalBefore = await readFinalFrame();
+    await info.attach('OW9-final-framing-plan.json', {
+      body: JSON.stringify(finalBefore, null, 2),
+      contentType: 'application/json',
+    });
+    expect(finalBefore.bounds.width).toBeGreaterThan(0);
+    expect(finalBefore.bounds.height).toBeGreaterThan(0);
+    expect(finalBefore.bounds.height).toBeLessThanOrEqual(finalBefore.viewport.height);
+    expect(finalBefore.bounds.left).toBeGreaterThanOrEqual(0);
+    expect(finalBefore.bounds.right).toBeLessThanOrEqual(finalBefore.viewport.width);
+    if (!finalBefore.contained) {
+      expect(finalBefore.documentWheel).toBe(true);
+      expect(Math.abs(finalBefore.delta)).toBeGreaterThan(0);
+      expect(Math.abs(finalBefore.delta)).toBeLessThanOrEqual(finalBefore.viewport.height);
+      expect(finalBefore.bounds.top - finalBefore.delta).toBeGreaterThanOrEqual(0);
+      expect(finalBefore.bounds.bottom - finalBefore.delta).toBeLessThanOrEqual(
+        finalBefore.viewport.height,
+      );
+      expect(finalBefore.document.y + finalBefore.delta).toBeGreaterThanOrEqual(0);
+      expect(finalBefore.document.y + finalBefore.delta).toBeLessThanOrEqual(
+        finalBefore.document.maximum,
+      );
+      await observeNativeScroll(
+        page.locator('html'),
+        primary.scroll,
+        info,
+        'OW9-final-framing',
+        async (read) => {
+          await page.mouse.move(finalBefore.point.x, finalBefore.point.y);
+          await page.mouse.wheel(0, finalBefore.delta);
+          await expect.poll(async () => (await readFinalFrame()).contained).toBe(true);
+          const receipt = await read();
+          const wheels = receipt.events.filter((event) => event.type === 'wheel');
+          expect(wheels).toHaveLength(1);
+          expect(wheels[0]).toMatchObject({
+            trusted: true,
+            targetInside: true,
+            sameCurrentTarget: true,
+            delta: { x: 0, y: finalBefore.delta, mode: 0 },
+          });
+          expect(receipt.current.document.y).not.toBe(finalBefore.document.y);
+          expect(receipt.current.active).toEqual(receipt.armed.state.active);
+        },
+      );
+    }
+    const finalAfter = await readFinalFrame();
+    await info.attach('OW9-final-framing-geometry.json', {
+      body: JSON.stringify({ before: finalBefore, after: finalAfter }, null, 2),
+      contentType: 'application/json',
+    });
+    expect(finalAfter.contained).toBe(true);
+    expect(finalAfter.rootTop).toBe(finalBefore.rootTop);
+    expect(finalAfter.document.x).toBe(finalBefore.document.x);
+    await expect(finalControl).toBeFocused();
+    await sameNode(row.node, old);
+    await assertRetained();
     await capture(page, primary, 'OW9-after', info);
     // Fixed-width growth and an admitted physical row are the complete claim.
     // This does not establish width-cache invalidation or uninterrupted reader
