@@ -352,7 +352,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');
-    expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
+    expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(3);
+    // Recovery keeps the existing queue controls close even in a tall panel.
+    expect(panel).toContain("isCompactMode || recoveryAtEnd ? 'mb-2' : 'mb-16'");
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable;"');
     expect(message).toContain('class="absolute right-1 z-10');

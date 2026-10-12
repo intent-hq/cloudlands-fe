@@ -4,7 +4,7 @@
  *
  * Post-#729, replies carry no anchor/anchorText on the wire — they anchor
  * through their thread root via threadId/parentId. Two paths still diverged:
- * 1. The legacy loadComments path synthesized a point/range anchor for every
+ * 1. The former legacy load path synthesized a point/range anchor for every
  *    comment, replies included (comment-manager-v2 → convertBackendCommentToV2).
  * 2. replyToComment cloned the parent's anchor/anchorText/anchorContext onto
  *    the optimistic reply, so its shape flipped when the daemon refetch
@@ -12,13 +12,23 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const storeControl = vi.hoisted(() => ({ reset: () => {} }));
+const { storeControl, loadNoteCommentsMock, respondToCommentRequestedMock } = vi.hoisted(() => ({
+  storeControl: { reset: () => {} },
+  loadNoteCommentsMock: vi.fn(),
+  respondToCommentRequestedMock: vi.fn(),
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const { commentsReducer, initialState } = await vi.importActual<
-    typeof import('$store/renderer/slices/comments/comments-slice')
-  >('$store/renderer/slices/comments/comments-slice');
+  const {
+    addCommentAction,
+    commentLoadFinished,
+    commentsReducer,
+    initialState,
+    replaceNoteCommentsAction,
+  } = await vi.importActual<typeof import('$store/renderer/slices/comments/comments-slice')>(
+    '$store/renderer/slices/comments/comments-slice',
+  );
   let state = { comments: initialState };
   storeControl.reset = () => {
     state = { comments: initialState };
@@ -30,7 +40,43 @@ vi.mock('$store/renderer/store', async () => {
     },
   });
   const mockStore = {
-    dispatch: (action: unknown) => {
+    dispatch: (action: {
+      asyncActionType?: string;
+      type?: string;
+      payload?: unknown[];
+      success?: (value: unknown) => unknown;
+      failure?: (error: unknown) => unknown;
+    }) => {
+      if (action.asyncActionType === 'comments/loadRequested') {
+        const [consumerId, requestId, workspaceId, noteId] = action.payload as [
+          string,
+          string,
+          string,
+          string,
+        ];
+        state = { comments: commentsReducer(state.comments, action as never) };
+        return Promise.resolve(loadNoteCommentsMock(workspaceId, noteId)).then((comments) => {
+          const current = state.comments.loadsByConsumer.map[consumerId];
+          if (current?.requestId !== requestId) return comments;
+          state = {
+            comments: commentsReducer(
+              commentsReducer(
+                state.comments,
+                replaceNoteCommentsAction(workspaceId, noteId, comments),
+              ),
+              commentLoadFinished(consumerId, requestId, workspaceId, 'test-authority'),
+            ),
+          };
+          return comments;
+        });
+      }
+      if (action.asyncActionType === 'workspaceNotes/respondToCommentRequested') {
+        const [noteId, optimistic, params] = action.payload as [string, any, any];
+        state = { comments: commentsReducer(state.comments, addCommentAction(optimistic)) };
+        const promise = Promise.resolve(respondToCommentRequestedMock(noteId, optimistic, params));
+        void promise.then(action.success, action.failure);
+        return promise;
+      }
       state = { comments: commentsReducer(state.comments, action as never) };
       return action;
     },
@@ -54,22 +100,9 @@ vi.mock('$store/renderer/store', async () => {
   return createStoreMockModule(mockStore);
 });
 
-vi.mock('../comment-loader', () => ({
-  loadComments: vi.fn(async () => []),
-  resolveComment: vi.fn(async () => true),
-}));
-
-vi.mock('../comments-write-service', () => ({
-  addComment: vi.fn(async () => true),
-  respondToComment: vi.fn(async () => true),
-  deleteComment: vi.fn(async () => ({ existed: true, success: true })),
-}));
-
 import type { Editor } from '@tiptap/core';
 import { CommentManagerV2 } from '../comment-manager-v2';
 import { convertBackendCommentToV2 } from '../comment-types-v2';
-import * as commentLoader from '../comment-loader';
-import * as commentsWrite from '../comments-write-service';
 import { store as appStore } from '$store/renderer/store';
 import {
   addCommentAction,
@@ -81,7 +114,7 @@ import {
 } from '$store/renderer/slices/comments/comments-selectors';
 import { createTestEditor, destroyTestEditor } from './test-utils';
 
-/** Minimal legacy `NoteComment` rows as `comment-loader` returns them. */
+/** Minimal legacy `NoteComment` rows returned by the compatibility client. */
 const now = new Date().toISOString();
 const backendRoot = {
   id: 'root-1',
@@ -109,6 +142,13 @@ const backendReply = {
   updatedAt: now,
   parentId: 'root-1',
 };
+const loadedRoot = (workspaceId = 'test-workspace') => ({
+  ...backendRoot,
+  workspaceId,
+  anchor: { type: 'point' as const, pointId: 'root-1:point' },
+  anchorText: 'Hello world',
+});
+const loadedReply = (workspaceId = 'test-workspace') => ({ ...backendReply, workspaceId });
 
 describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
   let editor: Editor;
@@ -117,6 +157,8 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storeControl.reset();
+    loadNoteCommentsMock.mockResolvedValue([]);
+    respondToCommentRequestedMock.mockResolvedValue(true);
     editor = createTestEditor('Hello world');
     manager = new CommentManagerV2('test-workspace', 'spec');
   });
@@ -127,8 +169,8 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
   });
 
   it('late hydration preserves a concurrently opened workspace with the same note ID', async () => {
-    let release!: (comments: (typeof backendRoot)[]) => void;
-    vi.mocked(commentLoader.loadComments).mockReturnValueOnce(
+    let release!: (comments: ReturnType<typeof loadedRoot>[]) => void;
+    loadNoteCommentsMock.mockReturnValueOnce(
       new Promise((resolve) => {
         release = resolve;
       }),
@@ -136,12 +178,12 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
     const pending = manager.initialize(editor);
     const otherEditor = createTestEditor('Hello world');
     const otherManager = new CommentManagerV2('other-workspace', 'spec');
-    vi.mocked(commentLoader.loadComments).mockResolvedValueOnce([
-      { ...backendRoot, id: 'other-root', threadId: 'other-thread' },
+    loadNoteCommentsMock.mockResolvedValueOnce([
+      { ...loadedRoot('other-workspace'), id: 'other-root', threadId: 'other-thread' },
     ]);
     try {
       await otherManager.initialize(otherEditor);
-      release([backendRoot]);
+      release([loadedRoot()]);
       await pending;
       expect(selectCommentById.select(appStore.state, 'other-root')?.workspaceId).toBe(
         'other-workspace',
@@ -163,8 +205,8 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
   });
 
   it('a destroyed manager cannot overwrite newer hydration for its former note', async () => {
-    let release!: (comments: (typeof backendRoot)[]) => void;
-    vi.mocked(commentLoader.loadComments).mockReturnValueOnce(
+    let release!: (comments: ReturnType<typeof loadedRoot>[]) => void;
+    loadNoteCommentsMock.mockReturnValueOnce(
       new Promise((resolve) => {
         release = resolve;
       }),
@@ -174,7 +216,7 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
     appStore.dispatch(
       addCommentAction({ ...backendRoot, content: 'Newer comment', workspaceId: 'test-workspace' }),
     );
-    release([backendRoot]);
+    release([loadedRoot()]);
     await pending;
     expect(selectCommentById.select(appStore.state, 'root-1')?.content).toBe('Newer comment');
   });
@@ -198,9 +240,9 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
     );
   });
 
-  describe('legacy loadComments path', () => {
+  describe('loaded comment rows', () => {
     it('does not synthesize an anchor for replies (parentId set)', async () => {
-      vi.mocked(commentLoader.loadComments).mockResolvedValueOnce([backendRoot, backendReply]);
+      loadNoteCommentsMock.mockResolvedValueOnce([loadedRoot(), loadedReply()]);
 
       await manager.initialize(editor);
 
@@ -213,8 +255,8 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
       expect(reply).not.toHaveProperty('anchorContext');
     });
 
-    it('keeps the synthesized point-anchor fallback for anchorless roots', async () => {
-      vi.mocked(commentLoader.loadComments).mockResolvedValueOnce([backendRoot, backendReply]);
+    it('retains the protocol point anchor and anchor text for roots', async () => {
+      loadNoteCommentsMock.mockResolvedValueOnce([loadedRoot(), loadedReply()]);
 
       await manager.initialize(editor);
 
@@ -264,7 +306,7 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
       const reply = await manager.replyToComment('root-1', 'my reply');
       expect(reply).not.toBeNull();
 
-      const respondMock = vi.mocked(commentsWrite.respondToComment);
+      const respondMock = respondToCommentRequestedMock;
       expect(respondMock).toHaveBeenCalledTimes(1);
       const [noteId, optimisticReply, params] = respondMock.mock.calls[0];
       expect(noteId).toBe('spec');
@@ -290,15 +332,6 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
       await manager.initialize(editor);
       appStore.dispatch(loadCommentsAction([rootV2]));
 
-      // Mimic the real write service's optimistic dispatch (the daemon call
-      // itself stays mocked) so the store reflects the optimistic window.
-      vi.mocked(commentsWrite.respondToComment).mockImplementationOnce(
-        async (_noteId, optimistic) => {
-          appStore.dispatch(addCommentAction(optimistic));
-          return true;
-        },
-      );
-
       const reply = await manager.replyToComment('root-1', 'my reply');
       expect(reply).not.toBeNull();
 
@@ -309,6 +342,14 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
       const replies = comments.filter((c) => c.parentId === 'root-1');
       expect(activeRoots.map((c) => c.id)).toEqual(['root-1']);
       expect(replies.map((c) => c.id)).toEqual([reply!.id]);
+    });
+
+    it('reports a failed persisted reply so the composer can retain its draft', async () => {
+      await manager.initialize(editor);
+      appStore.dispatch(loadCommentsAction([rootV2]));
+      respondToCommentRequestedMock.mockResolvedValueOnce(false);
+
+      await expect(manager.replyToComment('root-1', 'keep this draft')).resolves.toBeNull();
     });
   });
 });

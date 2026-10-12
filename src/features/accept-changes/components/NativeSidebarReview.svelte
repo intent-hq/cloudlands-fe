@@ -12,6 +12,7 @@
   import TimelineDivider from '$lib/components/workspace/sidebar/TimelineDivider.svelte';
   import DividerButton from '$lib/components/workspace/sidebar/DividerButton.svelte';
   import DividerPanel from '$lib/components/workspace/sidebar/DividerPanel.svelte';
+  import PrRepositorySelect from './PrRepositorySelect.svelte';
   let {
     review,
     entry = false,
@@ -111,6 +112,13 @@
     aria-label={m.native_review_title_label()}
     data-native-sidebar-review
   >
+    {#if entry}
+      <PrRepositorySelect
+        context={review.nativeRead.entry}
+        disabled={!!review.nativeIntent}
+        onsaved={review.startNativeRead}
+      />
+    {/if}
     {#if !review.nativeDemand}<Button onclick={review.startNativeRead}
         >{m.native_review_start_label()}</Button
       >
@@ -124,6 +132,8 @@
     {#if review.nativeDemand && !review.hostContext}<p role="status">
         {m.native_review_unavailable_description()}
       </p>
+    {:else if review.remoteSaving}
+      <p role="status">{m.repository_prRemote_saving_label()}</p>
     {:else if review.nativeDemand && (review.nativeRead.target?.provider === 'gitlab' || review.nativeIntent)}
       <label class="block text-xs text-subtle" for="sidebar-native-branch"
         >{m.native_review_target_label()}</label
@@ -263,7 +273,9 @@
           {/if}
         {/if}
       {/if}
-    {:else if review.nativeDemand && review.nativeRead.view?.status !== 'loading'}<p role="status">
+    {:else if review.nativeDemand && review.nativeRead.view?.status !== 'loading' && !review.nativeRead.canChooseRepository}<p
+        role="status"
+      >
         {m.native_review_unavailable_description()}
       </p>{/if}
     <Button

@@ -6,6 +6,11 @@ import { describe, expect, it } from 'vitest';
 
 import { getSpecialistById } from '../specialists';
 
+const bundledChiefPrompt = readFileSync(
+  resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),
+  'utf8',
+);
+
 describe('SPECIALISTS', () => {
   it('defines the Vulnerability Scanner fallback metadata and prompt', () => {
     const specialist = getSpecialistById('vulnerability-scanner');
@@ -48,10 +53,8 @@ describe('SPECIALISTS', () => {
 
   it('keeps chief workspace creation extraction guidance', () => {
     const chief = getSpecialistById('chief-of-staff');
-
     expect(chief?.defaultBehaviorPrompt).toContain('When the user names a branch');
     expect(chief?.defaultBehaviorPrompt).toContain('prUrl');
-    expect(chief?.defaultBehaviorPrompt).toContain('example-org/example-repo/pull/648');
   });
 
   // Regression: the agent was emitting a multi-ID workspace block followed by a
@@ -83,34 +86,29 @@ describe('SPECIALISTS', () => {
   // call out the bare-path anti-pattern with a concrete example.
   it('teaches NavLinks must use the full canonical route with a hash fragment', () => {
     const chief = getSpecialistById('chief-of-staff');
-    expect(chief?.defaultBehaviorPrompt).toMatch(/### NavLink Format/);
     expect(chief?.defaultBehaviorPrompt).toMatch(/ws\.app\.ui\.targets\(\)/);
-    expect(chief?.defaultBehaviorPrompt).toMatch(/\/settings\?tab=providers#utility-default-model/);
+    expect(chief?.defaultBehaviorPrompt).toMatch(/query and hash fragment/);
     expect(chief?.defaultBehaviorPrompt).toMatch(/bare path/i);
     expect(chief?.roleReminder).toMatch(/canonical route/i);
     expect(chief?.roleReminder).toMatch(/hash fragment/i);
   });
 
   it('teaches Chief to audit agent threads safely and link created notes', () => {
-    const chief = getSpecialistById('chief-of-staff');
-    expect(chief?.defaultBehaviorPrompt).toMatch(/## Agent Thread Audits/);
-    expect(chief?.defaultBehaviorPrompt).toContain(
+    expect(bundledChiefPrompt).toMatch(/## Agent Thread Audits/);
+    expect(bundledChiefPrompt).toContain(
       'ws.app.agents.list({ workspaceId?, includeCompleted?, limit?, cursor? })',
     );
-    expect(chief?.defaultBehaviorPrompt).toContain(
+    expect(bundledChiefPrompt).toContain(
       'ws.app.agents.readConversation(workspaceId, agentId, { lastN?, startTurn?, endTurn?, includeToolCalls? })',
     );
-    expect(chief?.defaultBehaviorPrompt).toMatch(/metadata only; no transcript content/i);
-    expect(chief?.defaultBehaviorPrompt).toMatch(
-      /defaults to the last 20 messages and caps reads at 100/i,
-    );
-    expect(chief?.defaultBehaviorPrompt).toMatch(/includeToolCalls: true/);
-    expect(chief?.defaultBehaviorPrompt).toMatch(/returned `markdownLink`/);
-    expect(chief?.defaultBehaviorPrompt).toContain('intent://local/{workspaceId}/note/{noteId}');
+    expect(bundledChiefPrompt).toMatch(/metadata only; no transcript content/i);
+    expect(bundledChiefPrompt).toMatch(/defaults to the last 20 messages and caps reads at 100/i);
+    expect(bundledChiefPrompt).toMatch(/includeToolCalls: true/);
+    expect(bundledChiefPrompt).toMatch(/returned `markdownLink`/);
+    expect(bundledChiefPrompt).toContain('intent://local/{workspaceId}/note/{noteId}');
   });
 
-  it('keeps completion-only Chief messaging guidance in canonical and bundled prompts', () => {
-    const chief = getSpecialistById('chief-of-staff');
+  it('keeps completion-only Chief messaging guidance in the bundled prompt', () => {
     const bundled = readFileSync(
       resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),
       'utf8',
@@ -118,8 +116,7 @@ describe('SPECIALISTS', () => {
     const section = (prompt: string) =>
       prompt.match(/## Messaging Agents Across Workspaces[\s\S]*?(?=\n## )/)?.[0].trim();
 
-    expect(section(chief?.defaultBehaviorPrompt ?? '')).toBe(section(bundled));
-    for (const prompt of [chief?.defaultBehaviorPrompt ?? '', bundled]) {
+    for (const prompt of [bundled]) {
       const messaging = section(prompt) ?? '';
 
       expect(prompt).toContain('ws.app.agents.send(agentId, message, priority?)');
@@ -157,26 +154,18 @@ describe('SPECIALISTS', () => {
   });
 
   it('teaches Chief to wait on cross-workspace agents instead of polling', () => {
-    const chief = getSpecialistById('chief-of-staff');
-    expect(chief?.defaultBehaviorPrompt).toMatch(/## Waiting on Agents Across Workspaces/);
-    expect(chief?.defaultBehaviorPrompt).toContain(
-      'ws.app.agents.waitFor({ agentIds, waitMode? })',
+    expect(bundledChiefPrompt).toMatch(/## Waiting on Agents Across Workspaces/);
+    expect(bundledChiefPrompt).toContain('ws.app.agents.waitFor({ agentIds, waitMode? })');
+    expect(bundledChiefPrompt).toContain(
+      "ws.app.agents.waitFor({ agentIds: ['agent-1111-…', 'agent-2222-…'], waitMode: 'after_all' });",
     );
-    expect(chief?.defaultBehaviorPrompt).toContain(
-      'ws.app.agents.waitFor({ agentIds: ["agent-1111-…", "agent-2222-…"], waitMode: "after_all" })',
-    );
-    expect(chief?.defaultBehaviorPrompt).toMatch(
-      /do not poll[*\s]+`ws\.app\.agents\.list` in a loop/i,
-    );
-    expect(chief?.defaultBehaviorPrompt).toMatch(/one wake per agent as each finishes/i);
-    expect(chief?.defaultBehaviorPrompt).toMatch(
-      /single aggregated wake once all listed agents settle/i,
-    );
+    expect(bundledChiefPrompt).toMatch(/do not poll[*\s]+`ws\.app\.agents\.list` in a loop/i);
+    expect(bundledChiefPrompt).toMatch(/one wake per agent as each finishes/i);
+    expect(bundledChiefPrompt).toMatch(/single aggregated wake once all listed agents settle/i);
   });
 
-  // The hardcoded SPECIALISTS entry is only the last-resort fallback; the
-  // runtime chief prompt is resolved from the bundled specialist file. Keep
-  // the waitFor guidance present in both so a normal install actually sees it.
+  // The concise fallback consults live tool help; the bundled specialist owns
+  // the detailed waitFor recipe used by a normal install.
   it('keeps the bundled chief-of-staff file in sync on cross-workspace waiting', () => {
     const bundled = readFileSync(
       resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),

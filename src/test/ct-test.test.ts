@@ -72,7 +72,10 @@ async function runWithFixtures(
   page: unknown,
   testInfo: FakeTestInfo,
 ): Promise<{ error: unknown; setUpOrder: string[] }> {
-  const resolved = new Map<string, unknown>([['page', page]]);
+  const resolved = new Map<string, unknown>([
+    ['page', page],
+    ['contextOptions', {}],
+  ]);
   const setUpOrder: string[] = [];
   const teardowns: Array<{ release: () => void; done: Promise<void> }> = [];
 
@@ -139,7 +142,7 @@ describe('shared CT test module fixtures', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/already used by an earlier test in this worker/);
-    expect(setUpOrder).toEqual(['_ctCdpLifecycleRecorder']);
+    expect(setUpOrder).toEqual(['_ctCdpLifecycleRecorder', '_ctMotionPreference']);
     expect(testInfo.attach).toHaveBeenCalledTimes(1);
     const [name, { contentType, body }] = testInfo.attach.mock.calls[0] as [
       string,

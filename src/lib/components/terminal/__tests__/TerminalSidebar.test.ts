@@ -1,5 +1,30 @@
+import { scriptsClient } from '$features/scripts/scripts.client';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { appClient } from '$lib/client';
+
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const { appClient } = await import('$lib/client');
+  return {
+    backendRequest: vi.fn(
+      async (method: string, params: { workspaceId: string; scriptId?: string }) => {
+        if (method === 'script.remove') {
+          const result = await mockWireRemove(params.workspaceId, params.scriptId);
+          if (!result.success) throw new Error(result.error);
+          return { ok: true };
+        }
+        const { workspaceId, ...definition } = params;
+        const result = await appClient.scripts.create(workspaceId, definition as never);
+        if (!result.success) throw new Error(result.error);
+        return result.script;
+      },
+    ),
+  };
+});
+
+vi.mock('$lib/client', () => ({
+  appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
+}));
 
 const {
   mockDetect,
@@ -8,6 +33,8 @@ const {
   mockScriptCreate,
   mockScriptUpdate,
   mockScriptRemove,
+  mockScriptRestoreSnapshot,
+  mockWireRemove,
   backgroundAgentOptions,
   scriptEntries,
   terminalEntries,
@@ -28,6 +55,8 @@ const {
     mockScriptCreate: vi.fn(),
     mockScriptUpdate: vi.fn(),
     mockScriptRemove: vi.fn(),
+    mockScriptRestoreSnapshot: vi.fn(),
+    mockWireRemove: vi.fn(),
     backgroundAgentOptions: {
       value: null as { onResult: (result: string) => Promise<void> } | null,
     },
@@ -59,10 +88,12 @@ const {
 
 vi.mock('$features/scripts/scripts.client', () => ({
   scriptsClient: {
+    list: vi.fn(async () => ({ success: true, data: scriptEntries.value })),
     detect: mockDetect,
     create: mockScriptCreate,
     update: mockScriptUpdate,
     remove: mockScriptRemove,
+    restoreSnapshot: mockScriptRestoreSnapshot,
     start: vi.fn(),
     stop: vi.fn(),
     restart: vi.fn(),
@@ -70,7 +101,8 @@ vi.mock('$features/scripts/scripts.client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>()),
   selectScriptEntries: Object.assign(
     (workspaceArg: any) => {
       selectorWorkspaceArgs.push(workspaceArg);
@@ -98,24 +130,38 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-
+  const { scriptsReducer, emptyWorkspaceState } =
+    await import('$store/renderer/slices/scripts/scripts-slice');
+  let scripts = scriptsReducer(undefined, { type: '@@init' });
   return createAppStoreMockModule({
     state: () => ({
       scripts: {
-        byWorkspaceId: {
-          'ws-1': {
-            scripts: {},
-            outputBuffers: {},
-            initialized: true,
-            loading: false,
-          },
-        },
+        byWorkspaceId: Object.fromEntries(
+          [...new Set(['ws-1', ...Object.keys(scriptEntries.byWorkspaceId)])].map((id) => [
+            id,
+            {
+              ...emptyWorkspaceState,
+              ...scripts.byWorkspaceId[id],
+              scripts: Object.fromEntries(
+                (scriptEntries.byWorkspaceId[id] ?? scriptEntries.value).map((script) => [
+                  script.id,
+                  script,
+                ]),
+              ),
+              initialized: true,
+            },
+          ]),
+        ),
       },
     }),
-    dispatch: mockDispatch,
+    dispatch: (action) => {
+      mockDispatch(action);
+      scripts = scriptsReducer(scripts, action);
+    },
   });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: { select: () => 'owner' },
   selectWorkspaceById: (workspaceArg: any) => {
     selectorWorkspaceArgs.push(workspaceArg);
     return {
@@ -251,6 +297,26 @@ describe('TerminalSidebar detection flow', () => {
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
   });
 
+  it.each([
+    ['idle', 'Start', 'scripts/startScriptRequested'],
+    ['running', 'Restart', 'scripts/restartScriptRequested'],
+  ])('tracks %s lifecycle requests so deletion sees pending work', async (status, label, type) => {
+    scriptEntries.value = [
+      {
+        id: 'check',
+        name: 'Check',
+        command: 'true',
+        mode: 'command',
+        runtime: { status, restartCount: 0 },
+      },
+    ];
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type, payload: ['ws-1', 'check', expect.any(String)] }),
+    );
+  });
+
   it('routes mixed finished/live Stop all through shared operations without changing selection', async () => {
     scriptEntries.value = ['exited', 'running'].map((status) => ({
       id: status,
@@ -317,6 +383,39 @@ describe('TerminalSidebar detection flow', () => {
     );
   });
 
+  it('captures full definitions for detection Undo even when the visible rows are previews', async () => {
+    const full = {
+      id: 'old',
+      name: 'test',
+      command: 'complete command beyond the preview',
+      mode: 'command',
+      cwd: 'app',
+      env: { KEY: 'value' },
+      runtime: { status: 'idle' },
+    };
+    scriptEntries.value = [
+      {
+        id: full.id,
+        name: full.name,
+        mode: full.mode,
+        commandPreview: 'complete',
+        commandTruncated: true,
+        runtime: full.runtime,
+      },
+    ];
+    vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: true, data: [full as never] });
+    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
+    );
+    mockScriptRestoreSnapshot.mockResolvedValueOnce({ success: true });
+    await notify.success.mock.calls[0][1].action.onClick();
+    expect(mockScriptRestoreSnapshot).toHaveBeenCalledWith('ws-1', [
+      expect.objectContaining({ command: full.command, cwd: full.cwd, env: full.env }),
+    ]);
+  });
+
   it.each(['saved', 'oneOff', undefined] as const)(
     'restores %s purpose when undo recreates a definition',
     async (purpose) => {
@@ -335,11 +434,11 @@ describe('TerminalSidebar detection flow', () => {
       await backgroundAgentOptions.value!.onResult(
         JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
       );
+      mockScriptRestoreSnapshot.mockResolvedValueOnce({ success: true });
       await notify.success.mock.calls[0][1].action.onClick();
-      expect(mockScriptCreate).toHaveBeenLastCalledWith(
-        'ws-1',
-        expect.objectContaining({ name: 'test', purpose: purpose ?? 'saved' }),
-      );
+      expect(mockScriptRestoreSnapshot).toHaveBeenCalledWith('ws-1', [
+        expect.objectContaining({ name: 'test', purpose }),
+      ]);
     },
   );
 
@@ -495,14 +594,11 @@ describe('TerminalSidebar workspace prop changes', () => {
       true,
     );
 
+    mockScriptRemove.mockResolvedValueOnce({ success: true });
     await fireEvent.contextMenu(screen.getByRole('button', { name: /^Script B(?:\s|$)/ }));
     await fireEvent.click(screen.getByText('Delete'));
 
     await waitFor(() => expect(mockScriptRemove).toHaveBeenCalledWith('ws-b', 'script-b'));
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'scripts/removeScript',
-      payload: ['ws-b', 'script-b'],
-    });
   });
 });
 
@@ -565,9 +661,15 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
     );
 
     expect(mockScriptUpdate).toHaveBeenCalledTimes(1);
-    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'auto-idle', {
-      command: 'pnpm build --clean',
-    });
+    expect(mockScriptUpdate).toHaveBeenCalledWith(
+      'ws-1',
+      'auto-idle',
+      {
+        command: 'pnpm build --clean',
+      },
+      expect.objectContaining({ id: 'auto-idle' }),
+      expect.any(Function),
+    );
     expect(mockScriptCreate).toHaveBeenCalledWith(
       'ws-1',
       expect.objectContaining({
@@ -577,7 +679,12 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
         purpose: 'saved',
       }),
     );
-    expect(mockScriptRemove).toHaveBeenCalledWith('ws-1', 'auto-stale');
+    expect(mockScriptRemove).toHaveBeenCalledWith(
+      'ws-1',
+      'auto-stale',
+      expect.objectContaining({ id: 'auto-stale' }),
+      expect.any(Function),
+    );
     expect(notify.warning).toHaveBeenCalledTimes(1);
     expect(notify.warning).toHaveBeenCalledWith(expect.stringContaining('"dev"'));
     expect(notify.success).toHaveBeenCalled();
@@ -754,5 +861,221 @@ describe('TerminalSidebar resize handle', () => {
 
     await fireEvent.mouseUp(document);
     expect(handle?.getAttribute('data-resizing')).toBe('false');
+  });
+});
+
+describe('sidebar inline rename deletion races', () => {
+  const scriptId = 'sidebar-rename';
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const actual = await vi.importActual<typeof import('$features/scripts/scripts.client')>(
+      '$features/scripts/scripts.client',
+    );
+    mockScriptUpdate.mockReset().mockImplementation(actual.scriptsClient.update);
+    mockScriptRemove.mockReset().mockImplementation(actual.scriptsClient.remove);
+    mockScriptRestoreSnapshot.mockReset().mockImplementation(actual.scriptsClient.restoreSnapshot);
+    mockWireRemove.mockReset().mockResolvedValue({ success: true });
+    vi.mocked(appClient.scripts.list).mockImplementation(async () => scriptEntries.value);
+    vi.mocked(appClient.scripts.get).mockImplementation(async (_ws, id) =>
+      scriptEntries.value.find((s) => s.id === id),
+    );
+    scriptEntries.value = [
+      {
+        id: scriptId,
+        name: 'Rename target',
+        command: 'true',
+        mode: 'command',
+        source: 'user',
+        runtime: { status: 'idle', restartCount: 0 },
+      },
+    ];
+  });
+
+  it.each(['update', 'remove'] as const)(
+    'applies off-page detection %s using the full inventory',
+    async (operation) => {
+      const offPage = {
+        id: 'off-page',
+        workspaceId: 'ws-1',
+        name: 'Detected build',
+        command: 'full build command',
+        cwd: 'app',
+        env: { TOKEN: 'complete' },
+        healthUrl: 'http://localhost/health',
+        readyPattern: 'READY',
+        mode: 'command',
+        source: 'auto-detected',
+        createdAt: 'now',
+        runtime: { status: 'idle', restartCount: 0 },
+      };
+      vi.mocked(scriptsClient.list).mockResolvedValueOnce({
+        success: true,
+        data: [offPage as never],
+      });
+      vi.mocked(appClient.scripts.get).mockResolvedValue(offPage as never);
+      vi.mocked(appClient.scripts.create).mockResolvedValue({
+        success: true,
+        script: offPage,
+      } as never);
+      render(TerminalSidebar, { workspaceId: 'ws-1' });
+      await backgroundAgentOptions.value!.onResult(
+        JSON.stringify(
+          operation === 'update'
+            ? { update: [{ id: offPage.id, name: 'Updated build' }] }
+            : { remove: [offPage.id] },
+        ),
+      );
+      if (operation === 'update') {
+        expect(appClient.scripts.create).toHaveBeenCalledWith(
+          'ws-1',
+          expect.objectContaining({
+            scriptId: offPage.id,
+            name: 'Updated build',
+            command: offPage.command,
+            cwd: offPage.cwd,
+            env: offPage.env,
+            healthUrl: offPage.healthUrl,
+            readyPattern: offPage.readyPattern,
+          }),
+        );
+      } else expect(mockWireRemove).toHaveBeenCalledWith('ws-1', offPage.id);
+      expect(notify.success).toHaveBeenCalledWith(
+        expect.stringContaining(operation === 'update' ? 'updated' : 'removed'),
+        expect.anything(),
+      );
+      expect(notify.info).not.toHaveBeenCalled();
+      expect(scriptEntries.value.some((s) => s.id === offPage.id)).toBe(false);
+    },
+  );
+
+  it.each([
+    ['update', 'switch'],
+    ['remove', 'switch'],
+    ['update', 'unmount'],
+    ['remove', 'unmount'],
+  ] as const)(
+    'cancels off-page detection %s when the sidebar changes %s during detail',
+    async (operation, lifecycle) => {
+      const offPage = {
+        id: 'off-page',
+        workspaceId: 'ws-1',
+        name: 'Build',
+        command: 'full command',
+        mode: 'command',
+        source: 'auto-detected',
+        createdAt: 'now',
+        runtime: { status: 'idle', restartCount: 0 },
+      };
+      vi.mocked(scriptsClient.list).mockResolvedValueOnce({
+        success: true,
+        data: [offPage as never],
+      });
+      let resolve!: (value: any) => void;
+      vi.mocked(appClient.scripts.get).mockReturnValueOnce(new Promise((done) => (resolve = done)));
+      const view = render(TerminalSidebar, { workspaceId: 'ws-1' });
+      const detection = backgroundAgentOptions.value!.onResult(
+        JSON.stringify(
+          operation === 'update'
+            ? { update: [{ id: offPage.id, name: 'New' }] }
+            : { remove: [offPage.id] },
+        ),
+      );
+      await waitFor(() => expect(appClient.scripts.get).toHaveBeenCalled());
+      if (lifecycle === 'unmount') view.unmount();
+      else await view.rerender({ workspaceId: 'ws-2' });
+      resolve(offPage);
+      await detection;
+      expect(appClient.scripts.create).not.toHaveBeenCalled();
+      expect(mockWireRemove).not.toHaveBeenCalled();
+      expect(notify.success).not.toHaveBeenCalled();
+    },
+  );
+
+  async function rename() {
+    await fireEvent.dblClick(screen.getByRole('button', { name: /^Rename target/ }));
+    const input = document.querySelector(`[data-edit-script="${scriptId}"]`)!;
+    await fireEvent.input(input, { target: { value: 'New name' } });
+    await fireEvent.blur(input);
+  }
+
+  it('blocks shared deletion eligibility throughout a deferred inline rename', async () => {
+    const { store } = await import('$store/renderer/store');
+    const { selectCanDeleteScript } =
+      await import('$store/renderer/slices/scripts/scripts-selectors');
+    let finish!: (result: { success: boolean }) => void;
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    await waitFor(() =>
+      expect(appClient.scripts.create).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({ scriptId, name: 'New name' }),
+      ),
+    );
+    expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(false);
+    finish({ success: true });
+    await waitFor(() =>
+      expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(true),
+    );
+  });
+
+  it('refuses inline rename while deletion is pending', async () => {
+    const { store } = await import('$store/renderer/store');
+    const { deleteScriptRequested, scriptOperationSucceeded } =
+      await import('$store/renderer/slices/scripts/scripts-slice');
+    store.dispatch(deleteScriptRequested('ws-1', scriptId, 'Delete failed'));
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    expect(appClient.scripts.list).not.toHaveBeenCalled();
+    expect(appClient.scripts.create).not.toHaveBeenCalled();
+    expect(notify.warning).toHaveBeenCalled();
+    store.dispatch(scriptOperationSucceeded('ws-1', scriptId, 'delete'));
+  });
+  it('keeps the sidebar row when context deletion races a pending rename', async () => {
+    let finish!: (result: { success: boolean }) => void;
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await rename();
+    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^Rename target/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete', exact: true }));
+    finish({ success: true });
+    await waitFor(() => expect(notify.warning).toHaveBeenCalled());
+    expect(mockWireRemove).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/removeScript' }),
+    );
+  });
+  it('rejects detection Undo during a rename without removing or recreating rows', async () => {
+    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new' } });
+    render(TerminalSidebar, { workspaceId: 'ws-1' });
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
+    );
+    const undo = notify.success.mock.calls[0][1].action.onClick;
+    notify.success.mockClear();
+    mockScriptCreate.mockClear();
+    let finish!: (result: { success: boolean }) => void;
+    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await rename();
+    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    await undo();
+    expect(mockWireRemove).not.toHaveBeenCalled();
+    expect(mockScriptCreate).not.toHaveBeenCalled();
+    expect(notify.warning).toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
+    finish({ success: true });
   });
 });

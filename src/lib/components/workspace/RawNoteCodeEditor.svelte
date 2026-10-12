@@ -3,7 +3,7 @@
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { updateNoteContent } from '$features/notes/notes-write-service';
+  import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { selectLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -139,12 +139,13 @@
       // Selector emissions are coalesced: these props still precede the staged draft.
       propsBeforeSave = { content: currentContent, rev };
     }
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-    updateNoteContent(target.workspaceId, target.noteId, target.content, {
-      immediate,
-      baseRev: target.baseRev,
-      baseContent: target.lastSavedContent,
-    });
+    appStore.dispatch(
+      updateNoteContent(target.workspaceId, target.noteId, target.content, {
+        immediate,
+        baseRev: target.baseRev,
+        baseContent: target.lastSavedContent,
+      }),
+    );
   }
 
   export function flushPendingSave(): void {

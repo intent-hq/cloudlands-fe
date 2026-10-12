@@ -22,7 +22,11 @@
     selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
     selectAcceptChangesState,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import { setCommitMessage } from '$store/renderer/slices/changes/changes-slice';
+  import {
+    setCommitMessage,
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { type TrackedChange } from '$features/file-tracking/types';
   import {
     acceptChangesConsumerMounted,
@@ -65,7 +69,6 @@
     type WorkspaceGitRootEntry,
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
-  import RepositoryContextSummary from '$features/accept-changes/components/RepositoryContextSummary.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
@@ -301,7 +304,11 @@
   $effect(() => {
     const visibleWorkspaceId = workspaceId;
     appStore.dispatch(acceptChangesConsumerMounted(visibleWorkspaceId));
-    return () => appStore.dispatch(acceptChangesConsumerUnmounted(visibleWorkspaceId));
+    appStore.dispatch(changesConsumerMounted(visibleWorkspaceId));
+    return () => {
+      appStore.dispatch(acceptChangesConsumerUnmounted(visibleWorkspaceId));
+      appStore.dispatch(changesConsumerUnmounted(visibleWorkspaceId));
+    };
   });
 
   // Git operation loading flag — used by the refresh button spinner
@@ -326,7 +333,7 @@
     }
   });
 
-  // Daemon Git events dispatch the lifecycle-owned broad changes refresh.
+  // The lifecycle owner reconciles incomplete Git pushes while this panel is visible.
 
   // Consolidated effect for managing hasLoadedForWorkspace
   // This single effect handles both workspace changes AND load state changes
@@ -864,12 +871,6 @@
             ? (action) => (secondaryRefreshAction = action)
             : undefined}
         />
-        <RepositoryContextSummary
-          root={selectedSecondaryRoot
-            ? { workspaceId, kind: 'registered', gitRootId: selectedSecondaryRoot.key }
-            : { workspaceId, kind: 'primary' }}
-        />
-
         {#if isBrowsingSecondaryRoot}
           <!-- PR sections follow the dropdown while browsing a secondary root:
                the selected root's PRs on top, the workspace's own PRs under

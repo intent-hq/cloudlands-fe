@@ -38,16 +38,17 @@ export class LiveClientsClient implements ClientsClient {
           return clientId;
         },
       );
-      ownClientIdPromise.catch(() => {
-        ownClientIdPromise = null;
+      const probe = ownClientIdPromise;
+      probe.catch(() => {
+        if (ownClientIdPromise === probe) ownClientIdPromise = null;
       });
     }
     return ownClientIdPromise;
   }
 }
 
-/** Test-only: forget the cached own-clientId probe. */
-export function __resetOwnClientIdForTesting(): void {
+/** Forget the previous connection's probe, including any pending flight. */
+export function invalidateOwnClientId(): void {
   ownClientIdPromise = null;
 }
 
@@ -55,3 +56,5 @@ export function __resetOwnClientIdForTesting(): void {
 const _interfaceCheck: AppClient['clients'] | undefined = undefined as
   LiveClientsClient | undefined;
 void _interfaceCheck;
+
+export const __resetOwnClientIdForTesting = invalidateOwnClientId;

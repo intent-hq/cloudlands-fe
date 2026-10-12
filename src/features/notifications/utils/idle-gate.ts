@@ -87,9 +87,13 @@ async function getAgentRow(
  */
 export async function readIdleNotificationGate(
   request: IdleGateRequest,
-  { workspaceId, agentId }: { workspaceId: string; agentId: string },
+  {
+    workspaceId,
+    agentId,
+    knownIdleAgent,
+  }: { workspaceId: string; agentId: string; knownIdleAgent?: IdleGateAgent },
 ): Promise<IdleGateVerdict> {
-  const idleAgent = await getAgentRow(request, workspaceId, agentId);
+  const idleAgent = knownIdleAgent ?? (await getAgentRow(request, workspaceId, agentId));
 
   // Skip background agents — delegated child completions stay quiet.
   if (idleAgent?.metadata?.isBackground === true) return { kind: 'background', idleAgent };

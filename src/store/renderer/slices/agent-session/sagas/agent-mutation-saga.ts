@@ -434,7 +434,23 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
       (specialistUpdate.model === undefined || current?.model === specialistUpdate.model) &&
       (specialistUpdate.provider === undefined || current?.provider === specialistUpdate.provider);
     if (rollback && specialistStillOptimistic) {
-      yield* put(updateSession(agentId, rollback));
+      // The picker owns these fields; copied metadata is not a new projection.
+      // Preserve unrelated writes that landed while specialist persistence failed.
+      const metadata = {
+        ...current?.metadata,
+        specialist: rollback.metadata?.specialist,
+        behaviorPrompt: rollback.metadata?.behaviorPrompt,
+        specialistName: rollback.metadata?.specialistName,
+      };
+      yield* put(
+        updateSession(
+          agentId,
+          { ...rollback, metadata },
+          {
+            projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'],
+          },
+        ),
+      );
     }
     yield* call(showError, failure.message);
     yield* put(action.failure(failure));
@@ -580,7 +596,15 @@ function* setBackground(
           : {}),
       };
       const next = { ...current, ...changes };
-      yield* put(updateSession(agentId, { ...changes, hasUnread: deriveAgentHasUnread(next) }));
+      yield* put(
+        updateSession(
+          agentId,
+          { ...changes, hasUnread: deriveAgentHasUnread(next) },
+          {
+            projectedMetadataKeys: ['isBackground'],
+          },
+        ),
+      );
       yield* put(addAgent(wsId, next));
       // Existing coalesced hydration refreshes authoritative bin counts and loaded groups.
       yield* put(hydrateAgentsRequested(wsId));

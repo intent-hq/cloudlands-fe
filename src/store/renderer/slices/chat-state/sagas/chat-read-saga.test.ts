@@ -32,6 +32,7 @@ import {
   chatReset,
   chatStateReducer,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   initialState as chatStateInitialState,
@@ -146,6 +147,46 @@ describe('chatReadSaga (single-transfer hydration)', () => {
   afterEach(() => {
     vi.clearAllMocks();
     clearAllStandingChatSubscriptions();
+  });
+
+  it('keeps hydration pending through delayed rows and settles only on explicit completion', async () => {
+    mocks.get.mockResolvedValue(session());
+    const run = harness();
+    try {
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await settle();
+      run.dispatch(
+        bulkUpsertSessions([session({ messages: [message('newest', 'first visible')] })]),
+      );
+      run.dispatch(
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: false,
+          totalMessages: 2,
+          initialHistory: { target: 20, received: 1, complete: false },
+        }),
+      );
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+      run.dispatch(
+        chatInitialHistoryProgressed(AGENT, { target: 20, received: 2, complete: false }),
+      );
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydratedOnce).not.toBe(true);
+      run.dispatch(
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: false,
+          totalMessages: 2,
+          nextToken: null,
+          initialHistory: { target: 20, received: 2, complete: true },
+        }),
+      );
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(mocks.getConversation).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
   });
 
   it('settles from the standing subscription snapshot without any conversation fetch', async () => {

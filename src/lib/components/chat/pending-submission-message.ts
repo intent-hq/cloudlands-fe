@@ -1,5 +1,4 @@
 import type { AgentMessage, QueuedMessage } from '$shared/types';
-import { createMessageId } from '$shared/types/branded-ids';
 import type { PendingSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-types';
 
 /** Display only. Never insert these rows into the authoritative transcript. */
@@ -8,7 +7,8 @@ export function pendingSubmissionMessage(
     Partial<PendingSubmission>,
 ): AgentMessage {
   return {
-    id: createMessageId(submission.id),
+    // Submission IDs are opaque wire identities, already admitted by the sender/daemon.
+    id: submission.id,
     appMessageId: submission.appMessageId,
     role: 'user',
     timestamp: new Date(submission.createdAt ?? 0).toISOString(),

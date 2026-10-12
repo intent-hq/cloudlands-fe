@@ -14,29 +14,28 @@
   let { open = false, children }: Props = $props();
 
   let panelRef: HTMLDivElement | undefined = $state();
-  let hasScrolled = $state(false);
-
-  // Reset scroll tracking when panel closes
+  // Opening focus must yield to the user's choice while the panel animates.
   $effect(() => {
-    if (!open) {
-      hasScrolled = false;
-    }
-  });
-
-  // Scroll panel into view and focus first input when it becomes available after opening
-  $effect(() => {
-    if (open && panelRef && !hasScrolled) {
-      hasScrolled = true;
-      // Wait for the slide transition to complete (150ms) before scrolling and focusing
-      setTimeout(() => {
-        panelRef?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        // Focus the first focusable form input in the panel
-        const firstInput = panelRef?.querySelector<HTMLElement>(
-          'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled])',
-        );
-        firstInput?.focus();
-      }, 180);
-    }
+    if (!open || !panelRef) return;
+    const panel = panelRef;
+    let focusMoved = panel.contains(document.activeElement);
+    const preserveFocus = () => {
+      focusMoved = true;
+    };
+    document.addEventListener('focusin', preserveFocus);
+    const timer = setTimeout(() => {
+      document.removeEventListener('focusin', preserveFocus);
+      if (focusMoved || !panel.isConnected) return;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const firstInput = panel.querySelector<HTMLElement>(
+        'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled])',
+      );
+      firstInput?.focus();
+    }, 180);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('focusin', preserveFocus);
+    };
   });
 </script>
 

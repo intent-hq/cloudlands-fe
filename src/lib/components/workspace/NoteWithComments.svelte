@@ -74,16 +74,14 @@
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
+    flushNoteContentRequested,
     restoreNoteVersion,
     clearNewlyCreatedNoteId,
+    settleNoteContentRequested,
+    updateNoteContent,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
-    flushNoteContent,
-    hasPendingNoteContent,
-    settleNoteContent,
-    updateNoteContent,
-  } from '$features/notes/notes-write-service';
-  import {
+    selectHasPendingNoteContent,
     selectNoteById,
     selectNewlyCreatedNoteId,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -92,8 +90,7 @@
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
-  import { bindRemoteCursors } from './note-with-comments/remote-cursors-binding';
-  import { joinNotePresence } from '$features/notes/note-presence/note-presence-service';
+  import { bindRemoteCursorsToOwnedPresence } from './note-with-comments/remote-cursors-binding';
   import { pruneTaskAgentAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -903,18 +900,23 @@
           // instead of merging. The store rev is that base only while it is
           // authoritative (no save unacknowledged) and its content IS the
           // editor's baseline — then it is also the freshest rev for it.
-          if (!hasPendingNoteContent(workspace.id, noteId) && (note.content || '') === baseline) {
+          if (
+            !selectHasPendingNoteContent.select(appStore.state, workspace.id, noteId) &&
+            (note.content || '') === baseline
+          ) {
             lastKnownRev = note.rev;
           }
           // The baseline also names the text the draft was typed on: a
           // pending draft the service has since rebased onto an echo the
           // editor has not shown yet would otherwise make this draft read as
           // deleting the rebased-in change.
-          updateNoteContent(workspace.id, noteId, markdownContent, {
-            immediate,
-            baseRev: lastKnownRev,
-            baseContent: baseline,
-          });
+          appStore.dispatch(
+            updateNoteContent(workspace.id, noteId, markdownContent, {
+              immediate,
+              baseRev: lastKnownRev,
+              baseContent: baseline,
+            }),
+          );
         }
       }
 
@@ -1075,9 +1077,8 @@
 
   // Handle reply to comment
   async function handleReplyToComment(commentId: string, content: string) {
-    if (commentManager) {
-      await commentManager.replyToComment(commentId, content);
-    }
+    if (!commentManager) return false;
+    return (await commentManager.replyToComment(commentId, content)) !== null;
   }
 
   // Handle restore version
@@ -1123,7 +1124,7 @@
         saveDebounceTimer = null;
         void saveEditorContent();
       }
-      await settleNoteContent(targetWorkspaceId, targetNoteId);
+      await appStore.dispatch(settleNoteContentRequested(targetWorkspaceId, targetNoteId));
       if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
         return;
       }
@@ -1733,7 +1734,9 @@
       getEditor: () => editor as any,
       getIsInitialized: () => isInitialized,
       getHasPendingNoteContent: () =>
-        workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
+        workspace?.id && noteId
+          ? selectHasPendingNoteContent.select(appStore.state, workspace.id, noteId)
+          : false,
       // Hand the current editor text to the write-service now — the pending
       // flush must carry keystrokes still waiting on saveDebounceTimer.
       stageUnsavedEdits: () => {
@@ -1748,13 +1751,19 @@
         // nothing leaves those keystrokes unsaved: keep the baseline so the
         // apply folds them in, and re-arm the debounced save to carry them.
         if (lastKnownContent === baseline) return;
-        if (workspace?.id && noteId && hasPendingNoteContent(workspace.id, noteId)) return;
+        if (
+          workspace?.id &&
+          noteId &&
+          selectHasPendingNoteContent.select(appStore.state, workspace.id, noteId)
+        )
+          return;
         lastKnownContent = baseline;
         saveDebounceTimer = setTimeout(() => {
           saveEditorContent();
         }, 1000);
       },
-      flushNoteContent,
+      flushNoteContent: (workspaceId, targetNoteId) =>
+        appStore.dispatch(flushNoteContentRequested(workspaceId, targetNoteId)),
       onPendingSaveSettled: () => {
         // Re-queue once an in-flight save's window closes. Reset the
         // safety-net dedupe first: if the resolved save left the Redux
@@ -1856,17 +1865,14 @@
       return;
     }
     if (boundEditor.isDestroyed) return;
-    const session = joinNotePresence(wsId, noteId);
-    const unbind = bindRemoteCursors({
+    const unbind = bindRemoteCursorsToOwnedPresence({
       editor: boundEditor,
-      session,
+      workspaceId: wsId,
+      noteId,
       getBaseText: () => lastKnownContent,
       getBaseRev: () => lastKnownRev,
     });
-    return () => {
-      unbind();
-      session.release();
-    };
+    return unbind;
   });
 
   // // Watch for editable prop changes and update editor

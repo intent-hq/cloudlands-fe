@@ -3,6 +3,11 @@
  *
  * Each exported factory returns one module shape; the test file registers it
  * with `vi.mock(path, async () => (await import('./mocks/chat-panel-render-scaffold')).x())`.
+ * For reactive selectors, spread the factory first and override only that selector:
+ * `return { ...agentSessionSelectors(), selectAgentMessages: () => messages };`.
+ * `intent/no-copied-chat-panel-selector-mocks` enforces shared defaults for supported
+ * selector modules in tests importing the real ChatPanel.
+ * Call `resetScaffold()` in `beforeEach` to isolate tests.
  * Mutate `scaffold` before `render()` to seed the transcript, the latched
  * divider anchor, or the queued messages the panel should see.
  */
@@ -123,6 +128,8 @@ export function chatStateSelectors() {
     selectHistorySeekUnsupported: false,
     selectPendingProposalRecovery: undefined,
     selectPendingQuestionRecovery: undefined,
+    selectInitialChatHistory: undefined,
+    selectInitialChatHistoryPending: false,
     selectTranscriptHydration: 'settled',
     selectTranscriptHydratedOnce: true,
     selectTranscriptSnapshotMeta: undefined,

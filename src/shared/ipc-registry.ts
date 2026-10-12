@@ -993,6 +993,8 @@ export const IPC_CHANNELS = {
     UPDATE: 'connections:update',
     TEST: 'connections:test',
     ROTATE_SECRET: 'connections:rotate-secret',
+    GET_TUNNEL: 'connections:get-tunnel',
+    SET_TUNNEL: 'connections:set-tunnel',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
     // Ask one connected remote backend's daemon to self-update (routes

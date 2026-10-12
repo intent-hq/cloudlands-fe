@@ -31,7 +31,6 @@ type KnownWindowEventName =
   | 'workspace:go-to-line'
   | 'workspace:new-terminal'
   | 'workspace:tab-moved'
-  | 'workspace:toggle-left-sidebar'
   // Orphan listener saga (`watchWaitingForFirstMessageSaga` in
   // workspace-agents-saga.ts) — no dispatcher exists today. Tracked as a
   // follow-up cleanup, kept in the union so the listener type-checks.

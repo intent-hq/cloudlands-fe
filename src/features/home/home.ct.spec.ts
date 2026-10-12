@@ -2,6 +2,62 @@ import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
 import IntegrationPreview from './home-integrations.preview.svelte';
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`Home destination labels remain readable after keyboard selection in ${theme} mode`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: theme });
+    await page.evaluate((value) => {
+      document.documentElement.classList.remove('light', 'dark');
+      document.documentElement.classList.add(value);
+    }, theme);
+    const component = await mount(Preview);
+    const tabs = component.locator('.home-sidebar-tabs');
+    const selectedContrast = () =>
+      tabs.evaluate((element) => {
+        const selected = element.querySelector('[role="tab"][aria-selected="true"]')!;
+        const indicator = element.querySelector('[data-tabs-indicator]');
+        if (!indicator) return 0;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d')!;
+        const rgba = (color: string) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          return Array.from(context.getImageData(0, 0, 1, 1).data);
+        };
+        const luminance = (color: number[]) => {
+          const linear = color.slice(0, 3).map((channel) => {
+            const value = channel / 255;
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+          });
+          return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722;
+        };
+        const foreground = rgba(getComputedStyle(selected).color);
+        const background = rgba(getComputedStyle(indicator).backgroundColor);
+        if (foreground[3] !== 255 || background[3] !== 255) return 0;
+        const fg = luminance(foreground);
+        const bg = luminance(background);
+        return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+      });
+
+    await tabs.getByRole('tab', { name: 'Workspaces', exact: true }).focus();
+    await page.keyboard.press('ArrowRight');
+    const assistant = tabs.getByRole('tab', { name: 'Assistant', exact: true });
+    await expect(assistant).toBeFocused();
+    await expect(assistant).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(selectedContrast).toBeGreaterThanOrEqual(4.5);
+
+    await page.keyboard.press('ArrowLeft');
+    const workspaces = tabs.getByRole('tab', { name: 'Workspaces', exact: true });
+    await expect(workspaces).toBeFocused();
+    await expect(workspaces).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(selectedContrast).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
 test('Home loading stays calm with reduced motion', async ({ mount, page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(IntegrationPreview, { props: { scenario: 'loading' } });
@@ -26,11 +82,16 @@ test('Home handles rapid tab and filter changes with motion enabled', async ({
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(Preview);
+  let currentTab = 'Workspaces';
   for (const name of ['Pull requests', 'Linear issues', 'Workspaces']) {
     await component
       .locator('.home-tabs')
+      .filter({
+        has: page.getByRole('tab', { name: new RegExp(`^${currentTab}`), selected: true }),
+      })
       .getByRole('tab', { name: new RegExp(`^${name}`) })
       .click();
+    currentTab = name;
   }
   await component
     .getByRole('group', { name: 'Status', exact: true })
@@ -168,6 +229,12 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   );
   const board = component.locator('[data-home-board]');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+  expect(
+    await board.evaluate(
+      (element) =>
+        element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight,
+    ),
+  ).toBe(true);
   const card = board.getByRole('button', { name: 'Review the new onboarding flow', exact: true });
   await card.focus();
   await page.keyboard.press('Enter');
@@ -185,8 +252,154 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('combobox', { name: 'Status', exact: true }).click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await expect(board.getByRole('region')).toHaveCount(3);
+  expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
+
+test('Home board right-click menu pins the chosen card and restores focus', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  const board = component.locator('[data-home-board]');
+  const card = board.locator('[data-home-workspace="home-complete"]');
+  await card.click({ button: 'right' });
+  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Archive', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('menuitem', { name: 'Delete Workspace…', exact: true }),
+  ).toBeVisible();
+  await testInfo.attach('kanban-right-click', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-right-click.png') }),
+    contentType: 'image/png',
+  });
+  await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+  await expect(card).toBeFocused();
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeFocused();
+  await page.keyboard.press('ContextMenu');
+  await page.getByRole('menuitem', { name: 'Unpin', exact: true }).click();
+  await expect(card).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeFocused();
+  await component.getByRole('button', { name: 'List view', exact: true }).click();
+  await expect(component.getByRole('listbox', { name: 'Pinned', exact: true })).toHaveCount(0);
+  await expect(component.getByRole('option')).toHaveCount(6);
+});
+
+test('Home board menu dismissal keeps an existing preview open', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  const card = component.locator('[data-home-workspace="home-review"]');
+  await card.click();
+  const detail = component.locator('[data-home-detail]');
+  await expect(detail).toBeVisible();
+  await card.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Pin', exact: true })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+  await expect(card).toBeFocused();
+  await expect(detail).toBeVisible();
+  await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('Escape');
+  await expect(detail).toBeVisible();
+  await expect(card).toBeFocused();
+  expect(
+    await component
+      .locator('[data-home-board]')
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await testInfo.attach('kanban-with-preview', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-with-preview.png') }),
+    contentType: 'image/png',
+  });
+});
+
+test('Home board archived cards offer restore', async ({ mount, page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  await component
+    .getByRole('group', { name: 'Status', exact: true })
+    .getByRole('button', { name: 'Archived', exact: true })
+    .click();
+  const board = component.locator('[data-home-board]');
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await board.locator('[data-home-workspace]').click({ button: 'right' });
+  await expect(
+    page.getByRole('menuitem', { name: 'Unarchive Workspace', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Archive', exact: true })).toHaveCount(0);
+  await testInfo.attach('kanban-archived-menu', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-archived-menu.png') }),
+    contentType: 'image/png',
+  });
+});
+
+test('Home board collaborator cards hide owner actions', async ({ mount, page }, testInfo) => {
+  const component = await mount(Preview, { props: { scenario: 'collaborator' } });
+  await component.getByRole('button', { name: 'Board view', exact: true }).click();
+  await component.locator('[data-home-workspace="home-complete"]').click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Open workspace', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Pin', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Archive', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Delete Workspace…', exact: true })).toHaveCount(
+    0,
+  );
+  await testInfo.attach('kanban-collaborator-menu', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-collaborator-menu.png') }),
+    contentType: 'image/png',
+  });
+});
+
+for (const { width, scenario, reason } of [
+  { width: 900, scenario: 'board-long-content', reason: 'long names in a narrow desktop' },
+  { width: 420, scenario: 'board-long-content', reason: 'stacked columns in a small window' },
+  { width: 900, scenario: 'board-repositories', reason: 'many repository columns' },
+] as const) {
+  test(`Home board keeps ${reason} reachable without horizontal scrolling`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const component = await mount(Preview, { props: { scenario } });
+    const board = component.locator('[data-home-board]');
+    await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+    expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    for (const card of await board.locator('[data-home-workspace]').all()) {
+      await card.scrollIntoViewIfNeeded();
+      await expect(card).toBeInViewport();
+      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await card.focus();
+      await page.keyboard.press('Shift+F10');
+      await expect(
+        page.getByRole('menuitem', { name: 'Open workspace', exact: true }),
+      ).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(card).toBeFocused();
+    }
+    await board.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await testInfo.attach(`kanban-${scenario}-${width}`, {
+      body: await page.screenshot({ path: testInfo.outputPath(`kanban-${scenario}-${width}.png`) }),
+      contentType: 'image/png',
+    });
+  });
+}
 
 test('Home keeps Assistant and owner creation hidden for collaborators', async ({
   mount,
@@ -273,11 +486,11 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
   await expect(sidebar.getByRole('button', { name: 'All repos', exact: true })).toHaveCount(0);
   const threads = sidebar.getByRole('listbox');
   const planning = threads.getByRole('option', { name: 'Plan the next release', exact: true });
-  await planning.click();
+  await planning.click({ position: { x: 6, y: 6 } });
   await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
     'Plan the next release',
   );
-  await planning.click();
+  await planning.click({ position: { x: 6, y: 6 } });
   await expect(planning).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('ArrowDown');
   await expect(
@@ -309,6 +522,27 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
     'Review open pull requests',
   );
   await expect(draft).toHaveText('Keep this draft while I check workspaces');
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.calls))
+    .toContainEqual({
+      method: 'drafts.set',
+      params: {
+        workspaceId: '__chief__',
+        agentId: 'home-assistant-1',
+        text: 'Keep this draft while I check workspaces',
+      },
+    });
+  const draftCalls = await page.evaluate(() =>
+    window.__homeIntegrationBrowser!.calls.filter(({ method }) => method.startsWith('drafts.')),
+  );
+  expect(draftCalls).toContainEqual({
+    method: 'drafts.get',
+    params: { workspaceId: '__chief__', agentId: 'home-assistant-1' },
+  });
+  await testInfo.attach('home-sidebar-draft-wire', {
+    body: JSON.stringify(draftCalls, null, 2),
+    contentType: 'application/json',
+  });
   await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
   await expect(threads.getByRole('option')).toHaveCount(2);
   await expect(threads.getByRole('option', { selected: true })).toHaveText('Plan the next release');

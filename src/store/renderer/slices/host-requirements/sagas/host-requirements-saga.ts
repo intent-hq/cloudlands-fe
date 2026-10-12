@@ -1,5 +1,6 @@
-import { all, call, put, takeEvery, takeLeading } from 'typed-redux-saga';
+import { all, call, fork, put, takeEvery, takeLeading } from 'typed-redux-saga';
 
+import { providerCliRequirementsSaga } from './provider-cli-requirements-saga';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -94,6 +95,7 @@ function* checkHostRequirementsWorker(_action: ReturnType<typeof checkHostRequir
 }
 
 export function* hostRequirementsSaga() {
+  yield* fork(providerCliRequirementsSaga);
   yield* takeEvery(ensureHostRequirementsChecked, ensureHostRequirementsWorker);
   yield* takeLeading(checkHostRequirementsRequested, checkHostRequirementsWorker);
 }

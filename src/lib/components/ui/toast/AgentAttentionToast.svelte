@@ -40,7 +40,7 @@
         <span class="first-line-icon toast-first-line"><MicroKeySlotSquare slot={keySlot} /></span>
       {/if}
       <p class="toast-title flex min-w-0 items-baseline">
-        <span class="min-w-0 truncate" {title}>{title}</span>
+        <span class="min-w-0 truncate" data-toast-title {title}>{title}</span>
         {#if timestamp}
           <RelativeTime
             date={timestamp}
@@ -50,7 +50,7 @@
         {/if}
       </p>
     </div>
-    <p class="toast-description line-clamp-3 break-words">{reason}</p>
+    <p class="toast-description" data-toast-description>{reason}</p>
 
     <!-- Action buttons -->
     <div class="toast-actions">
@@ -68,14 +68,6 @@
 </div>
 
 <style>
-  .line-clamp-3 {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
   .toast-title,
   .toast-first-line {
     color: hsl(var(--foreground));

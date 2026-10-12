@@ -23,6 +23,8 @@ import type {
   ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
+  GetConnectionTunnelParams,
+  SetConnectionTunnelParams,
 } from '$shared/types/connections';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -58,6 +60,9 @@ export type {
  *   - `error`      → the last operation failed (see `error`).
  */
 type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
+
+export type ConnectionTunnelIntent =
+  ({ kind: 'load' } & GetConnectionTunnelParams) | ({ kind: 'set' } & SetConnectionTunnelParams);
 
 /** Secrets occur only in intent payloads, never in retained workflow state. */
 export type ConnectionWorkflowIntent =

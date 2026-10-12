@@ -1,3 +1,5 @@
+import { workspaceCatalogEventReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import {
   observeSubmissionEvidence,
   observeSubmissionLifecycle,
@@ -60,8 +62,8 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      flows through the same dispatch with its exact daemon message and
  *      `resetFirstChunk: false` so the spinner shows the startup phase until
  *      the first chunk / stream:end / failed clears it.
- *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
- *      notes-read-service, which dispatches `applyNoteCreated`/
+ *   4. `note:*` (workspace-scoped, §7) → `noteEventReceived` in the registered
+ *      workspace-notes saga, which dispatches `applyNoteCreated`/
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
  *      panel while the workspace is open. The same events also trigger a
@@ -77,11 +79,11 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  *      or opening the note. The event payload is self-sufficient
  *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
  *      directly without a follow-up fetch.
- *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
- *      the comments-read-service, which refetches the affected note's comments
+ *   6. `comment:added` / `comment:resolved` (§6.5) → `commentEventReceived` in
+ *      the workspace-notes saga, which refetches the affected note's comments
  *      and reconciles the global comments slice per-comment (add / update /
  *      remove) so other notes' comments stay intact. Wired the same way
- *      `note:*` funnels through the notes-read-service.
+ *      `note:*` funnels through the same registered saga owner.
  *   7. `pr:linked` / `pr:updated` / `pr:unlinked` (§7.6) → `updateWorkspaceEntity`
  *      on the workspace slice with `{ prNumber, prUrl, prStatus, activePullRequest }`
  *      (or the cleared shape on unlink). This replaces the legacy main→renderer
@@ -110,7 +112,6 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  * Besides the Redux dispatches, the bridge re-emits a small set of daemon
  * events onto the LEGACY mock-IPC event channels (`relayLegacyIpcEvent`) that
  * components still subscribe to via `listenSync`/`on` — `workspace:updated`,
- * `git:status-changed`, `file-tracking:changes-updated`,
  * `task:ready-tasks-changed`, `agent:status-changed`, `agent:idle`. Without
  * the relay those listeners never fire (the silent-gap class: stale git
  * status, lost ready-task transitions). The emitted channel set is declared in
@@ -171,7 +172,10 @@ import type {
 } from '$shared/types';
 import { WorkspaceStatus, isWorkspaceAttention, isWorkspaceDisplayStatus } from '$shared/types';
 import type { AppliedSettingChange } from '$lib/client/app-client';
-import { isAcceptChangesStatusEvent } from './accept-changes-status-events';
+import {
+  isAcceptChangesStatusEvent,
+  isPushedAcceptChangesStatus,
+} from './accept-changes-status-events';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
@@ -220,7 +224,7 @@ import {
   ensureWorkspaceTasksLoaded,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import { changesEventReceived } from '$store/renderer/slices/changes/changes-slice';
 import { acceptChangesStatusInvalidated } from '$store/renderer/slices/git/git-slice';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
 import { toLockRecord } from '$features/file-tracking/file-tracking.client';
@@ -238,8 +242,10 @@ import {
   navigateAwayIfViewing,
 } from '$features/workspace/navigate-away-if-viewing';
 import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { applyNoteFromEvent } from '$features/notes/notes-read-service';
-import { applyCommentFromEvent } from '$features/comments/comments-read-service';
+import {
+  commentEventReceived,
+  noteEventReceived,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   ensureAgentSession,
   notePendingQuestionMarkerProjection,
@@ -273,7 +279,10 @@ import {
   type PermissionRequest,
 } from '$store/renderer/slices/permission/permission-slice';
 import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
-import { presenceRosterReceived } from '$store/renderer/slices/presence/presence-slice';
+import {
+  presenceRosterReceived,
+  presenceMembershipChanged,
+} from '$store/renderer/slices/presence/presence-slice';
 import { isPresenceRoster } from '$shared/types/presence';
 import {
   workspaceCreateProgressDone,
@@ -312,6 +321,7 @@ import {
   browserTabClosed,
   browserTabUpserted,
   fetchWorkspaceBrowserClientRequested,
+  workspaceBrowserClientPinReceived,
   refreshLiveClientsRequested,
 } from '$store/renderer/slices/browser-clients/browser-clients-slice';
 import { isBrowserTab, isLiveClientTransition } from '$shared/types/browser-clients';
@@ -335,16 +345,14 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 const logger = createLogger('DaemonEventsBridge');
 
 /**
- * Agent-lifecycle events that change the daemon's completion-watch registry
- * (AS-2/AS-4) — a child completing/failing/being deleted advances its parent's
- * `after_all` group, and a create can add a new watched child. Each delivery
- * refreshes the agent-subscription-ui entries for the event's workspace.
+ * Completion lifecycle invalidations. A child terminal event can advance
+ * known parent groups; subscriptions-changed names the changed parent. The
+ * latter carries waiting flags, but still omits watch/group detail records.
  */
 const SUBSCRIPTION_REFRESH_EVENT_TYPES = new Set([
   'agent:idle',
   'agent:failed',
   'agent:deleted',
-  'agent:created',
   'agent:subscriptions-changed',
 ]);
 
@@ -395,18 +403,6 @@ const previewTurnMessageIdByAgent = new Map<string, string>();
 const previewTurnEndedMessageIdByAgent = new Map<string, string>();
 
 /**
- * True once this bridge has delivered an `agent:last-message` event — the
- * §6.5 content-bearing companion the daemon emits alongside EVERY
- * `agent:message`. While false (older daemon), the lean id-only
- * `agent:message` echo falls back to a light `agent.get` refresh
- * (`refreshAgentSessionCoalesced`) so previews still converge; once true, the
- * companion carries the preview projections directly and the fallback
- * retires. Reset with the rest of the routing state (the next daemon after a
- * backend switch may be older).
- */
-let daemonEmitsLastMessage = false;
-
-/**
  * `scopeCounts` nudge idempotency (§5.5 row scope): created ids already
  * counted by `handleAgentCreatedEvent`, and each agent's last applied
  * retire/restore transition (see `claimRetireTransition`).
@@ -414,40 +410,7 @@ let daemonEmitsLastMessage = false;
 const scopeCountedCreatedAgentIds = new Set<string>();
 const lastAppliedRetireTransitionByAgent = new Map<string, 'retired' | 'restored'>();
 
-/**
- * Single-flight + trailing-coalesce wrapper over `ensureAgentSession` for the
- * `agent:message` back-compat refresh (per the event-driven refetch rule):
- * triggers during an in-flight fetch collapse into at most ONE follow-up
- * fetch after it settles. `ensureAgentSession` never rejects, so the chain
- * always advances.
- */
 let agentRefreshGeneration = 0;
-const agentSessionRefreshInFlight = new Set<string>();
-const agentSessionRefreshFollowUpWanted = new Set<string>();
-function refreshAgentSessionCoalesced(agentId: string, workspaceId?: string): void {
-  const generation = agentRefreshGeneration;
-  const key = JSON.stringify([generation, workspaceId ?? null, agentId]);
-  if (agentSessionRefreshInFlight.has(key)) {
-    agentSessionRefreshFollowUpWanted.add(key);
-    return;
-  }
-  agentSessionRefreshInFlight.add(key);
-  void ensureAgentSession(agentId, workspaceId).then(() => {
-    agentSessionRefreshInFlight.delete(key);
-    if (agentSessionRefreshFollowUpWanted.delete(key) && generation === agentRefreshGeneration) {
-      refreshAgentSessionCoalesced(agentId, workspaceId);
-    }
-  });
-}
-
-/**
- * Debounce timers for changes-slice refresh per workspace. Change events can
- * fire very frequently during agent activity (matching the note in
- * WorkspaceProgressCard.svelte line ~213), so we debounce ~1s per workspace to
- * avoid redundant refreshRequested dispatches.
- */
-const changesRefreshTimersByWorkspace = new Map<string, ReturnType<typeof setTimeout>>();
-const CHANGES_REFRESH_DEBOUNCE_MS = 1000;
 
 /**
  * Debounce timers for workspace-tasks refetch per workspace. Agents write
@@ -1506,20 +1469,91 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   appStore.dispatch(renameSession(agentId, name));
 }
 
-/**
- * `agent:updated` (§5.5 / §6.5) is emitted after non-name session-metadata
- * mutations (`agent.setModel`, `agent.reportToParent`, …). Payload shapes vary
- * per mutation (`{ agentId, modelId }`, `{ agentId, completionReportLength }`,
- * …), so instead of decoding each variant the bridge re-fetches the
- * projection via `refreshAgentSessionAfterEvent` — which preserves the local
- * transcript and schedules one trailing read when another read is already in
- * flight, so rapid marker updates converge to the newest AgentLite projection.
- * The pending-question markers are the exception (§6.5 "Pending-question
- * `agent:updated` payloads"): the `eventReceived` reducer mirrors them onto the
- * session synchronously, so the marker clear is applied before a later
- * `agent:queue:updated` shrink drops the queued answer; the read service is
- * told so a still-in-flight `agent.get` cannot undo that projection.
- */
+/** Apply self-sufficient metadata mutations; keep scoped reads for partial invalidations. */
+function projectAgentMetadata(
+  event: WorkspaceEvent,
+  agentId: string,
+  data: Record<string, unknown>,
+): boolean {
+  const session = appStore.state.agentSessions?.byAgentId[agentId];
+  if (!session || session.workspaceId !== event.workspaceId || isAgentDeletionPending(agentId))
+    return false;
+  const updates: Partial<AgentSession> = {};
+  const metadataUpdates: NonNullable<AgentSession['metadata']> = {};
+  const consumed = new Set(['agentId']);
+  for (const key of [
+    'pendingQuestionsMessageId',
+    'dismissedQuestionsMessageId',
+    'lastSeenMessageId',
+  ]) {
+    if (typeof data[key] === 'string') {
+      metadataUpdates[key] = data[key];
+      consumed.add(key);
+    }
+  }
+  if (
+    Array.isArray(data.pendingProposals) &&
+    data.pendingProposals.every(
+      (item) =>
+        item &&
+        typeof item === 'object' &&
+        typeof item.proposalId === 'string' &&
+        typeof item.messageId === 'string',
+    )
+  ) {
+    metadataUpdates.pendingProposals = data.pendingProposals;
+    consumed.add('pendingProposals');
+  }
+  const resolutions = data.proposalResolutions;
+  if (
+    resolutions &&
+    typeof resolutions === 'object' &&
+    !Array.isArray(resolutions) &&
+    Object.values(resolutions).every((value) => value === 'applied' || value === 'dismissed')
+  ) {
+    metadataUpdates.proposalResolutions = resolutions as Record<string, 'applied' | 'dismissed'>;
+    consumed.add('proposalResolutions');
+  }
+  if (data.completionReportCleared === true) {
+    metadataUpdates.completionReport = undefined;
+    metadataUpdates.completionReportTimestamp = undefined;
+    consumed.add('completionReportCleared');
+  }
+  if (data.attentionRequestCleared === true) {
+    for (const key of [
+      'attentionRequestKind',
+      'attentionRequestReason',
+      'attentionRequestTimestamp',
+    ] as const) {
+      updates[key] = undefined;
+      metadataUpdates[key] = undefined;
+    }
+    consumed.add('attentionRequestCleared');
+  }
+  if (
+    (event.type as string) === 'agent:attention-requested' &&
+    (data.kind === 'discussion' || data.kind === 'blocker') &&
+    typeof data.reason === 'string'
+  ) {
+    updates.attentionRequestKind = data.kind;
+    updates.attentionRequestReason = data.reason;
+    updates.attentionRequestTimestamp =
+      typeof data.timestamp === 'string' ? data.timestamp : event.timestamp;
+    Object.assign(metadataUpdates, updates);
+    for (const key of Object.keys(data)) consumed.add(key);
+  }
+  if (consumed.size === 1) return false;
+  const metadata = { ...session.metadata, ...metadataUpdates };
+  updates.metadata = metadata;
+  updates.hasUnread = deriveAgentHasUnread({ ...session, metadata });
+  appStore.dispatch(
+    updateSession(agentId, updates, { projectedMetadataKeys: Object.keys(metadataUpdates) }),
+  );
+  // modelId alone lacks the changed provider; completionReportLength lacks
+  // the report; id-only recovery events also still require an agent.get.
+  return Object.keys(data).every((key) => consumed.has(key));
+}
+
 function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -1535,7 +1569,10 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
     notePendingQuestionMarkerProjection(agentId, event.workspaceId);
   }
-  if (isAgentReadWorkspaceCurrent(agentId, event.workspaceId))
+  if (
+    isAgentReadWorkspaceCurrent(agentId, event.workspaceId) &&
+    !projectAgentMetadata(event, agentId, data)
+  )
     void refreshAgentSessionAfterEvent(agentId, event.workspaceId);
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an
@@ -1600,9 +1637,8 @@ function readPersistedLastToolUse(
  * cannot outrank the fresh tool chip (same outcome as the `agent.get`
  * replace-ingest path). The OTHER role's preview column was not touched by
  * the append, so it is left alone. System (and other) rows keep the
- * base id-only echo shape (the preview columns were not touched), so they
- * only flip the daemon-capability flag. The apply is a metadata-only
- * `updateSession` merge — ZERO follow-up RPCs, and a loaded transcript is
+ * base id-only echo shape (the preview columns were not touched). The apply
+ * is a metadata-only `updateSession` merge — ZERO follow-up RPCs, and a loaded transcript is
  * never clobbered (`updateSession` leaves `messages` untouched). `hasUnread`
  * is re-derived from the freshness fields so the unread badge converges
  * without an `agent.get` (same derivation as wire ingest, monorepo#1597).
@@ -1612,9 +1648,6 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
   if (!data) return;
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
-  // The daemon emits this companion event: retire the `agent:message`
-  // back-compat `agent.get` refresh for the rest of this bridge's lifetime.
-  daemonEmitsLastMessage = true;
   const role = data.role;
   if (role !== 'user' && role !== 'assistant') return;
   const updates: Partial<AgentSession> = {
@@ -2091,7 +2124,7 @@ function handleNoteEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyNoteFromEvent(workspaceId, noteId, type);
+  appStore.dispatch(noteEventReceived(workspaceId, noteId, type));
   debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
@@ -2147,7 +2180,7 @@ function handleCommentEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  applyCommentFromEvent(workspaceId, noteId, kind);
+  appStore.dispatch(commentEventReceived(workspaceId, noteId, kind));
 }
 
 /**
@@ -2647,6 +2680,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // Membership-changing deltas (invite redeem, member remove/leave — PROTOCOL
   // §5.1, multiplayer w4) carry the post-change `memberCount` so the roster
   // summary on the entity stays current without a refetch.
+  if (raw.members === true) appStore.dispatch(presenceMembershipChanged(workspaceId));
   if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
     changes.memberCount = raw.memberCount;
   }
@@ -2675,11 +2709,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   }
   // `browserClientId` (REV-2 pin, §5.17) is nullable on the wire the same way:
   // `workspace.setBrowserClient { clientId }` sends the pinned id, clearing
-  // sends an explicit JSON null. The pin change also moves the daemon's
-  // `resolved` driving client, so re-read `workspace.getBrowserClient` for
+  // sends an explicit JSON null. Apply the saved selection immediately; a
+  // failed resolution read must not retain the old checkmark. The change also
+  // moves the resolved driving client, so re-read `workspace.getBrowserClient` for
   // this one workspace (targeted, never a per-workspace fan-out).
   if (typeof raw.browserClientId === 'string' || raw.browserClientId === null) {
     changes.browserClientId = raw.browserClientId ?? undefined;
+    appStore.dispatch(workspaceBrowserClientPinReceived(workspaceId, raw.browserClientId));
     appStore.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
   }
   if (Object.keys(changes).length === 0) return;
@@ -3233,18 +3269,12 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  * `emitMockIpcEvent` call sites to keep `EMITTED_MOCK_IPC_EVENT_CHANNELS`
  * honest. Payload shapes mirror what the legacy Electron main process sent:
  *
- * - `agent:status-changed` / `agent:idle` → active-streams-tracker refetches
- *   on any delivery (payload unused) — the full event is forwarded.
  * - `task:ready-tasks-changed` → WorkspaceProgressCard reads
  *   `payload.workspaceId` + `payload.data.readyTaskIds`; the daemon event
  *   envelope (§5.4 TS-parity payload) already has exactly that shape.
- * - git/status-changing events → `git:status-changed { workspaceId }` — the
- *   listener only gates on workspaceId before a debounced reload.
- * - `changes:tracked` (§5.18) → `file-tracking:changes-updated
- *   { workspaceId }` — same debounced-reload gate.
  * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
  *   `{ workspaceId, noteId, attributions }` so the tiptap
- *   `LineAttributionGutter.svelte` `listenSync('line-attribution:updated')`
+ *   the workspace-notes read saga's `takeEveryFromListenSync` listener
  *   reload path fires without touching the daemon transport directly.
  * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
  *
@@ -3258,23 +3288,8 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
     unknown
   >;
   switch (type) {
-    case 'agent:status-changed':
-      emitMockIpcEvent('agent:status-changed', event);
-      return;
-    case 'agent:idle':
-      emitMockIpcEvent('agent:idle', event);
-      return;
     case 'task:ready-tasks-changed':
       emitMockIpcEvent('task:ready-tasks-changed', event);
-      return;
-    case 'git:commit':
-    case 'git:pull':
-    case 'changes:git-status':
-      emitMockIpcEvent('git:status-changed', { workspaceId });
-      return;
-    case 'changes:tracked':
-      emitMockIpcEvent('git:status-changed', { workspaceId });
-      emitMockIpcEvent('file-tracking:changes-updated', { workspaceId });
       return;
     case 'line-attribution:updated':
       emitMockIpcEvent('line-attribution:updated', {
@@ -3458,25 +3473,6 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   }
 }
 
-/**
- * Debounced changes-slice refresh for git/changes events (`git:commit`,
- * `git:pull`, `changes:git-status`, `changes:tracked`). These can fire frequently during
- * agent activity, so we debounce ~1s per workspace to avoid redundant
- * refreshRequested dispatches. Mirrors the precedent in
- * WorkspaceProgressCard.svelte line ~213.
- */
-function debouncedChangesRefresh(workspaceId: string): void {
-  const existing = changesRefreshTimersByWorkspace.get(workspaceId);
-  if (existing) {
-    clearTimeout(existing);
-  }
-  const timer = setTimeout(() => {
-    appStore.dispatch(refreshRequested(workspaceId));
-    changesRefreshTimersByWorkspace.delete(workspaceId);
-  }, CHANGES_REFRESH_DEBOUNCE_MS);
-  changesRefreshTimersByWorkspace.set(workspaceId, timer);
-}
-
 /** Refresh aggregates independently; detailed task-list reads still require demand. */
 function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
   appStore.dispatch(invalidateWorkspaceTasks(workspaceId));
@@ -3514,7 +3510,7 @@ function resolveHighlightId(highlightId: string): string {
 
 /**
  * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
- * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
+ * `{ route, workspaceId?, agentId?, highlightId?, durationMs? }`. Navigate the app UI to
  * the specified route and optionally pulse the highlight target with the given
  * duration. If highlightId is present, dispatch requestUiHighlight after
  * navigation settles.
@@ -3534,8 +3530,15 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       ? data.durationMs
       : undefined;
 
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
+
   import('$lib/utils/navigation.client')
-    .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
+    .then(({ navigateToRoute }) => navigateToRoute(route, options))
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -3575,7 +3578,7 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
 
 /**
  * `app:workspace-open` (§6.5 Chief-workspace workspace-open) — carries
- * `{ workspaceId, openInNewWindow? }`. Open the specified workspace in the
+ * `{ workspaceId, agentId?, openInNewWindow? }`. Open the specified workspace in the
  * current window (navigate to /workspace/:id) or in a new window if
  * openInNewWindow is true. Uses the IPC window.open-new channel when
  * openInNewWindow is set, falling back to in-window navigation on failure.
@@ -3590,6 +3593,12 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 
   const openInNewWindow = data.openInNewWindow === true;
   const route = `/workspace/${workspaceId}`;
+  const options = {
+    assistantContent: true,
+    ...(typeof data.agentId === 'string' && data.agentId.trim()
+      ? { assistantAgentId: data.agentId.trim() }
+      : {}),
+  };
 
   if (openInNewWindow) {
     // Try to open in new window via IPC, fall back to navigation if it fails
@@ -3607,7 +3616,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
             error: 'error' in result ? result.error : undefined,
           });
           const { navigateToRoute } = await import('$lib/utils/navigation.client');
-          return navigateToRoute(route, { assistantContent: true });
+          return navigateToRoute(route, options);
         }
       })
       .catch(async (error: unknown) => {
@@ -3616,14 +3625,14 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           error,
         });
         const { navigateToRoute } = await import('$lib/utils/navigation.client');
-        return navigateToRoute(route, { assistantContent: true });
+        return navigateToRoute(route, options);
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
     import('$lib/utils/navigation.client')
-      .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
+      .then(({ navigateToRoute }) => navigateToRoute(route, options))
       .catch((error: unknown) => {
         logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
       });
@@ -3659,6 +3668,18 @@ export function routeDaemonEventsNotification(
   if (!event || typeof event !== 'object') return;
   const type = (event as { type?: unknown }).type;
   if (typeof type !== 'string') return;
+
+  if (
+    [
+      'settings:changed',
+      'specialists:changed',
+      'skills:changed',
+      'mcp.servers:status-changed',
+      'workspace:updated',
+    ].includes(type)
+  ) {
+    appStore.dispatch(workspaceCatalogEventReceived(event));
+  }
 
   // `settings:changed` (§6.5) is global — no `workspaceId` envelope is
   // expected, so it must be routed BEFORE the workspace-id gate below.
@@ -3786,11 +3807,29 @@ export function routeDaemonEventsNotification(
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
 
+  if ((type.startsWith('git:') || type.startsWith('changes:')) && typeof event.id === 'string') {
+    const key = JSON.stringify([
+      selectPrincipalConnectionContext.select(appStore.state),
+      workspaceId,
+      event.id,
+    ]);
+    if (seenChangesEventIds.has(key)) return;
+    seenChangesEventIds.add(key);
+    if (seenChangesEventIds.size > 1024) {
+      const oldest = seenChangesEventIds.values().next().value;
+      if (oldest) seenChangesEventIds.delete(oldest);
+    }
+  }
+
   // Accept-status invalidation is deliberately narrow: repository mutations
   // (`git:*`), linked-PR changes (`pr:*`), and the daemon's authoritative
   // accept-status snapshot edge (`changes:git-status`). The owning saga gates
   // the follow-up read on active consumer visibility and coalesces bursts.
-  if (isAcceptChangesStatusEvent(type)) {
+  if (
+    isAcceptChangesStatusEvent(type) &&
+    !event.data?.gitRootId &&
+    !(type === 'changes:git-status' && isPushedAcceptChangesStatus(event.data?.status))
+  ) {
     appStore.dispatch(acceptChangesStatusInvalidated(workspaceId));
   }
 
@@ -3817,6 +3856,7 @@ export function routeDaemonEventsNotification(
     return;
   }
   if (type === 'agent:delete-scheduled') {
+    activeStreamsTracker.applyEvent(event);
     handleAgentDeleteScheduledEvent(event, workspaceId);
     return;
   }
@@ -3875,38 +3915,52 @@ export function routeDaemonEventsNotification(
   relayLegacyIpcEvent(type, event, workspaceId);
 
   // Completion-watch lifecycle subset (side effect, never an early return):
-  // these events feed the daemon's AS-3/AS-4 fan-in, so refresh every tracked
-  // agent-subscription-ui entry via `agent.getSubscriptions` — completion
-  // counts tick live while a coordinator waits on `waitMode: after_all`.
+  // Read only parents affected by this watch change. Lifecycle child events
+  // do not invalidate unrelated cached views, including hidden agents.
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
     const agentId = (event as { data?: { agentId?: unknown } }).data?.agentId;
     if (type === 'agent:subscriptions-changed' && typeof agentId === 'string' && agentId) {
-      // This event names the parent whose watch set changed. Other lifecycle
-      // events can affect arbitrary watched children and retain workspace scope.
+      // This event names the parent whose watch set changed. Child lifecycle
+      // events are scoped by known watch/group membership in the saga.
       appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId, agentId));
     } else {
-      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+      appStore.dispatch(
+        refreshWorkspaceSubscriptionEntriesRequested(
+          workspaceId,
+          undefined,
+          typeof agentId === 'string' ? agentId : undefined,
+        ),
+      );
     }
   }
 
-  // STAB-9: Agent lifecycle events (status-changed, idle) refresh ONLY the
-  // affected agent — `refreshAgentSessionAfterEvent` fetches `agent.get`
-  // (single-flight per agent with one trailing coalesced read, transcript
-  // preserved, same delete-tombstone + `pendingDeleteAt` guards as the list
-  // path) — so the sidebar shows live status/last-activity updates without
-  // refetching the whole workspace agent list on every per-agent tick (a
-  // large-workspace `agent.list` frame head-of-line blocks the shared
-  // connection — see the audit in the workspace spec). Whole-list hydration
-  // stays reserved for list-membership changes: mount, reconnect,
-  // `workspace:created`, and agent-delete recovery. A payload without an
-  // agentId (unexpected per §6.5) falls back to the list refetch so
-  // convergence is never lost.
+  // Known sessions fold lifecycle fields synchronously in eventReceived.
+  // Only unknown entities need metadata hydration; gaps/reconnects retain
+  // their separate authoritative recovery paths.
   if (type === 'agent:status-changed' || type === 'agent:idle') {
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     if (typeof agentId === 'string' && agentId.length > 0) {
-      if (isAgentReadWorkspaceCurrent(agentId, event.workspaceId))
+      if (
+        !appStore.state.agentSessions?.byAgentId[agentId] &&
+        isAgentReadWorkspaceCurrent(agentId, event.workspaceId)
+      ) {
+        // An absent row cannot consume deltas while its initial read is pending.
+        // Coalesce that burst into one trailing read so a stale busy snapshot
+        // cannot swallow an idle event. Known rows stay push-only below.
         void refreshAgentSessionAfterEvent(agentId, event.workspaceId);
+      } else if (
+        type === 'agent:status-changed' &&
+        typeof data?.status === 'string' &&
+        appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId === event.workspaceId &&
+        isAgentReadWorkspaceCurrent(agentId, event.workspaceId)
+      ) {
+        // persist_status stamps both the row update and event with the same
+        // daemon timestamp; AgentLite derives lastActivity from updated_at.
+        appStore.dispatch(
+          updateSession(agentId, { updatedAt: event.timestamp, lastActivity: event.timestamp }),
+        );
+      }
     } else {
       appStore.dispatch(hydrateAgentsRequested(workspaceId));
     }
@@ -4120,19 +4174,18 @@ export function routeDaemonEventsNotification(
     return;
   }
 
-  // Git/changes events should
-  // refresh the changes slice so daemon-originated commits appear live in the
-  // sidebar Changes panel. Debounce per workspace (~1s) because
-  // `changes:tracked` can fire very frequently during agent activity.
+  // Forward admitted payloads once. The read owner separates working files
+  // from history and defers missing-detail reads until the workspace is visible.
   if (
-    type === 'git:commit' ||
-    type === 'git:pull' ||
+    type.startsWith('git:') ||
     type === 'changes:git-status' ||
-    type === 'changes:tracked'
+    type === 'changes:tracked' ||
+    (type === 'workspace:updated' &&
+      ['baseRef', 'baseCommitSha', 'branch'].some((key) =>
+        Object.hasOwn(event.data?.changes ?? {}, key),
+      ))
   ) {
-    debouncedChangesRefresh(workspaceId);
-    // Fall through to the relayLegacyIpcEvent + eventReceived dispatches below
-    // so the legacy mock-IPC listeners and activity timeline still work.
+    appStore.dispatch(changesEventReceived(workspaceId, type, event.data ?? {}));
   }
 
   // Live stream family — accumulate per-agent and grow the in-flight assistant
@@ -4284,28 +4337,16 @@ export function routeDaemonEventsNotification(
   }
   // `agent:last-message` (§6.5, additive) — content-bearing companion of
   // every `agent:message`: applies the persisted preview projections straight
-  // off the payload (ZERO follow-up RPCs) and marks the daemon as emitting
-  // the event, retiring the back-compat refresh below. Returns early: the
+  // off the payload (ZERO follow-up RPCs). Returns early: the
   // paired `agent:message` already records the row in the activity timeline,
   // so the companion falling through would double-count every message.
   if (type === 'agent:last-message') {
     handleAgentLastMessageEvent(event);
     return;
   }
-  // STAB-22 (rewired): `agent:message` no longer triggers a transcript fetch.
-  // Non-viewed agents' previews ride `agent:last-message` (above) and viewed
-  // transcripts ride the standing `chat.subscribe` delta stream (§7.1) —
-  // paging the whole conversation per persisted row multiplied every message
-  // into O(pages) `agent.getConversation` calls. Back-compat: until the
-  // daemon proves it emits the companion event, fall back to a light
-  // metadata-only `agent.get` refresh (single-flight + trailing-coalesce,
-  // transcript preserved) so previews on older daemons still converge.
-  if (type === 'agent:message' && !daemonEmitsLastMessage) {
-    const { agentId, role } = event.data ?? {};
-    if (typeof agentId === 'string' && (role === 'assistant' || role === 'user')) {
-      refreshAgentSessionCoalesced(agentId, event.workspaceId);
-    }
-  }
+  // The supported daemon emits agent:last-message for persisted previews,
+  // and chat.subscribe owns transcript delivery. The id-only agent:message
+  // is timeline evidence, never a metadata/transcript invalidation.
   // Process-queue events (§6.5): agent:process:queued sets the hint,
   // agent:process:resumed clears it, agent:process:evicted clears it. These are
   // transient UI hints and should not clutter the activity timeline, so they
@@ -4454,8 +4495,6 @@ export async function refreshDaemonEventsAfterReconnect(
   activeWorkspaceId: string | null,
 ): Promise<void> {
   agentRefreshGeneration += 1;
-  agentSessionRefreshInFlight.clear();
-  agentSessionRefreshFollowUpWanted.clear();
   const state = appStore.state as {
     scripts?: { byWorkspaceId: Record<string, unknown> };
     workspaceAgents?: {
@@ -4568,22 +4607,17 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 }
 
 const seenScriptEventIds = new Set<string>();
+const seenChangesEventIds = new Set<string>();
 
 export function disposeDaemonEventsRoutingState(): void {
   seenScriptEventIds.clear();
+  seenChangesEventIds.clear();
   agentRefreshGeneration += 1;
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
   previewTurnEndedMessageIdByAgent.clear();
-  daemonEmitsLastMessage = false;
-  agentSessionRefreshInFlight.clear();
-  agentSessionRefreshFollowUpWanted.clear();
   scopeCountedCreatedAgentIds.clear();
   lastAppliedRetireTransitionByAgent.clear();
-  for (const timer of changesRefreshTimersByWorkspace.values()) {
-    clearTimeout(timer);
-  }
-  changesRefreshTimersByWorkspace.clear();
   for (const timer of tasksRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
   }

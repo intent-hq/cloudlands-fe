@@ -49,7 +49,7 @@
     isCollapsed?: boolean;
     replyValue?: string;
     onReplyValueChange?: (value: string) => void;
-    onReply?: (content: string) => void;
+    onReply?: (content: string) => boolean | void | Promise<boolean | void>;
     onAccept?: () => void;
     onReject?: () => void;
     onResolve?: () => void;
@@ -98,6 +98,7 @@
   const workspaceFileVersion = createWorkspaceFileVersion();
 
   let replyEditor: any = $state(null);
+  let isSubmittingReply = $state(false);
   $effect(() => {
     if (replyEditor && registerReplyInput) {
       registerReplyInput(replyEditor);
@@ -194,19 +195,24 @@
     };
   });
   async function submitReply() {
+    if (isSubmittingReply) return;
     const text = replyValue?.trim();
     if (!text) return;
+    const submittedReplyValue = replyValue;
+    const html = replyEditor?.getHTML?.() ?? '';
+    const md = processHTMLToMarkdown(html, {
+      preserveAnchors: false,
+      workspaceId: workspace?.id,
+    });
+    const out = (md || text).trim();
+    isSubmittingReply = true;
     try {
-      const html = replyEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, {
-        preserveAnchors: false,
-        workspaceId: workspace?.id,
-      });
-      const out = (md || text).trim();
-      if (out) onReply?.(out);
-    } finally {
+      const accepted = out ? await onReply?.(out) : false;
+      if (accepted === false || replyValue !== submittedReplyValue) return;
       onReplyValueChange?.('');
       replyEditor?.clear?.();
+    } finally {
+      isSubmittingReply = false;
     }
   }
 </script>
@@ -325,6 +331,7 @@
               minHeight={32}
               maxHeight={160}
               {workspace}
+              inputLocked={isSubmittingReply}
               onUpdate={(text) => onReplyValueChange?.(text)}
               onSubmit={() => submitReply()}
             />
@@ -349,6 +356,7 @@
             size="icon-sm"
             class="rounded-full bg-muted text-foreground hover:bg-muted/80"
             tooltip={m.tiptap_commentThread_send_tooltip()}
+            disabled={isSubmittingReply}
             onclick={() => submitReply()}
           >
             <Fa icon={faArrowUp} size="sm" />

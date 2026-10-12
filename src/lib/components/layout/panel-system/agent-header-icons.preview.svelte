@@ -103,8 +103,8 @@
     }}
     onZoomToggle={menuIcons ? () => (lastMenuAction = 'zoom') : undefined}
     onSplitHorizontal={menuIcons ? () => (lastMenuAction = 'split') : undefined}
-    onMoveLeft={menuIcons ? () => (lastMenuAction = 'move-left') : undefined}
-    onMoveRight={menuIcons ? () => (lastMenuAction = 'move-right') : undefined}
+    onMovePaneLeft={menuIcons ? () => (lastMenuAction = 'move-left') : undefined}
+    onMovePaneRight={menuIcons ? () => (lastMenuAction = 'move-right') : undefined}
     onTabClose={() => (closeCount += 1)}
     isFocused
   />

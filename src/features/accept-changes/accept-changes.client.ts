@@ -10,6 +10,8 @@
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
+import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
+import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 import {
   addAcceptRemoteRequested,
   executeAcceptRequested,
@@ -30,12 +32,12 @@ import type {
 } from './types';
 
 /**
- * Per-workspace single-flight for `getStatus`. Concurrent callers for the same
- * workspace share one in-flight `backendRequest`; the entry is cleared as soon
+ * Single-flight for one workspace in one admitted backend/principal lifetime.
+ * Concurrent callers share an in-flight `backendRequest`; the entry is cleared as soon
  * as it settles (resolve or reject), so this coalesces duplicate concurrent
  * calls without introducing any TTL/caching of the result.
  */
-const inFlightGetStatus = new Map<WorkspaceId, Promise<WorkspaceGitStatus>>();
+const inFlightGetStatus = new Map<string, Promise<WorkspaceGitStatus>>();
 
 /** Compatibility facade for non-component callers; remove once those callers dispatch intents. */
 export class AcceptChangesClient {
@@ -55,8 +57,19 @@ export class AcceptChangesClient {
     workspaceId: WorkspaceId,
     options?: { forceRefresh?: boolean },
   ): Promise<WorkspaceGitStatus> {
+    const state = appStore.state;
+    const context = getPrincipalActionContext(state);
+    // An unadmitted caller has no stable authority lifetime to share with.
+    if (!context)
+      return backendRequest<WorkspaceGitStatus>('accept-changes.getStatus', { workspaceId });
+    const key = JSON.stringify([
+      getActiveBackendId(state),
+      context,
+      state.daemonHealth?.connectionGeneration,
+      workspaceId,
+    ]);
     if (!options?.forceRefresh) {
-      const existing = inFlightGetStatus.get(workspaceId);
+      const existing = inFlightGetStatus.get(key);
       if (existing) {
         return existing;
       }
@@ -68,11 +81,11 @@ export class AcceptChangesClient {
     ).finally(() => {
       // Only clear the entry if it still points at this request - a forced
       // refresh may have already replaced it with a newer in-flight request.
-      if (inFlightGetStatus.get(workspaceId) === request) {
-        inFlightGetStatus.delete(workspaceId);
+      if (inFlightGetStatus.get(key) === request) {
+        inFlightGetStatus.delete(key);
       }
     });
-    inFlightGetStatus.set(workspaceId, request);
+    inFlightGetStatus.set(key, request);
     return request;
   }
 

@@ -76,9 +76,9 @@
 </script>
 
 {#if visible}
-  <Portal target="body" zIndex={1010}>
+  <Portal target="body" zIndex="var(--layer-connection-overlay)">
     <div
-      class="fixed inset-0 z-[1010] flex items-center justify-center bg-black/70 backdrop-blur-md"
+      class="fixed inset-0 z-[var(--layer-connection-overlay)] flex items-center justify-center bg-black/70 backdrop-blur-md"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="daemon-updating-title"

@@ -142,12 +142,12 @@
   {#if status === 'checking'}
     <div class="toast-row">
       <ToastGlyph variant="loading" />
-      <div class="title">{m.ui_updateToast_checking_label()}</div>
+      <div class="title" data-toast-title>{m.ui_updateToast_checking_label()}</div>
     </div>
   {:else if status === 'available'}
     <div class="toast-row">
       <ToastGlyph variant="update" />
-      <div class="title">
+      <div class="title" data-toast-title>
         {m.ui_updateToast_available_label({ version: updateInfo?.version || '' })}
       </div>
       <Button
@@ -159,14 +159,14 @@
         {m.ui_updateToast_download_label()}
       </Button>
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {previewState?.availableDescription ?? m.ui_updateToast_readyToDownload_description()}
     </div>
   {:else if status === 'downloading'}
     <div class="toast-downloading">
       <div class="toast-row">
         <ToastGlyph variant="update" />
-        <div class="title">
+        <div class="title" data-toast-title>
           {m.ui_updateToast_downloading_label({ version: updateInfo?.version || '' })}
         </div>
         <span class="toast-progress-label">{formatInteger(progressPercent)}%</span>
@@ -176,7 +176,7 @@
           ariaLabel={m.ui_updateToast_close_ariaLabel()}
         />
       </div>
-      <div class="description">
+      <div class="description" data-toast-description>
         {#if progress}{formatSpeed(progress.bytesPerSecond)}{/if}{#if remainingSeconds != null}
           · {m.ui_updateToast_remainingSeconds_label({
             seconds: formatInteger(remainingSeconds),
@@ -196,7 +196,7 @@
       >
         <ToastGlyph variant="celebrate" />
       </div>
-      <div class="title">{m.ui_updateToast_updateReady_label()}</div>
+      <div class="title" data-toast-title>{m.ui_updateToast_updateReady_label()}</div>
       <Button variant="primary" size="compact" class="toast-action" onclick={handleInstall}>
         <ArrowsClockwiseIcon size={16} weight="regular" aria-hidden="true" />
         {m.ui_updateToast_install_label()}
@@ -207,28 +207,28 @@
         ariaLabel={m.ui_updateToast_close_ariaLabel()}
       />
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
     </div>
   {:else if status === 'not-available'}
     <div class="toast-row">
       <ToastGlyph variant="celebrate" />
-      <div class="title">{m.ui_updateToast_upToDate_label()}</div>
+      <div class="title" data-toast-title>{m.ui_updateToast_upToDate_label()}</div>
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {m.ui_updateToast_runningVersion_description({ version: currentVersion ?? '' })}
     </div>
   {:else if status === 'error'}
     <div class="toast-row">
       <ToastGlyph variant="error" />
-      <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
+      <div class="title" data-toast-title>{m.ui_updateToast_checkFailed_label()}</div>
       <ToastCloseButton
         inline
         onclick={handleClose}
         ariaLabel={m.ui_updateToast_close_ariaLabel()}
       />
     </div>
-    <div class="description">
+    <div class="description" data-toast-description>
       {updateError || m.ui_updateToast_unknown_error()}
     </div>
   {/if}

@@ -19,6 +19,7 @@ const {
   createSelectorReadable,
   paletteMruEntries,
   paletteFileMru,
+  paletteNoteSearch,
   collaboratorState,
   multiplayerState,
   gitlabState,
@@ -36,21 +37,114 @@ const {
     },
   });
 
+  const backendRequestMock = vi.fn(async () => ({ files: [], matches: [] }));
+  const paletteNoteSearch = {
+    value: { items: [], loading: false, capability: 'unknown', fallback: true } as any,
+    generation: 0,
+    subscribers: new Set<(value: any) => void>(),
+  };
+  const publishNoteSearch = (value: any) => {
+    paletteNoteSearch.value = value;
+    for (const subscriber of paletteNoteSearch.subscribers) subscriber(value);
+  };
+  const reduxDispatchMock = vi.fn(
+    (action: {
+      asyncActionType?: string;
+      type?: string;
+      payload?: unknown[];
+      success?: (value: unknown) => unknown;
+      failure?: (error: unknown) => unknown;
+    }) => {
+      if (action.asyncActionType === 'workspaceNotes/searchNotesRequested') {
+        const [query, preferWorkspaceId] = action.payload ?? [];
+        void backendRequestMock('search.notes', {
+          query,
+          limit: 10,
+          includeArchived: false,
+          ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
+        }).then(action.success, action.failure);
+      }
+      if (action.asyncActionType === 'palette/noteSearchRequested') {
+        const [, , query, preferWorkspaceId] = action.payload ?? [];
+        const generation = ++paletteNoteSearch.generation;
+        const idle = { items: [], loading: false, capability: 'unknown', fallback: true };
+        if (typeof query !== 'string' || !query.trim()) {
+          publishNoteSearch(idle);
+          action.success?.(idle);
+        } else {
+          publishNoteSearch({ ...idle, loading: true });
+          setTimeout(async () => {
+            if (generation !== paletteNoteSearch.generation) return;
+            try {
+              const response: any = await backendRequestMock('search.notes', {
+                query,
+                limit: 10,
+                includeArchived: false,
+                ...(preferWorkspaceId ? { preferWorkspaceId } : {}),
+              });
+              if (generation !== paletteNoteSearch.generation) return;
+              const indexed = response?.indexed === true && Array.isArray(response.matches);
+              const update = indexed
+                ? {
+                    items: response.matches.slice(0, 10).map((hit: any) => ({
+                      id: JSON.stringify([hit.workspaceId, hit.noteId]),
+                      type: 'note',
+                      noteId: hit.noteId,
+                      workspaceId: hit.workspaceId,
+                      label: hit.title,
+                      description: hit.preview,
+                      score: hit.score,
+                      updatedAt: hit.updatedAt,
+                      isArchived: hit.isArchived,
+                      isArchivedWorkspace: hit.workspaceArchived,
+                    })),
+                    loading: false,
+                    capability: 'indexed',
+                    fallback: false,
+                  }
+                : { ...idle, capability: 'legacy' };
+              publishNoteSearch(update);
+              action.success?.(update);
+            } catch (error) {
+              if (generation !== paletteNoteSearch.generation) return;
+              const update = {
+                ...idle,
+                error: error instanceof Error ? error.message : String(error),
+              };
+              publishNoteSearch(update);
+              action.success?.(update);
+            }
+          }, 150);
+        }
+      }
+      if (action.type === 'palette/noteSearchReleased') {
+        ++paletteNoteSearch.generation;
+        publishNoteSearch({ items: [], loading: false, capability: 'unknown', fallback: true });
+      }
+      return action;
+    },
+  );
+
   return {
     gotoMock: vi.fn(),
     navigateToSettingsMock: vi.fn(),
     invokeMock: vi.fn().mockResolvedValue({ files: [] }),
     openMessageMock: vi.fn().mockResolvedValue(undefined),
-    backendRequestMock: vi.fn(async () => ({ files: [], matches: [] })),
+    backendRequestMock,
     workspaceItemsState: { value: [] as any[], subscribers: new Set<(items: any[]) => void>() },
     sessionSessions: { value: [] as any[] },
     localNotes: { value: [] as any[] },
-    reduxDispatchMock: vi.fn(),
+    reduxDispatchMock,
     browserRecentUrls: { value: [] as any[] },
     createSelectorReadable,
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
-    collaboratorState: { workspace: false, client: false },
+    paletteNoteSearch,
+    collaboratorState: {
+      workspace: false,
+      client: false,
+      subscribers: new Set<(value: boolean) => void>(),
+    },
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
@@ -62,6 +156,17 @@ vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
 vi.mock('$lib/utils/open-message', () => ({ openMessage: openMessageMock }));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/principal/principal-selectors')
+  >()),
+  selectPrincipalConnectionContext: () => ({
+    subscribe: (fn: (context: string) => void) => {
+      fn('test-connection');
+      return () => {};
+    },
+  }),
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: backendRequestMock,
   backendSubscribe: vi.fn(),
@@ -100,6 +205,13 @@ vi.mock('$store/renderer/slices/palette/palette-selectors', () => ({
       return () => {};
     },
   }),
+  selectPaletteNoteSearch: () => ({
+    subscribe: (fn: (value: any) => void) => {
+      paletteNoteSearch.subscribers.add(fn);
+      fn(paletteNoteSearch.value);
+      return () => paletteNoteSearch.subscribers.delete(fn);
+    },
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({
@@ -117,8 +229,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
+      collaboratorState.subscribers.add(fn);
       fn(collaboratorState.client);
-      return () => {};
+      return () => collaboratorState.subscribers.delete(fn);
     },
   }),
 }));
@@ -286,6 +399,127 @@ describe('CommandPalette new actions', () => {
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
+  });
+
+  it.each([
+    ['agent defaults', /Agent defaults/i, 'agent-behavior'],
+    ['providers', /Providers/i, 'providers'],
+    ['connections', /Connections/i, 'connections'],
+    ['machines', /Machines/i, 'devices'],
+    ['mobile', /Mobile/i, 'mobile'],
+    ['collaboration', /Collaboration/i, 'collaboration'],
+    ['appearance', /Appearance/i, 'display'],
+    ['general', /General/i, 'app-behavior'],
+    ['input shortcuts', /Input and shortcuts/i, 'input'],
+    ['workspace setup', /Workspace setup/i, 'setup'],
+    ['advanced', /Advanced/i, 'advanced'],
+    ['specialists', /Specialists/i, 'specialists'],
+    ['Linear', /Connections/i, 'connections'],
+    ['settings linear', /Connections/i, 'connections'],
+    ['keyboard', /Input and shortcuts/i, 'input'],
+    ['notifications', /General/i, 'app-behavior'],
+    ['theme', /Appearance/i, 'display'],
+  ] as const)(
+    'opens the settings destination for %s without a workspace',
+    async (query, name, tab) => {
+      multiplayerState.enabled = true;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, initialQuery: query, onClose } });
+
+      await fireEvent.click(await screen.findByRole('button', { name }));
+
+      expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab });
+      expect(reduxDispatchMock).toHaveBeenCalledWith({
+        type: 'sidebarNav/setShowCreateModal',
+        payload: [false],
+      });
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('opens Linear settings with Enter from a workspace and dismisses the create form', async () => {
+    const onClose = vi.fn();
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'Linear', workspaceId: 'tiny-owl', onClose },
+    });
+    await screen.findByRole('button', { name: /Connections/i });
+
+    await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'connections' });
+    expect(reduxDispatchMock).toHaveBeenCalledWith({
+      type: 'sidebarNav/setShowCreateModal',
+      payload: [false],
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('dismisses the create form when opening the general Settings command', async () => {
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'settings', onClose: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: /^Settings/i }));
+
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith();
+    expect(reduxDispatchMock).toHaveBeenCalledWith({
+      type: 'sidebarNav/setShowCreateModal',
+      payload: [false],
+    });
+  });
+
+  it.each([
+    ['Linear', /Connections/i, 'connections'],
+    ['providers', /Providers/i, 'providers'],
+  ] as const)(
+    'withholds administrator settings for collaborator-only clients searching %s',
+    async (query, name, tab) => {
+      render(CommandPalette, {
+        props: { isOpen: true, initialQuery: query, onClose: vi.fn() },
+      });
+      await screen.findByRole('button', { name });
+
+      collaboratorState.client = true;
+      collaboratorState.subscribers.forEach((subscriber) => subscriber(true));
+      await waitFor(() => expect(screen.queryByRole('button', { name })).toBeNull());
+      await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(navigateToSettingsMock).not.toHaveBeenCalledWith({ tab });
+    },
+  );
+
+  it('keeps personal settings accessible for collaborator-only clients', async () => {
+    collaboratorState.client = true;
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'theme', onClose: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: /Appearance/i }));
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'display' });
+  });
+
+  it('keeps administrator settings available to a host administrator in a shared workspace', async () => {
+    collaboratorState.workspace = true;
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'Linear', workspaceId: 'tiny-owl', onClose: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: /Connections/i }));
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'connections' });
+  });
+
+  it('refreshes collaboration settings results when multiplayer is enabled or disabled', async () => {
+    multiplayerState.enabled = true;
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'sharing', onClose: vi.fn() },
+    });
+    await screen.findByRole('button', { name: /Collaboration/i });
+
+    multiplayerState.enabled = false;
+    storeEvents.emit();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Collaboration/i })).toBeNull(),
+    );
+    multiplayerState.enabled = true;
+    storeEvents.emit();
+    await fireEvent.click(await screen.findByRole('button', { name: /Collaboration/i }));
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'collaboration' });
   });
 
   it.each([undefined, false, true])(

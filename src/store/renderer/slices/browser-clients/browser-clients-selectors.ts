@@ -22,6 +22,10 @@ export const selectOwnClientId = store.createSelector(
   (state): string | null => state?.browserClients?.ownClientId ?? null,
 );
 
+export const selectOwnClientIdConfirmed = store.createSelector(
+  (state): boolean => state?.browserClients?.ownClientIdConfirmed === true,
+);
+
 /** Every connected logical client (`client.list` order). */
 export const selectLiveClients = store.createSelector((state): LiveClient[] =>
   getItems(state.browserClients.liveClients),
@@ -44,6 +48,14 @@ export const selectLiveClient = store.createSelector(
 export const selectWorkspaceBrowserClient = store.createSelector(
   (state, wsId: string): WorkspaceBrowserClient | null =>
     (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).browserClient,
+);
+
+/** An event can confirm selection even while its resolution read is unavailable. */
+export const selectWorkspaceBrowserSelectionKnown = store.createSelector(
+  (state, wsId: string): boolean => {
+    const workspace = state?.browserClients?.byWorkspaceId[wsId];
+    return workspace?.pinnedClientId !== undefined || workspace?.browserClient != null;
+  },
 );
 
 /**
@@ -84,7 +96,12 @@ export const selectWorkspaceDrivingClient = store.createSelector(
       eligibleClients,
       ownClientId: slice.ownClientId ?? '',
       driving,
-      pinnedClientId: browserClient?.source === 'workspace' ? browserClient.clientId : null,
+      pinnedClientId:
+        slice.byWorkspaceId[wsId]?.pinnedClientId !== undefined
+          ? slice.byWorkspaceId[wsId].pinnedClientId
+          : browserClient?.source === 'workspace'
+            ? browserClient.clientId
+            : null,
     };
   },
 );

@@ -1,15 +1,21 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
-  import { AgentStatus, type AgentSession } from '$shared/types';
+  import { AgentStatus, type AgentMessage, type AgentSession } from '$shared/types';
   import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
+  import { selectAgentMessages } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import {
+    createChatDraftFixture,
+    type DraftFixtureRequest,
+  } from '../../../../test/fixtures/chat-drafts';
   import {
     principalContextChanged,
     principalReceived,
@@ -48,6 +54,7 @@
     chief = false,
     streaming = false,
     draft = '',
+    persistedDraft = '',
     attention = null,
     queued = false,
     suggestions = false,
@@ -63,6 +70,8 @@
     queuePhase,
     followUp,
     historyNotice,
+    messages,
+    ownerPrincipalId,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -71,6 +80,7 @@
     chief?: boolean;
     streaming?: boolean;
     draft?: string;
+    persistedDraft?: string;
     attention?: 'blocker' | 'discussion' | null;
     queued?: boolean;
     suggestions?: boolean;
@@ -86,6 +96,8 @@
     queuePhase?: 'ready' | 'foreign' | 'restored';
     followUp?: 'blocker' | 'discussion';
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
+    messages?: AgentMessage[];
+    ownerPrincipalId?: string;
   } = $props();
 
   $effect(() => {
@@ -104,21 +116,33 @@
     chief,
     streaming,
     draft,
+    persistedDraft,
     suggestions,
     questions,
     transcript,
     followUp,
     historyNotice,
+    messages,
+    ownerPrincipalId,
   }));
   let appliedStreaming = fixture.streaming;
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
   const timestamp = '2026-08-23T12:00:00.000Z';
+  let draftRequests = $state<DraftFixtureRequest[]>([]);
+  const draftFixture = createChatDraftFixture((request) => {
+    draftRequests = [...draftRequests, request];
+  });
+  const initialDraft = fixture.persistedDraft || fixture.draft;
+  if (initialDraft) draftFixture.seed(workspaceId, agentId, initialDraft);
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: () => [] })
+    ? startRootStoreLifecycle(store, {
+        startSagas: (appStore) => startChatFixtureSagas(appStore, draftFixture.client),
+      })
     : () => {};
+  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store, draftFixture.client);
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -203,6 +227,8 @@
     createdAt: timestamp,
     updatedAt: timestamp,
   } as unknown as AgentSession;
+  if (fixture.messages) session.messages = fixture.messages;
+  const storedMessages$ = selectAgentMessages(agentId);
 
   if (fixture.followUp || fixture.historyNotice) {
     session.messages = [
@@ -297,6 +323,7 @@
   });
   store.dispatch(
     setWorkspaceEntity({
+      ownerPrincipalId: fixture.ownerPrincipalId,
       id: workspaceId,
       title: fixture.chief ? 'Chief' : 'Composer geometry',
       myRole: 'owner',
@@ -592,6 +619,7 @@
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
   onDestroy(() => {
+    stopChatSagas.forEach((stop) => stop());
     disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
@@ -606,6 +634,8 @@
 </script>
 
 <section style:zoom data-testid="chat-panel-composer-host">
+  <output hidden data-testid="stored-messages">{JSON.stringify($storedMessages$)}</output>
+  <output hidden data-testid="composer-draft-requests">{JSON.stringify(draftRequests)}</output>
   <div class="relative" style:width="{width}px" style:height="{height}px">
     <div class="absolute inset-0 h-full w-full">
       <PanelLayout {workspaceId} layoutId={workspaceId} />

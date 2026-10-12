@@ -46,6 +46,13 @@ process.env.WORKSPACES_BASE_DIR =
 
 // Mock window.electronAPI for tests
 if (typeof window !== 'undefined') {
+  window.ResizeObserver ??= class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  globalThis.ResizeObserver ??= window.ResizeObserver;
+
   // Mock Element.prototype.animate for Svelte transitions (jsdom doesn't implement Web Animations API)
   if (typeof Element.prototype.animate !== 'function') {
     Element.prototype.animate = function (

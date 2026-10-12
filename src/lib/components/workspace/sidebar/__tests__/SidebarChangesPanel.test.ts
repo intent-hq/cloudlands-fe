@@ -7,6 +7,7 @@ import { warmImport } from '../../../../../test/warm-import';
 import { store as appStore } from '$store/renderer/store';
 import { prWorkflowReducer } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
 import { acceptWorkflowReducer } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
+import { repositoryContextReducer } from '$store/renderer/slices/repository-context/repository-context-slice';
 
 // Polyfill scrollIntoView for jsdom
 if (typeof Element.prototype.scrollIntoView !== 'function') {
@@ -685,6 +686,7 @@ async function resetMocks() {
     gitWrite: { byWorkspaceId: {} },
     prWorkflow: prWorkflowReducer(undefined, { type: 'init' }),
     acceptWorkflow: acceptWorkflowReducer(undefined, { type: 'init' }),
+    repositoryContext: repositoryContextReducer(undefined, { type: 'init' }),
   };
   mockDispatch.mockImplementation((action) => {
     const prWorkflow = prWorkflowReducer(mockStoreState.value.prWorkflow, action);
@@ -1192,8 +1194,11 @@ describe('SidebarChangesPanel', () => {
 
       expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
       ]);
       expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
@@ -1209,10 +1214,10 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+      ]);
       expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
     });
@@ -2056,10 +2061,10 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+      ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
@@ -2075,8 +2080,11 @@ describe('SidebarChangesPanel', () => {
 
       expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
       ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
@@ -2091,10 +2099,10 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+      ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
@@ -2130,6 +2138,14 @@ describe('SidebarChangesPanel', () => {
       ).toEqual([
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-2'] },
+      ]);
+      expect(
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('changes/consumer')),
+      ).toEqual([
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-2'] },
       ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
@@ -2536,65 +2552,6 @@ describe('SidebarChangesPanel', () => {
       expect(
         mockDispatch.mock.calls.some(([action]) => action.type === 'git/loadSecondaryRoot'),
       ).toBe(false);
-    });
-
-    it('opens repository details explicitly and keeps one demand while browsing exact roots', async () => {
-      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
-      await seedGitRoots([makeGitRoot({ id: 'tools' })]);
-      const { selectRepositoryContextForDemand } =
-        await import('$store/renderer/slices/repository-context/repository-context-selectors');
-      const { summaryContext } =
-        await import('$features/accept-changes/components/repository-context-summary.preview-fixtures');
-      // This existing mocked sidebar harness verifies root prop wiring only.
-      // The feature suite exercises the real selector, Store, saga and client lifecycle.
-      const context = summaryContext('self-managed', 'ws-1');
-      const selected = vi.spyOn(selectRepositoryContextForDemand, 'select').mockReturnValue({
-        ...context,
-        status: 'ready',
-        unavailableReason: null,
-      });
-      const { container, getByRole, findByText, queryByText, unmount } = await renderPanel();
-      try {
-        const demands = () =>
-          mockDispatch.mock.calls
-            .map(([action]) => action)
-            .filter((action) => action.type === 'repositoryContext/demanded');
-        expect(demands()).toHaveLength(0);
-        await fireEvent.click(getByRole('button', { name: 'Repository details' }));
-        await findByText('feature/details');
-        expect(demands()).toHaveLength(1);
-        const original = demands()[0].payload;
-        expect(original[0]).toBe('ws-1');
-        expect(original[2]).toBeNull();
-        const trigger = container.querySelector<HTMLButtonElement>(
-          '[data-testid="git-root-selector"] button',
-        )!;
-        trigger.focus();
-        await fireEvent.keyDown(trigger, { key: 'Enter' });
-        await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-        await fireEvent.keyDown(trigger, { key: 'Enter' });
-        await waitFor(() =>
-          expect(
-            container.querySelector('[data-testid="secondary-root-changes-view"]'),
-          ).toBeTruthy(),
-        );
-        // The shared sidebar mock needs an explicit notification for readable args.
-        // Real Store argument reactivity is covered in the feature lifecycle suite.
-        const { store } = await import('$store/renderer/store');
-        (store as unknown as { emitState(): void }).emitState();
-        await findByText('tools/maintenance');
-        expect(queryByText('feature/details')).toBeNull();
-        expect(demands()).toHaveLength(1);
-        await fireEvent.click(getByRole('button', { name: 'Repository details' }));
-        expect(queryByText('tools/maintenance')).toBeNull();
-        expect(mockDispatch.mock.calls.map(([action]) => action)).toContainEqual({
-          type: 'repositoryContext/demandEnded',
-          payload: original,
-        });
-      } finally {
-        unmount();
-        selected.mockRestore();
-      }
     });
 
     it('renders no dropdown when the workspace has no secondary roots', async () => {

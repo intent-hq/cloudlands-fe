@@ -346,3 +346,64 @@ it('retains workspace snapshots during refresh and clears them across connection
   );
   expect(selectWorkspaceMcpServerName.select(storeWith(removed), 'A', 'shared-id')).toBeUndefined();
 });
+
+it('projects catalog pushes only into the named existing snapshot and preserves definitions', async () => {
+  const { workspaceCatalogReceived, workspaceCatalogUpdated } =
+    await import('./provider-catalog-slice');
+  const snapshot = {
+    catalog: CATALOG,
+    settings: [
+      {
+        path: 'model.defaultProvider',
+        value: 'codex',
+        origin: 'default' as const,
+        type: 'string' as const,
+        label: 'Provider',
+        category: 'Providers',
+        description: '',
+        defaultValue: '',
+      },
+    ],
+    specialists: [],
+    readiness: {},
+    mcpServers: [{ id: 'server', name: 'tools', type: 'stdio' as const, workspaceDisabled: false }],
+    mcpStatuses: [{ serverId: 'server', state: 'error' as const, lastError: 'offline' }],
+  };
+  let state = providerCatalogReducer(initialState, workspaceCatalogReceived('A', snapshot, 0));
+  state = providerCatalogReducer(state, workspaceCatalogReceived('B', snapshot, 0));
+  state = providerCatalogReducer(
+    state,
+    workspaceCatalogUpdated('A', {
+      kind: 'settings',
+      changes: [{ path: 'model.defaultProvider', value: 'claude-code', origin: 'file' }],
+    }),
+  );
+  state = providerCatalogReducer(
+    state,
+    workspaceCatalogUpdated('A', {
+      kind: 'status',
+      status: { serverId: 'server', state: 'running' },
+    }),
+  );
+  state = providerCatalogReducer(
+    state,
+    workspaceCatalogUpdated('A', { kind: 'toggle', serverId: 'server', workspaceDisabled: true }),
+  );
+  expect(state.byWorkspaceId?.A.settings[0]).toEqual({
+    ...snapshot.settings[0],
+    value: 'claude-code',
+    origin: 'file',
+  });
+  expect(state.byWorkspaceId?.A.mcpStatuses).toEqual([{ serverId: 'server', state: 'running' }]);
+  expect(state.byWorkspaceId?.A.mcpServers?.[0].workspaceDisabled).toBe(true);
+  expect(state.byWorkspaceId?.B).toBe(snapshot);
+  expect(
+    providerCatalogReducer(
+      state,
+      workspaceCatalogUpdated('missing', {
+        kind: 'status',
+        status: { serverId: 'server', state: 'running' },
+      }),
+    ),
+  ).toBe(state);
+});

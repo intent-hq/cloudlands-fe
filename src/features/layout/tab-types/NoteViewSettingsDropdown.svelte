@@ -26,9 +26,10 @@
     noteId: string;
     /** Render controls within the panel's existing action menu. */
     embedded?: boolean;
+    canEdit?: boolean;
   }
 
-  let { workspaceId, noteId, embedded = false }: Props = $props();
+  let { workspaceId, noteId, embedded = false, canEdit = true }: Props = $props();
 
   const noteFontStyle = selectNoteFontStyle();
   const spellcheckEnabled = selectSpellcheckEnabled();
@@ -37,6 +38,7 @@
   $effect(() => workspaceIdStore.set(workspaceId));
   $effect(() => noteIdStore.set(noteId));
   const noteViewMode = selectNoteViewMode(workspaceIdStore, noteIdStore);
+  const effectiveViewMode = $derived(canEdit ? $noteViewMode : 'preview');
 
   let open = $state(false);
   const descriptionId = $props.id();
@@ -48,9 +50,9 @@
         : m.settings_fontStyle_mono(),
   );
   const viewLabel = $derived(
-    $noteViewMode === 'editor'
+    effectiveViewMode === 'editor'
       ? m.ui_viewSettings_editor_label()
-      : $noteViewMode === 'preview'
+      : effectiveViewMode === 'preview'
         ? m.ui_viewSettings_renderedPreview_label()
         : m.ui_viewSettings_rawMarkdown_label(),
   );
@@ -62,6 +64,7 @@
 
   function selectViewMode(value: string) {
     if (value !== 'editor' && value !== 'preview' && value !== 'raw') return;
+    if (!canEdit && value !== 'preview') return;
     appStore.dispatch(setNoteViewMode(workspaceId, noteId, value as NoteViewMode));
   }
 </script>
@@ -69,8 +72,12 @@
 {#snippet settingsItems()}
   <Menu.Sub>
     <Menu.SubTrigger>
-      <span class="min-w-0 flex-1">{m.ui_viewSettings_font_label()}</span>
-      <span class="type-caption text-muted-foreground">{fontLabel}</span>
+      <span class="min-w-0 flex-1">
+        <span class="block" data-note-setting-label>{m.ui_viewSettings_font_label()}</span>
+        <span class="block type-caption text-muted-foreground" data-note-setting-value
+          >{fontLabel}</span
+        >
+      </span>
     </Menu.SubTrigger>
     <Menu.SubContent aria-label={m.ui_viewSettings_font_label()}>
       <Menu.RadioGroup value={$noteFontStyle} onValueChange={setFontStyle}>
@@ -88,18 +95,22 @@
   </Menu.Sub>
   <Menu.Sub>
     <Menu.SubTrigger>
-      <span class="min-w-0 flex-1">{m.ui_viewSettings_noteViewMode_label()}</span>
-      <span class="type-caption text-muted-foreground">{viewLabel}</span>
+      <span class="min-w-0 flex-1">
+        <span class="block" data-note-setting-label>{m.ui_viewSettings_noteViewMode_label()}</span>
+        <span class="block type-caption text-muted-foreground" data-note-setting-value
+          >{viewLabel}</span
+        >
+      </span>
     </Menu.SubTrigger>
     <Menu.SubContent aria-label={m.ui_viewSettings_noteViewMode_label()}>
-      <Menu.RadioGroup value={$noteViewMode} onValueChange={selectViewMode}>
-        <Menu.RadioItem value="editor" closeOnSelect={false}>
+      <Menu.RadioGroup value={effectiveViewMode} onValueChange={selectViewMode}>
+        <Menu.RadioItem value="editor" closeOnSelect={false} disabled={!canEdit}>
           {m.ui_viewSettings_editor_label()}
         </Menu.RadioItem>
         <Menu.RadioItem value="preview" closeOnSelect={false}>
           {m.ui_viewSettings_renderedPreview_label()}
         </Menu.RadioItem>
-        <Menu.RadioItem value="raw" closeOnSelect={false}>
+        <Menu.RadioItem value="raw" closeOnSelect={false} disabled={!canEdit}>
           {m.ui_viewSettings_rawMarkdown_label()}
         </Menu.RadioItem>
       </Menu.RadioGroup>
@@ -108,14 +119,14 @@
   <Menu.CheckboxItem
     checked={$spellcheckEnabled}
     closeOnSelect={false}
-    disabled={$noteViewMode === 'preview'}
-    aria-describedby={$noteViewMode === 'preview' ? descriptionId : undefined}
+    disabled={effectiveViewMode === 'preview'}
+    aria-describedby={effectiveViewMode === 'preview' ? descriptionId : undefined}
     onCheckedChange={() => appStore.dispatch(toggleSpellcheck())}
   >
     <span class="min-w-0 flex-1">
       <span class="block">{m.ui_viewSettings_spellcheck_label()}</span>
-      {#if $noteViewMode === 'preview'}
-        <span id={descriptionId} class="block text-muted-foreground" aria-hidden="true">
+      {#if effectiveViewMode === 'preview'}
+        <span id={descriptionId} class="sr-only" aria-hidden="true">
           {m.ui_viewSettings_spellcheckPreview_description()}
         </span>
       {/if}

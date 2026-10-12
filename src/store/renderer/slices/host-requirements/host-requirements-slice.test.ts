@@ -15,6 +15,7 @@ import {
   selectHostRequirementsChecking,
   selectHostRequirementsHasCheckedOnce,
   selectNodeRequirement,
+  selectProviderCliRequirements,
 } from './host-requirements-selectors';
 import {
   checkHostRequirementsComplete,
@@ -25,6 +26,7 @@ import {
   hostRequirementsReset,
   initialState,
   nodeRequirementResolved,
+  providerCliRequirementsResolved,
 } from './host-requirements-slice';
 import type { HostRequirementsState } from './host-requirements-types';
 
@@ -33,6 +35,28 @@ function storeWith(hostRequirements: HostRequirementsState): StoreState {
 }
 
 describe('hostRequirementsReducer', () => {
+  it('keeps advisory CLI diagnostics scoped to their connection and resets them on admission changes', () => {
+    const warnings = [
+      {
+        providerId: 'codex',
+        providerName: 'Codex',
+        version: '0.114.0',
+        minimumVersion: '0.159.1',
+      },
+    ];
+    const state = hostRequirementsReducer(
+      initialState,
+      providerCliRequirementsResolved('remote-A', warnings),
+    );
+    expect(selectProviderCliRequirements.select(storeWith(state))).toEqual({
+      context: 'remote-A',
+      warnings,
+    });
+    expect(selectAllRequirementsMet.select(storeWith(state))).toBe(false);
+    const reset = hostRequirementsReducer(state, hostRequirementsReset());
+    expect(selectProviderCliRequirements.select(storeWith(reset))).toBeUndefined();
+  });
+
   it('requires fresh diagnostics after the owner connection changes', () => {
     const previous = hostRequirementsReducer(
       hostRequirementsReducer(initialState, nodeRequirementResolved(true, '22.1.0')),

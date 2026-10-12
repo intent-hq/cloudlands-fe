@@ -6,7 +6,7 @@
 
   interface Props {
     target?: string | HTMLElement;
-    zIndex?: number;
+    zIndex?: number | string;
     children: Snippet;
   }
 

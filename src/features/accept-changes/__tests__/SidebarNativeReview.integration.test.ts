@@ -74,11 +74,53 @@ async function mount(options: SidebarFixtureOptions = {}) {
   if (
     options.role !== 'guest-owner' &&
     options.context !== 'unknown' &&
+    options.context !== 'mixed-providers' &&
     options.context !== 'selection-required'
   )
     await screen.findByRole('textbox', { name: 'Target branch' });
   return mounted;
 }
+it('saves a mixed-provider remote immediately and refreshes the PR destination without a dialog', async () => {
+  await mount({ context: 'mixed-providers' });
+  const choose = async (key: 'Home' | 'End') => {
+    const control = await screen.findByRole('combobox', { name: 'PR repository' });
+    await fireEvent.click(control);
+    await screen.findByRole('option', { name: /origin · GitLab/ });
+    await fireEvent.keyDown(control, { key });
+    await fireEvent.keyDown(control, { key: 'Enter' });
+  };
+  await choose('Home');
+  await screen.findByRole('textbox', { name: 'Target branch' });
+  expect(fixture.base.selectionRequests[0]).toMatchObject({
+    kind: 'confirm',
+    root: { workspaceId: sidebarWorkspaceId, kind: 'primary' },
+    command: { kind: 'save', choice: { mode: 'explicit-remote', remoteName: 'origin' } },
+  });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await choose('End');
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Target branch' })).toBeNull());
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: 'PR repository' }).textContent).toContain(
+      'github · GitHub',
+    ),
+  );
+  expect(fixture.base.selectionRequests[1].command).toEqual({
+    kind: 'save',
+    choice: { mode: 'explicit-remote', remoteName: 'github' },
+  });
+  expect(fixture.requests).toHaveLength(0);
+  await fireEvent.click(screen.getByTestId('pr-create-button'));
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: 'Cancel', exact: true })).toBeNull(),
+  );
+  await fireEvent.click(screen.getByTestId('pr-create-button'));
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: 'PR repository' }).textContent).toContain(
+      'github · GitHub',
+    ),
+  );
+});
+
 async function drafts(branch = 'release/literal ') {
   await fireEvent.input(screen.getByRole('textbox', { name: 'Target branch' }), {
     target: { value: branch },

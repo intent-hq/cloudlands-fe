@@ -20,6 +20,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { tick } from 'svelte';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { initialState as hardwareConsoleInitialState } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import type { StoreState } from '$store/renderer/store';
 import {
   initialState as workspaceInitialState,
@@ -56,9 +57,13 @@ const mocks = vi.hoisted(() => {
       select: (s: any, ...a: any[]) => getter(s ?? storeState.current, ...a),
     });
 
-  return { dispatch, storeState, readable, selector };
+  return { dispatch, storeState, readable, selector, microConnected: false };
 });
 const pageState = vi.hoisted(() => ({ url: new URL('http://localhost/') }));
+
+vi.mock('$features/hardware-console/device/connection-status', () => ({
+  microConnectedReadable: () => mocks.readable(mocks.microConnected),
+}));
 
 vi.mock('$app/state', () => ({ page: pageState }));
 
@@ -145,6 +150,7 @@ const GUEST_SESSION: GuestSessionRecord = {
 const PRE_BIND = Symbol('pre-bind');
 function seedState(workspace: Workspace, backendId: string | typeof PRE_BIND = 'local'): void {
   mocks.storeState.current = {
+    hardwareConsole: hardwareConsoleInitialState,
     workspace: workspaceReducer(workspaceInitialState, setWorkspaceEntity(workspace)),
     connections:
       backendId === PRE_BIND
@@ -193,6 +199,7 @@ const menuItemNames = () =>
 beforeEach(() => {
   cleanup();
   mocks.dispatch.mockClear();
+  mocks.microConnected = false;
   mocks.storeState.current = {};
 });
 
@@ -231,6 +238,20 @@ describe('WorkspaceCard context menu owner gating', () => {
         onOpenInNewWindow,
       });
       await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    },
+  );
+
+  it.each([WorkspaceStatus.Active, WorkspaceStatus.Archived])(
+    'gates legacy card assignments by workspace eligibility: %s',
+    async (status) => {
+      mocks.microConnected = true;
+      const onOpen = vi.fn();
+      await openContextMenu(makeWorkspace({ status, myRole: 'owner' }), onOpen);
+      const assignment = screen.queryByRole('menuitem', { name: 'Assign to Micro Key' });
+      if (status === WorkspaceStatus.Active) expect(assignment).not.toBeNull();
+      else expect(assignment).toBeNull();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Open in New Window' }));
+      expect(onOpen).toHaveBeenCalledOnce();
     },
   );
 

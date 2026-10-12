@@ -145,7 +145,7 @@
         >
           {group.label}
         </h2>
-        <div class="mt-2 flex flex-col">
+        <div class="mt-2 flex flex-col gap-px">
           {#each groupItems as item (item.id)}
             <Button
               variant="plain"
@@ -190,7 +190,7 @@
     <h2 id="settings-group-specialists" class="px-3 type-caption font-normal text-muted-foreground">
       {m.settings_sidebar_specialists_label()}
     </h2>
-    <div class="mt-2 flex flex-col">
+    <div class="mt-2 flex flex-col gap-px">
       {@render agentsNavigation()}
     </div>
   </section>

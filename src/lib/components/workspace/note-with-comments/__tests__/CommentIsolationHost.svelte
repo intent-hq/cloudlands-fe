@@ -1,15 +1,17 @@
 <script lang="ts">
   /* eslint-disable intent/no-component-async-data-fetch -- Test-only mock transport and event injection exercise production read services. */
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import NoteWithComments from '../../NoteWithComments.svelte';
   import { Button } from '$lib/components/ui/button';
   import { store } from '$store/renderer/store';
+  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
   import { selectCommentAction } from '$store/renderer/slices/comments/comments-slice';
   import { applyCommentFromEvent } from '$features/comments/comments-read-service';
   import { installMockElectronBridge } from '../../../../../test/ct-mock-electron-bridge';
   import type { Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { startWorkspaceNotesSagaFixture } from '../../../../../test/fixtures/workspace-notes-saga-fixture';
 
   let {
     second = false,
@@ -27,6 +29,10 @@
   const workspace = (id: string) => ({ id: WorkspaceId(id), title: id }) as Workspace;
   const firstWorkspace = workspace('isolation-a');
   const secondWorkspace = workspace('isolation-b');
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: startWorkspaceNotesSagaFixture,
+  });
+  onDestroy(disposeStore);
 
   onMount(() => {
     const previous = window.electronAPI;

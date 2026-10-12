@@ -53,7 +53,7 @@
     hasConnectionLine?: boolean;
     replyValue?: string;
     onReplyValueChange?: (value: string) => void;
-    onReply?: (content: string) => void;
+    onReply?: (content: string) => boolean | void | Promise<boolean | void>;
     onAccept?: () => void;
     onReject?: () => void;
     onResolve?: () => void;

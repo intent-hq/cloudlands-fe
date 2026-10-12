@@ -15,6 +15,7 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import {
     bulkUpsertSessions,
@@ -26,6 +27,8 @@
     setRestoreStatus,
     setActiveTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -56,6 +59,8 @@
     liveMessages,
     pendingProposals,
     chiefWorkspace = false,
+    failureRecovery,
+    initializeStore = true,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -77,6 +82,11 @@
     liveMessages?: AgentMessage[];
     pendingProposals?: PendingProposalRef[];
     chiefWorkspace?: boolean;
+    initializeStore?: boolean;
+    failureRecovery?: {
+      state: 'failed' | 'queued' | 'attempting' | 'recovered' | 'retired';
+      error: string;
+    };
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
@@ -90,15 +100,21 @@
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
   const watchedFixture = untrack(() => watchedAgent);
-  const disposeStore = startRootStoreLifecycle(store, {
-    startSagas: (appStore) =>
-      watchedFixture
-        ? [
-            appStore.runSaga(appLayoutNavigationSaga),
-            appStore.runSaga(watchRightmostColumnRequests),
-          ]
-        : [],
-  });
+  const ownsStore = untrack(() => initializeStore);
+  const disposeStore = ownsStore
+    ? startRootStoreLifecycle(store, {
+        startSagas: (appStore) => [
+          ...startChatFixtureSagas(appStore),
+          ...(watchedFixture
+            ? [
+                appStore.runSaga(appLayoutNavigationSaga),
+                appStore.runSaga(watchRightmostColumnRequests),
+              ]
+            : []),
+        ],
+      })
+    : () => {};
+  const stopFixtureSagas = ownsStore ? [] : startChatFixtureSagas(store);
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>
     [
@@ -742,6 +758,51 @@
   });
 
   $effect(() => {
+    if (!failureRecovery) return;
+    const { state, error } = failureRecovery;
+    untrack(() => {
+      admitLegacyPrincipal();
+      const active = state === 'attempting';
+      store.dispatch(
+        updateSession(agentId, {
+          status: active
+            ? AgentStatus.Active
+            : state === 'recovered'
+              ? AgentStatus.RuntimeIdle
+              : AgentStatus.Error,
+          isActive: active,
+          isStreaming: active,
+          isProcessing: active,
+          isResponding: active,
+          turnInFlight: active,
+          stopReason: state === 'recovered' ? 'end_turn' : error,
+          stopReasonTimestamp: timestamp,
+          retiredAt: state === 'retired' ? timestamp : undefined,
+        }),
+      );
+      store.dispatch(chatErrorCleared(agentId));
+      store.dispatch(
+        replaceAgentQueue(
+          agentId,
+          state === 'queued' || state === 'retired'
+            ? [
+                {
+                  id: 'recovery-queue',
+                  turnId: 'recovery-turn',
+                  content: 'Please continue the review and preserve the partial work.',
+                  queuedAt: timestamp,
+                  position: 0,
+                  requeuedAfterFailure: true,
+                },
+              ]
+            : [],
+          workspaceId,
+        ),
+      );
+    });
+  });
+
+  $effect(() => {
     if (!pendingFixture) return;
     const status = pendingAssistantStatus;
     untrack(() => {
@@ -790,7 +851,10 @@
       }
     });
   });
-  onDestroy(disposeStore);
+  onDestroy(() => {
+    for (const stop of stopFixtureSagas) stop();
+    disposeStore();
+  });
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">

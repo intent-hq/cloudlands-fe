@@ -19,6 +19,7 @@ import net, { type AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Duplex, PassThrough } from 'node:stream';
+import tls from 'node:tls';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -2381,6 +2382,7 @@ describe('testWssConnection saved-route probes', () => {
 
   it('succeeds through one deduplicated alternate while the primary stalls, then closes both', async () => {
     let accepted!: () => void;
+    let primaryAccepted = false;
     daemon.upgradeGate = new Promise<void>((resolve) => {
       accepted = resolve;
     });
@@ -2389,19 +2391,35 @@ describe('testWssConnection saved-route probes', () => {
       sockets.add(socket);
       socket.resume();
       socket.once('close', () => sockets.delete(socket));
+      primaryAccepted = true;
       accepted();
     });
-    await new Promise<void>((resolve) => stalled.listen(daemon.port, '127.0.0.2', resolve));
     const handshakes = daemon.secureConnections;
     const request = vi.fn(() => ({ result: null }));
     daemon.handler = request;
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
+      await new Promise<void>((resolve, reject) => {
+        stalled.once('error', reject);
+        stalled.listen(0, '127.0.0.1', resolve);
+      });
+      const stalledPort = (stalled.address() as AddressInfo).port;
+      const connect = tls.connect;
+      // Keep two logical routes without requiring a second loopback alias.
+      // Only the stalled candidate is redirected; both use real sockets and
+      // the alternate still exercises TLS pinning and authenticated upgrade.
+      vi.spyOn(tls, 'connect').mockImplementation(((options: tls.ConnectionOptions) =>
+        connect(
+          options.host === '127.0.0.2' && Number(options.port) === daemon.port
+            ? { ...options, host: '127.0.0.1', port: stalledPort }
+            : options,
+        )) as typeof tls.connect);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       await testWssConnection({
         ...config(),
         host: '127.0.0.2',
         hosts: ['127.0.0.2', daemon.host, `  ${daemon.host}  `, ''],
       });
+      expect(primaryAccepted).toBe(true);
       // No clock advancement: success cannot wait for the stalled primary's deadline.
       expect(vi.getTimerCount()).toBe(0);
       expect(daemon.secureConnections - handshakes).toBe(1);

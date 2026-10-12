@@ -1,0 +1,22 @@
+{
+  "sourceRepo": "intent-hq/intentd",
+  "sourceCommit": "f37a984de599271a3030439e9c32c95dc8804143",
+  "sourceBase": "c93cc461db6d64c74a6a8275cd5fb0fbdffd749f",
+  "sourcePath": "crates/intent-services/src/pr_monitor/tests/fixtures/compact-required-checks.json",
+  "generationCommand": "INTENTD_UPDATE_GOLDENS=1 CARGO_TERM_PROGRESS_WHEN=never bash scripts/with-test-policy.sh cargo test -p intent-services --lib pr_monitor::tests::compact_required_checks --jobs 4 -- --nocapture",
+  "goldenCheckCommand": "CARGO_TERM_PROGRESS_WHEN=never bash scripts/with-test-policy.sh cargo test -p intent-services --lib pr_monitor::tests::compact_required_checks --jobs 4",
+  "producer": "merge_requirements -> serde_json persisted PrMonitorSnapshot -> pr_monitor_wire",
+  "sourceHashes": {
+    "crates/intent-services/src/pr_monitor.rs": "8184924a284b686fa9796b3297c8a8bbdfce892f8578bf538dd413f2b1695110",
+    "crates/intent-services/src/pr_monitor/tests/compact_required_checks.rs": "20b0c75d21a5c0d61e06a0bd5f7339ff912541c25f40340ad7393181a56ca279",
+    "crates/intent-services/resources/assistant-app-guide.md": "053fdc7728567b2373d4cac600d27691eb1e3074a56150f6ce2a6874ad10e55b"
+  },
+  "sha256": "dc9485e1a68f9c43f5004ed0d89a71716a41d34cd8e48c173d888eab34329c16",
+  "originalSha256": "02f67fdc79ec210becc6b82ce3965356b6de917a110e5a3167fd8e8eda460e70",
+  "originalSourceHashes": {
+    "crates/intent-services/src/pr_monitor.rs": "5c85b22fbe79d14fa47d2130a31765424aa1f6daba4a3353aa1d7211ddb7602b",
+    "crates/intent-services/src/pr_monitor/tests/compact_required_checks.rs": "0f7419d017cfebb832dfc3619dacb62a717005c4512e9bb75c33fb808a464595",
+    "crates/intent-services/resources/assistant-app-guide.md": "053fdc7728567b2373d4cac600d27691eb1e3074a56150f6ce2a6874ad10e55b"
+  },
+  "fixtureTransformation": "Only wrapped exact UTF-8 producer bytes, including final newline, in export default String.raw`...`; no JSON normalization. Copy rejects backticks and ${ sequences."
+}

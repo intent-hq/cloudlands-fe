@@ -59,8 +59,10 @@
   class="min-h-0 flex-1"
 >
   {#snippet row({ item: thread })}
-    <ListRow class="min-h-9 px-2 py-2">
-      {#snippet title()}<span title={thread.title}>{thread.title}</span>{/snippet}
+    <ListRow class="min-h-9 px-2 py-2" role="group" aria-label={thread.title}>
+      {#snippet title()}
+        <span title={thread.title}>{thread.title}</span>
+      {/snippet}
       {#snippet trailing()}
         <HomeAssistantThreadActivity agentId={thread.agentId} />
         {#if thread.isActive}

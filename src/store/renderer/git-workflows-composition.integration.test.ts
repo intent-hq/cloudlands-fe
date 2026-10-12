@@ -283,9 +283,17 @@ describe('Git workflow production composition and reload smoke', () => {
       ),
     );
     appStore.dispatch(setFileExplorerWorkspacePath('composition-reload', '/repo'));
-    appStore.dispatch(loadFileContentSucceeded('composition-reload', 'a.ts', '/repo/a.ts', 'old'));
     appStore.dispatch(
-      saveFileContentRequested('composition-reload', '/repo/a.ts', '/repo/a.ts', 'edited'),
+      loadFileContentSucceeded('composition-reload', 'a.ts', '/repo/a.ts', {
+        kind: 'editable-text',
+        content: 'old',
+      }),
+    );
+    appStore.dispatch(
+      saveFileContentRequested('composition-reload', '/repo/a.ts', '/repo/a.ts', {
+        kind: 'editable-text',
+        content: 'edited',
+      }),
     );
     await vi.waitFor(() => expect(calls('file.write')).toHaveLength(1));
     const cancelled = gitWriteRequested('composition-reload', 'before-reload', {

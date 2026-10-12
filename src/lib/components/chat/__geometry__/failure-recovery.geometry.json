@@ -1,0 +1,203 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "long-error": {
+    "420": {
+      "probes": {
+        "[data-testid=\"failure-recovery-preview\"], [data-testid=\"failure-recovery-card\"], [data-testid=\"failure-raw-details\"], .turn-failure-notice, [data-testid=\"queued-message-retry-status\"]": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 36,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 310,
+          "x": 50,
+          "y": 234
+        },
+        "data-stream-terminal-error=true": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 8,
+          "height": 416,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 8,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 310,
+          "x": 50,
+          "y": 282
+        },
+        "data-testid=failure-raw-details": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 256,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 4,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 284,
+          "x": 63,
+          "y": 429
+        },
+        "data-testid=failure-recovery-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 820,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 870,
+        "width": 420
+      }
+    }
+  },
+  "partial-output": {
+    "420": {
+      "probes": {
+        "[data-testid=\"failure-recovery-preview\"], [data-testid=\"failure-recovery-card\"], [data-testid=\"failure-raw-details\"], .turn-failure-notice, [data-testid=\"queued-message-retry-status\"]": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 36,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 310,
+          "x": 50,
+          "y": 446
+        },
+        "[data-testid=\"failure-recovery-preview\"], [data-testid=\"failure-recovery-card\"], [data-testid=\"failure-raw-details\"], .turn-failure-notice, [data-testid=\"queued-message-retry-status\"]#2": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 36,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 310,
+          "x": 50,
+          "y": 530
+        },
+        "data-stream-terminal-error=true": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 8,
+          "height": 120,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 8,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 310,
+          "x": 50,
+          "y": 578
+        },
+        "data-testid=failure-recovery-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 820,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 870,
+        "width": 420
+      }
+    }
+  },
+  "repeated-failures": {
+    "420": {
+      "probes": {
+        "[data-testid=\"failure-recovery-preview\"], [data-testid=\"failure-recovery-card\"], [data-testid=\"failure-raw-details\"], .turn-failure-notice, [data-testid=\"queued-message-retry-status\"]": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 36,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 310,
+          "x": 50,
+          "y": 378
+        },
+        "data-stream-terminal-error=true": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 8,
+          "height": 138,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 8,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 310,
+          "x": 50,
+          "y": 426
+        },
+        "data-testid=failure-recovery-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 820,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        },
+        "data-testid=queued-message-retry-status": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 4,
+          "height": 18,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 2,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 210,
+          "x": 68,
+          "y": 662
+        }
+      },
+      "root": {
+        "height": 870,
+        "width": 420
+      }
+    }
+  }
+}

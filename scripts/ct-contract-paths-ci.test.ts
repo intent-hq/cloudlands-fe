@@ -11,7 +11,8 @@
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
  * CT failures after green PR CI) or a CT spec / geometry golden
  * (cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped on the PR and
- * was ejected three times). The step script and the gate script are
+ * was ejected three times), or a direct fixture dependency of a discovered spec.
+ * The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
  * assertions hold against runtime behaviour rather than source spelling.
@@ -547,6 +548,33 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
   });
 });
 
+describe('portable fixture relevance', () => {
+  const script = stepRunBlock(releaseFastPath, 'Evaluate portable fixture relevance');
+  it.each([
+    ['src/features/dev-console/TrafficInspector.test.ts', true],
+    ['src/features/backend/main/backend-connection.test.ts', true],
+    ['src/features/backend/main/__tests__/isolated-test-package.test.ts', true],
+    ['src/main/isolated-test-profile.test.ts', true],
+    ['src/test/fixtures/isolated-profile-home.ts', true],
+    ['.github/workflows/intent-pr.yml', true],
+    ['src/other.test.ts', false],
+  ])('classifies %s without requiring unrelated native suites', (file, required) => {
+    const { root, base } = checkoutWith(file);
+    const output = join(root, 'github-output');
+    const result = bash(script, { BASE_SHA: base, GITHUB_OUTPUT: output }, root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe(`portable_fixtures_required=${required}`);
+  });
+
+  it('requires native tests if the diff cannot be read', () => {
+    const { root } = checkoutWith('src/other.ts');
+    const output = join(root, 'github-output');
+    const result = bash(script, { BASE_SHA: 'missing-ref', GITHUB_OUTPUT: output }, root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe('portable_fixtures_required=true');
+  });
+});
+
 describe('authored browser tests require their complete PR suites', () => {
   it.each([
     ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
@@ -793,7 +821,7 @@ describe('shared browser jobs and nightly routing', () => {
     const ct = jobLines('test-ct', browserWorkflow);
     expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
     expect(field(ct, 'fail-fast')).toBe('false');
-    expect(jobField(ct, 'timeout-minutes')).toBe('40');
+    expect(jobField(ct, 'timeout-minutes')).toBe('50');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
       '--max-old-space-size=8192',
     );
@@ -1134,6 +1162,8 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     RESULT_checks: 'success',
     RESULT_build_web: 'success',
     RESULT_test: 'success',
+    RESULT_test_portable_fixtures: 'skipped',
+    PORTABLE_FIXTURES_REQUIRED: 'false',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
     RESULT_test_playwright: ct,
@@ -1155,6 +1185,146 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
       { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ELECTRON_REQUIRED: 'false', ...env },
       tmpdir(),
     );
+
+  it.each([
+    ['edit', true],
+    ['add', true],
+    ['delete', true],
+    ['rename', true],
+    ['unreferenced host', false],
+    ['unit-only fixture', false],
+    ['computed import', true],
+    ['unreadable diff', true],
+  ] as const)(
+    'routes a fixture-only %s through classification, job selection and gate',
+    (change, required) => {
+      const host = 'src/lib/components/chat/input/__tests__/MemberMentionsHost.svelte';
+      const spec = 'src/lib/components/chat/input/__tests__/member-mentions.ct.spec.ts';
+      const { root } = checkoutWith(host);
+      commitFile(
+        root,
+        spec,
+        change === 'computed import'
+          ? "const host = './MemberMentionsHost.svelte'; import(host);"
+          : "import Host from './MemberMentionsHost.svelte';",
+      );
+      commitFile(root, 'src/lib/unit.test.ts', "import data from './unit-data.json';");
+      if (change === 'add') {
+        git(root, 'rm', host);
+        git(root, 'commit', '-q', '-m', 'prepare missing fixture');
+      }
+      const base = git(root, 'rev-parse', 'HEAD');
+      if (change === 'delete') {
+        git(root, 'rm', host);
+        git(root, 'commit', '-q', '-m', 'delete fixture');
+      } else if (change === 'rename') {
+        // Only the old name is imported: Git's rename must retain that dependency.
+        git(root, 'mv', host, 'renamed-host.svelte');
+        git(root, 'commit', '-q', '-m', 'move fixture');
+      } else {
+        const changed =
+          change === 'unreferenced host'
+            ? 'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte'
+            : change === 'unit-only fixture'
+              ? 'src/lib/unit-data.json'
+              : host;
+        commitFile(root, changed, '<div>updated fixture</div>');
+      }
+      // No changed spec or contract path may mask fixture dependency classification.
+      const changedPaths = git(root, 'diff', '--name-only', '--no-renames', base, 'HEAD').split(
+        '\n',
+      );
+      expect(changedPaths).toEqual(
+        change === 'rename'
+          ? ['renamed-host.svelte', host]
+          : [
+              change === 'unreferenced host'
+                ? 'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte'
+                : change === 'unit-only fixture'
+                  ? 'src/lib/unit-data.json'
+                  : host,
+            ],
+      );
+      const output = join(root, 'github-output');
+      const classified = bash(
+        stepRunBlock(releaseFastPath, 'Evaluate CT relevance'),
+        {
+          BASE_SHA: change === 'unreadable diff' ? 'missing-ref' : base,
+          GITHUB_OUTPUT: output,
+        },
+        root,
+      );
+      expect(classified.status, classified.stderr).toBe(0);
+      const line = readFileSync(output, 'utf8').trim();
+      expect(line).toBe(`ct_required=${required}`);
+      if (change === 'computed import' || change === 'unreadable diff') {
+        expect(classified.stderr).toContain('requiring CT (fail-safe)');
+      } else {
+        expect(classified.stderr).not.toContain('requiring CT (fail-safe)');
+      }
+      const ctRequired = line.split('=')[1];
+      const context: Context = {
+        event: 'pull_request',
+        ctRequired,
+        rootPlaywrightRequired: 'false',
+        fastPath: 'false',
+        route: 'success',
+      };
+      expect(evaluateCondition(jobField(testCt, 'if'), context)).toBe(required);
+      for (const outcome of ['success', 'failure', 'cancelled', 'skipped', '']) {
+        const result = runGate({
+          ...results(outcome),
+          FAST_PATH: 'false',
+          CT_REQUIRED: ctRequired,
+          ROOT_PLAYWRIGHT_REQUIRED: 'false',
+          RESULT_test_playwright: 'skipped',
+        });
+        expect(result.status, `${outcome}: ${result.stdout}${result.stderr}`).toBe(
+          outcome === 'success' || (!required && outcome === 'skipped') ? 0 : 1,
+        );
+      }
+      // Relevance is still computed for queue entries and release-shaped PRs,
+      // but neither is allowed to run browser jobs or reject their intended skip.
+      for (const override of [{ event: 'merge_group' }, { fastPath: 'true' }]) {
+        const routed = { ...context, ...override };
+        expect(evaluateCondition(jobField(testCt, 'if'), routed)).toBe(false);
+        const result = runGate({
+          ...results('skipped', routed.event),
+          FAST_PATH: routed.fastPath,
+          CT_REQUIRED: ctRequired,
+          ROOT_PLAYWRIGHT_REQUIRED: 'false',
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+      }
+    },
+  );
+
+  it.each(['pull_request', 'merge_group'])(
+    'requires native fixture success on relevant %s diffs',
+    (event) => {
+      for (const outcome of ['success', 'failure', 'cancelled', 'skipped', '']) {
+        const result = runGate({
+          ...results('success', event),
+          FAST_PATH: 'false',
+          CT_REQUIRED: 'true',
+          PORTABLE_FIXTURES_REQUIRED: 'true',
+          RESULT_test_portable_fixtures: outcome,
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(outcome === 'success' ? 0 : 1);
+      }
+    },
+  );
+
+  it('rejects missing native fixture classification even with a successful job', () => {
+    const result = runGate({
+      ...results('success'),
+      FAST_PATH: 'false',
+      CT_REQUIRED: 'true',
+      PORTABLE_FIXTURES_REQUIRED: '',
+      RESULT_test_portable_fixtures: 'success',
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+  });
 
   it('waits for the root matrix and runs even when a shard fails or is cancelled', () => {
     const start = gate.indexOf('    needs:');

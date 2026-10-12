@@ -13,7 +13,6 @@ import {
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { settleRegisteredNoteContent } from '../note-content-settlement';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById } from '../workspace-notes-selectors';
 import {
@@ -22,9 +21,9 @@ import {
   applyNoteVersionsError,
   fetchNoteVersions,
   restoreNoteVersion,
+  settleNoteContentRequested,
 } from '../workspace-notes-slice';
 import { toRuntimeNote, toRuntimeNoteVersion } from './note-payload-mappers';
-import { flushPendingNoteContent } from './notes-write-saga';
 
 const logger = createLogger('NoteVersionsSaga');
 type RestoreAction = ReturnType<typeof restoreNoteVersion>;
@@ -57,11 +56,12 @@ function* fetchVersions(workspaceId: string, noteId: string) {
 }
 
 function* restoreVersion(workspaceId: string, noteId: string, versionId: string) {
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
   // The daemon dispatches requests concurrently, so the restore must not be
-  // issued until every content save the write service holds for this note —
-  // debounced or already in flight — has been acknowledged.
-  yield* call(settleRegisteredNoteContent, workspaceId, noteId);
+  // issued until every debounced, queued, or in-flight content save has been
+  // acknowledged by the unified mutation owner.
+  const settle = settleNoteContentRequested(workspaceId, noteId);
+  yield* put(settle);
+  yield* call(() => settle.promise);
   try {
     const result: Awaited<ReturnType<typeof appClient.notes.restoreVersion>> = yield* call(
       [appClient.notes, appClient.notes.restoreVersion],

@@ -24,6 +24,7 @@ import { selectWorkspaceTerminalState } from '$store/renderer/slices/terminals/t
 import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 import {
   monitorFixture as active,
+  monitorSummaryFixture as summary,
   scriptFixture,
 } from '$features/script-monitor/script-monitor.fixture';
 import { notify } from '$lib/components/patterns/notify';
@@ -82,22 +83,31 @@ beforeEach(() => {
   vi.mocked(backendRequest).mockImplementation(async (method) => {
     if (method === 'client.hello')
       return {
-        server: { capabilities: { scriptMonitors: supported ? 1 : undefined, scriptLifecycle: 1 } },
-      };
-    if (method === 'scriptMonitor.list') return { monitors };
-    if (method === 'script.list') return { scripts };
-    if (method === 'scriptMonitor.cancelRun')
-      return { ok: true, monitor: settled, runStopped: true };
-    if (method === 'scriptMonitor.cancel')
-      return {
-        ok: true,
-        monitor: {
-          ...active,
-          state: 'cancelled',
-          reason: 'unmonitored',
-          settledAt: settled.settledAt,
+        server: {
+          protocolVersion: '14.0',
+          capabilities: { scriptMonitors: supported ? 2 : undefined, scriptActiveLists: 1 },
         },
       };
+    if (method === 'scriptMonitor.list')
+      return {
+        view: 'summary',
+        monitors: monitors
+          .filter((row) => row.state === 'active')
+          .map(({ outputPattern: _pattern, ...row }) => ({
+            ...row,
+            outputPatternPreview: summary.outputPatternPreview,
+            outputPatternTruncated: false,
+          })),
+      };
+    if (method === 'scriptMonitor.get') return active;
+    if (method === 'script.get') {
+      if (!scripts[0]) throw new Error('Unavailable');
+      return scripts[0];
+    }
+    if (method === 'script.list') return { scripts };
+    if (method === 'scriptMonitor.cancelRun')
+      return { ok: true, monitorId: active.monitorId, runStopped: true };
+    if (method === 'scriptMonitor.cancel') return { ok: true, monitorId: active.monitorId };
     throw new Error(`Unexpected call: ${method}`);
   });
   stop = store.runSaga(scriptMonitorSaga);
@@ -129,16 +139,46 @@ function event(row: ScriptMonitor) {
   });
 }
 describe('script monitor controls', () => {
+  it('keeps Load more accessible when the initial page belongs to other agents', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let pages = 0;
+    vi.mocked(backendRequest).mockImplementation((method, params) => {
+      if (method === 'scriptMonitor.list')
+        return Promise.resolve(
+          ++pages === 1
+            ? {
+                view: 'summary',
+                monitors: [{ ...active, agentId: 'someone-else' }],
+                nextCursor: 'more',
+              }
+            : { view: 'summary', monitors: [active] },
+        );
+      return original(method, params);
+    });
+    setEventSubscriptionsExpanded(ws, active.agentId, true);
+    render(EventSubscriptionsCard, { workspaceId: ws, agentId: active.agentId });
+    const more = await screen.findByRole('button', { name: 'Load more' });
+    expect(pages).toBe(1);
+    expect(screen.queryByTestId('script-monitor-row')).toBeNull();
+    await fireEvent.click(more);
+    await screen.findByTestId('script-monitor-row');
+    expect(pages).toBe(2);
+    expect(backendRequest).not.toHaveBeenCalledWith('script.list', expect.anything());
+    expect(backendRequest).not.toHaveBeenCalledWith('script.get', expect.anything());
+    expect(backendRequest).not.toHaveBeenCalledWith('script.output', expect.anything());
+  });
   it('discloses and copies the full current command verbatim, then hides it on collapse', async () => {
     const command = '  pnpm test --filter "chat <footer> & scripts"\n    --reporter=verbose  ';
     scripts = [{ ...scriptFixture, command }];
     await mount();
     expect(screen.queryByTestId('script-monitor-command')).toBeNull();
+    expect(backendRequest).not.toHaveBeenCalledWith('script.get', expect.anything());
+    expect(backendRequest).not.toHaveBeenCalledWith('scriptMonitor.get', expect.anything());
     expect(screen.queryByRole('button', { name: 'Copy command' })).toBeNull();
     const disclosure = screen.getAllByRole('button', { name: active.scriptName })[0];
     await fireEvent.click(disclosure);
-    expect(screen.getByTestId('script-monitor-command').textContent).toBe(command);
-    await fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
+    expect((await screen.findByTestId('script-monitor-command')).textContent).toBe(command);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy command' }));
     expect(clipboardWriteText).toHaveBeenCalledWith(command);
     await screen.findByRole('button', { name: 'Copied' });
     await fireEvent.click(disclosure);
@@ -149,11 +189,11 @@ describe('script monitor controls', () => {
     await mount();
     await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
     clipboardWriteText.mockRejectedValueOnce(new Error('Clipboard unavailable'));
-    await fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy command' }));
     await waitFor(() => expect(notify.error).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: 'Copied' })).toBeNull();
     expect(screen.getByTestId('script-monitor-command').textContent).toBe(scriptFixture.command);
-    await fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy command' }));
     await screen.findByRole('button', { name: 'Copied' });
     expect(clipboardWriteText).toHaveBeenCalledTimes(2);
   });
@@ -171,7 +211,7 @@ describe('script monitor controls', () => {
     await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
     expect(screen.queryByTestId('script-monitor-command')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Copy command' })).toBeNull();
-    expect(screen.getByText(/script is no longer available/)).toBeTruthy();
+    expect(await screen.findByText(/script is no longer available/)).toBeTruthy();
   });
 
   it('updates collapsed chat counters and retires every terminal kind without remounting the rows', async () => {
@@ -215,7 +255,7 @@ describe('script monitor controls', () => {
     expect(screen.queryByText('Private other row')).toBeNull();
     await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
     expect(screen.getByText(/Monitoring ends at/)).toBeTruthy();
-    expect(screen.getByText(/\^Tests:/)).toBeTruthy();
+    expect(await screen.findByText(/\^Tests:/)).toBeTruthy();
     expect(screen.getByText(/200 new lines/)).toBeTruthy();
     expect(screen.queryByText(/later run/)).toBeNull();
     expect(screen.queryByText(active.runId)).toBeNull();
@@ -231,7 +271,7 @@ describe('script monitor controls', () => {
     ];
     await mount();
     await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
-    expect(screen.getByText(/later run/)).toBeTruthy();
+    expect(await screen.findByText(/later run/)).toBeTruthy();
     expect(screen.getByTestId('script-monitor-command').textContent).toBe('pnpm replacement-check');
     expect(screen.getByTestId('script-monitor-command').getAttribute('aria-label')).toBe(
       'Current script command',
@@ -274,12 +314,12 @@ describe('script monitor controls', () => {
     scripts = [];
     await mount();
     await menu();
-    expect(screen.getByRole('menuitem', { name: /panel/i }).getAttribute('aria-disabled')).toBe(
+    expect(screen.getByRole('menuitem', { name: /panel/i }).getAttribute('aria-disabled')).not.toBe(
       'true',
     );
-    expect(screen.getByRole('menuitem', { name: /bottom/i }).getAttribute('aria-disabled')).toBe(
-      'true',
-    );
+    expect(
+      screen.getByRole('menuitem', { name: /bottom/i }).getAttribute('aria-disabled'),
+    ).not.toBe('true');
   });
   it('shows pending cancellation, sends only the monitor identity, and retires after daemon settlement', async () => {
     await mount();
@@ -297,7 +337,7 @@ describe('script monitor controls', () => {
       workspaceId: ws,
       monitorId: active.monitorId,
     });
-    resolve({ ok: true, monitor: settled, runStopped: true });
+    resolve({ ok: true, monitorId: active.monitorId, runStopped: true });
     await waitFor(() => expect(screen.queryByTestId('script-monitor-row')).toBeNull());
     expect(notify.info).toHaveBeenCalled();
   });

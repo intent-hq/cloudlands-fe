@@ -4,7 +4,7 @@
  * Tests FolderProvider, NoteProvider, TaskProvider, PersonalityProvider, RuleProvider, CommandProvider
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   FolderProvider,
   NoteProvider,
@@ -14,6 +14,9 @@ import {
   CommandProvider,
 } from '../../src/lib/services/mentions/providers';
 import type { SearchContext } from '../../src/lib/services/mentions/types';
+import { store } from '$store/renderer/store';
+import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
+import { admitLegacyPrincipal } from '../../src/test/fixtures/principal-state';
 
 // Mock the daemon transport (FolderProvider → search.fileNames)
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -103,6 +106,18 @@ describe('NoteProvider', () => {
   let provider: NoteProvider;
   let mockNotesList: any;
   let mockWorkspacesList: any;
+  let stopStore: () => void;
+  let stopSaga: () => void;
+
+  beforeAll(() => {
+    stopStore = store.init();
+    stopSaga = store.runSaga(notesReadSaga);
+  });
+
+  afterAll(() => {
+    stopSaga();
+    stopStore();
+  });
 
   beforeEach(async () => {
     provider = new NoteProvider();
@@ -110,6 +125,7 @@ describe('NoteProvider', () => {
     mockNotesList = appClient.notes.list as any;
     mockWorkspacesList = appClient.workspaces.list as any;
     vi.clearAllMocks();
+    admitLegacyPrincipal();
     mockWorkspacesList.mockResolvedValue([]);
   });
 

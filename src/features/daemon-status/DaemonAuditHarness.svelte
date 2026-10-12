@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { store } from '$store/renderer/store';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
@@ -10,7 +10,7 @@
   import DaemonStoppedOverlay from './DaemonStoppedOverlay.svelte';
   import DaemonUpdatingOverlay from './DaemonUpdatingOverlay.svelte';
 
-  let { state = 'external' }: { state?: string } = $props();
+  let { state = 'external', children }: { state?: string; children?: Snippet } = $props();
   onMount(() => {
     store.dispatch(connectionStatusChanged('connected'));
     if (state.startsWith('guest-') || state.startsWith('auth-')) {
@@ -84,5 +84,9 @@
   });
 </script>
 
-<DaemonUpdatingOverlay />
-<DaemonStoppedOverlay />
+{#if children}
+  {@render children()}
+{:else}
+  <DaemonUpdatingOverlay />
+  <DaemonStoppedOverlay />
+{/if}

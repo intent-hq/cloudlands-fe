@@ -84,7 +84,9 @@ export const ownClientIdReceived = createAction<[clientId: string]>(
   'browserClients/ownClientIdReceived',
 );
 
-export const liveClientListsInvalidated = createAction('browserClients/liveClientListsInvalidated');
+export const browserConnectionInvalidated = createAction(
+  'browserClients/browserConnectionInvalidated',
+);
 
 export const authenticatedClientsCleared = createAction<[context: string]>(
   'browserClients/authenticatedClientsCleared',
@@ -97,6 +99,11 @@ export const authenticatedClientsReceived = createAction<[context: string, clien
 export const liveClientsReceived = createAction<[clients: LiveClient[], workspaceId?: string]>(
   'browserClients/liveClientsReceived',
 );
+
+/** Authoritative saved selection; the event does not report routing availability. */
+export const workspaceBrowserClientPinReceived = createAction<
+  [wsId: string, clientId: string | null]
+>('browserClients/workspaceBrowserClientPinReceived');
 
 export const workspaceBrowserClientReceived = createAction<
   [wsId: string, browserClient: WorkspaceBrowserClient]
@@ -151,10 +158,15 @@ browserClientsReducer.with(
   }),
 );
 browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
-  state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
+  state.ownClientId === clientId && state.ownClientIdConfirmed
+    ? state
+    : { ...state, ownClientId: clientId, ownClientIdConfirmed: true },
 );
-browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
+browserClientsReducer.with(browserConnectionInvalidated, (state) => ({
   ...state,
+  // Keep hosted native surfaces mounted while the same client reconnects.
+  // Empty rosters/resolution fence recovery until fresh connection reads land.
+  ownClientIdConfirmed: false,
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,
   authenticatedContext: null,
@@ -162,7 +174,13 @@ browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
   byWorkspaceId: Object.fromEntries(
     Object.entries(state.byWorkspaceId).map(([id, entry]) => [
       id,
-      { ...entry, liveClients: createLiveClientCollection(), liveClientsLoaded: false },
+      {
+        ...entry,
+        browserClient: null,
+        pinnedClientId: undefined,
+        liveClients: createLiveClientCollection(),
+        liveClientsLoaded: false,
+      },
     ]),
   ),
 }));
@@ -184,7 +202,21 @@ browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients, wor
 browserClientsReducer.with(
   workspaceBrowserClientReceived,
   (state, { payload: [wsId, browserClient] }) =>
-    setWorkspaceState(state, wsId, { ...getWorkspaceState(state, wsId), browserClient }),
+    setWorkspaceState(state, wsId, {
+      ...getWorkspaceState(state, wsId),
+      browserClient,
+      pinnedClientId: browserClient.source === 'workspace' ? browserClient.clientId : null,
+    }),
+);
+browserClientsReducer.with(
+  workspaceBrowserClientPinReceived,
+  (state, { payload: [wsId, pinnedClientId] }) =>
+    setWorkspaceState(state, wsId, {
+      ...getWorkspaceState(state, wsId),
+      pinnedClientId,
+      // Selection is already known; resolution still needs its own read.
+      browserClient: null,
+    }),
 );
 function bumpTabsRevision(state: BrowserClientsState, wsId: string): BrowserClientsState {
   const ws = getWorkspaceState(state, wsId);

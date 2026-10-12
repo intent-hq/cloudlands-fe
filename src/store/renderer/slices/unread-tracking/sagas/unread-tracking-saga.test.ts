@@ -1,4 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
+import type { Action } from '@redux-saga/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -29,15 +30,25 @@ import {
   getCachedChatScroll,
   setCachedChatScroll,
 } from '$lib/components/chat/chat-scroll-cache';
+import {
+  resolveLatchedDividerAnchor,
+  resolveNewMessagesDividerAnchor,
+} from '$lib/components/chat/new-messages-divider';
 import { replaceMessages } from '../../agent-session/agent-session-slice';
 import { sendMessage } from '../../chat-state/chat-state-slice';
 import { closeTab } from '../../panel-layout/panel-layout-slice';
-import { closePanel } from '../../sidebar-nav/sidebar-nav-slice';
+import { closePanel, sidebarNavReducer } from '../../sidebar-nav/sidebar-nav-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { agentStreamUpdateReceived } from '../../workspace-agents/workspace-agents-stream-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import type { StoreState } from '../../../types';
 import type { DividerBoundarySnapshot } from '../unread-tracking-selectors';
-import { clearCurrentlyViewedAgent, markAgentAsViewed } from '../unread-tracking-slice';
+import {
+  clearCurrentlyViewedAgent,
+  markAgentAsViewed,
+  startDividerSession,
+  unreadTrackingReducer,
+} from '../unread-tracking-slice';
 import { detectDividerSessionBoundary, unreadTrackingSaga } from './unread-tracking-saga';
 
 const snapshot = (overrides: Partial<DividerBoundarySnapshot> = {}): DividerBoundarySnapshot => ({
@@ -278,6 +289,112 @@ describe('unreadTrackingSaga', () => {
     });
     task.cancel();
     await task.toPromise();
+  });
+
+  it.each(['old-seen', null])(
+    'refreshes the Assistant divider after Home unmount with previous anchor %s',
+    async (anchorId) => {
+      const channel = stdChannel();
+      let current = state(
+        snapshot({
+          chiefCardVisible: true,
+          chiefSessionAgentIds: ['chief-1'],
+          dividerSessionAgentIds: ['a1'],
+        }),
+      );
+      const dispatch = vi.fn((action: Action) => {
+        current = {
+          ...current,
+          sidebarNav: sidebarNavReducer(current.sidebarNav, action),
+          unreadTracking: unreadTrackingReducer(current.unreadTracking, action),
+        };
+        channel.put(action);
+      });
+      dispatch(startDividerSession('chief-1', anchorId));
+      const { task } = startSaga(channel, dispatch, () => current);
+      try {
+        dispatch(workspaceUnmounted('ws-other'));
+        await settle();
+        expect(current.unreadTracking.dividerSessionByAgentId['chief-1']).toEqual({ anchorId });
+        expect(marks.boundary).not.toHaveBeenCalled();
+
+        dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
+        await settle();
+        expect(marks.boundary).toHaveBeenCalledExactlyOnceWith(['chief-1']);
+        expect(current.unreadTracking.dividerSessionByAgentId['chief-1']).toBeUndefined();
+        expect(current.unreadTracking.dividerSessionByAgentId.a1).toEqual({ anchorId: null });
+        expect(current.sidebarNav.panelItem).toBe('chief');
+
+        const messageIds = ['old-seen', 'seen-at-leave', 'received-while-away'];
+        dispatch(
+          startDividerSession(
+            'chief-1',
+            resolveNewMessagesDividerAnchor(messageIds, 'seen-at-leave'),
+          ),
+        );
+        expect(
+          resolveLatchedDividerAnchor(
+            messageIds,
+            current.unreadTracking.dividerSessionByAgentId['chief-1']?.anchorId,
+          ),
+        ).toBe('seen-at-leave');
+        expect(current.sidebarNav.panelItem).toBe('chief');
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
+
+  it('records the watched streaming tail when the Assistant workspace unmounts', async () => {
+    const channel = stdChannel();
+    const current = snapshot({
+      chiefCardVisible: true,
+      chiefSessionAgentIds: ['chief-1'],
+      dividerSessionAgentIds: ['chief-1'],
+    });
+    const dispatch = vi.fn();
+    const { task } = startSaga(channel, dispatch, () =>
+      state(current, {
+        'chief-1': {
+          messages: [
+            { id: 'persisted-1', role: 'user', isStreaming: false },
+            { id: 'streaming-1', role: 'assistant', isStreaming: true },
+          ],
+        },
+      }),
+    );
+    try {
+      channel.put(workspaceUnmounted(CHIEF_WORKSPACE_ID));
+      await settle();
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'unreadTracking/recordWatchedStreamingTail',
+        payload: ['chief-1', 'persisted-1'],
+      });
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'unreadTracking/endDividerSession',
+        payload: ['chief-1'],
+      });
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('ignores Assistant unmount when no divider viewing session started', async () => {
+    const channel = stdChannel();
+    const current = snapshot({ chiefCardVisible: true, chiefSessionAgentIds: ['chief-1'] });
+    const dispatch = vi.fn();
+    const { task } = startSaga(channel, dispatch, () => state(current));
+    try {
+      channel.put(workspaceUnmounted(CHIEF_WORKSPACE_ID));
+      await settle();
+      expect(marks.boundary).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('routes workspace boundaries from the selected workspace', async () => {

@@ -501,9 +501,9 @@
       ondrop={handleHeaderFileDrop}
     >
       <PanelTabBar
-        tabs={panel.tabs}
-        activeTabId={panel.activeTabId}
-        attentionTabIds={panel.attentionTabIds}
+        tabs={panel?.tabs}
+        activeTabId={panel?.activeTabId}
+        attentionTabIds={panel?.attentionTabIds}
         {panelId}
         {workspaceId}
         {layoutId}

@@ -20,8 +20,10 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { writable } from 'svelte/store';
   import { ASSISTANT_CONTENT_PANEL_ID, selectAssistantPanelLayoutId } from './assistant-panels';
+  import { observeHomePanelWidth } from './home-panel-width';
 
   let { children, isActive = true }: { children: Snippet; isActive?: boolean } = $props();
+  let maxWidth = $state(Number.MAX_SAFE_INTEGER);
   const layoutId$ = selectAssistantPanelLayoutId();
   const layoutIdStore = writable($layoutId$);
   $effect(() => layoutIdStore.set($layoutId$));
@@ -59,7 +61,11 @@
   }
 </script>
 
-<div class="assistant-panels flex h-full min-h-0 min-w-0 flex-1" data-assistant-panels>
+<div
+  class="assistant-panels flex h-full min-h-0 min-w-0 flex-1"
+  data-assistant-panels
+  data-assistant-layout-id={$layoutId$}
+>
   <div class="assistant-chat home-panel min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
     {@render children()}
   </div>
@@ -67,13 +73,14 @@
     <div
       class="assistant-content ml-3 min-h-0 min-w-0 shrink-0"
       data-assistant-content-panel
+      use:observeHomePanelWidth={(width) => (maxWidth = width)}
       transition:expandContent={{ tier: 'moderate' }}
     >
       <ResizablePanel
         storageKey="assistant-content-width"
         side="right"
         minWidth={320}
-        maxWidth={900}
+        {maxWidth}
         defaultWidth={540}
         className="assistant-content-resizable h-full max-w-full home-panel bg-background"
         handleClassName="assistant-content-resize-handle"
@@ -102,11 +109,16 @@
 
 <style>
   .assistant-content {
-    max-width: 60%;
+    max-width: calc(100% - 0.75rem);
+  }
+  .assistant-content :global(.assistant-content-resizable) {
+    min-width: 0 !important;
+    max-width: 100% !important;
   }
   .assistant-content :global(.assistant-content-resize-handle) {
     left: -0.75rem;
     width: 0.75rem;
+    clip-path: none;
   }
   @container home-layout (max-width: 900px) {
     .assistant-panels {

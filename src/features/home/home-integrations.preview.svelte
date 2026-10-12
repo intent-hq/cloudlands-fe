@@ -2,6 +2,7 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   interface Props {
     scenario?: string;
+    height?: number;
   }
   export const preview = definePreview<Props>({
     id: 'home-integrations',
@@ -19,6 +20,15 @@
         'detail-error',
         'comments-error',
         'pagination-error',
+        'checks-mixed',
+        'checks-passed',
+        'checks-neutral',
+        'checks-cancelled',
+        'checks-empty',
+        'checks-loading',
+        'checks-error',
+        'files-long',
+        'files-empty',
       ].map((scenario) => [scenario, { props: { scenario } }]),
     ),
   });
@@ -48,13 +58,13 @@
       prUrl: 'https://github.com/other/service/pull/901',
     },
   ];
-  let { scenario = 'prs' }: Props = $props();
+  let { scenario = 'prs', height = 720 }: Props = $props();
   const dispose = startHomePreview(() => []);
   onDestroy(dispose);
   const state = $derived(homeIntegrationsFixtures[scenario] ?? homeIntegrationsFixtures.prs);
 </script>
 
-<div class="h-[720px] w-full bg-background text-foreground">
+<div class="w-full bg-background text-foreground" style:height={`${height}px`}>
   {#key scenario}{#if scenario === 'linked-prs'}<Harness
         repoCount={1}
         workspaces={linkedWorkspaces}

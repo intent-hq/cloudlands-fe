@@ -4,7 +4,7 @@ import Preview from './script-monitors.preview.svelte';
 defineGeometrySnapshotSuite({
   scene: 'script-monitors',
   component: Preview,
-  states: ['conditions', 'cancel-error'],
+  states: ['conditions', 'cancel-error', 'paged'],
   widths: [420],
   selector: '[data-testid="script-monitors-preview"]',
   snapshotPath: fileURLToPath(

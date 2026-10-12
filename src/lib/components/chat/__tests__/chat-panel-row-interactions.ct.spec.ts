@@ -308,7 +308,7 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
 test('focus pins a row until blur, and manual expansion survives eviction', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const host = await mount(ChatPanelOperationalGeometryHost, {
     props: { liveMessages: messages(), detachedStatus: true },
@@ -326,13 +326,20 @@ test('focus pins a row until blur, and manual expansion survives eviction', asyn
   });
   await expect(group).toBeFocused();
   await expect(group).toHaveAttribute('aria-expanded', 'true');
-  await host.getByTestId('message-input').locator('.tiptap-editor').focus();
+  const editor = host.getByTestId('message-input').locator('.tiptap-editor');
+  await expect(editor).toBeEditable();
+  await editor.focus();
+  await expect(editor).toBeFocused();
   await expect(group).toHaveCount(0);
   await viewport.evaluate((n, top) => {
     n.scrollTop = top;
   }, position);
   await expect(group).toHaveAttribute('aria-expanded', 'true');
   await expect(host.getByText('Hidden tool marker-90-end.', { exact: true })).toBeVisible();
+  await testInfo.attach('expanded-row-after-eviction', {
+    body: await host.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 test('editing a prompt retains the editor without exempting its operational turn', async ({

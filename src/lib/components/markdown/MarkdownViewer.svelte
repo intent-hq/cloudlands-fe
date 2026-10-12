@@ -2,7 +2,7 @@
   import './markdown-math.css';
   import { canLoadMediaUrl, filterFileMedia } from '$lib/utils/media-provenance';
   import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
-  import { mount, onDestroy, unmount } from 'svelte';
+  import { getAllContexts, mount, onDestroy, unmount } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
@@ -33,6 +33,7 @@
     stampMarkdownImageDimensions,
   } from '$lib/utils/markdown-image-dimensions';
   import type { TextBlockMedia } from '$shared/types/content-block';
+  import { markdownDiagrams } from './markdown-diagrams';
   import {
     openWorkspaceFile,
     openWorkspaceNote,
@@ -62,6 +63,8 @@
     forceExternalLinks?: boolean;
     /** Show rich fenced blocks as source when no TipTap node views are mounted. */
     renderRichFencesAsCode?: boolean;
+    /** Mount read-only diagrams while keeping other rich fences as visible source. */
+    renderDiagrams?: boolean;
     /** GitHub-style embedded HTML, still sanitized before rendering. */
     allowSanitizedHtml?: boolean;
     /** PROTOCOL §7.1 dimensions keyed by Markdown src; reserve image space while loading. */
@@ -80,11 +83,13 @@
     chatImageThumbnails = false,
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
+    renderDiagrams = false,
     allowSanitizedHtml = false,
     media,
   }: Props = $props();
 
   const workspaceFileVersion = createWorkspaceFileVersion();
+  const diagramContext = getAllContexts();
 
   const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
   const hasVideoSegments = $derived(mediaSegments.some((segment) => segment.type === 'video'));
@@ -170,7 +175,8 @@
       preserveAnchors: true,
       taskBlockRenderMode,
       workspaceId,
-      renderRichFencesAsCode,
+      renderRichFencesAsCode: renderRichFencesAsCode || renderDiagrams,
+      processPrimitives: !renderDiagrams,
       allowSanitizedHtml,
       renderMath: !isStreaming,
       workspaceFileVersion,
@@ -543,6 +549,7 @@
           {chatImageThumbnails}
           {forceExternalLinks}
           {renderRichFencesAsCode}
+          {renderDiagrams}
           {allowSanitizedHtml}
           {media}
         />
@@ -556,6 +563,7 @@
     class="markdown-viewer streaming-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
     use:mediaFallbacks
+    use:markdownDiagrams={{ enabled: renderDiagrams, workspaceId, context: diagramContext }}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
     oncopy={handleImageCopy}
@@ -579,6 +587,7 @@
     class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={staticContentElement}
     use:mediaFallbacks
+    use:markdownDiagrams={{ enabled: renderDiagrams, workspaceId, context: diagramContext }}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
     oncopy={handleImageCopy}
@@ -614,13 +623,10 @@
     color: hsl(var(--foreground));
   }
 
-  /* PERF: Streaming content uses contain for rendering isolation */
-  .streaming-content {
-    contain: layout style;
-  }
-
-  /* PERF: Simple content - minimal styling */
-  .simple-content {
+  /* Isolate layout and style work for each Markdown surface. */
+  .streaming-content,
+  .simple-content,
+  .static-content {
     contain: layout style;
   }
 
@@ -628,17 +634,8 @@
     margin: 0;
   }
 
-  /* PERF: Static content - processed HTML without TipTap */
-  .static-content {
-    contain: layout style;
-  }
-
   /* Paragraph spacing must not offset the positioned image controls. */
-  .markdown-viewer.static-content > :global(* + :not(.image-actions-overlay)) {
-    margin-top: 0.75rem;
-  }
-
-  /* PERF: Apply same styles to streaming content (direct children) */
+  .markdown-viewer.static-content > :global(* + :not(.image-actions-overlay)),
   .markdown-viewer.streaming-content > :global(* + :not(.image-actions-overlay)) {
     margin-top: 0.75rem;
   }

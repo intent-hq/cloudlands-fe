@@ -1,3 +1,5 @@
+import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { describe, expect, it } from 'vitest';
 import {
   AgentStatus,
@@ -210,6 +212,20 @@ function getMsgs(state: AgentSessionState, agentId: string): AgentMessage[] {
 // ============================================================================
 
 describe('agent-session-slice reducer', () => {
+  it.each([removeSession('a1'), removeWorkspaceSessions('ws-1'), clearAllSessions()])(
+    'removes projection versions with evicted sessions: $type',
+    (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, updateSession('a1', { status: AgentStatus.Active }));
+      expect(state.projectionVersions?.a1.fields.status).toBe(1);
+      state = agentSessionReducer(state, action);
+      expect(state.projectionVersions?.a1).toBeUndefined();
+    },
+  );
+
   it('returns initial state', () => {
     const state = agentSessionReducer(undefined, { type: '@@INIT', payload: undefined });
     expect(state).toEqual(initialState);
@@ -3436,6 +3452,22 @@ describe('agent-session-slice reducer', () => {
   // §5.5 list projection: the marker records that the detail read landed, so
   // an absent detail-only field is "none" rather than "not loaded yet".
   describe('markAgentDetailHydrated', () => {
+    it.each([
+      principalContextChanged('next'),
+      principalIdentityChanged('other'),
+      connectionStatusChanged('disconnected'),
+    ])('invalidates accepted detail at boundary $type', (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(state.detailHydrated?.a1).toBe(true);
+      state = agentSessionReducer(state, action);
+      expect(state.detailHydrated).toBeUndefined();
+      expect(state.byAgentId.a1).toBeDefined();
+    });
+
     it('is unset on initial state and set only for a stored session', () => {
       expect(initialState.detailHydrated).toBeUndefined();
 

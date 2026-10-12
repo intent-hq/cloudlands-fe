@@ -9,7 +9,9 @@
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import { listPrMonitors, type PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import producerRowsRaw from '$features/pr-monitor/__fixtures__/legacy-monitor-rows.fixture';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
 const {
@@ -72,6 +74,16 @@ vi.mock('$features/navigation/link-handler', () => ({
   openInBrowserPanel: openInBrowserPanelMock,
 }));
 
+// Producer fixtures enter at the transport boundary; the service and component
+// remain real so a wire count mismatch cannot be hidden by a hand-built row.
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  backendSubscribe: vi.fn(),
+  backendUnsubscribe: vi.fn(),
+  onBackendNotification: vi.fn(),
+  onBackendReconnected: vi.fn(),
+}));
+
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
 import monitoredPrsRowSource from '../MonitoredPrsRow.svelte?raw';
 import {
@@ -81,6 +93,8 @@ import {
 
 const originalInnerWidth = window.innerWidth;
 const originalDevicePixelRatio = window.devicePixelRatio;
+const producerCases: Array<{ name: string; monitor: PrMonitorRow }> =
+  JSON.parse(producerRowsRaw).cases;
 
 function setViewport(width: number, devicePixelRatio = 1) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
@@ -194,6 +208,65 @@ describe('MonitoredPrsRow', () => {
     workspaceState.workspace = defaultWorkspace;
     snapshotState.status = 'ready';
     monitorsState.monitors = [];
+    vi.mocked(backendRequest).mockReset();
+  });
+
+  it.each([
+    ['empty', /ready to merge/],
+    ['pending-build', /blocked by required checks still running/],
+    ['multiple-pending', /blocked by required checks still running/],
+    ['mixed-required-optional', /blocked by required checks failing/],
+    ['optional-only', /blocked by required checks failing/],
+    ['unknown-required', /blocked by required checks failing/],
+    ['unknown-threads', /blocked by review threads that could not be read/],
+    ['unknown-empty', /merge readiness is still being checked/],
+    ['missing-baseline', /merge readiness is still being checked/],
+  ])('renders readiness from the unmodified Rust producer row: %s', async (name, readiness) => {
+    const fixture = producerCases.find((entry) => entry.name === name)!;
+    expect(fixture, `missing producer case ${name}`).toBeDefined();
+    vi.mocked(backendRequest).mockResolvedValueOnce({ monitors: [fixture.monitor] });
+    monitorsState.monitors = await listPrMonitors(fixture.monitor.workspaceId);
+    expect(backendRequest).toHaveBeenCalledWith('prMonitor.list', {
+      workspaceId: fixture.monitor.workspaceId,
+    });
+    render(MonitoredPrsRow, {
+      props: {
+        workspaceId: fixture.monitor.workspaceId,
+        agentId: fixture.monitor.agentId,
+      },
+    });
+
+    const details = await openDetails();
+    expect(details.firstElementChild?.textContent).toMatch(readiness);
+  });
+
+  it('renders an actual paused producer row without inventing a checklist', async () => {
+    vi.useFakeTimers({ now: new Date('2026-01-02T03:30:00Z'), toFake: ['Date'] });
+    try {
+      const fixture = producerCases.find((entry) => entry.name === 'paused-missing-baseline')!;
+      vi.mocked(backendRequest).mockResolvedValueOnce({ monitors: [fixture.monitor] });
+      monitorsState.monitors = await listPrMonitors(fixture.monitor.workspaceId);
+      render(MonitoredPrsRow, {
+        props: {
+          workspaceId: fixture.monitor.workspaceId,
+          agentId: fixture.monitor.agentId,
+        },
+      });
+
+      const details = await openDetails();
+      expect(details.firstElementChild?.textContent).toMatch(/Monitoring paused until/);
+      expect(details.textContent).not.toMatch(
+        /ready to merge|checks failed|checks are still running/,
+      );
+      expect(
+        screen
+          .getByTestId('monitored-pr-summary')
+          .closest('[data-monitor-paused]')
+          ?.getAttribute('data-monitor-paused'),
+      ).toBe('true');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders a normalized inline disclosure row per active monitor', () => {

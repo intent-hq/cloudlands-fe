@@ -199,7 +199,7 @@ describe('StreamingStatus rendered UI', () => {
 
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
     const onRetry = vi.fn();
-    const { container } = render(StreamingStatus, {
+    render(StreamingStatus, {
       props: {
         error: 'Stream timeout after 10 minutes',
         onRetry,
@@ -207,33 +207,13 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
-    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
-    expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
-    expect(screen.getByTestId('error-message').className).toContain('truncate');
-    expect(screen.getByTestId('error-message').parentElement?.className).toContain(
-      'text-muted-foreground',
+    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
+    expect(screen.queryByText('Stream timeout after 10 minutes')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
+    expect(screen.getByTestId('failure-raw-details').textContent).toBe(
+      'Stream timeout after 10 minutes',
     );
-    expect(screen.getByTestId('error-message').parentElement?.className).toContain('type-caption');
-    expect(container.firstElementChild?.className).not.toContain('pl-2');
-    expect(container.firstElementChild?.className).toContain('mt-2');
-
-    const copyButton = screen.getByRole('button', { name: /copy error details/i });
-    expect(copyButton).toBeTruthy();
-    expect(copyButton.className).toContain('text-muted-foreground');
-    expect(copyButton.className).toContain('absolute');
-    expect(copyButton.className).toContain('top-2');
-    expect(copyButton.className).toContain('-translate-y-1/2');
-    expect(copyButton.getAttribute('data-variant')).toBe('ghost-light');
-    expect(copyButton.getAttribute('data-size')).toBe('icon-sm');
-    expect(copyButton.querySelector('[data-icon="copy"]')).toBeTruthy();
-    expect(copyButton.parentElement?.className).toContain('gap-x-1.5');
-    expect(copyButton.parentElement?.className).toContain('min-h-5');
-    expect(copyButton.parentElement?.className).toContain('grid-cols-[1.75rem_minmax(0,1fr)]');
-    expect(copyButton.nextElementSibling?.className).toContain('col-start-2');
-    const retry = screen.getByRole('button', { name: 'Try again' });
-    expect(retry.textContent?.trim()).toBe('');
-    expect(retry.className).toContain('shrink-0');
-    expect(retry.className).toContain('text-muted-foreground');
+    const retry = screen.getByRole('button', { name: 'Retry', exact: true });
     await fireEvent.click(retry);
     expect(onRetry).toHaveBeenCalledOnce();
   });
@@ -252,19 +232,18 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
-    const copyButton = screen.getByRole('button', { name: /copy error details/i });
+    await fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
+    const copyButton = screen.getByRole('button', { name: 'Copy details' });
     const stableClassName = copyButton.className;
     copyButton.focus();
     expect(document.activeElement).toBe(copyButton);
     expect(copyButton.tabIndex).toBe(0);
     await fireEvent.click(copyButton);
     expect(writeTextMock).toHaveBeenCalledOnce();
-    expect(writeTextMock).toHaveBeenCalledWith(
-      'Response failed\n\nStream timeout after 10 minutes',
-    );
+    expect(writeTextMock).toHaveBeenCalledWith('Stream timeout after 10 minutes');
     await waitFor(() => expect(copyButton.querySelector('[data-icon="check"]')).toBeTruthy());
     expect(copyButton.className).toBe(stableClassName);
-    expect(copyButton.getAttribute('aria-label')).toBe('Copy error details to clipboard');
+    expect(copyButton.getAttribute('aria-label')).toBe('Copied!');
   });
 
   it('removes the failure top step only when its caller marks it as the first row', () => {
@@ -290,14 +269,13 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByTestId('error-message').textContent).toBe(
       'Try again will start a fresh session and carry over the conversation history',
     );
-    expect(screen.queryByTestId('error-detail')).toBeNull();
-    await fireEvent.click(screen.getByTestId('error-message'));
-    expect(screen.getByTestId('error-message').className).toContain('whitespace-pre-wrap');
-    expect(screen.getByTestId('error-detail').textContent).toBe(
+    expect(screen.queryByTestId('failure-raw-details')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
+    expect(screen.getByTestId('failure-raw-details').textContent).toBe(
       'JSON-RPC error -32603: prompt rejected by provider',
     );
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
@@ -308,9 +286,9 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
-    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
-    expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
-    expect(screen.queryByTestId('error-detail')).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
+    expect(screen.queryByText('Stream timeout after 10 minutes')).toBeNull();
+    expect(screen.queryByTestId('failure-raw-details')).toBeNull();
   });
 
   it('keeps terminal failure visible even if a stale permission request flag remains set', () => {
@@ -322,21 +300,20 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
   });
 
-  it('shows failure copy without retry while active flags are still clearing', () => {
-    const onRetry = vi.fn();
+  it('shows current activity without raw stale errors or competing retry actions', () => {
     render(StreamingStatus, {
       props: {
         isStreaming: true,
         error: 'Provider crashed while finalizing the stream',
-        onRetry,
+        onRetry: vi.fn(),
       },
     });
-
-    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
-    expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
+    expect(screen.queryByTestId('error-title')).toBeNull();
+    expect(screen.queryByText('Provider crashed while finalizing the stream')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry', exact: true })).toBeNull();
   });
 
   it('prioritizes model-unavailable recovery over generic failure copy', async () => {
@@ -386,7 +363,7 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
-    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
 
     await rerender({
       error: null,
@@ -411,7 +388,9 @@ describe('StreamingStatus rendered UI', () => {
     expect(failedAtEl.className).toContain('type-caption');
     expect(failedAtEl.className).toContain('leading-4');
     expect(screen.getByTestId('error-title').textContent).not.toContain('·');
-    expect(screen.getByTestId('error-title').textContent).toContain('Response failed');
+    expect(screen.getByTestId('error-title').textContent).toContain(
+      "Couldn't complete this response",
+    );
   });
 
   it('omits the failed-X-ago span when failedAt is absent (older daemons / transient chat errors)', () => {
@@ -422,7 +401,7 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.queryByTestId('error-failed-at')).toBeNull();
-    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
   });
 
   it('renders login guidance (copyable command + claude desktop caveat) on provider auth failures', () => {
@@ -439,8 +418,8 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByTestId('error-auth-guidance')).toBeTruthy();
     expect(screen.getByTestId('error-auth-login-command').textContent).toBe('claude /login');
     expect(screen.getByTestId('error-auth-claude-desktop-note')).toBeTruthy();
-    // The raw error message stays visible alongside the guidance.
-    expect(screen.getByTestId('error-message').textContent).toContain('Authentication required');
+    // Technical details stay collapsed while login guidance remains available.
+    expect(screen.queryByText('JSON-RPC error -32000: Authentication required')).toBeNull();
   });
 
   it('hides the desktop caveat for non-claude providers and omits guidance entirely without it', () => {
@@ -669,10 +648,15 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
     cleanup();
 
     const failed = render(StreamingStatus, {
-      props: { isStreaming: true, error: 'Stream timeout', statusEvents: events },
+      props: {
+        isStreaming: true,
+        recoveryState: 'action-needed',
+        error: 'Stream timeout',
+        statusEvents: events,
+      },
     });
     expect(failed.container.querySelector('[data-stream-stalled="true"]')).toBeNull();
-    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
   });
 
   it('omits the Cancel button when no onStop handler is provided', () => {

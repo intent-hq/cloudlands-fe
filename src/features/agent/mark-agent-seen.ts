@@ -248,6 +248,7 @@ async function fire(agentId: string, gates: FireGates): Promise<void> {
     // Dependency-light one-time state read (no selector imports).
     const state = appStore.state as {
       unreadTracking?: { currentlyViewedAgentId: string | null };
+      chatState?: { byAgentId: Record<string, { initialHistoryPending?: boolean }> };
       agentSessions?: {
         byAgentId: Record<
           string,
@@ -268,6 +269,11 @@ async function fire(agentId: string, gates: FireGates): Promise<void> {
     if (!session) return;
     const workspaceId = typeof session.workspaceId === 'string' ? session.workspaceId : '';
     if (workspaceId.length === 0) return;
+    // Preserve the entry unread boundary until older rows carrying its anchor arrive.
+    if (gates.requireAssistantTail && state.chatState?.byAgentId[agentId]?.initialHistoryPending) {
+      viewAwaitingTranscript = agentId;
+      return;
+    }
     const target = newestPersistedMessage(session.messages ?? []);
     if (!target) {
       // View trigger that beat the transcript: re-arm so the hydration

@@ -18,3 +18,27 @@ export function getPrincipalConnectionContext(
     state.workspaceEvents.subscriptionGeneration,
   ]);
 }
+
+/** Stable identity for a read or action within one admitted principal lifetime. */
+export function getPrincipalActionContext(
+  state: Pick<StoreState, 'connections' | 'daemonHealth' | 'workspaceEvents' | 'principal'>,
+): string | null {
+  const connection = getPrincipalConnectionContext(state);
+  const principal = state.principal;
+  if (principal?.status !== 'ready' || !connection || principal.context !== connection) return null;
+  const snapshot = principal.snapshot;
+  if (!snapshot) return null;
+  const role = snapshot.capabilities.hostMembership
+    ? (snapshot.principal.hostRole ?? null)
+    : snapshot.principal.isAdministrator
+      ? 'owner'
+      : 'guest';
+  return JSON.stringify([
+    connection,
+    snapshot.principal.id,
+    snapshot.principal.hostMembershipRevision ?? null,
+    role,
+    principal.invalidation,
+    principal.presentationVersion,
+  ]);
+}

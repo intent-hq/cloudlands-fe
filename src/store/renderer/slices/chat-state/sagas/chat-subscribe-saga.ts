@@ -1,7 +1,4 @@
-import {
-  observeSubmissionEvidence,
-  submissionHistoryEvidence,
-} from '$features/agent/submission-evidence';
+import { observeSubmissionTranscript } from '$features/agent/submission-evidence';
 /**
  * Chat subscribe saga — feeds the STANDING `chat.subscribe` transcript
  * (PROTOCOL §7.1) into the agent-session slice so ChatPanel renders from the
@@ -133,6 +130,7 @@ import {
   chatSendStarted,
   chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   retainedChatTranscriptsSet,
@@ -142,6 +140,7 @@ import {
 import {
   selectAwaitingSwitchBackSnapshot,
   selectTranscriptHydration,
+  selectInitialChatHistoryPending,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   bulkUpsertSessions,
@@ -198,6 +197,8 @@ interface SubscriptionEntry {
   lastTranscript?: ChatTranscript;
   /** Last transcript whose submission evidence actually reached a hydrated session. */
   lastObservedTranscript?: ChatTranscript;
+  /** Immutable correlation/bounds evidence, cleared on stream continuity loss. */
+  lastSubmissionEvidence?: string;
   /**
    * A seq-0 snapshot that arrived BEFORE the session shell existed (the
    * chat-read saga's `agents.get` was still pending), held back so its meta
@@ -404,6 +405,8 @@ function isCurrentSubscription(
  * The protocol mandates discarding the cached transcript and rehydrating
  * from this snapshot as if freshly subscribed; a not-yet-echoed optimistic
  * row is dropped with them and reappears on its daemon echo.
+ * A local reconnect reset keeps unacknowledged optimistic user rows while
+ * discarding the canonical cache; it does not assert a daemon invalidation.
  */
 function* applyTranscript(
   coordinator: SubscriptionCoordinator,
@@ -429,13 +432,19 @@ function* applyTranscript(
       if (typeof message.id === 'string') transcriptIds.add(message.id);
       if (typeof message.appMessageId === 'string') transcriptIds.add(message.appMessageId);
     }
-    const storeOnly = discardStoreOnly
-      ? []
-      : (session.messages ?? []).filter(
-          (message) =>
-            !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
-            !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
-        );
+    const storeOnly = (session.messages ?? []).filter(
+      (message) =>
+        !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
+        !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)) &&
+        // Local reconnect recovery invalidates cached canonical history, not
+        // unacknowledged sends. A daemon reset still discards everything.
+        (!discardStoreOnly ||
+          (transcript.resetCachedTranscript === true &&
+            transcript.resumed !== false &&
+            message.role === 'user' &&
+            message.seq === undefined &&
+            typeof message.appMessageId === 'string')),
+    );
     // A snapshot is the authoritative newest page with the in-flight turn
     // MERGED INTO IT (§7.1), so a retained row the page does not cover cannot
     // still be in flight — settle its streaming flags, exactly as the
@@ -453,7 +462,7 @@ function* applyTranscript(
     // (which a healthy standing registration may never emit). Protecting the
     // optimistic row matters more than closing that residual window.
     const retained =
-      transcript.fromSnapshot === true && !racesLocalStart
+      transcript.fromSnapshot === true && !restoration && !racesLocalStart
         ? storeOnly.map((message) => (claimsLiveness(message) ? settleStreaming(message) : message))
         : storeOnly;
     const merged =
@@ -463,14 +472,17 @@ function* applyTranscript(
     if (isCurrentSubscription(coordinator, agentId, entry)) {
       // Hydration settlement restores the live transcript after a history read.
       // Re-observing that same evidence would invalidate the read and schedule
-      // another refresh forever. New subscription deliveries still invalidate,
-      // even when the client emits the same object; deferred first applies do too.
-      if (!restoration || entry.lastObservedTranscript !== transcript) {
-        observeSubmissionEvidence(
+      // another refresh forever. Accepted deliveries only preserve settled queue
+      // authority when their submission correlation and history bounds agree.
+      if (
+        (!transcript.fromHistory || transcript.initialHistory?.complete === true) &&
+        (!restoration || entry.lastObservedTranscript !== transcript)
+      ) {
+        entry.lastSubmissionEvidence = observeSubmissionTranscript(
           agentId,
           session.workspaceId,
-          'history',
-          submissionHistoryEvidence(transcript.messages),
+          transcript,
+          entry.lastSubmissionEvidence,
         );
         entry.lastObservedTranscript = transcript;
       }
@@ -484,14 +496,19 @@ function* applyTranscript(
   // pre-hydration emit must not swallow the transition, so the next emit
   // against the hydrated session still sees the edge and dispatches it.
   const streamingChanged = transcript.isStreaming !== entry.wasStreaming;
+  // Hydration replay restores content, not a second idle verdict from a
+  // snapshot that may already have raced (and spared) a new local send.
   const authoritativeIdleSnapshot =
-    transcript.fromSnapshot === true && transcript.isStreaming === false;
+    transcript.fromSnapshot === true && transcript.isStreaming === false && !restoration;
   const protectsLocalStart = session
     ? authoritativeIdleSnapshot && coordinator.locallyStartedTurns.delete(agentId)
     : false;
+  // Consume the old turn's falling edge even when a newer local send keeps
+  // the session active, so replay cannot apply that edge to the new turn.
+  if (protectsLocalStart) entry.wasStreaming = transcript.isStreaming;
   if (session && transcript.isStreaming) coordinator.locallyStartedTurns.delete(agentId);
   const shouldReconcileStreaming =
-    streamingChanged || (authoritativeIdleSnapshot && !protectsLocalStart);
+    (streamingChanged || authoritativeIdleSnapshot) && !protectsLocalStart;
   if (session && shouldReconcileStreaming && isCurrentSubscription(coordinator, agentId, entry)) {
     entry.wasStreaming = transcript.isStreaming;
     yield* put(
@@ -593,6 +610,7 @@ function* handleSubscriptionEvent(
   try {
     if (event.kind === 'phase') {
       if (isCurrentSubscription(coordinator, event.agentId, entry)) {
+        if (event.phase !== 'live') entry.lastSubmissionEvidence = undefined;
         yield* put(chatLiveStreamPhaseChanged(event.agentId, event.phase));
       }
       return;
@@ -615,10 +633,13 @@ function* handleSubscriptionEvent(
     // healthy subscription never emits. Defer the WHOLE application until
     // the session shell upserts (replayed by the lifecycle loop), so meta is
     // only ever recorded after the messages actually landed.
-    if (event.transcript.fromSnapshot === true) {
+    if (event.transcript.fromSnapshot === true || event.transcript.initialHistory !== undefined) {
       const preSession = yield* selectAgentSession.effect(event.agentId);
       if (!preSession) {
-        entry.pendingSnapshot = event.transcript;
+        entry.pendingSnapshot = event.transcript.fromSnapshot
+          ? event.transcript
+          : { ...entry.pendingSnapshot, ...event.transcript, fromSnapshot: true };
+        entry.lastTranscript = entry.pendingSnapshot;
         setReplayableChatSnapshot(event.agentId, true);
         reportSnapshotGuard(event.transcript, 'snapshot-held-pre-session', 'buffered');
         return;
@@ -631,23 +652,44 @@ function* handleSubscriptionEvent(
     // immediately instead of stranding a wait window (monorepo#2864).
     setReplayableChatSnapshot(
       event.agentId,
-      entry.pendingSnapshot !== undefined || event.transcript.fromSnapshot === true,
+      entry.pendingSnapshot !== undefined ||
+        event.transcript.fromSnapshot === true ||
+        event.transcript.fromHistory === true,
     );
+    if (
+      event.transcript.initialHistory?.complete === false &&
+      event.transcript.fromSnapshot !== true
+    ) {
+      yield* put(chatInitialHistoryProgressed(event.agentId, event.transcript.initialHistory));
+    }
     // §7.1 `resumed: false` snapshot: the retained transcript MUST be
     // discarded (see applyTranscript). Snapshot emits only — the settled
     // re-apply of the same transcript must not wipe the background
     // older-history pages fetched after it.
+    const resetsCachedHistory =
+      event.transcript.resumed === false || event.transcript.resetCachedTranscript === true;
     const discardStoreOnly =
-      !event.replayed &&
-      event.transcript.fromSnapshot === true &&
-      event.transcript.resumed === false;
-    yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
+      !event.replayed && event.transcript.fromSnapshot === true && resetsCachedHistory;
+    // Retry re-emits an already-applied snapshot to restore hydration, not to
+    // deliver new idle evidence. Deferred pre-session snapshots omit replayed
+    // because their first application must still reconcile stale activity.
+    yield* applyTranscript(
+      coordinator,
+      event.agentId,
+      entry,
+      event.transcript,
+      discardStoreOnly,
+      event.replayed === true,
+    );
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
     // subsequent agent:stream:chunk dispatches carry the full block prefix,
     // then record the snapshot metadata for the chat-read saga (it settles
     // hydration on it and anchors the background older-history fetch).
-    if (event.transcript.fromSnapshot === true) {
+    if (
+      event.transcript.fromSnapshot === true ||
+      (event.transcript.fromHistory === true && event.transcript.initialHistory?.complete)
+    ) {
       const session = yield* selectAgentSession.effect(event.agentId);
       const wsId = entry.wsId ?? session?.workspaceId;
       const inFlight = event.transcript.messages.find(
@@ -663,15 +705,20 @@ function* handleSubscriptionEvent(
         chatTranscriptSnapshotApplied(
           event.agentId,
           {
+            ...(event.transcript.initialHistory
+              ? { initialHistory: event.transcript.initialHistory }
+              : {}),
             truncated: event.transcript.truncated,
             ...(event.transcript.nextToken !== undefined
               ? { nextToken: event.transcript.nextToken }
               : {}),
             totalMessages: event.transcript.totalMessages,
             ...(oldest ? { oldestMessageId: oldest.id } : {}),
-            ...(event.transcript.resumed === undefined
-              ? {}
-              : { resumed: event.transcript.resumed }),
+            ...(resetsCachedHistory
+              ? { resumed: false }
+              : event.transcript.resumed === undefined
+                ? {}
+                : { resumed: event.transcript.resumed }),
           },
           event.replayed,
         ),
@@ -680,7 +727,7 @@ function* handleSubscriptionEvent(
       // `sinceMessageId` (unknown/pruned anchor) and served the standard
       // newest page instead — the retained older history may be stale, so
       // trigger a full rehydration through the chat-read saga.
-      if (!event.replayed && event.transcript.resumed === false && wsId) {
+      if (!event.replayed && resetsCachedHistory && wsId) {
         yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
       }
     }
@@ -735,7 +782,8 @@ function newestPersistedMessageId(messages: AgentMessage[]): string | undefined 
  */
 function* resolveResumeAnchor(agentId: string): SagaGenerator<string | undefined> {
   const hydration = yield* selectTranscriptHydration.effect(agentId);
-  if (hydration !== 'settled') return undefined;
+  if (hydration !== 'settled' || (yield* selectInitialChatHistoryPending.effect(agentId)))
+    return undefined;
   const messages = yield* selectAgentMessages.effect(agentId);
   const captured = resumeAnchors.get(agentId);
   if (captured === '') return undefined;
@@ -887,7 +935,8 @@ function* closeSubscription(
     // below — afterwards a partial row can no longer be told apart.
     if (!clearResumeAnchor) {
       const messages = (yield* selectAgentSession.effect(agentId))?.messages ?? [];
-      resumeAnchors.set(agentId, newestPersistedMessageId(messages) ?? '');
+      const incomplete = yield* selectInitialChatHistoryPending.effect(agentId);
+      resumeAnchors.set(agentId, incomplete ? '' : (newestPersistedMessageId(messages) ?? ''));
     }
   } catch (error) {
     logger.error('Failed to capture chat resume anchor', error);
@@ -1396,7 +1445,10 @@ function* emitOrCycleSnapshot(
     replayPendingSnapshot(coordinator, agentId);
     return;
   }
-  if (entry?.lastTranscript?.fromSnapshot === true) {
+  // Incomplete history has its own progress watchdog. Replaying it cannot settle
+  // hydration, and cycling here would abort a healthy transfer after a fast burst.
+  if (entry?.lastTranscript?.initialHistory?.complete === false) return;
+  if (entry?.lastTranscript?.fromSnapshot === true || entry?.lastTranscript?.fromHistory === true) {
     coordinator.events.put({
       kind: 'transcript',
       agentId,

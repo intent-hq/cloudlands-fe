@@ -25,9 +25,9 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
-    # A healthy shard can take 27 min for tests plus setup/report/cache work.
-    # Allow completion after the 390-pass run exhausted 30 min (intent#2887).
-    timeout-minutes: 40
+    # A healthy shard takes 36 min for tests plus setup/report/cache work.
+    # Leave headroom after passing tests hit 40 min (cloudlands-fe#3251).
+    timeout-minutes: 50
     permissions:
       contents: read
     env:

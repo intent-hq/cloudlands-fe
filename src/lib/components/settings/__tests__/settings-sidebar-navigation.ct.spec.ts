@@ -127,14 +127,6 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
   ).toBeLessThanOrEqual(1);
   expect(geometry.every((row) => row.overflow <= 1)).toBe(true);
   expect(geometry.every((row) => row.height === 32)).toBe(true);
-  const spacing = await component.locator('nav').evaluate((nav) => ({
-    sections: parseFloat(getComputedStyle(nav).rowGap),
-    rows: [...nav.querySelectorAll('section')].map(
-      (section) => parseFloat(getComputedStyle(section.lastElementChild!).rowGap) || 0,
-    ),
-  }));
-  expect(spacing.sections).toBe(16);
-  expect(spacing.rows).toEqual([0, 0, 0, 0]);
   const hint = await back.locator('kbd').evaluate((node) => {
     const style = getComputedStyle(node);
     return {

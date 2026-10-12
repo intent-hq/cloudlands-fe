@@ -1,3 +1,4 @@
+import type { InitialChatHistory } from '$lib/client/app-client';
 import type { QueuedMessage } from '$shared/types';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -175,6 +176,7 @@ export interface PendingProposalRecovery {
  * older-history fetch without a second conversation transfer.
  */
 export interface TranscriptSnapshotMeta {
+  initialHistory?: InitialChatHistory;
   /** Exclusive older-page continuation from the authoritative snapshot. */
   nextToken?: string | null;
   /** Daemon `truncated` flag: older history exists beyond the snapshot page. */
@@ -299,6 +301,8 @@ export interface ChatAgentState {
    * TranscriptSnapshotMeta.
    */
   transcriptSnapshot?: TranscriptSnapshotMeta;
+  initialHistory?: InitialChatHistory;
+  initialHistoryPending?: boolean;
   /** True while an on-demand older-history scrollback page fetch is in flight. */
   fetchingOlderHistory: boolean;
   /** Automatic paging stops after a failed or non-advancing page. */

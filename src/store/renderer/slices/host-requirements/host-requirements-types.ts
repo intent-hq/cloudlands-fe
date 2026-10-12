@@ -8,6 +8,8 @@
  * this state only mirrors those terminal answers.
  */
 
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { ProviderCliWarning } from '$features/providers/utils/provider-cli-warnings';
 /** Terminal probe result for git on the daemon host. */
 interface GitRequirementStatus {
   /** Whether the git probe has settled at least once. */
@@ -43,6 +45,11 @@ interface GhRequirementStatus {
 }
 
 export interface HostRequirementsState {
+  /** Advisory discovery belongs only to the admitted connection that produced it. */
+  providerCli?: {
+    context: string;
+    warnings: Collection<ProviderCliWarning, 'providerId'>;
+  };
   git: GitRequirementStatus;
   node: NodeRequirementStatus;
   gh: GhRequirementStatus;

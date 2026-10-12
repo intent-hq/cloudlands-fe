@@ -173,6 +173,57 @@ describe('UnifiedCommentThread', () => {
     expect(getByText('Reply User')).toBeTruthy();
   });
 
+  it('retains the reply draft when the async send is rejected', async () => {
+    const onReply = vi.fn(async () => false);
+    const onReplyValueChange = vi.fn();
+    const { getByRole } = render(TooltipWrapper, {
+      props: {
+        component: UnifiedCommentThread,
+        props: {
+          comment: mockComment,
+          replies: [],
+          isCollapsed: false,
+          replyValue: 'draft reply',
+          onReply,
+          onReplyValueChange,
+        },
+      },
+    });
+
+    await fireEvent.click(getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(onReply).toHaveBeenCalledWith('draft reply'));
+    expect(onReplyValueChange).not.toHaveBeenCalledWith('');
+  });
+
+  it('prevents duplicate reply submission until the pending send settles', async () => {
+    let resolveReply!: (accepted: boolean) => void;
+    const onReply = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveReply = resolve;
+        }),
+    );
+    const onReplyValueChange = vi.fn();
+    const { getByRole } = render(UnifiedCommentThread, {
+      props: {
+        comment: mockComment,
+        replies: [],
+        isCollapsed: false,
+        replyValue: 'draft reply',
+        onReply,
+        onReplyValueChange,
+      },
+    });
+
+    const send = getByRole('button', { name: 'Send' });
+    await fireEvent.click(send);
+    await fireEvent.click(send);
+    expect(onReply).toHaveBeenCalledExactlyOnceWith('draft reply');
+
+    resolveReply(true);
+    await waitFor(() => expect(onReplyValueChange).toHaveBeenLastCalledWith(''));
+  });
+
   it('calls onShow when clicking show replies in collapsed state', async () => {
     const onShow = vi.fn();
     const { getByText } = render(TooltipWrapper, {

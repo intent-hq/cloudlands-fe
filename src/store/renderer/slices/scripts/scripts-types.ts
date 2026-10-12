@@ -4,10 +4,15 @@
 
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { ScriptReadChange } from '$features/scripts/utils/script-change';
-import type { ScriptWithState } from '$features/scripts/types';
+import type { ScriptListEntry } from '$features/scripts/types';
 
 // Re-export types that consumers need
-export type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '$features/scripts/types';
+export type {
+  WorkspaceScript,
+  ScriptRuntimeState,
+  ScriptWithState,
+  ScriptListEntry,
+} from '$features/scripts/types';
 
 /**
  * One decoded `script:output` chunk (PROTOCOL §6.5). `text` is the UTF-8
@@ -38,7 +43,7 @@ type ScriptRetainedOutput = {
   text?: string;
 };
 
-export type ScriptQuickAction = 'start' | 'stop' | 'restart';
+export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete' | 'edit';
 
 export type ScriptOperationState = {
   action: ScriptQuickAction;
@@ -51,7 +56,7 @@ export type ScriptOperationState = {
  */
 export type ScriptsWorkspaceState = {
   /** Script definitions with runtime state keyed by script ID */
-  scripts: Record<string, ScriptWithState>;
+  scripts: Record<string, ScriptListEntry>;
   /** Event journals exist only while an authoritative list read is pending. */
   pendingReads?: Record<string, Collection<ScriptReadChange & { sequence: string }, 'sequence'>>;
   /** Raw-chunk output ring buffers keyed by script ID */
@@ -59,6 +64,8 @@ export type ScriptsWorkspaceState = {
   retainedOutputs?: Record<string, ScriptRetainedOutput>;
   /** Transient Shell controls state keyed by script ID. */
   operations: Record<string, ScriptOperationState>;
+  /** Detection owns every definition, including rows not yet loaded into the cache. */
+  detectionOperation?: ScriptOperationState;
   /** Whether the workspace scripts have been initialized */
   initialized: boolean;
   /** Whether scripts are currently loading */
@@ -66,6 +73,7 @@ export type ScriptsWorkspaceState = {
   lifecycleSupported?: boolean;
   activeScriptIds?: string[];
   loadError?: string;
+  nextCursor?: string;
 };
 
 /**

@@ -26,6 +26,7 @@ const designSystemBaselineOverrides = Object.keys(designSystemRules).flatMap((ru
 const semanticColorBaseline = baselineCounts(lintBaseline['no-arbitrary-motion-or-color']) ?? {};
 const iconOnlyButtonSizeBaseline = baselineCounts(lintBaseline['icon-only-button-size']) ?? {};
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
+import noCopiedChatPanelSelectorMocksRule from './eslint-rules/no-copied-chat-panel-selector-mocks.js';
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
@@ -45,6 +46,7 @@ const intentPlugin = {
     'no-production-dynamic-import': noProductionDynamicImportRule,
     ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
+    'no-copied-chat-panel-selector-mocks': noCopiedChatPanelSelectorMocksRule,
     'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
     'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
@@ -639,6 +641,7 @@ export default [
     },
     rules: {
       'intent/no-cold-svelte-import-in-tests': 'error',
+      'intent/no-copied-chat-panel-selector-mocks': 'error',
       // A test that reads a .svelte/.ts source file from disk to assert on its
       // text pins the test to how the source is spelled, not what it does
       // (cloudlands-fe#2760). The baseline maps today's offenders to their

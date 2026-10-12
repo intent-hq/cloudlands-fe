@@ -12,6 +12,18 @@ import {
   initialState,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
+  noteAttributionViewFinished,
+  noteAttributionViewReleased,
+  noteAttributionViewRequested,
+  noteContentViewFinished,
+  noteContentViewReleased,
+  noteContentViewRequested,
+  notePresenceViewReleased,
+  notePresenceViewRequested,
+  notePresenceViewersReceived,
+  noteWorkspaceRootFinished,
+  noteWorkspaceRootReleased,
+  noteWorkspaceRootRequested,
   setWorkspaceNotesLoading,
   workspaceNotesReducer,
 } from './workspace-notes-slice';
@@ -40,6 +52,88 @@ function mockNote(id: string, workspaceId = WS_1, overrides: Partial<Note> = {})
 describe('workspaceNotesReducer', () => {
   it('returns the initial state', () => {
     expect(workspaceNotesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('correlates and releases note content, root, presence, and attribution views', () => {
+    const authority = 'authority-1';
+    const viewer = {
+      principalId: 'principal-1',
+      login: 'viewer',
+      displayName: 'Viewer',
+      avatarUrl: null,
+      cursor: null,
+      cursorSeenAt: null,
+    };
+    const attribution = {
+      workspaceId: WS_1,
+      noteId: 'note-1',
+      computedAt: '2026-10-09T00:00:00.000Z',
+      attributions: { '1': { timestamp: 1 } },
+    };
+    let state = workspaceNotesReducer(
+      initialState,
+      noteContentViewRequested('consumer', 'content-1', WS_1, 'note-1'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      noteContentViewFinished(WS_1, 'consumer', 'content-1', authority, 'offline'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      noteContentViewFinished(WS_1, 'consumer', 'content-1', authority),
+    );
+    state = workspaceNotesReducer(state, noteWorkspaceRootRequested('consumer', 'root-1', WS_1));
+    state = workspaceNotesReducer(
+      state,
+      noteWorkspaceRootFinished(WS_1, 'consumer', 'root-1', authority, '/workspace'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      notePresenceViewRequested('consumer', 'presence-1', WS_1, 'note-1'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      notePresenceViewersReceived(WS_1, 'consumer', 'presence-1', authority, [viewer]),
+    );
+    state = workspaceNotesReducer(
+      state,
+      noteAttributionViewRequested('consumer', 'attribution-1', WS_1, 'note-1'),
+    );
+    const beforeStale = state;
+    state = workspaceNotesReducer(
+      state,
+      noteAttributionViewFinished('consumer', 'stale', WS_1, authority, attribution),
+    );
+    expect(state).toBe(beforeStale);
+    state = workspaceNotesReducer(
+      state,
+      noteAttributionViewFinished('consumer', 'attribution-1', WS_1, authority, attribution),
+    );
+
+    const workspace = state.byWorkspaceId[WS_1];
+    expect(getItem(workspace.contentViews, 'consumer')).toMatchObject({
+      status: 'ready',
+      authority,
+    });
+    expect(getItem(workspace.contentViews, 'consumer')).not.toHaveProperty('error');
+    expect(getItem(workspace.workspaceRoots, 'consumer')).toMatchObject({
+      status: 'ready',
+      path: '/workspace',
+    });
+    const presenceView = getItem(workspace.presenceViews, 'consumer');
+    expect(presenceView && getItems(presenceView.viewers)).toEqual([viewer]);
+    expect(getItem(workspace.attributionViews, 'consumer')?.data).toEqual(attribution);
+
+    state = workspaceNotesReducer(state, noteContentViewReleased(WS_1, 'consumer'));
+    state = workspaceNotesReducer(state, noteWorkspaceRootReleased(WS_1, 'consumer'));
+    state = workspaceNotesReducer(state, notePresenceViewReleased(WS_1, 'consumer'));
+    state = workspaceNotesReducer(state, noteAttributionViewReleased(WS_1, 'consumer'));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      contentViews: { ids: [] },
+      workspaceRoots: { ids: [] },
+      presenceViews: { ids: [] },
+      attributionViews: { ids: [] },
+    });
   });
 
   it('stores notes and per-workspace flags after a successful load', () => {

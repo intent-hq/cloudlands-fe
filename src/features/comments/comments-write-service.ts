@@ -1,135 +1,33 @@
-/**
- * Comments write service — the sanctioned post-saga comment-mutation mechanism.
- *
- * Mirrors `notes-write-service`: components/managers call these functions
- * instead of dispatching the (now dead) saga-trigger actions. Each operation:
- * (1) applies an optimistic store update for instant UI feedback, (2) awaits the
- * matching `appClient.comments.*` mutation (which forwards to intentd and never
- * throws — it returns a `MutationResult`), and (3) reconciles: on success the
- * live `comment:*` subscribe→refetch loop converges the store to canonical ids;
- * on failure the optimistic change is rolled back.
- *
- * This module is dependency-light: it imports only the AppClient seam, the
- * configured store, slice actions, selectors (per src/store AGENTS.md), and
- * the notes-write-service queue entry point (`comment.add` rewrites note
- * content, so its rev bookkeeping lives with the note mutation queue).
- */
-import { appClient } from '$lib/client';
+/** Compatibility façade for comment mutations owned by workspace-notes saga. */
 import type { CommentAddParams, CommentRespondParams } from '$lib/client';
-import { notify } from '$lib/components/patterns/notify';
-import { m } from '$shared/paraglide/messages.js';
-import type { CommentV2 } from './comment-types-v2';
 import { store as appStore } from '$store/renderer/store';
 import {
-  addCommentAction,
-  removeCommentAction,
-} from '$store/renderer/slices/comments/comments-slice';
-import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
-import { enqueueRevBumpingNoteMutation } from '../notes/notes-write-service';
-import { createLogger } from '$lib/utils/client-logger';
+  addCommentRequested,
+  deleteCommentRequested,
+  respondToCommentRequested,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import type { CommentV2 } from './comment-types-v2';
 
-const logger = createLogger('CommentsWriteService');
-
-/**
- * Add a comment optimistically, then persist via `comment.add`. The optimistic
- * comment is inserted into the store immediately; on failure it is removed and
- * a toast surfaces the daemon error. Returns `true` on success so callers can
- * branch on the persist outcome; convergence to the daemon-assigned id is left
- * to the subscribe→refetch loop.
- *
- * `comment.add` rewrites the note's markdown daemon-side (anchor markers),
- * bumping the note's `rev` without a `note:updated` event. When the workspace
- * is known, the call is therefore routed through the note's §11.4-D mutation
- * queue (`enqueueRevBumpingNoteMutation`) so the stored rev advances — from
- * the daemon's echoed `noteRev` when present (#638), else the rev+1 inference
- * — before the anchor-insertion's debounced content save flushes; otherwise
- * that save sends a stale `expectedVersion` and trips the "This note changed
- * on the server" conflict toast.
- */
-export async function addComment(
+export function addComment(
   noteId: string,
   optimistic: CommentV2,
   params: CommentAddParams,
 ): Promise<boolean> {
-  appStore.dispatch(addCommentAction(optimistic));
-
-  let result;
-  if (params.workspaceId) {
-    result = await enqueueRevBumpingNoteMutation(params.workspaceId, noteId, () =>
-      appClient.comments.add(noteId, params),
-    );
-  } else {
-    // Without a workspace the rev bookkeeping above is impossible: a
-    // successful add still bumps the server rev, so the next conditional save
-    // will conflict (the Round 6b failure mode). Every production caller
-    // passes workspaceId; warn so a future caller that doesn't is visible.
-    logger.warn(
-      'addComment called without workspaceId; note rev bookkeeping skipped — the next save may conflict',
-      { noteId },
-    );
-    result = await appClient.comments.add(noteId, params);
-  }
-  if (!result.success) {
-    logger.error('Failed to add comment', result.error);
-    notify.error(m.comments_writeService_addFailed_error(), {
-      description: result.error ?? m.comments_writeService_unknown_error(),
-    });
-    appStore.dispatch(removeCommentAction(optimistic.id));
-    return false;
-  }
-  return true;
+  return appStore.dispatch(addCommentRequested(noteId, optimistic, params));
 }
 
-/**
- * Reply to a thread/comment optimistically, then persist via `comment.respond`.
- * The optimistic reply is inserted immediately; on failure it is removed and a
- * toast surfaces the daemon error. Returns `true` on success so callers can
- * branch on the persist outcome.
- */
-export async function respondToComment(
+export function respondToComment(
   noteId: string,
   optimisticReply: CommentV2,
   params: CommentRespondParams,
 ): Promise<boolean> {
-  appStore.dispatch(addCommentAction(optimisticReply));
-
-  const result = await appClient.comments.respond(noteId, params);
-  if (!result.success) {
-    logger.error('Failed to respond to comment', result.error);
-    notify.error(m.comments_writeService_replyFailed_error(), {
-      description: result.error ?? m.comments_writeService_unknown_error(),
-    });
-    appStore.dispatch(removeCommentAction(optimisticReply.id));
-    return false;
-  }
-  return true;
+  return appStore.dispatch(respondToCommentRequested(noteId, optimisticReply, params));
 }
 
-/**
- * Delete a comment optimistically, then persist via `comment.delete`. The
- * comment is removed from the store immediately and restored from a snapshot on
- * failure (with a toast surfacing the daemon error). Returns `existed` (whether
- * the comment existed before the optimistic removal — preserved for callers
- * that key follow-up cleanup on prior presence) and `success` (whether the
- * daemon persisted the delete) so callers can react to either.
- */
-export async function deleteComment(
+export function deleteComment(
   noteId: string,
   commentId: string,
   workspaceId?: string,
 ): Promise<{ existed: boolean; success: boolean }> {
-  const snapshot = selectCommentById.select(appStore.state, commentId);
-  appStore.dispatch(removeCommentAction(commentId));
-
-  const result = await appClient.comments.delete(noteId, commentId, workspaceId);
-  if (!result.success) {
-    logger.error('Failed to delete comment', result.error);
-    notify.error(m.comments_writeService_deleteFailed_error(), {
-      description: result.error ?? m.comments_writeService_unknown_error(),
-    });
-    if (snapshot) appStore.dispatch(addCommentAction(snapshot));
-    return { existed: !!snapshot, success: false };
-  }
-
-  return { existed: !!snapshot, success: true };
+  return appStore.dispatch(deleteCommentRequested(noteId, commentId, workspaceId));
 }

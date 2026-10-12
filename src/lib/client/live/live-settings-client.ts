@@ -648,6 +648,8 @@ function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
   if (typeof wire.url === 'string' && wire.url) config.url = wire.url;
   if (wire.headers && typeof wire.headers === 'object') config.headers = wire.headers;
   if (wire.enabled === false) config.disabled = true;
+  if (typeof wire.workspaceDisabled === 'boolean')
+    config.workspaceDisabled = wire.workspaceDisabled;
   return config;
 }
 

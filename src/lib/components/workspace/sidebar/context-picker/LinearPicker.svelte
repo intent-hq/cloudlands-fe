@@ -44,7 +44,6 @@
   let issues = $state<LinearIssueResult[]>([]);
   let isLoading = $state(false);
   let searchQuery = $state('');
-  let isConnecting = $state(false);
 
   const filteredIssues = $derived.by(() => {
     if (!searchQuery.trim()) return issues;
@@ -86,24 +85,9 @@
     }
   }
 
-  async function handleConnect() {
-    const context = captureIntegrationContext(workspaceId);
-    isConnecting = true;
-    try {
-      appStore.dispatch(startLinearAuth());
-      // Wait a bit for auth to potentially complete, then re-check
-      // The user will complete OAuth externally, so we poll
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const authState = await linearAuthClient.getAuthState(true);
-      if (context.isCurrent() && context.workspaceId === workspaceId && authState.isAuthenticated) {
-        isAuthenticated = true;
-        await loadIssues();
-      }
-    } catch (error) {
-      logger.error('Linear auth failed', error as Error);
-    } finally {
-      isConnecting = false;
-    }
+  function handleConnect() {
+    onClose();
+    appStore.dispatch(startLinearAuth());
   }
 
   function handleSelect(issue: LinearIssueResult) {
@@ -144,10 +128,7 @@
   <div class="flex flex-col items-start gap-4 p-8 text-left">
     <LinearIcon size={48} class="text-subtle" />
     <p class="text-left text-sm text-subtle">{m.workspace_linearPicker_connectPrompt_label()}</p>
-    <Button onclick={handleConnect} disabled={isConnecting}>
-      {#if isConnecting}
-        <IntentMarkLoader size={16} class="mr-2" />
-      {/if}
+    <Button onclick={handleConnect}>
       {m.workspace_linearPicker_connect_label()}
     </Button>
   </div>

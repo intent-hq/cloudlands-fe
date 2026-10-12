@@ -374,6 +374,44 @@
   );
 </script>
 
+{#snippet portRow()}
+  <SettingsFieldRow
+    id="websocket-port"
+    label={m.settings_wsApi_port_label()}
+    error={portValid ? undefined : m.settings_wsApi_port_invalid()}
+    disabled={portSaving}
+  >
+    {#snippet control({ labelId, errorId })}
+      <div class="flex items-center gap-2">
+        <div class="shrink-0 w-32">
+          <Input
+            type="number"
+            min="1024"
+            max="65535"
+            bind:value={editedPort}
+            disabled={portSaving}
+            aria-label={m.settings_wsApi_port_ariaLabel()}
+            aria-labelledby={labelId}
+            aria-describedby={errorId}
+          />
+        </div>
+        {#if Number(editedPort) !== persistedPort}
+          <Button
+            variant="link"
+            size="sm"
+            type="button"
+            onclick={handlePortSave}
+            disabled={portSaving || !portValid}
+            class="h-auto px-0"
+          >
+            {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
+          </Button>
+        {/if}
+      </div>
+    {/snippet}
+  </SettingsFieldRow>
+{/snippet}
+
 {#snippet connectionSettings()}
   <div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
     {#if expanded}
@@ -462,41 +500,9 @@
           {/if}
 
           <!-- Port remains configurable even while remote access is disabled. -->
-          <SettingsFieldRow
-            id="websocket-port"
-            label={m.settings_wsApi_port_label()}
-            error={portValid ? undefined : m.settings_wsApi_port_invalid()}
-            disabled={portSaving}
-          >
-            {#snippet control({ labelId, errorId })}
-              <div class="flex items-center gap-2">
-                <div class="shrink-0 w-32">
-                  <Input
-                    type="number"
-                    min="1024"
-                    max="65535"
-                    bind:value={editedPort}
-                    disabled={portSaving}
-                    aria-label={m.settings_wsApi_port_ariaLabel()}
-                    aria-labelledby={labelId}
-                    aria-describedby={errorId}
-                  />
-                </div>
-                {#if Number(editedPort) !== persistedPort}
-                  <Button
-                    variant="link"
-                    size="sm"
-                    type="button"
-                    onclick={handlePortSave}
-                    disabled={portSaving || !portValid}
-                    class="h-auto px-0"
-                  >
-                    {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
-                  </Button>
-                {/if}
-              </div>
-            {/snippet}
-          </SettingsFieldRow>
+          {#if !enabled}
+            {@render portRow()}
+          {/if}
 
           {#if enabled}
             <section
@@ -506,6 +512,37 @@
               <h3 id="connection-details-heading" class="type-body font-medium text-foreground">
                 {m.settings_wsApi_connectionDetails_label()}
               </h3>
+              <!-- This daemon's own tailcat tunnel address (copyable) — shown only
+                 while the tunnel is on and the daemon reports one. -->
+              {#if tunnelSupported && tunnelEnabled && tcAddress}
+                <section data-tunnel-address-row>
+                  <SettingsFieldRow
+                    id="websocket-tailcat"
+                    label={m.settings_tunnel_tcAddress_label()}
+                    class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
+                  >
+                    {#snippet control()}
+                      <div class="flex min-w-0 w-full items-center gap-2">
+                        <code
+                          class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 flex-1 truncate"
+                          use:truncatedTitle={tcAddress}>{tcAddress}</code
+                        >
+                        <Button
+                          variant="ghost"
+                          size="icon-compact"
+                          iconOnly
+                          type="button"
+                          onclick={handleCopyTcAddress}
+                          title={m.settings_tunnel_tcAddress_copy()}
+                        >
+                          <Fa icon={faCopy} size="sm" />
+                        </Button>
+                      </div>
+                    {/snippet}
+                  </SettingsFieldRow>
+                </section>
+              {/if}
+              {@render portRow()}
               <SettingsFieldRow
                 id="websocket-token"
                 label={m.settings_wsApi_apiToken_label()}
@@ -561,36 +598,6 @@
                   </div>
                 {/snippet}
               </SettingsFieldRow>
-              <!-- This daemon's own tailcat tunnel address (copyable) — shown only
-                 while the tunnel is on and the daemon reports one. -->
-              {#if tunnelSupported && tunnelEnabled && tcAddress}
-                <section data-tunnel-address-row>
-                  <SettingsFieldRow
-                    id="websocket-tailcat"
-                    label={m.settings_tunnel_tcAddress_label()}
-                    class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
-                  >
-                    {#snippet control()}
-                      <div class="flex min-w-0 w-full items-center gap-2">
-                        <code
-                          class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 flex-1 truncate"
-                          use:truncatedTitle={tcAddress}>{tcAddress}</code
-                        >
-                        <Button
-                          variant="ghost"
-                          size="icon-compact"
-                          iconOnly
-                          type="button"
-                          onclick={handleCopyTcAddress}
-                          title={m.settings_tunnel_tcAddress_copy()}
-                        >
-                          <Fa icon={faCopy} size="sm" />
-                        </Button>
-                      </div>
-                    {/snippet}
-                  </SettingsFieldRow>
-                </section>
-              {/if}
               {#if certFingerprint}
                 <SettingsFieldRow
                   id="websocket-fingerprint"

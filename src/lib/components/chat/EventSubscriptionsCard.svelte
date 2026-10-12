@@ -11,7 +11,10 @@
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import MonitoredScriptsRow from './MonitoredScriptsRow.svelte';
-  import { selectAgentScriptMonitors } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
+  import {
+    selectAgentScriptMonitors,
+    selectScriptMonitors,
+  } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
   import {
     scriptMonitorsSubscribeRequested,
     scriptMonitorsUnsubscribeRequested,
@@ -119,7 +122,8 @@
   const hooks$ = selectBackgroundHooks(workspaceIdStore);
   const scriptMonitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
   const scriptCount = $derived($scriptMonitors$.filter((row) => row.state === 'active').length);
-  const hasScripts = $derived(scriptCount > 0);
+  const scriptPage$ = selectScriptMonitors(workspaceIdStore);
+  const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor);
   const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
   const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const agentSessionsById$ = selectAgentSessionsById();
@@ -187,8 +191,12 @@
       return totalCount === 0
         ? m.events_ipc_subscribed_description()
         : totalCount === 1
-          ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
-          : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+          ? m.chat_eventSubscriptions_heading_one({
+              count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+            })
+          : m.chat_eventSubscriptions_heading_many({
+              count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+            });
     }
 
     if (isAgentOnly) {
@@ -202,8 +210,12 @@
     return totalCount === 0
       ? m.events_ipc_subscribed_description()
       : totalCount === 1
-        ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
-        : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+        ? m.chat_eventSubscriptions_heading_one({
+            count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+          })
+        : m.chat_eventSubscriptions_heading_many({
+            count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+          });
   });
 
   $effect(() => {

@@ -10,6 +10,8 @@
  * stuck on "checking".
  */
 
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import type { ProviderCliWarning } from '$features/providers/utils/provider-cli-warnings';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { HostRequirementsState } from './host-requirements-types';
@@ -102,3 +104,18 @@ hostRequirementsReducer.with(checkHostRequirementsComplete, (state) => ({
   checking: false,
   hasCheckedOnce: true,
 }));
+
+/** Startup advisory check, independent of the onboarding requirements gate. */
+export const checkProviderCliRequirementsRequested = createAction(
+  'hostRequirements/checkProviderCliRequirementsRequested',
+);
+export const providerCliRequirementsResolved = createAction<
+  [context: string, warnings: ProviderCliWarning[]]
+>('hostRequirements/providerCliRequirementsResolved');
+hostRequirementsReducer.with(
+  providerCliRequirementsResolved,
+  (state, { payload: [context, warnings] }) => ({
+    ...state,
+    providerCli: { context, warnings: createCollection('providerId', warnings) },
+  }),
+);

@@ -187,7 +187,11 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
 
   await component.update({ props: { mode: 'error' } });
   await expect(mark).toHaveAttribute('data-motion-state', 'settling');
-  await expect(component.getByRole('alert')).toContainText('Provider stopped the response');
+  await expect(component.getByRole('alert')).toContainText("Couldn't complete this response");
+  await component.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(component.getByTestId('failure-raw-details')).toHaveText(
+    'Provider stopped the response',
+  );
   await expect(mark).toHaveCount(0);
   await component.update({ props: { mode: 'processing' } });
   await expect(component.locator('[data-slot="intent-mark-loader"]')).toHaveAttribute(

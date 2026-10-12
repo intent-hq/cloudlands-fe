@@ -153,13 +153,13 @@ describe('terminals selectors', () => {
       expect(selectSelectedScriptId.select(state, 'ws-1')).toBe('script-1');
     });
 
-    it('returns null once scripts initialize without the selected id (stale/deleted)', () => {
+    it('preserves a selected known ID absent from the loaded page', () => {
       const state = scriptSelectionState({
         selectedScriptId: 'script-1',
         scriptsWs: { initialized: true, scripts: { 'other-script': {} } },
       });
 
-      expect(selectSelectedScriptId.select(state, 'ws-1')).toBeNull();
+      expect(selectSelectedScriptId.select(state, 'ws-1')).toBe('script-1');
     });
 
     it('returns the id when scripts are initialized and the script exists', () => {

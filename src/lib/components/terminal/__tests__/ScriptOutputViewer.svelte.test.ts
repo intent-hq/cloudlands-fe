@@ -1,3 +1,6 @@
+import { appClient } from '$lib/client';
+import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { store as appStore } from '$store/renderer/store';
 /**
  * Regression tests for `ScriptOutputViewer.svelte` code-font wiring
  * (verifier follow-up).
@@ -31,7 +34,6 @@ const {
   fontReadableRef,
   scriptState,
   scriptSelectorArgs,
-  mockScriptStart,
   lifecycleGate,
   outputReadableRef,
   authorityReadableRef,
@@ -41,7 +43,6 @@ const {
   fontReadableRef: { value: null as any },
   scriptState: { byWorkspaceId: {} as Record<string, Record<string, any>> },
   scriptSelectorArgs: [] as unknown[][],
-  mockScriptStart: vi.fn(),
   lifecycleGate: { hidesAgentLifecycleActions: false },
   outputReadableRef: { value: null as any },
   authorityReadableRef: { value: null as any },
@@ -118,10 +119,6 @@ vi.mock('$features/terminal/terminal-theme-manager', () => ({
   },
 }));
 
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: { start: mockScriptStart, remove: vi.fn() },
-}));
-
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
   const makeSel = <T>(getter: (workspaceId: string, scriptId: string) => T) =>
     Object.assign(
@@ -188,7 +185,10 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 }));
 
 vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
-  removeScript: vi.fn(),
+  startScriptRequested: (...payload: unknown[]) => ({
+    type: 'scripts/startScriptRequested',
+    payload,
+  }),
   scriptOutputRequested: (...payload: unknown[]) => ({ type: 'scripts/outputRequested', payload }),
   scriptOutputReleased: (...payload: unknown[]) => ({ type: 'scripts/outputReleased', payload }),
 }));
@@ -196,6 +196,8 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   createAgentFromConfigRequested: vi.fn(),
 }));
+
+vi.mock('$lib/client', () => ({ appClient: { scripts: { get: vi.fn() } } }));
 
 vi.mock('$store/renderer/store', () => ({
   store: { dispatch: vi.fn(), state: {} },
@@ -342,7 +344,10 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     ).toBe(true);
 
     await fireEvent.click(screen.getByText('Run'));
-    expect(mockScriptStart).toHaveBeenCalledWith('ws-2', 's-1');
+    expect(appStore.dispatch).toHaveBeenCalledWith({
+      type: 'scripts/startScriptRequested',
+      payload: ['ws-2', 's-1'],
+    });
   });
 
   it('offers "Ask AI to Fix" on a failed script when agent creation is allowed', async () => {
@@ -350,6 +355,25 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     await waitForXTermInit();
 
     await waitFor(() => expect(screen.getByText('Ask AI to Fix')).toBeTruthy());
+  });
+
+  it('does not send a command from a departed workspace after a lazy detail read', async () => {
+    let finish!: (value: any) => void;
+    vi.mocked(appClient.scripts.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { rerender } = render(ScriptOutputViewer, {
+      props: { scriptId: 's-1', workspaceId: 'ws-failed' },
+    });
+    expect(appClient.scripts.get).not.toHaveBeenCalled();
+    await fireEvent.click(await screen.findByText('Ask AI to Fix'));
+    await rerender({ scriptId: 's-1', workspaceId: 'ws-2' });
+    finish(scriptState.byWorkspaceId['ws-failed']['s-1']);
+    await tick();
+    expect(createAgentFromConfigRequested).not.toHaveBeenCalled();
   });
 
   it('withholds "Ask AI to Fix" when agent lifecycle actions are hidden', async () => {

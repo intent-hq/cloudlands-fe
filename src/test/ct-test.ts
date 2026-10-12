@@ -1,3 +1,4 @@
+import { applyAndVerifyMotion } from './ct-motion';
 import { expect } from '@playwright/experimental-ct-svelte';
 import { browserTest as baseTest } from '../../playwright/ct-browser-fixtures';
 import {
@@ -27,7 +28,11 @@ import {
  * `playwright/ct-context-reuse.ts`: `'none'` by default, `'when-possible'`
  * under `CT_CONTEXT_REUSE=1` (measurement-only escape hatch).
  *
- * Two auto fixtures ride along:
+ * Motion is configured with test.use({ contextOptions: { reducedMotion: ... } })
+ * before CT navigation/imports, then applied and verified again before hooks/mount.
+ * Undefined and null preserve the runner default and system opt-out respectively.
+ *
+ * Additional auto fixtures ride along:
  * - the isolation guard: when the resolved mode is `'none'`, every test's CDP
  *   `browserContextId` must be new to the worker. A page-side marker cannot
  *   tell reuse from isolation (the reset clears origin storage), so the CDP id
@@ -63,6 +68,7 @@ interface CtHarnessWorkerFixtures {
 }
 
 interface CtHarnessTestFixtures {
+  _ctMotionPreference: void;
   _ctIsolatedContextGuard: void;
   _ctCdpLifecycleRecorder: void;
 }
@@ -186,6 +192,14 @@ export const ctHarnessFixtures: CtHarnessFixtures = {
   _optionContextReuseMode: [
     resolveCtContextReuseMode({ env: process.env }),
     { scope: 'worker', option: true, box: true },
+  ],
+
+  _ctMotionPreference: [
+    async ({ page, contextOptions, _ctCdpLifecycleRecorder: _recorderFirst }, use) => {
+      await applyAndVerifyMotion(page, contextOptions.reducedMotion);
+      await use();
+    },
+    { auto: true, box: true },
   ],
 
   _ctIsolatedContextGuard: [

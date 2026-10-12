@@ -1,5 +1,39 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Note, NoteVersion } from '$shared/types';
+import type { LineAttributionData } from '$lib/client';
+
+export type NoteUiRequestState = {
+  consumerId: string;
+  requestId: string;
+  workspaceId: string;
+  noteId: string;
+  authority: string | null;
+  status: 'loading' | 'ready' | 'error';
+  error?: string;
+};
+
+type NoteContentViewState = NoteUiRequestState;
+
+type NoteWorkspaceRootState = Omit<NoteUiRequestState, 'noteId'> & {
+  path: string | null;
+};
+
+export type NotePresenceViewer = {
+  principalId: string;
+  login: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  cursor: { rev: number; anchor: number; head: number } | null;
+  cursorSeenAt: number | null;
+};
+
+type NotePresenceViewState = NoteUiRequestState & {
+  viewers: Collection<NotePresenceViewer, 'principalId'>;
+};
+
+export type NoteAttributionViewState = NoteUiRequestState & {
+  data: LineAttributionData | null;
+};
 
 export type NoteVersionsState = {
   versions: NoteVersion[];
@@ -28,6 +62,11 @@ export type WorkspaceNotesWorkspaceState = {
   notesVersion: number;
   noteVersions: NoteVersionsState | null;
   readyTasks: ReadyTasksState | null;
+  pendingContentByNoteId: Record<string, true>;
+  contentViews: Collection<NoteContentViewState, 'consumerId'>;
+  workspaceRoots: Collection<NoteWorkspaceRootState, 'consumerId'>;
+  presenceViews: Collection<NotePresenceViewState, 'consumerId'>;
+  attributionViews: Collection<NoteAttributionViewState, 'consumerId'>;
 };
 
 export type WorkspaceNotesState = {

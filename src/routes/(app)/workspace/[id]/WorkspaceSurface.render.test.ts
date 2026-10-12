@@ -115,6 +115,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: action('workspace/loadWorkspacesRequested'),
 }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
+  setCollapsed: action('uiLayout/setCollapsed'),
   setPanelVisibility: action('uiLayout/setPanelVisibility'),
 }));
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', () => ({

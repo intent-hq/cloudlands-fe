@@ -60,12 +60,14 @@ test('shows a newer set during queue fallback and admits each answered set once'
 }, info) => {
   const component = await mount(ChatPanelComposerGeometryHost, { props });
   await component.getByRole('checkbox', { name: /Start with the smallest change/ }).click();
-  await component
-    .getByRole('button', { name: 'Continue', exact: true })
-    .evaluate((button: HTMLButtonElement) => {
-      button.click();
-      button.click();
-    });
+  const continueButton = component.getByRole('button', { name: 'Continue', exact: true });
+  // evaluate bypasses Playwright's actionability checks. Wait for the selected
+  // answer to enable submission before exercising same-frame double activation.
+  await expect(continueButton).toBeEnabled();
+  await continueButton.evaluate((button: HTMLButtonElement) => {
+    button.click();
+    button.click();
+  });
   await expect(component.getByRole('checkbox')).toHaveCount(0);
   await expect(component.locator('[data-message-role="user"]')).toHaveCount(1);
   await component.update({ props: { ...props, streaming: true, settleSubmission: 'queue' } });
@@ -98,11 +100,16 @@ for (const outcome of ['rejected', 'uncertain'] as const) {
     await expect(editor).toBeVisible();
     await editor.fill('Keep this newer draft');
     await component.update({ props: { ...props, settleSubmission: outcome } });
-    await expect(component.getByRole('button', { name: /try again/i })).toBeVisible();
+    await expect(component.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
     if (outcome === 'rejected') {
+      await expect(editor).toHaveText('Keep this newer draft');
       await expect(
         component.getByRole('checkbox', { name: /Start with the smallest change/ }),
       ).toBeVisible();
+      await page.screenshot({
+        animations: 'disabled',
+        path: info.outputPath('rejected-question-restored.png'),
+      });
       await component.getByRole('button', { name: 'Hide', exact: true }).click();
       await expect(component.getByRole('checkbox')).toHaveCount(0);
     } else await expect(component.getByRole('checkbox')).toHaveCount(0);

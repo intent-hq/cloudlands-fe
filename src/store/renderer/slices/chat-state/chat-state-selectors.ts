@@ -130,6 +130,13 @@ export const selectChatLiveStreamPhase = store.createSelector(
  * subscription, or undefined when none has arrived yet (single-transfer
  * hydration; consumed by the chat-read saga).
  */
+export const selectInitialChatHistory = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).initialHistory,
+);
+export const selectInitialChatHistoryPending = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).initialHistoryPending === true,
+);
+
 export const selectTranscriptSnapshotMeta = store.createSelector(
   (state, agentId: string): TranscriptSnapshotMeta | undefined =>
     getAgentChatState(state, agentId).transcriptSnapshot,

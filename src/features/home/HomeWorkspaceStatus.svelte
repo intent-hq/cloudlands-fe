@@ -80,11 +80,11 @@
           data-home-status={group}
           data-home-status-error={failed || undefined}
         >
-          <span class="inline-flex size-3 shrink-0 items-center justify-center" aria-hidden="true">
+          <span class="inline-flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
             {#if presentation.icon}
               <Fa icon={presentation.icon} weight="fill" class="size-full!" />
             {:else}
-              <span class="size-1.5 rounded-full bg-current"></span>
+              <span class="size-2 rounded-full bg-current"></span>
             {/if}
           </span>
           {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{explanation}</span

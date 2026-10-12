@@ -106,10 +106,37 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly scripts: AppClient['scripts'] = {
+    listPage: async (workspaceId) => ({
+      view: 'summary',
+      scripts: fx.mockScripts
+        .filter((s) => s.workspaceId === workspaceId && !s.archivedAt)
+        .map(
+          ({
+            command,
+            cwd: _cwd,
+            env: _env,
+            archivedAt: _archived,
+            lastRunAt: _run,
+            healthUrl: _health,
+            readyPattern: _ready,
+            ...row
+          }) => ({
+            ...row,
+            commandPreview: command,
+            commandTruncated: false,
+          }),
+        ),
+    }),
+    get: async (workspaceId, scriptId) => {
+      const row = fx.mockScripts.find(
+        (s) => s.workspaceId === workspaceId && s.id === scriptId && !s.archivedAt,
+      );
+      if (!row) throw new Error('Unknown script');
+      return row;
+    },
     list: async (workspaceId) =>
       fx.mockScripts.filter((script) => script.workspaceId === workspaceId),
     create: async () => OK,
-    remove: async () => OK,
     start: async () => OK,
     stop: async () => OK,
     restart: async () => OK,

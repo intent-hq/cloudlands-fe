@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import { getAttentionNotice, hasMatchingAttentionNotice } from '../attention-notice';
 import DiscussionRequestNotice from '../DiscussionRequestNotice.svelte';
 import BlockerReportNotice from '../BlockerReportNotice.svelte';
@@ -148,20 +148,18 @@ describe('DiscussionRequestNotice', () => {
 });
 
 describe('TurnFailureNotice', () => {
-  it('renders the title and reason with alert semantics', () => {
+  it('discloses historical details without live alert semantics', async () => {
     render(TurnFailureNotice, { props: { reason: 'Provider stream aborted' } });
 
-    const alert = screen.getByRole('alert');
-    expect(alert).toBeTruthy();
-    expect(alert.getAttribute('aria-live')).toBe('polite');
-    expect(screen.getByText(/Turn failed/i)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: '1 recorded failure' }));
     expect(screen.getByText('Provider stream aborted')).toBeTruthy();
   });
 
   it('renders the title alone when no reason is provided', () => {
     render(TurnFailureNotice);
 
-    expect(screen.getByText(/Turn failed/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '1 recorded failure' })).toBeTruthy();
   });
 
   it('applies custom class when provided', () => {

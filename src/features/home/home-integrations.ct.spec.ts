@@ -267,7 +267,13 @@ test('PR summary reads real checks and reviews; Code browses patches and retries
     'aria-selected',
     'true',
   );
-  await expect(component.getByText('Typecheck', { exact: true })).toBeVisible();
+  const checks = component.locator('[data-home-pr-checks]');
+  await expect(checks.locator('[data-home-pr-checks-summary]')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await checks.locator('[data-home-pr-checks-summary]').click();
+  await expect(checks.getByText('Typecheck', { exact: false })).toBeVisible();
   await expect(component.getByText('Approved', { exact: true }).first()).toBeVisible();
   await expect(component.getByText('Looks good after the', { exact: false })).toBeVisible();
   for (const method of ['github.pulls.checks', 'github.pulls.reviews']) {
@@ -294,7 +300,11 @@ test('PR summary reads real checks and reviews; Code browses patches and retries
   await expect(
     component.getByRole('button', { name: 'src/reconnect.ts', exact: false }),
   ).toBeVisible();
-  await expect(component.locator('[data-home-pr-code]')).toContainText('src/reconnect.ts');
+  const file = component.locator('[data-home-pr-file="src/reconnect.ts"]');
+  const fileToggle = file.locator('[data-home-pr-file-toggle]');
+  await expect(fileToggle).toHaveAttribute('aria-expanded', 'false');
+  await fileToggle.click();
+  await expect(file.locator('[data-line-type="change-addition"]').first()).toBeVisible();
   // Scope pagination to the preview: the PR list has independent pagination.
   await component
     .locator('section[aria-label]')
@@ -305,6 +315,7 @@ test('PR summary reads real checks and reviews; Code browses patches and retries
     component.getByRole('button', { name: 'src/reconnect.ts', exact: false }),
   ).toBeVisible();
   await component.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(fileToggle).toHaveAttribute('aria-expanded', 'true');
   await component.getByRole('button', { name: 'assets/preview.png', exact: false }).click();
   await expect(
     component.getByText('Preview unavailable for this file', { exact: true }),

@@ -11,12 +11,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { v4 as uuidv4 } from 'uuid';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
+  import AssistantThreadTitle from '$lib/components/chat/AssistantThreadTitle.svelte';
+  import { createAssistantThreadRename } from '$lib/components/chat/assistant-thread-rename.svelte';
   import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
-  import {
-    closePanel,
-    setChiefActiveAgentId,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
     selectCurrentChiefThread,
@@ -42,6 +41,7 @@
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectHasResolvableProvider } from '$store/renderer/slices/model/model-selectors';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import {
@@ -91,6 +91,13 @@
   };
 
   let selectedAgentId = $state<string | null>(null);
+  const renameConsumerId = crypto.randomUUID();
+  const renameOutcome$ = selectAgentMutationUi(CHIEF_WORKSPACE_ID, renameConsumerId);
+  const rename = createAssistantThreadRename(
+    renameConsumerId,
+    renameOutcome$,
+    hidesAgentLifecycleActions$,
+  );
   const isCreatingThread = $derived($creationOutcome$?.status === 'pending');
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
@@ -198,7 +205,6 @@
     if (!isWorkspaceRegistered) return;
     chiefMountCount = Math.max(0, chiefMountCount - 1);
     if (chiefMountCount === 0) {
-      appStore.dispatch(closePanel());
       appStore.dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
     }
   });
@@ -287,6 +293,15 @@
     data-chief-header-row
   >
     <div class="flex min-w-0 flex-1 items-center gap-1.5">
+      {#if activeThread && !$hidesAgentLifecycleActions$}
+        <h2
+          class="min-w-0 truncate type-body font-medium"
+          class:flex-1={rename.agentId === activeThread.agentId}
+          title={activeThread.title}
+        >
+          <AssistantThreadTitle thread={activeThread} {rename} class="type-body font-medium" />
+        </h2>
+      {/if}
       {#if threadPicker}
         <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
           <Select.Trigger
@@ -294,9 +309,11 @@
             aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
             class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
           >
-            <span class="type-body min-w-0 flex-1 truncate text-left font-medium">
-              {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
-            </span>
+            {#if !activeThread || $hidesAgentLifecycleActions$}
+              <span class="type-body min-w-0 flex-1 truncate text-left font-medium">
+                {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
+              </span>
+            {/if}
             <Fa icon={faChevronDown} class="shrink-0 text-muted-foreground" />
           </Select.Trigger>
           <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
@@ -319,7 +336,7 @@
             {/each}
           </Select.Content>
         </Select.Root>
-      {:else}
+      {:else if !activeThread || $hidesAgentLifecycleActions$}
         <h2 class="min-w-0 truncate type-body font-medium" title={activeThread?.title}>
           {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
         </h2>
@@ -358,6 +375,10 @@
       </div>
     {/if}
   </div>
+
+  {#if rename.error && rename.agentId === activeThread?.agentId}
+    <p role="alert" class="type-caption shrink-0 px-6 py-2 text-danger">{rename.error}</p>
+  {/if}
 
   <div class="min-h-0 flex-1 overflow-clip px-6 pt-4 pb-5 [overflow-clip-margin:0.5rem]">
     <section class="flex h-full min-h-0 flex-col">
