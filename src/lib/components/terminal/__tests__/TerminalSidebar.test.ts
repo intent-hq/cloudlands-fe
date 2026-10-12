@@ -161,6 +161,7 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: { select: () => 'owner' },
   selectWorkspaceById: (workspaceArg: any) => {
     selectorWorkspaceArgs.push(workspaceArg);
     return {
@@ -660,9 +661,15 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
     );
 
     expect(mockScriptUpdate).toHaveBeenCalledTimes(1);
-    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'auto-idle', {
-      command: 'pnpm build --clean',
-    });
+    expect(mockScriptUpdate).toHaveBeenCalledWith(
+      'ws-1',
+      'auto-idle',
+      {
+        command: 'pnpm build --clean',
+      },
+      expect.objectContaining({ id: 'auto-idle' }),
+      expect.any(Function),
+    );
     expect(mockScriptCreate).toHaveBeenCalledWith(
       'ws-1',
       expect.objectContaining({
@@ -672,7 +679,12 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
         purpose: 'saved',
       }),
     );
-    expect(mockScriptRemove).toHaveBeenCalledWith('ws-1', 'auto-stale');
+    expect(mockScriptRemove).toHaveBeenCalledWith(
+      'ws-1',
+      'auto-stale',
+      expect.objectContaining({ id: 'auto-stale' }),
+      expect.any(Function),
+    );
     expect(notify.warning).toHaveBeenCalledTimes(1);
     expect(notify.warning).toHaveBeenCalledWith(expect.stringContaining('"dev"'));
     expect(notify.success).toHaveBeenCalled();
@@ -878,6 +890,106 @@ describe('sidebar inline rename deletion races', () => {
       },
     ];
   });
+
+  it.each(['update', 'remove'] as const)(
+    'applies off-page detection %s using the full inventory',
+    async (operation) => {
+      const offPage = {
+        id: 'off-page',
+        workspaceId: 'ws-1',
+        name: 'Detected build',
+        command: 'full build command',
+        cwd: 'app',
+        env: { TOKEN: 'complete' },
+        healthUrl: 'http://localhost/health',
+        readyPattern: 'READY',
+        mode: 'command',
+        source: 'auto-detected',
+        createdAt: 'now',
+        runtime: { status: 'idle', restartCount: 0 },
+      };
+      vi.mocked(scriptsClient.list).mockResolvedValueOnce({
+        success: true,
+        data: [offPage as never],
+      });
+      vi.mocked(appClient.scripts.get).mockResolvedValue(offPage as never);
+      vi.mocked(appClient.scripts.create).mockResolvedValue({
+        success: true,
+        script: offPage,
+      } as never);
+      render(TerminalSidebar, { workspaceId: 'ws-1' });
+      await backgroundAgentOptions.value!.onResult(
+        JSON.stringify(
+          operation === 'update'
+            ? { update: [{ id: offPage.id, name: 'Updated build' }] }
+            : { remove: [offPage.id] },
+        ),
+      );
+      if (operation === 'update') {
+        expect(appClient.scripts.create).toHaveBeenCalledWith(
+          'ws-1',
+          expect.objectContaining({
+            scriptId: offPage.id,
+            name: 'Updated build',
+            command: offPage.command,
+            cwd: offPage.cwd,
+            env: offPage.env,
+            healthUrl: offPage.healthUrl,
+            readyPattern: offPage.readyPattern,
+          }),
+        );
+      } else expect(mockWireRemove).toHaveBeenCalledWith('ws-1', offPage.id);
+      expect(notify.success).toHaveBeenCalledWith(
+        expect.stringContaining(operation === 'update' ? 'updated' : 'removed'),
+        expect.anything(),
+      );
+      expect(notify.info).not.toHaveBeenCalled();
+      expect(scriptEntries.value.some((s) => s.id === offPage.id)).toBe(false);
+    },
+  );
+
+  it.each([
+    ['update', 'switch'],
+    ['remove', 'switch'],
+    ['update', 'unmount'],
+    ['remove', 'unmount'],
+  ] as const)(
+    'cancels off-page detection %s when the sidebar changes %s during detail',
+    async (operation, lifecycle) => {
+      const offPage = {
+        id: 'off-page',
+        workspaceId: 'ws-1',
+        name: 'Build',
+        command: 'full command',
+        mode: 'command',
+        source: 'auto-detected',
+        createdAt: 'now',
+        runtime: { status: 'idle', restartCount: 0 },
+      };
+      vi.mocked(scriptsClient.list).mockResolvedValueOnce({
+        success: true,
+        data: [offPage as never],
+      });
+      let resolve!: (value: any) => void;
+      vi.mocked(appClient.scripts.get).mockReturnValueOnce(new Promise((done) => (resolve = done)));
+      const view = render(TerminalSidebar, { workspaceId: 'ws-1' });
+      const detection = backgroundAgentOptions.value!.onResult(
+        JSON.stringify(
+          operation === 'update'
+            ? { update: [{ id: offPage.id, name: 'New' }] }
+            : { remove: [offPage.id] },
+        ),
+      );
+      await waitFor(() => expect(appClient.scripts.get).toHaveBeenCalled());
+      if (lifecycle === 'unmount') view.unmount();
+      else await view.rerender({ workspaceId: 'ws-2' });
+      resolve(offPage);
+      await detection;
+      expect(appClient.scripts.create).not.toHaveBeenCalled();
+      expect(mockWireRemove).not.toHaveBeenCalled();
+      expect(notify.success).not.toHaveBeenCalled();
+    },
+  );
 
   async function rename() {
     await fireEvent.dblClick(screen.getByRole('button', { name: /^Rename target/ }));

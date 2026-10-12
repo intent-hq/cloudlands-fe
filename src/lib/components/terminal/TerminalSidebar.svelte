@@ -21,6 +21,7 @@
   } from '$store/renderer/slices/scripts/scripts-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
+  import { onDestroy } from 'svelte';
 
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -127,10 +128,16 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let lastClickedScriptId = $state<string | null>(null);
   let pendingScrollScriptId = $state<string | null>(null);
 
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+  });
+
   async function handleDetectionResult(parsed: any): Promise<void> {
     const requestWorkspaceId = workspaceId;
+    const isCurrent = () => mounted && workspaceId === requestWorkspaceId;
     const complete = await scriptsClient.list(requestWorkspaceId);
-    if (workspaceId !== requestWorkspaceId) return;
+    if (!isCurrent()) return;
     if (!complete.success || !complete.data) return;
     const snapshot = complete.data.map((s) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -158,6 +165,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
       if (Array.isArray(parsed.remove)) {
         for (const scriptId of parsed.remove) {
+          if (!isCurrent()) return;
           if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
             // Removing a running script kills its live PTY group daemon-side —
             // skip it and surface the skip so the user can stop + re-detect.
@@ -170,7 +178,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               });
               continue;
             }
-            const removed = await scriptsClient.remove(workspaceId, scriptId);
+            const removed = await scriptsClient.remove(
+              requestWorkspaceId,
+              scriptId,
+              target,
+              isCurrent,
+            );
+            if (!isCurrent()) return;
+            if (!removed.success && removed.error) notify.warning(removed.error);
             if (removed.success) {
               removedCount++;
             }
@@ -180,6 +195,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
       if (Array.isArray(parsed.update)) {
         for (const entry of parsed.update) {
+          if (!isCurrent()) return;
           if (entry.id && typeof entry.id === 'string' && autoDetectedIds.has(entry.id)) {
             // The update rides the §5.8 script.create scriptId upsert, which
             // tears down the live PTY group — never send it for a running row.
@@ -198,7 +214,15 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
             if (entry.category && validCategories.has(entry.category))
               updates.category = entry.category;
-            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
+            const updateResult = await scriptsClient.update(
+              requestWorkspaceId,
+              entry.id,
+              updates,
+              target,
+              isCurrent,
+            );
+            if (!isCurrent()) return;
+            if (!updateResult.success && updateResult.error) notify.warning(updateResult.error);
             if (updateResult.success) updatedCount++;
           }
         }
@@ -206,12 +230,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
       if (Array.isArray(parsed.add)) {
         for (const entry of parsed.add) {
+          if (!isCurrent()) return;
           if (
             typeof entry.name === 'string' &&
             typeof entry.command === 'string' &&
             validModes.has(entry.mode)
           ) {
-            const createResult = await scriptsClient.create(workspaceId, {
+            const createResult = await scriptsClient.create(requestWorkspaceId, {
               name: entry.name,
               command: entry.command,
               mode: entry.mode as ScriptMode,
@@ -219,6 +244,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               category: (entry.category as ScriptCategory) || 'other',
               source: 'auto-detected',
             });
+            if (!isCurrent()) return;
             if (createResult.success && createResult.data) {
               appStore.dispatch(upsertScript(workspaceId, createResult.data));
               addedCount++;
@@ -246,8 +272,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               action: {
                 label: m.terminal_sidebar_undo_label(),
                 onClick: async () => {
-                  const result = await scriptsClient.restoreSnapshot(workspaceId, snapshot);
-                  appStore.dispatch(refreshScripts(workspaceId));
+                  if (!isCurrent()) return;
+                  const result = await scriptsClient.restoreSnapshot(requestWorkspaceId, snapshot);
+                  if (!isCurrent()) return;
+                  appStore.dispatch(refreshScripts(requestWorkspaceId));
                   if (!result.success) {
                     if (result.error) notify.warning(result.error);
                     return;
