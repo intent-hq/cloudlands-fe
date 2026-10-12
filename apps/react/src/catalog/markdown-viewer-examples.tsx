@@ -251,6 +251,9 @@ function useObservations() {
         argumentCount: args.length,
         arguments: args.map(snapshotArgument),
         result,
+        ...(['onOpenFile', 'onOpenNote', 'onFileClick'].includes(name)
+          ? { capturedEvent: captured.current ? snapshot(captured.current) : null }
+          : {}),
       };
       const current = records.current;
       current.counts[name] = (current.counts[name] ?? 0) + 1;
@@ -306,6 +309,105 @@ function useObservations() {
       setObservations((current) => ({ revision: current.revision + 1, ...next }));
     },
   };
+}
+
+type PastedFile = { name: string; type: string; size: number; dataUrl?: string; error?: string };
+type PasteReceipt = {
+  sequence: number;
+  event: {
+    type: string;
+    isTrusted: boolean;
+    currentTarget: ReturnType<typeof describeElement>;
+    target: ReturnType<typeof describeElement>;
+    control: ReturnType<typeof describeElement>;
+  };
+  types: string[];
+  items: { kind: string; type: string }[];
+  text: string;
+  files: PastedFile[];
+};
+
+function ClipboardPasteTarget() {
+  const [text, setText] = useState('');
+  const [receipts, setReceipts] = useState<PasteReceipt[]>([]);
+  const sequence = useRef(0);
+  const readers = useRef(new Set<FileReader>());
+  useEffect(() => {
+    const activeReaders = readers.current;
+    return () => {
+      for (const reader of activeReaders) reader.abort();
+      activeReaders.clear();
+    };
+  }, []);
+  return (
+    <>
+      <FormField
+        label="Paste copied image here"
+        description="Paste using the native clipboard. Image receipts contain exact FileReader data URLs; text paste remains ordinary textarea input."
+        control={(field) => (
+          <Textarea
+            {...field}
+            data-testid="markdown-viewer-paste-target"
+            rows={3}
+            value={text}
+            onChange={(event) => setText(event.currentTarget.value)}
+            onPaste={(event) => {
+              const id = ++sequence.current;
+              const files = Array.from(event.clipboardData.files);
+              const receipt: PasteReceipt = {
+                sequence: id,
+                event: {
+                  type: event.nativeEvent.type,
+                  isTrusted: event.nativeEvent.isTrusted,
+                  currentTarget: describeElement(event.nativeEvent.currentTarget),
+                  target: describeElement(event.nativeEvent.target),
+                  control: describeElement(event.currentTarget),
+                },
+                types: Array.from(event.clipboardData.types),
+                items: Array.from(event.clipboardData.items, (item) => ({
+                  kind: item.kind,
+                  type: item.type,
+                })),
+                text: event.clipboardData.getData('text/plain'),
+                files: files.map((file) => ({ name: file.name, type: file.type, size: file.size })),
+              };
+              setReceipts((current) => [...current.slice(-5), receipt]);
+              files.forEach((file, index) => {
+                if (!file.type.startsWith('image/')) return;
+                const reader = new FileReader();
+                readers.current.add(reader);
+                const complete = (result: Pick<PastedFile, 'dataUrl' | 'error'>) => {
+                  if (!readers.current.delete(reader)) return;
+                  setReceipts((current) =>
+                    current.map((entry) =>
+                      entry.sequence === id
+                        ? {
+                            ...entry,
+                            files: entry.files.map((item, fileIndex) =>
+                              fileIndex === index ? { ...item, ...result } : item,
+                            ),
+                          }
+                        : entry,
+                    ),
+                  );
+                };
+                reader.onload = () =>
+                  complete(
+                    typeof reader.result === 'string'
+                      ? { dataUrl: reader.result }
+                      : { error: 'FileReader returned no data URL.' },
+                  );
+                reader.onerror = () =>
+                  complete({ error: reader.error?.message ?? 'Pasted image could not be read.' });
+                reader.readAsDataURL(file);
+              });
+            }}
+          />
+        )}
+      />
+      <Output label="Markdown clipboard receipts" value={receipts} />
+    </>
+  );
 }
 
 export function MarkdownViewerExamples() {
@@ -676,6 +778,7 @@ export function MarkdownViewerExamples() {
         }}
       />
       <Output label="Markdown observations" value={observations} />
+      <ClipboardPasteTarget />
     </section>
   );
 }
