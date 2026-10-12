@@ -39,6 +39,8 @@ const sourceFiles = [
   'src/lib/components/ui/ImageActionsMenu.svelte',
   'src/lib/components/ui/ImageLightbox.svelte',
 ];
+// This intentional shared-parser fix is pinned to the approved candidate, not original equality.
+const intentionalSourceFixes = ['src/lib/utils/tiptap-task-list-extension.ts'];
 const profile = [
   'apps/react/src/components/markdown/markdown-viewer.tsx',
   'apps/react/src/components/markdown/markdown-viewer-dom.tsx',
@@ -53,6 +55,7 @@ const profile = [
   'apps/react/src/components/ui/media-unavailable.tsx',
   'apps/react/src/components/ui/media-loading-placeholder.tsx',
   'apps/react/src/components/ui/file-input.tsx',
+  ...intentionalSourceFixes,
 ];
 const runnerFiles = [
   'packages/view-parity/lib/markdown-viewer.mjs',
@@ -106,6 +109,7 @@ export const test = base.extend({
         generated: hashes(generated, root),
         candidate: candidateProvenance(root),
       });
+      const originalSourceFixHashes = committed(intentionalSourceFixes, original);
       const before = snapshot();
       expect(before.runner).toEqual(committed(runnerFiles, testSha));
       expect(before.source).toEqual(committed(sourceFiles, original));
@@ -118,7 +122,11 @@ export const test = base.extend({
       } finally {
         const after = snapshot();
         await info.attach('markdown-viewer-freeze.json', {
-          body: JSON.stringify({ original, sha, testSha, root, url, before, after }, null, 2),
+          body: JSON.stringify(
+            { original, sha, testSha, root, url, originalSourceFixHashes, before, after },
+            null,
+            2,
+          ),
           contentType: 'application/json',
         });
         expect(after).toEqual(before);

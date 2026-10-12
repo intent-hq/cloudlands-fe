@@ -76,10 +76,70 @@ test('markdown viewer MV2: structural Markdown code tables and read-only tasks',
   await expect(viewer(host).locator('[data-anchor-id="review:end"]')).toHaveCount(1);
   expect(navigation(await observations(host))).toEqual([]);
   await capture(page, frame(host), 'mv2-structural-markdown', info);
+
+  // The original mixed/loose fixture above stays unchanged: two tasks mean two controls.
+  for (const name of ['Alpha', 'Beta']) {
+    await expect(
+      viewer(host).getByRole('listitem').filter({ hasText: name }).getByRole('checkbox'),
+    ).toHaveCount(0);
+  }
+
   await apply(host, '# Replacement heading\n\n| Item | Count |\n| --- | --- |\n| Pears | 7 |');
   await expect(viewer(host).getByRole('cell')).toHaveText(['Pears', '7']);
   await expect(viewer(host).getByRole('checkbox')).toHaveCount(0);
   await expect(viewer(host).locator('[data-anchor-id]')).toHaveCount(0);
+
+  async function assertReadOnlyTasks(checkedStates) {
+    const current = viewer(host).getByRole('checkbox');
+    await expect(current).toHaveCount(checkedStates.length);
+    for (const [index, checked] of checkedStates.entries()) {
+      if (checked) await expect(current.nth(index)).toBeChecked();
+      else await expect(current.nth(index)).not.toBeChecked();
+      await expect(current.nth(index)).toBeDisabled();
+    }
+    expect(navigation(await observations(host))).toEqual([]);
+  }
+
+  await apply(host, '## Tight tasks\n\n- [ ] Tight pending\n- [x] Tight finished');
+  await expect(viewer(host).getByRole('heading', { level: 2 })).toHaveText('Tight tasks');
+  await assertReadOnlyTasks([false, true]);
+  await expect(viewer(host)).toContainText('Tight pending');
+  await expect(viewer(host)).toContainText('Tight finished');
+  await capture(page, frame(host), 'mv2-tight-tasks', info);
+
+  await apply(host, '## Loose tasks\n\n- [ ] Loose pending\n\n- [x] Loose finished');
+  await expect(viewer(host).getByRole('heading', { level: 2 })).toHaveText('Loose tasks');
+  await assertReadOnlyTasks([false, true]);
+  await expect(viewer(host)).toContainText('Loose pending');
+  await expect(viewer(host)).toContainText('Loose finished');
+  await capture(page, frame(host), 'mv2-loose-tasks', info);
+
+  await apply(
+    host,
+    '## Nested tasks\n\n- [ ] Parent pending\n\n  Parent continuation **kept** with [nested note](intent://local/note/spec).\n\n  - [x] Child finished\n\n    Child continuation remains.\n\n  - [ ] Child pending\n\n  - Nested plain item\n\n- [x] Sibling finished',
+  );
+  await expect(viewer(host).getByRole('heading', { level: 2 })).toHaveText('Nested tasks');
+  await assertReadOnlyTasks([false, true, false, true]);
+  const parentTask = viewer(host).getByRole('listitem').filter({ hasText: 'Parent pending' });
+  await expect(parentTask).toHaveCount(1);
+  await expect(parentTask.getByRole('checkbox')).toHaveCount(3);
+  await expect(parentTask).toContainText('Child continuation remains.');
+  await expect(parentTask).toContainText('Child pending');
+  await expect(parentTask.locator('strong')).toHaveText('kept');
+  await expect(parentTask.getByRole('link', { name: 'nested note' })).toHaveAttribute(
+    'href',
+    'intent://local/note/spec',
+  );
+  const plainChild = parentTask.getByRole('listitem').filter({ hasText: 'Nested plain item' });
+  await expect(plainChild).toHaveCount(1);
+  await expect(plainChild.getByRole('checkbox')).toHaveCount(0);
+  await capture(page, frame(host), 'mv2-nested-task-content', info);
+  const oldTask = await parentTask.elementHandle();
+  await apply(host, 'All nested task content removed.');
+  await expect(viewer(host)).toHaveText('All nested task content removed.');
+  await expect(viewer(host).getByRole('checkbox')).toHaveCount(0);
+  await detached(oldTask);
+  expect(navigation(await observations(host))).toEqual([]);
 });
 
 test('markdown viewer MV3: sanitized HTML opt-in keeps dangerous content inert', async ({
