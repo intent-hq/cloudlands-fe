@@ -256,17 +256,23 @@ function startWithLoopback() {
     channel.put(action);
     return action;
   };
-  const current = state(null, null, false);
+  // Connection/principal admission is independent of the workspace list loaded flag.
+  const current = state();
+  const getState = () => ({ ...current, workspace: workspaceState });
+  const context = selectPrincipalActionContext.select(
+    getState() as ReturnType<typeof withLegacyPrincipal>,
+  );
+  expect(context).not.toBeNull();
   const task = runSaga(
     {
       channel,
       dispatch,
-      getState: () => ({ ...current, workspace: workspaceState }),
+      getState,
     },
     lifecycleReadSaga,
   );
   runningTasks.push(task);
-  return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
+  return { channel, actions, task, dispatch, context, getWorkspaceState: () => workspaceState };
 }
 
 async function stop(task: ReturnType<typeof runSaga>) {
@@ -337,11 +343,39 @@ describe('lifecycleReadSaga', () => {
     vi.clearAllMocks();
   });
 
+  it('does not request the workspace list or recency before canonical admission', async () => {
+    const current = state(null, null, false);
+    expect(
+      selectPrincipalActionContext.select(current as ReturnType<typeof withLegacyPrincipal>),
+    ).toBeNull();
+    const run = start(current);
+    run.channel.put(loadWorkspacesRequested());
+    await settle();
+
+    expect(mocks.workspaceServiceList).not.toHaveBeenCalled();
+    expect(mocks.workspaces.recentViews).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
   it('loads the workspace list and recency in middleware order', async () => {
     const workspace = { id: WS, branch: 'main', wire_only: 'drop' };
     mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [workspace] });
     mocks.workspaces.recentViews.mockResolvedValue({ [WS]: 42 });
-    const run = start(state(null, null, false));
+    const admitted = state();
+    const current = {
+      ...admitted,
+      workspace: {
+        ...workspaceReducer.initialState,
+        ...admitted.workspace,
+        hasLoaded: false,
+      },
+    };
+    const context = selectPrincipalActionContext.select(
+      current as ReturnType<typeof withLegacyPrincipal>,
+    );
+    expect(context).not.toBeNull();
+    const run = start(current);
     run.channel.put(loadWorkspacesRequested());
     await settle();
 
@@ -352,7 +386,7 @@ describe('lifecycleReadSaga', () => {
         type: 'workspace/replaceWorkspaceList',
         payload: [[workspace], { complete: false, deletionTokens: {} }],
       },
-      { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
+      { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', context] },
       { type: 'workspace/loadRecencyData', payload: [{ lastViewedAt: { [WS]: 42 } }] },
     ]);
     await stop(run.task);
@@ -543,7 +577,7 @@ describe('lifecycleReadSaga', () => {
         },
       ]);
       expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toEqual([
-        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
+        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', run.context] },
       ]);
       expect(run.getWorkspaceState().hasLoaded).toBe(true);
 
