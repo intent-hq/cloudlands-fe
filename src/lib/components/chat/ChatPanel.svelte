@@ -5766,7 +5766,13 @@
     // Update the session via Redux (agent-session slice is canonical)
     if (workspace?.id) {
       appStore.dispatch(
-        updateAgentSessionFields(agentId, { metadata: newMetadata, model: newModel }),
+        updateAgentSessionFields(
+          agentId,
+          { metadata: newMetadata, model: newModel },
+          {
+            projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'],
+          },
+        ),
       );
     }
 

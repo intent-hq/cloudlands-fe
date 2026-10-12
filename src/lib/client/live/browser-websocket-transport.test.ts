@@ -929,11 +929,20 @@ describe('observational node capabilities', () => {
       id: socket.lastFrame().id,
       result: {
         clientId: 'A',
-        server: { capabilities: { agentNodes: 1, agentPlatformRouting: 1 } },
+        server: {
+          capabilities: { agentNodes: 1, agentPlatformRouting: 1, workspaceMembershipEvents: 1 },
+        },
       },
     });
     await expect(observing).resolves.toEqual({
-      server: { capabilities: { agentNodes: 1, localNodeIsolation: 0, agentPlatformRouting: 1 } },
+      server: {
+        capabilities: {
+          agentNodes: 1,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 1,
+          workspaceMembershipEvents: 1,
+        },
+      },
     });
     await h.transport.observeNodeCapabilities();
     expect(socket.sent).toHaveLength(1);
@@ -955,10 +964,20 @@ describe('observational node capabilities', () => {
     await flush();
     replacement.receive({
       id: replacement.lastFrame().id,
-      result: { clientId: 'B', server: { capabilities: { agentNodes: '1' } } },
+      result: {
+        clientId: 'B',
+        server: { capabilities: { agentNodes: '1', workspaceMembershipEvents: true } },
+      },
     });
     await expect(reconnecting).resolves.toEqual({
-      server: { capabilities: { agentNodes: 0, localNodeIsolation: 0, agentPlatformRouting: 0 } },
+      server: {
+        capabilities: {
+          agentNodes: 0,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 0,
+          workspaceMembershipEvents: 0,
+        },
+      },
     });
     h.transport.dispose();
     await expect(h.transport.observeNodeCapabilities()).rejects.toThrow();
@@ -980,11 +999,21 @@ describe('observational node capabilities', () => {
     await newer;
     h.socket().receive({
       id: oldId,
-      result: { clientId: 'old', server: { capabilities: { agentNodes: 1 } } },
+      result: {
+        clientId: 'old',
+        server: { capabilities: { agentNodes: 1, workspaceMembershipEvents: 1 } },
+      },
     });
     await older;
     await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
-      server: { capabilities: { agentNodes: 0, localNodeIsolation: 0, agentPlatformRouting: 0 } },
+      server: {
+        capabilities: {
+          agentNodes: 0,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 0,
+          workspaceMembershipEvents: 0,
+        },
+      },
     });
     h.transport.dispose();
   });

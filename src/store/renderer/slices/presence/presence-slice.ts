@@ -7,12 +7,16 @@
  * the `presence:report` sends; see `sagas/presence-saga.ts`.
  */
 
-import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  updateItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { effectivePresenceRows, type PresenceRoster } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
-import type { LiveTypingEntry, PresenceState } from './presence-types';
+import type { LiveTypingEntry, PresenceIdentity, PresenceState } from './presence-types';
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -23,6 +27,8 @@ export const initialState: PresenceState = {
   workspaceIds: [],
   rosters: {},
   members: {},
+  profileRevision: 0,
+  profileUpdates: {},
   liveTyping: {},
   ownPrincipalId: null,
   ownTypingSource: null,
@@ -48,6 +54,11 @@ export const presenceWorkspaceRemoved = createAction<[workspaceId: string]>(
 export const presenceRosterReceived =
   createAction<[roster: PresenceRoster]>('presence/rosterReceived');
 
+/** An authorized workspace:updated delta explicitly changed accepted membership. */
+export const presenceMembershipChanged = createAction<[workspaceId: string]>(
+  'presence/membershipChanged',
+);
+
 /** A `presence.snapshot` result the saga has fenced as current — the same full replacement. */
 export const presenceSnapshotReceived = createAction<[roster: PresenceRoster]>(
   'presence/snapshotReceived',
@@ -55,7 +66,7 @@ export const presenceSnapshotReceived = createAction<[roster: PresenceRoster]>(
 
 /** A `workspace.members.list` result the saga has fenced as current — a full replacement. */
 export const presenceMembersReceived = createAction<
-  [workspaceId: string, members: WorkspaceMember[]]
+  [workspaceId: string, members: WorkspaceMember[], startedProfileRevision?: number]
 >('presence/membersReceived');
 
 /** The 3 s receiver-local timer of a `(source, pulse)` pair ran out. */
@@ -113,13 +124,57 @@ function foldLiveTyping(
   return next;
 }
 
-function replaceRoster(state: PresenceState, roster: PresenceRoster): PresenceState {
+function profileFields(online: PresenceIdentity): PresenceIdentity {
+  return {
+    principalId: online.principalId,
+    login: online.login,
+    displayName: online.displayName,
+    avatarUrl: online.avatarUrl,
+    ...(online.hostRole ? { hostRole: online.hostRole } : {}),
+    ...(online.identity ? { identity: online.identity } : {}),
+  };
+}
+
+function replaceRoster(
+  state: PresenceState,
+  roster: PresenceRoster,
+  pushed = false,
+): PresenceState {
   if (!state.context || !state.workspaceIds.includes(roster.workspaceId)) return state;
+  const onlineMembers = effectivePresenceRows(roster.members);
+  const profileRevision = state.profileRevision + (pushed ? 1 : 0);
+  let profileUpdates = state.profileUpdates;
+  if (pushed) {
+    const updates = { ...profileUpdates[roster.workspaceId] };
+    for (const online of onlineMembers)
+      updates[online.principalId] = { revision: profileRevision, profile: profileFields(online) };
+    profileUpdates = { ...profileUpdates, [roster.workspaceId]: updates };
+  }
+  // Online profile fields are authoritative for accepted people too (mentions
+  // and offline avatars). Never invent a membership or copy transient typing.
+  let members = state.members[roster.workspaceId];
+  if (members) {
+    for (const online of onlineMembers) {
+      const member = getItem(members, online.principalId);
+      if (!member) continue;
+      const next = {
+        ...member,
+        ...profileFields(online),
+      };
+      if (JSON.stringify(next) !== JSON.stringify(member)) members = updateItem(members, next);
+    }
+  }
   return {
     ...state,
+    profileRevision,
+    profileUpdates,
+    members:
+      members && members !== state.members[roster.workspaceId]
+        ? { ...state.members, [roster.workspaceId]: members }
+        : state.members,
     rosters: {
       ...state.rosters,
-      [roster.workspaceId]: createCollection('principalId', effectivePresenceRows(roster.members)),
+      [roster.workspaceId]: createCollection('principalId', onlineMembers),
     },
     liveTyping: {
       ...state.liveTyping,
@@ -129,23 +184,40 @@ function replaceRoster(state: PresenceState, roster: PresenceRoster): PresenceSt
 }
 
 presenceReducer.with(presenceRosterReceived, (state, { payload: [roster] }) =>
-  replaceRoster(state, roster),
+  replaceRoster(state, roster, true),
 );
 
 presenceReducer.with(presenceSnapshotReceived, (state, { payload: [roster] }) =>
   replaceRoster(state, roster),
 );
 
-presenceReducer.with(presenceMembersReceived, (state, { payload: [workspaceId, members] }) =>
-  state.context && state.workspaceIds.includes(workspaceId)
-    ? {
-        ...state,
-        members: {
-          ...state.members,
-          [workspaceId]: createCollection('principalId', effectivePresenceRows(members)),
-        },
-      }
-    : state,
+presenceReducer.with(
+  presenceMembersReceived,
+  (state, { payload: [workspaceId, members, startedProfileRevision] }) => {
+    if (!state.context || !state.workspaceIds.includes(workspaceId)) return state;
+    const updates = state.profileUpdates[workspaceId] ?? {};
+    const accepted = effectivePresenceRows(members).map((member) => {
+      const update = updates[member.principalId];
+      // Only pushes received after this request started can supersede its profile.
+      // Membership inclusion, role and addedAt still come from the accepted reply.
+      return update &&
+        startedProfileRevision !== undefined &&
+        update.revision > startedProfileRevision
+        ? { ...member, ...update.profile }
+        : member;
+    });
+    const acceptedIds = new Set(accepted.map((member) => member.principalId));
+    return {
+      ...state,
+      members: { ...state.members, [workspaceId]: createCollection('principalId', accepted) },
+      profileUpdates: {
+        ...state.profileUpdates,
+        [workspaceId]: Object.fromEntries(
+          Object.entries(updates).filter(([id]) => acceptedIds.has(id)),
+        ),
+      },
+    };
+  },
 );
 
 presenceReducer.with(presenceTypingExpired, (state, { payload: [workspaceId, source, pulse] }) => {
@@ -195,11 +267,13 @@ presenceReducer.with(presenceContextReceived, (state, { payload: [context, ownPr
 presenceReducer.with(presenceWorkspaceRemoved, (state, { payload: [workspaceId] }) => {
   const rosters = { ...state.rosters };
   const members = { ...state.members };
+  const profileUpdates = { ...state.profileUpdates };
   const liveTyping = { ...state.liveTyping };
   delete rosters[workspaceId];
   delete members[workspaceId];
+  delete profileUpdates[workspaceId];
   delete liveTyping[workspaceId];
-  return { ...state, rosters, members, liveTyping };
+  return { ...state, rosters, members, profileUpdates, liveTyping };
 });
 
 presenceReducer.with(presenceWorkspacesReceived, (state, { payload: [workspaceIds] }) => {
@@ -210,6 +284,7 @@ presenceReducer.with(presenceWorkspacesReceived, (state, { payload: [workspaceId
     workspaceIds,
     rosters: keep(state.rosters),
     members: keep(state.members),
+    profileUpdates: keep(state.profileUpdates),
     liveTyping: keep(state.liveTyping),
   };
 });

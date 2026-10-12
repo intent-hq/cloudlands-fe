@@ -6,6 +6,9 @@ import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import {
   initialState as emptyState,
   presenceMembersReceived,
+  presenceContextReceived,
+  presenceWorkspaceRemoved,
+  presenceWorkspacesReceived,
   presenceOwnPrincipalReceived,
   presenceOwnTypingSourceReceived,
   presenceReducer,
@@ -56,6 +59,70 @@ describe('presence slice', () => {
     expect(initialState.windowVisible).toBe(true);
   });
 
+  it('uses pushed identities for known accepted members without inventing membership or persisting typing', () => {
+    let state = presenceReducer(initialState, presenceMembersReceived('ws-1', [accepted('other')]));
+    state = presenceReducer(
+      state,
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            login: 'renamed',
+            displayName: 'New name',
+            hostRole: 'member',
+            typing: [typing('remote', 1)],
+          }),
+          member('unknown'),
+        ]),
+      ),
+    );
+    expect(getItems(state.members['ws-1'])).toEqual([
+      {
+        ...accepted('other'),
+        login: 'renamed',
+        displayName: 'New name',
+        hostRole: 'member',
+      },
+    ]);
+    state = presenceReducer(state, presenceRosterReceived(roster([])));
+    expect(getItem(state.members['ws-1'], 'other')?.login).toBe('renamed');
+  });
+
+  it.each(['removed', 'hidden', 'reset', 'context'] as const)(
+    'discards pushed profile history when ownership is %s',
+    (change) => {
+      let state = presenceReducer(
+        initialState,
+        presenceRosterReceived(roster([member('a', { login: 'previous-admission' })])),
+      );
+      expect(state.profileUpdates['ws-1'].a.profile.login).toBe('previous-admission');
+      if (change === 'removed') state = presenceReducer(state, presenceWorkspaceRemoved('ws-1'));
+      if (change === 'hidden') state = presenceReducer(state, presenceWorkspacesReceived([]));
+      if (change === 'reset') state = presenceReducer(state, presenceReset());
+      if (change === 'context')
+        state = presenceReducer(state, presenceContextReceived('new', 'self'));
+      expect(state.profileUpdates['ws-1']).toBeUndefined();
+      state = presenceReducer(
+        { ...state, context: 'new', workspaceIds: ['ws-1'] },
+        presenceMembersReceived('ws-1', [accepted('a')], 0),
+      );
+      expect(getItem(state.members['ws-1'], 'a')?.login).toBe('a');
+    },
+  );
+
+  it('does not retain removed membership or its pushed profile after a reply', () => {
+    let state = presenceReducer(
+      initialState,
+      presenceMembersReceived('ws-1', [accepted('removed')]),
+    );
+    state = presenceReducer(
+      state,
+      presenceRosterReceived(roster([member('removed', { login: 'latest' })])),
+    );
+    state = presenceReducer(state, presenceMembersReceived('ws-1', [], 0));
+    expect(getItems(state.members['ws-1'])).toEqual([]);
+    expect(state.profileUpdates['ws-1']).toEqual({});
+  });
+
   it('replaces a workspace roster and keeps other workspaces', () => {
     let state = presenceReducer(initialState, presenceRosterReceived(roster([member('a')])));
     state = presenceReducer(state, presenceRosterReceived(roster([member('b')], 'ws-2')));
@@ -66,7 +133,7 @@ describe('presence slice', () => {
     expect(getItem(state.rosters['ws-1'], 'c')?.principalId).toBe('c');
   });
 
-  it('applies a fenced snapshot exactly like a pushed roster, typing included', () => {
+  it('applies snapshot roster and typing without treating a read as a pushed profile', () => {
     const pushed = presenceReducer(
       initialState,
       presenceRosterReceived(roster([member('a', { typing: [typing('ts-1', 1)] })])),
@@ -75,7 +142,11 @@ describe('presence slice', () => {
       initialState,
       presenceSnapshotReceived(roster([member('a', { typing: [typing('ts-1', 1)] })])),
     );
-    expect(snapshotted).toEqual(pushed);
+    expect(snapshotted.rosters).toEqual(pushed.rosters);
+    expect(snapshotted.liveTyping).toEqual(pushed.liveTyping);
+    expect(snapshotted.profileRevision).toBe(0);
+    expect(snapshotted.profileUpdates).toEqual({});
+    expect(pushed.profileRevision).toBe(1);
     expect(presenceSnapshotReceived.type).not.toBe(presenceRosterReceived.type);
   });
 
