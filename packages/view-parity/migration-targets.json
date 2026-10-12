@@ -8,20 +8,20 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+    "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
     "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded original003/frozen34161b6d static audit: NavLink partial and AugmentCodeSnippet local implemented; targeted existing ChatImageBlock caption-only correction.235/1430(230components+5modules),178partial57localimplemented,229targets86reviews.227previous target identities checked:226byteequal, only authorized caption target changed with exact inverse/fulloldrow preserved.85old reviews/history/cases/29receipts/failures/17invalidations retained. NavLink helper extraction adds explicit source drift; support adds no denominator. Response saved-owner gap open; native/visual/product acceptance remains separate.",
+    "method": "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T06:34:41.160233+00:00",
+    "reviewedAt": "2026-10-12T06:41:16.151484+00:00",
     "checkpointAdvance": {
-      "previousLedgerCommit": "3fccb52d27ca63950b99c2a01a80fa44ad44bb0b",
-      "previousAuditCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
-      "unchangedUniqueDirectTargets": 226,
+      "previousLedgerCommit": "9beea0cd41520964a03093b9b4a047161f66f99a",
+      "previousAuditCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "unchangedUniqueDirectTargets": 228,
       "changedUniqueDirectTargets": 1,
-      "retainedHistoricalReviewCount": 85,
-      "meaning": "Common validation candidate advances only; historical inspected/source/support/evidence pins and full233-view checkpoint preserved. Exactly2new maps and one targeted old image correction; no unrelated review/source baseline refresh. ResponseGroup1cea gap stays open. Native I6/I7 successes and I8 failure stay separately pinned."
+      "retainedHistoricalReviewCount": 86,
+      "meaning": "Advance common validation pin only, preserving historical inspected/source/support/evidence pins and previous235-view checkpoint. Exactlyone targeted Response row review; no new mappings, source drift or status upgrade. Historical gap now has a static correction and pending native closure, not retroactive acceptance."
     }
   },
   "statusDefinitions": {
@@ -73,7 +73,8 @@
     "Setup/edit3d7e81dc adds2localimplemented maps:229/1430(225components+4modules),174partial55implemented,223directtargets. All221old targets byteequal;82old reviews/full audit/rows/cases/29receipts/failures retained. Original Setup source import/2000 extraction is reviewed changed-source profile with new invalidation, never original-byte or Svelte-runtime equivalence; old13invalidations retained.19static API/body/extraction checks plus actual public dialog chain do not prove clipboard/timer/lifecycle/focus/native submission/source pixels/full motion/product integration.3df adjacent transcript caller and neutral timing helper are support only. Existing Bulk/helper/native acceptance unchanged; MV2/MC5/W3/video/attachment failures and earlier checkpoints stay historical. Operational wave outsidepin; no runtime acceptance.",
     "Operational window/panel2d988e34 adds exactly1component+1inventoriedreactivity module as partial:231/1430(226components+5modules),176partial55implemented,225directtargets. All223old targets byteequal;83old reviews/full audit/rows/cases/29receipts/failures retained. Original panel source extraction has exact741-line inverse and unchanged public Svelte compiler API but remains explicit drift/new invalidation; all14old invalidations retained. React hook uses committed acquire/release rather than direct owner, and window rebinds scope versus original snapshot; production consumers/lifetime/native geometry/admission/full motion/source pixels remain unverified. Neutral core and catalog add no denominator. MV9 bare genuine-image destination correction is caller support only: ic3oTB FAIL and valid-angle canonical defect remain, no parser fix or invalid-fixture waiver. Source-owner dead-code failures retained without baseline-CI claim; static ledger approval only.",
     "Response/Cylinder1cea8e2b adds2components:233/1430(228components+5modules),177partial56localimplemented,227targets85reviews. Cylinder stated local contract staticimplemented; Response stays partial for saved-owner replacement publication dependency gap despite source-matching branch tokens. All225old targets byteequal/84old reviews/full rows/history/cases/29receipts/failures preserved. Two150/800 source seams keep exact inverse but add sourceinvalidations, all15old retained; pure cluster extraction exact original declarations/base facade, supporting-only. Twelve support deltas include d1d759 global defaultToast fix, original I6pNbdtnFAIL/unknownclipboard retained. No native/visual/fullmotion/sourcepair/product claims. Source-owner579dead-code failures including2newunuseddefault exports recorded, no baselineCI claim. Later NavLink outsidepin.",
-    "Bounded original003/frozen34161b6d static audit: NavLink partial and AugmentCodeSnippet local implemented; targeted existing ChatImageBlock caption-only correction.235/1430(230components+5modules),178partial57localimplemented,229targets86reviews.227previous target identities checked:226byteequal, only authorized caption target changed with exact inverse/fulloldrow preserved.85old reviews/history/cases/29receipts/failures/17invalidations retained. NavLink helper extraction adds explicit source drift; support adds no denominator. Response saved-owner gap open; native/visual/product acceptance remains separate. Three changed support paths preserve original/previous/current hashes and all5710 historical citations. NavLink source drift exact inverse is not a runtime waiver. Original I8 remounted title failure remains, final overflow unmeasured; no I6/I7 transfer. Later ResponseGroup owner fix excluded. No released user-help impact."
+    "Bounded original003/frozen34161b6d static audit: NavLink partial and AugmentCodeSnippet local implemented; targeted existing ChatImageBlock caption-only correction.235/1430(230components+5modules),178partial57localimplemented,229targets86reviews.227previous target identities checked:226byteequal, only authorized caption target changed with exact inverse/fulloldrow preserved.85old reviews/history/cases/29receipts/failures/17invalidations retained. NavLink helper extraction adds explicit source drift; support adds no denominator. Response saved-owner gap open; native/visual/product acceptance remains separate. Three changed support paths preserve original/previous/current hashes and all5710 historical citations. NavLink source drift exact inverse is not a runtime waiver. Original I8 remounted title failure remains, final overflow unmeasured; no I6/I7 transfer. Later ResponseGroup owner fix excluded. No released user-help impact.",
+    "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer. Current unsuppressed UIinvariants3fail/Knip579 retained as source-owner reports, no baselineCI or all-gates-green claim. Original gap is historical; no additional static mismatch found, but runtime/current-owner/deadline/source-pair/fullmotion/StrictMode closure remains separate. Candidate preparation receipt/log hashes only; later native image successes not transferred."
   ],
   "reviews": {
     "foundation": {
@@ -83,7 +84,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -97,7 +98,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -111,7 +112,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -127,7 +128,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -141,7 +142,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -152,7 +153,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -163,7 +164,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -177,7 +178,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -188,7 +189,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -199,7 +200,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -210,7 +211,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -224,7 +225,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -235,7 +236,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -246,7 +247,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -261,7 +262,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -277,7 +278,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -288,7 +289,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -299,7 +300,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -317,7 +318,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -328,7 +329,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -339,7 +340,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -350,7 +351,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -364,7 +365,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -375,7 +376,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -389,7 +390,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -400,7 +401,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -415,7 +416,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -429,7 +430,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -443,7 +444,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -454,7 +455,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -462,7 +463,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -476,7 +477,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -490,7 +491,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -504,7 +505,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -515,7 +516,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -526,7 +527,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -537,7 +538,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -548,7 +549,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -559,7 +560,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -570,7 +571,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -584,7 +585,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -595,7 +596,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -606,7 +607,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -617,7 +618,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -628,7 +629,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -639,7 +640,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -647,7 +648,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -675,7 +676,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -698,7 +699,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -724,7 +725,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -750,7 +751,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -781,7 +782,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -810,7 +811,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -850,7 +851,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -883,7 +884,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -924,7 +925,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -969,7 +970,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -1027,7 +1028,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1072,7 +1073,7 @@
         "0f00a72202dce497991564f9fc6875db9f26c9e5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
       "inspectedCallsites": [
@@ -1170,7 +1171,7 @@
       ],
       "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
       "inspectedCallsites": [
@@ -1275,7 +1276,7 @@
     },
     "chat-disclosure-rows-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1471,7 +1472,7 @@
     },
     "chat-recovery-notices-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1675,7 +1676,7 @@
     },
     "chat-stream-metadata-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -1842,7 +1843,7 @@
     },
     "chat-history-attribution-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -2055,7 +2056,7 @@
     },
     "chat-disclosure-corrections-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2271,7 +2272,7 @@
     },
     "chat-queued-actions-command-3e894": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2465,7 +2466,7 @@
     },
     "chat-code-reference-context-4bfa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2830,7 +2831,7 @@
     },
     "chat-inline-mcp-prompt-preview-9d297": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3368,7 +3369,7 @@
     },
     "queued-attachments-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3547,7 +3548,7 @@
     },
     "tabs-export-correction-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3866,7 +3867,7 @@
     },
     "streaming-status-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -4086,7 +4087,7 @@
     },
     "mcp-inline-font-correction-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["7af853406e1a80758a3762bafef510be19db4587"],
@@ -4798,7 +4799,7 @@
     },
     "suggested-chief-prompts-16ee80": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5059,7 +5060,7 @@
     },
     "automated-wake-header-f2b2a2": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5415,7 +5416,7 @@
     },
     "agent-pr-attribution-headers-73da5529": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5888,7 +5889,7 @@
     },
     "attachment-permission-support-05cc7db6": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -6526,7 +6527,7 @@
     },
     "attachment-file-replacement-ff9a4e35": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -7562,7 +7563,7 @@
     },
     "inline-permission-and-live-support-6a51a3da": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -8408,7 +8409,7 @@
     },
     "media-and-markdown-composition-dd6e5720": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -9612,7 +9613,7 @@
     },
     "full-markdown-and-reasoning-68a5ca85": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -11448,7 +11449,7 @@
     },
     "chat-image-and-video-wrapper-561fa08c": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -13284,7 +13285,7 @@
     },
     "message-actions-and-transcript-cards-2d310fed": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -16532,7 +16533,7 @@
     },
     "setup-script-and-edit-confirmation-3d7e81dc": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -21521,7 +21522,7 @@
     },
     "operational-window-and-panel-2d988e34": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -30682,7 +30683,7 @@
     },
     "response-group-and-cylinder-1cea8e2b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -49117,7 +49118,7 @@
     },
     "navigation-excerpt-and-image-caption-34161b6d": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "inspectedCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -84266,7 +84267,829 @@
           "Initial supporting highlight consumer extension guessed tsx; pinned closure/tree located highlight-target.ts; corrected ignored script and reran static proof."
         ]
       },
-      "userHelpImpact": "Internal unreleased migration/catalog/ledger only; no released assistant-help impact."
+      "userHelpImpact": "Internal unreleased migration/catalog/ledger only; no released assistant-help impact.",
+      "retainedReviewCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+    },
+    "response-group-reaction-correction-e46a388f": {
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "taskNoteIds": [
+        "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+        "f4165dcb-1431-48fa-b988-231481c29329"
+      ],
+      "implementationCommits": ["e46a388f145af8692411824e5afe7736f432e1ed"],
+      "scope": "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer.",
+      "previousLedgerCommit": "9beea0cd41520964a03093b9b4a047161f66f99a",
+      "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "previousSourceRows": {
+        "src/lib/components/chat/ResponseGroup.svelte": {
+          "implementation": {
+            "status": "partial",
+            "reviewId": "response-group-and-cylinder-1cea8e2b",
+            "reviewedContract": "Partial static contract: all13 source props plus optional className alias, initial saved state, streaming/manual/search transitions, two-phase focus/inert collapse,800ms timer, actual canonical motion/follower leases, branch child identity/context, current callbacks and source CSS/icon/i18n composition reviewed. Named saved-owner publication gap: replacing saved alone is a reactive source effect dependency on automatic paths, but React only updates props ref and skips equal edge inputs; immediate write to replacement owner is not preserved. Native/source-pair behavior remains unverified.",
+            "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+          },
+          "targets": [
+            {
+              "path": "apps/react/src/features/chat/components/response-group.tsx",
+              "sha256": "c7775fa8b85f8cc825a869e9f5eea1379bbbe6b0497bd2b1f5c77827c19bc547",
+              "symbols": ["ResponseGroup"],
+              "lastChangedCommit": "ba312a2df08bfc289f90934119d1b9676632b2be"
+            }
+          ],
+          "functional": {
+            "cases": []
+          },
+          "visual": {
+            "cases": []
+          },
+          "gaps": [
+            "Original automatic nonstreaming nonterminal effect calls setExpanded(false), reading reactive saved() and writing current owner fields. Replacing saved alone can re-trigger that source effect. React only publishes a new saved ref and guards edge inputs; it does not immediately write current disclosure state to that owner. Full saved-owner publication correspondence not established; ResponseGroup remains partial.",
+            "Using separate native/source-pair authorization: mount automatic nonstreaming nonterminal group with saved {}, replace saved with {expanded:true} while preserving group identity and all streaming inputs; inspect the new object before any further transition/unmount. Static-derived expectation: source writes false, React leaves true. Then verify search/manual ownership and StrictMode replay before accepting a fix.",
+            "Native saved-owner replacement, current callback behavior during retained outro, branch reversal/fresh child identity, two-phase inert/focus ordering, timer races/unmount, search expansion restoration and real mutation lease tick/settle/dispose remain unverified. Original effect reads and React dependency/lifecycle scheduling are not proven equivalent by matching branch tokens.",
+            "Original800 timing literal becomes shared constant and receives explicit source drift/invalidation. Original operational-cluster declarations remain exact, but current facade also contains earlier shared motion/classes extraction; complete previous profile retained. Helpers/CSS/catalog are supporting-only, not extra view units.",
+            "Actual original MessageContent/StreamingMessageContent supply saved ownership, admission/header heights, filtered blocks and nested windows. Catalog exercise is not product transcript integration. Existing shared row, inline Markdown, icons/motion dependencies retain previous statuses/native evidence; no whole-primitive acceptance or pixel/full-motion claim.",
+            "All previous cases/receipts/failures/source invalidations and evidence pins retained; no runtime acceptance added."
+          ],
+          "sourceInspection": {
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "referenceSha256": "7e9012d1afeee8e804460afe2e29a32aa6b8c61c8b08af8923473cdf4c511526",
+            "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
+            "candidateSourceSha256": "07308dcc6d660eecb46e20602c39c4818898dcb572e2d65f415e89bff8e8d884",
+            "changedSinceReference": true
+          }
+        }
+      },
+      "previousReviewedContract": "Partial static contract: all13 source props plus optional className alias, initial saved state, streaming/manual/search transitions, two-phase focus/inert collapse,800ms timer, actual canonical motion/follower leases, branch child identity/context, current callbacks and source CSS/icon/i18n composition reviewed. Named saved-owner publication gap: replacing saved alone is a reactive source effect dependency on automatic paths, but React only updates props ref and skips equal edge inputs; immediate write to replacement owner is not preserved. Native/source-pair behavior remains unverified.",
+      "historicalReactionGap": {
+        "result": "NAMED_STATIC_GAP",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
+        "compiledOriginalSha256": "f7c9c5f6af031acb4e43008510eba6fbc188213a5445467e72ff21b852e70358",
+        "targetSha256": "c7775fa8b85f8cc825a869e9f5eea1379bbbe6b0497bd2b1f5c77827c19bc547",
+        "sourceReactiveSavedGetter": true,
+        "sourceEffectCallsSavedWritingSetter": true,
+        "reactPropEffectUpdatesSavedRefOnly": true,
+        "reactEdgeInputsExcludeSaved": true,
+        "meaning": "Original automatic nonstreaming nonterminal effect calls setExpanded(false), reading reactive saved() and writing current owner fields. Replacing saved alone can re-trigger that source effect. React only publishes a new saved ref and guards edge inputs; it does not immediately write current disclosure state to that owner. Full saved-owner publication correspondence not established; ResponseGroup remains partial.",
+        "reverify": "Using separate native/source-pair authorization: mount automatic nonstreaming nonterminal group with saved {}, replace saved with {expanded:true} while preserving group identity and all streaming inputs; inspect the new object before any further transition/unmount. Static-derived expectation: source writes false, React leaves true. Then verify search/manual ownership and StrictMode replay before accepting a fix.",
+        "limits": "Compiler/AST evidence only. No Svelte/React render, mock, native test, callback execution or source edit. Runtime outcome described as static-derived expectation, not observed behavior."
+      },
+      "sourceCorrection": {
+        "commit": "e46a388f145af8692411824e5afe7736f432e1ed",
+        "path": "apps/react/src/features/chat/components/response-group.tsx",
+        "previousSha256": "c7775fa8b85f8cc825a869e9f5eea1379bbbe6b0497bd2b1f5c77827c19bc547",
+        "sha256": "f54c8b3851ac41bd4fb04ce1dc5e433ec2608a62fe17473d653da0330b0e4bbc",
+        "sourcePort": "ba312a2df08bfc289f90934119d1b9676632b2be",
+        "exactOnlyCommitPath": true,
+        "originalSourceSha256": "7e9012d1afeee8e804460afe2e29a32aa6b8c61c8b08af8923473cdf4c511526",
+        "currentSourceSha256": "07308dcc6d660eecb46e20602c39c4818898dcb572e2d65f415e89bff8e8d884",
+        "sourceUnchangedFromBa312": true,
+        "scope": "Only React dependency adaptation changes. Original003 source timing extraction/ba312/1cea profile retained, no Svelte source change or source invalidation waiver. Previous sourceInspection on the row intentionally stays at1cea."
+      },
+      "sourceApiReview": {
+        "proofs": {
+          "exactOriginalTimingInverse": true,
+          "sourceUnchangedFromBa312": true,
+          "priorTargetEqualsBa312And1cea": true,
+          "all13SourcePropsPlusClassName": true,
+          "parameterDefaultsUnchanged": true,
+          "originalBranchesTokenEqualAfterReadRecordRemoval": true,
+          "saveAndSetterInverse": true,
+          "allRemainingComponentStatementsAndMarkupTokensUnchanged": true,
+          "allRemainingTopLevelStatementsAndImportsUnchanged": true,
+          "compiledCssSpecificityDeclarationsEqual": true,
+          "snapshotFieldsMatchOriginalSynchronousReads": true,
+          "scheduleHasNoSynchronousTrackedReads": true,
+          "recorderTryFinallyClears": true,
+          "optionalSavedWrapperTracksUndefined": true,
+          "conditionalRefNotifications": true
+        },
+        "compiledOriginalSha256": "f7c9c5f6af031acb4e43008510eba6fbc188213a5445467e72ff21b852e70358",
+        "sourceReadNames": [
+          "contentEl",
+          "hasPreview",
+          "isExpanded",
+          "isLastConversationMessage",
+          "isStreaming",
+          "isTerminal",
+          "saved",
+          "triggerEl"
+        ],
+        "sourceReadSites": [
+          {
+            "value": "isStreaming",
+            "owner": "streamingEffect",
+            "line": 242,
+            "column": 30,
+            "expression": "isStreaming()"
+          },
+          {
+            "value": "isTerminal",
+            "owner": "streamingEffect",
+            "line": 243,
+            "column": 29,
+            "expression": "isTerminal()"
+          },
+          {
+            "value": "hasPreview",
+            "owner": "streamingEffect",
+            "line": 244,
+            "column": 31,
+            "expression": "$.get(hasPreview)"
+          },
+          {
+            "value": "isExpanded",
+            "owner": "streamingEffect",
+            "line": 248,
+            "column": 22,
+            "expression": "$.get(isExpanded)"
+          },
+          {
+            "value": "saved",
+            "owner": "setExpanded",
+            "line": 191,
+            "column": 7,
+            "expression": "saved()"
+          },
+          {
+            "value": "saved",
+            "owner": "setExpanded",
+            "line": 192,
+            "column": 4,
+            "expression": "saved()"
+          },
+          {
+            "value": "saved",
+            "owner": "setExpanded",
+            "line": 193,
+            "column": 4,
+            "expression": "saved()"
+          },
+          {
+            "value": "saved",
+            "owner": "setExpanded",
+            "line": 194,
+            "column": 4,
+            "expression": "saved()"
+          },
+          {
+            "value": "isExpanded",
+            "owner": "setExpanded",
+            "line": 204,
+            "column": 8,
+            "expression": "$.get(isExpanded)"
+          },
+          {
+            "value": "contentEl",
+            "owner": "setExpanded",
+            "line": 205,
+            "column": 7,
+            "expression": "$.get(contentEl)"
+          },
+          {
+            "value": "triggerEl",
+            "owner": "setExpanded",
+            "line": 205,
+            "column": 59,
+            "expression": "$.get(triggerEl)"
+          },
+          {
+            "value": "isLastConversationMessage",
+            "owner": "streamingEffect",
+            "line": 260,
+            "column": 38,
+            "expression": "isLastConversationMessage()"
+          }
+        ],
+        "installedSvelteRuntimeProvenance": [
+          {
+            "path": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/package.json",
+            "sha256": "5a0d57cb27afe0365075723a85b19123006e3c8f00a518283272773f52b9b2dc"
+          },
+          {
+            "path": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/src/constants.js",
+            "sha256": "dee72099f192667f0ad225dbf2ad2972395e4074eb27f02ce59d2cb01556c18b"
+          },
+          {
+            "path": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/src/internal/client/runtime.js",
+            "sha256": "9105167919723d5c5d5b21dcd09bf1030251e0771516f25c0e1841e00a06b3c7"
+          },
+          {
+            "path": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/src/internal/client/reactivity/props.js",
+            "sha256": "474c7ded9179e566626c45e79a114b1cd706330ea5d15cc80027ee20c1d74eb0"
+          },
+          {
+            "path": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/src/internal/client/reactivity/sources.js",
+            "sha256": "0ce48a16e6c64754adb266ff44f1ed984b4d9305999dc82dc6e3845c440a10f1"
+          },
+          {
+            "path": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/src/internal/client/reactivity/deriveds.js",
+            "sha256": "99ad4d68c1183dcdf47be564a8b878f556097ede8979730bdcb5b295b957d58f"
+          }
+        ],
+        "dependencyConditions": [
+          {
+            "value": "isStreaming/isTerminal/hasPreview",
+            "condition": "Every reaction invocation."
+          },
+          {
+            "value": "saved identity",
+            "condition": "Only synchronous setExpanded/save calls, including absent owner; wrapper distinguishes unrecorded from recorded undefined."
+          },
+          {
+            "value": "isExpanded",
+            "condition": "Initialization seeds desiredExpanded; false setter reads after true branch returns. Snapshot records read-time value, not final post-write value."
+          },
+          {
+            "value": "isLastConversationMessage",
+            "condition": "Initial automatic nonstreaming terminal branch only, through short-circuit; absent otherwise."
+          },
+          {
+            "value": "contentEl",
+            "condition": "False setter while currently expanded; real null identity remains tracked."
+          },
+          {
+            "value": "triggerEl",
+            "condition": "Only when real content contains activeElement; focus/document activeElement itself is not a reactive source signal."
+          }
+        ],
+        "scheduling": "Original compiled updated saved prop getter uses tracked derived access; installed Svelte update_reaction resets reads and update_dependencies replaces them, not a union. New layout callback checks every React commit but executes branch body only on a changed previously tracked value; props publication runs first. Previous reaction is replaced by a fresh object and recording flag clears in finally, including early return. Original source branches match after removing only recording/reference adaptation.",
+        "grace": "scheduleCollapse/clearCollapseTimer unchanged, using canonical800. Their synchronous bodies do not read saved/isExpanded; timer callback is outside recording scope. Owner-only replacement while scheduling branch is current therefore does not invoke the reaction from that owner dependency. Timer later uses current props owner. This is static causal structure, not observed deadline/no-shortening/no-restart evidence.",
+        "refs": "Stable bindContent/bindTrigger retain actual nodes, no proxies/observers; notify only when previously read identity changes. Public unchanged ChatOperationalRow uses actual useImperativeHandle for trigger and guarded current-release details binding, retiring old attachment without clearing newer owner. Source content absence is undefined; React null models absent DOM ref with recorded presence distinguished from an unrecorded optional field. Actual commit/cleanup notification order remains native-unverified.",
+        "retainedBodies": "All other top-level statements/imports and component statements/markup token-identical after the declared private snapshot instrumentation and two callback-ref substitutions; save/setter inverses hold. API/defaults/child lifetimes/search/manual helpers/two-phase collapse/cleanup/motion untouched; compiled original CSS declarations/specificity match existing scope adaptation.",
+        "assessment": "Original saved-only publication omission has an explicit static correction. No additional static mismatch found in audited synchronous read sites/branch order. Runtime dependency scheduling/refs/current owner writes and exact grace deadline remain unverified; historical gap is retained, not retroactively approved.",
+        "limits": "No component/handler/saga/timer or Svelte/React runtime executed. Compiler/AST/source-accounting only; StrictMode and 800ms timing are not established by static structure."
+      },
+      "originalInputs": [
+        {
+          "path": "src/lib/components/chat/ResponseGroup.svelte",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "7e9012d1afeee8e804460afe2e29a32aa6b8c61c8b08af8923473cdf4c511526"
+        }
+      ],
+      "supportingDependencies": [
+        {
+          "path": "apps/react/src/features/chat/components/response-group.css",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "bd67cea15643270eaf94749feb60b5e1c674be0e18e8f33f1e0e94b0386b39bd",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "bd67cea15643270eaf94749feb60b5e1c674be0e18e8f33f1e0e94b0386b39bd"
+        },
+        {
+          "path": "apps/react/src/features/chat/components/cylinder-scroller.tsx",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "4b48296a54c2a1599e03a28c8f4605f602624375251956de1c6f14318061de08",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "4b48296a54c2a1599e03a28c8f4605f602624375251956de1c6f14318061de08"
+        },
+        {
+          "path": "apps/react/src/features/chat/components/chat-operational-row.tsx",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "9cead37831a09af5967b093432d78d5434b5a375d08d405b5b26c2d589ac0fda",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "9cead37831a09af5967b093432d78d5434b5a375d08d405b5b26c2d589ac0fda"
+        },
+        {
+          "path": "apps/react/src/features/chat/components/chat-motion.ts",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "953af986a21d259bed0314b16ae53c73399da7671386fcacffd37ba97a04bd51",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "953af986a21d259bed0314b16ae53c73399da7671386fcacffd37ba97a04bd51"
+        },
+        {
+          "path": "src/lib/components/chat/response-group-timing.ts",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "edcfc719e1dc4e5e346069762fd2bac5e7d9bdc68edb2cc6f8c9290ffbff66de",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "edcfc719e1dc4e5e346069762fd2bac5e7d9bdc68edb2cc6f8c9290ffbff66de"
+        },
+        {
+          "path": "src/lib/components/chat/operational-cluster-projections.ts",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "4c06d9139b347e38a9930f54b7edc23879bfd334f713305ab55ff7c7eeef7bdd",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "4c06d9139b347e38a9930f54b7edc23879bfd334f713305ab55ff7c7eeef7bdd"
+        },
+        {
+          "path": "src/lib/components/chat/disclosure-motion-core.ts",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "08257fb2f60f3a772d4066bc2d83f9507db2fa7f5e836aca4680abcaf78f6091",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "08257fb2f60f3a772d4066bc2d83f9507db2fa7f5e836aca4680abcaf78f6091"
+        },
+        {
+          "path": "src/lib/utils/smartScroll.ts",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "48cc7a2acd9f370d075b79825cd2e0672cac707c516ba0e9121517ec29988fb8",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "48cc7a2acd9f370d075b79825cd2e0672cac707c516ba0e9121517ec29988fb8"
+        },
+        {
+          "path": "src/lib/components/chat/response-group-blocks.ts",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "ac6ab5e33f19ddb3b430ec98ccaad06364231d542dc900519993e0afff4e58f1",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "ac6ab5e33f19ddb3b430ec98ccaad06364231d542dc900519993e0afff4e58f1"
+        },
+        {
+          "path": "src/shared/utils/content-block-helpers.ts",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "b0aa9c63ca7fd596a2c2c7716e44d429460773b4f7d5a76c9d7151f26d335832",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "b0aa9c63ca7fd596a2c2c7716e44d429460773b4f7d5a76c9d7151f26d335832"
+        },
+        {
+          "path": "apps/react/src/catalog/response-group-examples.tsx",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "a7d97df5aef1e231eb8089a97beddf337181516d6c67ec3ebe71468e19f3acd2",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "a7d97df5aef1e231eb8089a97beddf337181516d6c67ec3ebe71468e19f3acd2"
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577"
+        },
+        {
+          "path": "apps/react/src/styles/app.css",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "sha256": "2a6d00015092b7ef141b1e08fdbcff393a7ceff2ed4fbd87867c24940259930f",
+          "previousCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+          "previousSha256": "2a6d00015092b7ef141b1e08fdbcff393a7ceff2ed4fbd87867c24940259930f"
+        }
+      ],
+      "supportDelta": [],
+      "retainedHistoricalTargetRecords": [
+        {
+          "pointer": "reviews/navigation-excerpt-and-image-caption-34161b6d/supportingDependencies/23",
+          "path": "apps/react/src/features/chat/components/response-group.tsx",
+          "sha256": "c7775fa8b85f8cc825a869e9f5eea1379bbbe6b0497bd2b1f5c77827c19bc547",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        }
+      ],
+      "historicalPinnedReports": [
+        {
+          "path": ".demo-artifacts/attachment-correction-ledger/status-05cc7db6.json",
+          "sha256": "2ecc7894e3222c77d621cdf844a3c59630ecede44ec74a1d2ae8a09a2908cb26",
+          "candidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c"
+        },
+        {
+          "path": ".demo-artifacts/attachment-identity-ledger/status-ff9a4e35.json",
+          "sha256": "3de6cfc20cd498cc1dd7d3ac9fab59d75bd652576e0122fe0f95add767dfbd03",
+          "candidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35"
+        },
+        {
+          "path": ".demo-artifacts/inline-permission-ledger/status-6a51a3da.json",
+          "sha256": "871f8ca4bf374cba9df3b5e761107cbd19664e38768848b1f5e74779ffe1f767",
+          "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9"
+        },
+        {
+          "path": ".demo-artifacts/media-composition-ledger/status-dd6e5720.json",
+          "sha256": "dcf0190b31084f48d746fe704bfb67a56fc9772e34cb338e074e0d902206a6bd",
+          "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980"
+        },
+        {
+          "path": ".demo-artifacts/markdown-reasoning-ledger/status-68a5ca85.json",
+          "sha256": "9211fb66cfc453cf98321757efa4db39aa4eb8ade6c45129197d3c8e51a5a44a",
+          "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a"
+        },
+        {
+          "path": ".demo-artifacts/chat-image-ledger/status-561fa08c.json",
+          "sha256": "2642d63ee8d4ca3bae4c17bb7cdb4f7024656cb04643a00feb3c9b9762ef71a3",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4"
+        },
+        {
+          "path": ".demo-artifacts/message-transcript-ledger/status-2d310fed.json",
+          "sha256": "ecc0ac8a7b46dfa6601457464565b8f1996e69a14033287d8adda09c7584de37",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c"
+        },
+        {
+          "path": ".demo-artifacts/setup-edit-ledger/status-3d7e81dc.json",
+          "sha256": "e5e8c3d4a9ef941fc5f1b26062494d378febae9a4838a0f6d8b6ae7e0728316c",
+          "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b"
+        },
+        {
+          "path": ".demo-artifacts/operational-window-ledger/status-2d988e34.json",
+          "sha256": "3fa6ae7f8796a1e82d038bbd7555f8754205395ac8cfe83337b104ec06a55c4d",
+          "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95"
+        },
+        {
+          "path": ".demo-artifacts/response-cylinder-ledger/status-1cea8e2b.json",
+          "sha256": "769abbca7d5dec89b703ed52afdb92e2d353b076012b8490c53a162a7da1a45e",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        },
+        {
+          "path": ".demo-artifacts/navigation-caption-ledger/status-34161b6d.json",
+          "sha256": "5ed08c94a1b379cdac0454e45cb3470a4cf7b7a0a60b90dea7ea06e88bf3ca0e",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        }
+      ],
+      "staticImportInspection": {
+        "runtime-closure.json": {
+          "path": ".demo-artifacts/response-reaction-ledger/runtime-closure.json",
+          "sha256": "be1572ab243f114b1c55c3157eeea71f91e54cbd9f8e2e4c454eeb827ba17893",
+          "files": 93,
+          "edges": 176,
+          "generated": {
+            "src/shared/paraglide/messages.js": "39a9ca36b7cde8ef89011723c3b137ef0db319ddf59d9481fc3ae6e634453347",
+            "src/shared/paraglide/messages/_index.js": "a26c40cf294df28563672e0c1df073b30234517d6bc3e8667f7562cbf063249b",
+            "src/shared/paraglide/runtime.js": "666bf2dab0fb82cd0523f83eb6a43fece562f81ce172eddff3407122cb4b3584",
+            "src/shared/paraglide/messages/en.js": "4f5b4b77c725752d0915bedb4f8cb570c1a88d808d037ce8cca9035d920ed79b",
+            "src/shared/paraglide/messages/zh-CN.js": "329605599f934a70cad2e045e85223466a5e12c113ffd4db1ef4d73c9e37c2f1",
+            "src/shared/paraglide/messages/zh-TW.js": "dc73947a2547d7f12ff4c57c3320140858a0f8b0b712227635a5e537a2269821",
+            "src/shared/paraglide/messages/ja.js": "8d09ef5e88afcbf10e0cfee5d8ecc5f68a45d2307a0dbad076118c068f041cf2",
+            "src/shared/paraglide/messages/ko.js": "a4f6d0d287e7a6c43b10b3434fe912c76d300146034decc076849222878fae95",
+            "src/shared/paraglide/messages/de.js": "d4afe7e36cc8f39968a907379b5fdef155e5d94f15fa057284e5d4baabb09a69",
+            "src/shared/paraglide/messages/fr.js": "071dc735fd7a592b23cb6181adc0a033afadbf713155aa2a8acc4ed2c93d831d",
+            "src/shared/paraglide/messages/es.js": "1b20171e4b70a08ccb0d31d4f06d3372316949a5ef1a2b684724a66ee7a0792e"
+          },
+          "packageInternalsTraversed": false,
+          "typeOnlyBoundaryReferences": []
+        },
+        "type-closure.json": {
+          "path": ".demo-artifacts/response-reaction-ledger/type-closure.json",
+          "sha256": "4b8ba0ea6a7d303ff678710dcf8a4a07efe0249fcf8efbae9c496dc2f0f5296a",
+          "files": 132,
+          "edges": 304,
+          "generated": {
+            "src/shared/paraglide/messages.js": "39a9ca36b7cde8ef89011723c3b137ef0db319ddf59d9481fc3ae6e634453347",
+            "src/shared/paraglide/messages/_index.js": "a26c40cf294df28563672e0c1df073b30234517d6bc3e8667f7562cbf063249b",
+            "src/shared/paraglide/runtime.js": "666bf2dab0fb82cd0523f83eb6a43fece562f81ce172eddff3407122cb4b3584",
+            "src/shared/paraglide/messages/en.js": "4f5b4b77c725752d0915bedb4f8cb570c1a88d808d037ce8cca9035d920ed79b",
+            "src/shared/paraglide/messages/zh-CN.js": "329605599f934a70cad2e045e85223466a5e12c113ffd4db1ef4d73c9e37c2f1",
+            "src/shared/paraglide/messages/zh-TW.js": "dc73947a2547d7f12ff4c57c3320140858a0f8b0b712227635a5e537a2269821",
+            "src/shared/paraglide/messages/ja.js": "8d09ef5e88afcbf10e0cfee5d8ecc5f68a45d2307a0dbad076118c068f041cf2",
+            "src/shared/paraglide/messages/ko.js": "a4f6d0d287e7a6c43b10b3434fe912c76d300146034decc076849222878fae95",
+            "src/shared/paraglide/messages/de.js": "d4afe7e36cc8f39968a907379b5fdef155e5d94f15fa057284e5d4baabb09a69",
+            "src/shared/paraglide/messages/fr.js": "071dc735fd7a592b23cb6181adc0a033afadbf713155aa2a8acc4ed2c93d831d",
+            "src/shared/paraglide/messages/es.js": "1b20171e4b70a08ccb0d31d4f06d3372316949a5ef1a2b684724a66ee7a0792e"
+          },
+          "packageInternalsTraversed": false,
+          "typeOnlyBoundaryReferences": [
+            {
+              "from": "src/lib/motion/springs.ts",
+              "specifier": "svelte",
+              "kind": "static",
+              "to": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/types/index.d.ts"
+            },
+            {
+              "from": "src/lib/motion/springs.ts",
+              "specifier": "svelte/easing",
+              "kind": "static",
+              "to": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/types/index.d.ts"
+            },
+            {
+              "from": "src/lib/motion/springs.ts",
+              "specifier": "svelte/motion",
+              "kind": "static",
+              "to": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/types/index.d.ts"
+            },
+            {
+              "from": "src/lib/motion/springs.ts",
+              "specifier": "svelte/store",
+              "kind": "static",
+              "to": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/types/index.d.ts"
+            },
+            {
+              "from": "src/lib/motion/transitions.ts",
+              "specifier": "svelte/easing",
+              "kind": "static",
+              "to": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/types/index.d.ts"
+            },
+            {
+              "from": "src/lib/motion/transitions.ts",
+              "specifier": "svelte/transition",
+              "kind": "static",
+              "to": "node_modules/.pnpm/svelte@5.57.1_@typescript-eslint+types@8.70.1/node_modules/svelte/types/index.d.ts"
+            }
+          ]
+        }
+      },
+      "staticEvidence": [
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/api-report.json",
+          "sha256": "5affc528d422ac983caadd286096d32a239e47de383a9f0795d6f151b45bd5c0"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/static-report.json",
+          "sha256": "a6ea0da82e8ab45675c295ebfd2c39b48d644f5566db105e2584244fcd9cc2b5"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/original-response-compiled.js",
+          "sha256": "f7c9c5f6af031acb4e43008510eba6fbc188213a5445467e72ff21b852e70358"
+        }
+      ],
+      "candidatePreparationReceipts": {
+        "evidence": [
+          {
+            "path": ".demo-artifacts/response-reaction-integration/freeze-e46a388f1.json",
+            "sha256": "7ae8cb1b885409886652b8fed4fe349617f381b5c3c8da9dc58a6f422ac8de18"
+          },
+          {
+            "path": ".demo-artifacts/response-reaction-integration/gates-e46a388f1.json",
+            "sha256": "794572ec092ba423ae10fd62916288ebf5f4fce2d29bc821849b5ff7e43f7384"
+          },
+          {
+            "path": ".demo-artifacts/response-reaction-integration/runtime-e46a388f1.json",
+            "sha256": "2c8b6898317c9de2056353ec010d92c48dc2b495520495ea2dfc183da47e0036"
+          }
+        ],
+        "reportedProduct": "e46a388f145af8692411824e5afe7736f432e1ed",
+        "reportedSourceFiles": 7831,
+        "reportedSourceTreeSha256": "b9de2b32f5fffca326e0ebc6f912930a7e6328610ccd97532819f37c35a504cd",
+        "loggedGateResults": {
+          "install": {
+            "exitCode": 0,
+            "session": 11519,
+            "log": "/tmp/response-reaction-e46-install.log",
+            "sha256": "7a6656e86bda345f2b3700c0f3c165f071dffa1bf13ab0daef5856233dae14e3"
+          },
+          "predev": {
+            "exitCode": 0,
+            "session": 84799,
+            "log": "/tmp/response-reaction-e46-predev.log",
+            "sha256": "3bbf98e3dfbdc502d36b7bed23e2f1f647b9a2e227ca1d82c5eb656d451a70fa"
+          },
+          "types": {
+            "exitCode": 0,
+            "session": 11074,
+            "log": "/tmp/response-reaction-e46-typecheck.log",
+            "sha256": "b69a608b62a9f31dc6b103401f917fac6836025348c8c221ccfbd5d7702b572a"
+          },
+          "build": {
+            "exitCode": 0,
+            "session": 79996,
+            "log": "/tmp/response-reaction-e46-build.log",
+            "sha256": "8790ef6ccc4844ca20fd33b7f81dcef21094a39f12f1f9f0ad8f2d52724a1618"
+          }
+        },
+        "gateLogHashesVerified": true,
+        "limit": "Recorded coordinator preparation metadata and file log hashes only. Candidate source tree not rebuilt/rescanned, no process/HTTP/UI/service/browser inspection. Successful install/build/types are not native proof; no receipt imported into functional/visual cases."
+      },
+      "sourceOwnerCurrentGateLimits": {
+        "reportedByTask": "f4165dcb-1431-48fa-b988-231481c29329",
+        "deadCode": "579 error-level findings (24 files,1 dependency,391 exports,163 types); unchanged count from earlier task, not certified baseline.",
+        "uiInvariants": "220 passed/3 failed; two ui-component-audit and one ui-component-integration failure concern intent-mark-vector ceiling0/missing caller ledger. Unrelated current-tree failures unsuppressed; no base-CI result.",
+        "ourScope": "Not rerun in JSON-only audit; no source gate declared all-green and no native test imported."
+      },
+      "testHandoff": {
+        "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+        "status": "not-run",
+        "scope": "Static-only correction audit. No product/callback/timer/runtime execution, native or mock tests, browser/server/service/install/source/test/config writes. Candidate preparation logs are hashed records only; no liveness/full-source-tree or native verification."
+      },
+      "retainedFailureHistory": {
+        "priorNativeFailures": {
+          "preservation": "All existing native/source-paired failures, cases and29 receipts unchanged; no acceptance copied from supporting mapped components. Prior05cc/ff9/6a/dd6 reports remain pinned. No baseline CI failure or global clean-gate claim.",
+          "MC5": {
+            "productCommit": "33983d094dfce9aae1191fd63686deb19ed67261",
+            "runPath": ".demo-artifacts/view-parity/2026-10-12T05-23-57.906Z-extended-1Mcvyl",
+            "failure": "Original narrow-frame native case failed: tile x24..444 with viewport420 and open-file ending433. Coordinator-reported static three-grid-token correction219 is not a native pass. Original screenshot/failure and MC2→MC3 inspection-order deviation retained; old MC1–4 results are not imported.",
+            "screenshotSha256": "d76d4912f4397e4fbd2ffcd833a7da569b74db5ad57cd0ab64bc98db4e54b2c1"
+          },
+          "videoV1": {
+            "productCommit": "9402e17cdd9714763f4146bde68fa4352307d979",
+            "testCommit": "1cd6f90326809b7d9681aee714d93436b318acde",
+            "runPath": ".demo-artifacts/view-parity/chat-video-native/2026-10-12T05-28-09.665Z-core-6YWiyd",
+            "failure": "Owner-reported automated pass/exit0 was rejected by manual review: actual video frame0×0 despite32×18 decoded media and genuine events. V2–V10 unrun at that handoff. Source Button/source video omission not runtime-proven causal. Later React wrapContent correction excluded from68a; old video target review remains dd6 and unchanged.",
+            "evidenceIndexSha256": "5774009df3c14dde02d78520ebbe9e8ab1026f705d00d909b064d1dd9f382bff"
+          },
+          "ownerStaticHistory": "Owner viewer void-versus-boolean callback mismatch and narrow role lint corrected before freeze. Root Oxfmt zero-file runs discarded. Earlier temporary missing shimmer module/import resolved by bc87; reasoning saved writes use three narrow source-contract comments. Graph classifiers were corrected for canonical Redux, neutral shared-time-manager and erased motion types. These are owner-reported resolved preparation failures, not baseline CI failures."
+        },
+        "MV2AndOther": {
+          "MV2": {
+            "productCommit": "219b02b52a6a97fe0ff9e51d70e80e7a0b18510b",
+            "testCommit": "2038ee4cdb47b0367ca2a8c52dc9a99170e12c2f",
+            "runPath": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX",
+            "status": "FAIL",
+            "failure": "Expected two task checkboxes; saved DOM/AX has four distinct native inputs in one viewer/one task list: label/input and div/p/input for each pending/finished item, checked state duplicated consistently. Not a duplicated viewer or explicit-role double count. Original expectation retained; later assertions and MV3–16 unrun at failure handoff.",
+            "screenshotSha256": "65d456ed9f3032aa2023a23562eecb564a7275f736df382a0a37ca215e4a7b68",
+            "screenshotLimit": "Failure PNG shows caller controls with viewer below viewport; checkbox finding derives from saved DOM/AX, not screenshot. No new browser diagnostic or original rebuild.",
+            "staticAttribution": "Original003 and219 canonical helper bytes identical; old normalizer drops top-level checkbox but passes first paragraph nested checkbox. e27 intentionally changes canonical helper to drop only generated leading loose-paragraph checkbox. Exact inverse proof does not execute original/corrected parser, establish baseline CI, or promote native acceptance. Existing full viewer target/review stays pinned68a."
+          },
+          "other": "All original MC5, W3, attachment and videoV1 failures/full provenance retained through untouched old reviews and cases. No older successful lane imported."
+        }
+      },
+      "retainedCanonicalParserCorrection": {
+        "path": "src/lib/utils/tiptap-task-list-extension.ts",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "previousCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
+        "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
+        "referenceSha256": "e495f32dfe34f96c40cda22c427dfd183bfb7694b443f5140037360242fd51d1",
+        "previousSha256": "e495f32dfe34f96c40cda22c427dfd183bfb7694b443f5140037360242fd51d1",
+        "sha256": "1fbac6b79763eca2dc7758c41f018b59c4f6dea0942d201f1c9d0848c78926a8",
+        "commit": "e27fb64d82cb5280ed00eeb92ab5bccdda513134",
+        "exactInverseRestoresOriginalAndPrevious": true,
+        "fixedInventoryMember": false,
+        "meaning": "Intentional canonical algorithm fix: only an index-zero paragraph beginning with a generated checkbox is shallow-cloned with its first inline token removed. Existing top-level checkbox skipping/text aggregation remains; later/nested paragraph tokens are not recursively filtered. No input mutation. This is not byte-equivalent source extraction. Canonical renderer supplies its own label/input; original runtime and corrected behavior remain unverified. Fixed inventory omits this helper, so CLI drift cannot report it; this explicit support audit retains original and old dependent review pins instead.",
+        "historicalFailureEvidence": [
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/manual-review.json",
+            "sha256": "1df3dc10de46f4a86a5ab298c20994fde99dfcf997281a13f687e4d4b6435d98"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/offline-dom-diagnosis.json",
+            "sha256": "7e5996146fc7bc1c0bd4d2cbb43c4827d3506e64d678c9b4ba75d8cded5ed5a0"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/completion.json",
+            "sha256": "fb6a70b82b6799f2c662b6b925d8f2e8e54c7ed5a0c74609814113f4f579fab3"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/session.json",
+            "sha256": "440e8f83567f6bfa9dca275e26238602746423a1add4656fd0683d223f29459a"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/results.json",
+            "sha256": "71f7f832ae63d9d81fefdaca6de93d6a33f5a0dd0494e1beaa51ed08e60abe74"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/tests/markdown-viewer.core-markd-ee1c1--tables-and-read-only-tasks-core/test-failed-1.png",
+            "sha256": "65d456ed9f3032aa2023a23562eecb564a7275f736df382a0a37ca215e4a7b68"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/tests/markdown-viewer.core-markd-ee1c1--tables-and-read-only-tasks-core/error-context.md",
+            "sha256": "aaef2932605a55e8f73be7b9aada85e1983246b26d735a686d88493a3a41e116"
+          },
+          {
+            "path": ".demo-artifacts/view-parity/2026-10-12T05-40-44.569Z-core-E1t8wX/tests/markdown-viewer.core-markd-ee1c1--tables-and-read-only-tasks-core/trace.zip",
+            "sha256": "92c88dc65f5805348bce3d363a25a9ef5889ffacfaca9b88a3dfe88910b38fdd"
+          }
+        ]
+      },
+      "retainedMarkdownCallerCorrection": {
+        "path": "apps/react/src/catalog/markdown-viewer-examples.tsx",
+        "commit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+        "previousSha256": "d955ecaad8c53728a87b2811620159f3877b5301b4665c12cf1a54af2e0353c8",
+        "sha256": "f29f210b59dd275a89219d823395957e2f61e45d070cdb8b7cab4cd39acd8ac3",
+        "exactOneBlockInverse": true,
+        "meaning": "Only current genuine FileReader image URL (image MIME and exact URL identity) uses bare Markdown destination; arbitrary/manual URL retains angle syntax. Actual bytes, escaped label, intent-note link and changeDraft unchanged. Valid-angle canonical preprocessing defect remains unresolved; caller adaptation is not product/parser fix or invalid-fixture waiver. No acceptance transfer.",
+        "historicalFailure": {
+          "case": "MV9",
+          "verdict": "FAIL",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
+          "testCommit": "1a3d85be5fa35be3191e6d32078ccebd2c7c7629",
+          "run": ".demo-artifacts/view-parity/2026-10-12T05-58-38.832Z-extended-ic3oTB",
+          "plannedCaptureReached": false,
+          "scope": "Missing img stopped before link/keyboard behavior; saved caller outputs received genuine FileReader input, fallback showed load-failed. No new runtime performed. Source-owner diagnosis attributes canonical escapeHtmlTags angle-data handling; intermediate runtime HTML/src not captured, so causal sequence remains source-derived inference.",
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T05-58-38.832Z-extended-ic3oTB/manual-review.json",
+              "sha256": "31b409eba8f591af7f7babc01c620652865789e6d698193d15333cc1cd815e40"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T05-58-38.832Z-extended-ic3oTB/manual-evidence/markdown-viewer-freeze.json",
+              "sha256": "83ccaab82f10b2c473678800ddcbee123e3a869f23436bf9fb50dbbe4db8cd7b"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T05-58-38.832Z-extended-ic3oTB/manual-evidence/candidate-provenance.json",
+              "sha256": "f2db7e644ea381290b0e2be1ac7d42aa54c109157f200e2a195aa25928cb8781"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T05-58-38.832Z-extended-ic3oTB/completion.json",
+              "sha256": "986d73f3c6b959e1860c1136f87a9dcdab3c77e04950a68c277ceb015214dbfd"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T05-58-38.832Z-extended-ic3oTB/manual-evidence/markdown-viewer-outputs.json",
+              "sha256": "9a87428ed3c2fc7e98249163770148a0ecc5797ef2c52b782ff6e5c4b71543d3"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/2026-10-12T05-58-38.832Z-extended-ic3oTB/manual-evidence/error-context",
+              "sha256": "9a29cde7ffc3912b0bcc97a1d35ace52233054b89f494ed572c77cb9d672ec65"
+            }
+          ]
+        }
+      },
+      "retainedSourceOwnerGateLimit": {
+        "receipt": {
+          "path": ".demo-artifacts/response-group-port/handoff.json",
+          "sha256": "e5baffd49eebac6a2b86d0a76e37053bad38442348a7a230e5720ab39107efa1"
+        },
+        "failingCommands": [
+          {
+            "name": "dead-code",
+            "command": ["corepack", "pnpm", "run", "lint:dead-code"],
+            "cwd": "/home/sam/intent/workspaces/system-design/cloudlands-fe",
+            "headAtStart": "786299c422798afc78871d95f1142adf1b28db39",
+            "startedAt": "2026-10-12T06:14:37.037109+00:00",
+            "finishedAt": "2026-10-12T06:14:44.571977+00:00",
+            "exitCode": 1
+          }
+        ],
+        "meaning": "Source owner reported unsuppressed579 error-level dead-code findings; two unused default exports introduced here plus duplicate named/default warnings. No baseline-SHA CI comparison; do not claim entire failures pre-existing or whole-source gates green. Scoped source/React checks reported separately; this ledger audit does not rerun or approve runtime."
+      },
+      "retainedToastComposition": {
+        "commit": "d1d75922460e9bb521653519327befbb8b5f8aad",
+        "paths": [
+          "apps/react/src/catalog/catalog-app.tsx",
+          "apps/react/src/catalog/chat-command-examples.tsx",
+          "apps/react/src/catalog/chat-reference-examples.tsx",
+          "apps/react/src/catalog/notify-catalog-preview.tsx"
+        ],
+        "exactFourPathInverse": true,
+        "originalSourceLayout": {
+          "path": "src/routes/sandbox/+layout.svelte",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
+          "sha256": "98a62b796745d53ee341dfe61ccc7561f558d316f7e3a25082d64c3fb8d91504",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "referenceSha256": "98a62b796745d53ee341dfe61ccc7561f558d316f7e3a25082d64c3fb8d91504"
+        },
+        "meaning": "Original sandbox already mounts one default public Toast after CatalogShell. React now matches this host placement; three duplicate unscoped caller hosts/imports removed, scoped previews and Toast/notify/image copy algorithms unchanged. No clipboard outcome inferred from host presence; independent native owner remains separate.",
+        "historicalFailure": {
+          "case": "I6",
+          "verdict": "FAIL",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
+          "testCommit": "d1366b52f31f5650b75de2f841ad930715c50c35",
+          "run": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-10-46.160Z-extended-pNbdtn",
+          "failure": "No Image copied to clipboard text after selecting Copy image; paste not reached.",
+          "clipboardOutcomeAtFix": "unknown: native paste not reached",
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-10-46.160Z-extended-pNbdtn/manual-review.json",
+              "sha256": "d10ab626dff861d0513e31d9176bd499d5ba2d5f8d31682b96a640eae4c50c2a"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-10-46.160Z-extended-pNbdtn/offline-review/chat-image-freeze.json",
+              "sha256": "c5c287bbdc2eb18c89df0733efdef6e7a4fb18c9c4f471fc72314f1411682c82"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-10-46.160Z-extended-pNbdtn/completion.json",
+              "sha256": "ed9c0865b8ccc085858cbb488ee14f5561186d5c23e9683d865a86dfd43038a1"
+            }
+          ]
+        }
+      },
+      "retainedCaptionCorrection": {
+        "path": "apps/react/src/features/chat/components/chat-image-block.tsx",
+        "previousSha256": "a95f26827f0271a92c96e4f0f735751c5b651b8cc52346bf81d0f43cf7e633a9",
+        "sha256": "063dedf1b8b38ecb110bf5df2f744d924a164dca227ceaa8ea36cf0999e98f0f",
+        "exactInverseToPrevious": true,
+        "onlyChanges": [
+          "initialize truncatedTitle with committed caption textContent instead of undefined",
+          "clear current action only when retiring that action"
+        ],
+        "originalSourceUnchanged": true,
+        "canonicalObserverUnchanged": true,
+        "scope": "Static attachment/retirement and initial-content review only; no final native overflow measurement or I8 acceptance.",
+        "commit": "34161b6d596b63366d679dd83dd331b054e45af3",
+        "historicalFailure": {
+          "run": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-20-46.963Z-extended-RPHmEA",
+          "manual": {
+            "case": "I8",
+            "product": "d1d75922460e9bb521653519327befbb8b5f8aad",
+            "verdict": "FAIL",
+            "allDistinctPNGsInspected": 3,
+            "allRawPNGsAccountedByHash": 7,
+            "captureAttemptsInspected": 4,
+            "beforeFailureGeometryAXStable": true,
+            "visibleContent": "Genuine120x72PNG visibly occupies370x222 with substantive quadrant pixels; caption initially visibly truncates and shows120x72px/PNG. Frame372x275 and controls contained/hit-reachable. Failure screenshot shows native caller controls in file/current-long-alt state; final caption is outside its viewport, so no screenshot claim proves final overflow. Test fails on absent remounted caption title at extended:150.",
+            "strict": "Zero browser/image errors, failed requests, RPC or frozen-file drift; Vite HMR only.",
+            "reviewedBeforeNextLaunch": true,
+            "nextLaunch": "STOP; I9/I10 not run"
+          },
+          "candidateCommit": "d1d75922460e9bb521653519327befbb8b5f8aad",
+          "testCommit": "d1366b52f31f5650b75de2f841ad930715c50c35",
+          "evidence": [
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-20-46.963Z-extended-RPHmEA/manual-review.json",
+              "sha256": "7591f3b2c988c5732c2bea2e59cf50123f33798471f39ce4b840a98c826c7a83"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-20-46.963Z-extended-RPHmEA/offline-review/chat-image-freeze.json",
+              "sha256": "59dda113c7a78a58cc019d55797787f5117fbfcc499ad5b4ae7a9859a2482731"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-20-46.963Z-extended-RPHmEA/completion.json",
+              "sha256": "b23743c1e9415d307f3b5c8f9ae58171932a47154c8cbec1c9cfdef8b5cf2ea5"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-20-46.963Z-extended-RPHmEA/offline-review/caption-trace-audit.json",
+              "sha256": "40e1e17e7300d8035c37aaf91ff0be908890f8a71d4f26ced0de05e56393da93"
+            },
+            {
+              "path": ".demo-artifacts/view-parity/chat-image-native/2026-10-12T06-20-46.963Z-extended-RPHmEA/offline-review/i8-long-caption-controls-containment.json",
+              "sha256": "3b4c182ba9e17ba6f6b65c8adb53b8ea6370a7f686555c5442f909d4ee1ede91"
+            }
+          ],
+          "traceLimit": "Prior long title present; after file branch detach/reattach same long caption has no title. No final scrollWidth/clientWidth measurement; recorded native failure remains. Initial-content/lifecycle explanation is static inference, not a final overflow observation or new pass."
+        }
+      },
+      "sourceDriftPolicy": "Original003/fixed1430 unchanged; all18invalidations and16view/23support candidate drift retained. Response original/current source hashes and old profile remain. All old runtime cases/receipts/failures, including saved-owner1cea gap and original I6/I8, unchanged. Independently reported later image/native successes are not imported or transferred.",
+      "excludedFrozenChanges": [
+        "packages/view-parity/lib/navigation-content.mjs",
+        "packages/view-parity/lib/sandbox-notifications.mjs",
+        "packages/view-parity/tests/markdown-viewer.core.spec.mjs",
+        "packages/view-parity/tests/message-actions.core.spec.mjs",
+        "packages/view-parity/tests/navigation-content.core.spec.mjs",
+        "packages/view-parity/tests/navigation-content.extended.spec.mjs",
+        "packages/view-parity/tests/sandbox-notifications.core.spec.mjs"
+      ],
+      "excludedLaterWork": "Ignored indicator-boundary preparation3f022 and all later moving source/caller/test/runtime work excluded; native MA lane separately owned. No source or candidate root mutation.",
+      "auditCorrection": "Ignored receipt audit initially treated sourcePaths (10 configured roots) as file list; corrected to sourceSha256 map (7831 recorded files) after inspecting the receipt schema. No candidate files changed or installation/build rerun.",
+      "userHelpImpact": "Internal unreleased migration ledger; no released assistant-help impact."
     }
   },
   "sources": {
@@ -94001,16 +94824,16 @@
     "src/lib/components/chat/ResponseGroup.svelte": {
       "implementation": {
         "status": "partial",
-        "reviewId": "response-group-and-cylinder-1cea8e2b",
-        "reviewedContract": "Partial static contract: all13 source props plus optional className alias, initial saved state, streaming/manual/search transitions, two-phase focus/inert collapse,800ms timer, actual canonical motion/follower leases, branch child identity/context, current callbacks and source CSS/icon/i18n composition reviewed. Named saved-owner publication gap: replacing saved alone is a reactive source effect dependency on automatic paths, but React only updates props ref and skips equal edge inputs; immediate write to replacement owner is not preserved. Native/source-pair behavior remains unverified.",
-        "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        "reviewId": "response-group-reaction-correction-e46a388f",
+        "reviewedContract": "Partial static contract with targeted e46 saved-owner reaction correction. All13 original fields/className alias, original branch order, 800ms scheduler, props publication, search/manual/two-phase collapse, child lifetime, markup/styles/motion remain unchanged. Original compiled synchronous reads independently enumerate eight values; private snapshot mirrors those branch-dependent reads, saved wrapper tracks absent owners, and real conditional ref callbacks request guarded rechecks. Current props publish first, each actual reaction replaces dependencies, recorder clears in finally; timer/native/search/teardown calls do not subscribe. Named1cea omission now has an explicit static code correction; no additional static mismatch found. Complete native publication/dependency scheduling, unchanged deadline and StrictMode/source-pair behavior remain unverified, so status stays partial. Full prior contract and gap retained in this review.",
+        "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
       },
       "targets": [
         {
           "path": "apps/react/src/features/chat/components/response-group.tsx",
-          "sha256": "c7775fa8b85f8cc825a869e9f5eea1379bbbe6b0497bd2b1f5c77827c19bc547",
+          "sha256": "f54c8b3851ac41bd4fb04ce1dc5e433ec2608a62fe17473d653da0330b0e4bbc",
           "symbols": ["ResponseGroup"],
-          "lastChangedCommit": "ba312a2df08bfc289f90934119d1b9676632b2be"
+          "lastChangedCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
         }
       ],
       "functional": {
@@ -94020,12 +94843,14 @@
         "cases": []
       },
       "gaps": [
+        "Historical1cea gap statements below are retained verbatim as history; e46 replaces the missing saved-owner tracking with branch-dependent read snapshots. Static compiler/AST evidence supports this correction, but native/source-pair closure is pending and no old failure or acceptance is rewritten.",
         "Original automatic nonstreaming nonterminal effect calls setExpanded(false), reading reactive saved() and writing current owner fields. Replacing saved alone can re-trigger that source effect. React only publishes a new saved ref and guards edge inputs; it does not immediately write current disclosure state to that owner. Full saved-owner publication correspondence not established; ResponseGroup remains partial.",
         "Using separate native/source-pair authorization: mount automatic nonstreaming nonterminal group with saved {}, replace saved with {expanded:true} while preserving group identity and all streaming inputs; inspect the new object before any further transition/unmount. Static-derived expectation: source writes false, React leaves true. Then verify search/manual ownership and StrictMode replay before accepting a fix.",
         "Native saved-owner replacement, current callback behavior during retained outro, branch reversal/fresh child identity, two-phase inert/focus ordering, timer races/unmount, search expansion restoration and real mutation lease tick/settle/dispose remain unverified. Original effect reads and React dependency/lifecycle scheduling are not proven equivalent by matching branch tokens.",
         "Original800 timing literal becomes shared constant and receives explicit source drift/invalidation. Original operational-cluster declarations remain exact, but current facade also contains earlier shared motion/classes extraction; complete previous profile retained. Helpers/CSS/catalog are supporting-only, not extra view units.",
         "Actual original MessageContent/StreamingMessageContent supply saved ownership, admission/header heights, filtered blocks and nested windows. Catalog exercise is not product transcript integration. Existing shared row, inline Markdown, icons/motion dependencies retain previous statuses/native evidence; no whole-primitive acceptance or pixel/full-motion claim.",
-        "All previous cases/receipts/failures/source invalidations and evidence pins retained; no runtime acceptance added."
+        "All previous cases/receipts/failures/source invalidations and evidence pins retained; no runtime acceptance added.",
+        "e46 current limits: actual same-key owner replacement before another transition/unmount, saved absence/presence, changes during existing800ms delay without shortening/restarting, initial terminal/last gating, search/manual histories and subsequent owner swaps, conditional real refs/focus, React commit batching and StrictMode setup/cleanup remain unverified. Native tests may observe eventual collapse without proving the exact deadline. No new source/profile waiver or product-ready claim."
       ],
       "sourceInspection": {
         "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
@@ -123378,6 +124203,112 @@
         "operational-window-and-panel-2d988e34",
         "response-group-and-cylinder-1cea8e2b"
       ]
+    },
+    {
+      "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded original003/frozen34161b6d static audit: NavLink partial and AugmentCodeSnippet local implemented; targeted existing ChatImageBlock caption-only correction.235/1430(230components+5modules),178partial57localimplemented,229targets86reviews.227previous target identities checked:226byteequal, only authorized caption target changed with exact inverse/fulloldrow preserved.85old reviews/history/cases/29receipts/failures/17invalidations retained. NavLink helper extraction adds explicit source drift; support adds no denominator. Response saved-owner gap open; native/visual/product acceptance remains separate.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T06:34:41.160233+00:00",
+      "checkpointAdvance": {
+        "previousLedgerCommit": "3fccb52d27ca63950b99c2a01a80fa44ad44bb0b",
+        "previousAuditCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
+        "unchangedUniqueDirectTargets": 226,
+        "changedUniqueDirectTargets": 1,
+        "retainedHistoricalReviewCount": 85,
+        "meaning": "Common validation candidate advances only; historical inspected/source/support/evidence pins and full233-view checkpoint preserved. Exactly2new maps and one targeted old image correction; no unrelated review/source baseline refresh. ResponseGroup1cea gap stays open. Native I6/I7 successes and I8 failure stay separately pinned."
+      },
+      "ledgerCommit": "9beea0cd41520964a03093b9b4a047161f66f99a",
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10",
+        "chat-transcript-markers-fe630",
+        "chat-transcript-notices-fe630",
+        "chat-disclosure-rows-fb515",
+        "chat-recovery-notices-fb515",
+        "chat-stream-metadata-3230",
+        "chat-history-attribution-3230",
+        "chat-disclosure-corrections-3230",
+        "chat-queued-actions-command-3e894",
+        "chat-code-reference-context-4bfa",
+        "chat-inline-mcp-prompt-preview-9d297",
+        "queued-attachments-0a010",
+        "tabs-export-correction-0a010",
+        "streaming-status-840763",
+        "mcp-inline-font-correction-840763",
+        "suggested-chief-prompts-16ee80",
+        "automated-wake-header-f2b2a2",
+        "agent-pr-attribution-headers-73da5529",
+        "attachment-permission-support-05cc7db6",
+        "attachment-file-replacement-ff9a4e35",
+        "inline-permission-and-live-support-6a51a3da",
+        "media-and-markdown-composition-dd6e5720",
+        "full-markdown-and-reasoning-68a5ca85",
+        "chat-image-and-video-wrapper-561fa08c",
+        "message-actions-and-transcript-cards-2d310fed",
+        "setup-script-and-edit-confirmation-3d7e81dc",
+        "operational-window-and-panel-2d988e34",
+        "response-group-and-cylinder-1cea8e2b",
+        "navigation-excerpt-and-image-caption-34161b6d"
+      ]
     }
   ],
   "receipts": {
@@ -127980,6 +128911,52 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "Original003/fixed1430 unchanged;17old invalidations preserved, NavLink extraction remains new invalidation. Augment/current image source exact003. Full oldimage row/source review/hash/gaps/cases preserved; oldreviews receive commonvalidationpin only. Helper/caller/support add no views. I8RPHmEA failure retained; I6/I7d1positive not imported. ResponseGroup saved-owner gap remains open at exact1cea body; later fix excluded."
+    },
+    {
+      "id": "response-group-reaction-correction-e46a388f",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "previousLedgerCommit": "9beea0cd41520964a03093b9b4a047161f66f99a",
+      "previousCommonCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+      "reviewedAt": "2026-10-12T06:41:16.151484+00:00",
+      "method": "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer.",
+      "counts": {
+        "addedMappings": 0,
+        "addedSvelteComponents": 0,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "mappedViews": 235,
+        "mappedSvelteComponents": 230,
+        "mappedSvelteReactivityModules": 5,
+        "views": {
+          "unmapped": 1195,
+          "partial": 178,
+          "implemented": 57
+        }
+      },
+      "sourcePaths": [],
+      "targetedExistingSourcePaths": ["src/lib/components/chat/ResponseGroup.svelte"],
+      "newUniqueDirectTargetCount": 0,
+      "priorUniqueDirectTargetCount": 229,
+      "allUniqueDirectTargetCount": 229,
+      "priorDirectTargetIdentity": {
+        "total": 229,
+        "unchanged": 228,
+        "changed": [
+          {
+            "path": "apps/react/src/features/chat/components/response-group.tsx",
+            "previousSha256": "c7775fa8b85f8cc825a869e9f5eea1379bbbe6b0497bd2b1f5c77827c19bc547",
+            "sha256": "f54c8b3851ac41bd4fb04ce1dc5e433ec2608a62fe17473d653da0330b0e4bbc"
+          }
+        ],
+        "orderedPathAndHashSha256": "d4438a3bbd224349ae8543780ff012bf473ec44e8831bc436fc346fed09848ce"
+      },
+      "supportDelta": [],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "Original003/fixed1430 unchanged; all18invalidations and16view/23support candidate drift retained. Response original/current source hashes and old profile remain. All old runtime cases/receipts/failures, including saved-owner1cea gap and original I6/I8, unchanged. Independently reported later image/native successes are not imported or transferred."
     }
   ]
 }
