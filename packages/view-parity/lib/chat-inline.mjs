@@ -384,18 +384,49 @@ export async function expectInitial(item, initial) {
 }
 
 export async function iconGeometry(item, size, info, name) {
-  const measured = await icon(item).evaluate((root) => {
-    const bounds = (node) => {
-      const { left, right, top, bottom, width, height } = node.getBoundingClientRect();
-      return { left, right, top, bottom, width, height };
-    };
-    const child = root.querySelector('svg, img, span');
-    return { root: bounds(root), child: child ? bounds(child) : null };
-  });
-  await info.attach(name + '-geometry.json', {
-    body: JSON.stringify(measured, null, 2),
-    contentType: 'application/json',
-  });
+  const samples = [];
+  try {
+    await expect
+      .poll(async () => {
+        const sample = await icon(item).evaluate((root) => {
+          const bounds = (node) => {
+            const { left, right, top, bottom, width, height } = node.getBoundingClientRect();
+            return { left, right, top, bottom, width, height };
+          };
+          const child = root.querySelector('svg, img, span');
+          return {
+            timestamp: new Date().toISOString(),
+            root: bounds(root),
+            child: child ? bounds(child) : null,
+          };
+        });
+        samples.push(sample);
+        return { width: sample.root.width, height: sample.root.height };
+      })
+      .toEqual({ width: size, height: size });
+  } finally {
+    await info.attach(name + '-geometry-samples.json', {
+      body: JSON.stringify(
+        {
+          requestedSize: size,
+          initial: samples[0] ?? null,
+          final: samples.at(-1) ?? null,
+          samples,
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+    const final = samples.at(-1);
+    if (final) {
+      await info.attach(name + '-geometry.json', {
+        body: JSON.stringify({ root: final.root, child: final.child }, null, 2),
+        contentType: 'application/json',
+      });
+    }
+  }
+  const measured = samples.at(-1);
   // Size is an explicit component API: preserve requested icon allocation,
   // with artwork/fallback visible within it. No CSS/class oracle.
   expect(measured.root.width).toBe(size);
