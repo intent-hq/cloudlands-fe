@@ -1,5 +1,12 @@
 // i18n-ignore (internal catalog caller inputs and observations, not released product copy)
-import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { FormField } from '@/components/patterns/form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -188,6 +195,11 @@ export function AutomatedWakeExamples() {
 
   const recordCallback = useCallback(
     (name: CallbackName, callbackRevision: number, args: unknown[]) => {
+      const retainedClick = capturedClick.current;
+      // A stopped click may have no callback or parent bubble. Never attribute
+      // that retained event to a later callback after its native dispatch ends.
+      const activeClick =
+        retainedClick && retainedClick.eventPhase !== Event.NONE ? retainedClick : null;
       // The source chevron forwards its React click event despite the zero-argument
       // callback type. Snapshot it now, while currentTarget is still available.
       const argumentsSnapshot = args.map((argument) => {
@@ -196,7 +208,7 @@ export function AutomatedWakeExamples() {
           return {
             type: 'react-mouse-event',
             nativeEvent: snapshotNative(event.nativeEvent),
-            sameAsCapturedClick: event.nativeEvent === capturedClick.current,
+            sameAsCapturedClick: event.nativeEvent === activeClick,
             currentTargetTestId: event.currentTarget.getAttribute('data-testid'),
             defaultPrevented: event.defaultPrevented,
             propagationStopped: event.isPropagationStopped(),
@@ -210,8 +222,9 @@ export function AutomatedWakeExamples() {
         mountRevision,
         argumentCount: args.length,
         arguments: argumentsSnapshot,
-        capturedClick: capturedClick.current ? snapshotNative(capturedClick.current) : null,
+        capturedClick: activeClick ? snapshotNative(activeClick) : null,
       };
+      if (capturedClick.current === retainedClick) capturedClick.current = null;
       setObservations((current) => ({
         ...current,
         counts: { ...current.counts, [name]: current.counts[name] + 1 },
@@ -277,6 +290,13 @@ export function AutomatedWakeExamples() {
     contentBlocks: [{ type: 'text', text: 'Caller-controlled disclosure content.' }],
     metadata,
   });
+  const headerMounted = mounted && presentation !== null;
+  useLayoutEffect(
+    () => () => {
+      capturedClick.current = null;
+    },
+    [headerMounted, mountRevision],
+  );
   const workspace: Workspace | null | undefined =
     applied.workspaceMode === 'present'
       ? {
@@ -319,13 +339,13 @@ export function AutomatedWakeExamples() {
   }
   function observeParent(phase: ParentPhase, event: ReactMouseEvent<HTMLDivElement>) {
     if (phase === 'click-capture') {
-      const nativeEvent = event.nativeEvent;
-      capturedClick.current = nativeEvent;
-      queueMicrotask(() => {
-        if (capturedClick.current === nativeEvent) capturedClick.current = null;
-      });
+      // Keep the genuine event through the separate capture and bubble listeners.
+      capturedClick.current = event.nativeEvent;
     }
     const observation = { phase, ...snapshotNative(event.nativeEvent) };
+    if (phase === 'click-bubble' && capturedClick.current === event.nativeEvent) {
+      capturedClick.current = null;
+    }
     setObservations((current) => ({
       ...current,
       parentCounts: { ...current.parentCounts, [phase]: current.parentCounts[phase] + 1 },
