@@ -103,6 +103,15 @@ async function mountControls(
     },
     { theme, zoom, withAssistant },
   );
+  // Initial IPC hydration is asynchronous. Measure only after the production
+  // counter-scale has reached the requested zoom, just as for live zoom changes.
+  await expect
+    .poll(() =>
+      page
+        .locator('.window-title-bar')
+        .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
+    )
+    .toBeCloseTo(1 / zoom, 5);
 }
 
 async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linux') {
@@ -411,7 +420,7 @@ async function assistantBoundaryState(page: Page) {
 }
 
 for (const destination of ['current workspace', 'other workspace', 'Settings'] as const) {
-  test(`leaving Home Assistant for ${destination} ends its unread session`, async ({
+  test(`leaving Home Assistant for ${destination} ends its unread session and remembers selection`, async ({
     page,
   }, testInfo) => {
     await prepareAssistantBoundary(page);
@@ -431,7 +440,8 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         return { panelItem: state.panelItem, divider: state.divider, requests: state.requests };
       })
       .toEqual({
-        panelItem: null,
+        // Main's remembered Home tab is independent of the ended reading session.
+        panelItem: 'chief',
         divider: null,
         requests: [
           {
@@ -455,10 +465,9 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         : `/workspace/${destination === 'current workspace' ? 'titlebar-test' : 'titlebar-other'}`,
     );
     await page.evaluate(async () => {
-      const [{ store }, { bulkUpsertSessions }, nav, unread, { goto }] = await Promise.all([
+      const [{ store }, { bulkUpsertSessions }, unread, { goto }] = await Promise.all([
         import('/src/store/renderer/store.ts'),
         import('/src/store/renderer/slices/agent-session/agent-session-slice.ts'),
-        import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts'),
         import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts'),
         import('/test/fixtures/titlebar-navigation.svelte.ts'),
       ]);
@@ -479,7 +488,6 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
           },
         ] as never),
       );
-      store.dispatch(nav.openPanel('chief'));
       await goto('/');
       store.dispatch(
         unread.startDividerSession('assistant-route-thread', 'assistant-message-arrived-away'),
@@ -489,6 +497,7 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
     const returned = await assistantBoundaryState(page);
     expect(returned.divider).toEqual({ anchorId: 'assistant-message-arrived-away' });
     expect(returned.selectedThread).toBe('assistant-route-thread');
+    expect(returned.panelItem).toBe('chief');
     await testInfo.attach('assistant-route-boundary', {
       body: JSON.stringify({ destination, before, away, returned }, null, 2),
       contentType: 'application/json',
