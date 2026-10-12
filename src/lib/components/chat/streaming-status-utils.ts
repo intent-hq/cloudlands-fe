@@ -1,5 +1,5 @@
 import { m } from '$shared/paraglide/messages.js';
-import type { IntentMarkVariant } from '../ui/indicators/intent-mark-vector';
+import type { IntentMarkVariant } from '$lib/motion/intent-mark-variants';
 
 /**
  * Format duration with human-readable units:

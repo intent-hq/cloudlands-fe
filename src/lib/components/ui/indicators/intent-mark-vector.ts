@@ -1,6 +1,7 @@
+import type { IntentMarkVariant } from '$lib/motion/intent-mark-variants';
+export { intentMarkVariants, type IntentMarkVariant } from '$lib/motion/intent-mark-variants';
+
 // Native SVG geometry and scalar motion. GIFs are test references, never runtime assets.
-export const intentMarkVariants = ['bloom', 'pulse', 'twist'] as const;
-export type IntentMarkVariant = (typeof intentMarkVariants)[number];
 export const intentMarkMotionTiming = {
   settleMs: 160,
   bloomMs: 61_000 / 30,

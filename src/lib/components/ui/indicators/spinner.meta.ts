@@ -52,7 +52,6 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/input/ModelPicker.svelte',
     'src/lib/components/chat/input/ModelPickerProviderNotice.svelte',
     'src/lib/components/chat/input/SimpleRichInput.svelte',
-    'src/lib/components/chat/streaming-status-utils.ts',
     'src/lib/components/code-review/CodeReviewPanel.svelte',
     'src/lib/components/code-review/CodeReviewTabContent.svelte',
     'src/lib/components/code-review/walkthrough/CodeWalkthroughSection.svelte',
