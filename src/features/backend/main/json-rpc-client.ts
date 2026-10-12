@@ -513,18 +513,30 @@ export class JsonRpcClient extends EventEmitter {
     if (incarnation) this.emitRepositoryEvent({ type: 'closed', incarnation });
   }
 
-  /** Send now on exactly the captured connection; never reconnect, queue or rebind. */
+  /**
+   * Send now on exactly the captured connection; never reconnect, queue or rebind.
+   * isOriginCurrent is main-private and opt-in: it must synchronously return true
+   * only while the original route remains current, sampling retirement last after
+   * any callback-capable lookups. It is not a wire token or a producer parent.
+   */
   requestOnCapturedConnection<T = unknown>(
     captured: object,
     method: string,
     params?: unknown,
     options?: { timeoutMs?: number },
     parent?: object,
+    isOriginCurrent?: () => boolean,
   ): Promise<T> {
     const refused = this.refuseIndependent(parent);
     if (refused) return Promise.reject(refused);
     return this.own('captured-request', () =>
-      this.requestOnCapturedConnectionOriginal<T>(captured, method, params, options),
+      this.requestOnCapturedConnectionOriginal<T>(
+        captured,
+        method,
+        params,
+        options,
+        isOriginCurrent,
+      ),
     );
   }
 
@@ -533,6 +545,7 @@ export class JsonRpcClient extends EventEmitter {
     method: string,
     params?: unknown,
     options?: { timeoutMs?: number },
+    isOriginCurrent?: () => boolean,
   ): Promise<T> {
     if (!connection || connection !== this.getRepositoryConnection() || method === HELLO_METHOD) {
       return Promise.reject(new Error('Captured repository connection is unavailable'));
@@ -542,7 +555,12 @@ export class JsonRpcClient extends EventEmitter {
       typeof override === 'number' && Number.isFinite(override) && override > 0
         ? override
         : this.requestTimeoutMs;
-    return this.sendNow<T>(method, params, timeout);
+    return this.sendNow<T>(
+      method,
+      params,
+      timeout,
+      isOriginCurrent === undefined ? undefined : { connection, isOriginCurrent },
+    );
   }
 
   private beginHello(): object {
@@ -828,7 +846,12 @@ export class JsonRpcClient extends EventEmitter {
    * after the call is correlated correctly. Callers must ensure the socket is
    * usable: either `status === 'connected'` or the §5.17 handshake window.
    */
-  private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
+  private sendNow<T = unknown>(
+    method: string,
+    params: unknown,
+    timeoutMs: number,
+    capturedWrite?: { connection: object; isOriginCurrent: () => boolean },
+  ): Promise<T> {
     const socket = this.socket;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
@@ -858,9 +881,34 @@ export class JsonRpcClient extends EventEmitter {
         reject,
       });
       try {
-        socket?.write(payload);
+        if (capturedWrite) {
+          // Lookup may run user code. Complete it before checking the origin;
+          // do not look up socket.write again after the final identity checks.
+          const write = socket?.write;
+          const originCurrent = capturedWrite.isOriginCurrent();
+          if (
+            originCurrent !== true ||
+            !socket ||
+            socket.destroyed ||
+            this.disposed ||
+            this.status !== 'connected' ||
+            this.socket !== socket ||
+            this.repositoryConnection !== capturedWrite.connection
+          ) {
+            throw new Error('Captured repository connection is unavailable');
+          }
+          // A reentrant callback can already have settled this exact id. Never
+          // send it afterward or disturb a different pending request.
+          if (!this.pending.has(id)) return;
+          // This is the synchronous dispatch boundary, not an atomic guarantee
+          // about callbacks/buffering/physical delivery inside the stream.
+          Reflect.apply(write as Duplex['write'], socket, [payload]);
+        } else {
+          socket?.write(payload);
+        }
       } catch (error) {
         clearTimeout(timeout);
+        if (capturedWrite && !this.pending.has(id)) return;
         this.pending.delete(id);
         this.observeFrame(() => ({
           type: 'response',
