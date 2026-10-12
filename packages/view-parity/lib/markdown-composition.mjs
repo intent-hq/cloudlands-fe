@@ -399,6 +399,14 @@ export async function activate(
     'native-click-capture',
     'native-click-bubble',
   ]);
+  const frameObservation = await item.frame.evaluate((node) => ({
+    tag: node.tagName,
+    id: node.id,
+    testId: node.getAttribute('data-testid'),
+    nearestTestId: node.closest('[data-testid]')?.getAttribute('data-testid') ?? null,
+    panelId: node.closest('[data-panel-id]')?.getAttribute('data-panel-id') ?? null,
+  }));
+  for (const event of native) expect(event.currentTarget).toEqual(frameObservation);
   return record;
 }
 export function fileArgs(record, workspace, target, adjacent, panel) {
@@ -420,9 +428,8 @@ export function noteArgs(record, url, workspace, adjacent, panel) {
     event: record.capturedClick,
   });
   expect(options.event.target.panelId).toBe(panel);
-  // React delegates the same native event at its root. Record currentTarget;
-  // never manufacture source-button currentTarget equivalence.
-  expect(options.event.currentTarget).not.toBeNull();
+  // Whole-event equality above retains the callback's currentTarget observation.
+  // The catalog describes Elements only; non-Element targets serialize as null.
 }
 export async function noNavigation(item, target) {
   const before = await item.observations();
