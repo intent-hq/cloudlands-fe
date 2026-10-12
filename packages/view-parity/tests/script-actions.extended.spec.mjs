@@ -14,6 +14,7 @@ import {
   capture,
   sameNode,
   reachable,
+  grantScriptClipboard,
   openDialog,
   expectClosed,
   expectEdit,
@@ -21,8 +22,10 @@ import {
 
 test('script actions S3: long plain code scrolls inside the card and remount restores reachable controls', async ({
   page,
+  context,
 }, info) => {
   const item = await openActions(page);
+  await grantScriptClipboard(page, context, info);
   const originalNode = await item.card.elementHandle();
   const content =
     Array.from(

@@ -16,6 +16,7 @@ import {
   expectIcon,
   reachable,
   pasteCurrent,
+  grantScriptClipboard,
   tabToScript,
   openDialog,
   expectClosed,
@@ -24,8 +25,10 @@ import {
 
 test('script actions S1: native copy uses current raw content and exposes copied then reset feedback', async ({
   page,
+  context,
 }, info) => {
   const item = await openActions(page);
+  await grantScriptClipboard(page, context, info);
   const first = '# raw <b>not markup</b>\n\tprintf "%s" "雪 & <tag>"\n\n';
   await field(item.script, 'Script content').fill(first);
   const code = item.card.locator('pre');
@@ -59,8 +62,10 @@ test('script actions S1: native copy uses current raw content and exposes copied
 
 test('script actions S2: Use reports exact current payload and callback without remounting the card', async ({
   page,
+  context,
 }, info) => {
   const item = await openActions(page);
+  await grantScriptClipboard(page, context, info);
   const originalNode = await item.card.elementHandle();
   const payload = {
     name: 'Prepare 雪',
