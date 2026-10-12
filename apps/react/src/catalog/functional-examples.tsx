@@ -13,6 +13,8 @@ import { ModelPickerExamples } from './model-picker-examples';
 import { AgentAvatarExamples } from './agent-avatar-examples';
 import { WorkspacePresentationExamples } from './workspace-presentation-examples';
 import { ResourceIconExamples } from './resource-icon-examples';
+import { SidebarActionsExamples } from './sidebar-actions-examples';
+import { MentionNavigationExamples } from './mention-navigation-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
 import { ConfirmationExample } from './confirmation-example';
@@ -459,6 +461,8 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'effort-picker' && <EffortPickerExamples />}
       {slug === 'model-picker' && <ModelPickerExamples />}
       {slug === 'agent-avatar' && <AgentAvatarExamples />}
+      {slug === 'sidebar-actions' && <SidebarActionsExamples />}
+      {slug === 'mention-navigation' && <MentionNavigationExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -522,6 +526,8 @@ export function hasFunctionalExample(slug: string) {
     'effort-picker',
     'model-picker',
     'agent-avatar',
+    'sidebar-actions',
+    'mention-navigation',
     'diagram-workbench',
     'toast',
     'notify',
