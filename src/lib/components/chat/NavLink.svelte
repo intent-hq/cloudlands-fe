@@ -2,7 +2,8 @@
   import { goto } from '$app/navigation';
   import { store as appStore } from '$store/renderer/store';
   import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
-  import { isResolvableNavTarget, resolveHashToTarget } from '$shared/app-ui-targets';
+  import { isResolvableNavTarget } from '$shared/app-ui-targets';
+  import { getHighlightIdFromTarget as resolveHighlightIdFromTarget } from './nav-link-target';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -22,15 +23,7 @@
   const resolvable = $derived(isResolvableNavTarget(target));
 
   function getHighlightIdFromTarget(value: string): string | null {
-    try {
-      const url = new URL(value, window.location.origin);
-      const hash = decodeURIComponent(url.hash.replace(/^#/, '')).trim();
-      return resolveHashToTarget(hash)?.id ?? (hash || null);
-    } catch {
-      const hashIndex = value.indexOf('#');
-      const hash = hashIndex >= 0 ? value.slice(hashIndex + 1).trim() : '';
-      return resolveHashToTarget(hash)?.id ?? (hash || null);
-    }
+    return resolveHighlightIdFromTarget(value, window.location.origin);
   }
 
   async function handleClick(event: MouseEvent) {
