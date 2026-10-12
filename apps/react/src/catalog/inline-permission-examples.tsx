@@ -106,6 +106,8 @@ export function InlinePermissionExamples() {
   const [mounted, setMounted] = useState(true);
   const [mountRevision, setMountRevision] = useState(0);
   const [keyboardShortcutsEnabled, setKeyboardShortcutsEnabled] = useState(false);
+  const [supplyPendingCount, setSupplyPendingCount] = useState(false);
+  const [supplyKeyboardShortcutsEnabled, setSupplyKeyboardShortcutsEnabled] = useState(false);
   const [width, setWidth] = useState('420');
   const [anchorCount, setAnchorCount] = useState(0);
   const [anchorValue, setAnchorValue] = useState('');
@@ -153,6 +155,11 @@ export function InlinePermissionExamples() {
     setInputError('');
   }
 
+  const suppliedProps = {
+    ...(supplyPendingCount ? { pendingCount } : {}),
+    ...(supplyKeyboardShortcutsEnabled ? { keyboardShortcutsEnabled } : {}),
+  };
+
   return (
     <section
       className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
@@ -172,6 +179,8 @@ export function InlinePermissionExamples() {
         Remount resets the component; the mounted switch removes it. Parsing, option filtering and
         shortcuts belong to the actual component. Option IDs, labels and descriptions pass through
         unchanged. The focus anchors below stay mounted independently of the permission component.
+        Both optional props start omitted so the component supplies its own defaults. Enable each
+        supply switch to pass the corresponding caller value without remounting.
       </p>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         {(
@@ -252,6 +261,30 @@ export function InlinePermissionExamples() {
       )}
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         <FormField
+          label="Supply pendingCount prop"
+          control={(field) => (
+            <Switch
+              {...field}
+              ariaLabel="Supply pendingCount prop"
+              data-testid="permission-supply-pendingCount"
+              checked={supplyPendingCount}
+              onCheckedChange={setSupplyPendingCount}
+            />
+          )}
+        />
+        <FormField
+          label="Supply keyboardShortcutsEnabled prop"
+          control={(field) => (
+            <Switch
+              {...field}
+              ariaLabel="Supply keyboardShortcutsEnabled prop"
+              data-testid="permission-supply-keyboardShortcutsEnabled"
+              checked={supplyKeyboardShortcutsEnabled}
+              onCheckedChange={setSupplyKeyboardShortcutsEnabled}
+            />
+          )}
+        />
+        <FormField
           label="Permission component mounted"
           control={(field) => (
             <Switch
@@ -318,12 +351,7 @@ export function InlinePermissionExamples() {
         data-testid="inline-permission-frame"
       >
         {mounted && (
-          <InlinePermissionRequest
-            key={mountRevision}
-            request={request}
-            pendingCount={pendingCount}
-            keyboardShortcutsEnabled={keyboardShortcutsEnabled}
-          />
+          <InlinePermissionRequest key={mountRevision} request={request} {...suppliedProps} />
         )}
       </div>
       <pre
@@ -336,6 +364,9 @@ export function InlinePermissionExamples() {
             request,
             pendingCount,
             keyboardShortcutsEnabled,
+            supplyPendingCount,
+            supplyKeyboardShortcutsEnabled,
+            suppliedProps,
             inputRevision,
             mounted,
             mountRevision,
