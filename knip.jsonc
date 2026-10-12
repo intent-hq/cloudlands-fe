@@ -1,8 +1,36 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  // The independent React renderer owns its checks; retain this gate's Svelte scope.
-  "ignoreWorkspaces": ["apps/react"],
   "workspaces": {
+    "apps/react": {
+      "entry": [
+        // TanStack Start resolves these conventional entries via vite.config.ts.
+        "src/client.tsx",
+        "src/router.tsx",
+        // package.json invokes Vite's default config and this explicit preview config.
+        "vite.config.ts",
+        "vite.static.config.ts",
+        // Browser imports use computed URLs, which Knip cannot follow. These modules
+        // are loaded by packages/view-parity/lib/provider-runtime.mjs (rpc/runtimeSnapshot).
+        "src/features/backend/backend-transport.ts",
+        "src/store/index.ts",
+        "src/store/principal/principal-selectors.ts",
+        "src/store/host-execution/host-execution-selectors.ts",
+        "src/store/provider-catalog/provider-catalog-selectors.ts",
+        "src/store/provider-models/provider-models-selectors.ts",
+        // packages/view-parity/lib/agent-metadata.mjs (acquire/snapshot).
+        "src/features/agent/agent-metadata.ts",
+        "src/store/agent-session/agent-session-selectors.ts",
+        // packages/view-parity/tests/agent-metadata.extended.spec.mjs.
+        "src/features/agent/agent-client.ts",
+        // packages/view-parity/tests/provider-runtime.extended.spec.mjs.
+        "src/features/settings/settings-client.ts",
+        // packages/view-parity/tests/workspace-client.extended.spec.mjs and its helpers.
+        "src/features/workspace/workspace-client.ts",
+      ],
+      // Analyze the source graph so nested React imports count as shared-code consumers;
+      // unreachable ports remain reportable instead of becoming entry points themselves.
+      "project": ["src/**/*.{ts,tsx,css}", "vite*.config.ts"],
+    },
     "packages/view-parity": {
       // The runner passes this config to Playwright through a computed file path.
       "entry": ["scripts/run.mjs", "playwright.config.mjs", "tests/**/*.spec.mjs"],
