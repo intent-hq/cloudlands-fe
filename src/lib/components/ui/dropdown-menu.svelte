@@ -17,7 +17,7 @@
     side = 'bottom',
     portal = true,
     collisionPadding = 8,
-    alignIconColumn = false,
+    alignIconColumn = true,
     trigger,
     content,
     contentClass = '',

@@ -194,10 +194,10 @@
 
 {#snippet favicon(entry: BrowserTabEntry)}
   <span
-    class="relative inline-flex size-3.5 shrink-0 items-center justify-center"
+    class="relative inline-flex size-(--menu-icon-size) shrink-0 items-center justify-center"
     aria-hidden="true"
   >
-    <Fa icon={faWindowMaximize} size={12} class="size-3! opacity-30" />
+    <Fa icon={faWindowMaximize} class="size-(--menu-icon-size) opacity-30" />
     {#if entry.tab.faviconUrl}
       <img
         src={entry.tab.faviconUrl}

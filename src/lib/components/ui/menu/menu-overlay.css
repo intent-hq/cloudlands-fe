@@ -2,10 +2,19 @@
   .menu-overlay {
     max-width: calc(100dvw - 1rem);
   }
+}
 
-  /* Keep compact trailing glyphs on the label's first line, not its description.
-     Indicator also serves value pickers; only menu rows opt into this contract. */
-  .menu-row > :is([data-slot='menu-item-indicator'], [data-slot='menu-sub-chevron']) {
-    margin-block-start: max(0px, calc((1lh - 1rem) / 2));
-  }
+/* Menu geometry takes precedence over caller-specific icon size utilities. */
+.menu-row:not(.panel-move-direction) > svg:not([data-agent-avatar]),
+.menu-row [data-slot='button-label'] > svg:not([data-agent-avatar]),
+[data-slot='menu-item-leading'] :is(svg:not([data-agent-avatar]), img),
+.menu-row > [data-slot='action-row-leading'] :is(svg:not([data-agent-avatar]), img) {
+  width: var(--menu-icon-size);
+  height: var(--menu-icon-size);
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.menu-row:not(.panel-move-direction) > svg:not([data-agent-avatar]) {
+  margin-block-start: max(0px, calc((1lh - var(--menu-icon-size)) / 2));
 }
