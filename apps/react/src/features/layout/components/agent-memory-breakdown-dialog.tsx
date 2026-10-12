@@ -14,7 +14,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import {
   selectAgentMemoryUsage,
   selectAgentMemoryUsageError,
-} from '@/store/daemon-health/agent-memory-selectors';
+} from '@/store/daemon-health/daemon-health-selectors';
 import { observeOverflow } from '$lib/actions/observe-overflow';
 import { formatDateTime, formatNumber } from '$lib/i18n/format';
 import { formatMemory } from '$lib/utils/daemon-status-format';

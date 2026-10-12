@@ -1,6 +1,8 @@
 import { store } from '../index';
 
-/** ReactStore bindings for the canonical daemon-health memory sample. */
+/** ReactStore bindings for the shared daemon-health reducer. */
+export const selectDaemonHealth = store.createSelector((state) => state.daemonHealth.health);
+
 export const selectAgentMemoryUsage = store.createSelector(
   (state) => state.daemonHealth.agentMemoryUsage,
 );
