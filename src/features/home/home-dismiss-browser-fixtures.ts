@@ -1,5 +1,8 @@
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
+import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
+import { appClient } from '$lib/client';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import {
   WorkspaceStatus,
@@ -13,6 +16,8 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
 import {
   replaceWorkspaceList,
   loadWorkspacesRequested,
+  removeWorkspaceEntity,
+  resetWorkspaceState,
   setPendingCreation,
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
@@ -85,6 +90,12 @@ interface AdmissionListRead {
   status: 'held' | 'passed' | 'failed';
   workspaces?: Workspace[];
 }
+interface AdmissionDetailRead {
+  principalId: string;
+  context: string | null;
+  status: 'held' | 'passed';
+  workspace: Workspace;
+}
 declare global {
   interface Window {
     __homeDismiss?: {
@@ -105,8 +116,18 @@ declare global {
       setActivity: (activity: 'idle' | 'agent_running') => void;
       changePrincipal: (principalId: string, failList?: boolean) => void;
       reconnect: () => void;
-      releaseList: () => void;
+      releaseList: (principalId?: string) => void;
       refreshAdmission: () => void;
+      holdNextList: () => void;
+      startListRead: () => void;
+      listResults: Array<{ principalId: string; workspaces?: Workspace[]; error?: string }>;
+      listReads: AdmissionListRead[];
+      holdNextDetail: () => void;
+      startDetailRead: () => void;
+      startMissingEntityRead: () => void;
+      releaseDetail: () => void;
+      detailReads: AdmissionDetailRead[];
+      detailResults: Array<{ principalId: string; workspace?: Workspace }>;
       addPendingCreation: () => void;
       admissionSnapshot: () => {
         principalId: string | null;
@@ -134,6 +155,7 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
     myRole: collaborator ? ('collaborator' as const) : ('owner' as const),
   }));
   store.dispatch(resetHomeWorkspaceView());
+  if (admissions) store.dispatch(resetWorkspaceState());
   store.dispatch(replaceWorkspaceList(initialWorkspaces));
   store.dispatch(setWorkspaceHasLoaded(true));
   store.dispatch(setRepos([]));
@@ -143,9 +165,21 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
   const saved = new Map<string, Workspace>();
   const acknowledged = new Map<string, AttentionReminderReason[]>();
   const listReads: AdmissionListRead[] = [];
+  const listResults: NonNullable<Window['__homeDismiss']>['listResults'] = [];
+  const detailReads: AdmissionDetailRead[] = [];
+  const detailResults: NonNullable<Window['__homeDismiss']>['detailResults'] = [];
+  const heldLists = new Map<AdmissionListRead, () => void>();
   let holdList = false;
   let failList = false;
-  let releaseList = () => {};
+  let holdDetail = false;
+  let releaseDetail = () => {};
+  const releaseLists = (caller?: string) => {
+    for (const [entry, resolve] of heldLists) {
+      if (caller && entry.principalId !== caller) continue;
+      heldLists.delete(entry);
+      resolve();
+    }
+  };
   let hold = false,
     fail = false,
     holdResponse = false;
@@ -212,24 +246,58 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
     calls,
     responses,
     reads,
+    listResults,
+    listReads,
+    detailReads,
+    detailResults,
     changePrincipal: (caller, shouldFail = false) => {
       failList = shouldFail;
       admit(caller);
     },
     reconnect: () => admit(principalId, true),
-    releaseList: () => releaseList(),
+    releaseList: releaseLists,
     refreshAdmission: () => {
       failList = false;
       store.dispatch(loadWorkspacesRequested());
     },
-    addPendingCreation: () =>
+    holdNextList: () => {
+      holdList = true;
+    },
+    startListRead: () => {
+      const caller = principalId;
+      void appClient.workspaces.list({ includeArchived: true }).then(
+        (workspaces) => listResults.push({ principalId: caller, workspaces }),
+        (error: unknown) => listResults.push({ principalId: caller, error: String(error) }),
+      );
+    },
+    holdNextDetail: () => {
+      holdDetail = true;
+    },
+    startDetailRead: () => {
+      const caller = principalId;
+      void ensureWorkspaceDetail('dismiss-review').then((workspace) =>
+        detailResults.push({ principalId: caller, workspace }),
+      );
+    },
+    startMissingEntityRead: () => {
+      store.dispatch(removeWorkspaceEntity('dismiss-review'));
+      routeDaemonEventsNotification('events.event', {
+        type: 'workspace:displayStatus-changed',
+        workspaceId: 'dismiss-review',
+        data: { workspaceId: 'dismiss-review', displayStatus: 'needs_attention' },
+      });
+    },
+    releaseDetail: () => releaseDetail(),
+    addPendingCreation: () => {
       store.dispatch(
         setPendingCreation({
           ...get(),
           id: WorkspaceId('pending-reminder'),
           title: 'Pending review',
         }),
-      ),
+      );
+      store.dispatch(loadWorkspacesRequested());
+    },
     admissionSnapshot: () => ({
       principalId: store.state.principal.snapshot?.principal.id ?? null,
       context: selectPrincipalActionContext.select(store.state),
@@ -334,40 +402,63 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
     invoke: async (channel, payload) => {
       const request = payload as { method?: string; params?: DismissCall['params'] };
       const caller = principalId;
-      if (admissions && channel === WORKSPACE_CHANNELS.LIST) {
+      if (
+        admissions &&
+        channel === IPC_CHANNELS.BACKEND.REQUEST &&
+        request?.method === 'workspace.list'
+      ) {
+        const shouldHold = holdList;
+        const shouldFail = failList;
+        holdList = false;
         const entry: AdmissionListRead = {
           principalId: caller,
           context: selectPrincipalActionContext.select(store.state),
-          status: 'held',
+          status: shouldHold ? 'held' : 'passed',
+          workspaces: initialWorkspaces.map((row) =>
+            projectWorkspace(saved.get(row.id) ?? row, caller),
+          ),
         };
         listReads.push(entry);
-        if (holdList) {
-          holdList = false;
-          await new Promise<void>((resolve) => {
-            releaseList = resolve;
-          });
+        if (shouldHold) {
+          await new Promise<void>((resolve) => heldLists.set(entry, resolve));
         }
-        if (failList) {
+        if (shouldFail) {
           entry.status = 'failed';
-          return { ok: false, error: 'Workspace list unavailable' };
+          return {
+            ok: false,
+            error: { code: 'LIST_UNAVAILABLE', message: 'Workspace list unavailable' },
+          };
         }
         entry.status = 'passed';
-        entry.workspaces = initialWorkspaces.map((row) =>
-          projectWorkspace(saved.get(row.id) ?? row, caller),
-        );
-        return { ok: true, data: entry.workspaces };
+        return { ok: true, result: { workspaces: entry.workspaces } };
       }
       if (channel === IPC_CHANNELS.BACKEND.REQUEST && request?.method === 'workspace.get') {
         const params = request.params;
         if (!params) throw new Error('Missing workspace.get parameters');
         reads.push(params.workspaceId);
+        const server = saved.get(params.workspaceId) ?? get(params.workspaceId);
+        const workspace = { ...projectWorkspace(server, caller) };
+        if (admissions) {
+          const shouldHold = holdDetail;
+          holdDetail = false;
+          workspace.setupScript = 'detail-for-' + caller;
+          const entry: AdmissionDetailRead = {
+            principalId: caller,
+            context: selectPrincipalActionContext.select(store.state),
+            status: shouldHold ? 'held' : 'passed',
+            workspace,
+          };
+          detailReads.push(entry);
+          if (shouldHold)
+            await new Promise<void>((resolve) => {
+              releaseDetail = resolve;
+            });
+          entry.status = 'passed';
+        }
         return {
           ok: true,
           result: {
-            workspace: projectWorkspace(
-              saved.get(params.workspaceId) ?? get(params.workspaceId),
-              caller,
-            ),
+            workspace,
           },
         };
       }
@@ -418,13 +509,21 @@ export function setupHomeDismissFixtures(collaborator = false, admissions = fals
       return { ok: true, result: { workspace } };
     },
   };
+  const restoreList = admissions
+    ? overrideMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => ({
+        success: true,
+        data: await appClient.workspaces.list({ includeArchived: true }),
+      }))
+    : null;
   const stopSaga = store.runSaga(workspaceOperationsSaga);
   const stopReads = admissions ? store.runSaga(lifecycleReadSaga) : null;
   return () => {
     stopReads?.();
     stopSaga();
-    releaseList();
+    releaseLists();
+    releaseDetail();
     release();
+    restoreList?.();
     window.electronAPI = previous;
     delete window.__homeDismiss;
   };

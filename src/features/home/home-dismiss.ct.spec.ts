@@ -6,6 +6,196 @@ const observedReasons = [
   { id: 'agent:question', revision: 'question-1' },
 ];
 
+test('production detail reads belong to one person and coalesce within that admission', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, { props: { admissions: true } });
+  const row = component.getByRole('option', { name: 'Review onboarding' });
+  await row.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'idle');
+  const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  await testInfo.attach('detail-person-a-before', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.evaluate(() => {
+    window.__homeDismiss!.holdNextDetail();
+    window.__homeDismiss!.startDetailRead();
+    window.__homeDismiss!.startDetailRead();
+  });
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.detailReads.length)).toBe(1);
+  const held = await page.evaluate(() => window.__homeDismiss!.detailReads[0]);
+  expect(held.status).toBe('held');
+  expect(held.workspace.attentionReminder?.dismissed).toBe(true);
+  await page.evaluate(() => window.__homeDismiss!.changePrincipal('person-b'));
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window
+            .__homeDismiss!.admissionSnapshot()
+            .listReads.filter((read) => read.status === 'held').length,
+      ),
+    )
+    .toBe(1);
+  await page.evaluate(() => window.__homeDismiss!.releaseList());
+  await expect
+    .poll(() => page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.dismissed))
+    .toBe(false);
+  await page.evaluate(() => window.__homeDismiss!.startDetailRead());
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.detailReads.length)).toBe(2);
+  await expect
+    .poll(() => page.evaluate(() => window.__homeDismiss!.snapshot().setupScript))
+    .toBe('detail-for-person-b');
+  const fresh = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  await page.evaluate(() => window.__homeDismiss!.releaseDetail());
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.detailResults.length)).toBe(3);
+  const after = await page.evaluate(() => ({
+    state: window.__homeDismiss!.admissionSnapshot(),
+    reads: window.__homeDismiss!.detailReads,
+    results: window.__homeDismiss!.detailResults,
+  }));
+  expect(after.reads.map((read) => read.principalId)).toEqual([before.principalId, 'person-b']);
+  expect(after.state.workspace.setupScript).toBe('detail-for-person-b');
+  expect(after.state.workspace.attentionReminder?.dismissed).toBe(false);
+  expect(after.state.hudCard?.stateKey).toBe('wait');
+  expect(after.state.tabStatus?.categories.map((item) => item.category)).toContain('review');
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'needs-you');
+  await testInfo.attach('detail-person-b-after', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await testInfo.attach('production-detail-admission-proof', {
+    body: JSON.stringify({ before, held, fresh, after }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+test('missing-entity event reads cannot overwrite another person’s fresh row', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, { props: { admissions: true } });
+  const row = component.getByRole('option', { name: 'Review onboarding' });
+  await row.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'idle');
+  const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  await page.evaluate(() => {
+    window.__homeDismiss!.holdNextDetail();
+    window.__homeDismiss!.startMissingEntityRead();
+  });
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.detailReads.length)).toBe(1);
+  await expect(row).toHaveCount(0);
+  await page.evaluate(() => window.__homeDismiss!.changePrincipal('person-b'));
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__homeDismiss!.listReads.filter((read) => read.status === 'held').length,
+      ),
+    )
+    .toBe(1);
+  await page.evaluate(() => window.__homeDismiss!.releaseList());
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'needs-you');
+  await expect
+    .poll(() => page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.dismissed))
+    .toBe(false);
+  await page.evaluate(() => window.__homeDismiss!.startMissingEntityRead());
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.detailReads.length)).toBe(2);
+  await expect(row).toBeVisible();
+  expect(await page.evaluate(() => window.__homeDismiss!.snapshot().setupScript)).toBe(
+    'detail-for-person-b',
+  );
+  const fresh = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  await page.evaluate(() => window.__homeDismiss!.releaseDetail());
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__homeDismiss!.detailReads.filter((read) => read.status === 'passed').length,
+      ),
+    )
+    .toBe(2);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const after = await page.evaluate(() => ({
+    state: window.__homeDismiss!.admissionSnapshot(),
+    reads: window.__homeDismiss!.detailReads,
+  }));
+  expect(after.reads.map((read) => read.principalId)).toEqual([before.principalId, 'person-b']);
+  expect(after.state.workspace.setupScript).toBe('detail-for-person-b');
+  expect(after.state.workspace.attentionReminder?.dismissed).toBe(false);
+  expect(after.state.hudCard?.stateKey).toBe('wait');
+  expect(after.state.tabStatus?.categories.map((item) => item.category)).toContain('review');
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'needs-you');
+  await testInfo.attach('missing-entity-admission-proof', {
+    body: JSON.stringify({ before, fresh, after }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+test('concurrent workspace lists do not reuse another person’s held promise', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, { props: { admissions: true } });
+  const row = component.getByRole('option', { name: 'Review onboarding' });
+  await row.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'idle');
+  const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  await page.evaluate(() => {
+    window.__homeDismiss!.holdNextList();
+    window.__homeDismiss!.startListRead();
+    window.__homeDismiss!.startListRead();
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.__homeDismiss!.admissionSnapshot().listReads.length))
+    .toBe(1);
+  await page.evaluate(() => window.__homeDismiss!.changePrincipal('person-b'));
+  await expect
+    .poll(() => page.evaluate(() => window.__homeDismiss!.admissionSnapshot().listReads.length))
+    .toBe(2);
+  const held = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  expect(held.listReads.map((read) => read.principalId)).toEqual([before.principalId, 'person-b']);
+  expect(
+    held.listReads[0].workspaces?.find((workspace) => workspace.id === 'dismiss-review')
+      ?.attentionReminder?.dismissed,
+  ).toBe(true);
+  expect(
+    held.listReads[1].workspaces?.find((workspace) => workspace.id === 'dismiss-review')
+      ?.attentionReminder?.dismissed,
+  ).toBe(false);
+  await page.evaluate(() => window.__homeDismiss!.releaseList('person-b'));
+  await expect
+    .poll(() => page.evaluate(() => window.__homeDismiss!.snapshot().attentionReminder?.dismissed))
+    .toBe(false);
+  const fresh = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
+  await page.evaluate(() => window.__homeDismiss!.releaseList());
+  await expect.poll(() => page.evaluate(() => window.__homeDismiss!.listResults.length)).toBe(2);
+  const after = await page.evaluate(() => ({
+    state: window.__homeDismiss!.admissionSnapshot(),
+    results: window.__homeDismiss!.listResults,
+  }));
+  expect(after.results.every((result) => result.error?.includes('WORKSPACE_READ_RETIRED'))).toBe(
+    true,
+  );
+  expect(after.state.workspace.attentionReminder?.dismissed).toBe(false);
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'needs-you');
+  await testInfo.attach('concurrent-list-admission-proof', {
+    body: JSON.stringify({ before, held, fresh, after }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
 for (const surface of ['home', 'sidebar'] as const) {
   for (const refresh of ['delayed', 'failed'] as const) {
     test(
@@ -31,7 +221,10 @@ for (const surface of ['home', 'sidebar'] as const) {
         await page.keyboard.press('Shift+F10');
         await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
         await expect(status).toHaveAttribute(attribute, surface === 'home' ? 'idle' : 'waiting');
-        if (pending) await page.evaluate(() => window.__homeDismiss!.addPendingCreation());
+        if (pending) {
+          await page.evaluate(() => window.__homeDismiss!.addPendingCreation());
+          await expect(component.getByRole('option', { name: 'Pending review' })).toBeVisible();
+        }
         const before = await page.evaluate(() => window.__homeDismiss!.admissionSnapshot());
         expect(before.workspace.attentionReminder?.dismissed).toBe(true);
         expect(before.hudCard?.stateKey).toBe('idle');

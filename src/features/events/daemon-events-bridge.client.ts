@@ -14,6 +14,10 @@ import {
 } from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import {
+  captureWorkspaceReadContext,
+  type WorkspaceReadContext,
+} from '$lib/client/live/workspace-read-context';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -2365,19 +2369,26 @@ function handleWaitingChangedEvent(
  * with a pending local deletion are skipped so a tombstoned row is not
  * resurrected.
  */
-const missingEntityFetchInFlightByWorkspace = new Set<string>();
+const missingEntityFetchInFlightByWorkspace = new Map<string, WorkspaceReadContext>();
 const missingEntityFetchFollowUpWantedByWorkspace = new Set<string>();
 
-async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promise<void> {
-  const { backendRequest } = await import('$lib/client/live/backend-transport');
+async function runHydrateMissingWorkspaceEntityFetch(
+  workspaceId: string,
+  key: string,
+  read: WorkspaceReadContext,
+): Promise<void> {
   try {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    read.assertCurrent();
     const response = (await backendRequest('workspace.get', { workspaceId })) as
       { workspace?: Workspace } | undefined;
+    read.assertCurrent();
     const workspace = response?.workspace;
     if (workspace) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      if (read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId])
+        appStore.dispatch(setWorkspaceEntity(workspace));
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
@@ -2388,16 +2399,22 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
     // set across the trailing fetch so triggers arriving during it keep
     // coalescing instead of starting a parallel fetch; it is only cleared
     // when no follow-up is pending.
-    if (missingEntityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runHydrateMissingWorkspaceEntityFetch(workspaceId);
-    } else {
-      missingEntityFetchInFlightByWorkspace.delete(workspaceId);
+    if (missingEntityFetchInFlightByWorkspace.get(key) === read) {
+      const followUp = missingEntityFetchFollowUpWantedByWorkspace.delete(key);
+      if (followUp && read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId]) {
+        void runHydrateMissingWorkspaceEntityFetch(workspaceId, key, read);
+      } else {
+        missingEntityFetchInFlightByWorkspace.delete(key);
+      }
     }
   }
 }
 
 async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
+  const read = captureWorkspaceReadContext();
+  const key = JSON.stringify([read.key, workspaceId]);
   const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+  if (!read.isCurrent()) return;
   const state = appStore.state as {
     workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
   };
@@ -2408,13 +2425,13 @@ async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<voi
   // the present entity but the older fetch can resolve last and overwrite the
   // merged flag with its stale projection — queuing a trailing fetch (whose
   // projection postdates this delta) guarantees convergence.
-  if (missingEntityFetchInFlightByWorkspace.has(workspaceId)) {
-    missingEntityFetchFollowUpWantedByWorkspace.add(workspaceId);
+  if (missingEntityFetchInFlightByWorkspace.get(key)?.isCurrent()) {
+    missingEntityFetchFollowUpWantedByWorkspace.add(key);
     return;
   }
   if (getItem(state.workspace.workspaces as never, workspaceId as never)) return;
-  missingEntityFetchInFlightByWorkspace.add(workspaceId);
-  await runHydrateMissingWorkspaceEntityFetch(workspaceId);
+  missingEntityFetchInFlightByWorkspace.set(key, read);
+  await runHydrateMissingWorkspaceEntityFetch(workspaceId, key, read);
 }
 
 /**

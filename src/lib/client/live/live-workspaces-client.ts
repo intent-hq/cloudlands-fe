@@ -14,6 +14,7 @@ import { createRepositorySelectionTransport } from './repository-selection-trans
 import type { RepositoryContextRequest } from '$shared/types/repository-context';
 import type { RepositoryContextUpdate } from '../app-client';
 import { createRepositoryContextTransport } from './repository-context-transport';
+import { captureWorkspaceReadContext, type WorkspaceReadContext } from './workspace-read-context';
 /**
  * Live workspaces domain backed by the intentd daemon.
  *
@@ -182,27 +183,37 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return createRepositoryContextTransport().observe(request, handler);
   }
 
-  private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
-  private readonly getRequests = new Map<string, Promise<Workspace | null>>();
+  private readonly listRequests = new Map<
+    string,
+    { read: WorkspaceReadContext; promise: Promise<Workspace[]> }
+  >();
+  private readonly getRequests = new Map<
+    string,
+    { read: WorkspaceReadContext; promise: Promise<Workspace | null> }
+  >();
 
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
-    const existing = this.listRequests.get(includeArchived);
-    if (existing) return existing;
+    const read = captureWorkspaceReadContext();
+    const key = JSON.stringify([read.key, includeArchived]);
+    const existing = this.listRequests.get(key);
+    if (existing?.read.isCurrent()) return existing.promise;
 
     const request = backendRequest<{ workspaces?: unknown[] }>(
       'workspace.list',
       includeArchived ? { includeArchived: true } : undefined,
     ).then((result) => {
+      read.assertCurrent();
       const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
       return workspaces.map((workspace) =>
         normalizeWorkspace(workspace as Record<string, unknown>),
       );
     });
-    this.listRequests.set(includeArchived, request);
+    const entry = { read, promise: request };
+    this.listRequests.set(key, entry);
     const clearRequest = () => {
-      if (this.listRequests.get(includeArchived) === request) {
-        this.listRequests.delete(includeArchived);
+      if (this.listRequests.get(key) === entry) {
+        this.listRequests.delete(key);
       }
     };
     void request.then(clearRequest, clearRequest);
@@ -210,19 +221,22 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   }
 
   /**
-   * `workspace.get` (§5.1), single-flighted per workspace id: every caller —
+   * `workspace.get` (§5.1), single-flighted per workspace and admission: every caller —
    * `open`, the workspace-load saga, and the on-demand detail hydration
    * helpers — shares one in-flight request, so overlapping reads never fan
    * out into duplicate RPCs. The entry clears once the request settles either
    * way, so a rejected read never poisons later ones.
    */
   get(id: string): Promise<Workspace | null> {
-    const existing = this.getRequests.get(id);
-    if (existing) return existing;
+    const read = captureWorkspaceReadContext();
+    const key = JSON.stringify([read.key, id]);
+    const existing = this.getRequests.get(key);
+    if (existing?.read.isCurrent()) return existing.promise;
 
     const request = backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
       workspaceId: id,
     }).then((result) => {
+      read.assertCurrent();
       const raw =
         result && typeof result === 'object' && 'workspace' in result
           ? (result as { workspace?: unknown }).workspace
@@ -230,10 +244,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       if (!raw || typeof raw !== 'object') return null;
       return normalizeWorkspace(raw as Record<string, unknown>);
     });
-    this.getRequests.set(id, request);
+    const entry = { read, promise: request };
+    this.getRequests.set(key, entry);
     const clearRequest = () => {
-      if (this.getRequests.get(id) === request) {
-        this.getRequests.delete(id);
+      if (this.getRequests.get(key) === entry) {
+        this.getRequests.delete(key);
       }
     };
     void request.then(clearRequest, clearRequest);
