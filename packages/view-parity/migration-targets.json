@@ -8,20 +8,20 @@
     "sourceRecordCount": 1890
   },
   "audit": {
-    "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+    "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
     "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
     "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
-    "method": "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer.",
+    "method": "Bounded original003/final0afebba9 static audit adds only DetectedScriptsCard local implemented.236/1430(231components+5modules),178partial58localimplemented,230targets88reviews. All229prior directtargets byteequal;1889other rows and87historical reviews retained. Original/current class and compiled-source inverse, normal light/dark token proof and canonical icon/import/caller review. Support484 neutral tuple/type and metadata extraction explicitly reviewed without denominator inflation.18prior source invalidations/failures/receipts retained; new DetectedScripts source drift not waived. No native/visual/product acceptance transfer.",
     "functionalResultsReviewed": false,
     "visualResultsReviewed": false,
-    "reviewedAt": "2026-10-12T06:41:16.151484+00:00",
+    "reviewedAt": "2026-10-12T06:56:04.352188+00:00",
     "checkpointAdvance": {
-      "previousLedgerCommit": "9beea0cd41520964a03093b9b4a047161f66f99a",
-      "previousAuditCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
-      "unchangedUniqueDirectTargets": 228,
-      "changedUniqueDirectTargets": 1,
-      "retainedHistoricalReviewCount": 86,
-      "meaning": "Advance common validation pin only, preserving historical inspected/source/support/evidence pins and previous235-view checkpoint. Exactlyone targeted Response row review; no new mappings, source drift or status upgrade. Historical gap now has a static correction and pending native closure, not retroactive acceptance."
+      "previousLedgerCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+      "previousAuditCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "unchangedUniqueDirectTargets": 229,
+      "changedUniqueDirectTargets": 0,
+      "retainedHistoricalReviewCount": 87,
+      "meaning": "Advance common validation pin only; preserve historical inspected/source/support/evidence pins and full235-view checkpoint. One new local leaf map, no old row refresh. Semantic source/class drift is explicit; support-only tuple/type/catalog changes add no views."
     }
   },
   "statusDefinitions": {
@@ -74,7 +74,8 @@
     "Operational window/panel2d988e34 adds exactly1component+1inventoriedreactivity module as partial:231/1430(226components+5modules),176partial55implemented,225directtargets. All223old targets byteequal;83old reviews/full audit/rows/cases/29receipts/failures retained. Original panel source extraction has exact741-line inverse and unchanged public Svelte compiler API but remains explicit drift/new invalidation; all14old invalidations retained. React hook uses committed acquire/release rather than direct owner, and window rebinds scope versus original snapshot; production consumers/lifetime/native geometry/admission/full motion/source pixels remain unverified. Neutral core and catalog add no denominator. MV9 bare genuine-image destination correction is caller support only: ic3oTB FAIL and valid-angle canonical defect remain, no parser fix or invalid-fixture waiver. Source-owner dead-code failures retained without baseline-CI claim; static ledger approval only.",
     "Response/Cylinder1cea8e2b adds2components:233/1430(228components+5modules),177partial56localimplemented,227targets85reviews. Cylinder stated local contract staticimplemented; Response stays partial for saved-owner replacement publication dependency gap despite source-matching branch tokens. All225old targets byteequal/84old reviews/full rows/history/cases/29receipts/failures preserved. Two150/800 source seams keep exact inverse but add sourceinvalidations, all15old retained; pure cluster extraction exact original declarations/base facade, supporting-only. Twelve support deltas include d1d759 global defaultToast fix, original I6pNbdtnFAIL/unknownclipboard retained. No native/visual/fullmotion/sourcepair/product claims. Source-owner579dead-code failures including2newunuseddefault exports recorded, no baselineCI claim. Later NavLink outsidepin.",
     "Bounded original003/frozen34161b6d static audit: NavLink partial and AugmentCodeSnippet local implemented; targeted existing ChatImageBlock caption-only correction.235/1430(230components+5modules),178partial57localimplemented,229targets86reviews.227previous target identities checked:226byteequal, only authorized caption target changed with exact inverse/fulloldrow preserved.85old reviews/history/cases/29receipts/failures/17invalidations retained. NavLink helper extraction adds explicit source drift; support adds no denominator. Response saved-owner gap open; native/visual/product acceptance remains separate. Three changed support paths preserve original/previous/current hashes and all5710 historical citations. NavLink source drift exact inverse is not a runtime waiver. Original I8 remounted title failure remains, final overflow unmeasured; no I6/I7 transfer. Later ResponseGroup owner fix excluded. No released user-help impact.",
-    "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer. Current unsuppressed UIinvariants3fail/Knip579 retained as source-owner reports, no baselineCI or all-gates-green claim. Original gap is historical; no additional static mismatch found, but runtime/current-owner/deadline/source-pair/fullmotion/StrictMode closure remains separate. Candidate preparation receipt/log hashes only; later native image successes not transferred."
+    "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer. Current unsuppressed UIinvariants3fail/Knip579 retained as source-owner reports, no baselineCI or all-gates-green claim. Original gap is historical; no additional static mismatch found, but runtime/current-owner/deadline/source-pair/fullmotion/StrictMode closure remains separate. Candidate preparation receipt/log hashes only; later native image successes not transferred.",
+    "Bounded original003/final0afebba9 static audit adds only DetectedScriptsCard local implemented.236/1430(231components+5modules),178partial58localimplemented,230targets88reviews. All229prior directtargets byteequal;1889other rows and87historical reviews retained. Original/current class and compiled-source inverse, normal light/dark token proof and canonical icon/import/caller review. Support484 neutral tuple/type and metadata extraction explicitly reviewed without denominator inflation.18prior source invalidations/failures/receipts retained; new DetectedScripts source drift not waived. No native/visual/product acceptance transfer. Seven supporting deltas carry original/previous/current provenance;11458 historical citations preserved in unchanged old reviews, summarized as51 prior support profiles. Normal-theme compiled declaration proof is not source-runtime/pixel acceptance. No guard rewrites or released help impact."
   ],
   "reviews": {
     "foundation": {
@@ -84,7 +85,7 @@
       ],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Core control public API correspondence; native ref/event and motion semantics require scoped execution evidence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -98,7 +99,7 @@
         "2a6932d76f354df892bbea784ffa588e9fd8554c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Collection selection/virtualization public API and task handoff, including the committed keyboard focus correction.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -112,7 +113,7 @@
         "89195a5a5337c4ae0e7bd34ffc7f4f7ae9934fc2"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Form/content dialog prop surfaces and lifecycle handoff; no cross-framework modal behavior accepted here.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -128,7 +129,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Catalog controls, page routing, fixtures and shell source correspondence; explicit partial shell and avatar fixtures.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -142,7 +143,7 @@
         "5fe1c80292675a8c8eb6c223e30f4c8e5e320da1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Media overlay and zoom public API, including committed portal event containment fix.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -153,7 +154,7 @@
       ],
       "implementationCommits": ["f58a0bc4d5b4ca61b728228347cd703665aa5b8b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Image/video composition API and task provenance; audit candidate pins actual files, no historical run accepted.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -164,7 +165,7 @@
       ],
       "implementationCommits": ["12941c17b6d9770fea3c839f02db47d1e8699d3b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "TipTap node-view and suggestion/mention public API and callback ownership.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -178,7 +179,7 @@
         "fa205a31d309b01b09d01e31bc548c426755081f"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Wizard draft/completion/imperative-focus and local attachment presentation APIs; neutral type extraction is reported as source drift.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -189,7 +190,7 @@
       ],
       "implementationCommits": ["ada77a072cba788db51660ee4f0228c664398faa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Autosave and MCP JSON callback component APIs and implementation handoff.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -200,7 +201,7 @@
       ],
       "implementationCommits": ["61cc369a1662945da1e0ea1028154ee8b6608ca6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Replace-agent modal body and callback API; not a domain mutation or live agent journey.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -211,7 +212,7 @@
       ],
       "implementationCommits": ["062bfa560a4e8a11f70ebf81471132b2e28bcfd0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Controlled directory picker callback surface and source error/navigation state API.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -225,7 +226,7 @@
         "3c333bd696af0596e37bd56d3f82c8e5ec19a81a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Live directory modal API and shared factory handoff. No actual host journey accepted by this audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -236,7 +237,7 @@
       ],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "ButtonGroup component and extracted CSS were inspected against the original Svelte orientation/group contract.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -247,7 +248,7 @@
         "4ec9f4b1a7db56f19b7ffaa8825ac1ad1d3414fb"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "CopyInput, PrincipalAvatar and GrokLogo were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -262,7 +263,7 @@
         "80810ac0a3442575f9236b898cad55075ceb14fa"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Form, screen and static collection patterns were coordinator-authored; no separate implementation task ID was established. The task ID identifies this audit.",
       "implementationAgentId": "agent-2c670a4a-067d-464f-ac60-fd00efd63010",
       "planningNoteId": "spec",
@@ -278,7 +279,7 @@
         "448b6a115fd53490314ff69ddb6ec121da013cd8"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Partial avatar fixture source/target body inspected. Later presence/color fixture completions are outside the frozen candidate.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -289,7 +290,7 @@
       ],
       "implementationCommits": ["377f7ce4af5d6d77adb2e0764f9639bdc64f63ad"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Open state, callbacks, disabled/busy guards, descriptions and render branches of five callback-owned dialogs; no domain mutation or later callback catalog.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -300,7 +301,7 @@
       ],
       "implementationCommits": ["7376a44c2cda6de00efc900c0aabc8e58bc6b041"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Presentational note viewers and role/identity/action avatar stacks; read complete local bodies and native event adapter. Live presence wrapper remains unmapped.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -318,7 +319,7 @@
         "7670d1321d2bab931bad4f8b57b83ced4487f49a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Renderer/control/node/group/edge/export/streaming host APIs and selected model bodies; no exhaustive algorithm or embedding-host parity claim.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -329,7 +330,7 @@
       ],
       "implementationCommits": ["ad40530a3a6ee48c625d4c83558e8ccac818b9c5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "React host API and selected runtime request/render/resize/queue bodies; no blanket approval of copied geometry postprocessing.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -340,7 +341,7 @@
       ],
       "implementationCommits": ["fa62bb1bef49f76b2a40ab81e8f40403ab520278"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Canonical case registry, ready-generation observation and selected-case scrolling; only two historical visual states inspected.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -351,7 +352,7 @@
       ],
       "implementationCommits": ["69bfd1b3b0835c05c8f88bdcbe133ad49d0e6dfc"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "20 controls by 12 state registry, matrix wrapper and selected cell accessibility/effect branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -365,7 +366,7 @@
         "99397d426f574d9112cc3717f3c36bd7a220f73a"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "17 named row/menu/sidebar/table/tab cells and selected controlled selection/URL/overlay/focus branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -376,7 +377,7 @@
       ],
       "implementationCommits": ["15a4b88648de254c551a637002eb75c2a814a93b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Static proposal fixture composition only, not production proposal mutation cards.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -390,7 +391,7 @@
         "44f03ae4ab23e591d261d0498eb69599d3a7656c"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Question fixture data and controlled index/answer API; fixture change behavior remains partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -401,7 +402,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Coordinator-authored fields/rows source layout wrapper inside catalog page, not all CatalogFixtureList branches.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -416,7 +417,7 @@
         "c0f315b807a61b68b6b82235884949f4257dd616"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Content/description/header/footer wrapper APIs and focus-selection body; framework trap/scroll/motion differences remain partial.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -430,7 +431,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Group/item controlled APIs and focus-selection/dedup/read-only guards, not all row-highlight lifecycle behavior.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -444,7 +445,7 @@
         "10570d68164e9f3f38de6f2e9806a68c9bb6cb1e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Item/checkbox/radio selection and leading-slot wrappers; whole menu root/stack/submenu is not counted by these three mappings.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -455,7 +456,7 @@
       ],
       "implementationCommits": ["88327dcc676e4664597148a1963780e6949a2efa"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Main sidebar row API, active/disabled registration and selected lifecycle bodies; not full sidebar family.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -463,7 +464,7 @@
       "taskNoteIds": ["9bcbbfd0-2f97-4de9-a118-0423d03786e9"],
       "implementationCommits": ["5c8950b06ee70fc4b58d99938a0e2908ce76fd13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Coordinator/shared-widget implementation provenance from frozen Git file history; no invented implementation task attribution.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -477,7 +478,7 @@
         "dc357c8ba07a01a976eb04ac4a8e1be768774f5b"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Inline action partition and callback body; overflow delegates to separately unreviewed ActionMenu internals.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -491,7 +492,7 @@
         "088ddb4b6a172f1c774306ff087ed8b734405658"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Three callback-only dialog public APIs and complete local render/callback bodies; domain mutation and parent workflow excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -505,7 +506,7 @@
         "6f8ac623e96505fbfd4d39dcc99b2183fdda9b9e"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Primitive-state registry and selected dialog render branches, not all product dialogs.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -516,7 +517,7 @@
       ],
       "implementationCommits": ["b2e92d80f4a76aab5ea0a203d4d784369fdd874b"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Four public source wrappers against shared target: controlled selection, labels, keyboard and focus bodies.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -527,7 +528,7 @@
       ],
       "implementationCommits": ["81d4aaec9f0f8916da352ea92670b663d1821394"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Five display component APIs/local bodies, not provider discovery or persistence.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -538,7 +539,7 @@
       ],
       "implementationCommits": ["518ed1d60bb11cac76186df4233ac9f45085cd57"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Local notice display only; source store-coupled warning factory is not claimed by the component mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -549,7 +550,7 @@
       ],
       "implementationCommits": ["769f15eb690bf3aeb3831293ad45d3c609361701"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Embedded callback and agent-selector API/body mapping; canonical domain mutation owner retained.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -560,7 +561,7 @@
       ],
       "implementationCommits": ["d4000c51dc955ff4048f93b7be953ff2a5ac2537"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Public prop/ref surface plus selected observation, confirmation and interaction bodies of the large component; not a complete algorithm or route audit.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -571,7 +572,7 @@
       ],
       "implementationCommits": ["e66ec2e1ea973867e5541d80c7e11cbe462967e5"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Pure-input status, driving, progress and task-tree displays; shared projections/helpers are not additional migrated views.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -585,7 +586,7 @@
         "68a61faafeee003cfda3e9f6d1e2940322b54aab"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Complete local resource/favicon render and load/error bodies; actual resource navigation excluded.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -596,7 +597,7 @@
       ],
       "implementationCommits": ["ef9e38dc7fe087b34cb9c0fb7febaa367dcad762"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Four source leaf APIs and selected local artwork/measurement bodies; no AgentAvatarCatalog or live agent lifecycle mapping.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -607,7 +608,7 @@
       ],
       "implementationCommits": ["d329f6d2bfcb2d50349628ec10a4ef00a49a0f6e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -618,7 +619,7 @@
       ],
       "implementationCommits": ["c32abb525ed649362aa22c4ba19f0cb881fa1e44"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -629,7 +630,7 @@
       ],
       "implementationCommits": ["2c948a75a35116c30a19890676bc4b685d04014a"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -640,7 +641,7 @@
       ],
       "implementationCommits": ["04d592e205b072d212c3c71fb2b81627e6d401d6"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "scope": "Framework selector binding/support mapping only; canonical domain factories stay shared and contribute zero view units.",
       "retainedReviewCandidateCommit": "ac68d79c76e531729276b12c7cb499e2434d3254"
     },
@@ -648,7 +649,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped accordion source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -676,7 +677,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped breadcrumb source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -699,7 +700,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["fb9a9040afb0e408f512290de17292af415a0a13"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped card source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -725,7 +726,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped table source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -751,7 +752,7 @@
         "fb9a9040afb0e408f512290de17292af415a0a13"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped sheet source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -782,7 +783,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["c0f315b807a61b68b6b82235884949f4257dd616"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped tabs source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -811,7 +812,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped form source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -851,7 +852,7 @@
         "f4f6547b52608c9e0b74615cff74878cc73f00a5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped screen source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -884,7 +885,7 @@
         "c501071ec95835faa56d3399ec7aa3f815d6e5c1"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
       "provenance": "Additive static audit performed on original003 source and frozen cd729 target blobs. The legacy candidateCommit is retained for the unchanged status-tool schema; every new direct target is independently byte-identical at both revisions. Existing reviews and runtime receipts are not refreshed.",
       "scope": "Unmapped settings source bodies, public APIs and concrete consumers; implemented means complete stated local static contract only. React syntax adaptations do not establish migration acceptance.",
@@ -925,7 +926,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["bbbd93b89e3ca828fef318d541d80973df207cc0"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Five sidebar component local APIs/bodies against original003, original production callers and frozen caller-prop exercise. Exact callback/ref adaptations are recorded per source; wrapper implementation status is not underlying Button/runtime acceptance.",
       "inspectedCallsites": [
@@ -970,7 +971,7 @@
         "8c10b031b35f7f22c8d04839808c9c821cfc6117"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "EnhancedMentionList and MentionAgentAvatar source/API correspondence. Inspect all list navigation branches and public menu import, selector projection binding and neutral avatar state derivation; preserve service/editor/lifecycle gaps.",
       "inspectedCallsites": [
@@ -1028,7 +1029,7 @@
       "taskNoteIds": ["81e847c7-8d0e-4e1c-9370-1ed09111958f"],
       "implementationCommits": ["750dccb52f7e1ab3863f338d9e2bb86ecad25eed"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
       "scope": "Original zero-argument rune controller and group-stack algorithm correspond to shared neutral controller plus per-popup React signal accessor hook; incoming Svelte facade retains constructor/import API. Static local navigation only; no shared domain owner introduced.",
       "inspectedCallsites": [
@@ -1073,7 +1074,7 @@
         "0f00a72202dce497991564f9fc6875db9f26c9e5"
       ],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Five local marker/status/scroll/gap contracts are present; no extra indicator/helper/catalog source mapping.",
       "inspectedCallsites": [
@@ -1171,7 +1172,7 @@
       ],
       "implementationCommits": ["19bf7fffb0f48b960ac1efc27f1d1ac04359323e"],
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
       "scope": "Complete original leaf bodies/public props, frozen React bodies, concrete original transcript consumers and ordinary-prop catalog caller inspected. Effort local contract is present. Model/provider local formatting is present but full reactive hydration/lifetime contract remains partial. Neutral formatting/type extraction inspected against original; retained Svelte compatibility signatures are not counted as new mappings.",
       "inspectedCallsites": [
@@ -1276,7 +1277,7 @@
     },
     "chat-disclosure-rows-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1472,7 +1473,7 @@
     },
     "chat-recovery-notices-fb515": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
       "inspectedCallsites": [
         {
@@ -1676,7 +1677,7 @@
     },
     "chat-stream-metadata-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -1843,7 +1844,7 @@
     },
     "chat-history-attribution-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "implementationCommits": [
         "3230e2f3e188235f50123985c02bb0122a68b947",
@@ -2056,7 +2057,7 @@
     },
     "chat-disclosure-corrections-3230": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2272,7 +2273,7 @@
     },
     "chat-queued-actions-command-3e894": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2466,7 +2467,7 @@
     },
     "chat-code-reference-context-4bfa": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -2831,7 +2832,7 @@
     },
     "chat-inline-mcp-prompt-preview-9d297": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3369,7 +3370,7 @@
     },
     "queued-attachments-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3548,7 +3549,7 @@
     },
     "tabs-export-correction-0a010": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -3867,7 +3868,7 @@
     },
     "streaming-status-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -4087,7 +4088,7 @@
     },
     "mcp-inline-font-correction-840763": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
       "taskNoteIds": ["da8342f1-ffcc-433f-bb13-bf06675ad9a1"],
       "implementationCommits": ["7af853406e1a80758a3762bafef510be19db4587"],
@@ -4799,7 +4800,7 @@
     },
     "suggested-chief-prompts-16ee80": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5060,7 +5061,7 @@
     },
     "automated-wake-header-f2b2a2": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5416,7 +5417,7 @@
     },
     "agent-pr-attribution-headers-73da5529": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -5889,7 +5890,7 @@
     },
     "attachment-permission-support-05cc7db6": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -6527,7 +6528,7 @@
     },
     "attachment-file-replacement-ff9a4e35": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -7563,7 +7564,7 @@
     },
     "inline-permission-and-live-support-6a51a3da": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -8409,7 +8410,7 @@
     },
     "media-and-markdown-composition-dd6e5720": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -9613,7 +9614,7 @@
     },
     "full-markdown-and-reasoning-68a5ca85": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -11449,7 +11450,7 @@
     },
     "chat-image-and-video-wrapper-561fa08c": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -13285,7 +13286,7 @@
     },
     "message-actions-and-transcript-cards-2d310fed": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -16533,7 +16534,7 @@
     },
     "setup-script-and-edit-confirmation-3d7e81dc": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -21522,7 +21523,7 @@
     },
     "operational-window-and-panel-2d988e34": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -30683,7 +30684,7 @@
     },
     "response-group-and-cylinder-1cea8e2b": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -49118,7 +49119,7 @@
     },
     "navigation-excerpt-and-image-caption-34161b6d": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -84272,7 +84273,7 @@
     },
     "response-group-reaction-correction-e46a388f": {
       "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
-      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
       "inspectedCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
       "taskNoteIds": [
         "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
@@ -85089,7 +85090,1186 @@
       ],
       "excludedLaterWork": "Ignored indicator-boundary preparation3f022 and all later moving source/caller/test/runtime work excluded; native MA lane separately owned. No source or candidate root mutation.",
       "auditCorrection": "Ignored receipt audit initially treated sourcePaths (10 configured roots) as file list; corrected to sourceSha256 map (7831 recorded files) after inspecting the receipt schema. No candidate files changed or installation/build rerun.",
-      "userHelpImpact": "Internal unreleased migration ledger; no released assistant-help impact."
+      "userHelpImpact": "Internal unreleased migration ledger; no released assistant-help impact.",
+      "retainedReviewCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
+    },
+    "detected-scripts-and-neutral-indicator-0afebba9": {
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+      "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+      "taskNoteIds": [
+        "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+        "046eb06f-308e-4ebb-b696-6982569df63f",
+        "18ea505c-9a8f-4201-ac47-28517e37bd1f",
+        "3f022942-13dc-4652-be9d-6edf644e4e1d"
+      ],
+      "implementationCommits": [
+        "4840956c28776899b0655a4eead976a3c5dc0d32",
+        "662e2cc514cb9d5fd67ec4f854cd9260e7d6cb00",
+        "0afebba98529ca847730de026cc30a1b0831b1d7"
+      ],
+      "scope": "Bounded original003/final0afebba9 static audit adds only DetectedScriptsCard local implemented.236/1430(231components+5modules),178partial58localimplemented,230targets88reviews. All229prior directtargets byteequal;1889other rows and87historical reviews retained. Original/current class and compiled-source inverse, normal light/dark token proof and canonical icon/import/caller review. Support484 neutral tuple/type and metadata extraction explicitly reviewed without denominator inflation.18prior source invalidations/failures/receipts retained; new DetectedScripts source drift not waived. No native/visual/product acceptance transfer.",
+      "previousLedgerCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+      "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "previousSourceRows": {
+        "src/lib/components/chat/DetectedScriptsCard.svelte": {
+          "implementation": {
+            "status": "unmapped"
+          },
+          "targets": [],
+          "functional": {
+            "cases": []
+          },
+          "visual": {
+            "cases": []
+          },
+          "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+        }
+      },
+      "originalInputs": [
+        {
+          "path": "src/lib/components/chat/DetectedScriptsCard.svelte",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "c79ab36620046ededcd05470d7799baf989b1dcaba01b29531c745c9b150f76b"
+        },
+        {
+          "path": "vite.config.mjs",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "ae92ca961af6a093221750429e723d9b8d14fb24121656406e14d4c8918b187e"
+        },
+        {
+          "path": "svelte.config.js",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "50c023174cb63870c4510b17aaa8f501fce05caed0b8816bc0a59a7a35abb600"
+        },
+        {
+          "path": "src/lib/components/shared/icons/fa-proxy.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "ea20cd990524df42852f866850cc81f8b3e6fbf6272cb1a0f05a8c4a5ac679f2"
+        },
+        {
+          "path": "src/lib/components/shared/icons/FaWrapper.svelte",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "8ec3acd2f623e189e7a3dc8eb1be4b4cb6f7a7a5af13906f7779dee7cded1703"
+        },
+        {
+          "path": "src/lib/icons/phosphor-icons.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "ef231e1bd249293ece6e8de5cc3fc752bbf1da094c4fc0ba0fd68193d02d7926"
+        },
+        {
+          "path": "src/lib/i18n/format.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "74bdfa2c8835cebb999b5572301ee5b59907adb7e4c27558b1b8a896c4a475b1"
+        },
+        {
+          "path": "src/lib/i18n/locale.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "6ee1f0a6dd2a7241af1caf9bcfd40d635f1d854bebc8e2ac768e34be42fe7c3a"
+        },
+        {
+          "path": "src/shared/i18n/formatters.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "037dccd6a8f4d81e4ff7bdd9f74c06f83a64600f35feb95ec272536b55611cb4"
+        },
+        {
+          "path": "src/lib/utils/messageParser.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "45b747decc9985524f4d50a669b6d43b5e742d8bc423c4637c6b24c17f307707"
+        },
+        {
+          "path": "src/lib/components/chat/MessageContent.svelte",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "f431ad47a8ba4306e861e39f14385e86bcdc811acfcc9d10d9fd4d7f0bac8037"
+        },
+        {
+          "path": "src/lib/components/chat/StreamingMessageContent.svelte",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "2ddfe6217064b4dec91955f81b417c5a01b2cc0312ee0896d0d34bbadd1a0ecc"
+        },
+        {
+          "path": "messages/en.json",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "sha256": "63e466a847f795ae092f1a143d7baee55b34b38d7ed95e70d39bd8845da3d03b"
+        }
+      ],
+      "supportingDependencies": [
+        {
+          "path": "src/lib/components/chat/streaming-status-utils.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "da875ba07cd807044c5de7896558c9fd8ae765b5b42a42afa422ff93e3984057",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "0a18ca4f4c32967d5d797dddbabb30c22c0a3b2f310363b44d03b441a28260bb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "3c62188c1f1fc8c309e21e06d18c0be18c0dc2de814e2ec48a43649dbadf1393",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/components/ui/indicators/intent-mark-vector.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "76458e40a59c428e97839d14b575f741bfe654b6744a23e5759d6f6f79bf264b",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/components/ui/indicators/spinner.meta.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "4354bdb455b56df08ca6e9140e72766702e304fe535f2c5c4d30a8b7992f84b1",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/motion/intent-mark-variants.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": null,
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "41ebb27002863f2a30d419970ddc2c6a1855f483fd3c138e34991a43a8eef120",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/styles/tokens.css",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "7042e2536234a29b3ba6ab2c1eb0f765f36878828bfac53fae334280f6c231d4",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "89801b0ad50694205eac8e5512ee7345a1af6c3ea6411c48032aed8ced5c50a0",
+          "supportOnly": true
+        },
+        {
+          "path": "apps/react/src/catalog/detected-script-examples.tsx",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": null,
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "24590d368dfcb2dcb158a21dff5e3630d830a126fc8d512fcff179b93dfc2b86",
+          "supportOnly": true
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "d845ebc4bc7e0a94f5bd175a29ac83b33c3ac5a71e0a9f1af641ddfb5a99f571",
+          "supportOnly": true
+        },
+        {
+          "path": "apps/react/src/components/icons/icon-definition.tsx",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "7629bba4658f66a17af2981daf786cd605d702a5a62df23b3370c6c06db38fb4",
+          "previousSha256": "7629bba4658f66a17af2981daf786cd605d702a5a62df23b3370c6c06db38fb4",
+          "originalSha256": null
+        },
+        {
+          "path": "src/lib/icons/icon-definition.ts",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "7bc9d7158f9091eaafef65e663c3392947219072b9d4b0af13167a82f1a1b672",
+          "previousSha256": "7bc9d7158f9091eaafef65e663c3392947219072b9d4b0af13167a82f1a1b672",
+          "originalSha256": null
+        },
+        {
+          "path": "src/lib/icons/phosphor-icon-mapping.ts",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "32b0f5b1247236ef7f95abf2c8148851c9511221e797c6a1ee1f92ee89a8ea8b",
+          "previousSha256": "32b0f5b1247236ef7f95abf2c8148851c9511221e797c6a1ee1f92ee89a8ea8b",
+          "originalSha256": null
+        },
+        {
+          "path": "src/lib/icons/phosphor-icon-definitions.ts",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "fbee19d77db9d09abfb4a6447c3a1d3e19bc08dd321b9d7647071f515435ca6b",
+          "previousSha256": "fbee19d77db9d09abfb4a6447c3a1d3e19bc08dd321b9d7647071f515435ca6b",
+          "originalSha256": null
+        },
+        {
+          "path": "src/lib/i18n/format.ts",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "74bdfa2c8835cebb999b5572301ee5b59907adb7e4c27558b1b8a896c4a475b1",
+          "previousSha256": "74bdfa2c8835cebb999b5572301ee5b59907adb7e4c27558b1b8a896c4a475b1",
+          "originalSha256": "74bdfa2c8835cebb999b5572301ee5b59907adb7e4c27558b1b8a896c4a475b1"
+        },
+        {
+          "path": "src/lib/i18n/locale.ts",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "6ee1f0a6dd2a7241af1caf9bcfd40d635f1d854bebc8e2ac768e34be42fe7c3a",
+          "previousSha256": "6ee1f0a6dd2a7241af1caf9bcfd40d635f1d854bebc8e2ac768e34be42fe7c3a",
+          "originalSha256": "6ee1f0a6dd2a7241af1caf9bcfd40d635f1d854bebc8e2ac768e34be42fe7c3a"
+        },
+        {
+          "path": "src/shared/i18n/formatters.ts",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "037dccd6a8f4d81e4ff7bdd9f74c06f83a64600f35feb95ec272536b55611cb4",
+          "previousSha256": "037dccd6a8f4d81e4ff7bdd9f74c06f83a64600f35feb95ec272536b55611cb4",
+          "originalSha256": "037dccd6a8f4d81e4ff7bdd9f74c06f83a64600f35feb95ec272536b55611cb4"
+        },
+        {
+          "path": "apps/react/src/styles/app.css",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "2a6d00015092b7ef141b1e08fdbcff393a7ceff2ed4fbd87867c24940259930f",
+          "previousSha256": "2a6d00015092b7ef141b1e08fdbcff393a7ceff2ed4fbd87867c24940259930f",
+          "originalSha256": null
+        },
+        {
+          "path": "apps/react/vite.config.ts",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "5ccd7113b695526c4c014c53c9a8f50e61d58c7fd4267c23a69cb87e12f0ef3e",
+          "previousSha256": "5ccd7113b695526c4c014c53c9a8f50e61d58c7fd4267c23a69cb87e12f0ef3e",
+          "originalSha256": null
+        },
+        {
+          "path": "apps/react/tsconfig.json",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "f32d4b2342f1488282c97bf816fef97661e601ddaabafe2b8bc51ea6437d11f4",
+          "previousSha256": "f32d4b2342f1488282c97bf816fef97661e601ddaabafe2b8bc51ea6437d11f4",
+          "originalSha256": null
+        },
+        {
+          "path": "packages/view-parity/lib/streaming-status.mjs",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "fdeb27de938c884b0068b145ddff9161fd6c298584fa6d65da1bdf1acd065bd5",
+          "previousSha256": "fdeb27de938c884b0068b145ddff9161fd6c298584fa6d65da1bdf1acd065bd5",
+          "originalSha256": null
+        },
+        {
+          "path": "packages/view-parity/lib/transcript-cards.mjs",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "4d0cf56d00b428f34a1bf66636c15bd1cdf04daae138a22edd846f3f882343aa",
+          "previousSha256": "4d0cf56d00b428f34a1bf66636c15bd1cdf04daae138a22edd846f3f882343aa",
+          "originalSha256": null
+        },
+        {
+          "path": "packages/view-parity/scripts/migration-status.mjs",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "825f1908ddb5b3adf12fc82ec28fe6913b263dda1389572c5a5d8a943fe705ef",
+          "previousSha256": "825f1908ddb5b3adf12fc82ec28fe6913b263dda1389572c5a5d8a943fe705ef",
+          "originalSha256": null
+        }
+      ],
+      "supportDelta": [
+        {
+          "path": "src/lib/components/chat/streaming-status-utils.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "da875ba07cd807044c5de7896558c9fd8ae765b5b42a42afa422ff93e3984057",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "0a18ca4f4c32967d5d797dddbabb30c22c0a3b2f310363b44d03b441a28260bb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "3c62188c1f1fc8c309e21e06d18c0be18c0dc2de814e2ec48a43649dbadf1393",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/components/ui/indicators/intent-mark-vector.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "76458e40a59c428e97839d14b575f741bfe654b6744a23e5759d6f6f79bf264b",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/components/ui/indicators/spinner.meta.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "4354bdb455b56df08ca6e9140e72766702e304fe535f2c5c4d30a8b7992f84b1",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/motion/intent-mark-variants.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": null,
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "41ebb27002863f2a30d419970ddc2c6a1855f483fd3c138e34991a43a8eef120",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/styles/tokens.css",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "7042e2536234a29b3ba6ab2c1eb0f765f36878828bfac53fae334280f6c231d4",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "89801b0ad50694205eac8e5512ee7345a1af6c3ea6411c48032aed8ced5c50a0",
+          "supportOnly": true
+        },
+        {
+          "path": "apps/react/src/catalog/detected-script-examples.tsx",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": null,
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "24590d368dfcb2dcb158a21dff5e3630d830a126fc8d512fcff179b93dfc2b86",
+          "supportOnly": true
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "d845ebc4bc7e0a94f5bd175a29ac83b33c3ac5a71e0a9f1af641ddfb5a99f571",
+          "supportOnly": true
+        }
+      ],
+      "retainedHistoricalSupportProfiles": {
+        "previousLedgerCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+        "previousLedgerSha256": "b2c15f8e27468701ad8dad32a282ac805afe3c1a5b685b88916c0dc8d7441cb6",
+        "citationCount": 11458,
+        "orderedCitationsCanonicalSha256": "f442337fa8ce6e016b3719244fe5073d8db9d63d6c4574e0090d7a4f00b255ab",
+        "profiles": [
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "9133f8261cd37e8b21293aa0cb0fc1b5ae9ecb723229f5f4a19a499ff57111fc",
+            "candidateCommit": "cd729d17325b1086cdd3b6e201f31e68eddf2114",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/structural-audit-form/inspectedCallsites/1",
+            "retainedCitationCount": 1024
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "882e53cc352271178efc17ace73f1db5f24e16714119f6a2a96a5e91f7aa2723",
+            "candidateCommit": "fe63073f6fa70be30ff31c20de8909c026445fd4",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-transcript-markers-fe630/inspectedCallsites/1",
+            "retainedCitationCount": 1025
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "5646c127fbb1a63d9e4167005492dc92dfa51ed05b02554bc83b92755045ddc0",
+            "candidateCommit": "fb5150d5eac79f210b8fff0cc8ea5e698c292907",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-disclosure-rows-fb515/inspectedCallsites/1",
+            "retainedCitationCount": 1025
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "20f4df3fa55704bcb2be11ba8a8fa092acda1256afbc7f2d3e1702460e6972c2",
+            "candidateCommit": "3230e2f3e188235f50123985c02bb0122a68b947",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-stream-metadata-3230/inspectedCallsites/1",
+            "retainedCitationCount": 1025
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "a683e9f429333256084195067bbf7f0604ba336d6036510dbf00758754fcf88e",
+            "candidateCommit": "3e894185cba7a9c0ae157916f519bf54b1b6ca6c",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-queued-actions-command-3e894/inspectedCallsites/1",
+            "retainedCitationCount": 513
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "5441906cb76955ab68b140fcca1b0441b7fcb519d0921aaf595e4a6020d4c45d",
+            "candidateCommit": "4bfa1928f9aad66bac04a15a020dfde376e56d0a",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-code-reference-context-4bfa/inspectedCallsites/1",
+            "retainedCitationCount": 513
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "2d2d2d929d625502092acd131d6e31ac35d1285329c7580d2dd55e14415c5c98",
+            "candidateCommit": "9d29742dd6bd3a241ce244a5be3d5c9f1dc557ec",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-inline-mcp-prompt-preview-9d297/inspectedCallsites/2",
+            "retainedCitationCount": 2050
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "1328730b17475d2aad5516faac229d1b560c49f6a24bbef2c1abde6ecf59e401",
+            "candidateCommit": "0a010db37d278b82f0a19b069673677cc291fda0",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/queued-attachments-0a010/inspectedCallsites/1",
+            "retainedCitationCount": 513
+          },
+          {
+            "path": "src/lib/components/chat/streaming-status-utils.ts",
+            "sha256": "0a18ca4f4c32967d5d797dddbabb30c22c0a3b2f310363b44d03b441a28260bb",
+            "candidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/streaming-status-840763/supportingDependencies/0",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "src/lib/components/ui/indicators/intent-mark-vector.ts",
+            "sha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+            "candidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/streaming-status-840763/supportingDependencies/1",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "src/lib/components/chat/streaming-status-utils.ts",
+            "sha256": "da875ba07cd807044c5de7896558c9fd8ae765b5b42a42afa422ff93e3984057",
+            "candidateCommit": null,
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/streaming-status-840763/originalCallsites/1",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "f1522e048a3b6e512d31307b7a02b42daac9786ad13c27970a8785403fc0199d",
+            "candidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/streaming-status-840763/inspectedCallsites/1",
+            "retainedCitationCount": 513
+          },
+          {
+            "path": "src/lib/components/chat/streaming-status-utils.ts",
+            "sha256": "0a18ca4f4c32967d5d797dddbabb30c22c0a3b2f310363b44d03b441a28260bb",
+            "candidateCommit": "840763114aac9f13fff5fcaeb9799857a014cfb1",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/streaming-status-840763/sourceProfiles/0",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "c802100f3e214659e27ada17406aa3ebbb4b006687b6f49de7da4a397854e412",
+            "candidateCommit": "16ee80b2a121c20d34bd506570f9e0d98b08e870",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/suggested-chief-prompts-16ee80/inspectedCallsites/1",
+            "retainedCitationCount": 513
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "502a9f93b64e90f1b7d2fe43ee33a0985f8f8e96a96771626e319eacdce7b7ae",
+            "candidateCommit": "f2b2a2fed3bff7884f6e90a61598cd38415e31e2",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/automated-wake-header-f2b2a2/inspectedCallsites/1",
+            "retainedCitationCount": 512
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "502a9f93b64e90f1b7d2fe43ee33a0985f8f8e96a96771626e319eacdce7b7ae",
+            "candidateCommit": null,
+            "referenceCommit": null,
+            "representativePointer": "/reviews/automated-wake-header-f2b2a2/catalogSupportDelta/registration",
+            "retainedCitationCount": 513
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "a79cdbf48a3831b6184c6533c30c0ba07a2ebf3e32c7af81f602ec8598429824",
+            "candidateCommit": "73da5529003f1cf96f5cde3f7f7dbabc6c9f4ff8",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/agent-pr-attribution-headers-73da5529/inspectedCallsites/1",
+            "retainedCitationCount": 512
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "a79cdbf48a3831b6184c6533c30c0ba07a2ebf3e32c7af81f602ec8598429824",
+            "candidateCommit": null,
+            "referenceCommit": null,
+            "representativePointer": "/reviews/agent-pr-attribution-headers-73da5529/catalogSupportDelta/registration",
+            "retainedCitationCount": 513
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "f188e6559fb4bcfd2b00cc86a13a62fed1fead4ff278600ab7317f5d889ff753",
+            "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/inline-permission-and-live-support-6a51a3da/supportDelta/1",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "efeb9743519fc4deb0fb9de9c276208f14cc3e66e5fdba2e5b3b1d69f97d294e",
+            "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/inline-permission-and-live-support-6a51a3da/supportDelta/12",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "f17d5958ce03ebde303401782876b4f9c8ed3e0b5ecd185fcfd2e60419a60ec0",
+            "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/media-and-markdown-composition-dd6e5720/supportDelta/0",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+            "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/media-and-markdown-composition-dd6e5720/supportDelta/2",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "f188e6559fb4bcfd2b00cc86a13a62fed1fead4ff278600ab7317f5d889ff753",
+            "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/media-and-markdown-composition-dd6e5720/retainedHistoricalSupportRecords/21",
+            "retainedCitationCount": 255
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "efeb9743519fc4deb0fb9de9c276208f14cc3e66e5fdba2e5b3b1d69f97d294e",
+            "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/media-and-markdown-composition-dd6e5720/retainedHistoricalSupportRecords/22",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "a450a70158ae4768fa02c07bdaba3df03c4f97907eeab06a84aef0819360f2a7",
+            "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/full-markdown-and-reasoning-68a5ca85/supportingDependencies/1",
+            "retainedCitationCount": 127
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+            "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/full-markdown-and-reasoning-68a5ca85/supportingDependencies/20",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "a450a70158ae4768fa02c07bdaba3df03c4f97907eeab06a84aef0819360f2a7",
+            "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/full-markdown-and-reasoning-68a5ca85/supportDelta/1",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "f17d5958ce03ebde303401782876b4f9c8ed3e0b5ecd185fcfd2e60419a60ec0",
+            "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/full-markdown-and-reasoning-68a5ca85/retainedHistoricalSupportRecords/43",
+            "retainedCitationCount": 127
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "95de062ac9522c2bfde1544bab3fd7d94506c2de631fa70b6d6808a4286da735",
+            "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-image-and-video-wrapper-561fa08c/supportingDependencies/0",
+            "retainedCitationCount": 63
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+            "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/chat-image-and-video-wrapper-561fa08c/supportingDependencies/22",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "95de062ac9522c2bfde1544bab3fd7d94506c2de631fa70b6d6808a4286da735",
+            "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/chat-image-and-video-wrapper-561fa08c/supportDelta/0",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "67d4dd2843f291c72b0920a797425ebef03bdd428be41ff7c802db28cacf6f39",
+            "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/message-actions-and-transcript-cards-2d310fed/supportingDependencies/0",
+            "retainedCitationCount": 31
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+            "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/message-actions-and-transcript-cards-2d310fed/supportingDependencies/26",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "67d4dd2843f291c72b0920a797425ebef03bdd428be41ff7c802db28cacf6f39",
+            "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/message-actions-and-transcript-cards-2d310fed/supportDelta/0",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "67d4dd2843f291c72b0920a797425ebef03bdd428be41ff7c802db28cacf6f39",
+            "candidateCommit": null,
+            "referenceCommit": null,
+            "representativePointer": "/reviews/message-actions-and-transcript-cards-2d310fed/catalogRegistration",
+            "retainedCitationCount": 16
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "ba56b5b79d7d039602c0cbcaabf5917f12330dce01d619fa6467a82502280a3f",
+            "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/setup-script-and-edit-confirmation-3d7e81dc/supportingDependencies/0",
+            "retainedCitationCount": 15
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+            "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/setup-script-and-edit-confirmation-3d7e81dc/supportingDependencies/22",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "ba56b5b79d7d039602c0cbcaabf5917f12330dce01d619fa6467a82502280a3f",
+            "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/setup-script-and-edit-confirmation-3d7e81dc/supportDelta/0",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "ba56b5b79d7d039602c0cbcaabf5917f12330dce01d619fa6467a82502280a3f",
+            "candidateCommit": null,
+            "referenceCommit": null,
+            "representativePointer": "/reviews/setup-script-and-edit-confirmation-3d7e81dc/catalogRegistration",
+            "retainedCitationCount": 8
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "2e60d3582bf5f849a770f1f35943282510c45adc659eacd53a06a8cdf8cb828d",
+            "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/operational-window-and-panel-2d988e34/supportingDependencies/0",
+            "retainedCitationCount": 7
+          },
+          {
+            "path": "src/lib/styles/tokens.css",
+            "sha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+            "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/operational-window-and-panel-2d988e34/supportingDependencies/15",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "2e60d3582bf5f849a770f1f35943282510c45adc659eacd53a06a8cdf8cb828d",
+            "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/operational-window-and-panel-2d988e34/supportDelta/0",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "2e60d3582bf5f849a770f1f35943282510c45adc659eacd53a06a8cdf8cb828d",
+            "candidateCommit": null,
+            "referenceCommit": null,
+            "representativePointer": "/reviews/operational-window-and-panel-2d988e34/catalogRegistration",
+            "retainedCitationCount": 4
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "88796c86817f4881e51fb62bdac08c13f1e2553bf5b028822eb3bd702defff40",
+            "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/response-group-and-cylinder-1cea8e2b/supportingDependencies/5",
+            "retainedCitationCount": 3
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "88796c86817f4881e51fb62bdac08c13f1e2553bf5b028822eb3bd702defff40",
+            "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/response-group-and-cylinder-1cea8e2b/supportDelta/5",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "88796c86817f4881e51fb62bdac08c13f1e2553bf5b028822eb3bd702defff40",
+            "candidateCommit": null,
+            "referenceCommit": null,
+            "representativePointer": "/reviews/response-group-and-cylinder-1cea8e2b/catalogRegistration",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+            "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/navigation-excerpt-and-image-caption-34161b6d/supportingDependencies/0",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+            "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+            "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+            "representativePointer": "/reviews/navigation-excerpt-and-image-caption-34161b6d/supportDelta/0",
+            "retainedCitationCount": 2
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+            "candidateCommit": null,
+            "referenceCommit": null,
+            "representativePointer": "/reviews/navigation-excerpt-and-image-caption-34161b6d/catalogRegistration",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+            "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+            "referenceCommit": null,
+            "representativePointer": "/reviews/response-group-reaction-correction-e46a388f/supportingDependencies/11",
+            "retainedCitationCount": 1
+          },
+          {
+            "path": "apps/react/src/catalog/functional-examples.tsx",
+            "sha256": "051eb90570454ed1eaedffe1ef52f6bc4e97cd11143da2f64d852ecb71d52e1a",
+            "candidateCommit": "8c10b031b35f7f22c8d04839808c9c821cfc6117",
+            "referenceCommit": null,
+            "representativePointer": "/boundedAudits/1/inspectedDispatcherChange",
+            "retainedCitationCount": 1
+          }
+        ],
+        "preservation": "Every old full review/row/audit retained in ledger; pointers and digest identify old support citations without changing their pins."
+      },
+      "historicalPinnedReports": [
+        {
+          "path": ".demo-artifacts/attachment-correction-ledger/status-05cc7db6.json",
+          "sha256": "2ecc7894e3222c77d621cdf844a3c59630ecede44ec74a1d2ae8a09a2908cb26",
+          "candidateCommit": "05cc7db613d620deeaef294c281b0d50ff07a55c"
+        },
+        {
+          "path": ".demo-artifacts/attachment-identity-ledger/status-ff9a4e35.json",
+          "sha256": "3de6cfc20cd498cc1dd7d3ac9fab59d75bd652576e0122fe0f95add767dfbd03",
+          "candidateCommit": "ff9a4e3565013681aeb17356ed9604c56e00fc35"
+        },
+        {
+          "path": ".demo-artifacts/inline-permission-ledger/status-6a51a3da.json",
+          "sha256": "871f8ca4bf374cba9df3b5e761107cbd19664e38768848b1f5e74779ffe1f767",
+          "candidateCommit": "6a51a3dadafc8c833d5a69f98a32f61e3d657dd9"
+        },
+        {
+          "path": ".demo-artifacts/media-composition-ledger/status-dd6e5720.json",
+          "sha256": "dcf0190b31084f48d746fe704bfb67a56fc9772e34cb338e074e0d902206a6bd",
+          "candidateCommit": "dd6e57201122bac9e7ea689ab5c0fcf273b24980"
+        },
+        {
+          "path": ".demo-artifacts/markdown-reasoning-ledger/status-68a5ca85.json",
+          "sha256": "9211fb66cfc453cf98321757efa4db39aa4eb8ade6c45129197d3c8e51a5a44a",
+          "candidateCommit": "68a5ca85357bcbcd46e64744d5aefbc41c76b46a"
+        },
+        {
+          "path": ".demo-artifacts/chat-image-ledger/status-561fa08c.json",
+          "sha256": "2642d63ee8d4ca3bae4c17bb7cdb4f7024656cb04643a00feb3c9b9762ef71a3",
+          "candidateCommit": "561fa08c63b36faf981e5788f7738a432494f4b4"
+        },
+        {
+          "path": ".demo-artifacts/message-transcript-ledger/status-2d310fed.json",
+          "sha256": "ecc0ac8a7b46dfa6601457464565b8f1996e69a14033287d8adda09c7584de37",
+          "candidateCommit": "2d310fed5e547bd407124f3acd181d93733a2a8c"
+        },
+        {
+          "path": ".demo-artifacts/setup-edit-ledger/status-3d7e81dc.json",
+          "sha256": "e5e8c3d4a9ef941fc5f1b26062494d378febae9a4838a0f6d8b6ae7e0728316c",
+          "candidateCommit": "3d7e81dce0edc2d46565aa760d488b01e5c5491b"
+        },
+        {
+          "path": ".demo-artifacts/operational-window-ledger/status-2d988e34.json",
+          "sha256": "3fa6ae7f8796a1e82d038bbd7555f8754205395ac8cfe83337b104ec06a55c4d",
+          "candidateCommit": "2d988e34da8f0de450d8788845c3ab2c290dbd95"
+        },
+        {
+          "path": ".demo-artifacts/response-cylinder-ledger/status-1cea8e2b.json",
+          "sha256": "769abbca7d5dec89b703ed52afdb92e2d353b076012b8490c53a162a7da1a45e",
+          "candidateCommit": "1cea8e2be06cbdeeec657d13fb81d81700c07f80"
+        },
+        {
+          "path": ".demo-artifacts/navigation-caption-ledger/status-34161b6d.json",
+          "sha256": "5ed08c94a1b379cdac0454e45cb3470a4cf7b7a0a60b90dea7ea06e88bf3ca0e",
+          "candidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3"
+        },
+        {
+          "path": ".demo-artifacts/response-reaction-ledger/status-e46a388f.json",
+          "sha256": "de28615b813c3c9c480b8b786beaa3464943418a50794449c6e25f7193bbe30d",
+          "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed"
+        }
+      ],
+      "sourceApiReview": {
+        "result": "PASS",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+        "sourceCommit": "662e2cc514cb9d5fd67ec4f854cd9260e7d6cb00",
+        "sourcePath": "src/lib/components/chat/DetectedScriptsCard.svelte",
+        "targetPath": "apps/react/src/features/chat/components/detected-scripts-card.tsx",
+        "originalSourceSha256": "c79ab36620046ededcd05470d7799baf989b1dcaba01b29531c745c9b150f76b",
+        "currentSourceSha256": "6ecaf9abd90491eb25992de025658724b280b3596ba15d54b3522e8447707fe2",
+        "targetSha256": "aa29f3bc96287070ff77df13f1f3a8640d2b847237eb68538d9a6fd5b34dc54e",
+        "originalCompiledSha256": "325cff90fbe83319293c13d0fd7b9d7b10d526e42d8565f97ae1651a539eb291",
+        "currentCompiledSha256": "e2c648778c607933f357e3ba68c7964649ac56a549498c5c321ea8acb275d73f",
+        "publicApi": {
+          "props": ["scripts: DetectedScript[];"],
+          "scriptFields": [
+            "name: string;",
+            "command: string;",
+            "mode: string;",
+            "category?: string;"
+          ],
+          "exports": [
+            "DetectedScriptsCard named/default",
+            "DetectedScriptsCardProps",
+            "Props",
+            "DetectedScript"
+          ]
+        },
+        "classes": [
+          "detected-scripts-card my-3 rounded-lg border border-border bg-muted/30 overflow-hidden",
+          "flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/40",
+          "text-primary-ink/70",
+          "text-sm font-semibold text-foreground",
+          "divide-y divide-border",
+          "flex items-start gap-3 px-4 py-2.5",
+          "flex-1 min-w-0",
+          "flex items-center gap-2 flex-wrap",
+          "text-sm font-semibold text-foreground",
+          "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-script-service/15 text-script-service-foreground",
+          "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground",
+          "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary/80",
+          "mt-0.5 text-xs font-mono text-muted-foreground truncate",
+          "px-4 py-2 border-t border-border bg-muted/20",
+          "text-xs text-muted-foreground"
+        ],
+        "conditions": [
+          "script.mode === 'service'",
+          "script.category && script.category !== 'other'",
+          "scripts.length === 1"
+        ],
+        "key": "script.name + script.command",
+        "messageKeys": [
+          "chat_detectedScripts_title",
+          "chat_detectedScripts_service_badge",
+          "chat_detectedScripts_command_badge",
+          "chat_detectedScripts_count_one",
+          "chat_detectedScripts_count_many"
+        ],
+        "artwork": {
+          "sourcePath": "node_modules/phosphor-svelte/lib/MagicWand.svelte",
+          "reactPath": "apps/react/node_modules/@phosphor-icons/react/dist/defs/MagicWand.es.js",
+          "sourceSha256": "0181294ffc3e9a5dd61a0996e061f1cb10067226e7c95a4d3f98420ebe78b79c",
+          "reactSha256": "0070063e0cbc750e59d454d216a96149c4b29f5807d2564f6141e20c19190b08",
+          "regularPathSha256": "077a2d2cf43ad735852ac8d8a605e09350a9c16864f5a3f71bb1d7ba68c9e400",
+          "regularPathExact": true
+        },
+        "proofs": {
+          "originalSourceClassInverseExact": true,
+          "compiledSourceClassInverseExact": true,
+          "sourcePropsAndFieldsExact": true,
+          "noExtraBodyStatementsOrEffects": true,
+          "all15ClassesAccounted": true,
+          "conditionalsAndRowKeyExact": true,
+          "fiveMessagesAndEnglishValuesUnchanged": true,
+          "canonicalFormatting": true,
+          "tokenFourLineInverseExact": true,
+          "originalIconAliasSizeWeightDecorativePreserved": true,
+          "regularGlyphPathExact": true,
+          "registryThreeLineInverseExact": true,
+          "realCallerImportsPublicLeaf": true,
+          "appCssCanonicalTokensAndSourceScanUnchanged": true
+        },
+        "limits": [
+          "Static API/AST/compiler/extraction only, no native/source-pair appearance acceptance.",
+          "React keyed reconciliation versus Svelte keyed each behavior on duplicate/colliding keys remains unverified.",
+          "Original production parser accepts raw arrays without item validation; internal caller is a typed input exercise, not a replacement parser or production integration.",
+          "Full FaWrapper API, theme cascade beyond normal light/dark ancestor scopes and browser font/layout differences are outside the leaf static contract."
+        ]
+      },
+      "sourceProfile": {
+        "originalCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "sourceCommit": "662e2cc514cb9d5fd67ec4f854cd9260e7d6cb00",
+        "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+        "originalSha256": "c79ab36620046ededcd05470d7799baf989b1dcaba01b29531c745c9b150f76b",
+        "candidateSha256": "6ecaf9abd90491eb25992de025658724b280b3596ba15d54b3522e8447707fe2",
+        "inverse": "Replace exactly bg-script-service/15 text-script-service-foreground with bg-blue-500/15 text-blue-600 dark:text-blue-400; source and compiled JavaScript then equal original003.",
+        "sourceDriftAcceptedAsStaticProfileOnly": true,
+        "runtimeEquivalenceAccepted": false
+      },
+      "semanticTokenReview": {
+        "result": "PASS",
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+        "compilerVersion": "4.3.3",
+        "compilerMatchesOriginalLock": true,
+        "artifacts": [
+          {
+            "path": "node_modules/tailwindcss/package.json",
+            "sha256": "3dc86b46c511947ca00838aa3f1776243abe923ac347c092e60a0cbc7ae68559"
+          },
+          {
+            "path": "node_modules/tailwindcss/dist/lib.mjs",
+            "sha256": "8ebfd51c44d6cca0ef675007e97e6aa918944df2b662c2d7bfa50fdfaa98bb64"
+          },
+          {
+            "path": "node_modules/tailwindcss/theme.css",
+            "sha256": "443d7af364200f8ec8352dc78e39485a118a1840d498c97967bf0ae402b39167"
+          },
+          {
+            "path": "apps/react/node_modules/tailwindcss/package.json",
+            "sha256": "3dc86b46c511947ca00838aa3f1776243abe923ac347c092e60a0cbc7ae68559"
+          },
+          {
+            "path": "apps/react/node_modules/tailwindcss/dist/lib.mjs",
+            "sha256": "8ebfd51c44d6cca0ef675007e97e6aa918944df2b662c2d7bfa50fdfaa98bb64"
+          },
+          {
+            "path": "apps/react/node_modules/tailwindcss/theme.css",
+            "sha256": "443d7af364200f8ec8352dc78e39485a118a1840d498c97967bf0ae402b39167"
+          }
+        ],
+        "originalTokensSha256": "7042e2536234a29b3ba6ab2c1eb0f765f36878828bfac53fae334280f6c231d4",
+        "candidateTokensSha256": "89801b0ad50694205eac8e5512ee7345a1af6c3ea6411c48032aed8ced5c50a0",
+        "compiledOriginalSha256": "c20e8839a17bf5d22e82b8e5e97dc50c93032b6c8b54b27168ba1d8e5204cf0c",
+        "compiledCandidateSha256": "b20d75886ef2b4867a63fa0a2ace96b8a372ac5a3ed1212e726f94b9ef7951c5",
+        "scopes": {
+          "light": {
+            "source": {
+              "backgrounds": [
+                {
+                  "condition": "unconditional",
+                  "value": "color-mix(in srgb, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                },
+                {
+                  "condition": "supports (color: color-mix(in lab, red, red))",
+                  "value": "color-mix(in oklab, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                }
+              ],
+              "foreground": "oklch(54.6% 0.245 262.881)"
+            },
+            "candidate": {
+              "backgrounds": [
+                {
+                  "condition": "unconditional",
+                  "value": "color-mix(in srgb, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                },
+                {
+                  "condition": "supports (color: color-mix(in lab, red, red))",
+                  "value": "color-mix(in oklab, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                }
+              ],
+              "foreground": "oklch(54.6% 0.245 262.881)"
+            },
+            "exact": true
+          },
+          "dark": {
+            "source": {
+              "backgrounds": [
+                {
+                  "condition": "unconditional",
+                  "value": "color-mix(in srgb, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                },
+                {
+                  "condition": "supports (color: color-mix(in lab, red, red))",
+                  "value": "color-mix(in oklab, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                }
+              ],
+              "foreground": "oklch(70.7% 0.165 254.624)"
+            },
+            "candidate": {
+              "backgrounds": [
+                {
+                  "condition": "unconditional",
+                  "value": "color-mix(in srgb, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                },
+                {
+                  "condition": "supports (color: color-mix(in lab, red, red))",
+                  "value": "color-mix(in oklab, oklch(62.3% 0.214 259.815) 15%, transparent)"
+                }
+              ],
+              "foreground": "oklch(70.7% 0.165 254.624)"
+            },
+            "exact": true
+          }
+        },
+        "scope": "Independent frozen original/current token compilation and AST declarations resolved only for normal html.light/html.dark descendant badge scopes; no product execution, browser computed styles, global palette equivalence or pixels."
+      },
+      "neutralVariantSupport": {
+        "commit": "4840956c28776899b0655a4eead976a3c5dc0d32",
+        "exactFourPaths": [
+          {
+            "path": "src/lib/components/chat/streaming-status-utils.ts",
+            "parentCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+            "previousSha256": "0a18ca4f4c32967d5d797dddbabb30c22c0a3b2f310363b44d03b441a28260bb",
+            "supportCommit": "4840956c28776899b0655a4eead976a3c5dc0d32",
+            "sha256": "3c62188c1f1fc8c309e21e06d18c0be18c0dc2de814e2ec48a43649dbadf1393",
+            "originalSha256": "da875ba07cd807044c5de7896558c9fd8ae765b5b42a42afa422ff93e3984057"
+          },
+          {
+            "path": "src/lib/components/ui/indicators/intent-mark-vector.ts",
+            "parentCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+            "previousSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+            "supportCommit": "4840956c28776899b0655a4eead976a3c5dc0d32",
+            "sha256": "76458e40a59c428e97839d14b575f741bfe654b6744a23e5759d6f6f79bf264b",
+            "originalSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664"
+          },
+          {
+            "path": "src/lib/components/ui/indicators/spinner.meta.ts",
+            "parentCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+            "previousSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365",
+            "supportCommit": "4840956c28776899b0655a4eead976a3c5dc0d32",
+            "sha256": "4354bdb455b56df08ca6e9140e72766702e304fe535f2c5c4d30a8b7992f84b1",
+            "originalSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365"
+          },
+          {
+            "path": "src/lib/motion/intent-mark-variants.ts",
+            "parentCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+            "previousSha256": null,
+            "supportCommit": "4840956c28776899b0655a4eead976a3c5dc0d32",
+            "sha256": "41ebb27002863f2a30d419970ddc2c6a1855f483fd3c138e34991a43a8eef120",
+            "originalSha256": null
+          }
+        ],
+        "proofs": {
+          "supportFrozenAfter484": true,
+          "vectorParentEqualsOriginal": true,
+          "vectorInverseOriginalAndParent": true,
+          "helperEmittedJavaScriptEqualsOriginal": true,
+          "canonicalNeutralTupleAndDerivedTypeOnly": true
+        },
+        "helperEmittedSha256": "a1c750037b3f2f7ceb29afaa9cf1c5cf43b4de058bc5a72fba207fd052c05c58",
+        "meaning": "Dependency-free original tuple plus derived type moved to one neutral owner; existing vector facade retains import/reexport public API and identical geometry/timing/keyframe bodies. Helper runtime emission unchanged; only obsolete metadata caller removed. No new module/view mapping.",
+        "nativeGuardImpact": {
+          "path": ".demo-artifacts/indicator-boundary-repair/guard-impact.json",
+          "sha256": "011e0b1c5a33c02211c3deb41a76bfbb3fd32f58046431578c0f332ea89c861e"
+        },
+        "limits": "Existing streaming/TC exact source guards are not rewritten. Frozen earlier runtime results stay on their original candidates; future guard revision/release requires separate ownership."
+      },
+      "catalogReview": {
+        "path": "apps/react/src/catalog/detected-script-examples.tsx",
+        "sha256": "24590d368dfcb2dcb158a21dff5e3630d830a126fc8d512fcff179b93dfc2b86",
+        "route": "/sandbox/detected-scripts?example=interactive",
+        "registry": "Exactly import/dispatch/has lines; inverse restores previous registry. No component-catalog readiness or view count added for support.",
+        "controls": "Actual public FormField/Input/Textarea/Button/Switch/ToggleGroup controls. Empty/singular/service/nonservice/category/many/long/literal draft presets; explicit Apply passes accepted array unchanged. Mode/category replacement preserves name/command/order/extrafields; reverse preserves row fields. Invalid drafts retain applied state. Component mount/unmount and explicit remount key, unrelated parent rerender,420/720 frame.",
+        "identityAndValidation": "Validation checks typed strings/optional category only; no trimming/casefold/cap/dedup or duplicate key repair. Caller validation is narrower than original parser; it does not claim production admission. Ordinary Apply/width/rerender preserve component key; keyed rows retain original concatenation.",
+        "limits": "Caller output records props only, not DOM results. Global theme uses real CatalogShell. Catalog Preview dropdown affects fixture-preview, not functional caller; actual frame max-width and page/sidebar gutters require independent geometry at a wide viewport. No native behavior, overflow, source-pair or keyboard/layout acceptance.",
+        "controlMap": {
+          "path": ".demo-artifacts/detected-scripts-caller/control-map.json",
+          "sha256": "03624cb27f21f7fd8a8e8074e83c75a67626fad3cc920cff56a4169352646225"
+        }
+      },
+      "staticImportInspection": {
+        "runtime": {
+          "path": ".demo-artifacts/detected-scripts-ledger/runtime-closure.json",
+          "sha256": "03c3cd796156a5f8b18da13c0ca51818061b0bade8a2456462e3b8682e650fd4"
+        },
+        "type": {
+          "path": ".demo-artifacts/detected-scripts-ledger/type-closure.json",
+          "sha256": "55a4603823a689ff2fba69b876f4bf858e86e7c52318b0090263617458304d01"
+        }
+      },
+      "staticEvidence": [
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/preparation.json",
+          "sha256": "b16c83c93aadee28b103f1b837032bdec3cf9511e622b471148918ced6e61f28"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/api-report.json",
+          "sha256": "90dd601c14b9167564b2091b6d7b671420626b6987999817923aa2b3669bc1e6"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/css-report.json",
+          "sha256": "9ced14ea491e1bc3fb3926b5b39a0ccf22f6484046667bea318e0001068f2d93"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/support-report.json",
+          "sha256": "de4266527a0d478752352d0939aa7050ec99f00697c51586fff77bcb4a112156"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/static-report.json",
+          "sha256": "f39a57e3c231f1483687e1015712263521c3359da583ae0f955e1c5ada6645dc"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/original-compiled.js",
+          "sha256": "325cff90fbe83319293c13d0fd7b9d7b10d526e42d8565f97ae1651a539eb291"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/current-source-compiled.js",
+          "sha256": "e2c648778c607933f357e3ba68c7964649ac56a549498c5c321ea8acb275d73f"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/original-service.css",
+          "sha256": "c20e8839a17bf5d22e82b8e5e97dc50c93032b6c8b54b27168ba1d8e5204cf0c"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/candidate-service.css",
+          "sha256": "b20d75886ef2b4867a63fa0a2ace96b8a372ac5a3ed1212e726f94b9ef7951c5"
+        },
+        {
+          "path": ".demo-artifacts/detected-scripts-ledger/audit-corrections.json",
+          "sha256": "832711e7a7bd0de6c2afe756936b51efca59eef9fa2bc47400d84e13cc9f304a"
+        }
+      ],
+      "publicationReceipts": {
+        "source": {
+          "path": ".demo-artifacts/detected-scripts-port/publication-receipt.json",
+          "sha256": "3fb67973508b57a01421f65b0fe869dde4f9680862cccf46fea492e5069a16ba"
+        },
+        "caller": {
+          "path": ".demo-artifacts/detected-scripts-caller/publication-receipt.json",
+          "sha256": "18b43e644977a92412a990e1d9bf281469264bc9c79c08ce662c1afd6f912548"
+        },
+        "meaning": "Commit hashes/path bytes and caller logged gate hashes checked; owner-run gates are reported provenance, not re-executed by this audit."
+      },
+      "sourceOwnerGateLimits": {
+        "deadCode": "584 error-level findings before caller publication, no base CI comparison and not rerun by ledger auditor; previous579/other receipts retained.",
+        "uiInvariants": "Initial221passed2failed ENOENT temporary Knip canary; concurrent cleanup explanation is inference. Authorized serial223pass retained as owner receipt, not executed here.",
+        "format": "Initial root ignore excluded React; corrected scope passed without source change; caller later explicit3path checks passed.",
+        "native": "No behavior or visual outcomes imported."
+      },
+      "retainedHistory": {
+        "previousLedgerCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+        "previousLedgerSha256": "b2c15f8e27468701ad8dad32a282ac805afe3c1a5b685b88916c0dc8d7441cb6",
+        "reviewId": "response-group-reaction-correction-e46a388f",
+        "meaning": "Complete old rows/reviews/history/limits/cases/29receipts preserved, including saved-owner original gap/static correction, I6/I8/MV/MC/W3/attachment/video and UI/Knip failures; no historical native acceptance promoted.",
+        "previousCasesCanonicalSha256": "8c175aa57ff09841a38de9eccc4a2147e50b6022e590082ef314ee45749d2b22",
+        "previousReceiptsCanonicalSha256": "a81a9db5baafe3f90190c81190afce02ef70a567a60e2156ad7245b80905b763"
+      },
+      "testHandoff": {
+        "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+        "status": "not-run",
+        "scope": "Static Git/API/AST/compiler/import/preservation only; native Script6 old3d7 and future DetectedScripts runs independently owned. No browser/runtime/tests/services/install/user-state actions."
+      },
+      "sourceDriftPolicy": "Original003 inventory/1430 unchanged;18old invalidations preserved and DetectedScripts adaptation remains new invalidation. Changed neutral vector/helper support fingerprints retained with exact inverse; no old sourceInspection refresh. Shared tokens/catalog/types add no views.",
+      "excludedFrozenChanges": [
+        "packages/view-parity/lib/response-group.mjs",
+        "packages/view-parity/lib/script-actions.mjs",
+        "packages/view-parity/migration-targets.json",
+        "packages/view-parity/tests/message-actions.extended.spec.mjs",
+        "packages/view-parity/tests/response-group.core.spec.mjs",
+        "packages/view-parity/tests/response-group.extended.spec.mjs",
+        "packages/view-parity/tests/script-actions.core.spec.mjs",
+        "packages/view-parity/tests/script-actions.extended.spec.mjs"
+      ],
+      "excludedLaterWork": "All later source/caller/native work excluded; final0af only. No frozen candidate edits or guard changes.",
+      "auditCorrections": {
+        "scope": "Ignored audit preparation only; no product/status-tool changes or status retries.",
+        "items": [
+          "Initial original config and icon-path guesses resolved through original vite.config.mjs/fa-proxy to shared/icons/FaWrapper.svelte.",
+          "Initial new app stylesheet guess resolved through frozen tree to apps/react/src/styles/app.css.",
+          "First static excluded-path expectation omitted prior ledger and separately owned ResponseGroup/MessageActions verification commits between e46 and final0af. Exact git path listing inspected and excluded list corrected; no test bodies reviewed or evidence accepted."
+        ]
+      },
+      "userHelpImpact": "Internal unreleased migration/catalog/ledger; no released assistant-help impact."
     }
   },
   "sources": {
@@ -93749,16 +94929,38 @@
     },
     "src/lib/components/chat/DetectedScriptsCard.svelte": {
       "implementation": {
-        "status": "unmapped"
+        "status": "implemented",
+        "reviewId": "detected-scripts-and-neutral-indicator-0afebba9",
+        "reviewedContract": "Complete stated local code-review contract: one required scripts array with exact name/command/mode and optional category fields; original name+command row keys, service and category truthiness/exclusion branches, literal text, all15 class lists after documented service-token substitution, five original Paraglide calls and canonical formatInteger. No callbacks, effects or extra local state. Named/default React component and public prop/item types present. Canonical icon preserves actual original Phosphor alias, regular wand artwork, sm0.875em and decorative semantics. Original/current source class inverse and normal light/dark compiled token declaration proof are explicit, not a runtime equivalence waiver. Implemented means local static review only; production parser/host, native DOM/lifetime/layout and source pixels remain separately unverified.",
+        "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7"
       },
-      "targets": [],
+      "targets": [
+        {
+          "path": "apps/react/src/features/chat/components/detected-scripts-card.tsx",
+          "sha256": "aa29f3bc96287070ff77df13f1f3a8640d2b847237eb68538d9a6fd5b34dc54e",
+          "symbols": ["DetectedScriptsCard"],
+          "lastChangedCommit": "662e2cc514cb9d5fd67ec4f854cd9260e7d6cb00"
+        }
+      ],
       "functional": {
         "cases": []
       },
       "visual": {
         "cases": []
       },
-      "gaps": ["Source/API mapping not reviewed at the frozen candidate."]
+      "gaps": [
+        "Native keyed row identity under replacement/reorder/remount, duplicate or concatenated key collisions, escaping/literal output, zero/one/many updates and language switching remain unverified. Original Svelte keyed each and React map are distinct runtimes; no observed lifecycle equivalence from matching expressions.",
+        "Command truncation, long-name/category containment, actual420/720 geometry and light/dark browser cascade/source-paired pixels remain unverified. Compiled declaration proof covers normal html.light/html.dark descendant badge scopes only, not arbitrary nested theme scopes/global palette or appearance.",
+        "Original messageParser accepts a flat array or object.add array without per-item validation; both original consumers pass metadata directly. Internal caller validates the TypeScript prop shape and observes state, not original parser admission or real chat integration. No production route or malformed-payload behavior accepted.",
+        "Original003 source differs by the documented service class substitution; retain original/current hashes and source invalidation. All old source profiles, reviews, cases/receipts/failures and frozen native evidence remain unchanged. No new native or visual acceptance; whole FaWrapper and supporting tokens/types are not new view mappings."
+      ],
+      "sourceInspection": {
+        "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+        "referenceSha256": "c79ab36620046ededcd05470d7799baf989b1dcaba01b29531c745c9b150f76b",
+        "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+        "candidateSourceSha256": "6ecaf9abd90491eb25992de025658724b280b3596ba15d54b3522e8447707fe2",
+        "changedSinceReference": true
+      }
     },
     "src/lib/components/chat/DigestCard.svelte": {
       "implementation": {
@@ -124309,6 +125511,113 @@
         "response-group-and-cylinder-1cea8e2b",
         "navigation-excerpt-and-image-caption-34161b6d"
       ]
+    },
+    {
+      "candidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "method": "Bounded static e46 reaction correction only: zero new mappings;235/1430(230components+5modules),178partial57localimplemented,229targets87reviews. All229 prior target identities checked:228byteequal, only ResponseGroup updated with full oldrow/hash/contract/gaps retained. Eight original compiled synchronous tracked values and branch conditions audited, source timing inverse/API/CSS/unchanged-body proof; static omission addressed, native timing/dependency/StrictMode parity unverified and partial retained.86old reviews/history/cases/29receipts/failures/all18invalidations preserved. No runtime acceptance transfer.",
+      "functionalResultsReviewed": false,
+      "visualResultsReviewed": false,
+      "reviewedAt": "2026-10-12T06:41:16.151484+00:00",
+      "checkpointAdvance": {
+        "previousLedgerCommit": "9beea0cd41520964a03093b9b4a047161f66f99a",
+        "previousAuditCandidateCommit": "34161b6d596b63366d679dd83dd331b054e45af3",
+        "unchangedUniqueDirectTargets": 228,
+        "changedUniqueDirectTargets": 1,
+        "retainedHistoricalReviewCount": 86,
+        "meaning": "Advance common validation pin only, preserving historical inspected/source/support/evidence pins and previous235-view checkpoint. Exactlyone targeted Response row review; no new mappings, source drift or status upgrade. Historical gap now has a static correction and pending native closure, not retroactive acceptance."
+      },
+      "ledgerCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+      "retainedReviewIds": [
+        "foundation",
+        "collection",
+        "confirm",
+        "catalog",
+        "media",
+        "lightboxes",
+        "local-editor",
+        "questions-attachments",
+        "textarea-consumers",
+        "replace-agent",
+        "directory-view",
+        "directory-live",
+        "structural",
+        "coordinator-controls",
+        "coordinator-patterns",
+        "catalog-expansion",
+        "callback-dialogs",
+        "presence-display",
+        "custom-diagrams",
+        "mermaid-renderer",
+        "diagram-workbench",
+        "fields-matrix",
+        "rows-matrix",
+        "proposal-fixtures",
+        "question-fixtures",
+        "catalog-fixture-wrapper",
+        "dialog-primitives",
+        "radio-primitives",
+        "menu-items",
+        "sidebar-menu-button",
+        "editable-name",
+        "action-bar",
+        "callback-dialog-extension",
+        "modal-catalog",
+        "select-wrappers",
+        "model-display",
+        "model-provider-notice",
+        "effort-picker",
+        "model-picker",
+        "workspace-presentations",
+        "resource-presentations",
+        "agent-avatar-leaves",
+        "support-workspace",
+        "support-tab-state",
+        "support-provider-catalog",
+        "support-agent-model",
+        "structural-audit-accordion",
+        "structural-audit-breadcrumb",
+        "structural-audit-card",
+        "structural-audit-table",
+        "structural-audit-sheet",
+        "structural-audit-tabs",
+        "structural-audit-form",
+        "structural-audit-screen",
+        "structural-audit-settings",
+        "sidebar-leaves-8c10",
+        "mention-navigation-leaves-8c10",
+        "mention-breadcrumb-facade-8c10",
+        "chat-transcript-markers-fe630",
+        "chat-transcript-notices-fe630",
+        "chat-disclosure-rows-fb515",
+        "chat-recovery-notices-fb515",
+        "chat-stream-metadata-3230",
+        "chat-history-attribution-3230",
+        "chat-disclosure-corrections-3230",
+        "chat-queued-actions-command-3e894",
+        "chat-code-reference-context-4bfa",
+        "chat-inline-mcp-prompt-preview-9d297",
+        "queued-attachments-0a010",
+        "tabs-export-correction-0a010",
+        "streaming-status-840763",
+        "mcp-inline-font-correction-840763",
+        "suggested-chief-prompts-16ee80",
+        "automated-wake-header-f2b2a2",
+        "agent-pr-attribution-headers-73da5529",
+        "attachment-permission-support-05cc7db6",
+        "attachment-file-replacement-ff9a4e35",
+        "inline-permission-and-live-support-6a51a3da",
+        "media-and-markdown-composition-dd6e5720",
+        "full-markdown-and-reasoning-68a5ca85",
+        "chat-image-and-video-wrapper-561fa08c",
+        "message-actions-and-transcript-cards-2d310fed",
+        "setup-script-and-edit-confirmation-3d7e81dc",
+        "operational-window-and-panel-2d988e34",
+        "response-group-and-cylinder-1cea8e2b",
+        "navigation-excerpt-and-image-caption-34161b6d",
+        "response-group-reaction-correction-e46a388f"
+      ]
     }
   ],
   "receipts": {
@@ -128957,6 +130266,117 @@
       "runtimeResultsReviewed": false,
       "visualComparisonReviewed": false,
       "sourceDriftPolicy": "Original003/fixed1430 unchanged; all18invalidations and16view/23support candidate drift retained. Response original/current source hashes and old profile remain. All old runtime cases/receipts/failures, including saved-owner1cea gap and original I6/I8, unchanged. Independently reported later image/native successes are not imported or transferred."
+    },
+    {
+      "id": "detected-scripts-and-neutral-indicator-0afebba9",
+      "taskNoteId": "da8342f1-ffcc-433f-bb13-bf06675ad9a1",
+      "reviewContextNoteId": "70e9868e-752d-4d9b-b982-f181bc25eb8e",
+      "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+      "inspectedCandidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+      "previousLedgerCommit": "fff3c7b0a292b3782521c20743829b0eb6d06575",
+      "previousCommonCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+      "reviewedAt": "2026-10-12T06:56:04.352188+00:00",
+      "method": "Bounded original003/final0afebba9 static audit adds only DetectedScriptsCard local implemented.236/1430(231components+5modules),178partial58localimplemented,230targets88reviews. All229prior directtargets byteequal;1889other rows and87historical reviews retained. Original/current class and compiled-source inverse, normal light/dark token proof and canonical icon/import/caller review. Support484 neutral tuple/type and metadata extraction explicitly reviewed without denominator inflation.18prior source invalidations/failures/receipts retained; new DetectedScripts source drift not waived. No native/visual/product acceptance transfer.",
+      "counts": {
+        "addedMappings": 1,
+        "addedSvelteComponents": 1,
+        "addedSvelteReactivityModules": 0,
+        "addedSupportingMappings": 0,
+        "mappedViews": 236,
+        "mappedSvelteComponents": 231,
+        "mappedSvelteReactivityModules": 5,
+        "views": {
+          "unmapped": 1194,
+          "partial": 178,
+          "implemented": 58
+        }
+      },
+      "sourcePaths": ["src/lib/components/chat/DetectedScriptsCard.svelte"],
+      "targetedExistingSourcePaths": [],
+      "newUniqueDirectTargetCount": 1,
+      "priorUniqueDirectTargetCount": 229,
+      "allUniqueDirectTargetCount": 230,
+      "priorDirectTargetIdentity": {
+        "count": 229,
+        "unchanged": 229,
+        "changed": [],
+        "orderedPathAndHashSha256": "47db94ceb1095bbfc7fdd4150ad145e1ab5a72834898a39ffd8f82037274cac0"
+      },
+      "supportDelta": [
+        {
+          "path": "src/lib/components/chat/streaming-status-utils.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "da875ba07cd807044c5de7896558c9fd8ae765b5b42a42afa422ff93e3984057",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "0a18ca4f4c32967d5d797dddbabb30c22c0a3b2f310363b44d03b441a28260bb",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "3c62188c1f1fc8c309e21e06d18c0be18c0dc2de814e2ec48a43649dbadf1393",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/components/ui/indicators/intent-mark-vector.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "a99df6dd7ca32b189e51f71850a7ffb2f2a277b7fe61a0e2dc0ae06e0af67664",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "76458e40a59c428e97839d14b575f741bfe654b6744a23e5759d6f6f79bf264b",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/components/ui/indicators/spinner.meta.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "6c6769ad8b2e6bfe53ad34455ceb882b169b8c6d4ca5c9eb057a4d1b2674d365",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "4354bdb455b56df08ca6e9140e72766702e304fe535f2c5c4d30a8b7992f84b1",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/motion/intent-mark-variants.ts",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": null,
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "41ebb27002863f2a30d419970ddc2c6a1855f483fd3c138e34991a43a8eef120",
+          "supportOnly": true
+        },
+        {
+          "path": "src/lib/styles/tokens.css",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": "7042e2536234a29b3ba6ab2c1eb0f765f36878828bfac53fae334280f6c231d4",
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "b75a904d82e54e286fbce356b89cac0dd6e76f285386ead52cf2d4cb1494cb25",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "89801b0ad50694205eac8e5512ee7345a1af6c3ea6411c48032aed8ced5c50a0",
+          "supportOnly": true
+        },
+        {
+          "path": "apps/react/src/catalog/detected-script-examples.tsx",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": null,
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "24590d368dfcb2dcb158a21dff5e3630d830a126fc8d512fcff179b93dfc2b86",
+          "supportOnly": true
+        },
+        {
+          "path": "apps/react/src/catalog/functional-examples.tsx",
+          "referenceCommit": "003bc52c00dcfffe8513cd6be1b8f45011716714",
+          "originalSha256": null,
+          "previousCandidateCommit": "e46a388f145af8692411824e5afe7736f432e1ed",
+          "previousSha256": "bfd7c6866356e125213eb2c49943b3d995974557a684f5dacf9670de788cd577",
+          "candidateCommit": "0afebba98529ca847730de026cc30a1b0831b1d7",
+          "sha256": "d845ebc4bc7e0a94f5bd175a29ac83b33c3ac5a71e0a9f1af641ddfb5a99f571",
+          "supportOnly": true
+        }
+      ],
+      "runtimeResultsReviewed": false,
+      "visualComparisonReviewed": false,
+      "sourceDriftPolicy": "Original003 inventory/1430 unchanged;18old invalidations preserved and DetectedScripts adaptation remains new invalidation. Changed neutral vector/helper support fingerprints retained with exact inverse; no old sourceInspection refresh. Shared tokens/catalog/types add no views."
     }
   ]
 }
