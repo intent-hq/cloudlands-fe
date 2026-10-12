@@ -16,6 +16,7 @@ import {
   outputJson,
   expectCode,
   capture,
+  captureScopedToast,
 } from '../lib/sandbox-notifications.mjs';
 
 test('sandbox notifications SN1: progress lifecycle and keyed replacement render once in the default host', async ({
@@ -78,6 +79,7 @@ test('sandbox notifications SN2: catalog navigation keeps the default host and s
     const scopedNode = await scopedToast.elementHandle();
     try {
       await capture(page, scoped, 'sn2-scoped-before', info);
+      await captureScopedToast(page, scopedToast, 'sn2-complete-toast-before', info);
       const live = page.locator('[data-functional-example="notify"]');
       await button(live, 'Success').click();
       const liveToast = await oneToast(page, 'Live success toast');
@@ -92,6 +94,7 @@ test('sandbox notifications SN2: catalog navigation keeps the default host and s
         ),
       ).toBe(true);
       await capture(page, scoped, 'sn2-scoped-survives-default-dismiss', info);
+      await captureScopedToast(page, scopedToast, 'sn2-complete-toast-after', info);
     } finally {
       await scopedNode.dispose();
     }

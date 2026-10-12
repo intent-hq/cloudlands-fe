@@ -259,6 +259,111 @@ export async function navigateCatalog(page, slug) {
   await expect.poll(() => new URL(page.url()).pathname).toBe(`/sandbox/${slug}`);
 }
 
+export async function captureScopedToast(page, toast, name, info) {
+  const close = button(toast, label('ui_toast_close_ariaLabel'));
+  const message = toast.getByText('Workspace saved', { exact: true });
+  await expect(toast).toHaveCount(1);
+  await expect(message).toBeVisible();
+  await expect(close).toBeVisible();
+  await expect(close).toBeEnabled();
+  const focus = await page.evaluateHandle(() => document.activeElement);
+  const closeNode = await close.elementHandle();
+  const messageNode = await message.elementHandle();
+  try {
+    const probe = () =>
+      toast.evaluate(
+        (node, { focus, closeNode, messageNode }) => {
+          const rect = ({ left, right, top, bottom, width, height }) => ({
+            left,
+            right,
+            top,
+            bottom,
+            width,
+            height,
+          });
+          const hit = (target, bounds) => {
+            const found = document.elementFromPoint(
+              bounds.left + bounds.width / 2,
+              bounds.top + bounds.height / 2,
+            );
+            return found === target || target.contains(found);
+          };
+          const closeBounds = closeNode.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(messageNode);
+          const text = [...range.getClientRects()].map((bounds) => ({
+            bounds: rect(bounds),
+            hit: hit(messageNode, bounds),
+          }));
+          const active = document.activeElement;
+          return {
+            viewport: {
+              width: innerWidth,
+              height: innerHeight,
+              clientWidth: document.documentElement.clientWidth,
+              clientHeight: document.documentElement.clientHeight,
+              scrollX,
+              scrollY,
+            },
+            toast: rect(node.getBoundingClientRect()),
+            message: messageNode.textContent,
+            text,
+            close: { bounds: rect(closeBounds), hit: hit(closeNode, closeBounds) },
+            focus: {
+              tag: active?.tagName,
+              id: active?.id,
+              label: active?.getAttribute('aria-label'),
+            },
+            focusPreserved: active === focus,
+          };
+        },
+        { focus, closeNode, messageNode },
+      );
+    const before = { probe: await probe(), aria: await toast.ariaSnapshot() };
+    await info.attach(`${name}-viewport-before.json`, {
+      body: JSON.stringify(before, null, 2),
+      contentType: 'application/json',
+    });
+    const contained = (bounds, outer) => {
+      expect(bounds.width).toBeGreaterThan(0);
+      expect(bounds.height).toBeGreaterThan(0);
+      expect(bounds.left).toBeGreaterThanOrEqual(outer.left);
+      expect(bounds.right).toBeLessThanOrEqual(outer.right);
+      expect(bounds.top).toBeGreaterThanOrEqual(outer.top);
+      expect(bounds.bottom).toBeLessThanOrEqual(outer.bottom);
+    };
+    contained(before.probe.toast, {
+      left: 0,
+      top: 0,
+      right: before.probe.viewport.clientWidth,
+      bottom: before.probe.viewport.clientHeight,
+    });
+    expect(before.probe.focusPreserved).toBe(true);
+    expect(before.probe.text.length).toBeGreaterThan(0);
+    for (const part of [...before.probe.text, before.probe.close]) {
+      contained(part.bounds, before.probe.toast);
+      expect(part.hit, 'The visible notification text and close control must be reachable').toBe(
+        true,
+      );
+    }
+    // Keep the original section crop; this additional target includes the real toast's controls.
+    await captureTranscript(page, toast, name, info);
+    const after = { probe: await probe(), aria: await toast.ariaSnapshot() };
+    await info.attach(`${name}-viewport-after.json`, {
+      body: JSON.stringify(after, null, 2),
+      contentType: 'application/json',
+    });
+    expect(
+      after,
+      'Complete-toast capture preserves current focus, scroll, geometry and AX',
+    ).toEqual(before);
+  } finally {
+    await focus.dispose();
+    await closeNode.dispose();
+    await messageNode.dispose();
+  }
+}
+
 export async function copyWithFeedback(page, leaf, copy, paste, text, idle, copied) {
   await leaf.hover();
   await expect(copy).toHaveAccessibleName(idle);
