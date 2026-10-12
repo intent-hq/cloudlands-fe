@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.215.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.5...v2.215.6) (2026-10-12)
+
+
+### 🐛 Bug Fixes
+
+* apply primary browser selection events immediately ([#3361](https://github.com/intent-hq/cloudlands-fe/issues/3361)) ([45853ca](https://github.com/intent-hq/cloudlands-fe/commit/45853ca8efa6dd7608ce5cc6685a2682071a3e91))
+
 ## [2.215.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.4...v2.215.5) (2026-10-12)
 
 
