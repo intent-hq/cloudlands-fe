@@ -4,7 +4,10 @@ import { store as appStore } from '$store/renderer/store';
 import { createAdmittedLegacyPrincipal } from '../../test/fixtures/admitted-legacy-principal';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import {
+  pendingLifecycleObserved,
+  pendingSubmissionSettled,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { selectPendingSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
@@ -190,6 +193,79 @@ describe('authoritative submission integration', () => {
       vi.useRealTimers();
     }
   });
+
+  it.each(['updated', 'duplicate', 'empty'] as const)(
+    'does not reread after a complete %s queue push supersedes a held queue read',
+    async (variant) => {
+      const accepted = fixture();
+      event('agent:queue:updated', { queue: [accepted.row] });
+      appStore.dispatch(
+        pendingSubmissionSettled(accepted.scope, accepted.submission.id, 'accepted', Date.now()),
+      );
+      let oldReply!: (value: unknown) => void;
+      wire.request.mockImplementation(async () => ({ queue: [accepted.row] }));
+      wire.request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            oldReply = resolve;
+          }),
+      );
+      const hydration = hydrateAgentQueue('agent-evidence', 'evidence-workspace');
+      const pushed =
+        variant === 'empty'
+          ? []
+          : [
+              {
+                ...accepted.row,
+                content: variant === 'updated' ? 'new pushed content' : accepted.row.content,
+              },
+            ];
+      event('agent:queue:updated', { queue: pushed });
+      oldReply({ queue: [accepted.row] });
+      await hydration;
+      expect(wire.request.mock.calls).toEqual([
+        ['agent.getQueue', { agentId: 'agent-evidence', workspaceId: 'evidence-workspace' }],
+      ]);
+      expect(
+        accepted.display().queue.map((row) => [row.confirmedId, row.content, row.blocksMutations]),
+      ).toEqual(pushed.map((row) => [row.id, row.content, false]));
+      expect(appStore.state.agentQueue.byAgentId['agent-evidence'].isHydrating).toBe(false);
+    },
+  );
+
+  it.each(['explicit hydrate', 'lifecycle invalidation'] as const)(
+    'retains a trailing queue read for %s after a complete push',
+    async (reason) => {
+      const accepted = fixture();
+      event('agent:queue:updated', { queue: [accepted.row] });
+      appStore.dispatch(
+        pendingSubmissionSettled(accepted.scope, accepted.submission.id, 'accepted', Date.now()),
+      );
+      let oldReply!: (value: unknown) => void;
+      const recovered = { ...accepted.row, content: 'fresh recovery content' };
+      wire.request.mockImplementation(async () => ({ queue: [recovered] }));
+      wire.request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            oldReply = resolve;
+          }),
+      );
+      const hydration = hydrateAgentQueue('agent-evidence', 'evidence-workspace');
+      event('agent:queue:updated', { queue: [accepted.row] });
+      if (reason === 'explicit hydrate')
+        void hydrateAgentQueue('agent-evidence', 'evidence-workspace');
+      else appStore.dispatch(pendingLifecycleObserved(accepted.scope, false));
+      oldReply({ queue: [] });
+      await hydration;
+      expect(wire.request.mock.calls).toEqual([
+        ['agent.getQueue', { agentId: 'agent-evidence', workspaceId: 'evidence-workspace' }],
+        ['agent.getQueue', { agentId: 'agent-evidence', workspaceId: 'evidence-workspace' }],
+      ]);
+      expect(accepted.display().queue[0].content).toBe('fresh recovery content');
+      expect(accepted.display().queue[0].confirmedId).toBe(accepted.row.id);
+      expect(appStore.state.agentQueue.byAgentId['agent-evidence'].isHydrating).toBe(false);
+    },
+  );
 
   it('uses real queue, processing and lean message events to fence a late queued ACK', () => {
     const accepted = fixture();
