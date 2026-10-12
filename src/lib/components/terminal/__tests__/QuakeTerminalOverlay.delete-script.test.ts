@@ -137,7 +137,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 
 vi.mock('$lib/client', () => ({
-  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+  appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
 }));
 vi.mock('$features/scripts/scripts.client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$features/scripts/scripts.client')>();
@@ -447,6 +447,7 @@ describe('script definition and authority races', () => {
     seedWorkspace(WS_A, ['script-1'], 'script-1');
     appStore.dispatch(openTerminalOverlay(WS_A));
     vi.mocked(appClient.scripts.list).mockResolvedValue([makeScript('script-1', WS_A)]);
+    vi.mocked(appClient.scripts.get).mockResolvedValue(makeScript('script-1', WS_A));
   });
 
   it.each(['name', 'command'])('blocks deletion throughout a deferred %s save', async (field) => {
@@ -464,7 +465,7 @@ describe('script definition and authority races', () => {
       await fireEvent.blur(input);
     } else {
       await fireEvent.click(screen.getByRole('button', { name: 'Edit command' }));
-      await fireEvent.input(screen.getByPlaceholderText('npm run dev'), {
+      await fireEvent.input(await screen.findByPlaceholderText('npm run dev'), {
         target: { value: 'make check' },
       });
       await fireEvent.keyDown(screen.getByPlaceholderText('npm run dev'), {

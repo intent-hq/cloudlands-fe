@@ -1,3 +1,4 @@
+import type { WorkspaceScript } from './types';
 import { store } from '$store/renderer/store';
 import {
   selectScriptById,
@@ -17,6 +18,7 @@ export async function withScriptDefinitionEdits<T extends { success: boolean; er
   workspaceId: string,
   scriptIds: string[] | 'workspace',
   mutation: () => Promise<T>,
+  selectedDefinitions: WorkspaceScript[] = [],
 ): Promise<T | { success: false; error: string }> {
   if (selectScriptDetectionOperation.select(store.state, workspaceId)?.pending)
     return { success: false, error: m.scripts_pendingChange_error() };
@@ -38,7 +40,16 @@ export async function withScriptDefinitionEdits<T extends { success: boolean; er
   }
   const ids = [...new Set(scriptIds)];
   for (const id of ids) {
-    if (!selectScriptById.select(store.state, workspaceId, id))
+    if (
+      !selectScriptById.select(store.state, workspaceId, id) &&
+      !selectedDefinitions.some(
+        (script) =>
+          script.id === id &&
+          script.workspaceId === workspaceId &&
+          !script.archivedAt &&
+          typeof script.command === 'string',
+      )
+    )
       return { success: false, error: m.scripts_client_notFound_error({ scriptId: id }) };
     if (selectWorkspaceScriptOperations.select(store.state, workspaceId)[id]?.pending)
       return { success: false, error: m.scripts_pendingChange_error() };

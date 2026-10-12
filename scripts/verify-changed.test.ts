@@ -1695,6 +1695,36 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
   });
 
+  it.each(['edit', 'delete', 'rename'])(
+    'keeps a fixture %s on the focused component lane',
+    (change) => {
+      const host = 'src/lib/components/chat/input/__tests__/MemberMentionsHost.svelte';
+      const spec = 'src/lib/components/chat/input/__tests__/member-mentions.ct.spec.ts';
+      const unrelatedHost = 'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte';
+      const unrelatedSpec = 'src/lib/other/__tests__/other.ct.spec.ts';
+      const renamed = 'src/lib/components/chat/input/__tests__/RenamedHost.svelte';
+      const root = fixtureRoot({
+        [host]: '<div />',
+        [spec]: "import Host from './MemberMentionsHost.svelte';",
+        [unrelatedHost]: '<div />',
+        [unrelatedSpec]: "import Host from './OtherHost.svelte';",
+      });
+      if (change !== 'edit') rmSync(join(root, host));
+      if (change === 'rename') writeFileSync(join(root, renamed), '<div />');
+      const files = change === 'rename' ? [host, renamed] : [host];
+      const options = { root, ctTests: [spec, unrelatedSpec] };
+      expect(findRelatedCtTests(files, options)).toEqual([spec]);
+      const plan = createVerificationPlan(files, options);
+      expect(plan.checks.filter((check) => check.id.startsWith('ct-'))).toMatchObject([
+        { id: 'ct-related', args: ['run', 'test:ct', '--', spec] },
+      ]);
+      expect(findRelatedCtTests([unrelatedHost], options)).toEqual([]);
+      expect(
+        createVerificationPlan([unrelatedHost], options).checks.map((check) => check.id),
+      ).not.toContain('ct-full');
+    },
+  );
+
   it('selects a component test through the Svelte components its host imports, one hop only', () => {
     const root = fixtureRoot({
       'src/lib/__tests__/progress.ct.spec.ts': "import Host from './ProgressHost.svelte';",

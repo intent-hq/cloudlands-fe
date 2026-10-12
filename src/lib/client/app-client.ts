@@ -2,6 +2,7 @@ import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
   ScriptArchiveFilter,
+  ScriptListPage,
   ScriptArchiveResult,
   ScriptRestoreResult,
 } from '$features/scripts/types';
@@ -1913,6 +1914,8 @@ export interface ScriptCreateInput {
   name: string;
   command: string;
   mode: ScriptMode;
+  healthUrl?: string;
+  readyPattern?: string;
   cwd?: string;
   env?: Record<string, string>;
   category?: string;
@@ -1952,6 +1955,11 @@ export interface ScriptsClient {
     workspaceId: string,
     options?: { archive?: ScriptArchiveFilter },
   ): Promise<ScriptWithState[]>;
+  listPage(
+    workspaceId: string,
+    options?: { limit?: number; cursor?: string },
+  ): Promise<ScriptListPage>;
+  get(workspaceId: string, scriptId: string): Promise<ScriptWithState>;
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.start`. */

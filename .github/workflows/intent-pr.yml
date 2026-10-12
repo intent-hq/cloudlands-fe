@@ -328,8 +328,9 @@ jobs:
   # The same checkout + base fetch also computes CT relevance: ct_required
   # is 'true' when the PR diff touches a CT-contract path (the one list in
   # scripts/ct-contract-paths.mjs, shared with verify:changed) or a CT spec /
-  # geometry golden (same module), which makes test-ct run on pull_request
-  # (see test-ct / gate). Fail-safe the other
+  # geometry golden, or a direct local import of a discovered CT spec in either
+  # base or head (same module). Fixture changes keep focused local selection
+  # but require the hosted suite (see test-ct / gate). Fail-safe the other
   # way round from fast_path: the script prints ct_required=true on any
   # internal error, and the step writes 'true' if the script exits non-zero
   # or prints nothing — a broken relevance check runs CT, never skips it.

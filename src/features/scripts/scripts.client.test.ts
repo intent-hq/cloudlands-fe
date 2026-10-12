@@ -47,7 +47,12 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
 );
 vi.mock('$lib/client', () => ({
   appClient: {
-    scripts: { list: scriptsList, create: scriptsCreate },
+    scripts: {
+      list: scriptsList,
+      get: async (workspaceId: string, id: string) =>
+        (await scriptsList(workspaceId)).find((s: any) => s.id === id),
+      create: scriptsCreate,
+    },
     files: { read: filesRead },
   },
 }));
@@ -245,7 +250,7 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
 
     const result = await scriptsClient.update('ws-1', 'script-auto-dev', { command: 'pnpm dev' });
 
-    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
+    expect(scriptsList).toHaveBeenCalledWith('ws-1');
     expect(scriptsCreate).toHaveBeenCalledTimes(1);
     expect(scriptsCreate).toHaveBeenCalledWith(
       'ws-1',
@@ -317,7 +322,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     const result = await scriptsClient.detect('ws-1');
 
     expect(filesRead).toHaveBeenCalledWith('ws-1', 'package.json');
-    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
     expect(scriptsCreate).toHaveBeenCalledTimes(2);
     expect(scriptsCreate).toHaveBeenNthCalledWith(1, 'ws-1', {
       name: 'dev',

@@ -14,7 +14,11 @@
     selectScriptMonitors,
     selectAgentScriptMonitors,
   } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
-  import { scriptMonitorActionRequested } from '$store/renderer/slices/script-monitor/script-monitor-slice';
+  import {
+    scriptMonitorActionRequested,
+    scriptMonitorDetailsRequested,
+    scriptMonitorsLoadMoreRequested,
+  } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import {
     safeSubscriptionSlide,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
@@ -40,6 +44,10 @@
   const monitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
   const activeMonitors = $derived($monitors$.filter((row) => row.state === 'active'));
   let expanded = $state<string | null>(null);
+  function toggleDetails(monitorId: string) {
+    expanded = expanded === monitorId ? null : monitorId;
+    if (expanded) store.dispatch(scriptMonitorDetailsRequested(workspaceId, monitorId));
+  }
   async function copyCommand(command: string) {
     try {
       await navigator.clipboard.writeText(command);
@@ -55,6 +63,7 @@
 
 {#each activeMonitors as monitor (monitor.monitorId)}
   {@const script = $snapshot$.scripts.find((item) => item.id === monitor.scriptId)}
+  {@const details = $snapshot$.details?.[monitor.monitorId]}
   {@const operation = $snapshot$.operations[monitor.monitorId]}
   {@const disabled = operation?.pending || $snapshot$.status !== 'ready'}
   {@const detailsId = `script-monitor-details-${monitor.monitorId}`}
@@ -77,7 +86,7 @@
         class="min-w-0 flex-1 justify-start truncate p-0 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
         aria-expanded={expanded === monitor.monitorId}
         aria-controls={detailsId}
-        onclick={() => (expanded = expanded === monitor.monitorId ? null : monitor.monitorId)}
+        onclick={() => toggleDetails(monitor.monitorId)}
       >
         <span class="truncate">{monitor.scriptName}</span>
       </Button>
@@ -100,10 +109,10 @@
           {/snippet}
         </Menu.Trigger>
         <Menu.Content align="end" side="top" aria-label={monitor.scriptName}>
-          <Menu.Item disabled={!script} onSelect={() => act(monitor.monitorId, 'pane')}
+          <Menu.Item onSelect={() => act(monitor.monitorId, 'pane')}
             >{m.workspace_shell_showInPanel_tooltip()}</Menu.Item
           >
-          <Menu.Item disabled={!script} onSelect={() => act(monitor.monitorId, 'bottom')}
+          <Menu.Item onSelect={() => act(monitor.monitorId, 'bottom')}
             >{m.workspace_shell_showInBottomBar_tooltip()}</Menu.Item
           >
           <Menu.Separator />
@@ -122,7 +131,7 @@
         aria-label={monitor.scriptName}
         aria-expanded={expanded === monitor.monitorId}
         aria-controls={detailsId}
-        onclick={() => (expanded = expanded === monitor.monitorId ? null : monitor.monitorId)}
+        onclick={() => toggleDetails(monitor.monitorId)}
       >
         <Fa
           icon={faChevronDown}
@@ -168,15 +177,17 @@
             time: formatDateTime(monitor.expiresAt),
           })}</span
         >
-        {#if monitor.outputPattern !== undefined}<span class="whitespace-pre-wrap break-all"
-            >{m.chat_scriptMonitor_pattern_description({ pattern: monitor.outputPattern })}</span
+        {#if details?.outputPattern !== undefined}<span class="whitespace-pre-wrap break-all"
+            >{m.chat_scriptMonitor_pattern_description({ pattern: details?.outputPattern })}</span
           >{/if}
         {#if monitor.lineCount !== undefined}<span
             >{m.chat_scriptMonitor_lines_description({
               count: formatInteger(monitor.lineCount),
             })}</span
           >{/if}
-        {#if !script}
+        {#if details === undefined}
+          <span>{m.workspace_hoverCard_loading_label()}</span>
+        {:else if !script}
           <span>{m.chat_scriptMonitor_missing_description()}</span>
         {:else if script.runtime.runId && script.runtime.runId !== monitor.runId}
           <span>{m.chat_scriptMonitor_output_description()}</span>
@@ -185,3 +196,13 @@
     {/if}
   </div>
 {/each}
+
+{#if $snapshot$.nextCursor}
+  <Button
+    variant="ghost"
+    size="sm"
+    disabled={$snapshot$.loadingMore}
+    onclick={() => store.dispatch(scriptMonitorsLoadMoreRequested(workspaceId))}
+    >{m.gitlabCheckout_loadMore_label()}</Button
+  >
+{/if}

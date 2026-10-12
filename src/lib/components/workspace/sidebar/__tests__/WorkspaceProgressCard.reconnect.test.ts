@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import type { BackendNotification } from '$lib/client/live/backend-transport';
 import type { Workspace } from '$shared/types';
 import type { WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -10,6 +11,7 @@ const wire = vi.hoisted(() => ({
   request: vi.fn(),
   subscribe: vi.fn(),
   reconnect: new Set<() => void>(),
+  notifications: new Set<(event: BackendNotification) => void>(),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: wire.request,
@@ -17,7 +19,10 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     wire.reconnect.add(handler);
     return () => wire.reconnect.delete(handler);
   },
-  onBackendNotification: () => () => {},
+  onBackendNotification: (handler: (event: BackendNotification) => void) => {
+    wire.notifications.add(handler);
+    return () => wire.notifications.delete(handler);
+  },
   backendSubscribe: wire.subscribe,
   backendUnsubscribe: async () => {},
 }));
@@ -44,7 +49,10 @@ import { selectPrincipalActionContext } from '$store/renderer/slices/principal/p
 import { browserClientsSaga } from '$store/renderer/slices/browser-clients/sagas/browser-clients-saga';
 import { workspaceReconnectSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
 import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
-import { refreshLiveClientsRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
+import {
+  fetchWorkspaceBrowserClientRequested,
+  refreshLiveClientsRequested,
+} from '$store/renderer/slices/browser-clients/browser-clients-slice';
 import { __resetOwnClientIdForTesting } from '$lib/client/live/live-clients-client';
 import WorkspaceProgressCard from '../WorkspaceProgressCard.svelte';
 
@@ -165,7 +173,170 @@ async function reconnect(reverse = false) {
   await capabilities();
 }
 
+function pinChanged(clientId: string | null, workspaceId = 'ws-1') {
+  const notification: BackendNotification = {
+    method: 'events.event',
+    params: {
+      event: {
+        id: `pin-${workspaceId}-${clientId}`,
+        workspaceId,
+        timestamp: '2026-10-12T08:00:00Z',
+        type: 'workspace:updated',
+        actor: { type: 'user', id: 'person' },
+        data: { workspaceId, changes: { browserClientId: clientId } },
+      },
+    },
+  };
+  for (const handler of wire.notifications) handler(notification);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((yes) => {
+    resolve = yes;
+  });
+  return { promise, resolve };
+}
+
 describe('actual browser lifecycle to primary menu', () => {
+  it('shows a freshly read self pin as checked even when its browser is offline', async () => {
+    resolution = { source: 'workspace', clientId: own, resolved: null };
+    const normal = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation((method, params) =>
+      method === 'client.list' ? Promise.resolve({ clients: [] }) : normal(method, params),
+    );
+    await mount();
+    await waitFor(() => expect(store.state.browserClients.ownClientIdConfirmed).toBe(true));
+    const action = primary().closest('[role^="menuitem"]')!;
+    expect(action.getAttribute('aria-checked')).toBe('true');
+    expect(action.hasAttribute('data-disabled')).toBe(true);
+    expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient?.resolved).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  it('does not check remembered identity when the reconnect hello fails', async () => {
+    await mount();
+    const normal = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation((method, params) =>
+      method === 'client.hello'
+        ? Promise.reject(new Error('diagnostic hello failure'))
+        : normal(method, params),
+    );
+    resolution = { source: 'workspace', clientId: own, resolved: null };
+    store.dispatch(connectionStatusChanged('disconnected'));
+    expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toBeNull();
+    expect(store.state.browserClients.ownClientId).toBe(own);
+    store.dispatch(connectionStatusChanged('connected'));
+    await waitFor(() =>
+      expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toEqual(resolution),
+    );
+    await waitFor(() =>
+      expect(primary().closest('[role^="menuitem"]')?.getAttribute('aria-checked')).toBe('false'),
+    );
+    expect(store.state.browserClients.ownClientIdConfirmed).toBe(false);
+    expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
+    expect(writes()).toEqual([]);
+  });
+
+  it.each(['other-desktop', null])(
+    'uses a server pin change to %s even when the resolution read fails',
+    async (clientId) => {
+      const view = await mount();
+      const normal = wire.request.getMockImplementation()!;
+      wire.request.mockImplementation((method, params) =>
+        method === 'workspace.getBrowserClient'
+          ? Promise.reject(new Error('resolution temporarily unavailable'))
+          : normal(method, params),
+      );
+      pinChanged(clientId);
+      await waitFor(() => {
+        expect(primary().closest('[role^="menuitem"]')?.getAttribute('aria-checked')).toBe('false');
+        expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false);
+      });
+      expect(writes()).toEqual([]);
+      await fireEvent.click(primary());
+      await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(writes()).toEqual([]);
+      await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+      await fireEvent.click(primary());
+      await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
+      await waitFor(() =>
+        expect(writes()).toEqual([
+          ['workspace.setBrowserClient', { workspaceId: 'ws-1', clientId: own }],
+        ]),
+      );
+    },
+  );
+
+  it('does not apply another workspace pin event to this menu', async () => {
+    await mount();
+    pinChanged('other-desktop', 'ws-2');
+    await tick();
+    expect(primary().closest('[role^="menuitem"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(writes()).toEqual([]);
+  });
+
+  it('does not let an older read undo successive changed and cleared pin events', async () => {
+    await mount();
+    const normal = wire.request.getMockImplementation()!;
+    const old = deferred<unknown>();
+    const latest = deferred<unknown>();
+    let reads = 0;
+    wire.request.mockImplementation((method, params) =>
+      method === 'workspace.getBrowserClient'
+        ? ++reads === 1
+          ? old.promise
+          : latest.promise
+        : normal(method, params),
+    );
+    store.dispatch(fetchWorkspaceBrowserClientRequested('ws-1'));
+    pinChanged('other-desktop');
+    pinChanged(null);
+    await waitFor(() =>
+      expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
+    );
+    old.resolve({ browserClient: resolution });
+    await waitFor(() => expect(reads).toBe(2));
+    await tick();
+    expect(primary().closest('[role^="menuitem"]')?.getAttribute('aria-checked')).toBe('false');
+    latest.resolve({ browserClient: { source: 'default', resolved: null } });
+    await tick();
+    wire.request.mockImplementation((method, params) =>
+      method === 'workspace.getBrowserClient' ? new Promise(() => {}) : normal(method, params),
+    );
+    pinChanged(own);
+    await waitFor(() =>
+      expect(primary().closest('[role^="menuitem"]')?.getAttribute('aria-checked')).toBe('true'),
+    );
+    expect(writes()).toEqual([]);
+  });
+
+  it('does not let an older write echo undo another client selection', async () => {
+    resolution = { source: 'default', resolved: null };
+    const view = await mount();
+    const normal = wire.request.getMockImplementation()!;
+    const write = deferred<unknown>();
+    wire.request.mockImplementation((method, params) => {
+      if (method === 'workspace.setBrowserClient') return write.promise;
+      if (method === 'workspace.getBrowserClient')
+        return Promise.reject(new Error('read unavailable'));
+      return normal(method, params);
+    });
+    await fireEvent.click(primary());
+    await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    pinChanged('other-desktop');
+    write.resolve({
+      browserClient: { source: 'workspace', clientId: own, resolved: { clientId: own } },
+    });
+    await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+    await waitFor(() => {
+      expect(primary().closest('[role^="menuitem"]')?.getAttribute('aria-checked')).toBe('false');
+      expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false);
+    });
+    expect(writes()).toHaveLength(1);
+  });
+
   it('enables recovery after delayed startup status cancels the first hello', async () => {
     cancels.forEach((cancel) => cancel());
     dispose();
