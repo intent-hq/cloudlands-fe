@@ -6,6 +6,7 @@ import {
   choice,
   toggle,
   focusScroll,
+  pageDownAndWaitForScrollEnd,
   scrollState,
   wheel,
   visibleRow,
@@ -90,7 +91,7 @@ test('operational-window OW3 native PageDown and End expose usable rows', async 
   await visibleRow(primary);
   const before = await scrollState(primary.scroll);
   await capture(page, primary, 'OW3-before', info);
-  await page.keyboard.press('PageDown');
+  await pageDownAndWaitForScrollEnd(page, primary.scroll, info);
   await expect
     .poll(async () => (await scrollState(primary.scroll)).top)
     .toBeGreaterThan(before.top);

@@ -206,6 +206,92 @@ export async function focusScroll(scroll) {
   await scroll.click({ position: { x: 1, y: 1 } });
   await expect(scroll).toBeFocused();
 }
+export async function pageDownAndWaitForScrollEnd(page, scroll, info) {
+  const observation = await scroll.evaluateHandle((node) => {
+    const describe = (target) =>
+      target instanceof Element
+        ? {
+            tag: target.localName,
+            testId: target.getAttribute('data-testid'),
+            role: target.getAttribute('role'),
+            label: target.getAttribute('aria-label'),
+          }
+        : null;
+    const measure = () => ({
+      scrollTop: node.scrollTop,
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+    });
+    const armed = { at: performance.now(), target: describe(node), ...measure() };
+    const events = [];
+    let pageDownSeen = false;
+    const onEvent = (event) => {
+      if (event.type === 'keydown' && event.key !== 'PageDown') return;
+      if (
+        event.type === 'keydown' &&
+        event.isTrusted &&
+        event.target === node &&
+        event.currentTarget === node
+      )
+        pageDownSeen = true;
+      events.push({
+        type: event.type,
+        key: event.type === 'keydown' ? event.key : null,
+        afterPageDown: event.type === 'scrollend' && pageDownSeen,
+        at: performance.now(),
+        eventTimeStamp: event.timeStamp,
+        trusted: event.isTrusted,
+        target: describe(event.target),
+        sameTarget: event.target === node,
+        sameCurrentTarget: event.currentTarget === node,
+        ...measure(),
+      });
+    };
+    node.addEventListener('keydown', onEvent, { passive: true });
+    node.addEventListener('scrollend', onEvent, { passive: true });
+    return {
+      read: () => ({ armed, events: [...events], current: measure() }),
+      dispose: () => {
+        node.removeEventListener('keydown', onEvent);
+        node.removeEventListener('scrollend', onEvent);
+      },
+    };
+  });
+  try {
+    await page.keyboard.press('PageDown');
+    await expect
+      .poll(
+        () =>
+          observation.evaluate((observer) =>
+            observer
+              .read()
+              .events.some(
+                (event) =>
+                  event.afterPageDown &&
+                  event.trusted &&
+                  event.sameTarget &&
+                  event.sameCurrentTarget,
+              ),
+          ),
+        { timeout: 5000 },
+      )
+      .toBe(true);
+  } finally {
+    try {
+      const receipt = await observation.evaluate((observer) => observer.read());
+      await info.attach('OW3-PageDown-scrollend.json', {
+        body: JSON.stringify(receipt, null, 2),
+        contentType: 'application/json',
+      });
+    } finally {
+      try {
+        await observation.evaluate((observer) => observer.dispose());
+      } finally {
+        await observation.dispose();
+      }
+    }
+  }
+}
 export const scrollState = (scroll) =>
   scroll.evaluate((node) => ({
     top: node.scrollTop,
