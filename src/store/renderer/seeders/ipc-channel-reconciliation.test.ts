@@ -560,6 +560,11 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:repository-resource:capture',
   'backend:repository-resource:detail',
   'backend:repository-resource:release',
+  // Recovery captures the real preload and rejects before IPC without it.
+  // A mock bridge would bypass sender ownership and ordered fence observation.
+  'backend:event-recovery:capture',
+  'backend:event-recovery:request',
+  'backend:event-recovery:release',
   // Checkout sessions bind the original real preload bridge and host connection.
   // Mock bridging would bypass capture/currentness; preview clients report unavailable.
   'backend:repository-checkout:capture',

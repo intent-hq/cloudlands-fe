@@ -7,7 +7,6 @@ import {
 } from '$shared/event-recovery/session';
 import { BackendError } from './backend-transport-types';
 
-const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
 const frameSchema = z.discriminatedUnion('kind', [
   z.object({ id: z.string(), kind: z.literal('retired') }),
   z.object({
@@ -44,6 +43,7 @@ export function createEventRecoveryTransport(getBridge: () => Window['electronAP
   return async (): Promise<EventRecoverySession> => {
     const bridge = getBridge();
     if (!bridge) throw new Error('Event recovery bridge unavailable');
+    const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
     let id: string | undefined,
       retired = false,
       released = false,
