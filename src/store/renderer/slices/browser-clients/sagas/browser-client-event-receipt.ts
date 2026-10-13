@@ -42,14 +42,14 @@ export function cancelBrowserClientEvents(workspaceId?: string): void {
 
 /** Both read lanes return their actual completion, including a coalesced trigger. */
 export async function dispatchBrowserClientEvent(
-  workspaceId: string,
+  workspaceId: string | undefined,
   lifetime: RecoveryLifetime,
   includeRoster = true,
 ): Promise<void> {
   if (!lifetime.commit(() => undefined)) return;
-  const actions: ReadAction[] = includeRoster
-    ? [refreshLiveClientsRequested(workspaceId), fetchWorkspaceBrowserClientRequested(workspaceId)]
-    : [fetchWorkspaceBrowserClientRequested(workspaceId)];
+  const actions: ReadAction[] = [];
+  if (includeRoster) actions.push(refreshLiveClientsRequested(workspaceId));
+  if (workspaceId) actions.push(fetchWorkspaceBrowserClientRequested(workspaceId));
   await Promise.all(
     actions.map(
       (action) =>

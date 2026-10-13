@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import type { AdmittedEventObserver } from '$features/events/event-recovery-coordinator';
 import {
   createEventRecoverySession,
   type RecoveryNotification,
@@ -32,7 +33,7 @@ import { collectBrowserTabs } from '../../panel-layout/panel-layout-selectors';
 import type { BrowserTabListing } from '$shared/types/browser-clients';
 import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
 import { browserClientsSaga } from './browser-clients-saga';
-import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
+import { selectLiveClients, selectWorkspaceDrivingClient } from '../browser-clients-selectors';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -75,7 +76,7 @@ const lose = (generation = '1', id = 'browser-1') =>
   });
 const calls = (method: string) => rpc.request.mock.calls.filter(([name]) => name === method);
 
-async function attach(supported = true) {
+async function attach(supported = true, admitted?: AdmittedEventObserver) {
   scope = rendererEventRecovery.attach(
     createEventRecoverySession({
       supported,
@@ -92,6 +93,7 @@ async function attach(supported = true) {
         return value;
       },
     }),
+    admitted,
   );
   await scope.subscribe(
     { eventTypes: ['client:*', 'workspace:updated', 'settings:changed'] },
@@ -922,3 +924,74 @@ it.each<BrowserTabViewport>([
     ]);
   },
 );
+
+it('global client event receipt reads only its roster even with mounted workspace owners', async () => {
+  const { hydrateBrowserClientsRequested } = await import('../browser-clients-slice');
+  const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+  const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+  await attach();
+  store.dispatch(hydrateBrowserClientsRequested());
+  await settle();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  const held = deferred<unknown>();
+  const normal = rpc.request.getMockImplementation()!;
+  rpc.request.mockImplementation((method, params) =>
+    method === 'client.list' ? held.promise : normal(method, params),
+  );
+  rpc.request.mockClear();
+  const done = vi.fn();
+  rendererEventRecovery.push(browserClientRecoveryKey());
+  const receipt = dispatchBrowserClientEvent(
+    undefined,
+    rendererEventRecovery.capture(browserClientRecoveryKey()),
+  ).then(done);
+  await settle();
+  expect(done).not.toHaveBeenCalled();
+  const requestsBeforeSettlement = [...rpc.request.mock.calls];
+  held.resolve({ clients: [] });
+  await receipt;
+  expect(requestsBeforeSettlement.map(([method, params]) => [method, params])).toEqual([
+    ['client.list', undefined],
+  ]);
+  expect(store.state.browserClients.liveClientsLoaded).toBe(true);
+  expect(selectLiveClients.select(store.state)).toEqual([]);
+  expect(view().eligibleClients).toHaveLength(1);
+});
+
+it('admits client updated once and waits for both browser client read lanes', async () => {
+  const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+  const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+  let admitted = false;
+  let complete = false;
+  await attach(true, async (_event, lifetimes) => {
+    const token = lifetimes.get(browserClientRecoveryKey(WS));
+    if (!token) return;
+    admitted = true;
+    await dispatchBrowserClientEvent(WS, token);
+    complete = true;
+  });
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  clients = [];
+  pin = 'updated-host';
+  rpc.request.mockClear();
+  receive({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'browser-1',
+      event: {
+        type: 'client:updated',
+        data: { clientId: 'desktop', capabilities: { browserExec: true } },
+      },
+    },
+  });
+  await settle();
+  expect(admitted).toBe(true);
+  expect(complete).toBe(true);
+  expect(view().eligibleClients).toEqual([]);
+  expect(view().pinnedClientId).toBe('updated-host');
+  expect(calls('client.list')).toHaveLength(1);
+  expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+  expect(calls('events.fence')).toHaveLength(0);
+});

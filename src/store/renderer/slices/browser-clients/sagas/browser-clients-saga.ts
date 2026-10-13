@@ -142,7 +142,13 @@ function* readLiveClients(
   startBrowserClientEvent(action);
   const epoch = connection.epoch;
   try {
-    const mounted = action.payload[0] ? [action.payload[0]] : [...connection.mounted];
+    // An admitted global event owns only the global roster. The bridge sends
+    // separate receipts to mounted workspaces; never reuse this token for them.
+    const mounted = action.payload[0]
+      ? [action.payload[0]]
+      : isBrowserClientEvent(action)
+        ? []
+        : [...connection.mounted];
     if (mounted.length === 0) {
       connection.recovery.ensure();
       if (connection.recovery.stale()) return;

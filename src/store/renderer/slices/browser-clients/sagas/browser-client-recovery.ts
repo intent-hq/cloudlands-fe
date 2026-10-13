@@ -40,6 +40,7 @@ export class BrowserClientRecovery {
         eventTypes: [
           'client:connected',
           'client:disconnected',
+          'client:updated',
           'workspace:updated',
           'settings:changed',
         ],
