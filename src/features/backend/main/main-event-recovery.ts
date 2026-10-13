@@ -1,11 +1,13 @@
 import { createEventRecoverySession } from '../../../shared/event-recovery/session';
 import { EventRecoveryCoordinator } from '../../events/event-recovery-coordinator';
-import type { JsonRpcClient } from './json-rpc-client';
+import { captureRecoveryRequests, type JsonRpcClient } from './json-rpc-client';
 
 /** Main-only capture. No IPC forwarding, backend fallback, reconnect, or identity renewal. */
 export function captureMainEventRecovery(client: JsonRpcClient, retired: () => void) {
   const connection = client.getRepositoryConnection?.();
   if (!connection) return undefined;
+  const requests = captureRecoveryRequests(client, connection);
+  if (!requests) return undefined;
   const leases = new Set<string>();
   let disposed = false;
   const release = (subscriptionId: string) => {
@@ -35,22 +37,21 @@ export function captureMainEventRecovery(client: JsonRpcClient, retired: () => v
           handler(event.notification);
       }),
     request: (method, params, observe) =>
-      client.requestOnCapturedConnection(connection, method, params, {
-        observe: (result) => {
-          if (method === 'events.subscribe') {
-            const id = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
-            if (typeof id === 'string') {
-              if (disposed) release(id);
-              else leases.add(id);
-            }
-          } else if (method === 'events.unsubscribe') {
-            leases.delete((params as { subscriptionId: string }).subscriptionId);
+      requests.request(method, params, (result) => {
+        if (method === 'events.subscribe') {
+          const id = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
+          if (typeof id === 'string') {
+            if (disposed) release(id);
+            else leases.add(id);
           }
-          observe?.(result);
-        },
+        } else if (method === 'events.unsubscribe') {
+          leases.delete((params as { subscriptionId: string }).subscriptionId);
+        }
+        observe?.(result);
       }),
     dispose: () => {
       disposed = true;
+      requests.dispose();
       for (const id of [...leases]) release(id);
     },
   });

@@ -6,7 +6,11 @@ import {
   getStrictBackendBindingForWebContents,
   onStrictBackendBindingRetired,
 } from '../../../main/window-backend';
-import type { JsonRpcClient, RepositoryConnection } from './json-rpc-client';
+import {
+  captureRecoveryRequests,
+  type JsonRpcClient,
+  type RepositoryConnection,
+} from './json-rpc-client';
 
 import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
 
@@ -23,7 +27,6 @@ const ownedUnsubscribeMethods = new Set([
 ]);
 const MAX_SESSIONS = 64;
 const MAX_REQUESTS_PER_SESSION = 64;
-const MAX_REQUESTS_PER_CONNECTION = 64;
 const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
 const reference = z.object({ id: z.string().min(1).max(128) }).strict();
 const request = reference
@@ -57,14 +60,9 @@ export function registerEventRecoveryHandlers(
       { method: string; params: { subscriptionId: string; workspaceId?: string } }
     >;
     requests: number;
+    physical: NonNullable<ReturnType<typeof captureRecoveryRequests>>;
   }
   const entries = new Map<string, Entry>();
-  // Released/expired captures still own their physical requests. A new capture
-  // cannot bypass their drain merely by obtaining a new renderer handle.
-  const outstanding = new WeakMap<
-    RepositoryConnection,
-    Set<{ id: string; entry: Entry; expired: boolean }>
-  >();
   let disposed = false;
   const current = (entry: Entry) =>
     !disposed &&
@@ -81,6 +79,7 @@ export function registerEventRecoveryHandlers(
     const entry = entries.get(id);
     if (!entry) return;
     entries.delete(id);
+    entry.physical.dispose();
     entry.stop();
     try {
       send(entry, { id, kind: 'retired' });
@@ -115,12 +114,8 @@ export function registerEventRecoveryHandlers(
     const client = deps.readBackend(binding.backendId),
       connection = client?.getRepositoryConnection();
     if (!client || !connection) return unavailable();
-    if (
-      [...(outstanding.get(connection) ?? [])].some(
-        (row) => row.expired || entries.get(row.id) !== row.entry,
-      )
-    )
-      return unavailable();
+    const physical = captureRecoveryRequests(client, connection);
+    if (!physical) return unavailable();
     const id = randomUUID();
     const entry: Entry = {
       sender: event.sender,
@@ -131,6 +126,7 @@ export function registerEventRecoveryHandlers(
       leases: new Set(),
       typedLeases: new Map(),
       requests: 0,
+      physical,
     };
     entries.set(id, entry);
     const retire = () => drop(id);
@@ -234,49 +230,30 @@ export function registerEventRecoveryHandlers(
           : {}),
       },
     });
-    const physical = outstanding.get(entry.connection) ?? new Set();
-    if (physical.size >= MAX_REQUESTS_PER_CONNECTION) return unavailable();
-    outstanding.set(entry.connection, physical);
-    const row = { id, entry, expired: false };
-    physical.add(row);
-    const deadline = setTimeout(
-      () => {
-        row.expired = true;
-      },
-      method === 'events.fence' ? 5000 : 30000,
-    );
     let leaseAdmitted = false;
     entry.requests++;
     try {
-      const result = await entry.client.requestOnCapturedConnection(
-        entry.connection,
-        method,
-        routedParams,
-        {
-          waitForReply: true,
-          observe: (result) => {
-            if (!current(entry) || entries.get(id) !== entry) return;
-            const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
-            // Ownership must be recorded at decode, before any following frame.
-            if (method === 'events.subscribe' && typeof subscriptionId === 'string') {
-              entry.leases.add(subscriptionId);
-              leaseAdmitted = true;
-            }
-            if (typedUnsubscribe && typeof subscriptionId === 'string') {
-              entry.typedLeases.set(
-                `${typedUnsubscribe}:${subscriptionId}`,
-                typedLease(typedUnsubscribe, subscriptionId),
-              );
-              leaseAdmitted = true;
-            }
-            if (typedControl && typeof controlId === 'string')
-              entry.typedLeases.delete(`${method}:${controlId}`);
-            if (method === 'events.unsubscribe' && typeof controls?.subscriptionId === 'string')
-              entry.leases.delete(controls.subscriptionId);
-            if (replyId) send(entry, { id, kind: 'reply', replyId, result });
-          },
-        },
-      );
+      const result = await entry.physical.request(method, routedParams, (result) => {
+        if (!current(entry) || entries.get(id) !== entry) return;
+        const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
+        // Ownership must be recorded at decode, before any following frame.
+        if (method === 'events.subscribe' && typeof subscriptionId === 'string') {
+          entry.leases.add(subscriptionId);
+          leaseAdmitted = true;
+        }
+        if (typedUnsubscribe && typeof subscriptionId === 'string') {
+          entry.typedLeases.set(
+            `${typedUnsubscribe}:${subscriptionId}`,
+            typedLease(typedUnsubscribe, subscriptionId),
+          );
+          leaseAdmitted = true;
+        }
+        if (typedControl && typeof controlId === 'string')
+          entry.typedLeases.delete(`${method}:${controlId}`);
+        if (method === 'events.unsubscribe' && typeof controls?.subscriptionId === 'string')
+          entry.leases.delete(controls.subscriptionId);
+        if (replyId) send(entry, { id, kind: 'reply', replyId, result });
+      });
       if (!current(entry)) drop(id);
       if (!leaseAdmitted && (method === 'events.subscribe' || typedUnsubscribe)) {
         const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
@@ -305,8 +282,6 @@ export function registerEventRecoveryHandlers(
         },
       };
     } finally {
-      clearTimeout(deadline);
-      physical.delete(row);
       entry.requests--;
     }
   });

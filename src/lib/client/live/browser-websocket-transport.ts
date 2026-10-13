@@ -317,7 +317,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (
       [...this.recoveryRequests].some(
         (row) =>
-          row.socket === socket && row.generation === generation && (row.expired || row.released()),
+          row.socket === socket && (row.generation !== generation || row.expired || row.released()),
       )
     )
       throw new Error('Event recovery requests still draining');
@@ -335,9 +335,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
         if (!current() || method === 'client.hello')
           return Promise.reject(new Error('Event recovery connection retired'));
         if (
-          [...this.recoveryRequests].filter(
-            (row) => row.socket === socket && row.generation === generation,
-          ).length >= MAX_RECOVERY_WIRE_REQUESTS
+          [...this.recoveryRequests].filter((row) => row.socket === socket).length >=
+          MAX_RECOVERY_WIRE_REQUESTS
         )
           return Promise.reject(new Error('Event recovery request limit reached'));
         const row = { socket, generation, expired: false, released: () => released };

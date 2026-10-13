@@ -1369,3 +1369,61 @@ it('preserves a canonical physical denial after the recovery read deadline', asy
   session.dispose();
   shutdown();
 });
+
+it('blocks a same-socket new browser identity until the previous recovery request drains', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const boot = h.transport.request('ping');
+  await connect(h.socket(), true);
+  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+  await boot;
+  const session = await h.transport.captureEventRecovery();
+  const pending = session.request('data.read').catch((error) => error);
+  const oldRequest = h.socket().lastFrame();
+  await vi.advanceTimersByTimeAsync(60_000);
+  const hello = h.transport.request('client.hello', {});
+  h.socket().receive({
+    id: h.socket().lastFrame().id,
+    result: { clientId: 'new', server: { capabilities: { eventStreamRecovery: 1 } } },
+  });
+  await hello;
+  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
+  h.socket().receive({ id: oldRequest.id, result: 'expired' });
+  await pending;
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  const next = await h.transport.captureEventRecovery();
+  const fresh = next.request('data.read');
+  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
+  expect(await fresh).toBe('fresh');
+  session.dispose();
+  next.dispose();
+  h.transport.dispose();
+});
+
+it('releases physical browser recovery ownership on close and captures the new socket', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const boot = h.transport.request('ping');
+  await connect(h.socket(), true);
+  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+  await boot;
+  const session = await h.transport.captureEventRecovery();
+  const pending = session.request('data.read').catch((error) => error);
+  await vi.advanceTimersByTimeAsync(60_000);
+  const timeout = (await pending) as RecoveryRequestTimeoutError;
+  const old = h.socket();
+  old.drop();
+  await timeout.drained;
+  expect(session.isCurrent()).toBe(false);
+  await vi.advanceTimersByTimeAsync(1000);
+  const nextSocket = h.socket();
+  expect(nextSocket).not.toBe(old);
+  await connect(nextSocket, true);
+  const next = await h.transport.captureEventRecovery();
+  const fresh = next.request('data.read');
+  nextSocket.receive({ id: nextSocket.lastFrame().id, result: 'fresh' });
+  expect(await fresh).toBe('fresh');
+  session.dispose();
+  next.dispose();
+  h.transport.dispose();
+});

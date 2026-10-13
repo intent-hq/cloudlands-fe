@@ -49,6 +49,68 @@ export interface RepositoryConnection {
   readonly nativeReviewCompanion: boolean;
 }
 
+const MAX_RECOVERY_WIRE_REQUESTS = 64;
+type RecoveryClient = Pick<
+  JsonRpcClient,
+  'getRepositoryConnection' | 'requestOnCapturedConnection'
+>;
+interface RecoveryWireRequest {
+  connection: RepositoryConnection;
+  expired: boolean;
+  released: () => boolean;
+}
+const recoveryWireRequests = new WeakMap<RecoveryClient, Set<RecoveryWireRequest>>();
+
+/** Shared physical accounting for direct main and renderer recovery captures. */
+export function captureRecoveryRequests(client: RecoveryClient, connection: RepositoryConnection) {
+  if (client.getRepositoryConnection() !== connection) return undefined;
+  const requests = recoveryWireRequests.get(client) ?? new Set<RecoveryWireRequest>();
+  recoveryWireRequests.set(client, requests);
+  const physical = () =>
+    [...requests].filter((row) => row.connection.incarnation === connection.incarnation);
+  // A hello replaces authority, not the physical socket or its outstanding work.
+  if (physical().some((row) => row.expired || row.released() || row.connection !== connection))
+    return undefined;
+  let released = false;
+  return {
+    request(
+      method: string,
+      params?: unknown,
+      observe?: (result: unknown) => void,
+    ): Promise<unknown> {
+      if (
+        released ||
+        client.getRepositoryConnection() !== connection ||
+        physical().length >= MAX_RECOVERY_WIRE_REQUESTS
+      )
+        return Promise.reject(new Error('Event recovery connection unavailable'));
+      const row: RecoveryWireRequest = { connection, expired: false, released: () => released };
+      requests.add(row);
+      const deadline = setTimeout(
+        () => {
+          row.expired = true;
+        },
+        method === 'events.fence' ? 5000 : 30000,
+      );
+      const settled = () => {
+        clearTimeout(deadline);
+        requests.delete(row);
+      };
+      try {
+        return client
+          .requestOnCapturedConnection(connection, method, params, { waitForReply: true, observe })
+          .finally(settled);
+      } catch (error) {
+        settled();
+        return Promise.reject(error);
+      }
+    },
+    dispose() {
+      released = true;
+    },
+  };
+}
+
 /** Main-private physical evidence, never sent to the renderer. */
 export type RepositoryConnectionEvent =
   | { type: 'opened'; incarnation: object }

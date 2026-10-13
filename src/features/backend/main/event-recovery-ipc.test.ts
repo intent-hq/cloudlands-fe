@@ -1,3 +1,4 @@
+import { captureMainEventRecovery } from './main-event-recovery';
 import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { RecoveryResource } from '$shared/event-recovery/resource';
 import { EventEmitter } from 'node:events';
@@ -688,71 +689,77 @@ describe.each(typedChannels)('captured typed lease %s', (subscribe, unsubscribe)
 });
 
 describe('physical recovery timeout ownership', () => {
-  for (const phase of ['begin', 'read', 'end'] as const)
-    it(`keeps the real ipc ${phase} request outstanding until reply and blocks replacement capture`, async () => {
-      vi.useFakeTimers();
-      const h = await harness();
-      const capture = h.capture;
-      const shutdown = () => {};
-      const frames: Array<{ id: number; method: string; params: unknown }> = [];
-      const original = h.socket.write.bind(h.socket);
-      const install = (respond: (frame: (typeof frames)[number]) => void) => {
-        h.socket.write = (line) => {
-          const result = original(line);
-          const frame = JSON.parse(line);
-          frames.push(frame);
-          respond(frame);
-          return result;
+  for (const adapter of ['ipc', 'main'] as const)
+    for (const phase of ['begin', 'read', 'end'] as const)
+      it(`keeps the real ${adapter} ${phase} request outstanding until reply and blocks replacement capture`, async () => {
+        vi.useFakeTimers();
+        const h = await harness();
+        const capture = async () => {
+          if (adapter === 'ipc') return h.capture();
+          const result = captureMainEventRecovery(h.client, () => {});
+          if (!result) throw new Error('Unavailable');
+          return result.session;
         };
-      };
-      const reply = (id: number, result: unknown) => h.socket.reply(id, result);
+        const shutdown = () => {};
+        const frames: Array<{ id: number; method: string; params: unknown }> = [];
+        const original = h.socket.write.bind(h.socket);
+        const install = (respond: (frame: (typeof frames)[number]) => void) => {
+          h.socket.write = (line) => {
+            const result = original(line);
+            const frame = JSON.parse(line);
+            frames.push(frame);
+            respond(frame);
+            return result;
+          };
+        };
+        const reply = (id: number, result: unknown) => h.socket.reply(id, result);
 
-      let fences = 0;
-      let reads = 0;
-      let held: (typeof frames)[number] | undefined;
-      install((frame) => {
-        if (frame.method === 'events.subscribe')
-          queueMicrotask(() => reply(frame.id, { subscriptionId: 'a', lossRecovery: 1 }));
-        else if (frame.method === 'events.fence') {
-          if ((phase === 'begin' && ++fences === 1) || (phase === 'end' && ++fences === 2))
-            held = frame;
-          else queueMicrotask(() => reply(frame.id, { subscriptionIds: ['a'] }));
-        } else if (frame.method === 'data.read') {
-          if (phase === 'read' && ++reads === 1) held = frame;
-          else queueMicrotask(() => reply(frame.id, 'fresh'));
-        } else queueMicrotask(() => reply(frame.id, {}));
+        let fences = 0;
+        let reads = 0;
+        let held: (typeof frames)[number] | undefined;
+        install((frame) => {
+          if (frame.method === 'events.subscribe')
+            queueMicrotask(() => reply(frame.id, { subscriptionId: 'a', lossRecovery: 1 }));
+          else if (frame.method === 'events.fence') {
+            if ((phase === 'begin' && ++fences === 1) || (phase === 'end' && ++fences === 2))
+              held = frame;
+            else queueMicrotask(() => reply(frame.id, { subscriptionIds: ['a'] }));
+          } else if (frame.method === 'data.read') {
+            if (phase === 'read' && ++reads === 1) held = frame;
+            else queueMicrotask(() => reply(frame.id, 'fresh'));
+          } else queueMicrotask(() => reply(frame.id, {}));
+        });
+        const session = await capture();
+        await session.request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 });
+        const apply = vi.fn();
+        const resource = new RecoveryResource({
+          read: () => session.request('data.read'),
+          fence: (ids, observe) => session.fence(ids, observe),
+          apply,
+          invalidate: () => {},
+          retire: () => {},
+        });
+        resource.setLeases([{ id: 'a', lifetime: {} }]);
+        resource.invalidate();
+        for (let i = 0; i < 30; i++) await Promise.resolve();
+        const requests = frames.length;
+        expect(held).toBeDefined();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(frames).toHaveLength(requests);
+        expect(resource.status).toMatchObject({ running: true, suspended: true, stale: true });
+        await expect(capture()).rejects.toThrow();
+        expect(vi.getTimerCount()).toBe(0);
+        reply(held!.id, phase === 'read' ? 'expired' : { subscriptionIds: ['a'] });
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(frames).toHaveLength(requests + 3);
+        expect(apply).toHaveBeenCalledExactlyOnceWith('fresh');
+        resource.dispose();
+        session.dispose();
+        for (let i = 0; i < 30; i++) await Promise.resolve();
+        const next = await capture();
+        next.dispose();
+        shutdown();
       });
-      const session = await capture();
-      await session.request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 });
-      const apply = vi.fn();
-      const resource = new RecoveryResource({
-        read: () => session.request('data.read'),
-        fence: (ids, observe) => session.fence(ids, observe),
-        apply,
-        invalidate: () => {},
-        retire: () => {},
-      });
-      resource.setLeases([{ id: 'a', lifetime: {} }]);
-      resource.invalidate();
-      for (let i = 0; i < 30; i++) await Promise.resolve();
-      const requests = frames.length;
-      expect(held).toBeDefined();
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(frames).toHaveLength(requests);
-      expect(resource.status).toMatchObject({ running: true, suspended: true, stale: true });
-      await expect(capture()).rejects.toThrow();
-      expect(vi.getTimerCount()).toBe(0);
-      reply(held!.id, phase === 'read' ? 'expired' : { subscriptionIds: ['a'] });
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(frames).toHaveLength(requests + 3);
-      expect(apply).toHaveBeenCalledExactlyOnceWith('fresh');
-      resource.dispose();
-      session.dispose();
-      for (let i = 0; i < 30; i++) await Promise.resolve();
-      const next = await capture();
-      next.dispose();
-      shutdown();
-    });
 
   it('keeps a released capture quarantined until its physical read completes', async () => {
     vi.useFakeTimers();
@@ -825,29 +832,94 @@ it('bounds outstanding recovery wire requests across captures without deadline c
   shutdown();
 });
 
-it('preserves a canonical physical denial after the recovery read deadline', async () => {
+for (const adapter of ['ipc', 'main'] as const)
+  it(`preserves a canonical physical ${adapter} denial after the recovery read deadline`, async () => {
+    vi.useFakeTimers();
+    const h = await harness();
+    const session =
+      adapter === 'ipc' ? await h.capture() : captureMainEventRecovery(h.client, () => {})!.session;
+    const lastFrame = () => h.socket.frames.at(-1)!;
+    const reply = (frame: unknown) => h.socket.batch([frame]);
+    const shutdown = () => {};
+    const pending = session.request('data.read').catch((error) => error);
+    const frame = lastFrame();
+    await vi.advanceTimersByTimeAsync(60_000);
+    const timeout = (await pending) as RecoveryRequestTimeoutError;
+    expect(timeout).toBeInstanceOf(RecoveryRequestTimeoutError);
+    reply({
+      id: frame.id,
+      error: { code: -32003, message: 'Unavailable', data: { code: 'forbidden' } },
+    });
+    expect(await timeout.completion).toEqual({
+      retired: false,
+      errors: [
+        expect.objectContaining({
+          rpcCode: -32003,
+          code: 'forbidden',
+          data: { code: 'forbidden' },
+        }),
+      ],
+    });
+    await timeout.drained;
+    session.dispose();
+    shutdown();
+  });
+
+for (const adapter of ['ipc', 'main'] as const)
+  it(`keeps ${adapter} wire ownership across same-socket identity renewal`, async () => {
+    vi.useFakeTimers();
+    const h = await harness();
+    const capture = async () =>
+      adapter === 'ipc' ? h.capture() : captureMainEventRecovery(h.client, () => {})?.session;
+    const session = (await capture())!;
+    const pending = session.request('data.read').catch((error) => error);
+    const oldRequest = h.socket.frames.at(-1)!;
+    const oldIdentity = h.client.getRepositoryConnection()!;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.socket.frames.filter((frame) => frame.method === 'data.read')).toHaveLength(1);
+    await h.client.request('client.hello', {});
+    const successor = h.client.getRepositoryConnection()!;
+    expect(successor).not.toBe(oldIdentity);
+    expect(successor.incarnation).toBe(oldIdentity.incarnation);
+    if (adapter === 'ipc') await expect(capture()).rejects.toThrow();
+    else expect(await capture()).toBeUndefined();
+    h.socket.reply(oldRequest.id, 'expired');
+    await pending;
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    const next = (await capture())!;
+    const fresh = next.request('data.read');
+    h.socket.reply(h.socket.frames.at(-1)!.id, 'fresh');
+    expect(await fresh).toBe('fresh');
+    session.dispose();
+    next.dispose();
+  });
+
+it('shares physical recovery limits between IPC and direct main captures', async () => {
   vi.useFakeTimers();
   const h = await harness();
-  const session = await h.capture();
-  const lastFrame = () => h.socket.frames.at(-1)!;
-  const reply = (frame: unknown) => h.socket.batch([frame]);
-  const shutdown = () => {};
-  const pending = session.request('data.read').catch((error) => error);
-  const frame = lastFrame();
+  const main = captureMainEventRecovery(h.client, () => {})!;
+  const renderer = await h.capture();
+  const pending = Array.from({ length: 64 }, () =>
+    main.session.request('data.read').catch((error) => error),
+  );
+  const denied = renderer.request('data.read');
+  const reads = h.socket.frames.filter((frame) => frame.method === 'data.read');
+  if (reads.length > 64) h.socket.reply(reads.at(-1)!.id, 'wrongly-admitted');
+  await expect(denied).rejects.toThrow();
+  expect(h.socket.frames.filter((frame) => frame.method === 'data.read')).toHaveLength(64);
   await vi.advanceTimersByTimeAsync(60_000);
-  const timeout = (await pending) as RecoveryRequestTimeoutError;
-  expect(timeout).toBeInstanceOf(RecoveryRequestTimeoutError);
-  reply({
-    id: frame.id,
-    error: { code: -32003, message: 'Unavailable', data: { code: 'forbidden' } },
-  });
-  expect(await timeout.completion).toEqual({
-    retired: false,
-    errors: [
-      expect.objectContaining({ rpcCode: -32003, code: 'forbidden', data: { code: 'forbidden' } }),
-    ],
-  });
-  await timeout.drained;
-  session.dispose();
-  shutdown();
+  await Promise.all(pending);
+  expect(vi.getTimerCount()).toBe(0);
+  main.session.dispose();
+  expect(captureMainEventRecovery(h.client, () => {})).toBeUndefined();
+  await expect(h.capture()).rejects.toThrow();
+  for (const frame of h.socket.frames.filter((frame) => frame.method === 'data.read'))
+    h.socket.reply(frame.id, 'expired');
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  const next = captureMainEventRecovery(h.client, () => {})!;
+  const fresh = next.session.request('data.read');
+  h.socket.reply(h.socket.frames.at(-1)!.id, 'fresh');
+  expect(await fresh).toBe('fresh');
+  renderer.dispose();
+  next.session.dispose();
 });

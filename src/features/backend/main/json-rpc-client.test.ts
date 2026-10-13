@@ -5,7 +5,7 @@ import type { JsonRpcRetirement } from './json-rpc-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionLimitError, TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
-import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
+import { captureRecoveryRequests, JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
 
 /**
  * In-memory fake socket: captures outbound writes and lets tests inject inbound
@@ -1426,6 +1426,30 @@ describe('captured repository socket dispatch', () => {
       expect(sockets[0].writes).toHaveLength(1);
     },
   );
+  it('releases physical recovery ownership on socket retirement and admits a fresh capture', async () => {
+    const { client, sockets } = await connected();
+    const original = client.getRepositoryConnection()!;
+    const capture = captureRecoveryRequests(client, original)!;
+    const pending = capture.request('data.read').catch((error) => error);
+    capture.dispose();
+    expect(captureRecoveryRequests(client, original)).toBeUndefined();
+    sockets[0].emit('close');
+    expect(await pending).toBeInstanceOf(Error);
+    await vi.waitFor(() => expect(sockets).toHaveLength(2));
+    sockets[1].open();
+    await vi.waitFor(() => expect(sockets[1].writes).toHaveLength(1));
+    const hello = JSON.parse(sockets[1].writes[0]);
+    sockets[1].receive(
+      JSON.stringify({ id: hello.id, result: { clientId: 'confirmed-client' } }) + '\n',
+    );
+    await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
+    const next = captureRecoveryRequests(client, client.getRepositoryConnection()!)!;
+    const fresh = next.request('data.read');
+    const frame = JSON.parse(sockets[1].writes.at(-1)!);
+    sockets[1].receive(JSON.stringify({ id: frame.id, result: 'fresh' }) + '\n');
+    expect(await fresh).toBe('fresh');
+    next.dispose();
+  });
   it('rejects captured work across reconnect on the same client object without another dial', async () => {
     const { client, sockets, factory } = await connected();
     const original = client.getRepositoryConnection()!;
