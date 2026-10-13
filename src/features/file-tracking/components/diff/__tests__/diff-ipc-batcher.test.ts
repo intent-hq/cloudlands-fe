@@ -36,7 +36,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { batchedGitDiff, dedupedShowFile } from '../diff-ipc-batcher';
+import { batchedGitDiff, dedupedShowFile, dedupedGitNumstat } from '../diff-ipc-batcher';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -957,5 +957,39 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       ]);
       warnSpy.mockRestore();
     });
+  });
+});
+
+describe('captured Git read identity', () => {
+  it('never joins show-file requests across captured authorities', async () => {
+    let finish!: (value: unknown) => void;
+    const oldRequest = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const newRequest = vi.fn(async () => ({ content: 'new' }));
+    const old = dedupedShowFile('authority', 'HEAD', 'a.ts', {
+      transport: { key: {}, request: oldRequest as any },
+    });
+    const fresh = dedupedShowFile('authority', 'HEAD', 'a.ts', {
+      transport: { key: {}, request: newRequest as any },
+    });
+    await expect(fresh).resolves.toEqual({ success: true, data: 'new' });
+    expect(newRequest).toHaveBeenCalledExactlyOnceWith('git.showFile', {
+      workspaceId: 'authority',
+      ref: 'HEAD',
+      filePath: 'a.ts',
+    });
+    finish({ content: 'old' });
+    await old;
+  });
+  it('never silently reads primary numstat for unsupported secondary roots', async () => {
+    const request = vi.fn();
+    await expect(
+      dedupedGitNumstat('roots', { gitRootId: 'a', transport: { key: {}, request } }),
+    ).rejects.toThrow('Secondary-root numstat');
+    expect(request).not.toHaveBeenCalled();
   });
 });

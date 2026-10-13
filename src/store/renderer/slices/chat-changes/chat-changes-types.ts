@@ -31,7 +31,9 @@ export type ChatChangesConsumer = {
   requestId: string;
   options: Omit<ChatChangesInput, 'changes'>;
   status: 'pending' | 'ready' | 'failed';
+  recoveryVersion?: number;
   error?: string;
+  inputChanges?: Collection<ChatChangeEntry, 'id'>;
   changes: Collection<ChatChangeEntry, 'id'>;
   fileRefreshes: Collection<ChatFileRefresh, 'path'>;
   completedMutationRequestId?: string;

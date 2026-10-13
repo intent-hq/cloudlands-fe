@@ -1,5 +1,45 @@
-import { call, join, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
-import { buffers, channel, type Channel } from 'redux-saga';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { gitRootsUpdated } from '../../git-roots/git-roots-slice';
+import { connectionsListReceived, authRejectedReceived } from '../../connections/connections-slice';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
+import {
+  daemonEventsSubscribing,
+  daemonEventsSubscribed,
+} from '../../workspace-events/workspace-events-slice';
+import {
+  principalContextChanged,
+  principalIdentityChanged,
+  principalReceived,
+  principalReadFailed,
+  hostMembershipChanged,
+} from '../../principal/principal-slice';
+import {
+  markWorkspacePendingDeletion,
+  clearWorkspacePendingDeletion,
+  removeWorkspaceEntity,
+  resetWorkspaceState,
+  replaceWorkspaceList,
+} from '../../workspace/workspace-slice';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import type { StoreState } from '../../../types';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  captureGitRead,
+  gitContentRecoveryKey,
+} from '$features/file-tracking/git-recovery-read-lane';
+import { readGitContent } from '$features/file-tracking/git-content-read';
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
+import {
+  call,
+  join,
+  put,
+  race,
+  select,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
+import { buffers, channel, runSaga, type Channel } from 'redux-saga';
 import { appClient } from '$lib/client';
 import { invoke } from '$lib/electron-bridge';
 import {
@@ -44,7 +84,15 @@ type Resource = {
   failed: boolean;
 };
 type Resources = Map<string, Resource>;
-type ReadMessage = { resource: Resource; cancel?: boolean };
+type ReadMessage = {
+  resource: Resource;
+  cancel?: boolean;
+  lane?: ReturnType<typeof captureGitRead>;
+};
+const queuedRead = (resource: Resource): ReadMessage => ({
+  resource,
+  lane: captureGitRead(gitContentRecoveryKey(resource.workspaceId, resource.key)),
+});
 
 function* read(resource: Resource, signal: AbortSignal): SagaGenerator<GitReadResult> {
   const { workspaceId, request } = resource;
@@ -98,52 +146,89 @@ function* read(resource: Resource, signal: AbortSignal): SagaGenerator<GitReadRe
   }
 }
 
-function* refresh({ resource }: ReadMessage): SagaGenerator<void> {
+function* refresh({ resource, lane }: ReadMessage): SagaGenerator<void> {
   const controller = new AbortController();
   const revision = resource.revision;
+  if (!lane) return;
   resource.failed = false;
   try {
     do {
       if (isGitMutationPending(resource.workspaceId, resource.request.gitRootId))
         yield* call(waitForGitMutations, resource.workspaceId, resource.request.gitRootId);
-      if (revision !== resource.revision || !resource.consumers.size) return;
+      if (
+        revision !== resource.revision ||
+        !resource.consumers.size ||
+        !lane.receipt.commit(() => undefined)
+      )
+        return;
       const generation = crypto.randomUUID();
       const epoch = getGitMutationVersion(resource.workspaceId, resource.request.gitRootId);
       const pending = isGitMutationPending(resource.workspaceId, resource.request.gitRootId);
-      yield* put(gitReadStarted(resource.workspaceId, resource.key, generation));
+      yield* put(
+        withRecoveryLifetime(
+          gitReadStarted(resource.workspaceId, resource.key, generation),
+          lane.receipt,
+        ),
+      );
       try {
-        const result = yield* read(resource, controller.signal);
+        const result = yield* call(lane.run<GitReadResult>, () =>
+          lane.transport && resource.request.kind !== 'autoCommitStatus'
+            ? readGitContent(
+                resource.workspaceId,
+                resource.request,
+                lane.transport,
+                controller.signal,
+                () =>
+                  lane.receipt.commit(() => undefined) &&
+                  [...resource.consumers.values()].some(
+                    (consumer) => !consumer.canRead || consumer.canRead(),
+                  ),
+              )
+            : runSaga({}, read, resource, controller.signal).toPromise(),
+        );
         if (
           revision === resource.revision &&
+          lane.receipt.commit(() => undefined) &&
           !pending &&
           epoch === getGitMutationVersion(resource.workspaceId, resource.request.gitRootId)
         ) {
           resource.failed = result.kind === 'commitDetails' && result.details === null;
           yield* put(
-            gitReadCompleted(resource.workspaceId, resource.key, generation, result, null),
+            withRecoveryLifetime(
+              gitReadCompleted(resource.workspaceId, resource.key, generation, result, null),
+              lane.receipt,
+            ),
           );
           return;
         }
       } catch (error) {
         if (
           revision === resource.revision &&
+          lane.receipt.commit(() => undefined) &&
           !pending &&
           epoch === getGitMutationVersion(resource.workspaceId, resource.request.gitRootId)
         ) {
           resource.failed = true;
           yield* put(
-            gitReadCompleted(
-              resource.workspaceId,
-              resource.key,
-              generation,
-              null,
-              error instanceof Error ? error.message : String(error),
+            withRecoveryLifetime(
+              gitReadCompleted(
+                resource.workspaceId,
+                resource.key,
+                generation,
+                null,
+                error instanceof Error ? error.message : String(error),
+              ),
+              lane.receipt,
             ),
           );
           return;
         }
       }
-    } while (revision === resource.revision && resource.consumers.size);
+    } while (
+      revision === resource.revision &&
+      resource.consumers.size &&
+      lane.receipt.commit(() => undefined)
+    );
   } finally {
     controller.abort();
   }
@@ -171,7 +256,7 @@ function* requested(
     if (resource.failed) {
       // Retry only on an explicit request; pending and successful resources stay shared.
       resource.failed = false;
-      yield* put(reads, { resource });
+      yield* put(reads, queuedRead(resource));
     }
     return;
   }
@@ -184,7 +269,7 @@ function* requested(
     failed: false,
   };
   resources.set(id, resource);
-  yield* put(reads, { resource });
+  yield* put(reads, queuedRead(resource));
 }
 
 function* released(
@@ -215,7 +300,10 @@ function* invalidated(
     if (resource.workspaceId !== workspaceId || resource.request.gitRootId !== gitRootId) continue;
     resource.revision++;
     resource.failed = false;
-    yield* put(reads, { resource });
+    const queued = queuedRead(resource);
+    if (!queued.lane?.receipt.commit(() => undefined))
+      rendererEventRecovery.invalidate(gitContentRecoveryKey(resource.workspaceId, resource.key));
+    yield* put(reads, queued);
   }
 }
 
@@ -224,9 +312,18 @@ function* openCommitFile(
 ): SagaGenerator<void> {
   const [workspaceId, commitHash, filePath, additions = 0, deletions = 0, gitRootId] =
     action.payload;
-  const options = gitRootId ? { gitRootId } : undefined;
+  const lane = captureGitRead(
+    gitContentRecoveryKey(
+      workspaceId,
+      gitReadKey({ kind: 'showFile', ref: commitHash, filePath, gitRootId }),
+    ),
+  );
+  const options = { gitRootId, transport: lane.transport };
+  if (!lane.receipt.commit(() => undefined)) return;
   const after = yield* call(dedupedShowFile, workspaceId, commitHash, filePath, options);
+  if (!lane.receipt.commit(() => undefined)) return;
   const before = yield* call(dedupedShowFile, workspaceId, `${commitHash}^`, filePath, options);
+  if (!lane.receipt.commit(() => undefined)) return;
   const change = {
     id: `commit-${commitHash}-${filePath}`,
     file: filePath,
@@ -243,21 +340,35 @@ function* openCommitFile(
     attribution: { timestamp: Date.now() },
   };
   yield* put(
-    openWorkspaceDiff(workspaceId, change, {
-      changeId: change.id,
-      filePath,
-      ...(gitRootId ? { gitRootId } : {}),
-    }),
+    withRecoveryLifetime(
+      openWorkspaceDiff(workspaceId, change, {
+        changeId: change.id,
+        filePath,
+        ...(gitRootId ? { gitRootId } : {}),
+      }),
+      lane.receipt,
+    ),
   );
 }
 
 function* openPRFile(action: ReturnType<typeof openGitPRFileRequested>): SagaGenerator<void> {
   const [workspaceId, filePath, baseRef, additions = 0, deletions = 0] = action.payload;
+  const lane = captureGitRead(
+    gitContentRecoveryKey(workspaceId, gitReadKey({ kind: 'showFile', ref: 'HEAD', filePath })),
+  );
   for (;;) {
+    if (!lane.receipt.commit(() => undefined)) return;
     if (isGitMutationPending(workspaceId)) yield* call(waitForGitMutations, workspaceId);
     const epoch = getGitMutationVersion(workspaceId);
-    const after = yield* call(dedupedShowFile, workspaceId, 'HEAD', filePath);
-    const before = yield* call(dedupedShowFile, workspaceId, baseRef, filePath);
+    if (!lane.receipt.commit(() => undefined)) return;
+    const after = yield* call(dedupedShowFile, workspaceId, 'HEAD', filePath, {
+      transport: lane.transport,
+    });
+    if (!lane.receipt.commit(() => undefined)) return;
+    const before = yield* call(dedupedShowFile, workspaceId, baseRef, filePath, {
+      transport: lane.transport,
+    });
+    if (!lane.receipt.commit(() => undefined)) return;
     if (epoch !== getGitMutationVersion(workspaceId)) continue;
     const change = {
       id: `pr-file:${filePath}`,
@@ -273,7 +384,12 @@ function* openPRFile(action: ReturnType<typeof openGitPRFileRequested>): SagaGen
       },
       attribution: { timestamp: Date.now() },
     };
-    yield* put(openWorkspaceDiff(workspaceId, change, { changeId: change.id, filePath }));
+    yield* put(
+      withRecoveryLifetime(
+        openWorkspaceDiff(workspaceId, change, { changeId: change.id, filePath }),
+        lane.receipt,
+      ),
+    );
     return;
   }
 }
@@ -311,10 +427,48 @@ function* openXcode(action: ReturnType<typeof openGitXcodeRequested>): SagaGener
   }
 }
 
-function* waitForWorkspaceUnmount(workspaceId: string): SagaGenerator<void> {
+function* waitForNavigationRetirement(action: NavigationAction): SagaGenerator<void> {
+  const workspaceId = action.payload[0];
+  const rootId =
+    action.type === openGitCommitFileRequested.type
+      ? (action as ReturnType<typeof openGitCommitFileRequested>).payload[5]
+      : undefined;
+  const identity = (state: StoreState) => {
+    const roots = state.gitRoots?.byWorkspaceId[workspaceId]?.gitRoots;
+    const root = rootId && roots ? getItem(roots, rootId) : undefined;
+    return JSON.stringify([
+      state.connections?.windowBackendId,
+      state.principal ? selectPrincipalActionContext.select(state) : undefined,
+      state.workspace?.deletionTokens[workspaceId],
+      state.workspace?.workspaces
+        ? getItems(state.workspace.workspaces).some((workspace) => workspace.id === workspaceId)
+        : undefined,
+      rootId ? [root?.path, root?.createdAt] : undefined,
+    ]);
+  };
+  const original = identity(yield* select());
   for (;;) {
-    const action = yield* take(workspaceUnmounted);
-    if (action.payload[0] === workspaceId) return;
+    const next = yield* take([
+      workspaceUnmounted,
+      gitRootsUpdated,
+      connectionsListReceived,
+      authRejectedReceived,
+      connectionStatusChanged,
+      daemonEventsSubscribing,
+      daemonEventsSubscribed,
+      principalContextChanged,
+      principalIdentityChanged,
+      principalReceived,
+      principalReadFailed,
+      hostMembershipChanged,
+      markWorkspacePendingDeletion,
+      clearWorkspacePendingDeletion,
+      removeWorkspaceEntity,
+      resetWorkspaceState,
+      replaceWorkspaceList,
+    ]);
+    if (next.type === workspaceUnmounted.type && next.payload?.[0] === workspaceId) return;
+    if (identity(yield* select()) !== original) return;
   }
 }
 
@@ -324,7 +478,7 @@ function* withWorkspaceLifetime<A extends NavigationAction>(
 ): SagaGenerator<void> {
   yield* race({
     done: call(worker, action),
-    unmounted: call(waitForWorkspaceUnmount, action.payload[0]),
+    unmounted: call(waitForNavigationRetirement, action),
   });
 }
 
@@ -351,7 +505,7 @@ export function* gitConsumerReadSaga(): SagaGenerator<void> {
         )
           continue;
         resource.revision++;
-        yield* put(reads, { resource });
+        yield* put(reads, queuedRead(resource));
       }
     }
     yield* takeEveryFromElectronChannel('git:auto-commit-started', autoCommitChanged);
