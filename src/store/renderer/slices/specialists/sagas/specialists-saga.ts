@@ -712,18 +712,19 @@ function* specialistsSession(admission: string | null) {
           workspaceId: null,
           eventTypes: ['specialists:changed', 'skills:changed', 'settings:changed'],
           isCurrent: () => active && admission === selectPrincipalActionContext.select(store.state),
-          onEvent: (notification, lifetime) => {
+          acceptsEvent: (notification) => {
             const event = (
               notification.params as { event?: { type?: string; data?: { changes?: unknown } } }
             )?.event;
-            if (
-              event?.type === 'settings:changed' &&
-              !touchesModelResolutionSettings({
+            return (
+              event?.type !== 'settings:changed' ||
+              touchesModelResolutionSettings({
                 type: settingsChanged.type,
                 payload: [event.data?.changes],
               })
-            )
-              return;
+            );
+          },
+          onEvent: (_notification, lifetime) => {
             lifetime.commit(() => {
               store.dispatch(refetchSpecialistsRequested());
             });

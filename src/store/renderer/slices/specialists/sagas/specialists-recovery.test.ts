@@ -293,3 +293,66 @@ it('ignores appearance settings but refreshes model-resolution settings from adm
   expect(selectFileSpecialists.select(store.state)[0]?.name).toBe('current');
   expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(1);
 });
+
+it('keeps a held initial specialist read valid across unrelated settings events', async () => {
+  const { wire, receive } = await attachRecovery();
+  let release!: (value: ReturnType<typeof catalog>) => void;
+  backend.onRequest(
+    'specialist.list',
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  stop = store.runSaga(specialistsSaga);
+  await vi.advanceTimersByTimeAsync(0);
+  receive({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'specialists-1',
+      event: {
+        type: 'settings:changed',
+        data: { changes: [{ path: 'appearance.theme', value: 'dark' }] },
+      },
+    },
+  });
+  release(catalog('initial'));
+  await vi.advanceTimersByTimeAsync(250);
+  expect(selectFileSpecialists.select(store.state)[0]?.name).toBe('initial');
+  expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(1);
+});
+
+it('ignores irrelevant settings after recovery but retains settings-only loss coverage', async () => {
+  const { wire, receive, scope, lose } = await attachRecovery();
+  backend.onRequest('specialist.list', () => catalog('initial'));
+  stop = store.runSaga(specialistsSaga);
+  await vi.advanceTimersByTimeAsync(0);
+  lose();
+  await vi.advanceTimersByTimeAsync(0);
+  wire.mockClear();
+  receive({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'specialists-1',
+      event: {
+        type: 'settings:changed',
+        data: { changes: [{ path: 'appearance.theme', value: 'dark' }] },
+      },
+    },
+  });
+  await vi.advanceTimersByTimeAsync(250);
+  expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(0);
+  const settingsLease = await scope.subscribe(
+    { eventTypes: ['settings:changed'] },
+    { recover: true },
+  );
+  backend.onRequest('specialist.list', () => catalog('changed-model-resolution'));
+  if (!settingsLease) throw new Error('Expected admitted settings lease');
+  receive({
+    method: 'events.lost',
+    params: { subscriptionId: settingsLease.id, generation: '1', scope: { workspaceId: null } },
+  });
+  await vi.advanceTimersByTimeAsync(250);
+  expect(selectFileSpecialists.select(store.state)[0]?.name).toBe('changed-model-resolution');
+  expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(1);
+});
