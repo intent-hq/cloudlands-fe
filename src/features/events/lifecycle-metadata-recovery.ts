@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { RendererRecoveryHandle, RendererRecoveryScope } from './renderer-event-recovery';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
@@ -249,13 +250,19 @@ function readInLane<T>(
     }
   };
   const result = owned.tail ? owned.tail.then(start, start) : start();
-  owned.tail = result;
+  const drained = result.then(
+    () => undefined,
+    (error) => (error instanceof RecoveryRequestTimeoutError ? error.drained : undefined),
+  );
+  owned.tail = drained;
   if (!recovery) owned.ordinary = { receipt, result };
   const finish = () => {
     if (owned.ordinary?.result === result) owned.ordinary = undefined;
-    if (owned.tail === result && lanes.get(key) === owned) lanes.delete(key);
   };
   void result.then(finish, finish);
+  void drained.then(() => {
+    if (owned.tail === drained && lanes.get(key) === owned) lanes.delete(key);
+  });
   return result;
 }
 

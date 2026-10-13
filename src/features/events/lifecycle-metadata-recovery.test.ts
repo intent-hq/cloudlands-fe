@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -556,4 +557,30 @@ describe('lifecycle metadata recovery', () => {
     resolve('old protected result');
     await expect(result).rejects.toThrow('authority expired');
   });
+});
+
+it('retains the physical read lane after a logical timeout', async () => {
+  const registry = new RendererEventRecovery();
+  const key = 'timeout-lifecycle-metadata';
+  let release!: () => void;
+  const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+    release = () => resolve({ errors: [], retired: false });
+  });
+  const error = new RecoveryRequestTimeoutError(completion);
+  await expect(
+    runLifecycleMetadataRead(key, registry.capture(key), async () => {
+      throw error;
+    }),
+  ).rejects.toBe(error);
+  const send = vi.fn(async () => ['new']);
+  const pending = runLifecycleMetadataRead(key, registry.capture(key), send);
+  try {
+    await settle();
+    expect(send).not.toHaveBeenCalled();
+  } finally {
+    release();
+    await pending;
+    registry.dispose();
+  }
+  expect(send).toHaveBeenCalledTimes(1);
 });
