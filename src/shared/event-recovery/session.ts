@@ -87,10 +87,21 @@ const READ_TIMEOUT_MS = 30_000;
  * Adapters must preserve actual completion or retire the capture: a lower
  * transport's logical timeout is not proof that its wire request drained.
  */
-interface RecoveryRequestCompletion {
+export interface RecoveryRequestCompletion {
   readonly errors: readonly unknown[];
   readonly retired: boolean;
 }
+/** Local transport receipts survive ordinary logical deadlines without changing their errors. */
+export function getPhysicalRequestCompletion(
+  error: unknown,
+): Promise<RecoveryRequestCompletion> | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const completion = (error as { completion?: unknown }).completion;
+  return completion instanceof Promise
+    ? (completion as Promise<RecoveryRequestCompletion>)
+    : undefined;
+}
+
 export class RecoveryRequestTimeoutError extends Error {
   readonly drained: Promise<void>;
   constructor(readonly completion: Promise<RecoveryRequestCompletion>) {

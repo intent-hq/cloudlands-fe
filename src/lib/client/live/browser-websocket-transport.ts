@@ -308,9 +308,14 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.recoveryReadyHandlers.add(handler);
     // A newly registered listener must not miss readiness during async IPC/capture setup.
     this.checkRecoveryReady();
-    if (!this.recoveryReadyScheduled)
+    if (this.isRecoveryReady() && !this.recoveryReadyScheduled)
       queueMicrotask(() => {
-        if (this.recoveryReadyHandlers.has(handler) && this.isRecoveryReady()) handler();
+        if (
+          this.recoveryReadyHandlers.has(handler) &&
+          this.isRecoveryReady() &&
+          !this.recoveryReadyScheduled
+        )
+          handler();
       });
     return () => {
       this.recoveryReadyHandlers.delete(handler);
@@ -422,17 +427,25 @@ export class BrowserWebSocketTransport implements BackendTransport {
       // bound also covers time spent waiting for the WebSocket handshake
       // (e.g. a stalled connect attempt that never fires `close`).
       let timedOut = false;
+      let physical: ReturnType<RecoveryWirePool['trackOrdinary']> | undefined;
+      let waiting: ReturnType<RecoveryWirePool['waitForOrdinary']>;
+      let requestIdentity: number | undefined;
       const timeout = waitForReply
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            this.pending.delete(id);
+            waiting?.cancel();
+            physical?.timeout();
+            if (!physical) this.pending.delete(id);
             reject(
-              new BackendError({
-                code: 'TIMEOUT',
-                message: `JSON-RPC request timed out: ${method}`,
-                data: { code: 'TIMEOUT' },
-              }),
+              new BackendError(
+                {
+                  code: 'TIMEOUT',
+                  message: `JSON-RPC request timed out: ${method}`,
+                  data: { code: 'TIMEOUT' },
+                },
+                physical?.completion,
+              ),
             );
           }, timeoutMs);
       // Register the pending entry and send synchronously once connected, so a
@@ -457,6 +470,37 @@ export class BrowserWebSocketTransport implements BackendTransport {
           fail(error);
           return;
         }
+        if (!waitForReply && method !== 'client.hello') {
+          requestIdentity ??= this.capabilityHelloGeneration;
+          if (requestIdentity !== this.capabilityHelloGeneration) {
+            fail(new Error('Ordinary request identity changed before dispatch'));
+            return;
+          }
+          const identity = requestIdentity;
+          const pool = this.recoveryPools.get(socket) ?? new RecoveryWirePool();
+          this.recoveryPools.set(socket, pool);
+          this.checkRecoveryReady();
+          try {
+            waiting = pool.waitForOrdinary(identity);
+            if (waiting) {
+              void waiting.promise.then(() => {
+                waiting = undefined;
+                send(socket);
+              }, fail);
+              return;
+            }
+            physical = pool.trackOrdinary(
+              identity,
+              () =>
+                !this.disposed &&
+                this.socket === socket &&
+                this.capabilityHelloGeneration === identity,
+            );
+          } catch (error) {
+            fail(error);
+            return;
+          }
+        }
         // A capability probe must not replace the identity established at connect.
         const wireParams =
           method === 'client.hello' && this.clientId
@@ -474,6 +518,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
           method,
           timeout,
           resolve: (result) => {
+            physical?.settle();
+            if (timedOut) return;
             if (method === 'client.hello' && this.socket === socket) {
               const clientId = (result as { clientId?: unknown } | null)?.clientId;
               if (typeof clientId === 'string') this.clientId = clientId;
@@ -501,13 +547,17 @@ export class BrowserWebSocketTransport implements BackendTransport {
             observe?.(result);
             resolve(result as T);
           },
-          reject,
+          reject: (error) => {
+            physical?.settle(error);
+            reject(error);
+          },
         });
         try {
           socket.send(payload);
         } catch (error) {
           clearTimeout(timeout);
           this.pending.delete(id);
+          physical?.settle(error);
           reject(toTransportError(error));
         }
       };

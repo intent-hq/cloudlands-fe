@@ -1,7 +1,10 @@
+import type { RecoveryRequestCompletion } from './session';
 /** Bounds include cleanup: a logical timeout never releases physical capacity. */
 const MAX_WIRE_REQUESTS = 64;
 // Reserve before subscribing so the eventual cleanup queue also has a finite bound.
 const MAX_LEASES = 128;
+const MAX_ORDINARY_REQUESTS = 256;
+const MAX_DRAIN_WAITERS = 64;
 const unsubscribeMethods: Readonly<Record<string, string>> = {
   'events.subscribe': 'events.unsubscribe',
   'note.subscribe': 'note.unsubscribe',
@@ -59,6 +62,72 @@ export class RecoveryWirePool {
   private readonly leases = new Set<Lease>();
   private readonly cleanupQueue: Lease[] = [];
 
+  private readonly ordinary = new Set<{ identity: unknown; expired: boolean }>();
+  private drainWaiters = 0;
+  trackOrdinary(identity: unknown, current: () => boolean = () => true) {
+    if (this.ordinary.size >= MAX_ORDINARY_REQUESTS)
+      throw new Error('Event recovery ordinary request limit reached');
+    const row = { identity, expired: false };
+    let finish!: (value: RecoveryRequestCompletion) => void;
+    const completion = new Promise<RecoveryRequestCompletion>((resolve) => {
+      finish = resolve;
+    });
+    this.ordinary.add(row);
+    this.changed();
+    return {
+      completion,
+      drained: completion.then(() => {}),
+      timeout: () => {
+        if (this.ordinary.has(row)) {
+          row.expired = true;
+          this.changed();
+        }
+      },
+      settle: (error?: unknown) => {
+        if (!this.ordinary.delete(row)) return;
+        finish({ retired: !current(), errors: error === undefined ? [] : [error] });
+        this.changed();
+      },
+    };
+  }
+  private ordinaryBlocked(identity: unknown) {
+    return [...this.ordinary].some((row) => row.expired || row.identity !== identity);
+  }
+  waitForOrdinary(identity: unknown) {
+    if (!this.ordinaryBlocked(identity)) return undefined;
+    if (this.drainWaiters >= MAX_DRAIN_WAITERS)
+      throw new Error('Event recovery drain waiter limit reached');
+    this.drainWaiters++;
+    let finish!: () => void, fail!: (error: Error) => void;
+    const promise = new Promise<void>((resolve, reject) => {
+      finish = resolve;
+      fail = reject;
+    });
+    let active = true;
+    const stop = () => {
+      if (!active) return;
+      active = false;
+      this.drainWaiters--;
+      this.listeners.delete(check);
+    };
+    const check = () => {
+      if (active && !this.ordinaryBlocked(identity)) {
+        stop();
+        finish();
+      }
+    };
+    this.listeners.add(check);
+    check();
+    return {
+      promise,
+      cancel: () => {
+        if (active) {
+          stop();
+          fail(new Error('Ordinary request wait cancelled'));
+        }
+      },
+    };
+  }
   private readonly listeners = new Set<() => void>();
   onChange(handler: () => void): () => void {
     this.listeners.add(handler);
@@ -71,6 +140,7 @@ export class RecoveryWirePool {
       identity !== undefined &&
       identity !== null &&
       !this.cleanupQueue.length &&
+      !this.ordinaryBlocked(identity) &&
       ![...this.pending].some(
         (row) => row.expired || row.owner.released || row.owner.identity !== identity,
       )
@@ -221,7 +291,13 @@ export class RecoveryWirePool {
       this.changed();
     };
     try {
-      return owner.raw(method, params, (result) => observe?.(result, row.expired)).finally(settled);
+      const wait = cleanup ? undefined : this.waitForOrdinary(owner.identity);
+      const invoke = () => {
+        if (wait && (row.expired || owner.released || !owner.current()))
+          throw new Error('Event recovery request expired before dispatch');
+        return owner.raw(method, params, (result) => observe?.(result, row.expired));
+      };
+      return (wait ? wait.promise.then(invoke) : invoke()).finally(settled);
     } catch (error) {
       settled();
       return Promise.reject(error);

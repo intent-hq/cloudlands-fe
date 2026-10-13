@@ -1585,3 +1585,141 @@ it('cleans an acknowledged browser lease when its owner barrier times out', asyn
   expect(cleanups()).toHaveLength(1);
   h.transport.dispose();
 });
+
+it('ordinary browser timeout retains physical occupancy before recovery and recapture', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const capture = h.transport.captureEventRecovery();
+  await connect(h.socket(), true);
+  const session = await capture;
+  const original = h.transport
+    .request('note.get', { workspaceId: 'w', noteId: 'n' }, { timeoutMs: 50 })
+    .catch((e) => e);
+  const frame = h.socket().lastFrame();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(await original).toMatchObject({ code: 'TIMEOUT' });
+  const fresh = session.request('note.get', { workspaceId: 'w', noteId: 'n' });
+  void fresh.catch(() => {});
+  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
+  const count = () =>
+    h
+      .socket()
+      .sent.map((s) => JSON.parse(s))
+      .filter((f) => f.method === 'note.get').length;
+  expect(count()).toBe(1);
+  h.socket().receive({ id: frame.id, result: 'stale' });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(count()).toBe(2);
+  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
+  expect(await fresh).toBe('fresh');
+  session.dispose();
+  h.transport.dispose();
+});
+
+it('ordinary browser completion preserves late denial and fences queued work across same-socket hello', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const initial = h.transport.captureEventRecovery();
+  await connect(h.socket(), true);
+  const old = await initial;
+  const pending = h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
+  const first = h.socket().lastFrame();
+  await vi.advanceTimersByTimeAsync(51);
+  const timeout = await pending;
+  let drained = false;
+  void timeout.completion.then(() => {
+    drained = true;
+  });
+  expect(drained).toBe(false);
+  const queued = h.transport.request('note.list', {}, { timeoutMs: 100_000 }).catch((e) => e);
+  const hello = h.transport.request('client.hello');
+  h.socket().receive({
+    id: h.socket().lastFrame().id,
+    result: { clientId: 'replacement', server: { capabilities: { eventStreamRecovery: 1 } } },
+  });
+  await hello;
+  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
+  const ready = vi.fn();
+  const off = h.transport.onEventRecoveryReady(ready);
+  h.socket().receive({
+    id: first.id,
+    error: { code: -32003, message: 'Forbidden', data: { code: 'forbidden' } },
+  });
+  const completion = await timeout.completion;
+  expect(completion.retired).toBe(true);
+  expect(completion.errors[0]).toMatchObject({ rpcCode: -32003 });
+  expect(await queued).toBeInstanceOf(Error);
+  expect(
+    h
+      .socket()
+      .sent.map((s) => JSON.parse(s))
+      .filter((f) => f.method === 'note.list'),
+  ).toHaveLength(0);
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  expect(ready).toHaveBeenCalledTimes(1);
+  const next = await h.transport.captureEventRecovery();
+  next.dispose();
+  old.dispose();
+  off();
+  h.transport.dispose();
+});
+
+it('ordinary browser callers keep deadlines while timed-out correlation stays bounded', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const initial = h.transport.captureEventRecovery();
+  await connect(h.socket(), true);
+  const session = await initial;
+  const pending = Array.from({ length: 256 }, () =>
+    h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e),
+  );
+  const frames = h
+    .socket()
+    .sent.map((s) => JSON.parse(s))
+    .filter((f) => f.method === 'note.get');
+  expect(frames).toHaveLength(256);
+  await expect(h.transport.request('note.get', {}, { timeoutMs: 50 })).rejects.toThrow('limit');
+  await vi.advanceTimersByTimeAsync(51);
+  expect((await Promise.all(pending)).every((e) => e.code === 'TIMEOUT')).toBe(true);
+  for (let i = 0; i < 70; i++) {
+    const retry = h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(51);
+    expect(await retry).toMatchObject({ code: 'TIMEOUT' });
+  }
+  expect(
+    h
+      .socket()
+      .sent.map((s) => JSON.parse(s))
+      .filter((f) => f.method === 'note.get'),
+  ).toHaveLength(256);
+  for (const frame of frames) h.socket().receive({ id: frame.id, result: 'expired' });
+  const next = h.transport.request('note.get');
+  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
+  expect(await next).toBe('fresh');
+  expect(vi.getTimerCount()).toBe(0);
+  session.dispose();
+  h.transport.dispose();
+});
+
+it('socket retirement settles ordinary browser timeout receipts and cancels unsent retries', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const boot = h.transport.captureEventRecovery();
+  await connect(h.socket(), true);
+  const session = await boot;
+  const ordinary = h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
+  await vi.advanceTimersByTimeAsync(51);
+  const timeout = await ordinary;
+  const queued = h.transport.request('note.list', {}, { timeoutMs: 100_000 }).catch((e) => e);
+  h.transport.dispose();
+  expect((await timeout.completion).retired).toBe(true);
+  expect(await queued).toBeInstanceOf(Error);
+  expect(
+    h
+      .socket()
+      .sent.map((s) => JSON.parse(s))
+      .filter((f) => f.method === 'note.list'),
+  ).toHaveLength(0);
+  expect(vi.getTimerCount()).toBe(0);
+  session.dispose();
+});

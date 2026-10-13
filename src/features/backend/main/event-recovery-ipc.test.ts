@@ -1206,3 +1206,166 @@ it('binds readiness watches to their original renderer and disposes pending repl
   expect(h.event.sender.listenerCount('did-start-navigation')).toBe(navigationBefore);
   expect(h.event.sender.listenerCount('render-process-gone')).toBe(goneBefore);
 });
+
+for (const adapter of ['ipc', 'main'] as const)
+  it(`${adapter} recovery waits for actual ordinary timeout drainage`, async () => {
+    vi.useFakeTimers();
+    const h = await harness();
+    const capture = async () => {
+      const session =
+        adapter === 'ipc'
+          ? await h.capture()
+          : captureMainEventRecovery(h.client, () => {})?.session;
+      if (!session) throw new Error('unavailable');
+      return session;
+    };
+    const session = await capture();
+    const original = h.client
+      .request('note.get', { workspaceId: 'w', noteId: 'n' }, { timeoutMs: 50 })
+      .catch((e) => e);
+    const frame = h.socket.frames.at(-1)!;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await original).toBeInstanceOf(Error);
+    const fresh = session.request('note.get', { workspaceId: 'w', noteId: 'n' });
+    void fresh.catch(() => {});
+    await expect(capture()).rejects.toThrow();
+    const count = () => h.socket.frames.filter((f) => f.method === 'note.get').length;
+    expect(count()).toBe(1);
+    h.socket.reply(frame.id, 'stale');
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(count()).toBe(2);
+    h.socket.reply(h.socket.frames.at(-1)!.id, 'fresh');
+    expect(await fresh).toBe('fresh');
+    session.dispose();
+  });
+
+for (const adapter of ['ipc', 'main'] as const)
+  it(`${adapter} ordinary late denial retires old identity and never dispatches queued work on its successor`, async () => {
+    vi.useFakeTimers();
+    const h = await harness();
+    const initial =
+      adapter === 'ipc' ? await h.capture() : captureMainEventRecovery(h.client, () => {})!.session;
+    const pending = h.client.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
+    const first = h.socket.frames.at(-1)!;
+    await vi.advanceTimersByTimeAsync(51);
+    const timeout = await pending;
+    let drained = false;
+    void timeout.completion.then(() => {
+      drained = true;
+    });
+    expect(drained).toBe(false);
+    const queued = h.client.request('note.list', {}, { timeoutMs: 100_000 }).catch((e) => e);
+    await h.client.request('client.hello', {});
+    const get = async () => {
+      const session =
+        adapter === 'ipc'
+          ? await h.capture()
+          : captureMainEventRecovery(h.client, () => {})?.session;
+      if (!session) throw new Error('unavailable');
+      return session;
+    };
+    await expect(get()).rejects.toThrow();
+    const ready = vi.fn();
+    const off = onMainEventRecoveryReady(h.client, ready);
+    h.socket.batch([
+      { id: first.id, error: { code: -32003, message: 'Forbidden', data: { code: 'forbidden' } } },
+    ]);
+    const completion = await timeout.completion;
+    expect(completion.retired).toBe(true);
+    expect(completion.errors[0]).toMatchObject({ rpcCode: -32003 });
+    expect(await queued).toBeInstanceOf(Error);
+    expect(h.socket.frames.filter((f) => f.method === 'note.list')).toHaveLength(0);
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    expect(ready).toHaveBeenCalledTimes(1);
+    const next = await get();
+    next.dispose();
+    initial.dispose();
+    off();
+  });
+
+it('direct main ordinary callers keep deadlines while physical correlation remains bounded', async () => {
+  vi.useFakeTimers();
+  const h = await harness();
+  const pending = Array.from({ length: 256 }, () =>
+    h.client.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e),
+  );
+  const frames = h.socket.frames.filter((f) => f.method === 'note.get');
+  expect(frames).toHaveLength(256);
+  await expect(h.client.request('note.get', {}, { timeoutMs: 50 })).rejects.toThrow('limit');
+  await vi.advanceTimersByTimeAsync(51);
+  expect((await Promise.all(pending)).every((e) => e.message.includes('timed out'))).toBe(true);
+  for (let i = 0; i < 70; i++) {
+    const retry = h.client.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(51);
+    expect((await retry).message).toContain('timed out');
+  }
+  expect(h.socket.frames.filter((f) => f.method === 'note.get')).toHaveLength(256);
+  for (const frame of frames) h.socket.reply(frame.id, 'expired');
+  const next = h.client.request('note.get');
+  h.socket.reply(h.socket.frames.at(-1)!.id, 'fresh');
+  expect(await next).toBe('fresh');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('Electron ordinary serialized timeout cannot bypass main physical quarantine', async () => {
+  vi.useFakeTimers();
+  const h = await harness();
+  // Model BACKEND.REQUEST serialization while retaining the real Electron and JsonRpc adapters.
+  h.handlers.set(IPC_CHANNELS.BACKEND.REQUEST, async (_event, payload) => {
+    const { method, params, timeoutMs } = payload as {
+      method: string;
+      params?: unknown;
+      timeoutMs?: number;
+    };
+    try {
+      return { ok: true, result: await h.client.request(method, params, { timeoutMs }) };
+    } catch (error) {
+      return JSON.parse(
+        JSON.stringify({
+          ok: false,
+          error: { code: 'TRANSPORT_ERROR', message: (error as Error).message },
+        }),
+      );
+    }
+  });
+  const previous = window.electronAPI;
+  window.electronAPI = h.bridge as unknown as Window['electronAPI'];
+  try {
+    const { createElectronIpcBackendTransport } =
+      await import('$lib/client/live/electron-ipc-transport');
+    const transport = createElectronIpcBackendTransport();
+    const session = await transport.captureEventRecovery!();
+    const ordinary = transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
+    const frame = h.socket.frames.at(-1)!;
+    await vi.advanceTimersByTimeAsync(51);
+    const timeout = await ordinary;
+    expect(timeout.message).toContain('timed out');
+    expect(timeout.completion).toBeUndefined();
+    const next = session.request('note.get');
+    void next.catch(() => {});
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    expect(h.socket.frames.filter((f) => f.method === 'note.get')).toHaveLength(1);
+    h.socket.reply(frame.id, 'stale');
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(h.socket.frames.filter((f) => f.method === 'note.get')).toHaveLength(2);
+    h.socket.reply(h.socket.frames.at(-1)!.id, 'fresh');
+    expect(await next).toBe('fresh');
+    session.dispose();
+  } finally {
+    window.electronAPI = previous;
+  }
+});
+
+it('socket retirement settles ordinary main timeout receipts and cancels unsent retries', async () => {
+  vi.useFakeTimers();
+  const h = await harness();
+  const ordinary = h.client.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
+  await vi.advanceTimersByTimeAsync(51);
+  const timeout = await ordinary;
+  const queued = h.client.request('note.list', {}, { timeoutMs: 100_000 }).catch((e) => e);
+  h.client.dispose();
+  expect((await timeout.completion).retired).toBe(true);
+  expect(await queued).toBeInstanceOf(Error);
+  expect(h.socket.frames.filter((f) => f.method === 'note.list')).toHaveLength(0);
+  expect(vi.getTimerCount()).toBe(0);
+});

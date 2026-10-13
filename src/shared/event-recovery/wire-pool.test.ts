@@ -126,3 +126,24 @@ it('observes unsubscribe acknowledgement synchronously before the following wire
   await pending;
   capture.dispose();
 });
+
+it('bounds ordinary correlation and cancellable drainage waits without polling', async () => {
+  vi.useFakeTimers();
+  const pool = new RecoveryWirePool(),
+    identity = {};
+  const rows = Array.from({ length: 256 }, () => pool.trackOrdinary(identity));
+  expect(() => pool.trackOrdinary(identity)).toThrow('limit');
+  rows[0].timeout();
+  expect(pool.canCapture(identity)).toBe(false);
+  const waits = Array.from({ length: 64 }, () => pool.waitForOrdinary(identity)!);
+  const results = waits.map((wait) => wait.promise.catch((e) => e));
+  expect(() => pool.waitForOrdinary(identity)).toThrow('limit');
+  waits[0].cancel();
+  expect(await results[0]).toBeInstanceOf(Error);
+  const replacement = pool.waitForOrdinary(identity)!;
+  rows[0].settle();
+  await Promise.all([...results, replacement.promise]);
+  expect(pool.canCapture(identity)).toBe(true);
+  rows.slice(1).forEach((row) => row.settle());
+  expect(vi.getTimerCount()).toBe(0);
+});

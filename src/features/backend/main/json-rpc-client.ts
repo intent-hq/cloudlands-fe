@@ -56,12 +56,16 @@ type RecoveryClient = Pick<
 >;
 const recoveryWirePools = new WeakMap<RecoveryClient, WeakMap<object, RecoveryWirePool>>();
 
-function recoveryPool(client: RecoveryClient, connection: RepositoryConnection) {
+function recoveryPoolForSocket(client: RecoveryClient, incarnation: object) {
   const sockets = recoveryWirePools.get(client) ?? new WeakMap<object, RecoveryWirePool>();
   recoveryWirePools.set(client, sockets);
-  const pool = sockets.get(connection.incarnation) ?? new RecoveryWirePool();
-  sockets.set(connection.incarnation, pool);
+  const pool = sockets.get(incarnation) ?? new RecoveryWirePool();
+  sockets.set(incarnation, pool);
   return pool;
+}
+
+function recoveryPool(client: RecoveryClient, connection: RepositoryConnection) {
+  return recoveryPoolForSocket(client, connection.incarnation);
 }
 
 /** Shared physical accounting, including lease cleanup, for main and renderer captures. */
@@ -935,62 +939,123 @@ export class JsonRpcClient extends EventEmitter {
    * after the call is correlated correctly. Callers must ensure the socket is
    * usable: either `status === 'connected'` or the §5.17 handshake window.
    */
-  private sendNow<T = unknown>(
+  private sendNow<T>(
     method: string,
     params: unknown,
     timeoutMs: number | undefined,
     observe?: (result: unknown) => void,
   ): Promise<T> {
     const socket = this.socket;
+    const incarnation = this.socketIncarnation;
+    const identity = this.repositoryConnection ?? incarnation;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
       assertScopedFileReadSupport(method, params, this.protocolVersion);
-      const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
-      this.observeOutboundRequest(id, method, payload);
+      let payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
+      let physical: ReturnType<RecoveryWirePool['trackOrdinary']> | undefined;
+      let waiting: ReturnType<RecoveryWirePool['waitForOrdinary']>;
+      let timedOut = false;
       const timeout =
         timeoutMs === undefined
           ? undefined
           : setTimeout(() => {
-              this.pending.delete(id);
+              timedOut = true;
+              waiting?.cancel();
+              physical?.timeout();
+              if (!physical) this.pending.delete(id);
               this.observeFrame(() => ({
                 type: 'response',
                 key: `out:${id}`,
                 status: 'timeout',
                 payload: undefined,
               }));
-              reject(new Error(`JSON-RPC request timed out: ${method}`));
+              reject(
+                Object.assign(new Error(`JSON-RPC request timed out: ${method}`), {
+                  completion: physical?.completion,
+                  drained: physical?.drained,
+                }),
+              );
             }, timeoutMs);
-      this.pending.set(id, {
-        method,
-        timeout,
-        resolve: (result) => {
-          if (method === HELLO_METHOD && this.socket === socket) {
-            this.protocolVersion = (result as { protocolVersion?: unknown } | null)
-              ?.protocolVersion;
-          }
+      const fail = (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+      const send = () => {
+        if (timedOut) return;
+        if (
+          this.socket !== socket ||
+          this.socketIncarnation !== incarnation ||
+          this.disposed ||
+          (method !== HELLO_METHOD && (this.repositoryConnection ?? incarnation) !== identity)
+        ) {
+          fail(new Error('JSON-RPC connection changed before dispatch'));
+          return;
+        }
+        if (timeoutMs !== undefined && method !== HELLO_METHOD && incarnation) {
+          const pool = recoveryPoolForSocket(this, incarnation);
           try {
-            observe?.(result);
+            waiting = pool.waitForOrdinary(identity);
+            if (waiting) {
+              void waiting.promise.then(() => {
+                waiting = undefined;
+                send();
+              }, fail);
+              return;
+            }
+            physical = pool.trackOrdinary(
+              identity,
+              () =>
+                !this.disposed &&
+                this.socketIncarnation === incarnation &&
+                (this.repositoryConnection ?? incarnation) === identity,
+            );
           } catch (error) {
-            reject(error instanceof Error ? error : new Error(String(error)));
+            fail(error);
             return;
           }
-          resolve(result as T);
-        },
-        reject,
-      });
-      try {
-        socket?.write(payload);
-      } catch (error) {
-        clearTimeout(timeout);
-        this.pending.delete(id);
-        this.observeFrame(() => ({
-          type: 'response',
-          key: `out:${id}`,
-          status: 'send-error',
-          payload: { message: error instanceof Error ? error.message : String(error) },
-        }));
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
+        }
+        this.observeOutboundRequest(id, method, payload);
+        this.pending.set(id, {
+          method,
+          timeout,
+          resolve: (result) => {
+            physical?.settle();
+            if (timedOut) return;
+            if (method === HELLO_METHOD && this.socket === socket)
+              this.protocolVersion = (result as { protocolVersion?: unknown } | null)
+                ?.protocolVersion;
+            try {
+              observe?.(result);
+            } catch (error) {
+              fail(error);
+              return;
+            }
+            resolve(result as T);
+          },
+          reject: (error) => {
+            physical?.settle(error);
+            reject(error);
+          },
+        });
+        try {
+          socket?.write(payload);
+          // Retained correlation must not retain a potentially large serialized request body.
+          payload = '';
+        } catch (error) {
+          payload = '';
+          clearTimeout(timeout);
+          this.pending.delete(id);
+          physical?.settle(error);
+          this.observeFrame(() => ({
+            type: 'response',
+            key: `out:${id}`,
+            status: 'send-error',
+            payload: { message: error instanceof Error ? error.message : String(error) },
+          }));
+          fail(error);
+        }
+      };
+      send();
     });
   }
 
