@@ -9,7 +9,13 @@ import {
   getPrincipalActionContext,
   getPrincipalConnectionContext,
 } from '$store/renderer/slices/principal/principal-context';
-import { contextReducer, hydrateContextItems } from '$store/renderer/slices/context/context-slice';
+import {
+  contextReducer,
+  hydrateContextItems,
+  addContextItem,
+  removeContextItem,
+  updateContextItem,
+} from '$store/renderer/slices/context/context-slice';
 import {
   tokenUsageReducer,
   tokenUsageReceived,
@@ -17,11 +23,18 @@ import {
 import {
   taskAgentAssociationsReducer,
   hydrateTaskAgentAssociations,
+  addTaskAgentAssociation,
+  removeTaskAgentAssociation,
+  pruneTaskAgentAssociationsForNote,
+  applyTaskAgentLinked,
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import { RendererEventRecovery } from './renderer-event-recovery';
 import {
   acquireLifecycleMetadataDemand,
   contextRecoveryKey,
+  lifecycleMetadataMutationKey,
+  beginLifecycleMetadataMutation,
+  getLifecycleMetadataMutation,
   installLifecycleMetadataRecovery,
   runLifecycleMetadataRead,
 } from './lifecycle-metadata-recovery';
@@ -429,5 +442,118 @@ describe('lifecycle metadata recovery', () => {
     resolve('current');
     await valid;
     await expect(rejected).rejects.toThrow('authority expired');
+  });
+  it('classifies only optimistic commands, excluding recovery and daemon projections', () => {
+    for (const action of [
+      addContextItem('ws', item('edit') as never),
+      removeContextItem('ws', 'edit'),
+      updateContextItem('ws', 'edit', {}),
+    ])
+      expect(lifecycleMetadataMutationKey(action)).toBe(contextRecoveryKey('ws'));
+    for (const action of [
+      addTaskAgentAssociation('ws', 'note', link),
+      removeTaskAgentAssociation('ws', 'note', 'task'),
+      pruneTaskAgentAssociationsForNote('ws', 'note', []),
+    ])
+      expect(lifecycleMetadataMutationKey(action)).toBe('task-agent-links:["ws"]');
+    for (const action of [
+      hydrateContextItems('ws', []),
+      hydrateTaskAgentAssociations('ws', {}),
+      applyTaskAgentLinked('ws', 'note', link),
+      tokenUsageReceived('ws', usage(1)),
+    ])
+      expect(lifecycleMetadataMutationKey(action)).toBeUndefined();
+  });
+  it('waits for a cancelled saga physical mutation before recovery reads', async () => {
+    const h = await harness();
+    const action = addContextItem('ws', item('edit') as never);
+    const lease = beginLifecycleMetadataMutation(action)!;
+    expect(getLifecycleMetadataMutation(action)).toBe(lease);
+    h.registry.push(contextRecoveryKey('ws'));
+    h.dispatch(action);
+    let resolve!: () => void;
+    const mutate = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolve = r;
+        }),
+    );
+    const pending = lease.run(mutate);
+    lease.finish(); // Saga cancellation cannot cancel an already-sent request.
+    h.loss();
+    await settle();
+    expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(0);
+    resolve();
+    await pending;
+    await settle();
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual([
+      'fresh',
+    ]);
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+  it('holds buffered task mutations until every reservation and physical write finishes', async () => {
+    const h = await harness();
+    const action = removeTaskAgentAssociation('ws', 'note', 'task');
+    const lease = beginLifecycleMetadataMutation(action)!;
+    const releaseQueued = lease.retain();
+    lease.finish();
+    h.registry.push('task-agent-links:["ws"]');
+    h.loss();
+    await settle();
+    expect(h.request.mock.calls.filter((c) => c[0] === 'task.listAgentLinks')).toHaveLength(0);
+    const mutate = vi.fn(async () => undefined);
+    await lease.run(mutate);
+    releaseQueued();
+    await settle();
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    expect(h.state.taskAgentAssociations.byWorkspaceId.ws.byNoteId).toEqual({
+      note: { task: link },
+    });
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+  it('keeps clean local edits read-free after their mutations settle', async () => {
+    const h = await harness();
+    const action = addContextItem('ws', item('edit') as never);
+    const lease = beginLifecycleMetadataMutation(action)!;
+    h.registry.push(contextRecoveryKey('ws'));
+    h.dispatch(action);
+    await lease.run(async () => undefined);
+    lease.finish();
+    await settle();
+    expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toContain('edit');
+    expect(h.request).toHaveBeenCalledTimes(1);
+  });
+  it('rejects queued user mutations after workspace authority retires', async () => {
+    const h = await harness();
+    const lease = beginLifecycleMetadataMutation(removeContextItem('ws', 'old'))!;
+    const release = lease.retain();
+    lease.finish();
+    h.update((s) => {
+      s.principal.invalidation++;
+    });
+    const mutate = vi.fn(async () => undefined);
+    await expect(lease.run(mutate)).rejects.toThrow('authority expired');
+    expect(mutate).not.toHaveBeenCalled();
+    release();
+  });
+  it('does not return a mutation reply to a retired caller', async () => {
+    const h = await harness();
+    const lease = beginLifecycleMetadataMutation(removeContextItem('ws', 'old'))!;
+    let resolve!: (value: string) => void;
+    const result = lease.run(
+      () =>
+        new Promise<string>((r) => {
+          resolve = r;
+        }),
+    );
+    lease.finish();
+    h.update((s) => {
+      s.principal.invalidation++;
+    });
+    resolve('old protected result');
+    await expect(result).rejects.toThrow('authority expired');
   });
 });

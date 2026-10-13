@@ -6,13 +6,23 @@ import type { StoreState } from '$store/renderer/types';
 import type { ContextItem } from '$features/context/types';
 import { parseTokenUsage } from '$features/token-usage/token-usage-schema';
 import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
-import { hydrateContextItems } from '$store/renderer/slices/context/context-slice';
+import {
+  addContextItem,
+  removeContextItem,
+  updateContextItem,
+  hydrateContextItems,
+} from '$store/renderer/slices/context/context-slice';
 import {
   clearWorkspaceTokenUsage,
   tokenUsageFetchFailed,
   tokenUsageReceived,
 } from '$store/renderer/slices/token-usage/token-usage-slice';
-import { hydrateTaskAgentAssociations } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
+import {
+  addTaskAgentAssociation,
+  removeTaskAgentAssociation,
+  pruneTaskAgentAssociationsForNote,
+  hydrateTaskAgentAssociations,
+} from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import type { TaskAgentAssociationsByTaskKey } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
 
 export const contextRecoveryKey = (workspaceId: string) =>
@@ -38,6 +48,162 @@ export function acquireLifecycleMetadataDemand(
     if (!demands.delete(demand)) return;
     for (const listener of demandListeners) listener();
   };
+}
+
+/** Local commands only: snapshots and daemon echoes must never replay a mutation. */
+export function lifecycleMetadataMutationKey(action: object): string | undefined {
+  const { type, payload } = action as { type?: unknown; payload?: unknown };
+  if (!Array.isArray(payload) || typeof payload[0] !== 'string' || !payload[0]) return;
+  if (
+    [addContextItem.type, removeContextItem.type, updateContextItem.type].includes(type as string)
+  )
+    return contextRecoveryKey(payload[0]);
+  if (
+    [
+      addTaskAgentAssociation.type,
+      removeTaskAgentAssociation.type,
+      pruneTaskAgentAssociationsForNote.type,
+    ].includes(type as string)
+  )
+    return taskAgentLinksRecoveryKey(payload[0]);
+}
+export interface LifecycleMetadataMutation {
+  readonly key: string;
+  /** Reserve buffered child work before releasing its parent action. */
+  retain(): () => void;
+  /** Release action processing; already-sent requests retain their own barrier. */
+  finish(): void;
+  run<T>(mutate: () => Promise<T>): Promise<T>;
+}
+interface MutationOwner {
+  generation: object;
+  isCurrent(): boolean;
+  handle: RendererRecoveryHandle;
+}
+interface PendingMutation {
+  owner: MutationOwner | undefined;
+  drained: Promise<void>;
+  cancel(): void;
+}
+const mutationOwners = new Map<string, MutationOwner>();
+const pendingMutations = new Map<string, Set<PendingMutation>>();
+const actionMutations = new WeakMap<object, LifecycleMetadataMutation>();
+
+export function getLifecycleMetadataMutation(
+  action: object,
+): LifecycleMetadataMutation | undefined {
+  return actionMutations.get(action);
+}
+
+/** Call at command ingress before reducers, then finish in the command saga's finally. */
+export function beginLifecycleMetadataMutation(
+  action: object,
+): LifecycleMetadataMutation | undefined {
+  const existing = actionMutations.get(action);
+  if (existing) return existing;
+  const key = lifecycleMetadataMutationKey(action);
+  if (!key) return;
+  const owner = mutationOwners.get(key);
+  const reservations = new Set<object>();
+  let ingress = true,
+    physical = 0,
+    cancelled = false,
+    done = false;
+  let resolve!: () => void;
+  const drained = new Promise<void>((r) => {
+    resolve = r;
+  });
+  let pending = pendingMutations.get(key);
+  if (!pending) {
+    pending = new Set();
+    pendingMutations.set(key, pending);
+  }
+  const owned = pending;
+  const current = () =>
+    !cancelled && !done && mutationOwners.get(key) === owner && (!owner || owner.isCurrent());
+  const settle = () => {
+    if (done || ingress || physical || reservations.size) return;
+    done = true;
+    owned.delete(entry);
+    if (!owned.size && pendingMutations.get(key) === owned) pendingMutations.delete(key);
+    // A clean optimistic edit needs no read. Only supersede a recovery which
+    // may have observed the pre-mutation snapshot while this request was pending.
+    if (
+      !cancelled &&
+      owner &&
+      mutationOwners.get(key) === owner &&
+      owner.isCurrent() &&
+      owner.handle.status.stale
+    )
+      owner.handle.invalidate();
+    resolve();
+  };
+  const entry: PendingMutation = {
+    owner,
+    drained,
+    cancel: () => {
+      cancelled = true;
+      ingress = false;
+      reservations.clear();
+      settle();
+    },
+  };
+  pending.add(entry);
+  const lease: LifecycleMetadataMutation = {
+    key,
+    retain: () => {
+      if (!current()) return () => {};
+      const token = {};
+      reservations.add(token);
+      return () => {
+        reservations.delete(token);
+        settle();
+      };
+    },
+    finish: () => {
+      ingress = false;
+      settle();
+    },
+    run: <T>(mutate: () => Promise<T>): Promise<T> => {
+      if (!current())
+        return Promise.reject(new Error('Lifecycle metadata mutation authority expired'));
+      physical++;
+      let result: Promise<T>;
+      try {
+        result = mutate();
+      } catch (error) {
+        result = Promise.reject(error);
+      }
+      return result.then(
+        (value) => {
+          const authorized = current();
+          physical--;
+          settle();
+          if (!authorized) throw new Error('Lifecycle metadata mutation authority expired');
+          return value;
+        },
+        (error) => {
+          physical--;
+          settle();
+          throw error;
+        },
+      );
+    },
+  };
+  actionMutations.set(action, lease);
+  return lease;
+}
+function retireMutations(key: string, generation: object): void {
+  for (const pending of pendingMutations.get(key) ?? [])
+    if (pending.owner?.generation === generation) pending.cancel();
+  if (mutationOwners.get(key)?.generation === generation) mutationOwners.delete(key);
+}
+async function waitForMutations(key: string): Promise<void> {
+  for (;;) {
+    const pending = pendingMutations.get(key);
+    if (!pending?.size) return;
+    await Promise.all([...pending].map((mutation) => mutation.drained));
+  }
 }
 
 interface MetadataStore {
@@ -72,7 +238,8 @@ function readInLane<T>(
   const owned = lane;
   if (!recovery && owned.ordinary?.receipt.commit(() => undefined))
     return owned.ordinary.result as Promise<T>;
-  const start = () => {
+  const start = (): Promise<T> => {
+    if (pendingMutations.get(key)?.size) return waitForMutations(key).then(start);
     if (!(recovery ? receipt.isCurrent() : receipt.commit(() => undefined)))
       return Promise.reject(new Error('Lifecycle metadata read authority expired'));
     try {
@@ -208,6 +375,7 @@ export function installLifecycleMetadataRecovery(
         const contextKey = contextRecoveryKey(workspaceId),
           tokenKey = tokenUsageRecoveryKey(workspaceId),
           linksKey = taskAgentLinksRecoveryKey(workspaceId);
+        const generation = {};
         const handles = [
           scope.registerResource({
             ...common,
@@ -231,6 +399,7 @@ export function installLifecycleMetadataRecovery(
             },
             invalidate: () => {},
             retire: () => {
+              retireMutations(contextKey, generation);
               store.dispatch(hydrateContextItems(workspaceId, []));
             },
           }),
@@ -259,6 +428,7 @@ export function installLifecycleMetadataRecovery(
               store.dispatch(tokenUsageFetchFailed(workspaceId));
             },
             retire: () => {
+              retireMutations(tokenKey, generation);
               store.dispatch(clearWorkspaceTokenUsage(workspaceId));
             },
           }),
@@ -290,10 +460,18 @@ export function installLifecycleMetadataRecovery(
             },
             invalidate: () => {},
             retire: () => {
+              retireMutations(linksKey, generation);
               store.dispatch(hydrateTaskAgentAssociations(workspaceId, {}));
             },
           }),
         ];
+        [contextKey, tokenKey, linksKey].forEach((key, index) => {
+          mutationOwners.set(key, {
+            generation,
+            handle: handles[index],
+            isCurrent: common.isCurrent,
+          });
+        });
         owners.set(workspaceId, handles);
       }
     } finally {
@@ -309,6 +487,14 @@ export function installLifecycleMetadataRecovery(
     demandListeners.delete(sync);
     for (const demand of capturedDemands) demands.delete(demand);
     for (const [workspaceId, handles] of owners) {
+      for (const key of [
+        contextRecoveryKey(workspaceId),
+        tokenUsageRecoveryKey(workspaceId),
+        taskAgentLinksRecoveryKey(workspaceId),
+      ]) {
+        const owner = mutationOwners.get(key);
+        if (owner && handles.includes(owner.handle)) retireMutations(key, owner.generation);
+      }
       for (const handle of handles) handle.dispose();
       store.dispatch(hydrateContextItems(workspaceId, []));
       store.dispatch(clearWorkspaceTokenUsage(workspaceId));
