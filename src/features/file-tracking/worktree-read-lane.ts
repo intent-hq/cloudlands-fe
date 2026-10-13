@@ -2,13 +2,16 @@ import { rendererEventRecovery } from '$features/events/renderer-event-recovery'
 import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 /** Independent ordinary scopes may overlap; recovery owns an exclusive snapshot. */
 type SnapshotLane = { active: Set<Promise<void>>; barrier?: Promise<void> };
-const lanes = new Map<string, SnapshotLane>();
+const sessions = new WeakMap<object, Map<string, SnapshotLane>>();
 
 export function trackWorktreeSnapshotRead<T>(
   key: string,
   read: () => Promise<T>,
   mode: 'ordinary' | 'recovery' = 'ordinary',
 ): Promise<T> {
+  const session = rendererEventRecovery.capturePhysicalSessionIdentity();
+  const lanes = sessions.get(session) ?? new Map<string, SnapshotLane>();
+  sessions.set(session, lanes);
   const retire = rendererEventRecovery.captureRetirement(key);
   const observe = async (error: unknown): Promise<void> => {
     const code = (error as { rpcCode?: unknown } | null)?.rpcCode;
@@ -26,6 +29,8 @@ export function trackWorktreeSnapshotRead<T>(
       : lane.barrier;
   const invoke = () => {
     try {
+      if (session !== rendererEventRecovery.capturePhysicalSessionIdentity())
+        throw new Error('Worktree read physical session expired before dispatch');
       return Promise.resolve(read());
     } catch (error) {
       return Promise.reject(error);

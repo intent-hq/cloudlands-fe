@@ -150,3 +150,39 @@ it.each(['current', 'push', 'replaced'] as const)(
     }
   },
 );
+
+it.each(['same', 'replacement'] as const)(
+  'shares held work only with the same physical session (%s)',
+  async (change) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const attach = () =>
+      rendererEventRecovery.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onNotification: () => () => {},
+          onRetired: () => () => {},
+          dispose: () => {},
+          request: async () => ({}),
+        }),
+      );
+    attach();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ordinary = trackWorktreeSnapshotRead('physical-' + change, () => held);
+    if (change === 'replacement') attach();
+    else rendererEventRecovery.refreshAuthority();
+    const read = vi.fn(async () => 'fresh');
+    const recovery = trackWorktreeSnapshotRead('physical-' + change, read, 'recovery');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect.soft(read).toHaveBeenCalledTimes(change === 'replacement' ? 1 : 0);
+    release();
+    await ordinary;
+    await recovery;
+    rendererEventRecovery.dispose();
+  },
+);
