@@ -233,6 +233,7 @@ function logWorkspaceListRpc(tag: string, detail?: string): void {
  * retryable after the transport recovers.
  */
 function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
+  const cacheLifetime = captureNoteWorkspaceCacheLifetime();
   if (workspaceListRpcInFlight) return workspaceListRpcInFlight;
   const lifetime = rendererEventRecovery.capture(WORKSPACE_IDS_RECOVERY_KEY);
   const ownerEpoch = workspaceIdOwnerEpoch;
@@ -256,6 +257,7 @@ function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
       .filter((id) => id.length > 0);
     if (
       ownerEpoch !== workspaceIdOwnerEpoch ||
+      !cacheLifetime.commit(() => {}) ||
       !lifetime.commit(() => {
         workspaceListCache = { ids, fetchedAt: Date.now() };
       })
@@ -307,7 +309,9 @@ export async function listWorkspaceIds(tag = 'explicit'): Promise<string[]> {
 
 /** Test-only: clear the module-level workspace.list / note-resolution caches. */
 export function __resetLiveSupportCachesForTests(): void {
-  workspaceListCache = null;
+  offNoteWorkspaceCacheRecovery?.();
+  offNoteWorkspaceCacheRecovery = undefined;
+  invalidateNoteWorkspaceCache();
   workspaceListRpcInFlight = null;
   workspaceIdAuthorityRetired = false;
   noteResolveNegativeCache.clear();
@@ -704,6 +708,35 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
 
 /** noteId → workspaceId, populated as notes are listed so note-scoped reads resolve. */
 const noteWorkspaceIndex = new Map<string, string>();
+const NOTE_WORKSPACE_CACHE_KEY = 'note-workspace-cache';
+let noteWorkspaceCacheEpoch: object = {};
+let offNoteWorkspaceCacheRecovery: Unsubscribe | undefined;
+function invalidateNoteWorkspaceCache(): void {
+  noteWorkspaceCacheEpoch = {};
+  workspaceListCache = null;
+  noteWorkspaceIndex.clear();
+  noteResolveNegativeCache.clear();
+  noteResolveScansInFlight.clear();
+}
+function ensureNoteWorkspaceCacheRecovery(): void {
+  offNoteWorkspaceCacheRecovery ??= rendererEventRecovery.onSession((scope) => {
+    invalidateNoteWorkspaceCache();
+    const owner = scope.registerResource({
+      key: NOTE_WORKSPACE_CACHE_KEY,
+      workspaceId: null,
+      eventTypes: ['workspace:*', 'note:*', 'task:*'],
+      active: false,
+      isCurrent: () => scope.isCurrent(),
+      read: async () => undefined,
+      apply: () => {},
+      invalidate: invalidateNoteWorkspaceCache,
+      retire: () => {
+        invalidateNoteWorkspaceCache();
+      },
+    });
+    return () => owner.dispose();
+  });
+}
 
 /**
  * Record the workspace a note belongs to (called from `LiveNotesClient.list`).
@@ -711,7 +744,16 @@ const noteWorkspaceIndex = new Map<string, string>();
  * that appears within the negative TTL resolves immediately.
  */
 export function captureNoteWorkspaceCacheLifetime(): RecoveryLifetime {
-  return workspaceScopeLifetime(rendererEventRecovery.capture(WORKSPACE_IDS_RECOVERY_KEY));
+  ensureNoteWorkspaceCacheRecovery();
+  const epoch = noteWorkspaceCacheEpoch;
+  const authority = workspaceScopeLifetime(
+    rendererEventRecovery.captureAuthority(NOTE_WORKSPACE_CACHE_KEY),
+  );
+  return {
+    key: epoch,
+    isCurrent: () => epoch === noteWorkspaceCacheEpoch && authority.isCurrent(),
+    commit: (write) => epoch === noteWorkspaceCacheEpoch && authority.commit(write),
+  };
 }
 
 export function rememberNoteWorkspace(
@@ -719,6 +761,7 @@ export function rememberNoteWorkspace(
   workspaceId: string,
   lifetime?: RecoveryLifetime,
 ): void {
+  ensureNoteWorkspaceCacheRecovery();
   if (lifetime && !lifetime.commit(() => {})) return;
   if (
     noteId &&
@@ -810,6 +853,7 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
  * unknown note performs one scan, not many.
  */
 export async function resolveNoteWorkspaceId(noteId: string): Promise<string | null> {
+  ensureNoteWorkspaceCacheRecovery();
   if (workspaceIdAuthorityRetired || workspaceIdRecovery?.status.stale) return null;
   const cached = noteWorkspaceIndex.get(noteId);
   if (cached && (sharedWorkspaceIds === null || sharedWorkspaceIds.has(cached))) return cached;

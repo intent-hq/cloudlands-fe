@@ -31,6 +31,7 @@ import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
   rememberNoteWorkspace,
+  captureNoteWorkspaceCacheLifetime,
   resolveNoteWorkspaceId,
   runMutationWithId,
   subscribeWorkspaceIds,
@@ -200,6 +201,23 @@ function normalizeStats(raw: unknown): WorkspaceTaskStats {
   };
 }
 
+export function normalizeTaskListResult(raw: unknown): {
+  tasks: WorkspaceTask[];
+  stats: WorkspaceTaskStats;
+} {
+  const result =
+    raw && typeof raw === 'object' ? (raw as { tasks?: unknown[]; stats?: unknown }) : {};
+  const tasks: WorkspaceTask[] = [];
+  for (const entry of Array.isArray(result.tasks) ? result.tasks : []) {
+    const task =
+      entry && typeof entry === 'object'
+        ? normalizeTaskEntity(entry as Record<string, unknown>)
+        : null;
+    if (task) tasks.push(task);
+  }
+  return { tasks, stats: normalizeStats(result.stats) };
+}
+
 export class LiveTasksClient implements TasksClient {
   /**
    * `task.list` (PROTOCOL §5.4) → `{ tasks, stats }`. The BE owns the
@@ -207,18 +225,15 @@ export class LiveTasksClient implements TasksClient {
    * by workspace so note-scoped mutations can resolve their owning workspace.
    */
   async list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }> {
+    const cacheLifetime = captureNoteWorkspaceCacheLifetime();
     const result = await backendRequest<{ tasks?: unknown[]; stats?: unknown }>('task.list', {
       workspaceId,
     });
-    const rawTasks = Array.isArray(result?.tasks) ? result.tasks : [];
-    const tasks: WorkspaceTask[] = [];
-    for (const entry of rawTasks) {
-      const task = normalizeTaskEntity(entry as Record<string, unknown>);
-      if (!task) continue;
-      if (task.id) rememberNoteWorkspace(task.id, workspaceId);
-      tasks.push(task);
+    const snapshot = normalizeTaskListResult(result);
+    for (const task of snapshot.tasks) {
+      if (task.id) rememberNoteWorkspace(task.id, workspaceId, cacheLifetime);
     }
-    return { tasks, stats: normalizeStats(result?.stats) };
+    return snapshot;
   }
 
   async get(taskId: string): Promise<WorkspaceTask | null> {

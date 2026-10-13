@@ -11,6 +11,7 @@ const listWorkspaceIdsCalls: unknown[] = [];
 let listWorkspaceIdsImpl: () => Promise<unknown> = () => Promise.resolve({ workspaces: [] });
 const noteListCalls: unknown[] = [];
 let noteListImpl: (params: unknown) => Promise<unknown> = () => Promise.resolve({ notes: [] });
+let taskListImpl: () => Promise<unknown> = () => Promise.resolve({ tasks: [] });
 
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn((method: string, params?: unknown) => {
@@ -18,6 +19,7 @@ vi.mock('./backend-transport', () => ({
       listWorkspaceIdsCalls.push(method);
       return listWorkspaceIdsImpl();
     }
+    if (method === 'task.list') return taskListImpl();
     if (method === 'note.list') {
       noteListCalls.push(params);
       return noteListImpl(params);
@@ -1037,4 +1039,125 @@ it('serializes workspace scope recovery behind a held ordinary seed', async () =
     off();
     rendererEventRecovery.dispose();
   }
+});
+
+describe('all workspace cache writers', () => {
+  it('rejects task-list cache writes captured before generic loss', async () => {
+    __resetLiveSupportCachesForTests();
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { LiveTasksClient } = await import('$lib/client/live/live-tasks-client');
+    let receive!: (n: { method: string; params?: unknown }) => void;
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: (fn) => {
+          receive = fn;
+          return () => {};
+        },
+        request: async (method, params, observe) => {
+          const result =
+            method === 'events.subscribe'
+              ? { subscriptionId: 'cache-loss', lossRecovery: 1 }
+              : method === 'workspace.list'
+                ? { workspaces: [{ id: 'ws' }] }
+                : params;
+          observe?.(result);
+          return result;
+        },
+        dispose: () => {},
+      }),
+    );
+    listWorkspaceIdsImpl = async () => ({ workspaces: [{ id: 'ws' }] });
+    noteListImpl = async () => ({ notes: [] });
+    const off = subscribeWorkspaceIds(() => {});
+    let finish!: (value: unknown) => void;
+    taskListImpl = () =>
+      new Promise((done) => {
+        finish = done;
+      });
+    try {
+      await scope.subscribe({ eventTypes: ['workspace:*'] }, { recover: true });
+      await flush();
+      const pending = new LiveTasksClient().list('ws');
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'cache-loss', generation: '1', scope: { workspaceId: null } },
+      });
+      await flush();
+      finish({ tasks: [{ id: 'removed-task', title: 'old task', status: 'not_started' }] });
+      await pending;
+      expect(await resolveNoteWorkspaceId('removed-task')).toBeNull();
+    } finally {
+      off();
+      rendererEventRecovery.dispose();
+      __resetLiveSupportCachesForTests();
+    }
+  });
+});
+
+describe('inactive resolver cache recovery', () => {
+  it('invalidates ordinary-client caches on loss without a typed subscriber', async () => {
+    __resetLiveSupportCachesForTests();
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { LiveTasksClient } = await import('$lib/client/live/live-tasks-client');
+    let receive!: (n: { method: string; params?: unknown }) => void;
+    let recoveryReads = 0;
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: (fn) => {
+          receive = fn;
+          return () => {};
+        },
+        request: async (method, params, observe) => {
+          if (method === 'workspace.list') recoveryReads++;
+          const result =
+            method === 'events.subscribe'
+              ? { subscriptionId: 'inactive-loss', lossRecovery: 1 }
+              : method === 'workspace.list'
+                ? { workspaces: [] }
+                : params;
+          observe?.(result);
+          return result;
+        },
+        dispose: () => {},
+      }),
+    );
+    listWorkspaceIdsImpl = async () => ({ workspaces: [{ id: 'idle-ws' }] });
+    taskListImpl = async () => ({
+      tasks: [{ id: 'inactive-deleted', title: 'Old', status: 'not_started' }],
+    });
+    noteListImpl = async () => ({ notes: [] });
+    try {
+      await scope.subscribe({ eventTypes: ['workspace:*', 'note:*', 'task:*'] }, { recover: true });
+      await new LiveTasksClient().list('idle-ws');
+      expect(await resolveNoteWorkspaceId('inactive-deleted')).toBe('idle-ws');
+      let finishScope!: (value: unknown) => void;
+      listWorkspaceIdsImpl = () =>
+        new Promise((done) => {
+          finishScope = done;
+        });
+      const oldScope = listWorkspaceIds();
+      listWorkspaceIdsImpl = async () => ({ workspaces: [] });
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'inactive-loss', generation: '1', scope: { workspaceId: null } },
+      });
+      await flush();
+      finishScope({ workspaces: [{ id: 'idle-ws' }] });
+      expect(await oldScope).toEqual([]);
+      expect(await listWorkspaceIds()).toEqual([]);
+      expect(await resolveNoteWorkspaceId('inactive-deleted')).toBeNull();
+      expect(recoveryReads).toBe(0);
+    } finally {
+      rendererEventRecovery.dispose();
+      __resetLiveSupportCachesForTests();
+    }
+  });
 });
