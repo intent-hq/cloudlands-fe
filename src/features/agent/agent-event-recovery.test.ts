@@ -1056,3 +1056,52 @@ it.each([
     activeStreamsTracker.replaceSnapshot([]);
   }
 });
+
+it('admits subscription child updates across workspaces only for watching parents and retires the home scope', async () => {
+  const { setSubscriptionSnapshot } =
+    await import('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice');
+  const { agentSubscriptionsRecoveryKey } = await import('./agent-recovery-keys');
+  const h = integration();
+  h.store.dispatch(
+    setSubscriptionSnapshot('ws', 'a', {
+      subscriptions: [
+        {
+          id: 'watch',
+          agentId: 'a',
+          actorIds: ['child'],
+          eventTypes: ['agent:idle'],
+          createdAt: '',
+        },
+      ],
+      delegationGroups: [],
+      agentStatuses: {},
+      waitingState: 'waiting',
+    }),
+  );
+  await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+  const key = agentSubscriptionsRecoveryKey('ws', 'a');
+  const before = h.registry.capture(key);
+  expect(h.state.agentSubscriptionUI.entries['ws:a']).toBeDefined();
+  h.emit({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'lease-1',
+      event: { type: 'agent:idle', workspaceId: 'other', data: { agentId: 'unrelated' } },
+    },
+  });
+  await settle();
+  expect(before.commit(() => undefined)).toBe(true);
+  h.emit({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'lease-1',
+      event: { type: 'agent:idle', workspaceId: 'other', data: { agentId: 'child' } },
+    },
+  });
+  await settle();
+  expect(before.commit(() => undefined)).toBe(false);
+  h.registry.retireWorkspace('ws');
+  expect(h.state.agentSubscriptionUI.entries['ws:a']).toBeUndefined();
+  h.stop();
+  h.registry.dispose();
+});

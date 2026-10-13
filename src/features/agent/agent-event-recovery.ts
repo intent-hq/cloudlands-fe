@@ -146,6 +146,12 @@ export function installAgentEventRecovery(
   const retireWorkspace = (workspaceId: string) => {
     if (!current() || retiredWorkspaces.has(workspaceId)) return;
     retiredWorkspaces.add(workspaceId);
+    // Subscription owners admit watched children from other workspaces, while
+    // their authority and protected snapshot still belong to the parent's home.
+    for (const [key, demand] of demands) {
+      if (demand.kind === 'subscriptions' && demand.workspaceId === workspaceId)
+        handles.get(key)?.captureLifetime().isCurrent();
+    }
     for (const key of [
       AGENT_ACTIVE_STREAMS_RECOVERY_KEY,
       AGENT_FAILURES_RECOVERY_KEY,
@@ -452,9 +458,41 @@ export function installAgentEventRecovery(
         if (handles.has(key)) continue;
         const handle = scope.registerResource({
           key,
-          workspaceId,
-          eventTypes: ['agent:subscriptions-changed', 'agent:deleted', 'agent:delete-scheduled'],
-          isCurrent: current,
+          workspaceId: null,
+          eventTypes: [
+            'agent:subscriptions-changed',
+            'agent:idle',
+            'agent:failed',
+            'agent:status-changed',
+            'agent:deleted',
+            'agent:delete-scheduled',
+          ],
+          isCurrent: () => current() && workspaceAuthority.current(workspaceId),
+          acceptsEvent: (notification) => {
+            const event = (
+              notification.params as {
+                event?: {
+                  workspaceId?: string;
+                  type?: string;
+                  data?: { agentId?: string };
+                };
+              }
+            )?.event;
+            if (!event?.workspaceId || !workspaceAuthority.current(event.workspaceId)) return false;
+            const changed = event.data?.agentId;
+            if (event.type === 'agent:subscriptions-changed')
+              return event.workspaceId === workspaceId && changed === agentId;
+            const entry =
+              store.getState().agentSubscriptionUI.entries[makeKey(workspaceId, agentId)];
+            const watchesChild =
+              !!changed &&
+              (entry?.subscriptions.some((watch) => watch.actorIds.includes(changed)) ||
+                entry?.delegationGroups.some((group) => group.expectedAgentIds.includes(changed)));
+            return (
+              !!watchesChild ||
+              (event.workspaceId === workspaceId && (!changed || entry?.snapshotStatus !== 'ready'))
+            );
+          },
           read: ({ request, lifetime }) =>
             trackAgentRecoveryRead(
               key,

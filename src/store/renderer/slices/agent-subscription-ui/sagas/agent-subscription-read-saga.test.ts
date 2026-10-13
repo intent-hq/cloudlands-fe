@@ -70,7 +70,11 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function harness(seed = initialState, extraState: Record<string, unknown> = {}) {
+function harness(
+  seed = initialState,
+  extraState: Record<string, unknown> = {},
+  onDispatch?: () => void,
+) {
   const channel = stdChannel();
   let state = seed;
   const listeners = new Set<() => void>();
@@ -83,6 +87,7 @@ function harness(seed = initialState, extraState: Record<string, unknown> = {}) 
   const dispatch = vi.fn((action) => {
     state = agentSubscriptionUIReducer(state, action);
     listeners.forEach((listener) => listener());
+    onDispatch?.();
   });
   const reduxStore = {
     getState,
@@ -582,5 +587,190 @@ it('refreshes only parents watching the changed child, including hidden tracked 
   });
   expect(run.state().entries[makeKey(WS, AGENT)]?.waitingState).toBe('completed');
   expect(run.state().entries[makeKey(WS, 'unrelated')]?.waitingState).toBe('idle');
+  run.task.cancel();
+});
+
+it.each(['missing', 'denied', 'expired'] as const)(
+  'rejects %s integrated subscription refresh before any read',
+  async (kind) => {
+    const { withRecoveryAdmissions } = await import('$store/renderer/middlewares/event-recovery');
+    const { agentSubscriptionsRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+    mocks.request.mockClear();
+    mocks.request.mockResolvedValue(empty());
+    const seed = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, { ...active(), waitingState: 'waiting' }),
+    );
+    const run = harness(seed);
+    const token = { key: {}, isCurrent: () => false, commit: () => false };
+    const admissions = new Map(
+      kind === 'missing'
+        ? []
+        : [[agentSubscriptionsRecoveryKey(WS, AGENT), kind === 'denied' ? null : token]],
+    );
+    run.channel.put(
+      withRecoveryAdmissions(refreshWorkspaceSubscriptionEntriesRequested(WS, AGENT), admissions),
+    );
+    await settle();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(run.state()).toEqual(seed);
+    run.task.cancel();
+  },
+);
+
+it.each([true, false])(
+  'retains queued event admission when its original receipt current=%s',
+  async (currentAtDrain) => {
+    const { withRecoveryAdmissions } = await import('$store/renderer/middlewares/event-recovery');
+    const { agentSubscriptionsRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+    mocks.request.mockClear();
+    const held = deferred<ReturnType<typeof active>>();
+    mocks.request
+      .mockReturnValueOnce(held.promise)
+      .mockResolvedValue(active(AGENT, CHILD, 'Trailing'));
+    const run = harness();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await settle();
+    let current = true;
+    const token = {
+      key: {},
+      isCurrent: () => current,
+      commit: (write: () => void) => {
+        if (!current) return false;
+        write();
+        return true;
+      },
+    };
+    run.channel.put(
+      withRecoveryAdmissions(
+        refreshWorkspaceSubscriptionEntriesRequested(WS, AGENT),
+        new Map([[agentSubscriptionsRecoveryKey(WS, AGENT), token]]),
+      ),
+    );
+    current = currentAtDrain;
+    held.resolve(active(AGENT, CHILD, 'Initial'));
+    for (let i = 0; i < 20; i++) await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(currentAtDrain ? 2 : 1);
+    expect(run.state().entries[makeKey(WS, AGENT)]?.subscriptions[0]?.description).toBe(
+      currentAtDrain ? 'Trailing' : 'Initial',
+    );
+    run.task.cancel();
+  },
+);
+
+it('rejects a subscription event reply after its original admission expires', async () => {
+  const { withRecoveryAdmissions } = await import('$store/renderer/middlewares/event-recovery');
+  const { agentSubscriptionsRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+  mocks.request.mockClear();
+  const held = deferred<ReturnType<typeof empty>>();
+  mocks.request.mockReturnValueOnce(held.promise);
+  const seed = agentSubscriptionUIReducer(
+    initialState,
+    setSubscriptionSnapshot(WS, AGENT, { ...active(), waitingState: 'waiting' }),
+  );
+  const run = harness(seed);
+  let current = true;
+  const token = {
+    key: {},
+    isCurrent: () => current,
+    commit: (write: () => void) => {
+      if (!current) return false;
+      write();
+      return true;
+    },
+  };
+  run.channel.put(
+    withRecoveryAdmissions(
+      refreshWorkspaceSubscriptionEntriesRequested(WS, AGENT),
+      new Map([[agentSubscriptionsRecoveryKey(WS, AGENT), token]]),
+    ),
+  );
+  await settle();
+  current = false;
+  run.dispatch(
+    setSubscriptionSnapshot(WS, AGENT, {
+      ...active(AGENT, CHILD, 'Recovered'),
+      waitingState: 'waiting',
+    }),
+  );
+  held.resolve(empty());
+  for (let i = 0; i < 20; i++) await settle();
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(run.state().entries[makeKey(WS, AGENT)]?.subscriptions[0]?.description).toBe('Recovered');
+  run.task.cancel();
+});
+
+it('captures an initial ordinary read after its loading demand creates the recovery owner', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { agentSubscriptionsRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+  const scope = rendererEventRecovery.attach({
+    supported: true,
+    isCurrent: () => true,
+    onRetired: () => () => {},
+    dispose: () => {},
+    onNotification: () => () => {},
+    request: async () => ({}),
+    fence: async (_ids: unknown, observe: () => void) => observe(),
+  } as never);
+  mocks.request.mockClear();
+  mocks.request.mockResolvedValue(active());
+  let registered = false;
+  const run = harness(initialState, {}, () => {
+    if (registered) return;
+    registered = true;
+    scope.registerResource({
+      key: agentSubscriptionsRecoveryKey(WS, AGENT),
+      workspaceId: WS,
+      eventTypes: ['agent:*'],
+      isCurrent: () => true,
+      read: async () => empty(),
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+  });
+  try {
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    for (let i = 0; i < 20; i++) await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(run.state().entries[makeKey(WS, AGENT)]?.snapshotStatus).toBe('ready');
+  } finally {
+    run.task.cancel();
+    rendererEventRecovery.dispose();
+  }
+});
+
+it('refreshes a cached cross-workspace watching parent without prior saga context', async () => {
+  const { withRecoveryAdmissions } = await import('$store/renderer/middlewares/event-recovery');
+  const { agentSubscriptionsRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+  mocks.request.mockClear();
+  mocks.request.mockResolvedValue(active());
+  const seed = agentSubscriptionUIReducer(
+    initialState,
+    setSubscriptionSnapshot(WS, AGENT, { ...active(), waitingState: 'waiting' }),
+  );
+  const run = harness(seed, {
+    agentSessions: { byAgentId: { [AGENT]: { id: AGENT, workspaceId: WS } } },
+  });
+  const token = {
+    key: {},
+    isCurrent: () => true,
+    commit: (write: () => void) => {
+      write();
+      return true;
+    },
+  };
+  run.channel.put(
+    withRecoveryAdmissions(
+      refreshWorkspaceSubscriptionEntriesRequested('child-home', undefined, CHILD),
+      new Map([[agentSubscriptionsRecoveryKey(WS, AGENT), token]]),
+    ),
+  );
+  for (let i = 0; i < 20; i++) await settle();
+  expect(mocks.request).toHaveBeenCalledExactlyOnceWith('agent.getSubscriptions', {
+    workspaceId: WS,
+    agentId: AGENT,
+  });
+  expect(run.state().entries[makeKey(WS, AGENT)]?.snapshotStatus).toBe('ready');
   run.task.cancel();
 });

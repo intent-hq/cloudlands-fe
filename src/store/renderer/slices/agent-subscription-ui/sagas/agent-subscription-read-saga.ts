@@ -4,7 +4,11 @@ import {
   agentSubscriptionsRecoveryKey,
   agentMetadataRecoveryKey,
 } from '$features/agent/agent-recovery-keys';
-import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
+import {
+  withRecoveryLifetime,
+  getRecoveryAdmission,
+  getRecoveryLifetime,
+} from '$store/renderer/middlewares/event-recovery';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import { mapResult, type WireResult } from './agent-subscription-snapshot';
 import type { Task } from 'redux-saga';
@@ -68,11 +72,15 @@ interface ReadCoordinator {
   contexts: Map<string, { wsId: string; agentId: string }>;
   reads: Map<string, Task>;
   completedCleanups: Map<string, Task>;
-  pendingSnapshots: Set<string>;
-  pendingConfirmations: Set<string>;
+  pendingSnapshots: Map<string, ReadReceipts>;
+  pendingConfirmations: Map<string, ReadReceipts>;
 }
 
 type ReadMode = 'snapshot' | 'confirmation';
+interface ReadReceipts {
+  recovery: RecoveryLifetime;
+  metadata: RecoveryLifetime | null;
+}
 
 function matchesWorkspaceCleanup(wsId: string) {
   return (action: { type: string; payload?: unknown }) =>
@@ -111,9 +119,8 @@ function* ingestBundledAgents(
     );
 }
 
-function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
-  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
-  const metadata = rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId));
+function* confirmCompletedSnapshotSaga(wsId: string, agentId: string, receipts: ReadReceipts) {
+  const { recovery, metadata } = receipts;
   if (!recovery.commit(() => undefined)) return;
   try {
     const beforeRead = yield* selectAgentSessionsById.effect();
@@ -134,7 +141,7 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
       ),
     );
     if (!recovery.commit(() => undefined)) return;
-    yield* ingestBundledAgents(fresh, beforeRead, metadata);
+    if (metadata) yield* ingestBundledAgents(fresh, beforeRead, metadata);
     const mapped = mapResult(fresh);
     const hasData =
       mapped.subscriptions.length > 0 ||
@@ -162,9 +169,8 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
   yield* put(withRecoveryLifetime(resetSubscriptionUI(wsId, agentId), recovery));
 }
 
-function* fetchSnapshotSaga(wsId: string, agentId: string) {
-  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
-  const metadata = rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId));
+function* fetchSnapshotSaga(wsId: string, agentId: string, receipts: ReadReceipts) {
+  const { recovery, metadata } = receipts;
   if (!recovery.commit(() => undefined)) return;
   const key = makeKey(wsId, agentId);
   try {
@@ -187,7 +193,7 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
       ),
     );
     if (!recovery.commit(() => undefined)) return;
-    yield* ingestBundledAgents(result, beforeRead, metadata);
+    if (metadata) yield* ingestBundledAgents(result, beforeRead, metadata);
     const mapped = mapResult(result);
     const hasData =
       mapped.subscriptions.length > 0 ||
@@ -217,16 +223,17 @@ function* completedCleanupTask(
   coordinator: ReadCoordinator,
   wsId: string,
   agentId: string,
+  receipts: ReadReceipts,
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
-  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
+  const { recovery } = receipts;
   try {
     const { elapsed } = yield* race({
       elapsed: delay(COMPLETED_DISPLAY_DURATION_MS, true),
       cleanup: take(matchesWorkspaceCleanup(wsId)),
     });
     if (elapsed && recovery.commit(() => undefined))
-      yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
+      yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation', receipts);
   } finally {
     coordinator.completedCleanups.delete(key);
   }
@@ -236,10 +243,11 @@ function* scheduleCompletedCleanup(
   coordinator: ReadCoordinator,
   wsId: string,
   agentId: string,
+  receipts: ReadReceipts,
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
   if (coordinator.completedCleanups.has(key)) return;
-  const task = yield* fork(completedCleanupTask, coordinator, wsId, agentId);
+  const task = yield* fork(completedCleanupTask, coordinator, wsId, agentId, receipts);
   coordinator.completedCleanups.set(key, task);
 }
 
@@ -248,9 +256,9 @@ function* readSnapshotTask(
   wsId: string,
   agentId: string,
   mode: ReadMode,
+  receipts: ReadReceipts,
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
-  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
   let completed = false;
   let invalidated = false;
   try {
@@ -259,6 +267,7 @@ function* readSnapshotTask(
         mode === 'confirmation' ? confirmCompletedSnapshotSaga : fetchSnapshotSaga,
         wsId,
         agentId,
+        receipts,
       ),
       cleanup: take(matchesWorkspaceCleanup(wsId)),
       reconnected: take(backendReconnected),
@@ -268,15 +277,17 @@ function* readSnapshotTask(
   } finally {
     coordinator.reads.delete(key);
     const taskCancelled = yield* cancelled();
-    const snapshotPending = coordinator.pendingSnapshots.delete(key);
-    const confirmationPending = coordinator.pendingConfirmations.delete(key);
-    if (!taskCancelled && !invalidated && recovery.commit(() => undefined)) {
-      if (confirmationPending) {
-        yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
+    const snapshotPending = coordinator.pendingSnapshots.get(key);
+    const confirmationPending = coordinator.pendingConfirmations.get(key);
+    coordinator.pendingSnapshots.delete(key);
+    coordinator.pendingConfirmations.delete(key);
+    if (!taskCancelled && !invalidated) {
+      if (confirmationPending?.recovery.commit(() => undefined)) {
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation', confirmationPending);
       } else if (snapshotPending) {
-        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
-      } else if (completed) {
-        yield* scheduleCompletedCleanup(coordinator, wsId, agentId);
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot', snapshotPending);
+      } else if (completed && receipts.recovery.commit(() => undefined)) {
+        yield* scheduleCompletedCleanup(coordinator, wsId, agentId, receipts);
       }
     }
   }
@@ -287,23 +298,40 @@ function* startSnapshotRead(
   wsId: string,
   agentId: string,
   mode: ReadMode,
+  receipts?: ReadReceipts,
 ): SagaGenerator<void> {
+  let started = false;
+  if (
+    !receipts &&
+    mode === 'snapshot' &&
+    !rendererEventRecovery.hasOwner(agentSubscriptionsRecoveryKey(wsId, agentId))
+  ) {
+    // Initial demand installs the owner synchronously. Event continuations
+    // always supply receipts and must never enter this recapture path.
+    yield* put(subscriptionSnapshotFetchStarted(wsId, agentId));
+    started = true;
+  }
+  receipts ??= {
+    recovery: rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId)),
+    metadata: rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId)),
+  };
+  if (!receipts.recovery.commit(() => undefined)) return;
   const key = makeKey(wsId, agentId);
   coordinator.contexts.set(key, { wsId, agentId });
   if (coordinator.reads.has(key)) {
-    if (mode === 'confirmation') {
-      coordinator.pendingConfirmations.add(key);
-    } else {
-      coordinator.pendingSnapshots.add(key);
-    }
+    if (mode === 'confirmation') coordinator.pendingConfirmations.set(key, receipts);
+    else coordinator.pendingSnapshots.set(key, receipts);
     return;
   }
   if (mode === 'snapshot') {
-    yield* put(subscriptionSnapshotFetchStarted(wsId, agentId));
+    if (!started)
+      yield* put(
+        withRecoveryLifetime(subscriptionSnapshotFetchStarted(wsId, agentId), receipts.recovery),
+      );
     const cleanup = coordinator.completedCleanups.get(key);
     if (cleanup) yield* cancel(cleanup);
   }
-  const task = yield* fork(readSnapshotTask, coordinator, wsId, agentId, mode);
+  const task = yield* fork(readSnapshotTask, coordinator, wsId, agentId, mode, receipts);
   coordinator.reads.set(key, task);
 }
 
@@ -406,6 +434,12 @@ function* refreshWorkspaceSubscriptionsWorker(
   // Cross-workspace completion watches use the parent's home workspace.
   if (watchedAgentId) {
     for (const [key, context] of coordinator.contexts) targets.set(key, context);
+    const sessions = yield* selectAgentSessionsById.effect();
+    for (const home of new Set(Object.values(sessions).map((session) => session.workspaceId))) {
+      for (const parent of yield* selectTrackedAgentIds.effect(home)) {
+        targets.set(makeKey(home, parent), { wsId: home, agentId: parent });
+      }
+    }
   }
   for (const { wsId: targetWs, agentId } of targets.values()) {
     if (changedAgentId && changedAgentId !== agentId) continue;
@@ -421,7 +455,22 @@ function* refreshWorkspaceSubscriptionsWorker(
       // are not invalidated by an arbitrary agent finishing.
       if (!watchesChild && (known || targetWs !== wsId)) continue;
     }
-    yield* startSnapshotRead(coordinator, targetWs, agentId, 'snapshot');
+    const admission = getRecoveryAdmission(
+      action,
+      agentSubscriptionsRecoveryKey(targetWs, agentId),
+    );
+    const recovery =
+      admission === undefined
+        ? (getRecoveryLifetime(action) ??
+          rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(targetWs, agentId)))
+        : admission;
+    if (!recovery?.commit(() => undefined)) continue;
+    const metadataAdmission = getRecoveryAdmission(action, agentMetadataRecoveryKey(targetWs));
+    const metadata =
+      metadataAdmission === undefined
+        ? rendererEventRecovery.capture(agentMetadataRecoveryKey(targetWs))
+        : metadataAdmission;
+    yield* startSnapshotRead(coordinator, targetWs, agentId, 'snapshot', { recovery, metadata });
   }
 }
 
@@ -462,8 +511,8 @@ export function* agentSubscriptionReadSaga() {
     contexts: new Map(),
     reads: new Map(),
     completedCleanups: new Map(),
-    pendingSnapshots: new Set(),
-    pendingConfirmations: new Set(),
+    pendingSnapshots: new Map(),
+    pendingConfirmations: new Map(),
   };
   yield* all([
     takeEvery(requestSubscriptionFetch, requestSubscriptionFetchWorker, coordinator),

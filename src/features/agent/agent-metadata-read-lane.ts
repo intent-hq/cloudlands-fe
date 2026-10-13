@@ -1,3 +1,5 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+
 /** Independent ordinary scopes may overlap; recovery owns an exclusive snapshot. */
 type MetadataLane = { active: Set<Promise<void>>; barrier?: Promise<void> };
 const lanes = new Map<string, MetadataLane>();
@@ -25,7 +27,9 @@ export function trackAgentMetadataRead<T>(
   const result = previous ? previous.then(invoke) : invoke();
   const settled = result.then(
     () => undefined,
-    () => undefined,
+    async (error: unknown) => {
+      if (error instanceof RecoveryRequestTimeoutError) await error.drained;
+    },
   );
   lane.active.add(settled);
   if (mode === 'recovery') lane.barrier = settled;

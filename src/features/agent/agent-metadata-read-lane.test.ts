@@ -40,3 +40,32 @@ it('allows independent ordinary scopes then gives recovery an exclusive turn bef
   expect(await later).toBe('after');
   expect(laterRead).toHaveBeenCalledTimes(1);
 });
+
+it.each(['ordinary', 'recovery'] as const)(
+  'retains physical ownership after a %s timeout',
+  async (mode) => {
+    const { RecoveryRequestTimeoutError } = await import('$shared/event-recovery/session');
+    const drain = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+    const timeout = new RecoveryRequestTimeoutError(drain.promise);
+    const first = trackAgentMetadataRead(
+      `timeout-${mode}`,
+      async () => {
+        throw timeout;
+      },
+      mode,
+    );
+    await expect(first).rejects.toBe(timeout);
+    const next = vi.fn(async () => 'fresh');
+    const trailing = trackAgentMetadataRead(
+      `timeout-${mode}`,
+      next,
+      mode === 'ordinary' ? 'recovery' : 'ordinary',
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(next).not.toHaveBeenCalled();
+    drain.resolve({ errors: [], retired: false });
+    expect(await trailing).toBe('fresh');
+    expect(next).toHaveBeenCalledTimes(1);
+  },
+);
