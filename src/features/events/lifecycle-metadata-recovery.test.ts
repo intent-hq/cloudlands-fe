@@ -903,3 +903,79 @@ it.each([false, true])(
     expect(mutate).toHaveBeenCalledTimes(1);
   },
 );
+
+it.each([false, true])(
+  'retires task links only when the authoritative workspace read is denied (late mutation=%s)',
+  async (late) => {
+    const h = await harness();
+    const key = 'task-agent-links:["ws"]';
+    h.dispatch(hydrateTaskAgentAssociations('ws', { note: { task: link } }));
+    const forbidden = new BackendError({
+      rpcCode: -32003,
+      code: 'forbidden',
+      message: 'Access denied',
+    });
+    const original = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params) => {
+      if (method === 'task.listAgentLinks') throw forbidden;
+      return original(method, params);
+    });
+    let release!: () => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = () => resolve({ errors: [forbidden], retired: false });
+    });
+    const error = late
+      ? new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion)
+      : forbidden;
+    const lease = beginLifecycleMetadataMutation(addTaskAgentAssociation('ws', 'note', link))!;
+    const mutate = vi.fn(async () => {
+      throw error;
+    });
+    await expect(lease.run(mutate)).rejects.toBe(error);
+    lease.finish();
+    expect(h.registry.capture(key).commit(() => undefined)).toBe(true);
+    expect(h.state.taskAgentAssociations.byWorkspaceId.ws.byNoteId).toEqual({
+      note: { task: link },
+    });
+    h.loss();
+    if (late) {
+      await settle();
+      expect(h.request.mock.calls.filter((c) => c[0] === 'task.listAgentLinks')).toHaveLength(0);
+      release();
+    }
+    await settle();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(h.state.taskAgentAssociations.byWorkspaceId.ws.byNoteId).toEqual({});
+    expect(h.registry.capture(key).commit(() => undefined)).toBe(false);
+    expect(h.request.mock.calls.filter((c) => c[0] === 'task.listAgentLinks')).toHaveLength(1);
+    expect(mutate).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('keeps replacement task links after an old mutation returns a late referenced-agent denial', async () => {
+  const h = await harness();
+  const key = 'task-agent-links:["ws"]';
+  let release!: () => void;
+  const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+    release = () => resolve({ errors: [{ rpcCode: -32003 }], retired: false });
+  });
+  const error = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+  const lease = beginLifecycleMetadataMutation(addTaskAgentAssociation('ws', 'note', link))!;
+  const mutate = vi.fn(async () => {
+    throw error;
+  });
+  await expect(lease.run(mutate)).rejects.toBe(error);
+  lease.finish();
+  h.registry.refreshAuthority();
+  const replacement = { ...link, agentId: 'replacement-agent' };
+  h.dispatch(hydrateTaskAgentAssociations('ws', { note: { task: replacement } }));
+  const receipt = h.registry.capture(key);
+  release();
+  await settle();
+  expect(receipt.commit(() => undefined)).toBe(true);
+  expect(h.state.taskAgentAssociations.byWorkspaceId.ws.byNoteId).toEqual({
+    note: { task: replacement },
+  });
+  expect(h.request.mock.calls.filter((c) => c[0] === 'task.listAgentLinks')).toHaveLength(0);
+  expect(mutate).toHaveBeenCalledTimes(1);
+});
