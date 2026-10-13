@@ -5,6 +5,18 @@ export const GLOBAL_MCP_RECOVERY_KEY = 'mcp:global';
 let generation = {};
 let admitted = true;
 const pendingReads = new Map<string, Set<Promise<unknown>>>();
+const authorityFailures = new Set<() => void>();
+
+/** The current settings owner clears all protected mirrors on a strict read denial. */
+export function onSettingsAuthorityFailure(handler: () => void): () => void {
+  authorityFailures.add(handler);
+  return () => {
+    authorityFailures.delete(handler);
+  };
+}
+export function reportSettingsAuthorityFailure(): void {
+  for (const handler of [...authorityFailures]) handler();
+}
 
 /** Recovery waits for ordinary reads already occupying this resource. */
 export function trackSettingsRead<T>(key: string, read: () => Promise<T>): Promise<T> {

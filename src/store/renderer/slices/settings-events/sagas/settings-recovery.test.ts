@@ -997,6 +997,7 @@ it('preserves canonical authority failure in a trailing real settings snapshot',
       },
     },
   });
+  await settle();
   const denied = { rpcCode: -32003, data: { code: 'forbidden' } };
   settingsTransport.request.mockRejectedValueOnce(denied);
   const trailing = client.listSnapshot();
@@ -1005,5 +1006,214 @@ it('preserves canonical authority failure in a trailing real settings snapshot',
   await initial;
   await rejection;
   expect(settingsTransport.request).toHaveBeenCalledTimes(2);
-  expect(store.state.model.defaultProviderId).toBe('new');
+  expect(store.state.model.defaultProviderId).toBe('');
+});
+
+it('canonical ordinary real settings.get retires protected mirrors', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  settingsTransport.request
+    .mockReset()
+    .mockRejectedValue({ rpcCode: -32003, data: { code: 'forbidden' } });
+  store.dispatch(hydrateDefaultProvider('private'));
+  const client = new RealSettingsClient();
+  await client.get('model.defaultProvider');
+  expect(store.state.model.defaultProviderId).toBe('');
+  expect(captureSettingsWork().isCurrent()).toBe(false);
+});
+
+it('canonical held MCP denial after timeout still retires protected state', async () => {
+  vi.useFakeTimers();
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  const normal = h.request.getMockImplementation()!;
+  let reject!: (reason: unknown) => void;
+  const held = new Promise((_done, fail) => {
+    reject = fail;
+  });
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'mcp.servers.list')
+      return {
+        servers: [
+          { id: 'one', name: 'one', transport: 'stdio', command: 'x' },
+          { id: 'two', name: 'two', transport: 'stdio', command: 'y' },
+        ],
+      };
+    if (method === 'mcp.servers.getStatus') {
+      if ((params as { serverId: string }).serverId === 'one') throw new Error('temporary');
+      return held;
+    }
+    return normal(method, params);
+  });
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['mcp.servers:status-changed'] }, { recover: true });
+  store.dispatch(setServers([{ id: 'private', name: 'private', type: 'stdio' }]));
+  h.emit({
+    method: 'events.lost',
+    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: null } },
+  });
+  await vi.advanceTimersByTimeAsync(35_000);
+  reject({ rpcCode: -32003, data: { code: 'forbidden' } });
+  await settle();
+  expect(store.state.mcpSettings.servers).toEqual([]);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(h.request.mock.calls.filter(([method]) => method === 'mcp.servers.list')).toHaveLength(1);
+});
+
+it('global authority retirement also fences an already-held MCP snapshot', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  const normal = h.request.getMockImplementation()!;
+  let release!: (value: unknown) => void;
+  const held = new Promise((done) => {
+    release = done;
+  });
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'settings.list') throw { rpcCode: -32003, data: { code: 'forbidden' } };
+    if (method === 'mcp.servers.list') return held;
+    if (method === 'mcp.servers.getStatus') return { status: { state: 'running' } };
+    return normal(method, params);
+  });
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe(
+    { eventTypes: ['settings:changed', 'mcp.servers:status-changed'] },
+    { recover: true },
+  );
+  store.dispatch(hydrateDefaultProvider('private'));
+  store.dispatch(setServers([{ id: 'private', name: 'private', type: 'stdio' }]));
+  h.emit({
+    method: 'events.lost',
+    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: null } },
+  });
+  await settle();
+  expect(store.state.model.defaultProviderId).toBe('');
+  expect(store.state.mcpSettings.servers).toEqual([]);
+  release({ servers: [{ id: 'old-scope', name: 'old-scope', transport: 'stdio', command: 'x' }] });
+  await settle();
+  expect(store.state.mcpSettings.servers).toEqual([]);
+  expect(
+    h.request.mock.calls.filter(([method]) => method === 'mcp.servers.getStatus'),
+  ).toHaveLength(0);
+});
+
+it('unrelated push does not strand RTK initial hydration', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  const stop = store.runSaga(verifierRtkSaga);
+  cleanups.add(stop);
+  const identity = { formId: 'rtk-unrelated', sessionId: 'one' };
+  let release!: (value: unknown) => void;
+  formClient.get.mockResolvedValue({ path: 'rtk.enabled', value: false });
+  verifierIpc.request.mockImplementation(
+    () =>
+      new Promise((done) => {
+        release = done;
+      }),
+  );
+  store.dispatch(settingsFormOpened(identity, 'rtk'));
+  store.dispatch(
+    verifierRtkRequested({ ...identity, requestId: 'initial', resource: 'load' }, { kind: 'load' }),
+  );
+  await settle();
+  expect(verifierIpc.request).toHaveBeenCalledTimes(1);
+  h.emit({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'global',
+      event: {
+        type: 'settings:changed',
+        data: { revision: 4, changes: [{ path: 'providers.enabled', value: { codex: true } }] },
+      },
+    },
+  });
+  release({ data: { available: true } });
+  await settle();
+  expect(getItem(store.state.settingsEvents.forms, identity.formId)?.values.loaded).toBe(true);
+  expect(getItem(store.state.settingsEvents.forms, identity.formId)?.values.enabled).toBe(false);
+  expect(formClient.get).toHaveBeenCalledTimes(1);
+});
+
+it('unrelated push does not strand websocket initial hydration', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  let release!: (value: unknown) => void;
+  const pairingInfo = vi.fn(
+    () =>
+      new Promise((done) => {
+        release = done;
+      }),
+  );
+  const { appClient } = await import('$lib/client');
+  (appClient as unknown as { server: unknown }).server = { pairingInfo };
+  cleanups.add(store.runSaga(verifierApiSaga));
+  cleanups.add(
+    store.runSaga(function* () {
+      yield* verifierTakeEvery(verifierPublication, function* (action) {
+        yield* verifierPut(action.success(undefined));
+      });
+    }),
+  );
+  const identity = { formId: 'api-unrelated', sessionId: 'one' };
+  formClient.list.mockResolvedValue([
+    { path: 'server.wsApi.enabled', value: true },
+    { path: 'server.wsApi.port', value: 5000 },
+  ]);
+  store.dispatch(settingsFormOpened(identity, 'websocket-api'));
+  store.dispatch(
+    verifierApiRequested(
+      { ...identity, requestId: 'initial', resource: 'load' },
+      { kind: 'load', connectionId: 'local' },
+    ),
+  );
+  await settle();
+  expect(pairingInfo).toHaveBeenCalledTimes(1);
+  h.emit({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'global',
+      event: {
+        type: 'settings:changed',
+        data: { revision: 4, changes: [{ path: 'providers.enabled', value: { codex: true } }] },
+      },
+    },
+  });
+  release({ enabled: true, port: 5000, token: 'synthetic', localIps: [], certFingerprint: '' });
+  await settle();
+  expect(getItem(store.state.settingsEvents.forms, identity.formId)?.values.loaded).toBe(true);
+  expect(getItem(store.state.settingsEvents.forms, identity.formId)?.values.persistedPort).toBe(
+    5000,
+  );
+  expect(formClient.list).toHaveBeenCalledTimes(1);
+});
+
+it('a late ordinary denial cannot retire replacement settings authority', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  rendererEventRecovery.attach(h.session);
+  let reject!: (reason: unknown) => void;
+  settingsTransport.request.mockReset().mockImplementationOnce(
+    () =>
+      new Promise((_done, fail) => {
+        reject = fail;
+      }),
+  );
+  const pending = new RealSettingsClient().get('model.defaultProvider');
+  rendererEventRecovery.attach(recoveryHarness().session);
+  store.dispatch(hydrateDefaultProvider('replacement'));
+  reject({ rpcCode: -32003, data: { code: 'forbidden' } });
+  await pending;
+  expect(store.state.model.defaultProviderId).toBe('replacement');
+  expect(captureSettingsWork().isCurrent()).toBe(true);
 });

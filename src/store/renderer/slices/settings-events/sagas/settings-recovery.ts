@@ -20,6 +20,7 @@ import {
   retireSettingsWork,
   waitForSettingsReads,
   isSettingsAuthorityError,
+  onSettingsAuthorityFailure,
 } from '$features/settings/settings-recovery-lifetime';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
@@ -71,6 +72,9 @@ export function installSettingsRecovery() {
       !!selectHostAdministrationContext.select(store.state) &&
       authority === selectPrincipalActionContext.select(store.state);
     if (!isCurrent()) return () => {};
+    const stopAuthorityFailures = onSettingsAuthorityFailure(() => {
+      if (isCurrent()) retireSettingsAuthority();
+    });
     retireSettingsWork(true);
     let recovered = false;
     const owner = scope.registerResource({
@@ -104,11 +108,7 @@ export function installSettingsRecovery() {
         invalidateSettingsReadCache();
         store.dispatch(settingsRecoveryInvalidated());
       },
-      retire: () => {
-        retireSettingsWork(false);
-        resetSettingsConnectionCache();
-        store.dispatch(settingsAuthorityRetired());
-      },
+      retire: retireSettingsAuthority,
       onEvent: (notification, lifetime) => {
         const params = notification.params as {
           event?: { data?: { changes?: AppliedSettingChange[]; revision?: number } };
@@ -230,6 +230,7 @@ export function installSettingsRecovery() {
     };
     retireCurrentOwners = disposeOwners;
     return () => {
+      stopAuthorityFailures();
       if (retireCurrentOwners === disposeOwners) retireCurrentOwners = undefined;
       disposeOwners();
     };

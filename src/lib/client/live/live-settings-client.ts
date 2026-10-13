@@ -4,6 +4,7 @@ import {
   GLOBAL_MCP_RECOVERY_KEY,
   trackSettingsRead,
   isSettingsAuthorityError,
+  reportSettingsAuthorityFailure,
 } from '$features/settings/settings-recovery-lifetime';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import { validateMcpServerIdentities } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
@@ -203,6 +204,7 @@ export function readSetting(
   }
 
   const generation = settingsGeneration;
+  const authority = rendererEventRecovery.captureAuthority(GLOBAL_SETTINGS_RECOVERY_KEY);
   const run = trackSettingsRead(
     workspaceId
       ? `workspace-catalog:${JSON.stringify([workspaceId])}`
@@ -221,6 +223,11 @@ export function readSetting(
       if (generation === settingsGeneration && receipt.commit(() => {}))
         settingCache.set(key, { value: setting, receipt });
       return setting;
+    })
+    .catch((error) => {
+      if (!workspaceId && isSettingsAuthorityError(error))
+        authority.commit(reportSettingsAuthorityFailure);
+      throw error;
     })
     .finally(() => {
       if (pendingSettingReads.get(key)?.promise === run) pendingSettingReads.delete(key);
@@ -304,6 +311,7 @@ export class LiveSettingsClient implements SettingsClient {
     ensureSettingsLifecycle();
     const generation = settingsGeneration;
     const receipt = captureSettings(workspaceId);
+    const authority = rendererEventRecovery.captureAuthority(GLOBAL_SETTINGS_RECOVERY_KEY);
     try {
       assertSettingsCurrent(receipt);
       const result = await trackSettingsRead(
@@ -329,7 +337,10 @@ export class LiveSettingsClient implements SettingsClient {
       }
       return snapshot;
     } catch (error) {
-      if (isSettingsAuthorityError(error)) throw error;
+      if (isSettingsAuthorityError(error)) {
+        if (!workspaceId) authority.commit(reportSettingsAuthorityFailure);
+        throw error;
+      }
       return { settings: [], revision: 0 };
     }
   }
