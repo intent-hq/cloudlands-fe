@@ -384,10 +384,10 @@ it('isolates subscription notifications, replacement groups and controls between
     },
   });
   h.socket.batch([
-    loss('a'),
-    loss('b'),
     { id: requestB.id, result: { subscriptionId: 'b', lossRecovery: 1 } },
+    loss('b'),
     { id: requestA.id, result: { subscriptionId: 'a', lossRecovery: 1 } },
+    loss('a'),
   ]);
   await Promise.all([subscribingA, subscribingB]);
   for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -413,27 +413,74 @@ it.each(['git.status', 'file.read'])('preserves captured %s reads', async (metho
   await expect(read).resolves.toEqual({ value: 'current' });
 });
 
-it('retires a capture when pre-ack staging overflows and cleans up its late subscription', async () => {
+it('ignores foreign traffic while another sender is awaiting subscription admission', async () => {
   const h = await harness();
-  const session = await h.capture();
-  cleanup.push(() => session.dispose());
-  const subscribing = session.request('events.subscribe', { eventTypes: ['file:*'] });
-  const rejected = expect(subscribing).rejects.toThrow();
-  const request = h.socket.frames.at(-1)!;
-  h.socket.batch(
-    Array.from({ length: 65 }, (_, i) => ({
-      method: 'events.lost',
-      params: { subscriptionId: 'early-' + i },
-    })),
-  );
-  await rejected;
-  expect(session.isCurrent()).toBe(false);
-  h.socket.reply(request.id, { subscriptionId: 'late' });
-  for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(h.socket.frames.at(-1)).toMatchObject({
-    method: 'events.unsubscribe',
-    params: { subscriptionId: 'late' },
+  const other = h.createSender();
+  const a = await h.capture(),
+    b = await other.capture();
+  const coordinator = new EventRecoveryCoordinator(b);
+  cleanup.push(() => {
+    a.dispose();
+    coordinator.dispose();
   });
+  const subscribedA = a.request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 });
+  h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'a', lossRecovery: 1 });
+  await subscribedA;
+  const apply = vi.fn();
+  coordinator.registerResource({
+    key: 'files:ws-a',
+    workspaceId: 'ws-a',
+    eventTypes: ['file:*'],
+    read: (reader) => reader.request('file.read', { workspaceId: 'ws-a' }),
+    apply,
+    invalidate: vi.fn(),
+    retire: vi.fn(),
+  });
+  const subscribedB = coordinator
+    .subscribe({ workspaceId: 'ws-a', eventTypes: ['file:*'] }, { recover: true })
+    .catch((error) => error);
+  const requestB = h.socket.frames.at(-1)!;
+  h.socket.batch(
+    Array.from({ length: 130 }, (_, i) =>
+      i % 2
+        ? {
+            method: 'events.event',
+            params: { subscriptionId: 'a', event: { type: 'file:changed', workspaceId: 'ws-a' } },
+          }
+        : {
+            method: 'events.lost',
+            params: {
+              subscriptionId: 'a',
+              generation: String(i + 1),
+              scope: { workspaceId: null },
+            },
+          },
+    ),
+  );
+  expect(b.isCurrent()).toBe(true);
+  expect(h.socket.frames.filter((f) => f.method === 'file.read')).toHaveLength(0);
+  h.socket.batch([
+    { id: requestB.id, result: { subscriptionId: 'b', lossRecovery: 1 } },
+    {
+      method: 'events.lost',
+      params: { subscriptionId: 'b', generation: '1', scope: { workspaceId: 'ws-a' } },
+    },
+  ]);
+  expect(await subscribedB).toMatchObject({ id: 'b' });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(h.socket.frames.at(-1)!.method).toBe('events.fence');
+  h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionIds: ['b'] });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(h.socket.frames.at(-1)!.method).toBe('file.read');
+  h.socket.reply(h.socket.frames.at(-1)!.id, { value: 'current' });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(h.socket.frames.at(-1)!.method).toBe('events.fence');
+  h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionIds: ['b'] });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(apply).toHaveBeenCalledExactlyOnceWith({ value: 'current' });
+  expect(
+    h.socket.frames.filter((f) => ['file.read', 'events.fence'].includes(f.method)),
+  ).toHaveLength(3);
 });
 
 it.each([

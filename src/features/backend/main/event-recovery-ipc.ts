@@ -10,7 +10,6 @@ import type { JsonRpcClient, RepositoryConnection } from './json-rpc-client';
 
 import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
 
-const MAX_EARLY_NOTIFICATIONS = 64;
 const MAX_SESSIONS = 64;
 const MAX_REQUESTS_PER_SESSION = 64;
 const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
@@ -41,8 +40,6 @@ export function registerEventRecoveryHandlers(
     stop: () => void;
     leases: Set<string>;
     requests: number;
-    subscribing: number;
-    early: Array<{ method: string; params?: unknown }>;
   }
   const entries = new Map<string, Entry>();
   let disposed = false;
@@ -72,7 +69,6 @@ export function registerEventRecoveryHandlers(
         .requestOnCapturedConnection(entry.connection, 'events.unsubscribe', { subscriptionId })
         .catch(() => {});
     entry.leases.clear();
-    entry.early = [];
   }
   function admitted(event: IpcMainInvokeEvent, id: string) {
     const entry = entries.get(id);
@@ -100,8 +96,6 @@ export function registerEventRecoveryHandlers(
       stop: () => {},
       leases: new Set(),
       requests: 0,
-      subscribing: 0,
-      early: [],
     };
     entries.set(id, entry);
     const retire = () => drop(id);
@@ -118,13 +112,9 @@ export function registerEventRecoveryHandlers(
         const subscriptionId = (notification.params as { subscriptionId?: unknown } | null)
           ?.subscriptionId;
         if (typeof subscriptionId !== 'string') return;
-        if (!entry.leases.has(subscriptionId)) {
-          if (entry.subscribing) {
-            if (entry.early.length >= MAX_EARLY_NOTIFICATIONS) drop(id);
-            else entry.early.push(notification);
-          }
-          return;
-        }
+        // The daemon is ack-first and ownership is installed synchronously at
+        // reply decode. Unknown IDs belong to other owners; do not stage them.
+        if (!entry.leases.has(subscriptionId)) return;
         try {
           send(entry, { id, kind: 'notification', notification });
         } catch {
@@ -188,7 +178,6 @@ export function registerEventRecoveryHandlers(
         ? { ...subscription, replaceGroup: `${id}:${subscription.replaceGroup}` }
         : params;
     entry.requests++;
-    if (method === 'events.subscribe') entry.subscribing++;
     try {
       const result = await entry.client.requestOnCapturedConnection(
         entry.connection,
@@ -205,16 +194,6 @@ export function registerEventRecoveryHandlers(
             if (method === 'events.unsubscribe' && typeof controls?.subscriptionId === 'string')
               entry.leases.delete(controls.subscriptionId);
             if (replyId) send(entry, { id, kind: 'reply', replyId, result });
-            if (method === 'events.subscribe' && typeof subscriptionId === 'string') {
-              const ready = entry.early.filter(
-                (n) =>
-                  (n.params as { subscriptionId?: unknown } | null)?.subscriptionId ===
-                  subscriptionId,
-              );
-              entry.early = entry.early.filter((n) => !ready.includes(n));
-              for (const notification of ready)
-                send(entry, { id, kind: 'notification', notification });
-            }
           },
         },
       );
@@ -242,7 +221,6 @@ export function registerEventRecoveryHandlers(
       };
     } finally {
       entry.requests--;
-      if (method === 'events.subscribe' && --entry.subscribing === 0) entry.early = [];
     }
   });
   ipc.handle(channels.RELEASE, (event, payload: unknown) => {

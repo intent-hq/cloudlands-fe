@@ -29,6 +29,7 @@ export class RecoveryResource<T> {
   private epoch: object = {};
   private recovered = false;
   private dirty = 0n;
+  private mutation = 0n;
   private stale = false;
   private active = true;
   private running = false;
@@ -50,7 +51,9 @@ export class RecoveryResource<T> {
   captureLifetime(): RecoveryLifetime {
     const epoch = this.epoch;
     const dirty = this.dirty;
-    const isCurrent = () => !this.disposed && this.active && epoch === this.epoch;
+    const mutation = this.mutation;
+    const isCurrent = () =>
+      !this.disposed && this.active && epoch === this.epoch && mutation === this.mutation;
     return Object.freeze({
       key: epoch,
       isCurrent,
@@ -94,6 +97,9 @@ export class RecoveryResource<T> {
       this.invalidate();
       return false;
     }
+    // Accepted pushes supersede older async mutation receipts without making
+    // the resource dirty or restoring reads to the ordinary push path.
+    this.mutation++;
     return true;
   }
   setActive(active: boolean) {

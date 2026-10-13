@@ -332,3 +332,27 @@ describe('canonical authority failures', () => {
     expect(h.resource.status).toMatchObject({ stale: true, suspended: true });
   });
 });
+
+it('rejects an older mutation receipt after an accepted ordinary push without starting recovery', () => {
+  const h = setup();
+  expect(h.resource.push()).toBe(true);
+  const older = h.resource.captureLifetime();
+  expect(h.resource.push()).toBe(true);
+  const newer = h.resource.captureLifetime();
+  let value = '';
+  expect(
+    newer.commit(() => {
+      value = 'new';
+    }),
+  ).toBe(true);
+  expect(
+    older.commit(() => {
+      value = 'old';
+    }),
+  ).toBe(false);
+  expect(value).toBe('new');
+  expect(h.resource.status).toMatchObject({ stale: false, running: false });
+  expect(h.read).not.toHaveBeenCalled();
+  expect(h.fence).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
