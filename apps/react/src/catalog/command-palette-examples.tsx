@@ -24,6 +24,7 @@ const filters: Record<string, PaletteFilter> = {
 
 export function CommandPaletteExamples() {
   const filterHandle = useRef<CommandPaletteFiltersHandle>(null);
+  const workspaceToggle = useRef<HTMLButtonElement>(null);
   const [prefix, setPrefix] = useState('');
   const [label, setLabel] = useState('React migration');
   const [workspace, setWorkspace] = useState(true);
@@ -48,6 +49,7 @@ export function CommandPaletteExamples() {
               value={label}
               onChange={(event) => setLabel(event.target.value)}
               onKeyDown={(event) => {
+                if (event.key === 'Escape') workspaceToggle.current?.focus();
                 if (event.key === 'Tab') {
                   event.preventDefault();
                   filterHandle.current?.cycle(event.shiftKey ? -1 : 1);
@@ -57,7 +59,7 @@ export function CommandPaletteExamples() {
           )}
         />
         <p className="type-caption text-muted-foreground">
-          Tab and Shift+Tab cycle filters while editing.
+          Tab and Shift+Tab cycle filters. Escape leaves the title field.
         </p>
         <div className="flex flex-wrap gap-4">
           <FormField
@@ -66,6 +68,7 @@ export function CommandPaletteExamples() {
               <Switch
                 {...field}
                 ariaLabel="Workspace options"
+                ref={workspaceToggle}
                 checked={workspace}
                 onCheckedChange={setWorkspace}
               />

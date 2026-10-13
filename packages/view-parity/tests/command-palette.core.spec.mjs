@@ -75,6 +75,11 @@ test('narrow keyboard cycling reveals the selected offscreen filter and retains 
   await expect(input).toBeFocused();
   const browser = host.getByRole('button', { name: 'Browser', exact: true });
   await expect(browser).toBeInViewport();
+  await page.keyboard.press('Escape');
+  await expect(input).not.toBeFocused();
+  await expect(host.getByRole('switch', { name: 'Workspace options' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(host.getByRole('switch', { name: 'Collaborator', exact: true })).toBeFocused();
   await browser.click();
   await expect(browser).toHaveAttribute('aria-pressed', 'true');
   expect(errors).toEqual([]);
