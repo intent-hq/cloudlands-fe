@@ -1,3 +1,4 @@
+import { observeGitReadFailure } from '$features/file-tracking/git-recovery-read-lane';
 import {
   captureSecondaryRootRead,
   readSecondaryRootSnapshot,
@@ -257,11 +258,14 @@ function* loadSecondaryRootCommitFilesWorker(
         captured.run(async () =>
           captured.transport
             ? normalizeCommitDetails(
-                await captured.transport.request<Record<string, unknown>>('git.commitDetails', {
-                  workspaceId,
-                  gitRootId,
-                  commitHash,
-                }),
+                await observeGitReadFailure(
+                  captured.transport.request<Record<string, unknown>>('git.commitDetails', {
+                    workspaceId,
+                    gitRootId,
+                    commitHash,
+                  }),
+                  captured.transport.onFailure,
+                ),
                 commitHash,
               )
             : appClient.git.commitDetails(workspaceId, commitHash, { gitRootId }),

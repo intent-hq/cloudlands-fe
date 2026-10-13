@@ -1,3 +1,4 @@
+import { installChatChangesRecovery } from '$features/file-tracking/chat-content-recovery';
 import { installWorkspaceActivityRecovery } from './workspace-activity-recovery';
 import { observeRecoveryActionIngress } from '$store/renderer/middlewares/event-recovery';
 import { beginLifecycleMetadataMutation } from './lifecycle-metadata-recovery';
@@ -39,6 +40,7 @@ export function installRendererRecoveryOwners(
       () => installScriptsRecovery(scope, store),
       () => installWorktreeSnapshotsRecovery(scope, store),
       () => installGitContentRecovery(scope, store),
+      () => installChatChangesRecovery(scope, store),
       () => installSecondaryRootRecovery(scope, store),
       () => installLifecycleMetadataRecovery(scope, store),
       () => installSkillsRecovery(scope, store),
