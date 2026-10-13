@@ -56,7 +56,7 @@ function toFileContentEntry(path: string, content: FileContent): FileContentEntr
  * `files`. Children are left unset (lazy) — the explorer fetches deeper levels
  * on demand. Entries missing both a name and a path are skipped.
  */
-function toFileNodes(result: unknown): FileNode[] {
+export function toFileNodes(result: unknown): FileNode[] {
   const raw = result as { entries?: unknown[]; files?: unknown[] } | unknown[] | null;
   const entries = Array.isArray(raw)
     ? raw
@@ -96,6 +96,25 @@ function toPorcelain(status: string, staged: boolean): string {
   return staged ? `${code} ` : ` ${code}`;
 }
 
+export function parseFileReadResult(path: string, result: unknown): FileContentEntry | null {
+  const content =
+    typeof result === 'string'
+      ? result
+      : typeof (result as { content?: unknown })?.content === 'string'
+        ? (result as { content: string }).content
+        : null;
+  if (content === null) return null;
+  // Binary controls survive UTF-8 decoding, including in mostly printable
+  // payloads or past the shared detector's sample. Keep its other heuristics.
+  const isBinary =
+    hasBinaryControls(content) ||
+    detectBinaryContent(new TextEncoder().encode(content.slice(0, 8192)));
+  return toFileContentEntry(
+    path,
+    isBinary ? { kind: 'restorable-snapshot', content, isBinary: true } : editableText(content),
+  );
+}
+
 export class LiveFilesClient implements FilesClient {
   // The daemon's `file.list` is a directory listing, not the per-file content
   // cache this method models; the content cache is populated on demand via
@@ -115,22 +134,7 @@ export class LiveFilesClient implements FilesClient {
         path,
         ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
       });
-      const content =
-        typeof result === 'string'
-          ? result
-          : typeof (result as { content?: unknown })?.content === 'string'
-            ? (result as { content: string }).content
-            : null;
-      if (content === null) return null;
-      // Binary controls survive UTF-8 decoding, including in mostly printable
-      // payloads or past the shared detector's sample. Keep its other heuristics.
-      const isBinary =
-        hasBinaryControls(content) ||
-        detectBinaryContent(new TextEncoder().encode(content.slice(0, 8192)));
-      return toFileContentEntry(
-        path,
-        isBinary ? { kind: 'restorable-snapshot', content, isBinary: true } : editableText(content),
-      );
+      return parseFileReadResult(path, result);
     } catch (error) {
       // file.read uses Rust read_to_string. Its decoding failure proves that
       // the file exists but cannot be read as text. Cache only a binary marker;

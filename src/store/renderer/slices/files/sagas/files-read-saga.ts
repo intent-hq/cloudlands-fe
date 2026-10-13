@@ -1,7 +1,12 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { fileContentRecoveryKey } from '$features/file/file-recovery-keys';
+import { demandFileRead } from '$features/file/file-recovery-demand';
+import { putFileRecovery } from '$features/file/file-recovery-effects';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { FileContent } from '../files-types';
 import { editableText } from '$features/file/utils/file-content';
 import { buffers, channel, type Channel } from 'redux-saga';
-import { call, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, join, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { mutationErrorMessage } from '$lib/client/live/live-support';
@@ -77,17 +82,23 @@ function* loadFileContentWorker(
   }
 }
 
-function* applyReadResult(action: ReadAction, result: ReadResult): SagaGenerator<void> {
+function* applyReadResult(
+  action: ReadAction,
+  result: ReadResult,
+  receipt: RecoveryLifetime,
+): SagaGenerator<void> {
   const [workspaceId, path, absolutePath] = action.payload;
   if (result.kind === 'retarget') {
-    yield* put(removeFileContentEntry(workspaceId, path));
-    yield* put(updateFileTabPath(workspaceId, path, result.path));
+    yield* putFileRecovery(receipt, updateFileTabPath(workspaceId, path, result.path));
+    yield* putFileRecovery(receipt, removeFileContentEntry(workspaceId, path));
   } else if (result.kind === 'failure') {
-    yield* put(
+    yield* putFileRecovery(
+      receipt,
       loadFileContentFailed(workspaceId, path, absolutePath, result.message, result.candidates),
     );
   } else {
-    yield* put(
+    yield* putFileRecovery(
+      receipt,
       loadFileContentSucceeded(workspaceId, path, absolutePath, result.content, result.truncated),
     );
   }
@@ -176,6 +187,8 @@ function* loadFileContentRequestWorker(
   const generation = requestGenerations.get(action);
   if (!generation || generations.get(key) !== generation) return;
 
+  demandFileRead(workspaceId, path, action.payload[3]);
+  const receipt = rendererEventRecovery.capture(fileContentRecoveryKey(workspaceId, path));
   const result = yield* call(
     readWithPermit,
     permits,
@@ -188,7 +201,7 @@ function* loadFileContentRequestWorker(
   );
   if (!result || generations.get(key) !== generation) return;
 
-  yield* call(applyReadResult, action, result);
+  yield* call(applyReadResult, action, result, receipt);
   if (generations.get(key) === generation) {
     generations.delete(key);
   }
