@@ -108,6 +108,14 @@ export function installGitContentRecovery(
             rootTransports.set(rootKey, rootTransport);
           }
           const capturedRoot = rootTransport;
+          const observingTransport = (readKey: object, retireDenied: (error: unknown) => void) => ({
+            key: readKey,
+            request: <T>(method: string, params?: unknown): Promise<T> =>
+              observeGitReadFailure(
+                capturedRoot.transport.request<T>(method, params),
+                retireDenied,
+              ),
+          });
           const controller = new AbortController();
           const freshRequest =
             entry.request.kind === 'trackedDiff' &&
@@ -126,23 +134,20 @@ export function installGitContentRecovery(
             lifetime: import('$shared/event-recovery/resource').RecoveryLifetime,
           ) => {
             const retireDenied = captureGitReadRetirement(key);
-            return observeGitReadFailure(
-              trackGitRead(
-                capturedRoot.transport,
-                serializeGitRead(
-                  key,
-                  () => current() && lifetime.commit(() => undefined),
-                  () =>
-                    readGitContent(
-                      workspaceId,
-                      freshRequest,
-                      capturedRoot.transport,
-                      controller.signal,
-                      () => current() && lifetime.commit(() => undefined),
-                    ),
-                ),
+            return trackGitRead(
+              capturedRoot.transport,
+              serializeGitRead(
+                key,
+                () => current() && lifetime.commit(() => undefined),
+                () =>
+                  readGitContent(
+                    workspaceId,
+                    freshRequest,
+                    observingTransport(capturedRoot.transport.key, retireDenied),
+                    controller.signal,
+                    () => current() && lifetime.commit(() => undefined),
+                  ),
               ),
-              retireDenied,
             )
               .then((result) => {
                 lifetime.commit(() => {
@@ -170,8 +175,9 @@ export function installGitContentRecovery(
                 return false;
               return gitEventMatchesRoot(notification, request.gitRootId);
             },
-            read: (reader) =>
-              serializeGitRead(
+            read: (reader) => {
+              const retireDenied = captureGitReadRetirement(key);
+              return serializeGitRead(
                 key,
                 () => current() && reader.lifetime.isCurrent(),
                 async () => {
@@ -187,12 +193,13 @@ export function installGitContentRecovery(
                   return readGitContent(
                     workspaceId,
                     request,
-                    { key: capturedRoot.recoveryKey, request: capturedRoot.transport.request },
+                    observingTransport(capturedRoot.recoveryKey, retireDenied),
                     controller.signal,
                     () => current() && reader.lifetime.isCurrent(),
                   );
                 },
-              ),
+              );
+            },
             apply,
             invalidate: clear,
             retire: () => {

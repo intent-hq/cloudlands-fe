@@ -761,3 +761,252 @@ it.each(['push', 'loss'] as const)(
     expect(h.request.mock.calls.filter(([method]) => method === 'git.showFile')).toHaveLength(1);
   },
 );
+
+async function ordinaryGitWire() {
+  const { BrowserWebSocketTransport } =
+    await import('$lib/client/live/browser-websocket-transport');
+  let socket: any;
+  const transport = new BrowserWebSocketTransport({
+    url: 'ws://127.0.0.1:9100/rpc?token=test',
+    requestTimeoutMs: 25,
+    webSocketFactory: () => {
+      socket = {
+        onopen: null,
+        onmessage: null,
+        onerror: null,
+        onclose: null,
+        sent: [] as string[],
+        send(data: string) {
+          this.sent.push(data);
+        },
+        close() {},
+        receive(frame: unknown) {
+          this.onmessage?.({ data: JSON.stringify(frame) });
+        },
+      };
+      return socket;
+    },
+  });
+  const flush = async () => {
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+  };
+  const ready = transport.request('probe.ready');
+  void ready.catch(() => undefined);
+  socket.onopen();
+  await flush();
+  const hello = JSON.parse(socket.sent.at(-1));
+  expect(hello.method).toBe('client.hello');
+  socket.receive({
+    jsonrpc: '2.0',
+    id: hello.id,
+    result: {
+      clientId: 'browser-verifier',
+      protocolVersion: '2.2',
+      server: {
+        locality: 'local',
+        hasDisplay: false,
+        osArch: 'linux/x86_64',
+        version: '0.1.0',
+        protocolVersion: '2.2',
+        capabilities: { liveState: true, eventStreamRecovery: 1 },
+      },
+    },
+  });
+  await flush();
+  const initial = JSON.parse(socket.sent.at(-1));
+  expect(initial.method).toBe('probe.ready');
+  socket.receive({ jsonrpc: '2.0', id: initial.id, result: {} });
+  await ready;
+  return {
+    transport,
+    socket,
+    flush,
+    frames: (method: string) =>
+      socket.sent.map((s: string) => JSON.parse(s)).filter((f: any) => f.method === method),
+    reply: (frame: any, result: unknown) =>
+      socket.receive({ jsonrpc: '2.0', id: frame.id, result }),
+    deny: (frame: any) =>
+      socket.receive({ jsonrpc: '2.0', id: frame.id, error: { code: -32003, message: 'denied' } }),
+  };
+}
+
+it('a new physical Git connection does not inherit an old ordinary completion barrier', async () => {
+  const old = await setup();
+  const firstWire = await ordinaryGitWire();
+  const firstNormal = old.request.getMockImplementation()!;
+  old.request.mockImplementation((m, p) =>
+    m === 'git.showFile' ? firstWire.transport.request(m, p) : firstNormal(m, p),
+  );
+  const firstLane = captureGitRead(gitContentRecoveryKey('ws', old.key));
+  const first = firstLane
+    .run(() =>
+      readGitContent(
+        'ws',
+        old.read,
+        firstLane.transport!,
+        new AbortController().signal,
+        () => true,
+      ),
+    )
+    .catch((e) => e);
+  await firstWire.flush();
+  expect(firstWire.frames('git.showFile')).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(26);
+  await firstWire.flush();
+  expect(await first).toMatchObject({ code: 'TIMEOUT' });
+  const current = await setup();
+  const secondWire = await ordinaryGitWire();
+  const secondNormal = current.request.getMockImplementation()!;
+  current.request.mockImplementation((m, p) =>
+    m === 'git.showFile' ? secondWire.transport.request(m, p) : secondNormal(m, p),
+  );
+  const secondLane = captureGitRead(gitContentRecoveryKey('ws', current.key));
+  const next = secondLane
+    .run(() =>
+      readGitContent(
+        'ws',
+        current.read,
+        secondLane.transport!,
+        new AbortController().signal,
+        () => true,
+      ),
+    )
+    .catch((e) => e);
+  try {
+    await secondWire.flush();
+    expect(secondLane.receipt.isCurrent()).toBe(true);
+    expect(
+      secondWire.frames('git.showFile'),
+      'new transport must dispatch before the old socket reply',
+    ).toHaveLength(1);
+  } finally {
+    firstWire.reply(firstWire.frames('git.showFile')[0], { content: 'obsolete' });
+    await firstWire.flush();
+    await secondWire.flush();
+    for (const f of secondWire.frames('git.showFile')) secondWire.reply(f, { content: 'current' });
+    await secondWire.flush();
+    await next;
+    firstWire.transport.dispose();
+    secondWire.transport.dispose();
+  }
+});
+
+it('captured Browser Git scope releases replacement after retirement', async () => {
+  const h = await setup();
+  for (const off of cleanups.splice(0)) off();
+  const firstWire = await ordinaryGitWire();
+  const oldScope = rendererEventRecovery.attach(await firstWire.transport.captureEventRecovery());
+  h.dispatch(gitReadStarted('ws', h.key, 'initial'));
+  h.dispatch(
+    gitReadCompleted('ws', h.key, 'initial', { kind: 'showFile', content: 'private old' }, null),
+  );
+  const stopOld = installGitContentRecovery(oldScope, h.store);
+  cleanups.push(stopOld);
+  const lane = captureGitRead(gitContentRecoveryKey('ws', h.key));
+  const old = lane
+    .run(() =>
+      readGitContent('ws', h.read, lane.transport!, new AbortController().signal, () => true),
+    )
+    .catch((e) => e);
+  await firstWire.flush();
+  expect(firstWire.frames('git.showFile')).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(30001);
+  await firstWire.flush();
+  expect(await old).toBeInstanceOf(Error);
+  stopOld();
+  const nextWire = await ordinaryGitWire();
+  const nextScope = rendererEventRecovery.attach(await nextWire.transport.captureEventRecovery());
+  h.dispatch(gitReadStarted('ws', h.key, 'current'));
+  h.dispatch(
+    gitReadCompleted('ws', h.key, 'current', { kind: 'showFile', content: 'cached current' }, null),
+  );
+  cleanups.push(installGitContentRecovery(nextScope, h.store));
+  const nextLane = captureGitRead(gitContentRecoveryKey('ws', h.key));
+  const next = nextLane
+    .run(() =>
+      readGitContent('ws', h.read, nextLane.transport!, new AbortController().signal, () => true),
+    )
+    .catch((e) => e);
+  try {
+    await nextWire.flush();
+    expect(nextLane.receipt.isCurrent()).toBe(true);
+    expect(nextWire.frames('git.showFile')).toHaveLength(1);
+  } finally {
+    firstWire.reply(firstWire.frames('git.showFile')[0], { content: 'old' });
+    await firstWire.flush();
+    await nextWire.flush();
+    for (const f of nextWire.frames('git.showFile')) nextWire.reply(f, { content: 'new' });
+    await next;
+    firstWire.transport.dispose();
+    nextWire.transport.dispose();
+  }
+});
+
+it.each(['ordinary', 'recovery'])(
+  'tracked Git content retires denied authority before held sibling drains (%s)',
+  async (mode) => {
+    const h = await setup();
+    h.dispatch(releaseGitRead('ws', 'view', 'request'));
+    const normal = h.request.getMockImplementation()!;
+    const denied = deferred<any>();
+    const sibling = deferred<any>();
+    h.request.mockImplementation((m, p) =>
+      m === 'git.diffs'
+        ? Promise.resolve(p.paths.map((path: string) => ({ path, hunks: [] })))
+        : m === 'git.showFile'
+          ? denied.promise
+          : m === 'file.read'
+            ? sibling.promise
+            : normal(m, p),
+    );
+    const read = {
+      kind: 'trackedDiff' as const,
+      filePath: 'secret.ts',
+      workspacePath: '/ws',
+      stage: 'unstaged',
+      allowHeadReads: true,
+      forceRefresh: false,
+      useProvidedContent: true,
+      providedOld: 'private index',
+      providedNew: 'private disk',
+    };
+    h.dispatch(gitReadRequested('ws', 'tracked', 'tracked', read));
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    const key = gitReadKey(read);
+    h.dispatch(gitReadStarted('ws', key, 'seed'));
+    h.dispatch(
+      gitReadCompleted(
+        'ws',
+        key,
+        'seed',
+        { kind: 'trackedDiff', oldContent: 'private index', newContent: 'private disk' } as any,
+        null,
+      ),
+    );
+    if (mode === 'recovery') h.loss();
+    else h.event();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    try {
+      expect(h.request.mock.calls.filter(([m]) => m === 'git.showFile')).toHaveLength(1);
+      expect(h.request.mock.calls.filter(([m]) => m === 'file.read')).toHaveLength(1);
+      // The held Promise adopts an immediate rejected canonical reply.
+      denied.resolve(Promise.reject({ rpcCode: -32003, message: 'Forbidden' }));
+      await settle();
+      expect(
+        getItem(h.store.getState().git.byWorkspaceId.ws.reads, key).result,
+        'denied content must clear before physical sibling settles',
+      ).toBeNull();
+      expect(
+        rendererEventRecovery.captureAuthority(gitContentRecoveryKey('ws', key)).isCurrent(),
+      ).toBe(false);
+    } finally {
+      sibling.resolve({ content: 'old' });
+      denied.resolve({ content: 'old' });
+      await settle();
+    }
+  },
+);

@@ -69,7 +69,7 @@ export function trackGitRead<T>(transport: GitReadTransport, result: Promise<T>)
   return result;
 }
 // Physical work survives a lease epoch change and cancellation of its caller.
-const tails = new Map<string, Promise<unknown>>();
+const sessionTails = new WeakMap<object, Map<string, Promise<unknown>>>();
 export function bindGitReadTransport(
   key: string,
   transport: GitReadTransport,
@@ -91,9 +91,13 @@ export function serializeGitRead<T>(
   read: () => Promise<T>,
   wait = true,
   physicalReads?: Set<Promise<void>>,
+  physicalSession = rendererEventRecovery.capturePhysicalSessionIdentity(),
 ): Promise<T> {
+  const tails = sessionTails.get(physicalSession) ?? new Map<string, Promise<unknown>>();
+  sessionTails.set(physicalSession, tails);
   const start = () => {
-    if (!current()) throw new Error('Git read authority expired before dispatch');
+    if (physicalSession !== rendererEventRecovery.capturePhysicalSessionIdentity() || !current())
+      throw new Error('Git read authority expired before dispatch');
     return read();
   };
   const tail = wait ? tails.get(key) : undefined;
@@ -124,6 +128,7 @@ export function captureGitRead(key: string): {
   transport?: GitReadTransport;
   run<T>(read: () => Promise<T>): Promise<T>;
 } {
+  const physicalSession = rendererEventRecovery.capturePhysicalSessionIdentity();
   const receipt = rendererEventRecovery.capture(key);
   const authority = rendererEventRecovery.captureAuthority(key);
   const bound = transports.get(key);
@@ -160,6 +165,7 @@ export function captureGitRead(key: string): {
         read,
         !!transport,
         physicalReads,
+        physicalSession,
       );
       if (transport) trackGitRead(transport, drainCapturedGitRead(result, physicalReads));
       return result;

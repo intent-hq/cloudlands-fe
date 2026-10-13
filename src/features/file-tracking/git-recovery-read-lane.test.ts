@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { type RecoveryRequestCompletion } from '$shared/event-recovery/session';
 import {
@@ -13,6 +14,7 @@ import {
 const cleanup: (() => void)[] = [];
 afterEach(() => {
   for (const off of cleanup.splice(0)) off();
+  vi.restoreAllMocks();
 });
 const settle = async () => {
   for (let i = 0; i < 30; i++) await Promise.resolve();
@@ -98,3 +100,33 @@ it.each([false, true])(
     else expect(observed).toHaveBeenLastCalledWith(denied);
   },
 );
+
+it('separates replacement physical sessions and rejects old queued work', async () => {
+  const identity = vi
+    .spyOn(rendererEventRecovery, 'capturePhysicalSessionIdentity')
+    .mockReturnValue({});
+  const held = deadline();
+  await expect(
+    serializeGitRead(
+      'replacement-session',
+      () => true,
+      () => Promise.reject(held.error),
+    ),
+  ).rejects.toBe(held.error);
+  const obsoleteRead = vi.fn(async () => 'obsolete');
+  const obsolete = serializeGitRead('replacement-session', () => true, obsoleteRead).catch(
+    (error) => error,
+  );
+  identity.mockReturnValue({});
+  const freshRead = vi.fn(async () => 'fresh');
+  const fresh = serializeGitRead('replacement-session', () => true, freshRead);
+  try {
+    await settle();
+    expect(freshRead).toHaveBeenCalledOnce();
+    await expect(fresh).resolves.toBe('fresh');
+  } finally {
+    held.finish({ retired: false, errors: [] });
+  }
+  await expect(obsolete).resolves.toBeInstanceOf(Error);
+  expect(obsoleteRead).not.toHaveBeenCalled();
+});
