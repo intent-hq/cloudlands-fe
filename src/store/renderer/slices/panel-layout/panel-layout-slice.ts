@@ -3611,8 +3611,8 @@ panelLayoutReducer.with(
         );
         continue;
       }
-      // The live host's URL/title are local truth; only mirror/re-homed tabs
-      // follow canonical navigation. Keep current ownership from the snapshot.
+      // The live host's navigation and geometry are local truth; only mirror/
+      // re-homed tabs follow canonical values. Keep ownership from the snapshot.
       const mine =
         row.hostClientId === ownClientId &&
         (tab.hostClientId === ownClientId || tab.hostClientId === undefined) &&
@@ -3634,7 +3634,13 @@ panelLayoutReducer.with(
             : row,
         ),
       );
-      if (!mine) {
+      if (mine) {
+        next = patchBrowserTab(next, wsId, row.tabId, (current) => ({
+          ...current,
+          viewport: tab.viewport,
+          emulatedSize: tab.emulatedSize,
+        }));
+      } else {
         const hidden = !!getItem(getWorkspaceState(next, wsId).hiddenTabs, row.tabId);
         if (row.visibility === 'hidden' && row.ownerAgentId && !hidden)
           next = selfDispatch(

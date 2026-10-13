@@ -30,6 +30,7 @@ import { initializeLayout, setRestoreStatus } from '../../panel-layout/panel-lay
 import { ownClientIdReceived } from '../browser-clients-slice';
 import { collectBrowserTabs } from '../../panel-layout/panel-layout-selectors';
 import type { BrowserTabListing } from '$shared/types/browser-clients';
+import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
 import { browserClientsSaga } from './browser-clients-saga';
 import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
 import {
@@ -868,3 +869,56 @@ it('cancelled old placement cannot delete the recovered row with the same id', a
     stopRouter();
   }
 });
+
+it.each<BrowserTabViewport>([
+  { mode: 'fit' },
+  { mode: 'custom', width: 390, height: 844 },
+  { mode: 'preset', presetId: 'mobile', width: 390, height: 844 },
+])(
+  'preserves a live host viewport $mode while recovering canonical mirrors and rehomes',
+  async (viewport) => {
+    const { updateTabViewport, setTabOwnerAgent } =
+      await import('../../panel-layout/panel-layout-slice');
+    const canonicalSize = { width: 1280, height: 800 };
+    await startTabs([
+      { ...row('hosted'), hostClientId: 'desktop', emulatedSize: canonicalSize },
+      { ...row('mirror'), hostClientId: 'remote', emulatedSize: canonicalSize },
+      { ...row('rehome'), hostClientId: 'remote', emulatedSize: canonicalSize },
+    ]);
+    for (const id of ['hosted', 'mirror', 'rehome'])
+      store.dispatch(updateTabViewport(WS, id, viewport));
+    const retainedSize = { width: 600, height: 480 };
+    store.dispatch(setTabOwnerAgent(WS, 'hosted', 'agent', retainedSize, undefined, viewport));
+    await settle();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'browser.listTabs'
+        ? Promise.resolve({
+            tabs: [
+              { ...row('hosted'), hostClientId: 'desktop', emulatedSize: canonicalSize },
+              { ...row('mirror'), hostClientId: 'remote', emulatedSize: canonicalSize },
+              { ...row('rehome'), hostClientId: 'desktop', emulatedSize: canonicalSize },
+            ],
+          })
+        : normal(method, params),
+    );
+    rpc.request.mockClear();
+    loseTabs();
+    await settle();
+    expect(tabs().find((tab) => tab.id === 'hosted')).toMatchObject({
+      viewport,
+      emulatedSize: retainedSize,
+    });
+    for (const id of ['mirror', 'rehome'])
+      expect(tabs().find((tab) => tab.id === id)).toMatchObject({
+        viewport: { mode: 'custom', ...canonicalSize },
+        emulatedSize: canonicalSize,
+      });
+    expect(calls('browser.listTabs')).toHaveLength(1);
+    expect(rpc.request.mock.calls.map(([method]) => method)).toEqual([
+      'events.fence',
+      'browser.listTabs',
+      'events.fence',
+    ]);
+  },
+);
