@@ -381,6 +381,47 @@ describe('spawnSidecarOnDemand', () => {
     );
   });
 
+  it.each(['indexing', 'finalizing', 'failed', 'unknown-schema'])(
+    'adopts an existing %s daemon during on-demand local recovery without spawning',
+    async (phase) => {
+      mockProbeSocket(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          error: {
+            code: -32012,
+            message: 'Daemon not ready',
+            data: {
+              code: phase === 'failed' ? 'daemon-startup-failed' : 'daemon-not-ready',
+              startup:
+                phase === 'unknown-schema'
+                  ? { startupStatus: 99 }
+                  : {
+                      startupStatus: 1,
+                      attemptId: 'existing',
+                      phase,
+                      elapsedMs: 1000,
+                      phaseElapsedMs: 1000,
+                      progressAgeMs: 0,
+                      retryAfterMs: 1000,
+                    },
+            },
+          },
+        }),
+      );
+      mockSpawnedProcess();
+      const result = await spawnSidecarOnDemand(
+        { INTENTD_BIN: '/fake/intentd' },
+        false,
+        '/resources',
+        '/cwd',
+      );
+      expect(result).toMatchObject({ ok: true, spawned: false });
+      expect(getConnectionMode()).toBe('external');
+      expect(mockSpawn).not.toHaveBeenCalled();
+    },
+  );
+
   it('spawns exactly once under concurrent calls (in-flight coalescing)', async () => {
     mockProbeSocket(null);
     mockSpawnedProcess();
@@ -463,11 +504,26 @@ describe('sidecar gave-up notifier (crash-loop surfacing)', () => {
       exitHandlers[exitHandlers.length - 1](1, null);
       expect(gaveUp).not.toHaveBeenCalled();
       await vi.runOnlyPendingTimersAsync();
+      // The restart now re-probes socket ownership before spawning.
+      await vi.advanceTimersByTimeAsync(1);
       expect(exitHandlers).toHaveLength(attempt + 1);
     }
     exitHandlers[exitHandlers.length - 1](1, null);
 
     expect(gaveUp).toHaveBeenCalledTimes(1);
     expect(gaveUp).toHaveBeenCalledWith(expect.stringContaining('Max restart attempts'));
+  });
+
+  it('does not restart alongside a daemon that takes the socket during restart backoff', async () => {
+    mockProbeSocket(null);
+    const exitHandlers: Array<(code: number, signal: null) => void> = [];
+    mockSpawnCapturingExit(exitHandlers);
+    await spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd');
+    mockProbeSocket(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32012 } }));
+    vi.useFakeTimers();
+    exitHandlers[0](1, null);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(getConnectionMode()).toBe('external');
   });
 });

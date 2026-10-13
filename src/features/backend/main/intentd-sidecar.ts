@@ -1020,6 +1020,18 @@ async function spawnSidecarProcess(
         logger.info('Skipping restart; shutdown in progress');
         return;
       }
+      // A different daemon may have acquired the socket during backoff. Any
+      // response (including startup/failed admission) still owns its data dir.
+      const probe = await probeDaemonVersion(socketPath);
+      if (isShuttingDown) return;
+      if (probe.alive) {
+        if (!isIsolatedTestBuild()) {
+          setConnectionMode('external');
+          refreshLocalUpdateSupportedAfterModeResolution();
+        }
+        logger.info('Skipping restart; a live daemon owns the socket', { socketPath });
+        return;
+      }
       await spawnSidecarProcess(binaryPath, socketPath, env);
       // Start watchdog after successful spawn
       startHealthWatchdog(socketPath);
@@ -1319,7 +1331,10 @@ async function doSpawnSidecarOnDemand(
     return { ok: true, spawned: false, reason: 'sidecar already running' };
   }
   const socketPath = resolveSocketPath(env);
-  if (await healthCheckProbe(socketPath)) {
+  // Readiness is deliberately false while indexing; ownership is not. Match
+  // initial acquisition and preserve every responding daemon, even when its
+  // startup snapshot is failed or from an unknown schema version.
+  if ((await probeDaemonVersion(socketPath)).alive) {
     if (isIsolatedTestBuild()) {
       return { ok: false, spawned: false, reason: 'isolated test socket is already owned' };
     }
