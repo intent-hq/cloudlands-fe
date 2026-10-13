@@ -78,3 +78,55 @@ it('does not turn a late success into passing evidence after timeout', async () 
   await Promise.resolve();
   expect(read()).toMatchObject({ passed: false, probe: { state: 'failed' } });
 });
+
+it('keeps successful main checks incomplete until cleanup and terminal persistence finish', async () => {
+  const evidence = { passed: false };
+  const probe = createPackageProbe(directory, evidence);
+  evidence.passed = true;
+  probe.persist();
+  expect(read()).toMatchObject({ passed: false, completed: false });
+  let close!: () => void;
+  const cleanup = probe.run(
+    'final cleanup',
+    () =>
+      new Promise<void>((resolve) => {
+        close = resolve;
+      }),
+  );
+  await Promise.resolve();
+  expect(read()).toMatchObject({ passed: false, completed: false });
+  close();
+  await cleanup;
+  expect(read()).toMatchObject({ passed: false, completed: false });
+  probe.finish();
+  expect(read()).toMatchObject({ passed: true, completed: true });
+});
+
+it('persists terminal failure when cleanup fails after successful main checks', async () => {
+  const evidence = { passed: false };
+  const probe = createPackageProbe(directory, evidence);
+  evidence.passed = true;
+  const cleanup = probe.run('final cleanup', () => new Promise(() => {}), 100);
+  const rejected = expect(cleanup).rejects.toThrow('exceeded');
+  expect(read().passed).toBe(false);
+  await vi.advanceTimersByTimeAsync(100);
+  await rejected;
+  evidence.passed = false;
+  probe.finish();
+  expect(read()).toMatchObject({ passed: false, completed: true });
+});
+
+it('never persists passing evidence when final cleanup rejects immediately', async () => {
+  const evidence = { passed: false };
+  const probe = createPackageProbe(directory, evidence);
+  evidence.passed = true;
+  await expect(
+    probe.run('final cleanup', async () => {
+      throw new Error('sentinel close failed');
+    }),
+  ).rejects.toThrow('sentinel close failed');
+  expect(read()).toMatchObject({ passed: false, completed: false });
+  evidence.passed = false;
+  probe.finish();
+  expect(read()).toMatchObject({ passed: false, completed: true });
+});

@@ -3,10 +3,15 @@ import path from 'node:path';
 
 /** Preserve progress before awaiting package code, including code that never settles. */
 export function createPackageProbe(output, evidence) {
+  let completed = false;
   const persist = () => {
-    fs.writeFileSync(path.join(output, 'isolation.json'), JSON.stringify(evidence, null, 2), {
-      mode: 0o600,
-    });
+    fs.writeFileSync(
+      path.join(output, 'isolation.json'),
+      JSON.stringify({ ...evidence, passed: completed && evidence.passed, completed }, null, 2),
+      {
+        mode: 0o600,
+      },
+    );
   };
   const checkpoint = (label, state) => {
     evidence.probe = { label, state, at: new Date().toISOString() };
@@ -37,5 +42,9 @@ export function createPackageProbe(output, evidence) {
     }
   };
   persist();
-  return { run, checkpoint, persist };
+  const finish = () => {
+    completed = true;
+    persist();
+  };
+  return { run, checkpoint, persist, finish };
 }

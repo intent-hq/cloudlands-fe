@@ -443,9 +443,7 @@ try {
       process.exitCode = 1;
     }
   }
-  fs.writeFileSync(path.join(output, 'isolation.json'), JSON.stringify(evidence, null, 2), {
-    mode: 0o600,
-  });
+  probe.finish();
   // Never relabel forced cleanup as a pass. This VM is retired by GitHub after the job.
   console.log(JSON.stringify({ passed: evidence.passed, output, error: evidence.error }));
 }
