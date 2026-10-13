@@ -957,6 +957,8 @@ it('global client event receipt reads only its roster even with mounted workspac
   expect(store.state.browserClients.liveClientsLoaded).toBe(true);
   expect(selectLiveClients.select(store.state)).toEqual([]);
   expect(view().eligibleClients).toHaveLength(1);
+  expect(calls('client.list')).toHaveLength(1);
+  expect(calls('workspace.getBrowserClient')).toHaveLength(0);
 });
 
 it('admits client updated once and waits for both browser client read lanes', async () => {
@@ -994,4 +996,61 @@ it('admits client updated once and waits for both browser client read lanes', as
   expect(calls('client.list')).toHaveLength(1);
   expect(calls('workspace.getBrowserClient')).toHaveLength(1);
   expect(calls('events.fence')).toHaveLength(0);
+});
+
+it('rejects a superseded global client admission without starting any read', async () => {
+  const { hydrateBrowserClientsRequested } = await import('../browser-clients-slice');
+  const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+  const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+  await attach();
+  store.dispatch(hydrateBrowserClientsRequested());
+  await settle();
+  const old = rendererEventRecovery.capture(browserClientRecoveryKey());
+  rendererEventRecovery.push(browserClientRecoveryKey());
+  rpc.request.mockClear();
+  await dispatchBrowserClientEvent(undefined, old);
+  await settle();
+  expect(rpc.request.mock.calls).toEqual([]);
+  expect(selectLiveClients.select(store.state)).toEqual([client]);
+});
+
+it('client updated loss recovers both registered global and workspace client owners', async () => {
+  const { hydrateBrowserClientsRequested } = await import('../browser-clients-slice');
+  await attach();
+  store.dispatch(hydrateBrowserClientsRequested());
+  await settle();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  await scope.subscribe({ eventTypes: ['client:updated'] }, { recover: true });
+  clients = [];
+  pin = 'recovered-from-update';
+  rpc.request.mockClear();
+  lose('1', 'browser-2');
+  await settle();
+  expect(selectLiveClients.select(store.state)).toEqual([]);
+  expect(view().eligibleClients).toEqual([]);
+  expect(view().pinnedClientId).toBe('recovered-from-update');
+  expect(calls('client.list').map(([, params]) => params)).toEqual(
+    expect.arrayContaining([undefined, { workspaceId: WS }]),
+  );
+  expect(calls('client.list')).toHaveLength(2);
+  expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+});
+
+it('legacy broad refresh still fans out into mounted workspace reads', async () => {
+  const { refreshLiveClientsRequested } = await import('../browser-clients-slice');
+  await attach(false);
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  clients = [];
+  pin = 'legacy-refresh';
+  rpc.request.mockClear();
+  store.dispatch(refreshLiveClientsRequested());
+  await settle();
+  expect(view().eligibleClients).toEqual([]);
+  expect(view().pinnedClientId).toBe('legacy-refresh');
+  expect(rpc.request.mock.calls.map(([method, params]) => [method, params])).toEqual([
+    ['client.list', { workspaceId: WS }],
+    ['workspace.getBrowserClient', { workspaceId: WS }],
+  ]);
 });
