@@ -12,6 +12,7 @@ import {
 } from '$features/events/renderer-event-recovery';
 import {
   createEventRecoverySession,
+  RecoveryRequestTimeoutError,
   type RecoveryNotification,
 } from '$shared/event-recovery/session';
 import {
@@ -26,6 +27,7 @@ import {
   hydrateFileExplorerRequested,
   setFileExplorerWorkspacePath,
   setRootNode,
+  updateAgentFileEditsEntries,
   addExpandedPath,
   fileSearchRequested,
   fileSearchReleased,
@@ -155,6 +157,154 @@ function setup(recoverable = true, registry = new RendererEventRecovery()) {
 }
 afterEach(() => vi.useRealTimers());
 describe('file projections after lost final events', () => {
+  it('preserves file edit badge physical siblings after a transient failure', async () => {
+    const h = setup();
+    h.dispatch(setFileExplorerWorkspacePath('ws', '/repo'));
+    h.dispatch(updateAgentFileEditsEntries('ws', { 'old.ts': ['old-agent'] }));
+    const held = deferred<unknown>();
+    const normal = h.request.getMockImplementation()!;
+    let initial = true;
+    h.request.mockImplementation((method, params) => {
+      if (method !== 'event.query') return normal(method, params);
+      const changed = (params as { eventType: string }).eventType === 'file:changed';
+      if (initial) return changed ? Promise.reject(new Error('transient')) : held.promise;
+      return Promise.resolve(
+        changed
+          ? [{ timestamp: '2026-10-13', actor: { id: 'new-agent' }, data: { path: 'new.ts' } }]
+          : [],
+      );
+    });
+    try {
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+      h.emit(lost());
+      await flush();
+      expect(h.request.mock.calls.filter(([method]) => method === 'event.query')).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1001);
+      await flush();
+      expect(h.request.mock.calls.filter(([method]) => method === 'event.query')).toHaveLength(2);
+      initial = false;
+      held.resolve([]);
+      await flush();
+      await vi.advanceTimersByTimeAsync(1001);
+      await flush();
+      expect(h.request.mock.calls.filter(([method]) => method === 'event.query')).toHaveLength(4);
+      expect(h.state().fileExplorer.byWorkspaceId.ws.agentFileEdits['new.ts']).toEqual([
+        'new-agent',
+      ]);
+      expect(h.state().fileExplorer.byWorkspaceId.ws.agentFileEdits['old.ts']).toBeUndefined();
+    } finally {
+      held.resolve([]);
+      await flush();
+      h.close();
+    }
+  });
+
+  it.each([false, true])(
+    'retires file badges promptly while retaining a physical sibling (late timeout=%s)',
+    async (timeout) => {
+      const h = setup();
+      h.dispatch(setFileExplorerWorkspacePath('ws', '/repo'));
+      h.dispatch(updateAgentFileEditsEntries('ws', { 'private.ts': ['agent'] }));
+      const held = deferred<unknown>();
+      const completion = deferred<{ retired: boolean; errors: unknown[] }>();
+      const denied = { rpcCode: -32003 };
+      const normal = h.request.getMockImplementation()!;
+      h.request.mockImplementation((method, params) =>
+        method === 'event.query'
+          ? (params as { eventType: string }).eventType === 'file:changed'
+            ? Promise.reject(timeout ? new RecoveryRequestTimeoutError(completion.promise) : denied)
+            : held.promise
+          : normal(method, params),
+      );
+      try {
+        await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+        h.emit(lost());
+        await flush();
+        if (timeout) {
+          await vi.advanceTimersByTimeAsync(1001);
+          await flush();
+          expect(h.request.mock.calls.filter(([method]) => method === 'event.query')).toHaveLength(
+            2,
+          );
+          completion.resolve({ retired: false, errors: [denied] });
+          await flush();
+        }
+        expect(h.state().fileExplorer.byWorkspaceId.ws.agentFileEdits).toEqual({});
+        await vi.advanceTimersByTimeAsync(1001);
+        await flush();
+        expect(h.request.mock.calls.filter(([method]) => method === 'event.query')).toHaveLength(2);
+      } finally {
+        completion.resolve({ retired: false, errors: [] });
+        held.resolve([]);
+        await flush();
+        h.close();
+      }
+    },
+  );
+
+  it('keeps the badge lane occupied after one timeout drains while its sibling is still held', async () => {
+    const h = setup();
+    h.dispatch(setFileExplorerWorkspacePath('ws', '/repo'));
+    const held = deferred<unknown>();
+    const completion = deferred<{ retired: boolean; errors: unknown[] }>();
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation((method, params) =>
+      method === 'event.query'
+        ? (params as { eventType: string }).eventType === 'file:changed'
+          ? Promise.reject(new RecoveryRequestTimeoutError(completion.promise))
+          : held.promise
+        : normal(method, params),
+    );
+    try {
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+      h.emit(lost());
+      await flush();
+      completion.resolve({ retired: false, errors: [] });
+      await flush();
+      await vi.advanceTimersByTimeAsync(1001);
+      await flush();
+      expect(h.request.mock.calls.filter(([method]) => method === 'event.query')).toHaveLength(2);
+    } finally {
+      completion.resolve({ retired: false, errors: [] });
+      held.resolve([]);
+      await flush();
+      h.close();
+    }
+  });
+
+  it('does not retire a replacement badge owner on an old timed-out denial', async () => {
+    const h = setup();
+    h.dispatch(setFileExplorerWorkspacePath('ws', '/repo'));
+    const held = deferred<unknown>();
+    const completion = deferred<{ retired: boolean; errors: unknown[] }>();
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation((method, params) =>
+      method === 'event.query'
+        ? (params as { eventType: string }).eventType === 'file:changed'
+          ? Promise.reject(new RecoveryRequestTimeoutError(completion.promise))
+          : held.promise
+        : normal(method, params),
+    );
+    try {
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+      h.emit(lost());
+      await flush();
+      h.setWorkspaceVisible(false);
+      h.setWorkspaceVisible(true);
+      h.dispatch(updateAgentFileEditsEntries('ws', { 'new-owner.ts': ['new-agent'] }));
+      completion.resolve({ retired: false, errors: [{ rpcCode: -32003 }] });
+      await flush();
+      expect(h.state().fileExplorer.byWorkspaceId.ws.agentFileEdits).toEqual({
+        'new-owner.ts': ['new-agent'],
+      });
+    } finally {
+      completion.resolve({ retired: false, errors: [] });
+      held.resolve([]);
+      await flush();
+      h.close();
+    }
+  });
+
   it.each([false, true])(
     'keeps ordinary reads admitted when a pre-loss file notice carries no store snapshot (recovery=%s)',
     async (recoverable) => {

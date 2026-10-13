@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
@@ -56,16 +57,46 @@ const anchor = (nodes: FileNode[], path: string): FileNode[] =>
     ...(node.type === 'directory' ? { children: [] } : {}),
   }));
 
-async function readEdits(workspaceId: string, root: string, { request }: RecoveryReader) {
-  const results = await Promise.all(
-    ['file:changed', 'file:created'].map((eventType) =>
-      request<WorkspaceEvent[]>('event.query', {
-        workspaceId,
-        eventType,
-        actorType: 'agent',
-        limit: 100,
-      }),
-    ),
+function fileReadAuthorityDenied(error: unknown): boolean {
+  const value = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
+  return (
+    value?.rpcCode === -32003 ||
+    value?.rpcCode === -32001 ||
+    (value?.rpcCode === -32602 && value.data?.code === 'not-found')
+  );
+}
+
+async function readEdits(
+  workspaceId: string,
+  root: string,
+  { request }: RecoveryReader,
+  retire: () => void,
+) {
+  const settled = await Promise.allSettled(
+    ['file:changed', 'file:created'].map(async (eventType) => {
+      try {
+        return await request<WorkspaceEvent[]>('event.query', {
+          workspaceId,
+          eventType,
+          actorType: 'agent',
+          limit: 100,
+        });
+      } catch (error) {
+        if (fileReadAuthorityDenied(error)) retire();
+        if (error instanceof RecoveryRequestTimeoutError) {
+          const completion = await error.completion;
+          if (!completion.retired && completion.errors.some(fileReadAuthorityDenied)) retire();
+        }
+        throw error;
+      }
+    }),
+  );
+  // One failed query must not release the lane while its sibling still runs.
+  // Canonical failures retire through the captured owner above without waiting.
+  const failure = settled.find((result) => result.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
+  const results = settled.flatMap((result) =>
+    result.status === 'fulfilled' ? [result.value] : [],
   );
   if (results.some((events) => !Array.isArray(events)))
     throw new Error('Invalid event.query response');
@@ -365,6 +396,16 @@ export function installFileEventRecovery(
             }),
           ws.isStoreActive && activeWorkspace(workspaceId),
         );
+        const retireEdits = (): undefined => {
+          store.dispatch(
+            removeAgentFileEditsEntries(
+              workspaceId,
+              Object.keys(
+                store.getState().fileExplorer.byWorkspaceId[workspaceId]?.agentFileEdits ?? {},
+              ),
+            ),
+          );
+        };
         own(
           fileEditsRecoveryKey(workspaceId),
           workspaceId,
@@ -381,7 +422,11 @@ export function installFileEventRecovery(
                   () => {
                     if (!reader.lifetime.isCurrent())
                       throw new Error('File edits authority expired');
-                    return readEdits(workspaceId, root, reader);
+                    return readEdits(workspaceId, root, reader, () => {
+                      if (!reader.lifetime.isCurrent()) return;
+                      owners.get(fileEditsRecoveryKey(workspaceId))?.handle.dispose();
+                      retireEdits();
+                    });
                   },
                   'recovery',
                 ),
@@ -398,17 +443,7 @@ export function installFileEventRecovery(
                 store.dispatch(updateAgentFileEditsEntries(workspaceId, edits));
               },
               invalidate: () => {},
-              retire: () => {
-                store.dispatch(
-                  removeAgentFileEditsEntries(
-                    workspaceId,
-                    Object.keys(
-                      store.getState().fileExplorer.byWorkspaceId[workspaceId]?.agentFileEdits ??
-                        {},
-                    ),
-                  ),
-                );
-              },
+              retire: retireEdits,
             }),
           ws.isStoreActive && activeWorkspace(workspaceId),
         );
