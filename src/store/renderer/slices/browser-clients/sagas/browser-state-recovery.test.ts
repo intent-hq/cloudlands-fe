@@ -1309,3 +1309,48 @@ it.each(['unmount', 'dispose'])(
     expect(calls('workspace.getBrowserClient')).toHaveLength(1);
   },
 );
+
+it('keeps a removed workspace inactive after queued reads and a later loss', async () => {
+  const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+  const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+  await attach();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  const roster = deferred<unknown>(),
+    selection = deferred<unknown>();
+  const normal = rpc.request.getMockImplementation()!;
+  rpc.request.mockImplementation((method, params) =>
+    method === 'client.list'
+      ? roster.promise
+      : method === 'workspace.getBrowserClient'
+        ? selection.promise
+        : normal(method, params),
+  );
+  rpc.request.mockClear();
+  const key = browserClientRecoveryKey(WS);
+  rendererEventRecovery.push(key);
+  const active = dispatchBrowserClientEvent(WS, rendererEventRecovery.capture(key));
+  await settle();
+  rendererEventRecovery.push(key);
+  const queued = dispatchBrowserClientEvent(WS, rendererEventRecovery.capture(key));
+  await settle();
+  store.dispatch(workspaceUnmounted(WS));
+  await settle();
+  expect.soft(calls('client.list')).toHaveLength(1);
+  roster.resolve({ clients: [client] });
+  selection.resolve({ browserClient: { source: 'default', resolved: null } });
+  await Promise.all([active, queued]);
+  await settle();
+  expect.soft(store.state.browserClients.byWorkspaceId[WS]).toBeUndefined();
+  expect.soft(rendererEventRecovery.capture(key).isCurrent()).toBe(false);
+  rpc.request.mockImplementation(normal);
+  rpc.request.mockClear();
+  pin = 'after-removal';
+  lose();
+  await settle();
+  expect.soft(rpc.request.mock.calls).toEqual([]);
+  expect.soft(calls('client.list')).toHaveLength(0);
+  expect.soft(calls('workspace.getBrowserClient')).toHaveLength(0);
+  expect.soft(store.state.browserClients.byWorkspaceId[WS]).toBeUndefined();
+  expect.soft(rendererEventRecovery.capture(key).isCurrent()).toBe(false);
+});
