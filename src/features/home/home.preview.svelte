@@ -205,6 +205,15 @@
         }) as Workspace,
     ),
   ];
+  const untitledFixtures: Workspace[] = [
+    ...fixtures,
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-typeahead-review'),
+      title: 'Review release notes',
+      statusMessage: 'Ready for your review.',
+    },
+  ];
   const statusFixtures: Workspace[] = [
     ...fixtures.filter((workspace) => workspace.status === WorkspaceStatus.Active),
     {
@@ -417,7 +426,9 @@
               ? statusFixtures
               : scenario === 'pr-ready'
                 ? prReadyFixtures
-                : fixtures
+                : scenario === 'untitled'
+                  ? untitledFixtures
+                  : fixtures
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
