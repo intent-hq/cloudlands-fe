@@ -25,7 +25,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { scriptsReducer, editScriptRequested, scriptOperationSucceeded } =
+  const { scriptsReducer, editScriptRequested, scriptOperationSucceeded, scriptWorkflowFinished } =
     await import('$store/renderer/slices/scripts/scripts-slice');
   const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
@@ -51,11 +51,31 @@ vi.mock('$store/renderer/store', async () => {
       terminalsState = terminalsReducer(terminalsState, action);
       for (const notify of subscribers) notify();
       if (action.type === 'scripts/updateScriptDefinitionRequested') {
-        const [workspaceId, scriptId, updates] = action.payload;
+        const [workspaceId, scriptId, updates, consumer] = action.payload;
         scriptsState = scriptsReducer(scriptsState, editScriptRequested(workspaceId, scriptId));
         for (const notify of subscribers) notify();
         const complete = (script: unknown) => {
           action.success(script);
+          if (consumer)
+            store.dispatch(scriptWorkflowFinished(workspaceId, consumer, 'success', script));
+          scriptsState = scriptsReducer(
+            scriptsState,
+            scriptOperationSucceeded(workspaceId, scriptId, 'edit'),
+          );
+          for (const notify of subscribers) notify();
+        };
+        const fail = (error: unknown) => {
+          action.failure(error);
+          if (consumer)
+            store.dispatch(
+              scriptWorkflowFinished(
+                workspaceId,
+                consumer,
+                'failure',
+                undefined,
+                error instanceof Error ? error.message : String(error),
+              ),
+            );
           scriptsState = scriptsReducer(
             scriptsState,
             scriptOperationSucceeded(workspaceId, scriptId, 'edit'),
@@ -65,6 +85,23 @@ vi.mock('$store/renderer/store', async () => {
         if (asyncDefinitionActionHandlers.update)
           asyncDefinitionActionHandlers.update(action, complete);
         else complete({ id: scriptId, workspaceId, ...updates });
+        action.__fail = fail;
+      } else if (action.type === 'scripts/getScriptDefinitionRequested') {
+        const [workspaceId, scriptId, consumer] = action.payload;
+        void (async () => {
+          try {
+            const script = await (
+              await import('$lib/client')
+            ).appClient.scripts.get(workspaceId, scriptId);
+            if (consumer)
+              store.dispatch(scriptWorkflowFinished(workspaceId, consumer, 'success', script));
+          } catch (error) {
+            if (consumer)
+              store.dispatch(
+                scriptWorkflowFinished(workspaceId, consumer, 'failure', undefined, String(error)),
+              );
+          }
+        })();
       }
       return action;
     },
@@ -512,21 +549,21 @@ describe('script definition and authority races', () => {
     'releases the delete button after a direct save fails (throw: %s)',
     async (throws) => {
       let finish!: () => void;
-      vi.mocked(appClient.scripts.create).mockReturnValueOnce(
-        new Promise((resolve, reject) => {
-          finish = () =>
-            throws ? reject(new Error('offline')) : resolve({ success: false, error: 'offline' });
-        }),
+      asyncDefinitionActionHandlers.update = (action) => {
+        finish = () => action.__fail(throws ? new Error('offline') : 'offline');
+      };
+      const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
+      await fireEvent.click(screen.getByTitle('Click to rename script'));
+      const input = view.container.querySelector('[data-edit-script-header-name]')!;
+      await fireEvent.input(input, { target: { value: 'Renamed' } });
+      await fireEvent.blur(input);
+      await waitFor(() =>
+        expect(dispatchedTypes()).toContain('scripts/updateScriptDefinitionRequested'),
       );
-      render(QuakeTerminalOverlay, { workspaceId: WS_A });
-      const saved = scriptsClient.update(WS_A, 'script-1', { name: 'Renamed' });
-      const result = saved.catch((error: Error) => ({ success: false, error: error.message }));
-      await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
       expect(
         (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
       ).toBe(true);
       finish();
-      expect(await result).toEqual({ success: false, error: 'offline' });
       await waitFor(() =>
         expect(
           (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,

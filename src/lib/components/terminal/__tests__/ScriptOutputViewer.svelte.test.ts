@@ -38,6 +38,8 @@ const {
   outputReadableRef,
   authorityReadableRef,
   retainedReadableRef,
+  workflowOutcomeRef,
+  mockGetDefinition,
 } = vi.hoisted(() => ({
   xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
   fontReadableRef: { value: null as any },
@@ -47,6 +49,8 @@ const {
   outputReadableRef: { value: null as any },
   authorityReadableRef: { value: null as any },
   retainedReadableRef: { value: null as any },
+  workflowOutcomeRef: { value: null as any },
+  mockGetDefinition: vi.fn(),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -175,6 +179,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
     ),
     selectScriptOutput: makeSel(getOutput),
     selectScriptRetainedOutput: () => retainedReadableRef.value,
+    selectScriptWorkflowOutcome: () => workflowOutcomeRef.value,
   };
 });
 
@@ -191,16 +196,53 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
   }),
   scriptOutputRequested: (...payload: unknown[]) => ({ type: 'scripts/outputRequested', payload }),
   scriptOutputReleased: (...payload: unknown[]) => ({ type: 'scripts/outputReleased', payload }),
+  getScriptDefinitionRequested: (...payload: unknown[]) => ({
+    type: 'scripts/getScriptDefinitionRequested',
+    payload,
+  }),
+  scriptWorkflowConsumed: (...payload: unknown[]) => ({
+    type: 'scripts/workflowConsumed',
+    payload,
+  }),
+  scriptWorkflowReleased: (...payload: unknown[]) => ({
+    type: 'scripts/workflowReleased',
+    payload,
+  }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   createAgentFromConfigRequested: vi.fn(),
 }));
 
-vi.mock('$lib/client', () => ({ appClient: { scripts: { get: vi.fn() } } }));
+vi.mock('$lib/client', () => ({ appClient: { scripts: { get: mockGetDefinition } } }));
 
 vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: vi.fn(), state: {} },
+  store: {
+    state: {},
+    dispatch: vi.fn((action: any) => {
+      if (action.type !== 'scripts/getScriptDefinitionRequested') return action;
+      const [workspaceId, scriptId, consumer] = action.payload;
+      void mockGetDefinition(workspaceId, scriptId).then(
+        (result: unknown) =>
+          workflowOutcomeRef.value.set({
+            ...consumer,
+            workspaceId,
+            status: 'success',
+            result,
+            consumed: false,
+          }),
+        (error: unknown) =>
+          workflowOutcomeRef.value.set({
+            ...consumer,
+            workspaceId,
+            status: 'failure',
+            error: String(error),
+            consumed: false,
+          }),
+      );
+      return action;
+    }),
+  },
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -234,6 +276,12 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     lifecycleGate.hidesAgentLifecycleActions = false;
     outputReadableRef.value = null;
     retainedReadableRef.value = createControllableReadable(undefined);
+    workflowOutcomeRef.value = createControllableReadable(undefined);
+    mockGetDefinition
+      .mockReset()
+      .mockImplementation((workspaceId: string, scriptId: string) =>
+        Promise.resolve(scriptState.byWorkspaceId[workspaceId]?.[scriptId]),
+      );
     authorityReadableRef.value = createControllableReadable<string | null>('authority');
     scriptState.byWorkspaceId = {
       'ws-failed': {
@@ -394,6 +442,12 @@ describe('retained output viewer lifecycle', () => {
     scriptSelectorArgs.length = 0;
     outputReadableRef.value = null;
     retainedReadableRef.value = createControllableReadable(undefined);
+    workflowOutcomeRef.value = createControllableReadable(undefined);
+    mockGetDefinition
+      .mockReset()
+      .mockImplementation((workspaceId: string, scriptId: string) =>
+        Promise.resolve(scriptState.byWorkspaceId[workspaceId]?.[scriptId]),
+      );
     authorityReadableRef.value = createControllableReadable<string | null>('authority');
     fontReadableRef.value = createControllableReadable(SYSTEM_DEFAULT);
     scriptState.byWorkspaceId = {
