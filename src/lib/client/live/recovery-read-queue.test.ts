@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
-import { runRecoveryRead } from './recovery-read-queue';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { runRecoveryRead, retireRecoveryReads } from './recovery-read-queue';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 function authority() {
   let alive = true;
@@ -19,6 +21,7 @@ function authority() {
     },
   };
 }
+afterEach(() => vi.restoreAllMocks());
 describe('shared ordinary and recovery read admission', () => {
   it('shares demanded ordinary work and then starts a fresh recovery with peak one', async () => {
     const a = authority();
@@ -94,7 +97,10 @@ describe('shared ordinary and recovery read admission', () => {
     await expect(pending).rejects.toThrow('expired');
     expect(next).not.toHaveBeenCalled();
   });
-  it('does not let an old authority block or evict replacement work', async () => {
+  it('does not let an old transport block or evict replacement work', async () => {
+    const session = vi
+      .spyOn(rendererEventRecovery, 'capturePhysicalSessionIdentity')
+      .mockReturnValue({});
     const a = authority(),
       b = authority();
     let oldFinish!: () => void, newFinish!: () => void;
@@ -115,6 +121,7 @@ describe('shared ordinary and recovery read admission', () => {
           newFinish = done;
         }),
     );
+    session.mockReturnValue({});
     const next = runRecoveryRead('replace', b.token, 'ordinary', 'list', read);
     oldFinish();
     await first;
@@ -122,5 +129,108 @@ describe('shared ordinary and recovery read admission', () => {
     expect(read).toHaveBeenCalledTimes(1);
     newFinish();
     await next;
+  });
+});
+
+describe('physical request accounting', () => {
+  const settle = async () => {
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+  };
+  it.each(['ordinary', 'recovery'] as const)(
+    'keeps a held request across resource epoch replacement before %s work',
+    async (mode) => {
+      const old = authority();
+      let finish!: () => void;
+      const first = runRecoveryRead(
+        `epoch-${mode}`,
+        old.token,
+        'ordinary',
+        'list',
+        () =>
+          new Promise<void>((done) => {
+            finish = done;
+          }),
+      );
+      old.retire();
+      const next = vi.fn(async () => 'new');
+      const fresh = runRecoveryRead(`epoch-${mode}`, authority().token, mode, 'list', next);
+      await settle();
+      expect(next).not.toHaveBeenCalled();
+      finish();
+      await first;
+      expect(await fresh).toBe('new');
+      expect(next).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('keeps physical work after explicit owner retirement and rejects queued old-authority starts', async () => {
+    const old = authority();
+    let finish!: () => void;
+    const first = runRecoveryRead(
+      'remount',
+      old.token,
+      'ordinary',
+      'list',
+      () =>
+        new Promise<void>((done) => {
+          finish = done;
+        }),
+    );
+    const staleRead = vi.fn(async () => 'stale');
+    const stale = runRecoveryRead('remount', old.token, 'recovery', 'list', staleRead).catch(
+      (error) => error.message,
+    );
+    retireRecoveryReads('remount');
+    const read = vi.fn(async () => 'new');
+    const next = runRecoveryRead('remount', authority().token, 'ordinary', 'list', read);
+    await settle();
+    expect(read).not.toHaveBeenCalled();
+    finish();
+    await first;
+    expect(await stale).toMatch('expired');
+    expect(await next).toBe('new');
+    expect(staleRead).not.toHaveBeenCalled();
+  });
+  it.each(['ordinary', 'recovery'] as const)(
+    'retains a timed-out physical request before %s retry',
+    async (mode) => {
+      const a = authority();
+      let drain!: (value: { errors: unknown[]; retired: boolean }) => void;
+      const timeout = new RecoveryRequestTimeoutError(
+        new Promise((done) => {
+          drain = done;
+        }),
+      );
+      const failed = runRecoveryRead(`timeout-${mode}`, a.token, 'recovery', 'list', async () => {
+        throw timeout;
+      });
+      await expect(failed).rejects.toBe(timeout);
+      const read = vi.fn(async () => 'new');
+      const next = runRecoveryRead(`timeout-${mode}`, a.token, mode, 'list', read);
+      await settle();
+      expect(read).not.toHaveBeenCalled();
+      drain({ errors: [], retired: false });
+      expect(await next).toBe('new');
+      expect(read).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('does not share a logically rejected ordinary request with its retry', async () => {
+    const a = authority();
+    let drain!: (value: { errors: unknown[]; retired: boolean }) => void;
+    const timeout = new RecoveryRequestTimeoutError(
+      new Promise((done) => {
+        drain = done;
+      }),
+    );
+    const failed = runRecoveryRead('ordinary-timeout', a.token, 'ordinary', 'list', async () => {
+      throw timeout;
+    });
+    await expect(failed).rejects.toBe(timeout);
+    const read = vi.fn(async () => 'retry');
+    const next = runRecoveryRead('ordinary-timeout', a.token, 'ordinary', 'list', read);
+    expect(next).not.toBe(failed);
+    await settle();
+    expect(read).not.toHaveBeenCalled();
+    drain({ errors: [], retired: false });
+    expect(await next).toBe('retry');
   });
 });

@@ -5,6 +5,7 @@ import { appClient } from '$lib/client';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import {
   createEventRecoverySession,
+  RecoveryRequestTimeoutError,
   type RecoveryNotification,
 } from '$shared/event-recovery/session';
 import { selectNoteById } from '../workspace-notes-selectors';
@@ -253,11 +254,11 @@ describe('active note recovery', () => {
     vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('remounted') as never);
     h.dispatch(workspaceNotesHydrationRequested('ws', 2, false));
     await settle();
-    expect(h.store.state.workspaceNotes).toMatchObject({
-      byWorkspaceId: { ws: { initialized: true } },
-    });
+    expect(h.store.state.workspaceNotes.byWorkspaceId.ws).toBeUndefined();
+    expect(appClient.notes.list).not.toHaveBeenCalled();
     resolve({ notes: [row('old workspace')] });
     await settle();
+    expect(appClient.notes.list).toHaveBeenCalledTimes(1);
     expect(h.row()?.content).toBe('remounted');
   });
   it('recovers comments once while active and defers closed-view recovery until demand', async () => {
@@ -881,5 +882,28 @@ describe('admitted note ingress completion', () => {
     expect(await request.promise).toBeNull();
     expect(read).not.toHaveBeenCalled();
     expect(attribution).not.toHaveBeenCalled();
+  });
+});
+
+describe('physical note read drainage', () => {
+  it('keeps a timed-out comment read ahead of recovery and repairs actual rows after drainage', async () => {
+    const h = await harness();
+    let drain!: (value: { errors: unknown[]; retired: boolean }) => void;
+    const timeout = new RecoveryRequestTimeoutError(
+      new Promise((done) => {
+        drain = done;
+      }),
+    );
+    vi.spyOn(appClient.comments, 'list').mockRejectedValueOnce(timeout);
+    h.dispatch(commentLoadRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    h.loss();
+    await settle();
+    expect(h.commentRead).not.toHaveBeenCalled();
+    expect(h.store.state.comments.commentsById.ids).toEqual([]);
+    drain({ errors: [], retired: false });
+    await settle();
+    expect(h.commentRead).toHaveBeenCalledTimes(1);
+    expect(getItem(h.store.state.comments.commentsById, 'comment')?.content).toBe('new comment');
   });
 });

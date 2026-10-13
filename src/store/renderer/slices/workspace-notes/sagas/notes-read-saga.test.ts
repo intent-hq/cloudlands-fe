@@ -375,14 +375,20 @@ describe('notesReadSaga', () => {
     run.channel.put(workspaceMounted(WS));
     await settle();
 
+    // Remount changes write authority, not the transport holding the first read.
+    expect(list.mock.calls).toEqual([
+      [WS, { projection: 'slim' }],
+      [secondWorkspaceId, { projection: 'slim' }],
+    ]);
+    second.resolve([note('second-note', { workspaceId: WorkspaceId(secondWorkspaceId) })]);
+    firstAttempt.resolve([note('stale-note')]);
+    await settle();
     expect(list.mock.calls).toEqual([
       [WS, { projection: 'slim' }],
       [secondWorkspaceId, { projection: 'slim' }],
       [WS, { projection: 'slim' }],
     ]);
-    second.resolve([note('second-note', { workspaceId: WorkspaceId(secondWorkspaceId) })]);
     retry.resolve([note('retry-note')]);
-    firstAttempt.resolve([note('stale-note')]);
     await settle();
     expect(run.actions).toEqual([
       loadWorkspaceNotesSucceeded([secondWorkspaceId], {

@@ -896,7 +896,7 @@ describe('resolveNoteWorkspaceId (negative cache)', () => {
   });
 });
 
-it('starts a new workspace scope seed without waiting for a disposed read', async () => {
+it('waits for a disposed physical read before a new workspace scope seed', async () => {
   let finish!: (value: any) => void;
   listWorkspaceIdsImpl = () =>
     new Promise((done) => {
@@ -909,7 +909,7 @@ it('starts a new workspace scope seed without waiting for a disposed read', asyn
   const off = subscribeWorkspaceIds((ids) => snapshots.push([...ids]));
   try {
     await flush();
-    expect(snapshots.at(-1)).toEqual(['ws-new']);
+    expect(snapshots).toEqual([]);
     finish(workspaceListResult(['ws-old']));
     await flush();
     expect(snapshots.at(-1)).toEqual(['ws-new']);
