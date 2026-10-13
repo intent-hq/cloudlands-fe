@@ -45,7 +45,7 @@ function claimOwner(agentId: string, workspaceId?: string) {
 
 /** A mutation must keep the same owner across every await, including reconnects. */
 export function captureAgentMutationOwnership(agentId: string, workspaceId?: string) {
-  const metadata = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
+  const metadata = rendererEventRecovery.captureAuthority(agentMetadataRecoveryKey(workspaceId));
   const captured = claimOwner(agentId, workspaceId);
   return {
     key: captured.key,

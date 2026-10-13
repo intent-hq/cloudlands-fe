@@ -1,3 +1,5 @@
+import { trackAgentMetadataRead } from './agent-metadata-read-lane';
+export { trackAgentMetadataRead } from './agent-metadata-read-lane';
 import type {
   RendererRecoveryScope,
   RendererRecoveryHandle,
@@ -238,7 +240,12 @@ export function installAgentMetadataRecovery(
             active: mounted.has(workspaceId) || demands.has(workspaceId),
             isCurrent: () =>
               !disposed && context === selectPrincipalActionContext.select(store.getState()),
-            read: (reader) => readMetadata(workspaceId, store, reader),
+            read: (reader) =>
+              trackAgentMetadataRead(
+                workspaceId,
+                () => readMetadata(workspaceId, store, reader),
+                'recovery',
+              ),
             apply: (snapshot) => {
               applying = true;
               try {

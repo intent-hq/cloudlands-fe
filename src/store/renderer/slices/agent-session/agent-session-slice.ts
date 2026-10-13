@@ -1850,7 +1850,12 @@ agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates, op
   if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
   return next;
 });
-agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
+agentSessionReducer.with(eventReceived, (state, { payload: [, event, applyAgentMetadata] }) => {
+  const userMessage = userMessageFromWorkspaceEvent(event);
+  if (userMessage) {
+    return addMessageToSession(state, userMessage[0], userMessage[1]);
+  }
+  if (applyAgentMetadata === false) return state;
   if (['agent:updated', 'agent:status-changed', 'hub:checkpoint'].includes(event.type)) {
     const agentId = event.data?.agentId;
     const existing = typeof agentId === 'string' ? getSession(state, agentId) : undefined;
@@ -1859,11 +1864,6 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
       if (Object.keys(fields).length) state = updateSessionFields(state, agentId, fields);
     }
   }
-  const userMessage = userMessageFromWorkspaceEvent(event);
-  if (userMessage) {
-    return addMessageToSession(state, userMessage[0], userMessage[1]);
-  }
-
   const statsUpdate = statsFromWorkspaceEvent(event);
   if (statsUpdate) {
     const [agentId, stats] = statsUpdate;

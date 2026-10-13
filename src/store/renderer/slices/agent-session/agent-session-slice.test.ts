@@ -7483,3 +7483,49 @@ describe('background mode request state', () => {
     expect(state.byAgentId).toEqual({});
   });
 });
+
+describe('rejected metadata admission', () => {
+  it.each([
+    { type: 'agent:updated', data: { agentId: 'a1', name: 'stale name' } },
+    {
+      type: 'agent:status-changed',
+      data: { agentId: 'a1', status: 'responding', isResponding: true },
+    },
+    { type: 'agent:updated', data: { agentId: 'a1', pendingQuestionsMessageId: 'stale' } },
+    {
+      type: 'agent:session-stats-changed',
+      data: { agentId: 'a1', stats: { creditsUsed: 1, messageCount: 9, toolCount: 2 } },
+    },
+  ])('preserves recovered session fields for $type', ({ type, data }) => {
+    const state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+    const next = agentSessionReducer(
+      state,
+      eventReceived(
+        'ws-1',
+        { id: 'rejected', workspaceId: 'ws-1', type, timestamp: '2026-01-01', data } as any,
+        false,
+      ),
+    );
+    expect(next).toBe(state);
+  });
+  it('still preserves an existing cross-client user message event', () => {
+    const state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+    const next = agentSessionReducer(
+      state,
+      eventReceived(
+        'ws-1',
+        {
+          id: 'user',
+          workspaceId: 'ws-1',
+          type: 'agent:user-message:sent',
+          timestamp: '2026-01-01',
+          data: { agentId: 'a1', messageId: 'remote-user', content: 'Hello' },
+        } as any,
+        false,
+      ),
+    );
+    expect(getMsgs(next, 'a1')).toMatchObject([
+      { id: 'remote-user', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }] },
+    ]);
+  });
+});

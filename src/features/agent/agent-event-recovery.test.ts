@@ -155,6 +155,7 @@ import { installAgentEventRecovery } from './agent-event-recovery';
 import { activeStreamsTracker } from './services/active-streams-tracker';
 import { clearAgentFailureRegistry, getAgentFailureEntry } from './agent-failure-registry';
 import { normalizeAgent } from '$lib/client/live/live-agents-client';
+import { trackAgentMetadataRead } from './agent-metadata-read-lane';
 import { acquireAgentMetadataDemand } from './agent-metadata-recovery';
 
 function integration() {
@@ -538,6 +539,69 @@ it('clears pending deletion snapshots when workspace authority retires', async (
     expect(getPendingAgentDeletion('hidden')).toBeUndefined();
   } finally {
     clearPendingAgentDeletions();
+    h.stop();
+    h.registry.dispose();
+  }
+});
+
+it('waits for an ordinary metadata read before recovery and performs one final snapshot', async () => {
+  const h = integration();
+  const release = acquireAgentMetadataDemand('ws', {});
+  let finish!: () => void;
+  const ordinary = trackAgentMetadataRead(
+    'ws',
+    () =>
+      new Promise<void>((done) => {
+        finish = done;
+      }),
+  );
+  try {
+    await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+    h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+    await settle();
+    expect(h.request.mock.calls.filter(([method]) => method === 'agent.list')).toHaveLength(0);
+    finish();
+    await ordinary;
+    await settle();
+    expect(h.request.mock.calls.filter(([method]) => method === 'agent.list')).toHaveLength(1);
+    expect(h.state.agentSessions.byAgentId.a.name).toBe('Recovered');
+    expect(h.fence).toHaveBeenCalledTimes(10);
+  } finally {
+    release();
+    h.stop();
+    h.registry.dispose();
+  }
+});
+
+it('removes only a missing agent detail while retaining its workspace and sibling snapshot', async () => {
+  const h = integration();
+  h.store.dispatch(
+    bulkUpsertSessions([
+      normalizeAgent({ id: 'gone', workspaceId: 'ws', name: 'Deleted', status: 'idle' }),
+    ]),
+  );
+  const release = acquireAgentMetadataDemand('ws', { agentId: 'gone' });
+  const original = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'agent.get' && (params as { agentId: string }).agentId === 'gone')
+      throw Object.assign(new Error('gone'), { rpcCode: -32602, data: { code: 'not-found' } });
+    return original(method, params);
+  });
+  try {
+    await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+    h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+    await settle();
+    expect(h.state.agentSessions.byAgentId.gone).toBeUndefined();
+    expect(h.state.agentSessions.byAgentId.a.name).toBe('Recovered');
+    expect(h.state.workspaceAgents.byWorkspaceId.ws).toBeDefined();
+    expect(
+      h.request.mock.calls.filter(
+        ([method, params]) =>
+          method === 'agent.get' && (params as { agentId: string }).agentId === 'gone',
+      ),
+    ).toHaveLength(1);
+  } finally {
+    release();
     h.stop();
     h.registry.dispose();
   }

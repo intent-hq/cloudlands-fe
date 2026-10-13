@@ -912,3 +912,51 @@ it('does not reject a mutation merely because its first queue resource is regist
     rendererEventRecovery.dispose();
   }
 });
+
+it('keeps a valid user mutation after unrelated metadata pushes, but rejects a replaced recovery session', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { agentMetadataRecoveryKey } = await import('./agent-recovery-keys');
+  const { captureAgentMutationOwnership } = await import('./agent-read-ownership');
+  const scope = rendererEventRecovery.attach({
+    supported: false,
+    isCurrent: () => true,
+    request: vi.fn(),
+    fence: vi.fn(),
+    onNotification: () => () => {},
+    onRetired: () => () => {},
+    dispose: () => {},
+  });
+  scope.registerResource({
+    key: agentMetadataRecoveryKey(WS),
+    workspaceId: WS,
+    eventTypes: ['agent:*'],
+    isCurrent: () => true,
+    read: async () => [],
+    apply: () => {},
+    invalidate: () => {},
+    retire: () => {},
+  });
+  const ownership = captureAgentMutationOwnership('valid-send', WS);
+  rendererEventRecovery.push(agentMetadataRecoveryKey(WS));
+  try {
+    expect(ownership.isCurrent(WS)).toBe(true);
+  } finally {
+    rendererEventRecovery.dispose();
+  }
+  expect(ownership.isCurrent(WS)).toBe(false);
+});
+
+it('does not issue an agent get queued behind hydration after session retirement', async () => {
+  const { trackAgentMetadataRead } = await import('./agent-metadata-read-lane');
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const held = Promise.withResolvers<void>();
+  const leading = trackAgentMetadataRead(WS, () => held.promise, 'recovery');
+  agentsApi.get.mockClear();
+  const read = ensureAgentSession('queued-lane-retired', WS);
+  expect(agentsApi.get).not.toHaveBeenCalled();
+  rendererEventRecovery.dispose();
+  held.resolve();
+  await Promise.all([leading, read]);
+  expect(agentsApi.get).not.toHaveBeenCalled();
+  expect(selectAgentSession.select(appStore.state, 'queued-lane-retired')).toBeUndefined();
+});

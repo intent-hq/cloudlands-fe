@@ -1,3 +1,4 @@
+import { trackAgentMetadataRead } from './agent-metadata-read-lane';
 import { acquireAgentMetadataDemand } from './agent-metadata-demand';
 import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
@@ -235,8 +236,13 @@ export function readAgentSession(
   const context = getAgentReadContext();
   const generation = ++readGeneration;
   const connection = connectionGeneration;
-  const run = appClient.agents
-    .get(agentId, workspaceId)
+  const request = () =>
+    connection === connectionGeneration &&
+    context === getAgentReadContext() &&
+    recovery.commit(() => undefined)
+      ? appClient.agents.get(agentId, workspaceId)
+      : Promise.resolve(null);
+  const run = (workspaceId ? trackAgentMetadataRead(workspaceId, request) : request())
     .then((session) =>
       connection === connectionGeneration &&
       context === getAgentReadContext() &&
