@@ -927,6 +927,7 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    REQUEST_COMPLETION: 'backend:request-completion',
     NATIVE_REVIEW: {
       PREPARE: 'backend:native-review:prepare',
       EXECUTE: 'backend:native-review:execute',

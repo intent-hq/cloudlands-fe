@@ -547,6 +547,8 @@ const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
  */
 const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:request',
+  // One-shot physical completion receipts use the original live preload bridge.
+  'backend:request-completion',
   'backend:subscribe',
   'backend:unsubscribe',
   // Onboarding preparation invokes the real preload directly so main captures

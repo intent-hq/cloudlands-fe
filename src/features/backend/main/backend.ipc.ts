@@ -1,3 +1,4 @@
+import { registerOrdinaryRequestCompletions } from './ordinary-request-completion';
 import { captureMainEventRecovery, onMainEventRecoveryReady } from './main-event-recovery';
 import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
 import { registerEventRecoveryHandlers } from './event-recovery-ipc';
@@ -414,6 +415,7 @@ const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createReposit
 const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
 let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
+let ordinaryRequestCompletions: ReturnType<typeof registerOrdinaryRequestCompletions> | undefined;
 let eventRecoveryRoutes: ReturnType<typeof registerEventRecoveryHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
@@ -1006,6 +1008,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
         eventRecoveryRoutes?.dispose();
+        ordinaryRequestCompletions?.dispose();
         checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
@@ -4486,6 +4489,11 @@ export function registerBackendHandlers(): void {
     },
     errorPayload: toErrorPayload,
   });
+  ordinaryRequestCompletions?.dispose();
+  ordinaryRequestCompletions = registerOrdinaryRequestCompletions(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    errorPayload: toErrorPayload,
+  });
   eventRecoveryRoutes = registerEventRecoveryHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
   });
@@ -4509,7 +4517,13 @@ export function registerBackendHandlers(): void {
     BACKEND.REQUEST,
     async (
       event,
-      payload: { method?: string; params?: unknown; timeoutMs?: number; localMachine?: boolean },
+      payload: {
+        method?: string;
+        params?: unknown;
+        timeoutMs?: number;
+        localMachine?: boolean;
+        observeCompletion?: boolean;
+      },
     ) => {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
@@ -4559,17 +4573,26 @@ export function registerBackendHandlers(): void {
           );
           return { ok: true, result };
         }
-        const nameGuard =
-          method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
-        const result = await client.request(method, payload?.params, { timeoutMs });
-        if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
-        const expected = invitedClientCredentials.get(client);
-        if (expected && method === 'principal.me') {
-          const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);
-          if (!snapshot || snapshot.principal.id !== expected.principalId || !invitedRole(snapshot))
-            throw new Error('Invited principal unavailable');
-        }
-        return { ok: true, result };
+        const operation = async () => {
+          const nameGuard =
+            method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
+          const result = await client.request(method, payload?.params, { timeoutMs });
+          if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
+          const expected = invitedClientCredentials.get(client);
+          if (expected && method === 'principal.me') {
+            const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);
+            if (
+              !snapshot ||
+              snapshot.principal.id !== expected.principalId ||
+              !invitedRole(snapshot)
+            )
+              throw new Error('Invited principal unavailable');
+          }
+          return result;
+        };
+        if (payload.observeCompletion === true && ordinaryRequestCompletions)
+          return ordinaryRequestCompletions.run(event, backendId, client, operation);
+        return { ok: true, result: await operation() };
       } catch (error) {
         return { ok: false, error: toErrorPayload(error) };
       }
@@ -5586,6 +5609,7 @@ export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
   eventRecoveryRoutes?.dispose();
+  ordinaryRequestCompletions?.dispose();
   checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();

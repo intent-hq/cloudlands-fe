@@ -452,6 +452,7 @@ describe('electron-ipc-transport param serialization (structured clone)', () => 
     expect(received).toEqual([
       {
         method: 'settings.update',
+        observeCompletion: true,
         params: [
           { path: 'server.bindAddress', value: ['192.168.1.2'] },
           { path: 'server.tunnel.enabled', value: true },
@@ -467,7 +468,9 @@ describe('electron-ipc-transport param serialization (structured clone)', () => 
 
     await transport.request('system.status');
 
-    expect(received).toEqual([{ method: 'system.status', params: undefined }]);
+    expect(received).toEqual([
+      { method: 'system.status', params: undefined, observeCompletion: true },
+    ]);
   });
 
   it('subscribe(): proxied params survive the IPC structured-clone boundary', async () => {
@@ -981,4 +984,28 @@ describe('native review original renderer bridge', () => {
     api.invoke.mockResolvedValue({ ok: true, result: { released: true } } as never);
     await parent.release();
   });
+});
+
+it('ordinary request keeps the shaped transport failure for a missing IPC response', async () => {
+  const api = installFakeApi();
+  api.invoke.mockResolvedValueOnce(undefined as never);
+  await expect(createElectronIpcBackendTransport().request('note.get')).rejects.toMatchObject({
+    name: 'BackendError',
+    code: 'TRANSPORT_ERROR',
+  });
+});
+
+it('completion invoke failure retires the original receipt without rejecting its drain', async () => {
+  const api = installFakeApi();
+  api.invoke.mockResolvedValueOnce({
+    ok: false,
+    error: { code: 'TRANSPORT_ERROR', message: 'timed out' },
+    completionId: 'receipt',
+  } as never);
+  api.invoke.mockRejectedValueOnce(new Error('document gone'));
+  const error = await createElectronIpcBackendTransport()
+    .request('note.get')
+    .catch((failure) => failure);
+  expect(await error.completion).toEqual({ retired: true, errors: [] });
+  await expect(error.drained).resolves.toBeUndefined();
 });

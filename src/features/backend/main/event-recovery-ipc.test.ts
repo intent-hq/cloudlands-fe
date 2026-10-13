@@ -1,3 +1,5 @@
+import { registerOrdinaryRequestCompletions } from './ordinary-request-completion';
+import { JsonRpcError } from './json-rpc-errors';
 import { captureMainEventRecovery, onMainEventRecoveryReady } from './main-event-recovery';
 import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { RecoveryResource } from '$shared/event-recovery/resource';
@@ -1310,23 +1312,26 @@ it('direct main ordinary callers keep deadlines while physical correlation remai
 it('Electron ordinary serialized timeout cannot bypass main physical quarantine', async () => {
   vi.useFakeTimers();
   const h = await harness();
-  // Model BACKEND.REQUEST serialization while retaining the real Electron and JsonRpc adapters.
-  h.handlers.set(IPC_CHANNELS.BACKEND.REQUEST, async (_event, payload) => {
+  const completions = registerOrdinaryRequestCompletions(
+    { handle: (channel, fn) => h.handlers.set(channel, fn) },
+    {
+      readBackend: (id) => (id === 'A' ? h.client : undefined),
+      errorPayload: (error) =>
+        error instanceof JsonRpcError
+          ? error.toErrorPayload()
+          : { code: 'TRANSPORT_ERROR', message: (error as Error).message },
+    },
+  );
+  cleanup.push(() => completions.dispose());
+  h.handlers.set(IPC_CHANNELS.BACKEND.REQUEST, (event, payload) => {
     const { method, params, timeoutMs } = payload as {
       method: string;
       params?: unknown;
       timeoutMs?: number;
     };
-    try {
-      return { ok: true, result: await h.client.request(method, params, { timeoutMs }) };
-    } catch (error) {
-      return JSON.parse(
-        JSON.stringify({
-          ok: false,
-          error: { code: 'TRANSPORT_ERROR', message: (error as Error).message },
-        }),
-      );
-    }
+    return completions.run(event, 'A', h.client, () =>
+      h.client.request(method, params, { timeoutMs }),
+    );
   });
   const previous = window.electronAPI;
   window.electronAPI = h.bridge as unknown as Window['electronAPI'];
@@ -1340,7 +1345,7 @@ it('Electron ordinary serialized timeout cannot bypass main physical quarantine'
     await vi.advanceTimersByTimeAsync(51);
     const timeout = await ordinary;
     expect(timeout.message).toContain('timed out');
-    expect(timeout.completion).toBeUndefined();
+    expect(timeout.completion).toBeInstanceOf(Promise);
     const next = session.request('note.get');
     void next.catch(() => {});
     for (let i = 0; i < 30; i++) await Promise.resolve();
@@ -1368,4 +1373,174 @@ it('socket retirement settles ordinary main timeout receipts and cancels unsent 
   expect(await queued).toBeInstanceOf(Error);
   expect(h.socket.frames.filter((f) => f.method === 'note.list')).toHaveLength(0);
   expect(vi.getTimerCount()).toBe(0);
+});
+
+async function ordinaryElectronHarness() {
+  const h = await harness();
+  const completions = registerOrdinaryRequestCompletions(
+    { handle: (channel, fn) => h.handlers.set(channel, fn) },
+    {
+      readBackend: (id) => (id === 'A' ? h.client : undefined),
+      errorPayload: (error) =>
+        error instanceof JsonRpcError
+          ? error.toErrorPayload()
+          : { code: 'TRANSPORT_ERROR', message: (error as Error).message },
+    },
+  );
+  cleanup.push(() => completions.dispose());
+  h.handlers.set(IPC_CHANNELS.BACKEND.REQUEST, (event, payload) => {
+    const { method, params, timeoutMs } = payload as {
+      method: string;
+      params?: unknown;
+      timeoutMs?: number;
+    };
+    return completions.run(event, 'A', h.client, () =>
+      h.client.request(method, params, { timeoutMs }),
+    );
+  });
+  const previous = window.electronAPI;
+  window.electronAPI = h.bridge as unknown as Window['electronAPI'];
+  cleanup.push(() => {
+    window.electronAPI = previous;
+  });
+  const { createElectronIpcBackendTransport } =
+    await import('$lib/client/live/electron-ipc-transport');
+  return { ...h, completions, transport: createElectronIpcBackendTransport() };
+}
+
+for (const kind of ['forbidden', 'not-found', 'transient', 'success', 'replacement'] as const)
+  it(`ordinary Electron physical completion delivers ${kind} under original authority`, async () => {
+    vi.useFakeTimers();
+    const h = await ordinaryElectronHarness();
+    const promise = h.transport
+      .request('comment.list', { workspaceId: 'w', noteId: 'n' }, { timeoutMs: 50 })
+      .catch((error) => error);
+    const first = h.socket.frames.at(-1)!;
+    await vi.advanceTimersByTimeAsync(51);
+    const timeout = await promise;
+    expect(timeout).toMatchObject({ code: 'TRANSPORT_ERROR' });
+    expect(timeout.completion).toBeInstanceOf(Promise);
+    let settled = false;
+    void timeout.completion.then(() => {
+      settled = true;
+    });
+    if (kind === 'replacement') await h.client.request('client.hello', {});
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).toBe(false);
+    expect(h.socket.frames.filter((frame) => frame.method === 'comment.list')).toHaveLength(1);
+    if (kind === 'success') h.socket.reply(first.id, [{ private: 'timed-out data' }]);
+    else
+      h.socket.batch([
+        {
+          id: first.id,
+          error: {
+            code: kind === 'not-found' ? -32602 : kind === 'transient' ? -32603 : -32003,
+            message: kind,
+            data: {
+              code:
+                kind === 'not-found'
+                  ? 'not-found'
+                  : kind === 'transient'
+                    ? 'internal'
+                    : 'forbidden',
+            },
+          },
+        },
+      ]);
+    const outcome = await timeout.completion;
+    expect(outcome.retired).toBe(kind === 'replacement');
+    if (kind === 'replacement' || kind === 'success') expect(outcome.errors).toEqual([]);
+    else
+      expect(outcome.errors[0]).toMatchObject({
+        rpcCode: kind === 'not-found' ? -32602 : kind === 'transient' ? -32603 : -32003,
+      });
+    expect(h.event.sender.listenerCount('did-start-navigation')).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+it('ordinary completion receipt cannot be claimed by another sender or foreign frame and survives reply-before-claim', async () => {
+  vi.useFakeTimers();
+  const h = await ordinaryElectronHarness();
+  const response = h.handlers.get(IPC_CHANNELS.BACKEND.REQUEST)!(h.event, {
+    method: 'note.get',
+    timeoutMs: 50,
+  }) as Promise<{ completionId: string }>;
+  const first = h.socket.frames.at(-1)!;
+  await vi.advanceTimersByTimeAsync(51);
+  const { completionId: id } = await response;
+  const foreign = h.createSender();
+  const claim = h.handlers.get(IPC_CHANNELS.BACKEND.REQUEST_COMPLETION)!;
+  expect(await claim(foreign.event, { id })).toMatchObject({ ok: false });
+  expect(await claim({ ...h.event, senderFrame: foreign.event.senderFrame }, { id })).toMatchObject(
+    { ok: false },
+  );
+  h.socket.batch([
+    {
+      id: first.id,
+      error: { code: -32003, message: 'private denial', data: { code: 'forbidden' } },
+    },
+  ]);
+  const outcome = await claim(h.event, { id });
+  expect(outcome).toMatchObject({
+    ok: true,
+    result: { retired: false, errors: [{ rpcCode: -32003 }] },
+  });
+  expect(await claim(h.event, { id })).toMatchObject({ ok: false });
+  expect(foreign.delivered).toEqual([]);
+});
+
+for (const retirement of ['navigation', 'dispose', 'binding', 'socket'] as const)
+  it(`ordinary Electron ${retirement} fences a held completion without leaking late denial`, async () => {
+    vi.useFakeTimers();
+    const h = await ordinaryElectronHarness();
+    const request = h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((error) => error);
+    const first = h.socket.frames.at(-1)!;
+    await vi.advanceTimersByTimeAsync(51);
+    const timeout = await request;
+    if (retirement === 'navigation')
+      h.event.sender.emit('did-start-navigation', {}, 'next', false, true);
+    if (retirement === 'dispose') h.completions.dispose();
+    if (retirement === 'binding') {
+      stampWindowWithBackend(h.window as unknown as BrowserWindow, 'B');
+      stampWindowWithBackend(h.window as unknown as BrowserWindow, 'A');
+    }
+    if (retirement === 'socket') h.client.dispose();
+    else
+      h.socket.batch([
+        {
+          id: first.id,
+          error: { code: -32003, message: 'old private denial', data: { code: 'forbidden' } },
+        },
+      ]);
+    expect(await timeout.completion).toEqual({ retired: true, errors: [] });
+    expect(h.event.sender.listenerCount('did-start-navigation')).toBe(1);
+  });
+
+it('ordinary completion registry bounds unclaimed receipts before dispatch and reclaims its slots', async () => {
+  vi.useFakeTimers();
+  const h = await ordinaryElectronHarness();
+  const request = h.handlers.get(IPC_CHANNELS.BACKEND.REQUEST)!;
+  const pending = Array.from({ length: 256 }, () =>
+    request(h.event, { method: 'note.get', timeoutMs: 50 }),
+  );
+  expect(h.event.sender.listenerCount('did-start-navigation')).toBe(2);
+  await vi.advanceTimersByTimeAsync(51);
+  const responses = (await Promise.all(pending)) as Array<{ completionId: string }>;
+  const frames = h.socket.frames.filter((frame) => frame.method === 'note.get');
+  expect(frames).toHaveLength(256);
+  for (const frame of frames) h.socket.reply(frame.id, 'unadmitted');
+  expect(await request(h.event, { method: 'note.get', timeoutMs: 50 })).toMatchObject({
+    ok: false,
+  });
+  expect(h.socket.frames.filter((frame) => frame.method === 'note.get')).toHaveLength(256);
+  const claim = h.handlers.get(IPC_CHANNELS.BACKEND.REQUEST_COMPLETION)!;
+  for (const response of responses)
+    expect(await claim(h.event, { id: response.completionId })).toMatchObject({
+      ok: true,
+      result: { errors: [] },
+    });
+  expect(h.event.sender.listenerCount('did-start-navigation')).toBe(1);
+  const next = request(h.event, { method: 'note.get', timeoutMs: 50 });
+  h.socket.reply(h.socket.frames.at(-1)!.id, 'fresh');
+  expect(await next).toEqual({ ok: true, result: 'fresh' });
 });
