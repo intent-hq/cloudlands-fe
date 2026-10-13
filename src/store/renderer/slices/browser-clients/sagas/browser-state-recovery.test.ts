@@ -10,6 +10,7 @@ import type { LiveClient } from '$shared/types/browser-clients';
 const rpc = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: rpc.request,
+  observeBackendNodeCapabilities: async () => ({ clientId: 'desktop' }),
   onBackendReconnected: () => () => {},
 }));
 vi.mock('$lib/client', async () => {
@@ -108,7 +109,6 @@ beforeEach(async () => {
   rpc.request
     .mockReset()
     .mockImplementation(async (method: string, params?: { lossRecovery?: number }) => {
-      if (method === 'client.hello') return { clientId: client.clientId };
       if (method === 'client.list') return { clients };
       if (method === 'workspace.getBrowserClient')
         return {
