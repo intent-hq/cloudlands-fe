@@ -106,7 +106,11 @@ for (const scenario of ['legacy', 'qualified', 'recovery'])
       byConnection.set(connection, socket);
       socket.on('error', (error: NodeJS.ErrnoException) => {
         // This case deliberately breaks the attachment while main may unsubscribe.
-        if (expectedResets.has(connection) && error.code === 'ECONNRESET') return;
+        if (
+          expectedResets.has(connection) &&
+          (error.code === 'ECONNRESET' || error.code === 'EPIPE')
+        )
+          return;
         throw error;
       });
       socket.once('close', () => sockets.delete(socket));
