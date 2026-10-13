@@ -23,6 +23,7 @@ import { CommandPaletteExamples } from './command-palette-examples';
 import { EditorIconExamples } from './editor-icon-examples';
 import { DeviceIconExamples } from './device-icon-examples';
 import { HomeLoadingExamples } from './home-loading-examples';
+import { TimelineSectionExamples } from './timeline-section-examples';
 import { BrowserDeviceFrameExamples } from './browser-device-frame-examples';
 import { ChatReferenceExamples } from './chat-reference-examples';
 import { ChatInlineExamples } from './chat-inline-examples';
@@ -501,6 +502,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'editor-icons' && <EditorIconExamples />}
       {slug === 'device-icons' && <DeviceIconExamples />}
       {slug === 'home-loading' && <HomeLoadingExamples />}
+      {slug === 'timeline-section' && <TimelineSectionExamples />}
       {slug === 'browser-device-frame' && <BrowserDeviceFrameExamples />}
       {slug === 'chat-reference' && <ChatReferenceExamples />}
       {slug === 'chat-inline' && <ChatInlineExamples />}
@@ -596,6 +598,7 @@ export function hasFunctionalExample(slug: string) {
     'editor-icons',
     'device-icons',
     'home-loading',
+    'timeline-section',
     'browser-device-frame',
     'chat-reference',
     'chat-inline',
