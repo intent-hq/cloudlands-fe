@@ -140,6 +140,7 @@ export function installSettingsRecovery() {
       eventTypes: ['mcp.servers:status-changed'],
       isCurrent,
       read: async ({ request }) => {
+        const authority = rendererEventRecovery.captureAuthority(GLOBAL_MCP_RECOVERY_KEY);
         await waitForSettingsReads(GLOBAL_MCP_RECOVERY_KEY);
         const wire = await request<{ servers: Parameters<typeof fromWireMcpConfig>[0][] }>(
           'mcp.servers.list',
@@ -165,14 +166,18 @@ export function installSettingsRecovery() {
         );
         // Deadline failures still own physical driver work. Drain every timed-out
         // sibling before selecting an error, even when an earlier sibling failed.
-        await Promise.all(
+        const completions = await Promise.all(
           rejected.flatMap(({ reason }) =>
-            reason instanceof RecoveryRequestTimeoutError ? [reason.drained] : [],
+            reason instanceof RecoveryRequestTimeoutError ? [reason.completion] : [],
           ),
         );
-        const failure =
-          rejected.find((result) => isSettingsAuthorityError(result.reason)) ?? rejected[0];
-        if (failure) throw failure.reason;
+        if (!authority.isCurrent() || completions.some((completion) => completion.retired))
+          throw new Error('MCP settings read authority retired');
+        const failures = [
+          ...rejected.map((result) => result.reason),
+          ...completions.flatMap((completion) => completion.errors),
+        ];
+        if (failures.length) throw failures.find(isSettingsAuthorityError) ?? failures[0];
         const statuses = results.flatMap((result) =>
           result.status === 'fulfilled' ? [result.value] : [],
         );

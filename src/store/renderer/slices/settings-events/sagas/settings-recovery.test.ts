@@ -1217,3 +1217,44 @@ it('a late ordinary denial cannot retire replacement settings authority', async 
   expect(store.state.model.defaultProviderId).toBe('replacement');
   expect(captureSettingsWork().isCurrent()).toBe(true);
 });
+
+it('late timed-out MCP denial cannot clear replacement authority', async () => {
+  vi.useFakeTimers();
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  const normal = h.request.getMockImplementation()!;
+  let reject!: (reason: unknown) => void;
+  const held = new Promise((_done, fail) => {
+    reject = fail;
+  });
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'mcp.servers.list')
+      return {
+        servers: [
+          { id: 'one', name: 'one', transport: 'stdio', command: 'x' },
+          { id: 'two', name: 'two', transport: 'stdio', command: 'y' },
+        ],
+      };
+    if (method === 'mcp.servers.getStatus') {
+      if ((params as { serverId: string }).serverId === 'one') throw new Error('temporary');
+      return held;
+    }
+    return normal(method, params);
+  });
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['mcp.servers:status-changed'] }, { recover: true });
+  store.dispatch(setServers([{ id: 'private', name: 'private', type: 'stdio' }]));
+  h.emit({
+    method: 'events.lost',
+    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: null } },
+  });
+  await vi.advanceTimersByTimeAsync(35_000);
+  rendererEventRecovery.attach(recoveryHarness().session);
+  store.dispatch(setServers([{ id: 'replacement', name: 'replacement', type: 'stdio' }]));
+  reject({ rpcCode: -32003, data: { code: 'forbidden' } });
+  await settle();
+  expect(store.state.mcpSettings.servers.map((server) => server.id)).toEqual(['replacement']);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(h.request.mock.calls.filter(([method]) => method === 'mcp.servers.list')).toHaveLength(1);
+});
