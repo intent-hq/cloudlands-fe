@@ -18,6 +18,7 @@ import {
   appendScriptOutput,
   clearScriptOperations,
   emptyWorkspaceState,
+  removeScriptDefinitionRequested,
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
@@ -25,6 +26,7 @@ import {
   setScriptsData,
   startScriptRequested,
   stopScriptRequested,
+  updateScriptDefinitionRequested,
   updateRuntimeState,
   upsertScript,
 } from './scripts-slice';
@@ -200,6 +202,37 @@ describe('scriptsReducer', () => {
     expect(state.byWorkspaceId[WS].operations).toEqual({});
     expect(state.byWorkspaceId['ws-2'].operations['script-2']?.pending).toBe(true);
   });
+
+  it.each([
+    ['update', () => updateScriptDefinitionRequested(WS, 'script-1', { name: 'Renamed' })],
+    ['remove', () => removeScriptDefinitionRequested(WS, 'script-1')],
+  ] as const)(
+    'reserves a definition %s synchronously for its request lifetime',
+    (_name, request) => {
+      const first = request();
+      const second = request();
+      let state = scriptsReducer(undefined, first);
+
+      expect(state.byWorkspaceId[WS].operations['script-1']).toEqual({
+        action: 'edit',
+        pending: true,
+        reservationId: String(first.seq),
+      });
+
+      state = scriptsReducer(state, second);
+      state = scriptsReducer(
+        state,
+        scriptOperationSucceeded(WS, 'script-1', 'edit', String(second.seq)),
+      );
+      expect(state.byWorkspaceId[WS].operations['script-1']?.reservationId).toBe(String(first.seq));
+
+      state = scriptsReducer(
+        state,
+        scriptOperationSucceeded(WS, 'script-1', 'edit', String(first.seq)),
+      );
+      expect(state.byWorkspaceId[WS].operations['script-1']).toBeUndefined();
+    },
+  );
 
   it('appends raw chunks verbatim — no line splitting, no injected newlines', () => {
     let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));

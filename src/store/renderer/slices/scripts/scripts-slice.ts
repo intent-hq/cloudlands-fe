@@ -2,7 +2,10 @@ import {
   addItem,
   addItems,
   createCollection,
+  getItem,
   getItems,
+  removeItem,
+  upsertItem,
 } from '@themislib/themis/utils/collections/collection-utils';
 /**
  * Scripts slice — actions and reducer.
@@ -35,6 +38,10 @@ import type {
   ScriptDefinitionSnapshot,
   ScriptDefinitionUpdate,
   ScriptDetectionOutcome,
+  ScriptDefinitionChangesOutcome,
+  ScriptWorkflowConsumer,
+  ScriptWorkflowOutcome,
+  ScriptWorkflowResult,
 } from './scripts-types';
 
 // ============================================================================
@@ -118,63 +125,121 @@ export const deleteScriptRequested = createAction<
 >('scripts/deleteScriptRequested');
 
 export const createScriptDefinitionRequested = createAsyncAction<
-  [wsId: string, input: ScriptDefinitionInput],
+  [wsId: string, input: ScriptDefinitionInput, consumer?: ScriptWorkflowConsumer],
   WorkspaceScript
 >('scripts/createScriptDefinition', 'scripts/createScriptDefinitionRequested');
 
 export const updateScriptDefinitionRequested = createAsyncAction<
-  [wsId: string, scriptId: string, updates: ScriptDefinitionUpdate],
+  [
+    wsId: string,
+    scriptId: string,
+    updates: ScriptDefinitionUpdate,
+    consumer?: ScriptWorkflowConsumer,
+    selectedDefinition?: WorkspaceScript,
+  ],
   WorkspaceScript
 >('scripts/updateScriptDefinition', 'scripts/updateScriptDefinitionRequested');
 
 export const removeScriptDefinitionRequested = createAsyncAction<
-  [wsId: string, scriptId: string],
+  [
+    wsId: string,
+    scriptId: string,
+    consumer?: ScriptWorkflowConsumer,
+    selectedDefinition?: WorkspaceScript,
+  ],
   void
 >('scripts/removeScriptDefinition', 'scripts/removeScriptDefinitionRequested');
 
 export const detectScriptDefinitionsRequested = createAsyncAction<
-  [wsId: string],
+  [wsId: string, consumer?: ScriptWorkflowConsumer],
   ScriptDetectionOutcome
 >('scripts/detectScriptDefinitions', 'scripts/detectScriptDefinitionsRequested');
 
+type ApplyScriptDefinitionChangesArgs = [
+  wsId: string,
+  changes: ScriptDefinitionChanges,
+  definitionsOrConsumer?: ScriptWithState[] | ScriptWorkflowConsumer,
+  legacyConsumerId?: string,
+];
+type ApplyScriptDefinitionChangesPayload = [
+  wsId: string,
+  changes: ScriptDefinitionChanges,
+  consumer?: ScriptWorkflowConsumer,
+  legacyConsumerId?: string,
+];
 export const applyScriptDefinitionChangesRequested = createAsyncAction<
-  [
-    wsId: string,
-    changes: ScriptDefinitionChanges,
-    definitions: ScriptWithState[],
-    consumerId: string,
+  ApplyScriptDefinitionChangesArgs,
+  ApplyScriptDefinitionChangesPayload,
+  ScriptDefinitionChangesOutcome
+>(
+  'scripts/applyScriptDefinitionChanges',
+  'scripts/applyScriptDefinitionChangesRequested',
+  (wsId, changes, definitionsOrConsumer, legacyConsumerId) => [
+    wsId,
+    changes,
+    Array.isArray(definitionsOrConsumer) ? undefined : definitionsOrConsumer,
+    Array.isArray(definitionsOrConsumer) ? legacyConsumerId : undefined,
   ],
-  ScriptDetectionOutcome
->('scripts/applyScriptDefinitionChanges', 'scripts/applyScriptDefinitionChangesRequested');
+);
+
+export const listScriptDefinitionsRequested = createAsyncAction<
+  [wsId: string, options?: { archive?: 'active' }, consumer?: ScriptWorkflowConsumer],
+  ScriptWithState[]
+>('scripts/listScriptDefinitions', 'scripts/listScriptDefinitionsRequested');
+
+export const getScriptDefinitionRequested = createAsyncAction<
+  [wsId: string, scriptId: string, consumer?: ScriptWorkflowConsumer],
+  ScriptWithState
+>('scripts/getScriptDefinition', 'scripts/getScriptDefinitionRequested');
 
 export const scriptDefinitionChangesReleased = createAction<[wsId: string, consumerId: string]>(
   'scripts/scriptDefinitionChangesReleased',
 );
 
 export const restoreScriptDefinitionsRequested = createAsyncAction<
-  [wsId: string, snapshot: ScriptDefinitionSnapshot],
+  [wsId: string, snapshot: ScriptDefinitionSnapshot, consumer?: ScriptWorkflowConsumer],
   void
 >('scripts/restoreScriptDefinitions', 'scripts/restoreScriptDefinitionsRequested');
 
-export const saveScriptDefinitionsToRepoRequested = createAsyncAction<[wsId: string], void>(
-  'scripts/saveScriptDefinitionsToRepo',
-  'scripts/saveScriptDefinitionsToRepoRequested',
+export const saveScriptDefinitionsToRepoRequested = createAsyncAction<
+  [wsId: string, consumer?: ScriptWorkflowConsumer],
+  void
+>('scripts/saveScriptDefinitionsToRepo', 'scripts/saveScriptDefinitionsToRepoRequested');
+
+export const scriptWorkflowFinished = createAction<
+  [
+    wsId: string,
+    consumer: ScriptWorkflowConsumer,
+    status: Exclude<ScriptWorkflowOutcome['status'], 'pending'>,
+    result?: ScriptWorkflowResult,
+    error?: string,
+  ]
+>('scripts/workflowFinished');
+export const scriptWorkflowConsumed = createAction<
+  [wsId: string, consumerId: string, requestId: string]
+>('scripts/workflowConsumed');
+export const scriptWorkflowReleased = createAction<[wsId: string, consumerId: string]>(
+  'scripts/workflowReleased',
 );
 
-export const editScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/editScriptRequested',
-);
+export const editScriptRequested = createAction<
+  [wsId: string, scriptId: string, reservationId?: string]
+>('scripts/editScriptRequested');
 
 export const scriptOperationSucceeded = createAction<
-  [wsId: string, scriptId: string, action: ScriptQuickAction]
+  [wsId: string, scriptId: string, action: ScriptQuickAction, reservationId?: string]
 >('scripts/scriptOperationSucceeded');
 
 export const scriptOperationFailed = createAction<
   [wsId: string, scriptId: string, action: ScriptQuickAction, error: string]
 >('scripts/scriptOperationFailed');
 
-export const scriptDetectionRequested = createAction<[wsId: string]>('scripts/detectionRequested');
-export const scriptDetectionFinished = createAction<[wsId: string]>('scripts/detectionFinished');
+export const scriptDetectionRequested = createAction<[wsId: string, reservationId?: string]>(
+  'scripts/detectionRequested',
+);
+export const scriptDetectionFinished = createAction<[wsId: string, reservationId?: string]>(
+  'scripts/detectionFinished',
+);
 
 export const clearScriptOperations = createAction<[wsId: string]>('scripts/clearScriptOperations');
 
@@ -237,6 +302,117 @@ export const appendScriptOutput =
 // ============================================================================
 
 export const scriptsReducer = createReducer<ScriptsState>(initialState);
+function startWorkflow(
+  state: ScriptsState,
+  workspaceId: string,
+  consumer?: ScriptWorkflowConsumer,
+): ScriptsState {
+  if (!consumer) return state;
+  const ws = getWorkspaceState(state, workspaceId);
+  const outcomes = ws.workflowOutcomes ?? createCollection<ScriptWorkflowOutcome, 'id'>('id');
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    workflowOutcomes: upsertItem(removeItem(outcomes, consumer.consumerId), {
+      ...consumer,
+      id: consumer.consumerId,
+      workspaceId,
+      status: 'pending',
+    }),
+  });
+}
+
+function asyncRequestReservation(action: { type: string }): string {
+  return String((action as { type: string; seq: number }).seq);
+}
+
+scriptsReducer.with(createScriptDefinitionRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[2]),
+);
+scriptsReducer.with(updateScriptDefinitionRequested, (state, action) => {
+  const { payload } = action;
+  return requestOperation(
+    startWorkflow(state, payload[0], payload[3]),
+    payload[0],
+    payload[1],
+    'edit',
+    asyncRequestReservation(action),
+  );
+});
+scriptsReducer.with(removeScriptDefinitionRequested, (state, action) => {
+  const { payload } = action;
+  return requestOperation(
+    startWorkflow(state, payload[0], payload[2]),
+    payload[0],
+    payload[1],
+    'edit',
+    asyncRequestReservation(action),
+  );
+});
+scriptsReducer.with(detectScriptDefinitionsRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[1]),
+);
+scriptsReducer.with(applyScriptDefinitionChangesRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[2]),
+);
+scriptsReducer.with(listScriptDefinitionsRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[2]),
+);
+scriptsReducer.with(getScriptDefinitionRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[2]),
+);
+scriptsReducer.with(restoreScriptDefinitionsRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[2]),
+);
+scriptsReducer.with(saveScriptDefinitionsToRepoRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[1]),
+);
+scriptsReducer.with(
+  scriptWorkflowFinished,
+  (state, { payload: [wsId, consumer, status, result, error] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    const outcomes = ws.workflowOutcomes;
+    const current = outcomes ? getItem(outcomes, consumer.consumerId) : undefined;
+    if (
+      current?.status !== 'pending' ||
+      current.requestId !== consumer.requestId ||
+      current.resourceId !== consumer.resourceId
+    )
+      return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      workflowOutcomes: upsertItem(outcomes!, {
+        ...current,
+        status,
+        ...(result !== undefined ? { result } : {}),
+        ...(error ? { error } : {}),
+      }),
+    });
+  },
+);
+scriptsReducer.with(scriptWorkflowConsumed, (state, { payload: [wsId, consumerId, requestId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const outcomes = ws.workflowOutcomes;
+  const current = outcomes ? getItem(outcomes, consumerId) : undefined;
+  if (
+    !current ||
+    current.requestId !== requestId ||
+    current.status === 'pending' ||
+    current.consumed
+  )
+    return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    workflowOutcomes: upsertItem(outcomes!, { ...current, consumed: true }),
+  });
+});
+scriptsReducer.with(scriptWorkflowReleased, (state, { payload: [wsId, consumerId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!ws.workflowOutcomes || !getItem(ws.workflowOutcomes, consumerId)) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    workflowOutcomes: removeItem(ws.workflowOutcomes, consumerId),
+  });
+});
 function recordChange(ws: ScriptsWorkspaceState, change: ScriptReadChange): ScriptsWorkspaceState {
   if (!Object.keys(ws.pendingReads ?? {}).length) return ws;
   return {
@@ -319,32 +495,41 @@ function requestOperation(
   wsId: string,
   scriptId: string,
   action: ScriptQuickAction,
+  reservationId?: string,
 ): ScriptsState {
   const ws = getWorkspaceState(state, wsId);
   if (ws.detectionOperation?.pending || ws.operations[scriptId]?.pending) return state;
   return setWorkspaceState(state, wsId, {
     ...ws,
-    operations: { ...ws.operations, [scriptId]: { action, pending: true } },
+    operations: {
+      ...ws.operations,
+      [scriptId]: { action, pending: true, ...(reservationId ? { reservationId } : {}) },
+    },
   });
 }
 
-scriptsReducer.with(scriptDetectionRequested, (state, { payload: [wsId] }) => {
+scriptsReducer.with(scriptDetectionRequested, (state, { payload: [wsId, reservationId] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (ws.detectionOperation?.pending || Object.values(ws.operations).some((op) => op.pending))
     return state;
   return setWorkspaceState(state, wsId, {
     ...ws,
-    detectionOperation: { action: 'edit', pending: true },
+    detectionOperation: {
+      action: 'edit',
+      pending: true,
+      ...(reservationId ? { reservationId } : {}),
+    },
   });
 });
-scriptsReducer.with(scriptDetectionFinished, (state, { payload: [wsId] }) => {
+scriptsReducer.with(scriptDetectionFinished, (state, { payload: [wsId, reservationId] }) => {
   const ws = getWorkspaceState(state, wsId);
+  if (reservationId && ws.detectionOperation?.reservationId !== reservationId) return state;
   const { detectionOperation: _detection, ...rest } = ws;
   return setWorkspaceState(state, wsId, rest);
 });
 
-scriptsReducer.with(editScriptRequested, (state, { payload: [wsId, scriptId] }) =>
-  requestOperation(state, wsId, scriptId, 'edit'),
+scriptsReducer.with(editScriptRequested, (state, { payload: [wsId, scriptId, reservationId] }) =>
+  requestOperation(state, wsId, scriptId, 'edit', reservationId),
 );
 scriptsReducer.with(startScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'start'),
@@ -358,12 +543,16 @@ scriptsReducer.with(restartScriptRequested, (state, { payload: [wsId, scriptId] 
 scriptsReducer.with(deleteScriptRequested, (state, { payload: [wsId, scriptId] }) =>
   requestOperation(state, wsId, scriptId, 'delete'),
 );
-scriptsReducer.with(scriptOperationSucceeded, (state, { payload: [wsId, scriptId, action] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  if (ws.operations[scriptId]?.action !== action) return state;
-  const { [scriptId]: _operation, ...operations } = ws.operations;
-  return setWorkspaceState(state, wsId, { ...ws, operations });
-});
+scriptsReducer.with(
+  scriptOperationSucceeded,
+  (state, { payload: [wsId, scriptId, action, reservationId] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    if (ws.operations[scriptId]?.action !== action) return state;
+    if (reservationId && ws.operations[scriptId]?.reservationId !== reservationId) return state;
+    const { [scriptId]: _operation, ...operations } = ws.operations;
+    return setWorkspaceState(state, wsId, { ...ws, operations });
+  },
+);
 scriptsReducer.with(
   scriptOperationFailed,
   (state, { payload: [wsId, scriptId, action, error] }) => {
@@ -381,10 +570,12 @@ scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   // Definition writes and daemon deletions cannot be cancelled by unmount.
   // Their owners release the reservation only after the wire request settles.
   const operations = Object.fromEntries(
-    Object.entries(ws.operations).filter(
-      ([, operation]) =>
-        (operation.action === 'edit' || operation.action === 'delete') && operation.pending,
-    ),
+    Object.entries(ws.operations)
+      .filter(
+        ([, operation]) =>
+          (operation.action === 'edit' || operation.action === 'delete') && operation.pending,
+      )
+      .map(([id, operation]) => [id, { ...operation }]),
   );
   return setWorkspaceState(state, wsId, { ...ws, operations });
 });

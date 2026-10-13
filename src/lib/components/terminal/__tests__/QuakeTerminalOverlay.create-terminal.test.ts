@@ -14,22 +14,49 @@ const sagaMocks = vi.hoisted(() => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
+  const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
+  const { get } = await import('svelte/store');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
+  let terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
   let currentTabId: string | null = null;
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
+  const listeners = new Set<() => void>();
   const store: any = {
     get state() {
       return {
         tabState: { currentTabId },
         scripts: scriptsState,
-        terminals: { height: 30, workspaceHeights: {}, workspaces: {} },
+        terminals: terminalsState,
       };
     },
     dispatch: (action: any) => {
       dispatched.push(action);
       scriptsState = scriptsReducer(scriptsState, action);
+      terminalsState = terminalsReducer(terminalsState, action);
+      listeners.forEach((listener) => listener());
       if (action.type === 'terminals/createOverlayTerminalRequested') {
-        return sagaMocks.createTerminal(action.payload[0]);
+        void sagaMocks.createTerminal(action.payload[0]).then((terminalId: string) => {
+          const [workspaceId, consumer] = action.payload;
+          const current = terminalsState.creationOutcomes.map[consumer.id];
+          if (current?.seq !== action.seq || current.status !== 'pending') return;
+          store.dispatch({
+            type: 'terminals/addTerminal',
+            payload: [workspaceId, terminalId, 'Terminal'],
+          });
+          store.dispatch({ type: 'terminals/open', payload: [workspaceId, terminalId] });
+          store.dispatch({
+            type: 'terminals/terminalCreationFinished',
+            payload: [
+              {
+                ...consumer,
+                workspaceId,
+                seq: action.seq,
+                status: 'success',
+                terminalId,
+              },
+            ],
+          });
+        });
       }
       return action;
     },
@@ -37,8 +64,24 @@ vi.mock('$store/renderer/store', async () => {
       Object.assign(
         (...args: any[]) => ({
           subscribe: (listener: (v: any) => void) => {
-            listener(fn(store.state, ...args));
-            return () => {};
+            const read = () =>
+              listener(
+                fn(
+                  store.state,
+                  ...args.map((arg) =>
+                    arg && typeof arg.subscribe === 'function' ? get(arg) : arg,
+                  ),
+                ),
+              );
+            const dependencyUnsubscribes = args
+              .filter((arg) => arg && typeof arg.subscribe === 'function')
+              .map((arg) => arg.subscribe(read));
+            listeners.add(read);
+            read();
+            return () => {
+              listeners.delete(read);
+              dependencyUnsubscribes.forEach((unsubscribe) => unsubscribe());
+            };
           },
         }),
         { select: fn },
@@ -55,8 +98,10 @@ vi.mock('$store/renderer/store', async () => {
     },
     __reset: () => {
       scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
+      terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
       currentTabId = null;
       dispatched.length = 0;
+      listeners.clear();
     },
   };
   return { store };

@@ -10,6 +10,7 @@ const {
   selectorSubscribers,
   terminalState,
   asyncUpdate,
+  workflowOutcomes,
   notify,
 } = vi.hoisted(() => ({
   mockDispatch: vi.fn(),
@@ -30,6 +31,7 @@ const {
   asyncUpdate: {
     handler: null as ((action: any) => void) | null,
   },
+  workflowOutcomes: new Map<string, any>(),
   notify: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
 
@@ -62,12 +64,55 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: (action: any) => {
       mockDispatch(action);
       scripts = scriptsReducer(scripts, action);
+      const finishWorkflow = (
+        consumer: any,
+        workspaceId: string,
+        status: string,
+        result?: unknown,
+        error?: string,
+      ) => {
+        if (!consumer) return;
+        workflowOutcomes.set(consumer.consumerId, {
+          ...consumer,
+          workspaceId,
+          status,
+          result,
+          error,
+          consumed: false,
+        });
+        for (const notifySelector of selectorSubscribers) notifySelector();
+      };
       if (action.type === 'scripts/updateScriptDefinitionRequested') {
+        const [workspaceId, _scriptId, _updates, consumer] = action.payload;
+        const success = action.success;
+        const failure = action.failure;
+        action.success = (result: unknown) => {
+          const next = success(result);
+          finishWorkflow(consumer, workspaceId, 'success', result);
+          return next;
+        };
+        action.failure = (error: unknown) => {
+          const next = failure(error);
+          finishWorkflow(
+            consumer,
+            workspaceId,
+            'failure',
+            undefined,
+            error instanceof Error ? error.message : String(error),
+          );
+          return next;
+        };
         if (asyncUpdate.handler) asyncUpdate.handler(action);
         else {
-          const [workspaceId, scriptId, updates] = action.payload;
+          const [, scriptId, updates] = action.payload;
           action.success({ id: scriptId, workspaceId, ...updates });
         }
+      } else if (action.type === 'scripts/getScriptDefinitionRequested') {
+        const [workspaceId, scriptId, consumer] = action.payload;
+        void mockGet(workspaceId, scriptId).then(
+          (result) => finishWorkflow(consumer, workspaceId, 'success', result),
+          (error) => finishWorkflow(consumer, workspaceId, 'failure', undefined, String(error)),
+        );
       }
     },
     createSelector: (fn: (state: any, ...args: any[]) => any) =>
@@ -132,6 +177,7 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
         scopedReadable(workspaceIdStore, () => ({ selectedScriptId: selectedScript.id })),
       { select: () => ({ selectedScriptId: selectedScript.id }) },
     ),
+    selectTerminalCreationOutcome: () => readable(() => undefined),
   };
 });
 
@@ -148,6 +194,10 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   removeTerminal: (...payload: any[]) => ({ type: 'terminals/remove', payload }),
   setTerminalOverlayHeight: (...payload: any[]) => ({ type: 'terminals/setHeight', payload }),
   renameTerminal: (...payload: any[]) => ({ type: 'terminals/rename', payload }),
+  clearTerminalCreationOutcome: (...payload: any[]) => ({
+    type: 'terminals/clearCreation',
+    payload,
+  }),
   clearScriptSelection: (...payload: any[]) => ({
     type: 'terminals/clearScriptSelection',
     payload,
@@ -175,6 +225,35 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOrigina
     }),
     selectWorkspaceScriptsInitialized: () => readable(() => true),
     selectCanDeleteScript: () => readable(() => false),
+    selectScriptWorkflowOutcome: (consumerId: string, workspaceArg: any, resourceArg: any) => ({
+      subscribe: (listener: (value: any) => void) => {
+        let workspaceId = typeof workspaceArg === 'string' ? workspaceArg : '';
+        let resourceId = typeof resourceArg === 'string' ? resourceArg : '';
+        const emit = () => {
+          const outcome = workflowOutcomes.get(consumerId);
+          listener(
+            outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+              ? outcome
+              : undefined,
+          );
+        };
+        const unsubWorkspace = workspaceArg?.subscribe?.((value: string) => {
+          workspaceId = value;
+          emit();
+        });
+        const unsubResource = resourceArg?.subscribe?.((value: string) => {
+          resourceId = value;
+          emit();
+        });
+        selectorSubscribers.add(emit);
+        emit();
+        return () => {
+          selectorSubscribers.delete(emit);
+          unsubWorkspace?.();
+          unsubResource?.();
+        };
+      },
+    }),
   };
 });
 
@@ -260,6 +339,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     selectedScript.id = null;
     mockGet.mockReset().mockResolvedValue(runningScript);
     asyncUpdate.handler = null;
+    workflowOutcomes.clear();
     scriptEntries.value = [runningScript];
     terminalState.activeId = 'terminal-1';
     terminalState.height = 50;
@@ -375,7 +455,12 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'scripts/updateScriptDefinitionRequested',
-          payload: ['ws-1', 'script-1', { command: 'pnpm edited-command' }],
+          payload: [
+            'ws-1',
+            'script-1',
+            { command: 'pnpm edited-command' },
+            expect.objectContaining({ resourceId: 'script-1' }),
+          ],
         }),
       ),
     );
@@ -396,7 +481,12 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'scripts/updateScriptDefinitionRequested',
-        payload: ['ws-1', 'script-1', { name: 'renamed dev' }],
+        payload: [
+          'ws-1',
+          'script-1',
+          { name: 'renamed dev' },
+          expect.objectContaining({ resourceId: 'script-1' }),
+        ],
       }),
     );
     expect(mockDispatch).not.toHaveBeenCalledWith(
@@ -430,7 +520,12 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'scripts/updateScriptDefinitionRequested',
-        payload: ['ws-a', 'script-1', { name: 'renamed in A' }],
+        payload: [
+          'ws-a',
+          'script-1',
+          { name: 'renamed in A' },
+          expect.objectContaining({ resourceId: 'script-1' }),
+        ],
       }),
     );
 

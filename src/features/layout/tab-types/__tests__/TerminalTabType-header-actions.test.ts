@@ -25,24 +25,10 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 import { scriptsClient } from '$features/scripts/scripts.client';
-import { appClient } from '$lib/client';
-
-vi.mock('$lib/client/live/backend-transport', async () => {
-  const { appClient } = await import('$lib/client');
-  return {
-    backendRequest: vi.fn(async (_method: string, params: { workspaceId: string }) => {
-      const { workspaceId, ...definition } = params;
-      const result = await appClient.scripts.create(workspaceId, definition as never);
-      if (!result.success) throw new Error(result.error);
-      return result.script;
-    }),
-  };
-});
-
-vi.mock('$lib/client', () => ({
-  appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
-}));
-import { scriptsReducer } from '$store/renderer/slices/scripts/scripts-slice';
+import {
+  scriptOperationSucceeded,
+  scriptsReducer,
+} from '$store/renderer/slices/scripts/scripts-slice';
 import { confirm } from '$lib/components/patterns/confirm';
 import { store } from '$store/renderer/store';
 import TerminalTabTypeHeaderHarness from './mocks/TerminalTabTypeHeaderHarness.svelte';
@@ -125,6 +111,12 @@ describe('script panel deletion', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
   }
 
+  function updateRequest() {
+    return dispatch.mock.calls.find(
+      ([candidate]) => candidate.type === 'scripts/updateScriptDefinitionRequested',
+    )![0];
+  }
+
   it('confirms the named script and dispatches deletion from the panel menu', async () => {
     render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
     await openMenu();
@@ -149,23 +141,17 @@ describe('script panel deletion', () => {
         mockState.scripts = scriptsReducer(mockState.scripts as never, action);
         (store as any).emitState();
       });
-      let finish!: (value: { success: boolean }) => void;
-      vi.mocked(appClient.scripts.get).mockResolvedValue(
-        mockState.scripts.byWorkspaceId['workspace-1'].scripts.check,
-      );
-      vi.mocked(appClient.scripts.create).mockReturnValueOnce(
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-      );
       const pending = scriptsClient.update('workspace-1', 'check', { name: 'Renamed' });
       render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
       await openMenu();
       expect(
         screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
       ).toBe('true');
-      await waitFor(() => expect(finish).toBeTypeOf('function'));
-      finish({ success });
+      const request = updateRequest();
+      if (success)
+        request.success({ ...mockState.scripts.byWorkspaceId['workspace-1'].scripts.check });
+      else request.failure(new Error('Save failed'));
+      dispatch(scriptOperationSucceeded('workspace-1', 'check', 'edit', String(request.seq)));
       await pending;
       await waitFor(() =>
         expect(
@@ -190,23 +176,15 @@ describe('script panel deletion', () => {
     render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
-    let finish!: (value: { success: boolean }) => void;
-    vi.mocked(appClient.scripts.get).mockResolvedValue(
-      mockState.scripts.byWorkspaceId['workspace-1'].scripts.check,
-    );
-    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
     const pending = scriptsClient.update('workspace-1', 'check', { name: 'Renamed' });
     accept(true);
     await Promise.resolve();
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'scripts/deleteScriptRequested' }),
     );
-    await waitFor(() => expect(finish).toBeTypeOf('function'));
-    finish({ success: true });
+    const request = updateRequest();
+    request.success({ ...mockState.scripts.byWorkspaceId['workspace-1'].scripts.check });
+    dispatch(scriptOperationSucceeded('workspace-1', 'check', 'edit', String(request.seq)));
     await pending;
     dispatch.mockReset();
   });

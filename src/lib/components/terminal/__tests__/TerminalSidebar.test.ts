@@ -134,10 +134,39 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  const { scriptsReducer, emptyWorkspaceState } =
+  const { scriptsReducer, emptyWorkspaceState, scriptWorkflowFinished } =
     await import('$store/renderer/slices/scripts/scripts-slice');
   let scripts = scriptsReducer(undefined, { type: '@@init' });
-  return createAppStoreMockModule({
+  let module: ReturnType<typeof createAppStoreMockModule>;
+  const finishWorkflow = (
+    action: any,
+    status: 'success' | 'failure',
+    result?: unknown,
+    error?: string,
+  ) => {
+    const payload = action.payload as any[];
+    const consumer =
+      action.type === 'scripts/createScriptDefinitionRequested'
+        ? payload[2]
+        : action.type === 'scripts/updateScriptDefinitionRequested'
+          ? payload[3]
+          : action.type === 'scripts/removeScriptDefinitionRequested' ||
+              action.type === 'scripts/getScriptDefinitionRequested'
+            ? payload[2]
+            : action.type === 'scripts/detectScriptDefinitionsRequested' ||
+                action.type === 'scripts/saveScriptDefinitionsToRepoRequested'
+              ? payload[1]
+              : action.type === 'scripts/applyScriptDefinitionChangesRequested' ||
+                  action.type === 'scripts/restoreScriptDefinitionsRequested' ||
+                  action.type === 'scripts/listScriptDefinitionsRequested'
+                ? payload[2]
+                : undefined;
+    if (consumer)
+      module.store.dispatch(
+        scriptWorkflowFinished(payload[0], consumer, status, result as never, error),
+      );
+  };
+  module = createAppStoreMockModule({
     state: () => ({
       scripts: {
         byWorkspaceId: Object.fromEntries(
@@ -161,6 +190,20 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: (action) => {
       mockDispatch(action);
       scripts = scriptsReducer(scripts, action);
+      if (action?.asyncActionType) {
+        const success = action.success;
+        const failure = action.failure;
+        action.success = (result: unknown) => {
+          const next = success(result);
+          finishWorkflow(action, 'success', result);
+          return next;
+        };
+        action.failure = (error: unknown) => {
+          const next = failure(error);
+          finishWorkflow(action, 'failure', undefined, String(error));
+          return next;
+        };
+      }
       if (
         action.type === 'scripts/detectScriptDefinitionsRequested' &&
         asyncActionHandlers.detect
@@ -193,6 +236,13 @@ vi.mock('$store/renderer/store', async () => {
           updated: changes.update.length - skippedRunning.length,
           removed: changes.remove.length,
           skippedRunning,
+          snapshot: scriptEntries.byWorkspaceId[action.payload[0]] ?? scriptEntries.value,
+        });
+      } else if (action.type === 'scripts/listScriptDefinitionsRequested') {
+        const [workspaceId] = action.payload;
+        void scriptsClient.list(workspaceId).then((result) => {
+          if (result.success) action.success(result.data);
+          else action.failure(result.error);
         });
       } else if (
         action.type === 'scripts/restoreScriptDefinitionsRequested' ||
@@ -200,23 +250,31 @@ vi.mock('$store/renderer/store', async () => {
       ) {
         action.success(undefined);
       }
+      module.store.emitState();
     },
   });
+  return module;
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActionContext: { select: () => 'owner' },
-  selectWorkspaceById: (workspaceArg: any) => {
-    selectorWorkspaceArgs.push(workspaceArg);
-    return {
-      subscribe: (fn: (value: any) => void) =>
-        typeof workspaceArg === 'string'
-          ? (fn(activeWorkspaceState.byWorkspaceId[workspaceArg] ?? activeWorkspaceState.value),
-            () => {})
-          : workspaceArg.subscribe((workspaceId: string) =>
-              fn(activeWorkspaceState.byWorkspaceId[workspaceId] ?? activeWorkspaceState.value),
-            ),
-    };
-  },
+  selectWorkspaceById: Object.assign(
+    (workspaceArg: any) => {
+      selectorWorkspaceArgs.push(workspaceArg);
+      return {
+        subscribe: (fn: (value: any) => void) =>
+          typeof workspaceArg === 'string'
+            ? (fn(activeWorkspaceState.byWorkspaceId[workspaceArg] ?? activeWorkspaceState.value),
+              () => {})
+            : workspaceArg.subscribe((workspaceId: string) =>
+                fn(activeWorkspaceState.byWorkspaceId[workspaceId] ?? activeWorkspaceState.value),
+              ),
+      };
+    },
+    {
+      select: (_state: unknown, workspaceId: string) =>
+        activeWorkspaceState.byWorkspaceId[workspaceId] ?? activeWorkspaceState.value,
+    },
+  ),
 }));
 vi.mock('$store/renderers/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
@@ -412,6 +470,7 @@ describe('TerminalSidebar detection flow', () => {
         payload: [
           'ws-1',
           { name: 'test', command: 'pnpm test', mode: 'command', purpose: 'saved', source: 'user' },
+          expect.objectContaining({ resourceId: 'create' }),
         ],
       }),
     );
@@ -430,8 +489,8 @@ describe('TerminalSidebar detection flow', () => {
           expect.objectContaining({
             add: [expect.objectContaining({ purpose: 'saved', source: 'auto-detected' })],
           }),
-          expect.any(Array),
-          expect.any(String),
+          expect.objectContaining({ resourceId: 'agent-detection' }),
+          undefined,
         ],
       }),
     );
@@ -459,6 +518,15 @@ describe('TerminalSidebar detection flow', () => {
     ];
     vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: true, data: [full as never] });
     mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
+    asyncActionHandlers.apply = (action) =>
+      action.success({
+        detected: 0,
+        added: 1,
+        updated: 0,
+        removed: 0,
+        skippedRunning: [],
+        snapshot: [full],
+      });
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
     await backgroundAgentOptions.value!.onResult(
       JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
@@ -466,7 +534,12 @@ describe('TerminalSidebar detection flow', () => {
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'scripts/applyScriptDefinitionChangesRequested',
-        payload: ['ws-1', expect.any(Object), [full], expect.any(String)],
+        payload: [
+          'ws-1',
+          expect.any(Object),
+          expect.objectContaining({ resourceId: 'agent-detection' }),
+          undefined,
+        ],
       }),
     );
     await notify.success.mock.calls[0][1].action.onClick();
@@ -476,6 +549,7 @@ describe('TerminalSidebar detection flow', () => {
         payload: [
           'ws-1',
           [expect.objectContaining({ command: full.command, cwd: full.cwd, env: full.env })],
+          expect.objectContaining({ resourceId: 'restore' }),
         ],
       }),
     );
@@ -507,7 +581,12 @@ describe('TerminalSidebar detection flow', () => {
         expect(mockDispatch).toHaveBeenCalledWith(
           expect.objectContaining({
             type: 'scripts/applyScriptDefinitionChangesRequested',
-            payload: ['ws-a', expect.any(Object), [full], expect.any(String)],
+            payload: [
+              'ws-a',
+              expect.any(Object),
+              expect.objectContaining({ resourceId: 'agent-detection' }),
+              undefined,
+            ],
           }),
         ),
       );
@@ -518,10 +597,12 @@ describe('TerminalSidebar detection flow', () => {
       const request = mockDispatch.mock.calls.find(
         ([action]) => action.type === 'scripts/applyScriptDefinitionChangesRequested',
       )![0];
-      expect(mockDispatch).toHaveBeenCalledWith({
-        type: 'scripts/scriptDefinitionChangesReleased',
-        payload: ['ws-a', request.payload[3]],
-      });
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/workflowReleased',
+          payload: ['ws-a', request.payload[2].consumerId],
+        }),
+      );
       reject(new Error('Applying script changes cancelled'));
       await detection;
       expect(notify.info).not.toHaveBeenCalled();
@@ -550,7 +631,11 @@ describe('TerminalSidebar detection flow', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'scripts/restoreScriptDefinitionsRequested',
-          payload: ['ws-1', [expect.objectContaining({ name: 'test', purpose })]],
+          payload: [
+            'ws-1',
+            [expect.objectContaining({ name: 'test', purpose })],
+            expect.objectContaining({ resourceId: 'restore' }),
+          ],
         }),
       );
     },
@@ -584,7 +669,7 @@ describe('TerminalSidebar detection flow', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'scripts/detectScriptDefinitionsRequested',
-          payload: ['ws-1'],
+          payload: ['ws-1', expect.objectContaining({ resourceId: 'local-detection' })],
         }),
       ),
     );
@@ -715,8 +800,8 @@ describe('TerminalSidebar workspace prop changes', () => {
     await waitFor(() =>
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'scripts/removeScriptDefinitionRequested',
-          payload: ['ws-b', 'script-b'],
+          type: 'scripts/deleteScriptRequested',
+          payload: ['ws-b', 'script-b', expect.any(String)],
         }),
       ),
     );
@@ -790,8 +875,8 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
             ],
             remove: ['auto-stale'],
           },
-          expect.any(Array),
-          expect.any(String),
+          expect.objectContaining({ resourceId: 'agent-detection' }),
+          undefined,
         ],
       }),
     );
@@ -895,7 +980,12 @@ describe('TerminalSidebar script inline rename', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'scripts/updateScriptDefinitionRequested',
-          payload: ['ws-1', 'script-1', { name: 'compile' }],
+          payload: [
+            'ws-1',
+            'script-1',
+            { name: 'compile' },
+            expect.objectContaining({ resourceId: 'script-1' }),
+          ],
         }),
       ),
     );
@@ -914,7 +1004,12 @@ describe('TerminalSidebar script inline rename', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'scripts/updateScriptDefinitionRequested',
-          payload: ['ws-1', 'script-1', { name: 'bundle' }],
+          payload: [
+            'ws-1',
+            'script-1',
+            { name: 'bundle' },
+            expect.objectContaining({ resourceId: 'script-1' }),
+          ],
         }),
       ),
     );
