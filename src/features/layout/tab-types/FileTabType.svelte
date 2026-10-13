@@ -7,6 +7,10 @@
 
   import { editableText, fileSnapshot } from '$features/file/utils/file-content';
   import type { TabTypeComponentProps } from './registry';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { updateFileTabPath } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
@@ -77,6 +81,13 @@
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
+
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!isActive || !wsId || gitRootId) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'files'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'files'));
+  });
 
   const gitRootId = $derived(
     typeof tab.data?.gitRootId === 'string' ? tab.data.gitRootId : undefined,
@@ -724,7 +735,12 @@
         />
       {:else if isMarkdownFile && markdownPreview}
         <div class="h-full overflow-auto p-4">
-          <MarkdownViewer content={fileContent} {workspaceId} renderRichFencesAsCode />
+          <MarkdownViewer
+            content={fileContent}
+            {workspaceId}
+            renderRichFencesAsCode
+            renderDiagrams
+          />
         </div>
       {:else}
         <CodeEditor

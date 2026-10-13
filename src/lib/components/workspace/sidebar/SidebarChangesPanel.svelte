@@ -22,7 +22,11 @@
     selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
     selectAcceptChangesState,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import { setCommitMessage } from '$store/renderer/slices/changes/changes-slice';
+  import {
+    setCommitMessage,
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { type TrackedChange } from '$features/file-tracking/types';
   import {
     acceptChangesConsumerMounted,
@@ -300,7 +304,11 @@
   $effect(() => {
     const visibleWorkspaceId = workspaceId;
     appStore.dispatch(acceptChangesConsumerMounted(visibleWorkspaceId));
-    return () => appStore.dispatch(acceptChangesConsumerUnmounted(visibleWorkspaceId));
+    appStore.dispatch(changesConsumerMounted(visibleWorkspaceId));
+    return () => {
+      appStore.dispatch(acceptChangesConsumerUnmounted(visibleWorkspaceId));
+      appStore.dispatch(changesConsumerUnmounted(visibleWorkspaceId));
+    };
   });
 
   // Git operation loading flag — used by the refresh button spinner
@@ -325,7 +333,7 @@
     }
   });
 
-  // Daemon Git events dispatch the lifecycle-owned broad changes refresh.
+  // The lifecycle owner reconciles incomplete Git pushes while this panel is visible.
 
   // Consolidated effect for managing hasLoadedForWorkspace
   // This single effect handles both workspace changes AND load state changes

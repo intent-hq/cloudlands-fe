@@ -416,7 +416,7 @@ const queueReconciliationActions = [
 ];
 type QueueReconciliationAction = ReturnType<(typeof queueReconciliationActions)[number]>;
 
-/** Evidence invalidates both reads. Coalesce bursts and wait for the event mirror to publish. */
+/** Coalesce evidence bursts and wait for the authoritative event mirror to publish. */
 function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): SagaGenerator<void> {
   yield* delay(0);
   const [scope] = action.payload;
@@ -426,7 +426,7 @@ function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): Sa
   if (!display.queue.length) return;
   // Both services retain their existing scope/connection/read fences and trailing coalescing.
   yield* all([
-    call(hydrateAgentQueue, scope.agentId, scope.workspaceId),
+    ...(!entry.queueFresh ? [call(hydrateAgentQueue, scope.agentId, scope.workspaceId)] : []),
     call(loadChatTranscript, scope.agentId, scope.workspaceId),
   ]);
 }

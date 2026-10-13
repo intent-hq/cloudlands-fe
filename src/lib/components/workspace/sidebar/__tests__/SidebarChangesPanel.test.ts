@@ -1194,8 +1194,11 @@ describe('SidebarChangesPanel', () => {
 
       expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
       ]);
       expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
@@ -1211,10 +1214,10 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+      ]);
       expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
     });
@@ -2058,10 +2061,10 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+      ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
@@ -2077,8 +2080,11 @@ describe('SidebarChangesPanel', () => {
 
       expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
       ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
@@ -2093,10 +2099,10 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+      ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
@@ -2132,6 +2138,14 @@ describe('SidebarChangesPanel', () => {
       ).toEqual([
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-2'] },
+      ]);
+      expect(
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('changes/consumer')),
+      ).toEqual([
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-2'] },
       ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });

@@ -136,6 +136,20 @@ describe('createAgentModelMutator — unlocked', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       updateSession(AGENT, { model: 'auggie:sonnet4.6' }),
     );
+    expect(mocks.setModel).not.toHaveBeenCalled();
+  });
+
+  it('setSessionModel includes exact metadata provenance when a provider is supplied', () => {
+    expect(mutator.setSessionModel(AGENT, 'auggie:sonnet4.6', 'auggie')).toBe(true);
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      updateSession(AGENT, {
+        model: 'auggie:sonnet4.6',
+        provider: 'auggie',
+        metadataPatch: { provider: { op: 'set', value: 'auggie' } },
+      }),
+    );
+    expect(mocks.setModel).not.toHaveBeenCalled();
   });
 
   it('setModel forwards the exact arguments and returns the RPC result', async () => {

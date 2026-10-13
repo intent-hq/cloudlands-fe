@@ -19,6 +19,7 @@
       };
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
+        setTitle: (id: string, title: string) => void;
       };
     }
   }
@@ -26,6 +27,7 @@
   interface Props {
     scenario?:
       | 'populated'
+      | 'untitled'
       | 'status-icons'
       | 'board'
       | 'pr-ready'
@@ -53,6 +55,7 @@
     defaultState: 'populated',
     states: {
       populated: { props: { scenario: 'populated' } },
+      untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       board: { props: { scenario: 'board' } },
       'pr-ready': { props: { scenario: 'pr-ready' } },
@@ -332,6 +335,8 @@
   const previousPinnedIds = store.state.sidebarNav.pinnedWorkspaceIds;
   const showCreateModal$ = selectShowCreateModal();
   window.__homeWorkspacePreview = {
+    setTitle: (id, title) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),
@@ -416,6 +421,11 @@
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
+              ...(scenario === 'untitled' && workspace.id === 'home-running'
+                ? { title: '' }
+                : scenario === 'untitled' && workspace.id === 'home-review'
+                  ? { title: ' \t ' }
+                  : {}),
               ...(scenario === 'board-long-content'
                 ? {
                     title: `${workspace.title} ${'workspace'.repeat(12)}`,

@@ -9,9 +9,11 @@ import type { PresenceMember, PresenceRoster } from '$shared/types/presence';
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   invoke: vi.fn(),
+  capabilities: vi.fn(),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.request,
+  observeBackendNodeCapabilities: mocks.capabilities,
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
 }));
@@ -25,7 +27,11 @@ import type { WorkspaceMember } from '../../guest-sessions/guest-sessions-types'
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { replaceWorkspaceList } from '../../workspace/workspace-slice';
 import { daemonEventsSubscribed } from '../../workspace-events/workspace-events-slice';
-import { presenceRosterReceived } from '../presence-slice';
+import {
+  presenceRosterReceived,
+  presenceTypingPulse,
+  presenceWindowVisibilityChanged,
+} from '../presence-slice';
 import { selectAgentPresencePeople, selectWorkspacePresencePeople } from '../presence-selectors';
 import { presenceSaga } from './presence-saga';
 
@@ -102,6 +108,9 @@ describe('presenceSaga lifecycle', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    mocks.capabilities
+      .mockReset()
+      .mockResolvedValue({ server: { capabilities: { workspaceMembershipEvents: 1 } } });
     mocks.invoke.mockReset().mockResolvedValue({ typingSource: 'ts-own' });
     mocks.request.mockReset().mockImplementation(async (method: string, params: unknown) => {
       if (method === 'principal.me') return { id: 'me' };
@@ -392,6 +401,70 @@ describe('presenceSaga lifecycle', () => {
       typing: null,
     });
     expect(store.state.presence.ownTypingSource).toBe('ts-own');
+  });
+
+  it('stays silent at idle and while hidden input continues pulsing', async () => {
+    start();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    store.dispatch(presenceWindowVisibilityChanged(false));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(mocks.invoke).toHaveBeenLastCalledWith('presence:report', { focus: [], typing: null });
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 6; i++) {
+      store.dispatch(presenceTypingPulse('agent'));
+      await vi.advanceTimersByTimeAsync(1500);
+    }
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    store.dispatch(presenceWindowVisibilityChanged(true));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(mocks.invoke).toHaveBeenLastCalledWith('presence:report', {
+      focus: [{ workspaceId: 'ws-1' }],
+      typing: { agentId: 'agent' },
+    });
+  });
+
+  it.each(['rejected', 'null-source'])(
+    'retries the same hidden report after a %s send',
+    async (failure) => {
+      start();
+      await vi.advanceTimersByTimeAsync(500);
+      mocks.invoke.mockClear();
+      if (failure === 'rejected') mocks.invoke.mockRejectedValueOnce(new Error('connection lost'));
+      else mocks.invoke.mockResolvedValueOnce({ typingSource: null });
+      store.dispatch(presenceWindowVisibilityChanged(false));
+      await vi.advanceTimersByTimeAsync(250);
+      store.dispatch(presenceTypingPulse('agent'));
+      await vi.advanceTimersByTimeAsync(1500);
+      store.dispatch(presenceTypingPulse('agent'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.invoke).toHaveBeenCalledTimes(2);
+      expect(mocks.invoke).toHaveBeenLastCalledWith('presence:report', { focus: [], typing: null });
+      expect(store.state.presence.ownTypingSource).toBe('ts-own');
+    },
+  );
+
+  it('preserves continuous typing pulses and sends one clear after typing stops', async () => {
+    start();
+    await vi.advanceTimersByTimeAsync(500);
+    mocks.invoke.mockClear();
+    for (let i = 0; i < 4; i++) {
+      store.dispatch(presenceTypingPulse('agent'));
+      await vi.advanceTimersByTimeAsync(1500);
+    }
+    expect(mocks.invoke).toHaveBeenCalledTimes(4);
+    for (const [, params] of mocks.invoke.mock.calls)
+      expect(params.typing).toEqual({ agentId: 'agent' });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.invoke).toHaveBeenCalledTimes(5);
+    expect(mocks.invoke).toHaveBeenLastCalledWith('presence:report', {
+      focus: [{ workspaceId: 'ws-1' }],
+      typing: null,
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(mocks.invoke).toHaveBeenCalledTimes(5);
   });
 
   it('refreshes displayed rosters after fresh admission on resubscribe and clears the old report', async () => {
