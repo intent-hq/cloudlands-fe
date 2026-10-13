@@ -322,6 +322,9 @@ test('note filtering survives opening a note and supports clear and Escape', asy
   const target = notes.locator(`a[data-note-id="${noteId}"]`);
   await expect(target).toBeVisible({ timeout: 60_000 });
   const allCount = await notes.locator('a[data-note-id]').count();
+  const allIds = await notes
+    .locator('a[data-note-id]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('data-note-id')));
   const trigger = notes.getByRole('button', { name: 'Filter notes', exact: true });
   await trigger.click();
   const input = notes.getByRole('searchbox', { name: 'Filter notes', exact: true });
@@ -330,12 +333,31 @@ test('note filtering survives opening a note and supports clear and Escape', asy
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(noteId);
   await expect(target).toBeVisible();
   await expect.poll(() => notes.locator('a[data-note-id]').count()).toBeLessThan(allCount);
+  const filteredIds = await notes
+    .locator('a[data-note-id]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('data-note-id')));
   await target.click();
   await expect(page.getByTestId('workspace-note')).toHaveAttribute('data-note-id', noteId);
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(noteId);
   await page.getByRole('link', { name: 'All notes', exact: true }).click();
   await expect(input).toHaveValue(noteId);
   await expect(target).toBeFocused();
+  await target.click();
+  const noteLinks = page
+    .getByTestId('note-rendered-content')
+    .locator('a[href^="intent://local/note/"]');
+  await expect(noteLinks.first()).toBeVisible();
+  const linkedIds = await noteLinks.evaluateAll((links) =>
+    links.map((link) => new URL(link.getAttribute('href')).pathname.split('/').at(-1)),
+  );
+  const excludedId = linkedIds.find((id) => allIds.includes(id) && !filteredIds.includes(id));
+  if (!excludedId) throw new Error('Choose a note with a saved link outside its filter results');
+  await noteLinks.nth(linkedIds.indexOf(excludedId)).click();
+  await expect(page.getByTestId('workspace-note')).toHaveAttribute('data-note-id', excludedId);
+  await page.getByRole('link', { name: 'All notes', exact: true }).click();
+  await expect(notes.locator(`a[data-note-id="${excludedId}"]`)).toHaveCount(0);
+  await expect(input).toHaveValue(noteId);
+  await expect(input).toBeFocused();
   await page.reload();
   await expect(input).toHaveValue(noteId, { timeout: 60_000 });
   await expect(target).toBeVisible();

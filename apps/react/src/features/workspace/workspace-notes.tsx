@@ -172,6 +172,7 @@ export function WorkspaceNotes({
   const notes = selectAllNotes(workspaceId);
   const filteredNotes = filterContextNotes(notes.value, query);
   const list = useRef<HTMLUListElement>(null);
+  const filterHeader = useRef<HTMLElement>(null);
   const previousNoteId = useRef(noteId);
   const connection = authority.value;
   useLayoutEffect(() => {
@@ -185,9 +186,10 @@ export function WorkspaceNotes({
     const previous = previousNoteId.current;
     previousNoteId.current = noteId;
     if (!noteId && previous) {
-      list.current
-        ?.querySelector<HTMLAnchorElement>(`a[data-note-id="${CSS.escape(previous)}"]`)
-        ?.focus();
+      const opener = list.current?.querySelector<HTMLAnchorElement>(
+        `a[data-note-id="${CSS.escape(previous)}"]`,
+      );
+      (opener ?? filterHeader.current?.querySelector<HTMLElement>('input, button'))?.focus();
     }
   }, [noteId]);
   if (!connection) return <p>Notes are not available for the current connection.</p>;
@@ -210,7 +212,7 @@ export function WorkspaceNotes({
         </>
       ) : (
         <>
-          <header className="flex min-w-0 items-center gap-4">
+          <header ref={filterHeader} className="flex min-w-0 items-center gap-4">
             <h2 className="type-heading-sm flex-1">Notes</h2>
             <SidebarExpandableSearch
               query={query}
