@@ -495,6 +495,19 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     expect(log.lines).toEqual(['hello', 'world', 'oops']);
   });
 
+  it('preserves the managed child and its run record on repeated initial acquisition', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('still starting\n'));
+    await startIntentdSidecar(
+      { INTENTD_SIDECAR: '1', INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(getSidecarRunLog().lines).toEqual(['still starting']);
+  });
+
   it('caps the tail at the last 400 lines', async () => {
     const proc = await startWithFakeProc();
     for (let i = 1; i <= 450; i++) {
@@ -524,6 +537,7 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     proc1.stdout.emit('data', Buffer.from('first-run\n'));
     expect(getSidecarRunLog().lines).toEqual(['first-run']);
 
+    proc1.emit('exit', 0, null);
     const proc2 = await startWithFakeProc();
     expect(getSidecarRunLog().lines).toEqual([]);
     expect(getSidecarRunLog().endedAt).toBeNull();
@@ -717,7 +731,8 @@ describe('sidecar scheduling priority (best-effort)', () => {
       throw systemError('EPERM');
     });
 
-    await startWithFakeProc();
+    const first = await startWithFakeProc();
+    first.emit('exit', 0, null);
     await startWithFakeProc();
 
     expect(
