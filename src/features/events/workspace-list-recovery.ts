@@ -43,7 +43,21 @@ export function installWorkspaceListRecovery(
   const owner = scope.registerResource({
     key: WORKSPACE_LIST_RECOVERY_KEY,
     workspaceId: null,
-    eventTypes: ['workspace:*', 'pr:*'],
+    eventTypes: [
+      'workspace:*',
+      'pr:*',
+      'note:created',
+      'note:updated',
+      'note:deleted',
+      'task:created',
+      'task:status-changed',
+      'agent:deleted',
+      'agent:idle',
+      'agent:status-changed',
+      'agent:stream:start',
+      'agent:stream:activity',
+      'agent:stream:status',
+    ],
     active: true,
     isCurrent: () =>
       scope.isCurrent() &&

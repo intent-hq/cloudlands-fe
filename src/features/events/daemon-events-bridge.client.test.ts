@@ -4381,31 +4381,38 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
   });
 
   it('carries rejected recovery admission to note and comment workers', async () => {
+    const { installNoteRecoveryDispatcher } =
+      await import('$store/renderer/slices/workspace-notes/sagas/note-event-receipt');
     await primeBridge();
-    const dispatch = vi.spyOn(appStore, 'dispatch');
+    const jobs: import('$store/renderer/slices/workspace-notes/sagas/note-event-receipt').NoteRecoveryEventJob[] =
+      [];
+    const stop = installNoteRecoveryDispatcher((job) => jobs.push(job));
     try {
       for (const type of ['note:updated', 'comment:added']) {
         const key = type.startsWith('note:')
           ? `notes:${JSON.stringify([WS])}`
           : `comments:${JSON.stringify([WS, 'n'])}`;
         const envelope = notificationWithSub(type, { noteId: 'n' }, 'sub-1');
-        routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1'], {
-          lifetimes: new Map([[key, null]]),
+        let finished = false;
+        const pending = Promise.resolve(
+          routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1'], {
+            lifetimes: new Map([[key, null]]),
+          }),
+        ).then(() => {
+          finished = true;
         });
-        const action = dispatch.mock.calls
-          .map(([action]) => action)
-          .find(
-            (action) =>
-              action.type ===
-              (type.startsWith('note:')
-                ? 'workspaceNotes/noteEventReceived'
-                : 'workspaceNotes/commentEventReceived'),
-          );
-        expect(action).toBeDefined();
-        expect(getRecoveryAdmission(action!, key)).toBeNull();
+        await Promise.resolve();
+        const job = jobs.at(-1)!;
+        expect(job.kind).toBe('note');
+        if (job.kind !== 'note') throw new Error('Expected note worker');
+        expect(getRecoveryAdmission(job.action, key)).toBeNull();
+        expect(finished).toBe(false);
+        job.complete();
+        await pending;
+        expect(finished).toBe(true);
       }
     } finally {
-      dispatch.mockRestore();
+      stop();
     }
   });
 
@@ -11869,6 +11876,49 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     const agentGetCalls = () =>
       backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.get');
 
+    it.each(['pending', 'timeout'] as const)(
+      'holds the whole reconnect failure batch through %s physical completion',
+      async (mode) => {
+        const { rendererEventRecovery } = await import('./renderer-event-recovery');
+        const { trackAgentRecoveryRead } = await import('$features/agent/agent-recovery-read-lane');
+        const { AGENT_FAILURES_RECOVERY_KEY } = await import('$features/agent/agent-recovery-keys');
+        const { RecoveryRequestTimeoutError } = await import('$shared/event-recovery/session');
+        let release!: () => void;
+        const held = new Promise<void>((done) => {
+          release = done;
+        });
+        recordAgentFailure({ agentId: 'first', workspaceId: WS, error: 'failed' });
+        recordAgentFailure({ agentId: 'held', workspaceId: WS, error: 'failed' });
+        backendRequestSpy.mockImplementation((method, params) => {
+          if (method !== 'agent.get') return Promise.resolve({});
+          if ((params as { agentId: string }).agentId !== 'held') return Promise.resolve({});
+          return mode === 'pending'
+            ? held
+            : Promise.reject(
+                new RecoveryRequestTimeoutError(held.then(() => ({ retired: false, errors: [] }))),
+              );
+        });
+        const pending = refreshDaemonEventsAfterReconnect(null);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const read = vi.fn(async () => undefined);
+        const next = trackAgentRecoveryRead(
+          AGENT_FAILURES_RECOVERY_KEY,
+          read,
+          rendererEventRecovery.capture(AGENT_FAILURES_RECOVERY_KEY),
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(agentGetCalls()).toHaveLength(2);
+          expect(read).not.toHaveBeenCalled();
+        } finally {
+          release();
+          await pending;
+          await next;
+        }
+        expect(read).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it('drops registry entries whose agent no longer exists on the daemon', async () => {
       // agent:deleted fired while the connection was down — the registry
       // still holds the stale entry. The reconnect refresh must verify each
@@ -14552,4 +14602,202 @@ describe('production recovery owner installation', () => {
       rendererEventRecovery.dispose();
     }
   });
+});
+
+describe('workspace projection ingress ownership', () => {
+  it('does not invalidate tasks or fetch aggregates for a rejected note event', async () => {
+    const { loadWorkspaceTasksSucceeded } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    const ws = 'rejected-note-aggregate';
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(ws, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    const original = appStore.state.workspaceTasks.byWorkspaceId[ws];
+    backendRequestSpy.mockClear();
+    await routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'projection',
+        event: {
+          id: 'rejected-note',
+          workspaceId: ws,
+          type: 'note:updated',
+          data: { noteId: 'spec' },
+          timestamp: '2026-10-13T00:00:00Z',
+          actor: { type: 'system' },
+        },
+      },
+      'projection',
+      { lifetimes: new Map() },
+    );
+    await flush();
+    expect(appStore.state.workspaceTasks.byWorkspaceId[ws]).toBe(original);
+    expect(
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get'),
+    ).toHaveLength(0);
+  });
+
+  it.each(['missing', 'retired'])(
+    'does not start activity reads with %s original projection admission',
+    async (kind) => {
+      let current = true;
+      const receipt = {
+        key: {},
+        isCurrent: () => current,
+        commit: (fn: () => undefined) => {
+          if (!current) return false;
+          fn();
+          return true;
+        },
+      };
+      backendRequestSpy.mockClear();
+      const pending = routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'projection',
+          event: {
+            id: `activity-${kind}`,
+            workspaceId: `activity-${kind}`,
+            type: 'agent:idle',
+            data: { agentId: 'unknown' },
+            timestamp: '2026-10-13T00:00:00Z',
+            actor: { type: 'system' },
+          },
+        },
+        'projection',
+        { lifetimes: new Map(kind === 'missing' ? [] : [['workspace-list', receipt]]) },
+      );
+      current = false;
+      await pending;
+      await flush();
+      expect(
+        backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get'),
+      ).toHaveLength(0);
+    },
+  );
+});
+
+describe('admitted task event processing completion', () => {
+  it.each(['success', 'failure', 'retire-before', 'retire-held'] as const)(
+    'settles admitted task work on %s',
+    async (outcome) => {
+      const { rendererEventRecovery } = await import('./renderer-event-recovery');
+      const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+      const { appClient } = await import('$lib/client');
+      const { tasksRecoveryKey } = await import('./task-list-recovery');
+      const { acquireWorkspaceTasksDemand, loadWorkspaceTasksSucceeded } =
+        await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+      vi.useFakeTimers();
+      admitLegacyPrincipal();
+      rendererEventRecovery.dispose();
+      const ws = `task-completion-${outcome}`;
+      const value = { tasks: [], stats: { total: 0, completed: 0, inProgress: 0 } };
+      const scope = rendererEventRecovery.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onNotification: () => () => {},
+          onRetired: () => () => {},
+          dispose: () => {},
+          request: async (method, params, observe) => {
+            const result =
+              method === 'events.subscribe'
+                ? { subscriptionId: 'tasks-completion', lossRecovery: 1 }
+                : params;
+            observe?.(result);
+            return result;
+          },
+        }),
+      );
+      const key = tasksRecoveryKey(ws);
+      scope.registerResource({
+        key,
+        workspaceId: ws,
+        eventTypes: ['task:*'],
+        isCurrent: () => true,
+        read: async () => value,
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {},
+      });
+      await scope.subscribe({ workspaceId: ws, eventTypes: ['task:*'] }, { recover: true });
+      appStore.dispatch(loadWorkspaceTasksSucceeded(ws, [], value.stats));
+      appStore.dispatch(acquireWorkspaceTasksDemand(ws, 'visible'));
+      let finish!: (value: any) => void;
+      let fail!: (error: Error) => void;
+      const read = vi.spyOn(appClient.tasks, 'list').mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+          }),
+      );
+      const tick = async () => {
+        for (let i = 0; i < 100; i++) await Promise.resolve();
+      };
+      try {
+        expect(rendererEventRecovery.push(key)).toBe(true);
+        let complete = false;
+        const pending = Promise.resolve(
+          routeDaemonEventsNotification(
+            'events.event',
+            {
+              subscriptionId: 'tasks-completion',
+              event: {
+                id: 'task-completion-event',
+                workspaceId: ws,
+                type: 'task:created',
+                timestamp: '2026-01-01',
+                data: { noteId: 'task' },
+              },
+            },
+            'tasks-completion',
+            {
+              lifetimes: new Map([
+                [key, rendererEventRecovery.capture(key)],
+                ['workspace-list', null],
+              ]),
+            },
+          ),
+        ).then(() => {
+          complete = true;
+        });
+        await tick();
+        expect.soft(complete).toBe(false);
+        expect(read).not.toHaveBeenCalled();
+        if (outcome === 'retire-before') {
+          rendererEventRecovery.dispose();
+          await pending;
+          await vi.advanceTimersByTimeAsync(1000);
+          expect(read).not.toHaveBeenCalled();
+          return;
+        }
+        await vi.advanceTimersByTimeAsync(1000);
+        await tick();
+        expect(read).toHaveBeenCalledTimes(1);
+        expect.soft(complete).toBe(false);
+        if (outcome === 'retire-held') {
+          rendererEventRecovery.dispose();
+          await pending;
+          finish(value);
+          await tick();
+          expect(appStore.state.workspaceTasks.byWorkspaceId[ws].stale).toBe(true);
+          return;
+        }
+        if (outcome === 'failure') fail(new Error('task list unavailable'));
+        else finish(value);
+        await tick();
+        await pending;
+        expect(appStore.state.workspaceTasks.byWorkspaceId[ws].loading).toBe(false);
+        if (outcome === 'success')
+          expect(appStore.state.workspaceTasks.byWorkspaceId[ws].stale).toBe(false);
+        else expect(appStore.state.workspaceTasks.byWorkspaceId[ws].error).toContain('unavailable');
+      } finally {
+        read.mockRestore();
+        rendererEventRecovery.dispose();
+        __resetDaemonEventsBridgeForTests();
+        vi.useRealTimers();
+      }
+    },
+  );
 });

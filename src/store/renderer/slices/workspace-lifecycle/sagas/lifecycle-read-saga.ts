@@ -1,3 +1,4 @@
+import { installTaskEventCompletionOwner } from '$features/events/task-event-completion';
 import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
 import {
   acquireWorkspaceActivityDemand,
@@ -42,7 +43,11 @@ import {
   changesRecoveryKey,
   registerChangesRecovery,
 } from '$features/file-tracking/changes-event-recovery';
-import { getRecoveryAdmission, withRecoveryLifetime } from '../../../middlewares/event-recovery';
+import {
+  getRecoveryAdmission,
+  getRecoveryLifetime,
+  withRecoveryLifetime,
+} from '../../../middlewares/event-recovery';
 import {
   selectAllWorkspaceScriptEntries,
   selectScriptListPageState,
@@ -388,10 +393,10 @@ function* refreshWorkspaces(): SagaGenerator<void> {
   }
 }
 
-function* refreshTasks(workspaceId: string): SagaGenerator<void> {
+function* refreshTasks(workspaceId: string, original?: RecoveryLifetime): SagaGenerator<void> {
   if (!(yield* selectWorkspaceTasksShouldLoad.effect(workspaceId))) return;
   const authority = rendererEventRecovery.captureAuthority(tasksRecoveryKey(workspaceId));
-  const receipt = rendererEventRecovery.capture(tasksRecoveryKey(workspaceId));
+  const receipt = original ?? rendererEventRecovery.capture(tasksRecoveryKey(workspaceId));
   if (!receipt.commit(() => undefined)) return;
   yield* put(withRecoveryLifetime(workspaceTasksReadStarted(workspaceId), receipt));
   const { readRevision } = yield* selectWorkspaceTasksState.effect(workspaceId);
@@ -2087,7 +2092,16 @@ function tasksReadContext(action: TasksReadAction) {
 }
 
 function* tasksWorker(scheduler: WorkspaceReadScheduler, action: TasksReadAction) {
-  yield* runWorkspaceRead(scheduler, 'tasks', action.payload[0], refreshTasks, false);
+  const original = getRecoveryLifetime(action);
+  yield* runWorkspaceRead(
+    scheduler,
+    'tasks',
+    action.payload[0],
+    function* (workspaceId) {
+      yield* refreshTasks(workspaceId, original);
+    },
+    false,
+  );
 }
 
 function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadAction) {
@@ -2339,6 +2353,7 @@ function* clearUnmountedInitializedContext(
 }
 
 export function* lifecycleReadSaga(): SagaGenerator<void> {
+  const stopTaskCompletions = installTaskEventCompletionOwner();
   const changesReads: ChangesReads = new Map();
   const changesDemand: ChangesDemand = new Map();
   const membershipRevisions = new Map<string, symbol>();
@@ -2483,6 +2498,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
     ]);
   } finally {
+    stopTaskCompletions();
     for (const entry of changesReads.values()) entry.stopRecovery?.();
     initializedContexts.clear();
     pendingInitialEventReads.clear();
