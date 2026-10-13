@@ -1,4 +1,8 @@
-import { withRecoveryLifetime } from '../../middlewares/event-recovery';
+import {
+  getRecoveryAdmission,
+  getRecoveryLifetime,
+  withRecoveryLifetime,
+} from '../../middlewares/event-recovery';
 import { invalidateSettingsReadCache } from '$lib/client/live/live-settings-client';
 import {
   rendererEventRecovery,
@@ -333,15 +337,17 @@ function* watchProviderReadiness() {
   }
 }
 
-function* applyPush(reads: Reads, workspaceId: string, update: WorkspaceCatalogUpdate) {
-  if (!rendererEventRecovery.push(workspaceCatalogRecoveryKey(workspaceId))) return;
-  if (reads.pending.has(workspaceId))
-    reads.receipts.set(
-      workspaceId,
-      rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId)),
-    );
+function* applyPush(
+  reads: Reads,
+  workspaceId: string,
+  update: WorkspaceCatalogUpdate,
+  admitted?: RecoveryLifetime,
+) {
+  if (!admitted && !rendererEventRecovery.push(workspaceCatalogRecoveryKey(workspaceId))) return;
+  const token = admitted ?? rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId));
+  if (!token.commit(() => undefined)) return;
+  if (reads.pending.has(workspaceId)) reads.receipts.set(workspaceId, token);
   reads.pending.get(workspaceId)?.push(update);
-  const token = rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId));
   yield* put(withRecoveryLifetime(workspaceCatalogUpdated(workspaceId, update), token));
   if (update.kind === 'toggle') {
     const snapshot = yield* selectWorkspaceCatalog.effect(workspaceId);
@@ -375,6 +381,12 @@ function* onEvent(
     event.workspaceId || (typeof data?.workspaceId === 'string' ? data.workspaceId : undefined);
   const targets = scope ? mounted.filter((id) => id === scope) : mounted;
   for (const workspaceId of targets) {
+    const admission = getRecoveryAdmission(action, workspaceCatalogRecoveryKey(workspaceId));
+    if (admission === null || (admission && !admission.commit(() => undefined))) continue;
+    const request = (resources: WorkspaceCatalogResource[]) => {
+      const refresh = workspaceCatalogRequested(workspaceId, resources);
+      return admission ? withRecoveryLifetime(refresh, admission) : refresh;
+    };
     // WorkspaceEventType covers timeline events; daemon catalog events have additional names.
     switch (event.type as string) {
       case 'settings:changed': {
@@ -389,11 +401,11 @@ function* onEvent(
           : [];
         if (!changes.length) {
           // Missing deltas cannot update definitions, but do not invalidate unrelated resources.
-          yield* put(workspaceCatalogRequested(workspaceId, ['settings']));
+          yield* put(request(['settings']));
           break;
         }
         const snapshot = yield* selectWorkspaceCatalog.effect(workspaceId);
-        yield* applyPush(reads, workspaceId, { kind: 'settings', changes });
+        yield* applyPush(reads, workspaceId, { kind: 'settings', changes }, admission);
         const resources = new Set<WorkspaceCatalogResource>();
         if (
           snapshot &&
@@ -408,13 +420,13 @@ function* onEvent(
           resources.add('readiness');
         if (changes.some((change) => change.path === 'specialists.dir'))
           resources.add('specialists');
-        if (resources.size) yield* put(workspaceCatalogRequested(workspaceId, [...resources]));
+        if (resources.size) yield* put(request([...resources]));
         break;
       }
       case 'specialists:changed':
       case 'skills:changed':
         // Both supported events name the affected workspace, including user-tier changes.
-        if (scope) yield* put(workspaceCatalogRequested(workspaceId, ['specialists']));
+        if (scope) yield* put(request(['specialists']));
         break;
       case 'mcp.servers:status-changed': {
         const status = data?.status as { state?: unknown; lastError?: unknown } | undefined;
@@ -424,16 +436,21 @@ function* onEvent(
           mapDaemonMcpState(status.state) === null
         )
           break;
-        yield* applyPush(reads, workspaceId, {
-          kind: 'status',
-          status: {
-            serverId: data.serverId,
-            state: status.state as NonNullable<
-              WorkspaceCatalogSnapshot['mcpStatuses']
-            >[number]['state'],
-            ...(typeof status.lastError === 'string' ? { lastError: status.lastError } : {}),
+        yield* applyPush(
+          reads,
+          workspaceId,
+          {
+            kind: 'status',
+            status: {
+              serverId: data.serverId,
+              state: status.state as NonNullable<
+                WorkspaceCatalogSnapshot['mcpStatuses']
+              >[number]['state'],
+              ...(typeof status.lastError === 'string' ? { lastError: status.lastError } : {}),
+            },
           },
-        });
+          admission,
+        );
         break;
       }
       case 'workspace:updated': {
@@ -445,11 +462,16 @@ function* onEvent(
           typeof toggle?.serverId === 'string' &&
           typeof toggle.workspaceDisabled === 'boolean'
         ) {
-          yield* applyPush(reads, workspaceId, {
-            kind: 'toggle',
-            serverId: toggle.serverId,
-            workspaceDisabled: toggle.workspaceDisabled,
-          });
+          yield* applyPush(
+            reads,
+            workspaceId,
+            {
+              kind: 'toggle',
+              serverId: toggle.serverId,
+              workspaceDisabled: toggle.workspaceDisabled,
+            },
+            admission,
+          );
         }
         break;
       }
@@ -465,11 +487,16 @@ function* onConfirmedToggle(
   const snapshot = yield* selectWorkspaceCatalog.effect(workspaceId);
   const server = snapshot?.mcpServers?.find((entry) => getMcpServerKey(entry) === key);
   if (server?.id)
-    yield* applyPush(reads, workspaceId, {
-      kind: 'toggle',
-      serverId: server.id,
-      workspaceDisabled,
-    });
+    yield* applyPush(
+      reads,
+      workspaceId,
+      {
+        kind: 'toggle',
+        serverId: server.id,
+        workspaceDisabled,
+      },
+      getRecoveryLifetime(action),
+    );
 }
 
 function* watchReconnects(seen: Set<string>) {

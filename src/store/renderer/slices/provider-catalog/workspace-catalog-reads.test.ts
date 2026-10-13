@@ -1,3 +1,5 @@
+import { withRecoveryAdmissions } from '../../middlewares/event-recovery';
+import { workspaceCatalogRecoveryKey } from './workspace-catalog-recovery';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import {
   createEventRecoverySession,
@@ -297,6 +299,53 @@ describe('workspace catalog host probes through live clients', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(wire.mock.calls.filter(([method]) => method === 'settings.list')).toHaveLength(2);
     expect(store.state.providerCatalog.byWorkspaceId?.[WS]).toBeDefined();
+  });
+
+  it('preserves independent bridge admission and never admits the same event twice', async () => {
+    await attachRecovery();
+    backend.onRequest('settings.list', () => ({
+      settings: [{ path: 'model.defaultProvider', value: 'initial' }],
+    }));
+    store.dispatch(workspaceMounted(WS));
+    store.dispatch(workspaceMounted('other'));
+    await settle();
+    const otherKey = workspaceCatalogRecoveryKey('other');
+    const receipt = rendererEventRecovery.capture(otherKey);
+    const push = vi.spyOn(rendererEventRecovery, 'push');
+    const event = {
+      type: 'settings:changed',
+      workspaceId: '',
+      data: { changes: [{ path: 'model.defaultProvider', value: 'admitted' }] },
+    } as unknown as WorkspaceEvent;
+    store.dispatch(
+      withRecoveryAdmissions(
+        workspaceCatalogEventReceived(event),
+        new Map([
+          [workspaceCatalogRecoveryKey(WS), null],
+          [otherKey, receipt],
+        ]),
+      ),
+    );
+    await settle();
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].settings[0]?.value).toBe('initial');
+    expect(store.state.providerCatalog.byWorkspaceId?.other.settings[0]?.value).toBe('admitted');
+    expect(push).not.toHaveBeenCalled();
+    push.mockRestore();
+    rendererEventRecovery.push(otherKey);
+    store.dispatch(
+      withRecoveryAdmissions(
+        workspaceCatalogEventReceived({
+          ...event,
+          data: { changes: [{ path: 'model.defaultProvider', value: 'obsolete-receipt' }] },
+        } as unknown as WorkspaceEvent),
+        new Map([
+          [workspaceCatalogRecoveryKey(WS), null],
+          [otherKey, receipt],
+        ]),
+      ),
+    );
+    await settle();
+    expect(store.state.providerCatalog.byWorkspaceId?.other.settings[0]?.value).toBe('admitted');
   });
 
   it('shares lifecycle and sidebar mount demand without a second MCP list', async () => {
