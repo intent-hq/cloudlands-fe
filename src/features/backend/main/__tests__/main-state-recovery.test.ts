@@ -142,6 +142,85 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('main-process generic loss recovery', () => {
+  it('real reconnect renews settings only once', async () => {
+    const { EventEmitter } = await import('node:events');
+    const { JsonRpcClient: RealClient } = await import('../json-rpc-client');
+    let value = 'old/';
+    let subscription = 0;
+    class Socket extends EventEmitter {
+      destroyed = false;
+      frames: Array<{ id: number; method: string }> = [];
+      write(line: string) {
+        const frame = JSON.parse(line);
+        this.frames.push(frame);
+        let result;
+        if (frame.method === 'client.hello')
+          result = { clientId: 'desktop', server: { capabilities: { eventStreamRecovery: 1 } } };
+        else if (frame.method === 'events.subscribe')
+          result = { subscriptionId: `s-${++subscription}`, lossRecovery: 1 };
+        else if (frame.method === 'settings.get') result = { value };
+        else result = {};
+        queueMicrotask(() =>
+          this.emit(
+            'data',
+            Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) + '\n'),
+          ),
+        );
+        return true;
+      }
+      destroy() {
+        this.destroyed = true;
+      }
+    }
+    const sockets: Socket[] = [];
+    const client = new RealClient({
+      socketFactory: () => {
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket as unknown as import('node:stream').Duplex;
+      },
+      helloParams: () => ({ clientId: 'desktop' }),
+      heartbeatIntervalMs: 0,
+      reconnectDelayMs: 10,
+    });
+    mock.client = client;
+    client.on('status', (status) => {
+      for (const callback of mock.statuses) callback(status);
+    });
+    client.on('reconnected', () => {
+      for (const callback of mock.reconnects) callback();
+    });
+    try {
+      client.start();
+      sockets[0].emit('connect');
+      await flush();
+      expect(client.getRepositoryConnection()).not.toBeNull();
+      await settings.initAppSettingsService();
+      await flush();
+      expect(settings.getBranchPrefix()).toBe('old/');
+      value = 'renewed/';
+      sockets[0].emit('close');
+      await vi.advanceTimersByTimeAsync(10);
+      expect(sockets).toHaveLength(2);
+      sockets[1].emit('connect');
+      await flush();
+      expect(client.getStatus()).toBe('connected');
+      expect(settings.getBranchPrefix()).toBe('renewed/');
+      expect(
+        sockets
+          .flatMap((socket) => socket.frames)
+          .filter((frame) => frame.method === 'events.subscribe'),
+      ).toHaveLength(2);
+      expect(
+        sockets
+          .flatMap((socket) => socket.frames)
+          .filter((frame) => frame.method === 'settings.get'),
+      ).toHaveLength(6);
+    } finally {
+      client.dispose();
+    }
+  });
+
   it('real JsonRpcClient rehello automatically restores settings', async () => {
     const { EventEmitter } = await import('node:events');
     const { JsonRpcClient: RealClient } = await import('../json-rpc-client');

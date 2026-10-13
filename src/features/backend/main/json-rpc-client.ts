@@ -498,7 +498,7 @@ export class JsonRpcClient extends EventEmitter {
     return () => this.repositoryObservers.delete(listener);
   }
 
-  /** Main-only readiness signal, including a new identity on the existing socket. */
+  /** Main-only identity renewal on a connected socket; physical reconnect uses status. */
   onRepositoryIdentityConfirmed(listener: (connection: RepositoryConnection) => void): () => void {
     this.identityConfirmedObservers.add(listener);
     return () => {
@@ -1455,6 +1455,5 @@ export class JsonRpcClient extends EventEmitter {
     if (this.status === status) return;
     this.status = status;
     this.emit('status', status);
-    if (status === 'connected') this.emitIdentityConfirmed();
   }
 }
