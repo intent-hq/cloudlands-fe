@@ -1950,14 +1950,20 @@ function createAdditionalBackendClient(
             continue;
           }
           const receipt = recovery?.resource.captureLifetime();
-          const current = Object.assign(
+          const connection = instance.getRepositoryConnection?.();
+          // Enduring admission follows principal/connection authority, not the
+          // mutation receipt invalidated by each accepted workspace event.
+          const admitted = Object.assign(
             () =>
               backendClients.get(id) === instance &&
               guestWorkspaceEvents.generation === generation &&
               identityRevision === revision &&
-              (!receipt || receipt.isCurrent()),
+              (!connection || instance.getRepositoryConnection?.() === connection),
             { credential: invitedCredential },
           );
+          const current = Object.assign(() => admitted() && (!receipt || receipt.isCurrent()), {
+            credential: invitedCredential,
+          });
           invitedConnectionGuards.delete(id);
           principalRead = poolRequest(owner, instance, 'principal.me');
           const principal = await principalRead;
@@ -1980,7 +1986,7 @@ function createAdditionalBackendClient(
             !current()
           )
             continue;
-          invitedConnectionGuards.set(id, current);
+          invitedConnectionGuards.set(id, admitted);
           hostMembership = snapshot.capabilities.hostMembership;
           void captureRemoteHostnameOwned(id, owner);
           void captureRemoteUpdateSupportedOwned(id, owner);

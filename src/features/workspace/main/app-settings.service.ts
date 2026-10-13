@@ -173,6 +173,11 @@ async function refreshSettings(paths: readonly string[]): Promise<void> {
 
 async function refreshSettingsPass(paths: readonly string[]): Promise<void> {
   if (authorityRetired) return;
+  // Missing-path hydration joins recovery demand instead of issuing parallel reads.
+  if (recoveryResource?.status.stale) {
+    if (recoveryResource.status.suspended) recoveryResource.refresh();
+    return;
+  }
   const epoch = subscribeEpoch;
   const receipt = recoveryResource?.captureLifetime();
   await Promise.all(
@@ -267,12 +272,25 @@ function captureSettingsRecovery(): void {
     eventTypes: ['settings:changed'],
     read: async (reader) => {
       await ordinaryRefresh;
-      return Promise.all(
+      const results = await Promise.allSettled(
         APP_SETTING_PATHS.map(async (path) => {
           const result = await reader.request<{ value?: unknown }>('settings.get', { path });
           return [path, typeof result?.value === 'string' ? result.value : ''] as const;
         }),
       );
+      // Keep the cycle active until every sibling settles; an early rejection
+      // must not allow the retry timer to duplicate still-running path reads.
+      const failures = results.filter((result) => result.status === 'rejected');
+      const authorityFailure = failures.find(({ reason }) => {
+        const error = reason as { rpcCode?: number; data?: { code?: string } } | null;
+        return (
+          error?.rpcCode === -32003 ||
+          error?.rpcCode === -32001 ||
+          (error?.rpcCode === -32602 && error.data?.code === 'not-found')
+        );
+      });
+      if (failures.length) throw (authorityFailure ?? failures[0]).reason;
+      return results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
     },
     apply: (values) => {
       for (const [path, value] of values) setCachedValue(path, value);
@@ -391,7 +409,10 @@ function clearSubscribeRetry(): void {
  * promise so `initAppSettingsService` can order subscribe-before-fetch.
  */
 function attachSettingsListeners(): Promise<void> {
-  if (listenersAttached) return Promise.resolve();
+  if (listenersAttached)
+    return recovery && !recovery.session.isCurrent()
+      ? subscribeToSettingsChanges()
+      : Promise.resolve();
   listenersAttached = true;
   notificationDisposer = onBackendNotification(handleBackendNotification, LOCAL_CONNECTION_ID);
   reconnectDisposer = onBackendReconnected(() => {

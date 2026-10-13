@@ -129,6 +129,120 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('main-process generic loss recovery', () => {
+  it('explicit incomplete hydration must join an active loss recovery', async () => {
+    const d = daemon();
+    const original = d.request.getMockImplementation();
+    d.request.mockImplementation((method, params) =>
+      method === 'settings.get' && params?.path === 'workspace.branchPrefix'
+        ? Promise.reject(new Error('temporary startup failure'))
+        : (original?.(method, params) ?? Promise.resolve()),
+    );
+    await settings.initAppSettingsService();
+    await flush();
+    const held: Array<(value: unknown) => void> = [];
+    d.request.mockImplementation((method, params) =>
+      method === 'settings.get'
+        ? new Promise((resolve) => held.push(resolve))
+        : (original?.(method, params) ?? Promise.resolve()),
+    );
+    d.loss();
+    await flush();
+    expect(held).toHaveLength(3);
+    await settings.initAppSettingsService();
+    await flush();
+    expect(
+      held,
+      'ordinary missing-path hydration must not overlap the active recovery',
+    ).toHaveLength(3);
+    for (const resolve of held) resolve({ value: '/fresh' });
+    await flush();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(held).toHaveLength(3);
+    expect(settings.getBranchPrefix()).toBe('/fresh');
+  });
+  it('settings resume after replacement identity without a socket reconnect', async () => {
+    const d = daemon();
+    await settings.initAppSettingsService();
+    await flush();
+    d.retire();
+    d.values['workspace.branchPrefix'] = 'renewed/';
+    d.connect(false);
+    await settings.initAppSettingsService();
+    await flush();
+    expect(settings.getBranchPrefix()).toBe('renewed/');
+  });
+
+  it('transient partial settings failure must not overlap held path reads', async () => {
+    const d = daemon();
+    await settings.initAppSettingsService();
+    await flush();
+    const original = d.request.getMockImplementation();
+    let branchReads = 0;
+    let active = 0;
+    let peakActive = 0;
+    const held: Array<(value: unknown) => void> = [];
+    d.request.mockImplementation((method, params) => {
+      if (method !== 'settings.get') return original?.(method, params) ?? Promise.resolve();
+      if (params?.path === 'workspace.branchPrefix') {
+        branchReads++;
+        return branchReads === 1
+          ? Promise.reject(new Error('temporary'))
+          : Promise.resolve({ value: 'current/' });
+      }
+      active++;
+      peakActive = Math.max(peakActive, active);
+      return new Promise((resolve) =>
+        held.push((value) => {
+          active--;
+          resolve(value);
+        }),
+      );
+    });
+    d.loss();
+    await flush();
+    expect(held).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(
+      held,
+      'a retry must not start another worktree/SSH read before the first settles',
+    ).toHaveLength(2);
+    for (const resolve of held.splice(0)) resolve({ value: '/fresh' });
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(branchReads).toBe(2);
+    expect(active).toBe(2);
+    expect(peakActive).toBe(2);
+    for (const resolve of held.splice(0)) resolve({ value: '/fresh' });
+    await flush();
+    expect(active).toBe(0);
+    expect(settings.getBranchPrefix()).toBe('current/');
+  });
+
+  it('preserves authority retirement when a sibling settings read also fails transiently', async () => {
+    const d = daemon();
+    await settings.initAppSettingsService();
+    await flush();
+    const original = d.request.getMockImplementation();
+    d.request.mockImplementation((method, params) => {
+      if (method !== 'settings.get') return original?.(method, params) ?? Promise.resolve();
+      return Promise.reject(
+        params?.path === 'workspace.sshKeyPath'
+          ? Object.assign(new Error('forbidden'), { rpcCode: -32003 })
+          : new Error('temporary'),
+      );
+    });
+    d.loss();
+    await flush();
+    expect(settings.getBranchPrefix()).toBe('');
+    expect(settings.getWorktreesLocation()).toBe('');
+    expect(settings.getSshKeyPath()).toBe('');
+    const reads = calls(d, 'settings.get').length;
+    await vi.advanceTimersByTimeAsync(6000);
+    await settings.initAppSettingsService();
+    await flush();
+    expect(calls(d, 'settings.get')).toHaveLength(reads);
+  });
+
   it('recovers final lost settings with one fenced read per path and rejects delayed unversioned pushes', async () => {
     const d = daemon();
     await settings.initAppSettingsService();

@@ -5525,6 +5525,95 @@ describe('guest-sessions:* IPC handlers', () => {
         return { guest, send, mod };
       }
 
+      it('ordinary guest updates still refresh after same-socket hello', async () => {
+        rpc.recovery = true;
+        let title = 'Before';
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list')
+            return { workspaces: [{ id: 'ws-guest', title, myRole: 'collaborator' }] };
+          return {};
+        };
+        const { guest } = await connectGuest();
+        guest.hello(hello);
+        await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1));
+        guestStore.setWorkspaces.mockClear();
+        title = 'Renamed';
+        guest.emit(
+          'notification',
+          workspaceEvent(SUB_ID, 'workspace:updated', {
+            workspaceId: 'ws-guest',
+            changes: { title },
+          }),
+        );
+        await vi.waitFor(
+          () =>
+            expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+              GUEST.id,
+              [{ id: 'ws-guest', title: 'Renamed' }],
+              expect.any(Function),
+            ),
+          { timeout: 300 },
+        );
+      });
+
+      it('ordinary guest updates still refresh after host membership refresh', async () => {
+        rpc.recovery = true;
+        rpc.principal = async () => ({
+          id: GUEST.principalId,
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator: false,
+          hostRole: 'guest',
+          hostMembershipRevision: 1,
+        });
+        let title = 'Before';
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list')
+            return { workspaces: [{ id: 'ws-guest', title, myRole: 'collaborator' }] };
+          return {};
+        };
+        installGuest();
+        guestStore.setWorkspaces.mockResolvedValue(true);
+        installWindow();
+        const { mod } = await loadModule();
+        mod.registerBackendHandlers();
+        const guest = await mod.connectBackendClient(GUEST.id);
+        guest.hello({ server: { ...hello.server, capabilities: { hostMembership: 1 } } });
+        await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1));
+        guest.emit(
+          'notification',
+          workspaceEvent(SUB_ID, 'host:members-changed', {
+            principalId: GUEST.principalId,
+            hostRole: 'guest',
+            action: 'removed',
+            revision: 2,
+          }),
+        );
+        await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(2));
+        guestStore.setWorkspaces.mockClear();
+        title = 'Renamed';
+        guest.emit(
+          'notification',
+          workspaceEvent(SUB_ID, 'workspace:updated', {
+            workspaceId: 'ws-guest',
+            changes: { title },
+          }),
+        );
+        await vi.waitFor(
+          () =>
+            expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+              GUEST.id,
+              [{ id: 'ws-guest', title: 'Renamed' }],
+              expect.any(Function),
+            ),
+          { timeout: 300 },
+        );
+      });
       it('recovers the final lost guest title and membership from fenced authority reads', async () => {
         rpc.recovery = true;
         let rows = [{ id: 'ws-guest', title: 'Before', myRole: 'collaborator' }];
