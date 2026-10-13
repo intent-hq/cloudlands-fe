@@ -33,6 +33,14 @@ type SendReport = (params: {
   };
 }) => Promise<unknown>;
 
+function requireProtectedStorage(): void {
+  if (!safeStorage.isEncryptionAvailable())
+    throw desktopFailure(
+      'desktop-execution-failed',
+      'Protected local credential storage is unavailable',
+    );
+}
+
 /** Protected app-local outbox, never workspace content. Failed writes keep the
  * in-memory report and fail visibly; they cannot restore native authority. */
 export class DesktopReportStore implements DesktopStopReports {
@@ -49,15 +57,13 @@ export class DesktopReportStore implements DesktopStopReports {
   private async load(): Promise<void> {
     if (!this.loading)
       this.loading = (async () => {
-        if (!safeStorage.isEncryptionAvailable())
-          throw desktopFailure(
-            'desktop-execution-failed',
-            'Protected local credential storage is unavailable',
-          );
         try {
           const files = (await fs.readdir(this.directory())).filter((name) =>
             /^[a-f0-9]{64}\.enc$/.test(name),
           );
+          // A fresh connection has no credentials to restore. Do not initialize
+          // the OS Keychain (which can show blocking UI) for an empty outbox.
+          if (files.length > 0) requireProtectedStorage();
           this.records = await Promise.all(
             files.map(async (name) =>
               recordSchema.parse(
@@ -90,6 +96,7 @@ export class DesktopReportStore implements DesktopStopReports {
     const write = this.writes
       .catch(() => {})
       .then(async () => {
+        requireProtectedStorage();
         const filename = this.path(record);
         await fs.mkdir(dirname(filename), { recursive: true, mode: 0o700 });
         const data = safeStorage.encryptString(JSON.stringify(record));

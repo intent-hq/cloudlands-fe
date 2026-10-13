@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DesktopReportStore } from './desktop-stop-reports';
+import { safeStorage } from 'electron';
 
 const storage = vi.hoisted(() => ({ available: true }));
 vi.mock('electron', () => ({
@@ -40,6 +41,50 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 describe('durable local Stop reports', () => {
+  it.each(['absent', 'empty'])(
+    'does not touch the Keychain when connecting with an %s outbox',
+    async (kind) => {
+      const directory = join(dir, 'reports');
+      if (kind === 'empty') await fs.mkdir(directory);
+      const check = vi.spyOn(safeStorage, 'isEncryptionAvailable');
+      const readDirectory = vi.spyOn(fs, 'readdir');
+      const failure = vi.fn();
+      const send = vi.fn();
+      const store = new DesktopReportStore(() => directory, failure);
+      store.connect('backend-a', 'human', send);
+      await vi.waitFor(() => expect(readDirectory).toHaveBeenCalled());
+      await readDirectory.mock.results[0].value.catch(() => {});
+      await store.flush('backend-a');
+      expect(check).not.toHaveBeenCalled();
+      expect(failure).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+  it('requires protected storage for every write after an empty startup', async () => {
+    const directory = join(dir, 'reports');
+    const store = new DesktopReportStore(() => directory);
+    store.connect('backend-a', 'human', vi.fn());
+    await store.retain(credential);
+    const original = await savedFiles(directory);
+    storage.available = false;
+    await expect(store.retain({ ...credential, sessionId: 'next' })).rejects.toMatchObject({
+      data: { code: 'desktop-execution-failed' },
+    });
+    expect(await savedFiles(directory)).toEqual(original);
+  });
+  it('does not decrypt or send existing reports when protected storage is unavailable', async () => {
+    const directory = join(dir, 'reports');
+    await new DesktopReportStore(() => directory).queue(credential);
+    storage.available = false;
+    const decrypt = vi.spyOn(safeStorage, 'decryptString');
+    const failure = vi.fn();
+    const send = vi.fn();
+    const store = new DesktopReportStore(() => directory, failure);
+    store.connect('backend-a', 'human', send);
+    await vi.waitFor(() => expect(failure).toHaveBeenCalled());
+    expect(decrypt).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
   it('retains encrypted credentials before activation and sends nothing until Stop', async () => {
     const filename = join(dir, 'reports');
     const store = new DesktopReportStore(() => filename);
