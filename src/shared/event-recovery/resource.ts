@@ -5,10 +5,18 @@ interface LeaseIdentity {
   id: string;
   lifetime: object;
 }
+/** Opaque identity includes every ownership transition, including same-name ABA changes. */
+export interface RecoveryLifetime {
+  readonly key: object;
+  isCurrent(): boolean;
+  /** Atomic synchronous mutation; stale, retired and pre-loss receipts cannot commit. */
+  commit(mutation: () => undefined): boolean;
+}
 interface Owner<T> {
-  read(): Promise<T>;
+  sourceOrdered?: boolean;
+  read(lifetime: RecoveryLifetime): Promise<T>;
   fence(ids: readonly string[], observe: () => void): Promise<void>;
-  apply(value: T): void;
+  apply(value: T): undefined;
   invalidate(): void;
   retire(error: unknown): void;
 }
@@ -16,7 +24,9 @@ interface Owner<T> {
 /** One owner per authoritative read key. Timers and promises are not domain state. */
 export class RecoveryResource<T> {
   private leases: readonly LeaseIdentity[] = [];
-  private epoch = 0;
+  private recoverable = true;
+  private epoch: object = {};
+  private recovered = false;
   private dirty = 0n;
   private stale = false;
   private active = true;
@@ -36,8 +46,23 @@ export class RecoveryResource<T> {
       running: this.running,
     };
   }
-  setLeases(leases: readonly LeaseIdentity[]) {
+  captureLifetime(): RecoveryLifetime {
+    const epoch = this.epoch;
+    const dirty = this.dirty;
+    const isCurrent = () => !this.disposed && this.active && epoch === this.epoch;
+    return Object.freeze({
+      key: epoch,
+      isCurrent,
+      commit: (mutation: () => undefined) => {
+        if (!isCurrent() || this.stale || dirty !== this.dirty) return false;
+        mutation();
+        return true;
+      },
+    });
+  }
+  setLeases(leases: readonly LeaseIdentity[], recoverable = true) {
     if (
+      this.recoverable === recoverable &&
       this.leases.length === leases.length &&
       this.leases.every(
         (lease, i) => lease.id === leases[i].id && lease.lifetime === leases[i].lifetime,
@@ -45,7 +70,8 @@ export class RecoveryResource<T> {
     )
       return;
     this.leases = [...leases];
-    this.epoch++;
+    this.recoverable = recoverable;
+    this.epoch = {};
     this.cancelTimer();
     if (this.stale) this.schedule();
   }
@@ -56,10 +82,14 @@ export class RecoveryResource<T> {
     this.owner.invalidate();
     this.schedule();
   }
-  /** Resource adapter calls this before applying ANY unversioned push. */
+  /**
+   * Every push writer must enter here. A bus fence cannot date unpublished payloads:
+   * without proven source ordering, recovery permanently switches this lifetime to
+   * invalidation-only delivery. Ordinary pre-loss push behavior is unchanged.
+   */
   push(): boolean {
     if (this.disposed) return false;
-    if (this.stale) {
+    if (this.stale || (this.recovered && !this.owner.sourceOrdered)) {
       this.invalidate();
       return false;
     }
@@ -68,7 +98,7 @@ export class RecoveryResource<T> {
   setActive(active: boolean) {
     if (this.active === active || this.disposed) return;
     this.active = active;
-    this.epoch++;
+    this.epoch = {};
     this.cancelTimer();
     if (active) {
       this.failures = 0;
@@ -79,9 +109,10 @@ export class RecoveryResource<T> {
   }
   /** Call at each workspace/entity ownership transition, including A→B→A. */
   changeLifetime() {
-    this.epoch++;
+    this.epoch = {};
     this.cancelTimer();
     this.stale = false;
+    this.recovered = false;
     this.failures = 0;
     this.suspended = false;
     this.retryAt = -Infinity;
@@ -95,7 +126,7 @@ export class RecoveryResource<T> {
   }
   dispose() {
     this.disposed = true;
-    this.epoch++;
+    this.epoch = {};
     this.cancelTimer();
   }
   private cancelTimer() {
@@ -110,6 +141,7 @@ export class RecoveryResource<T> {
       this.running ||
       this.suspended ||
       this.timer !== undefined ||
+      !this.recoverable ||
       !this.leases.length ||
       this.leases.length > 64
     )
@@ -141,13 +173,14 @@ export class RecoveryResource<T> {
       });
       if (!current()) return;
       this.lastRead = Date.now();
-      const snapshot = await this.owner.read();
+      const snapshot = await this.owner.read(this.captureLifetime());
       if (!current()) return;
       await this.owner.fence(ids, () => {
         if (!current() || version !== this.dirty) return;
         // Commit inside the ingress barrier, before callbacks following the end reply.
         this.owner.apply(snapshot);
         this.stale = false;
+        this.recovered = true;
         this.failures = 0;
         this.retryAt = -Infinity;
       });

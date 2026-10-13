@@ -3,23 +3,39 @@ import {
   type RecoveryLease,
   type RecoveryScope,
 } from '$shared/event-recovery/admission';
-import { RecoveryResource } from '$shared/event-recovery/resource';
+import { RecoveryResource, type RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { EventRecoverySession, RecoveryNotification } from '$shared/event-recovery/session';
 
+interface RecoveryReader {
+  readonly lifetime: RecoveryLifetime;
+  request<T = unknown>(method: string, params?: unknown): Promise<T>;
+}
 interface ResourceOwner<T> extends RecoveryScope {
-  /** Includes workspace/entity/read identity. One registered owner per key. */
+  /** Workspace/entity/read key local to this captured backend/principal session.
+   * Use reader.lifetime.key (opaque object), never this string, for shared read caches.
+   */
   key: string;
   active?: boolean;
-  read(session: EventRecoverySession): Promise<T>;
-  apply(value: T): void;
+  /** Opt in only with source revisions or proven commit/publication serialization. */
+  sourceOrdered?: boolean;
+  read(reader: RecoveryReader): Promise<T>;
+  /** Atomic store commit inside the end barrier; async preparation belongs in read. */
+  apply(value: T): undefined;
   invalidate(): void;
   retire(error: unknown): void;
-  /** Synchronous mutations or a processing receipt; never await a recovery read here. */
-  onEvent?(notification: RecoveryNotification): void | Promise<void>;
+  /**
+   * Own ALL mutations for this resource (including overlapping legacy leases).
+   * After awaiting work, write via lifetime.commit. Return the entire processing
+   * receipt so end-fence observation waits for it. Never await recovery here.
+   */
+  onEvent?(notification: RecoveryNotification, lifetime: RecoveryLifetime): void | Promise<void>;
 }
 interface Registration {
   scope: RecoveryScope;
-  resource: Pick<RecoveryResource<unknown>, 'setLeases' | 'invalidate' | 'push' | 'dispose'>;
+  resource: Pick<
+    RecoveryResource<unknown>,
+    'setLeases' | 'invalidate' | 'push' | 'dispose' | 'captureLifetime'
+  >;
   onEvent?: ResourceOwner<unknown>['onEvent'];
 }
 interface SubscribeParams {
@@ -65,7 +81,21 @@ export class EventRecoveryCoordinator {
     if (this.disposed || this.resources.has(owner.key))
       throw new Error('Recovery resource owner already registered or retired');
     const resource = new RecoveryResource({
-      read: () => owner.read(this.session),
+      sourceOrdered: owner.sourceOrdered,
+      read: (lifetime) =>
+        owner.read({
+          lifetime,
+          request: async <R>(method: string, params?: unknown): Promise<R> => {
+            const assertCurrent = () => {
+              if (!lifetime.isCurrent() || !this.session.isCurrent())
+                throw new Error('Recovery read lifetime retired');
+            };
+            assertCurrent();
+            const result = await this.session.request<R>(method, params);
+            assertCurrent();
+            return result;
+          },
+        }),
       fence: (ids, observe) => this.session.fence(ids, observe),
       apply: owner.apply,
       invalidate: owner.invalidate,
@@ -88,6 +118,7 @@ export class EventRecoveryCoordinator {
       refresh: () => resource.refresh(),
       /** Use for additional mutation owners which participate in this same lifetime. */
       push: () => resource.push(),
+      captureLifetime: () => resource.captureLifetime(),
       dispose: () => {
         if (this.resources.get(owner.key) !== row) return;
         resource.dispose();
@@ -184,9 +215,8 @@ export class EventRecoveryCoordinator {
       );
       // An overlapping legacy mutation owner cannot be silently omitted from a fence.
       row.resource.setLeases(
-        covering.some((lease) => !lease.recovery)
-          ? []
-          : covering.map((lease) => ({ id: lease.id, lifetime: lease.lifetime })),
+        covering.map((lease) => ({ id: lease.id, lifetime: lease.lifetime })),
+        covering.every((lease) => lease.recovery),
       );
     }
   }
@@ -228,7 +258,7 @@ export class EventRecoveryCoordinator {
       if (row.onEvent) {
         handled = true;
         if (row.resource.push()) {
-          const result = row.onEvent(notification);
+          const result = row.onEvent(notification, row.resource.captureLifetime());
           if (result) pending.push(result);
         }
       } else if (!row.resource.push()) blocked = true;

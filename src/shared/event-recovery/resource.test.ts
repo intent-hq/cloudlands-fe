@@ -23,6 +23,7 @@ function setup() {
     observe();
   });
   const resource = new RecoveryResource({
+    sourceOrdered: true,
     read,
     fence,
     apply: applied,
@@ -231,4 +232,52 @@ it('new losses cannot shorten failure delays, and explicit refresh opens a fresh
   expect(h.read).toHaveBeenCalledTimes(4);
   expect(h.applied).toHaveBeenCalledExactlyOnceWith('snapshot');
   expect(h.resource.status).toMatchObject({ stale: false, suspended: false, failures: 0 });
+});
+
+describe('adapter lifetime and source ordering', () => {
+  it('changes opaque identity on workspace ABA and covering lease changes', () => {
+    const h = setup();
+    const first = h.resource.captureLifetime();
+    h.resource.changeLifetime();
+    h.resource.changeLifetime();
+    expect(first.isCurrent()).toBe(false);
+    expect(h.resource.captureLifetime().key).not.toBe(first.key);
+    const next = h.resource.captureLifetime();
+    h.resource.setLeases([{ id: 'a', lifetime: {} }]);
+    expect(next.isCurrent()).toBe(false);
+    const last = h.resource.captureLifetime();
+    h.resource.dispose();
+    expect(last.commit(vi.fn())).toBe(false);
+  });
+  it('rejects a delayed mutation captured before loss even after reconciliation', async () => {
+    const h = setup();
+    const beforeLoss = h.resource.captureLifetime();
+    h.resource.invalidate();
+    await settle();
+    const write = vi.fn();
+    expect(beforeLoss.commit(write)).toBe(false);
+    expect(write).not.toHaveBeenCalled();
+    expect(h.resource.captureLifetime().commit(write)).toBe(true);
+  });
+  it('uses invalidation-only pushes after recovery unless source ordering is proven', async () => {
+    vi.useFakeTimers();
+    const read = vi.fn(async () => 'snapshot');
+    const resource = new RecoveryResource({
+      read,
+      fence: async (_ids, observe) => observe(),
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    resource.setLeases([{ id: 'a', lifetime: {} }]);
+    expect(resource.push()).toBe(true);
+    resource.invalidate();
+    await settle();
+    expect(resource.push()).toBe(false);
+    expect(resource.status.stale).toBe(true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(resource.push()).toBe(false);
+    resource.dispose();
+  });
 });

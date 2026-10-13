@@ -4,6 +4,7 @@ import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createEventRecoveryTransport } from '$lib/client/live/event-recovery-transport';
+import { EventRecoveryCoordinator } from '../../events/event-recovery-coordinator';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import { JsonRpcClient } from './json-rpc-client';
 import { registerEventRecoveryHandlers } from './event-recovery-ipc';
@@ -155,6 +156,81 @@ describe('Electron recovery IPC through real JSON-RPC decode', () => {
     await subscribing;
     for (let i = 0; i < 20; i++) await Promise.resolve();
     expect(observations).toEqual([true]);
+  });
+
+  it('keeps partial adoption and mixed writers behind the owner processing barrier', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const unhandled = vi.fn();
+    const coordinator = new EventRecoveryCoordinator(session, unhandled);
+    cleanup.push(() => coordinator.dispose());
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const write = vi.fn();
+    const read = vi.fn(async () => 'snapshot');
+    const resource = coordinator.registerResource({
+      key: 'files:ws-a',
+      workspaceId: 'ws-a',
+      eventTypes: ['file:*'],
+      read,
+      apply: vi.fn(),
+      invalidate: vi.fn(),
+      retire: vi.fn(),
+      onEvent: async (_event, lifetime) => {
+        await held;
+        lifetime.commit(write);
+      },
+    });
+    async function subscribe(id: string, type: string, recover: boolean) {
+      const pending = coordinator.subscribe(
+        { workspaceId: 'ws-a', eventTypes: [type] },
+        { recover },
+      );
+      h.socket.reply(h.socket.frames.at(-1)!.id, {
+        subscriptionId: id,
+        ...(recover ? { lossRecovery: 1 } : {}),
+      });
+      await pending;
+    }
+    await subscribe('a', 'file:*', true);
+    await subscribe('unrelated', 'note:*', false);
+    await subscribe('mixed', 'file:*', false);
+    const event = (subscriptionId: string, type: string) => ({
+      method: 'events.event',
+      params: { subscriptionId, event: { type, workspaceId: 'ws-a' } },
+    });
+    h.socket.batch([event('unrelated', 'note:changed'), event('mixed', 'file:changed')]);
+    const observed = vi.fn();
+    const fence = session.fence(['a'], observed);
+    h.socket.batch([
+      { id: h.socket.frames.at(-1)!.id, result: { subscriptionIds: ['a'] } },
+      event('unrelated', 'note:changed'),
+    ]);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(unhandled).toHaveBeenCalledOnce();
+    expect(observed).not.toHaveBeenCalled();
+    resource.changeLifetime();
+    release();
+    await fence;
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(write).not.toHaveBeenCalled();
+    expect(unhandled).toHaveBeenCalledTimes(2);
+    expect(observed).toHaveBeenCalledOnce();
+    h.socket.batch([
+      {
+        method: 'events.lost',
+        params: {
+          subscriptionId: 'a',
+          generation: '1',
+          scope: { workspaceId: 'ws-a' },
+        },
+      },
+    ]);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(read).not.toHaveBeenCalled();
+    expect(h.socket.frames.filter((f) => f.method === 'events.fence')).toHaveLength(1);
   });
 
   it('retires on backend ABA and rejects old in-flight read replies', async () => {

@@ -193,3 +193,73 @@ describe('subscription attempt lifetimes', () => {
     expect(h.coordinator.ownsSubscription('a')).toBe(false);
   });
 });
+
+describe('adapter ownership', () => {
+  it('fences each staged request after workspace ABA without issuing the next read', async () => {
+    const h = harness();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const read = vi.fn(async (reader: { request<T>(method: string): Promise<T> }) => {
+      await reader.request('first');
+      await held;
+      return reader.request('second');
+    });
+    const apply = vi.fn();
+    const registration = h.coordinator.registerResource({
+      key: 'other:ws-a',
+      ...params,
+      read,
+      apply,
+      invalidate: vi.fn(),
+      retire: vi.fn(),
+    });
+    await h.coordinator.subscribe(params, { recover: true });
+    h.receive(loss());
+    await settle();
+    registration.changeLifetime();
+    registration.changeLifetime();
+    release();
+    await settle();
+    expect(h.request.mock.calls.map(([method]) => method)).not.toContain('second');
+    expect(apply).not.toHaveBeenCalled();
+  });
+  it('routes mixed leases through one owner and rejects its delayed write after retirement', async () => {
+    const h = harness();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const write = vi.fn();
+    const registration = h.coordinator.registerResource({
+      key: 'owner:ws-a',
+      ...params,
+      read: async () => 'snapshot',
+      apply: vi.fn(),
+      invalidate: vi.fn(),
+      retire: vi.fn(),
+      onEvent: async (_event, lifetime) => {
+        await held;
+        lifetime.commit(write);
+      },
+    });
+    await h.coordinator.subscribe(params, { recover: true });
+    h.request.mockResolvedValueOnce({ subscriptionId: 'legacy' });
+    await h.coordinator.subscribe(params, { recover: false });
+    const receipt = h.receive({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'legacy',
+        event: { type: 'file:changed', workspaceId: 'ws-a' },
+      },
+    });
+    registration.changeLifetime();
+    release();
+    await receipt;
+    expect(write).not.toHaveBeenCalled();
+    h.receive(loss());
+    await settle();
+    expect(h.read).not.toHaveBeenCalled();
+  });
+});
