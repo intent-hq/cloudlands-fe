@@ -140,7 +140,12 @@ describe('registered model and effort mutation owner', () => {
   it('preserves only provider metadata over a held detail read during a real provider switch', async () => {
     const { ensureAgentSession } = await import('$features/agent/agent-read-service');
     store.dispatch(
-      updateSession(agentId, { metadata: { provider: 'codex', specialist: 'before' } }),
+      updateSession(agentId, {
+        metadataPatch: {
+          provider: { op: 'set', value: 'codex' },
+          specialist: { op: 'set', value: 'before' },
+        },
+      }),
     );
     const prior = session();
     const held = deferred<unknown>();
