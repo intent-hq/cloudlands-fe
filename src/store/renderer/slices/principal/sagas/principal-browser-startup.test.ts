@@ -370,8 +370,8 @@ describe('principal discovery through browser startup', () => {
     expect(frames).toEqual([]);
   });
 
-  async function bootLifecycle() {
-    recoverySupported = true;
+  async function bootLifecycle(supported = true) {
+    recoverySupported = supported;
     const store = await boot();
     const { selectPrincipalActionContext } = await import('../principal-selectors');
     await vi.waitFor(() => expect(selectPrincipalActionContext.select(store.state)).not.toBeNull());
@@ -493,6 +493,91 @@ describe('principal discovery through browser startup', () => {
     expect(frames.filter((f) => f.method === 'event.query')).toHaveLength(2);
     expect(frames.filter((f) => f.method === 'events.fence')).toHaveLength(fences + 2);
   });
+  it.each([false, true])('skills recover after final loss with mounted=%s', async (mounted) => {
+    const { store, row, workspaceId } = await bootLifecycle();
+    const { loadSkillsRequested } = await import('../../skills/skills-slice');
+    let current = 'old';
+    wireReply = (frame) =>
+      frame.method === 'skill.list'
+        ? [{ name: current, description: current, location: '/skills/test', scope: 'workspace' }]
+        : frame.method === 'workspace.list'
+          ? { workspaces: [row] }
+          : undefined;
+    const names = () =>
+      store.state.skills.byWorkspaceId[workspaceId]?.skills.map((skill) => skill.name);
+    store.dispatch(loadSkillsRequested(workspaceId));
+    await vi.waitFor(() => expect(names()).toEqual(['old']));
+    if (mounted) {
+      const { workspaceMounted } =
+        await import('../../workspace-lifecycle/workspace-lifecycle-slice');
+      store.dispatch(workspaceMounted(workspaceId));
+    }
+    current = 'new';
+    await globalLoss();
+    if (!mounted) expect(frames.filter((frame) => frame.method === 'skill.list')).toHaveLength(1);
+    const fences = frames.filter((frame) => frame.method === 'events.fence').length;
+    if (!mounted) store.dispatch(loadSkillsRequested(workspaceId));
+    await vi.waitFor(() => expect(names()).toEqual(['new']));
+    expect(frames.filter((frame) => frame.method === 'skill.list')).toHaveLength(2);
+    if (!mounted)
+      expect(frames.filter((frame) => frame.method === 'events.fence')).toHaveLength(fences + 2);
+  });
+
+  it.each(['retire', 'push', 'legacy'] as const)(
+    'skills preserve the %s boundary',
+    async (mode) => {
+      const { store, row, workspaceId } = await bootLifecycle(mode !== 'legacy');
+      const { loadSkillsRequested } = await import('../../skills/skills-slice');
+      const { workspaceMounted } =
+        await import('../../workspace-lifecycle/workspace-lifecycle-slice');
+      let current = 'old';
+      wireReply = (frame) =>
+        frame.method === 'skill.list'
+          ? [{ name: current, description: current, location: '/skills/test', scope: 'project' }]
+          : frame.method === 'workspace.list'
+            ? { workspaces: [row] }
+            : undefined;
+      const names = () =>
+        store.state.skills.byWorkspaceId[workspaceId]?.skills.map((skill) => skill.name) ?? [];
+      store.dispatch(loadSkillsRequested(workspaceId));
+      await vi.waitFor(() => expect(names()).toEqual(['old']));
+      current = 'new';
+      if (mode === 'retire') {
+        await globalLoss();
+        heldMethod = 'skill.list';
+        store.dispatch(loadSkillsRequested(workspaceId));
+        await vi.waitFor(() => expect(heldReplies).toHaveLength(1));
+        transport?.dispose?.();
+        await vi.waitFor(() => expect(names()).toEqual([]));
+        heldReplies.shift()!();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(names()).toEqual([]);
+      } else if (mode === 'push') {
+        store.dispatch(workspaceMounted(workspaceId));
+        const sub = frames.find((frame) => frame.method === 'events.subscribe')!;
+        receive({
+          data: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'events.event',
+            params: {
+              subscriptionId: `subscription-${sub.id}`,
+              event: { type: 'skills:changed', workspaceId, data: { workspaceId } },
+            },
+          }),
+        });
+        await vi.waitFor(() => expect(names()).toEqual(['new']));
+        expect(frames.filter((frame) => frame.method === 'events.fence')).toHaveLength(0);
+      } else {
+        store.dispatch(loadSkillsRequested(workspaceId));
+        await vi.waitFor(() => expect(names()).toEqual(['new']));
+        expect(frames.filter((frame) => frame.method === 'events.fence')).toHaveLength(0);
+      }
+      expect(frames.filter((frame) => frame.method === 'skill.list')).toHaveLength(2);
+      expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(1);
+      expect(frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(1);
+    },
+  );
+
   it('workspace list accepts the actual daemon response envelope', async () => {
     const { store, row, workspaceId } = await bootLifecycle();
     wireReply = (frame) =>

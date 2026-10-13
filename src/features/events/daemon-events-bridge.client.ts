@@ -4814,6 +4814,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // this bridge currently handles (handleTerminalExitEvent below).
   'terminal:exit',
   'settings:changed',
+  'skills:changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
   // list migrated off FE localStorage; the daemon emits the full new items

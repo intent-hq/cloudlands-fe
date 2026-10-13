@@ -14,14 +14,24 @@ import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
 export const skillsRecoveryKey = (workspaceId: string) => `skills:${JSON.stringify([workspaceId])}`;
 const demand = new Map<string, number>();
 const listeners = new Set<() => void>();
+const demandOwners = new Map<string, RendererRecoveryHandle>();
 export function acquireSkillsRecoveryDemand(workspaceId: string) {
   demand.set(workspaceId, (demand.get(workspaceId) ?? 0) + 1);
   for (const listener of listeners) listener();
-  return () => {
+  const handle = demandOwners.get(workspaceId);
+  let released = false;
+  const remove = () => {
     const count = (demand.get(workspaceId) ?? 1) - 1;
     if (count) demand.set(workspaceId, count);
     else demand.delete(workspaceId);
     for (const listener of listeners) listener();
+  };
+  return () => {
+    if (released) return;
+    released = true;
+    if (handle && (handle.status.stale || handle.status.running))
+      void handle.whenSettled().then(remove);
+    else remove();
   };
 }
 export function readSkillsWithRecovery<T>(
@@ -33,6 +43,20 @@ export function readSkillsWithRecovery<T>(
   return rendererEventRecovery.hasOwner(key)
     ? runRecoveryRead(key, receipt, 'ordinary', 'list', read)
     : read();
+}
+function normalizeSkills(raw: unknown): SkillInfo[] {
+  if (
+    !Array.isArray(raw) ||
+    raw.some((row) => !row || typeof row.name !== 'string' || typeof row.location !== 'string')
+  )
+    throw new Error('Invalid skills snapshot');
+  return raw.map((row): SkillInfo => ({
+    name: row.name,
+    description: row.description,
+    location: row.location,
+    scope: row.scope,
+    ...(row.resourceDirectory ? { resourceDirectory: row.resourceDirectory } : {}),
+  }));
 }
 interface RecoveryStore {
   getState(): StoreState;
@@ -52,6 +76,7 @@ export function installSkillsRecovery(scope: RendererRecoveryScope, store: Recov
       if (selectPrincipalActionContext.select(state) !== authority) {
         live = false;
         for (const [id, owner] of owners) {
+          if (demandOwners.get(id) === owner.handle) demandOwners.delete(id);
           owner.handle.dispose();
           store.dispatch(setSkills(id, []));
         }
@@ -68,6 +93,7 @@ export function installSkillsRecovery(scope: RendererRecoveryScope, store: Recov
         const active = mounted.has(workspaceId) || demand.has(workspaceId);
         let owner = owners.get(workspaceId);
         if (owner && owner.context !== context) {
+          if (demandOwners.get(workspaceId) === owner.handle) demandOwners.delete(workspaceId);
           owner.handle.dispose();
           owners.delete(workspaceId);
           owner = undefined;
@@ -92,23 +118,25 @@ export function installSkillsRecovery(scope: RendererRecoveryScope, store: Recov
                 'list',
                 async () => {
                   const raw = await reader.request<unknown>('skill.list', { workspaceId });
-                  if (
-                    !Array.isArray(raw) ||
-                    raw.some(
-                      (row) =>
-                        !row || typeof row.name !== 'string' || typeof row.location !== 'string',
-                    )
-                  )
-                    throw new Error('Invalid skills snapshot');
-                  return raw.map((row): SkillInfo => ({
-                    name: row.name,
-                    description: row.description,
-                    location: row.location,
-                    scope: row.scope,
-                    ...(row.resourceDirectory ? { resourceDirectory: row.resourceDirectory } : {}),
-                  }));
+                  return normalizeSkills(raw);
                 },
               ),
+            onEvent: async (_notification, receipt) => {
+              try {
+                const skills = await runRecoveryRead(
+                  skillsRecoveryKey(workspaceId),
+                  receipt,
+                  'ordinary',
+                  'list',
+                  async () => normalizeSkills(await scope.request('skill.list', { workspaceId })),
+                );
+                receipt.commit(() => {
+                  store.dispatch(setSkills(workspaceId, skills));
+                });
+              } catch {
+                // The read lane retires canonical denial; transient failure keeps the cached roster.
+              }
+            },
             apply: (skills) => {
               store.dispatch(setSkills(workspaceId, skills));
             },
@@ -119,6 +147,7 @@ export function installSkillsRecovery(scope: RendererRecoveryScope, store: Recov
           });
           owner = { context, handle };
           owners.set(workspaceId, owner);
+          demandOwners.set(workspaceId, handle);
         }
         owner.handle.setActive(active);
       }
@@ -133,7 +162,10 @@ export function installSkillsRecovery(scope: RendererRecoveryScope, store: Recov
     live = false;
     off();
     listeners.delete(sync);
-    for (const owner of owners.values()) owner.handle.dispose();
+    for (const [id, owner] of owners) {
+      if (demandOwners.get(id) === owner.handle) demandOwners.delete(id);
+      owner.handle.dispose();
+    }
     owners.clear();
   };
 }
