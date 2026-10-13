@@ -65,6 +65,7 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 
 import * as clientModule from '$lib/client';
 import { appClient } from '$lib/client';
+import { readAgentSession } from '$features/agent/agent-read-service';
 import { takeEvery } from 'typed-redux-saga';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -1774,6 +1775,551 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(session?.isResponding).toBe(false);
   });
 
+  function remoteActivity(agentId: string, messageId: string): void {
+    routeDaemonEventsNotification('events.event', {
+      event: {
+        id: `ordering-activity-${agentId}`,
+        workspaceId: WS,
+        timestamp: '2026-01-01T00:00:02.000Z',
+        type: 'agent:stream:activity',
+        actor: { type: 'agent', id: agentId },
+        data: { agentId, messageId, lastToolUse: { name: 'shell', status: 'running' } },
+      },
+    });
+  }
+  function terminalDelta(
+    agentId: string,
+    messageId: string,
+    messageSeq: number,
+    timestamp: string,
+    role = 'assistant',
+    appMessageId?: string,
+  ) {
+    return {
+      added: [
+        {
+          id: `${messageId}:0`,
+          agentId,
+          messageId,
+          role,
+          messageSeq,
+          timestamp,
+          streamingComplete: true,
+          ...(appMessageId ? { appMessageId } : {}),
+          block: { id: `${messageId}:0`, type: 'text', text: 'finished' },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    };
+  }
+
+  it('completion ordering: settles a remote first-frame terminal after protecting it from the previous terminal', () => {
+    const agentId = 'ordering-remote-first-frame';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const r = new ChatTranscriptReconciler(agentId);
+    r.applySnapshot(0, {
+      agentId,
+      messages: [makeMessage('old', 'partial', { isStreaming: true })],
+      truncated: false,
+      totalMessages: 1,
+    });
+    sub.handler({ ...r.transcript(), fromSnapshot: true });
+    remoteActivity(agentId, 'new');
+    expect(selectAgentSession.select(appStore.state, agentId)?.liveTurnOpenedAt).toBe(
+      '2026-01-01T00:00:02.000Z',
+    );
+    r.applyDelta(1, terminalDelta(agentId, 'old', 1, '2026-01-01T00:00:01.000Z'));
+    sub.handler(r.transcript());
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentSession.select(appStore.state, agentId)?.lastToolUse?.status).toBe('running');
+    r.applyDelta(2, terminalDelta(agentId, 'new', 2, '2026-01-01T00:00:03.000Z'));
+    const result = r.transcript();
+    expect(result.messages.find((m) => m.id === 'new')).toMatchObject({
+      seq: 2,
+      timestamp: '2026-01-01T00:00:03.000Z',
+      streamingComplete: true,
+    });
+    expect(result.isStreaming).toBe(false);
+    sub.handler(result);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+  });
+
+  it.each([true, undefined])(
+    'completion ordering: preserves remote work through old snapshots (terminal marker: %s)',
+    (streamingComplete) => {
+      const agentId = 'ordering-remote-snapshot';
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      const r = new ChatTranscriptReconciler(agentId);
+      r.applySnapshot(0, {
+        agentId,
+        messages: [makeMessage('old', 'partial', { isStreaming: true })],
+        truncated: false,
+        totalMessages: 1,
+      });
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      remoteActivity(agentId, 'new');
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+      expect(selectAgentSession.select(appStore.state, agentId)?.lastToolUse?.status).toBe(
+        'running',
+      );
+      const old = makeMessage('old', 'complete', { seq: 1, streamingComplete });
+      // A snapshot captured after the old turn ended but before the new turn
+      // began reaches the chat lane after the newer generic activity event.
+      expect(
+        r.applySnapshot(0, {
+          agentId,
+          messages: [old],
+          truncated: false,
+          totalMessages: 1,
+          turnInFlight: false,
+        }),
+      ).toBe(true);
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+      expect(selectAgentSession.select(appStore.state, agentId)?.lastToolUse?.status).toBe(
+        'running',
+      );
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+      r.applySnapshot(0, {
+        agentId,
+        messages: [
+          makeMessage('new', 'complete', {
+            seq: 2,
+            streamingComplete: true,
+            timestamp: '2026-01-01T00:00:03.000Z',
+          }),
+        ],
+        truncated: true,
+        totalMessages: 2,
+        turnInFlight: false,
+      });
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+      expect(selectAgentSession.select(appStore.state, agentId)?.lastToolUse).toBeUndefined();
+    },
+  );
+
+  it.each(['user', 'system', 'tool'])(
+    'completion ordering: non-assistant %s echoes retain tools and assistant terminal finishes them',
+    (role) => {
+      const agentId = `ordering-echo-${role}`;
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      const r = new ChatTranscriptReconciler(agentId);
+      r.applySnapshot(0, {
+        agentId,
+        messages: [
+          makeMessage('answer', '', {
+            isStreaming: true,
+            contentBlocks: [{ id: 'answer:0', type: 'tool_use', name: 'shell', status: 'running' }],
+          }),
+        ],
+        truncated: false,
+        totalMessages: 1,
+        turnInFlight: true,
+      });
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      appStore.dispatch(
+        updateSession(agentId, {
+          isWaitingOnTool: true,
+          lastToolUse: { name: 'shell', status: 'running' },
+          turnInFlight: true,
+        }),
+      );
+      r.applyDelta(1, terminalDelta(agentId, `echo-${role}`, 2, '2026-01-01T00:00:02.000Z', role));
+      sub.handler(r.transcript());
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+      expect(selectAgentSession.select(appStore.state, agentId)?.isWaitingOnTool).toBe(true);
+      r.applyDelta(2, terminalDelta(agentId, 'answer', 3, '2026-01-01T00:00:03.000Z'));
+      sub.handler(r.transcript());
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+    },
+  );
+
+  it('completion ordering: unrelated user echoes cannot admit completion but matching local echo can', () => {
+    const agentId = 'ordering-local-echo';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const r = new ChatTranscriptReconciler(agentId);
+    r.applySnapshot(0, { agentId, messages: [], truncated: false, totalMessages: 0 });
+    sub.handler({ ...r.transcript(), fromSnapshot: true });
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    appStore.dispatch(
+      addMessage(
+        agentId,
+        makeMessage('local', 'prompt', { role: 'user', appMessageId: 'my-send' }),
+      ),
+    );
+    r.applyDelta(
+      1,
+      terminalDelta(agentId, 'foreign-user', 1, '2026-01-01T00:00:01.000Z', 'user', 'other-send'),
+    );
+    sub.handler(r.transcript());
+    r.applyDelta(2, terminalDelta(agentId, 'foreign-answer', 2, '2026-01-01T00:00:02.000Z'));
+    sub.handler(r.transcript());
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    r.applyDelta(
+      3,
+      terminalDelta(agentId, 'my-user', 3, '2026-01-01T00:00:03.000Z', 'user', 'my-send'),
+    );
+    sub.handler(r.transcript());
+    r.applyDelta(4, terminalDelta(agentId, 'my-answer', 4, '2026-01-01T00:00:04.000Z'));
+    sub.handler(r.transcript());
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+  });
+
+  it('completion ordering: remembered canonical local echo admits completed reply in a truncated recovery snapshot', () => {
+    const agentId = 'ordering-truncated-echo';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const r = new ChatTranscriptReconciler(agentId);
+    r.applySnapshot(0, { agentId, messages: [], truncated: false, totalMessages: 0 });
+    sub.handler({ ...r.transcript(), fromSnapshot: true });
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    appStore.dispatch(
+      addMessage(
+        agentId,
+        makeMessage('local', 'prompt', { role: 'user', appMessageId: 'my-send' }),
+      ),
+    );
+    r.applyDelta(
+      1,
+      terminalDelta(agentId, 'canonical', 3, '2026-01-01T00:00:03.000Z', 'user', 'my-send'),
+    );
+    sub.handler(r.transcript());
+    expect(
+      selectAgentMessages.select(appStore.state, agentId).find((m) => m.appMessageId === 'my-send'),
+    ).toMatchObject({ id: 'canonical', seq: 3 });
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    r.applySnapshot(0, {
+      agentId,
+      messages: [
+        makeMessage('my-answer', 'long complete reply', {
+          seq: 4,
+          streamingComplete: true,
+          timestamp: '2026-01-01T00:00:04.000Z',
+        }),
+      ],
+      truncated: true,
+      nextToken: 'before-4',
+      totalMessages: 2,
+      turnInFlight: false,
+    });
+    sub.handler({ ...r.transcript(), fromSnapshot: true });
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+  });
+
+  it('idle confirmation: authoritative idle snapshot settles a remote turn that persisted no new assistant row', async () => {
+    const agentId = 'confirmation-no-content-recovery';
+    seedSession(agentId, { status: AgentStatus.RuntimeIdle });
+    const sub = openChat(agentId);
+    const r = new ChatTranscriptReconciler(agentId);
+    const prior = makeMessage('old', 'previous answer', { seq: 1, streamingComplete: true });
+    r.applySnapshot(0, {
+      agentId,
+      messages: [prior],
+      truncated: false,
+      totalMessages: 1,
+      turnInFlight: true,
+    });
+    sub.handler({ ...r.transcript(), fromSnapshot: true });
+    routeDaemonEventsNotification('events.event', {
+      event: {
+        id: 'confirmation-no-content-running',
+        workspaceId: WS,
+        timestamp: '2026-01-01T00:00:02.000Z',
+        type: 'agent:status-changed',
+        actor: { type: 'system' },
+        data: {
+          agentId,
+          status: 'responding',
+          previousStatus: 'idle',
+          isActive: true,
+          isResponding: true,
+          turnInFlight: true,
+        },
+      },
+    });
+    expect(selectAgentSession.select(appStore.state, agentId)?.liveTurnOpenedAt).toBe(
+      '2026-01-01T00:00:02.000Z',
+    );
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    // Status-only wake emits no persisted assistant row; generic end/idle was
+    // missed, and a later recovery snapshot is authoritative that it is idle.
+    expect(
+      r.applySnapshot(0, {
+        agentId,
+        messages: [prior],
+        truncated: false,
+        totalMessages: 1,
+        turnInFlight: false,
+        isResponding: false,
+      }),
+    ).toBe(true);
+    vi.mocked(appClient.agents.get).mockResolvedValueOnce({
+      id: agentId,
+      workspaceId: WS,
+      status: AgentStatus.Active,
+      messages: [],
+      isResponding: false,
+      turnInFlight: false,
+      isWaitingOnTool: false,
+    } as AgentSession);
+    sub.handler({ ...r.transcript(), fromSnapshot: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+    expect(appClient.agents.get).toHaveBeenCalledWith(agentId, WS);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+  });
+
+  function confirmationScenario(agentId: string) {
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const prior = makeMessage('old', 'previous answer', { seq: 1, streamingComplete: true });
+    sub.handler(transcript([prior], true));
+    remoteActivity(agentId, 'status-only-turn');
+    const idle = { ...transcript([prior]), fromSnapshot: true };
+    const reply = makeSession(agentId, {
+      isResponding: false,
+      turnInFlight: false,
+      isWaitingOnTool: false,
+    });
+    return { sub, idle, reply };
+  }
+  const flushConfirmation = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('idle confirmation: duplicates and content-only snapshots share one read and retain text', async () => {
+    const id = 'confirm-duplicates';
+    const { sub, idle, reply } = confirmationScenario(id);
+    const held = deferred<AgentSession>();
+    vi.mocked(appClient.agents.get).mockReturnValueOnce(held.promise);
+    sub.handler(idle);
+    sub.handler({ ...idle });
+    sub.handler({
+      ...idle,
+      messages: [makeMessage('old', 'corrected history', { seq: 1, streamingComplete: true })],
+    });
+    expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+    held.resolve(reply);
+    await flushConfirmation();
+    expect(selectAgentIsResponding.select(appStore.state, id)).toBe(false);
+    expect(selectAgentSessionIsStreaming.select(appStore.state, id)).toBe(false);
+    expect(selectAgentSession.select(appStore.state, id)?.messages[0].contentBlocks?.[0].text).toBe(
+      'corrected history',
+    );
+    sub.handler(idle);
+    await flushConfirmation();
+    expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    'same-value activity',
+    'status hint',
+    'generic chunk',
+    'root cancellation',
+    'activity ABA',
+    'local send',
+    'transcript',
+    'phase ABA',
+    'remove/reopen',
+  ] as const)('idle confirmation: held idle cannot clear newer %s', async (change) => {
+    const id = `confirm-fence-${change}`;
+    const { sub, idle, reply } = confirmationScenario(id);
+    const held = deferred<AgentSession>();
+    vi.mocked(appClient.agents.get).mockReturnValueOnce(held.promise);
+    sub.handler(idle);
+    if (change === 'same-value activity') remoteActivity(id, 'status-only-turn');
+    if (change === 'status hint')
+      routeDaemonEventsNotification('events.event', {
+        event: {
+          id: 'confirmation-status',
+          workspaceId: WS,
+          timestamp: '2026-01-01T00:00:02Z',
+          type: 'agent:stream:status',
+          actor: { type: 'system' },
+          data: { agentId: id, phase: 'prompt', message: 'working', timestamp: 2 },
+        },
+      });
+    if (change === 'generic chunk')
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId: id,
+          workspaceId: WS,
+          eventType: 'chunk',
+          handlerSessionId: id,
+          source: 'restored',
+          chunk: 'new work',
+        }),
+      );
+    if (change === 'root cancellation') stopSaga?.();
+    if (change === 'activity ABA') {
+      appStore.dispatch(updateSession(id, { liveTurnOpen: false }));
+      remoteActivity(id, 'status-only-turn');
+    }
+    if (change === 'local send') appStore.dispatch(chatSendStarted(id, WS));
+    if (change === 'transcript')
+      sub.handler(transcript([makeMessage('new', 'working', { isStreaming: true })], true));
+    if (change === 'phase ABA') {
+      sub.onPhase?.('resyncing');
+      sub.onPhase?.('live');
+    }
+    if (change === 'remove/reopen') {
+      appStore.dispatch(removeSession(id));
+      seedSession(id, { isResponding: true, turnInFlight: true });
+      openChat(id);
+    }
+    held.resolve(reply);
+    await flushConfirmation();
+    expect(selectAgentIsResponding.select(appStore.state, id)).toBe(true);
+    expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+    if (change === 'root cancellation') stopSaga = appStore.runSaga(chatSubscribeSaga);
+  });
+
+  it('idle confirmation: newer activity permits one later episode after invalidating a held read', async () => {
+    const id = 'confirm-new-episode';
+    const { sub, idle, reply } = confirmationScenario(id);
+    const held = deferred<AgentSession>();
+    vi.mocked(appClient.agents.get).mockReturnValueOnce(held.promise).mockResolvedValueOnce(reply);
+    sub.handler(idle);
+    remoteActivity(id, 'status-only-turn');
+    held.resolve(reply);
+    await flushConfirmation();
+    expect(selectAgentIsResponding.select(appStore.state, id)).toBe(true);
+    sub.handler(idle);
+    sub.handler(idle);
+    await flushConfirmation();
+    expect(appClient.agents.get).toHaveBeenCalledTimes(2);
+    expect(selectAgentIsResponding.select(appStore.state, id)).toBe(false);
+  });
+
+  it.each([
+    'null',
+    'missing responding',
+    'missing in-flight',
+    'missing tool',
+    'active',
+    'tool',
+    'running tool',
+    'wrong agent',
+    'wrong workspace',
+    'deleted',
+    'error',
+  ] as const)(
+    'idle confirmation: %s preserves activity without retrying duplicates',
+    async (shape) => {
+      const id = `confirm-invalid-${shape}`;
+      const { sub, idle, reply } = confirmationScenario(id);
+      const response = { ...reply };
+      if (shape === 'missing responding') delete response.isResponding;
+      if (shape === 'missing in-flight') delete response.turnInFlight;
+      if (shape === 'missing tool') delete response.isWaitingOnTool;
+      if (shape === 'active') response.isResponding = true;
+      if (shape === 'tool') response.isWaitingOnTool = true;
+      if (shape === 'running tool') response.lastToolUse = { name: 'shell', status: 'running' };
+      if (shape === 'wrong agent') response.id = 'other';
+      if (shape === 'wrong workspace') response.workspaceId = 'other';
+      if (shape === 'deleted') response.pendingDeleteAt = '2026-01-01T00:00:03Z';
+      if (shape === 'error')
+        vi.mocked(appClient.agents.get).mockRejectedValueOnce(new Error('offline'));
+      else
+        vi.mocked(appClient.agents.get).mockResolvedValueOnce(shape === 'null' ? null : response);
+      sub.handler(idle);
+      await flushConfirmation();
+      sub.handler({ ...idle });
+      await flushConfirmation();
+      expect(selectAgentIsResponding.select(appStore.state, id)).toBe(true);
+      expect(selectAgentSession.select(appStore.state, id)?.lastToolUse?.status).toBe('running');
+      expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([AgentStatus.Waiting, AgentStatus.Error, AgentStatus.Completed])(
+    'idle confirmation: preserves lifecycle %s and peer waits',
+    async (status) => {
+      const id = `confirm-lifecycle-${status}`;
+      const { sub, idle, reply } = confirmationScenario(id);
+      appStore.dispatch(
+        updateSession(id, { status, isWaitingForOtherAgents: true, waitingForAgentIds: ['peer'] }),
+      );
+      vi.mocked(appClient.agents.get).mockResolvedValueOnce(reply);
+      sub.handler(idle);
+      await flushConfirmation();
+      const current = selectAgentSession.select(appStore.state, id);
+      expect(current).toMatchObject({
+        status,
+        isWaitingForOtherAgents: true,
+        waitingForAgentIds: ['peer'],
+        liveTurnOpen: false,
+        isResponding: false,
+      });
+      expect(current?.messages[0].contentBlocks?.[0].text).toBe('previous answer');
+    },
+  );
+
+  it('idle confirmation: daemon-admitted no-content wake can finish without an assistant row', async () => {
+    const id = 'confirm-admitted-wake';
+    const { sub, idle, reply } = confirmationScenario(id);
+    appStore.dispatch(chatSendStarted(id, WS, undefined, 'wake-answer'));
+    vi.mocked(appClient.agents.get).mockResolvedValueOnce(reply);
+    sub.handler(idle);
+    await flushConfirmation();
+    expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+    expect(selectAgentIsResponding.select(appStore.state, id)).toBe(false);
+    expect(selectAgentSessionIsStreaming.select(appStore.state, id)).toBe(false);
+  });
+
+  it('idle confirmation: unadmitted optimistic send cannot accept daemon idle', async () => {
+    const id = 'confirm-unadmitted';
+    const { sub, idle, reply } = confirmationScenario(id);
+    appStore.dispatch(chatSendStarted(id, WS));
+    vi.mocked(appClient.agents.get).mockResolvedValueOnce(reply);
+    sub.handler(idle);
+    await flushConfirmation();
+    expect(appClient.agents.get).not.toHaveBeenCalled();
+    expect(selectAgentIsResponding.select(appStore.state, id)).toBe(true);
+    vi.mocked(appClient.agents.get).mockReset().mockResolvedValue(null);
+  });
+
+  it.each(['settled', 'cancelled', 'activity'] as const)(
+    'idle confirmation: older shared read is drained before confirmation (%s)',
+    async (outcome) => {
+      const id = `confirm-leading-${outcome}`;
+      const { sub, idle, reply } = confirmationScenario(id);
+      const old = deferred<AgentSession>();
+      const fresh = deferred<AgentSession>();
+      vi.mocked(appClient.agents.get)
+        .mockReturnValueOnce(old.promise)
+        .mockReturnValueOnce(fresh.promise);
+      const leading = readAgentSession(id, WS);
+      sub.handler(idle);
+      sub.handler(idle);
+      expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+      if (outcome === 'cancelled') sub.onPhase?.('resyncing');
+      if (outcome === 'activity') remoteActivity(id, 'status-only-turn');
+      old.resolve(reply);
+      await leading;
+      await flushConfirmation();
+      expect(selectAgentIsResponding.select(appStore.state, id)).toBe(true);
+      expect(appClient.agents.get).toHaveBeenCalledTimes(outcome === 'settled' ? 2 : 1);
+      if (outcome === 'settled') {
+        fresh.resolve(reply);
+        await flushConfirmation();
+        expect(selectAgentIsResponding.select(appStore.state, id)).toBe(false);
+      } else vi.mocked(appClient.agents.get).mockReset().mockResolvedValue(null);
+    },
+  );
+
   it.each(['terminal', 'snapshot'] as const)(
     'settles all chat activity after %s when generic idle delivery is missed',
     async (delivery) => {
@@ -1809,7 +2355,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       const composer = render(SimpleRichInput, { props: composerProps() });
       expect(composer.getByRole('button', { name: /stop/i })).toBeTruthy();
       const completed = transcript([
-        makeMessage('answer', 'done', { isStreaming: false, streamingComplete: true }),
+        makeMessage('answer', 'done', { seq: 1, isStreaming: false, streamingComplete: true }),
       ]);
       sub.handler(delivery === 'snapshot' ? { ...completed, fromSnapshot: true } : completed);
 
@@ -1928,7 +2474,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
       sub.handler(
         transcript([
-          makeMessage('answer', 'done', { isStreaming: false, streamingComplete: true }),
+          makeMessage('answer', 'done', { seq: 1, isStreaming: false, streamingComplete: true }),
         ]),
       );
       expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
