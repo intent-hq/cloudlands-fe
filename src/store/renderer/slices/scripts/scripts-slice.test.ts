@@ -219,19 +219,21 @@ describe('scriptsReducer', () => {
       expect(state.byWorkspaceId[WS].operations['script-1']).toEqual({
         action: 'edit',
         pending: true,
-        reservationId: String(first.seq),
+        reservationId: `${first.type}:${first.seq}`,
       });
 
       state = scriptsReducer(state, second);
       state = scriptsReducer(
         state,
-        scriptOperationSucceeded(WS, 'script-1', 'edit', String(second.seq)),
+        scriptOperationSucceeded(WS, 'script-1', 'edit', `${second.type}:${second.seq}`),
       );
-      expect(state.byWorkspaceId[WS].operations['script-1']?.reservationId).toBe(String(first.seq));
+      expect(state.byWorkspaceId[WS].operations['script-1']?.reservationId).toBe(
+        `${first.type}:${first.seq}`,
+      );
 
       state = scriptsReducer(
         state,
-        scriptOperationSucceeded(WS, 'script-1', 'edit', String(first.seq)),
+        scriptOperationSucceeded(WS, 'script-1', 'edit', `${first.type}:${first.seq}`),
       );
       expect(state.byWorkspaceId[WS].operations['script-1']).toBeUndefined();
     },

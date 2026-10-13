@@ -30,6 +30,7 @@ import {
   removeScriptDefinitionRequested,
   refreshScripts,
   restoreScriptDefinitionsRequested,
+  deleteScriptRequested,
   scriptWorkflowReleased,
   scriptsReducer,
   setScriptsData,
@@ -247,7 +248,59 @@ describe('scriptsOperationSaga definition ownership', () => {
     await stop(run.task);
   });
 
-  it('rejects an apply when the reviewed definition changed before the batch', async () => {
+  it('skips non-auto-detected agent changes without aborting the remaining batch', async () => {
+    const userDefinition = {
+      ...definition,
+      id: 'user-script',
+      name: 'User script',
+      source: 'user',
+    };
+    transport.list.mockResolvedValueOnce([definition, userDefinition]);
+    transport.remove.mockResolvedValueOnce({ success: true });
+    transport.create.mockResolvedValueOnce({ success: true, script: definition });
+    const run = start();
+    const request = applyScriptDefinitionChangesRequested(
+      WS,
+      {
+        add: [{ name: 'New script', command: 'pnpm new', mode: 'command' }],
+        remove: [definition.id],
+        update: [{ id: userDefinition.id, updates: { command: 'pnpm changed' } }],
+      },
+      [definition, userDefinition],
+    );
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toMatchObject({ added: 1, removed: 1, updated: 0 });
+    expect(transport.remove).toHaveBeenCalledWith(WS, definition.id);
+    expect(transport.upsert).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
+
+  it('rechecks authority before each agent-detection write', async () => {
+    let resolveRemoval!: (value: { success: true }) => void;
+    transport.list.mockResolvedValueOnce([definition]);
+    transport.remove.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRemoval = resolve;
+      }),
+    );
+    const run = start();
+    const request = applyScriptDefinitionChangesRequested(WS, {
+      add: [{ name: 'Later', command: 'pnpm later', mode: 'command' }],
+      remove: [definition.id],
+      update: [],
+    });
+    run.channel.put(request);
+    await vi.waitFor(() => expect(transport.remove).toHaveBeenCalledOnce());
+    run.state.workspace.workspaces = createCollection('id', []);
+    resolveRemoval({ success: true });
+
+    await expect(request.promise).rejects.toThrow();
+    expect(transport.create).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
+
+  it('skips an apply entry when the reviewed definition changed before the batch', async () => {
     const reviewed = { ...definition, updatedAt: 'reviewed' };
     transport.list.mockResolvedValueOnce([{ ...definition, updatedAt: 'newer' }]);
     const run = start();
@@ -259,7 +312,7 @@ describe('scriptsOperationSaga definition ownership', () => {
     );
     run.channel.put(request);
 
-    await expect(request.promise).rejects.toThrow('pending change');
+    await expect(request.promise).resolves.toMatchObject({ updated: 0 });
     expect(transport.upsert).not.toHaveBeenCalled();
     await stop(run.task);
   });
@@ -291,10 +344,24 @@ describe('scriptsOperationSaga definition ownership', () => {
     run.channel.put(request);
     await vi.waitFor(() => expect(transport.upsert).toHaveBeenCalledOnce());
     run.dispatch(scriptWorkflowReleased(WS, consumer.consumerId));
-
-    await expect(request.promise).rejects.toThrow('cancelled');
+    await Promise.resolve();
+    expect(run.state.scripts.byWorkspaceId[WS].detectionOperation?.pending).toBe(true);
     resolveUpdate({ success: true, script: definition });
+    await expect(request.promise).rejects.toThrow('cancelled');
+    expect(run.state.scripts.byWorkspaceId[WS].detectionOperation).toBeUndefined();
     expect(transport.create).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
+
+  it('deletes a live script through the explicit lifecycle action', async () => {
+    const running = { ...definition, runtime: { status: 'running' as const, restartCount: 0 } };
+    transport.remove.mockResolvedValueOnce({ success: true });
+    const run = start();
+    run.dispatch(setScriptsData(WS, [running]));
+    run.channel.put(deleteScriptRequested(WS, running.id, 'Delete failed'));
+
+    await vi.waitFor(() => expect(transport.remove).toHaveBeenCalledWith(WS, running.id));
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[running.id]).toBeUndefined();
     await stop(run.task);
   });
 

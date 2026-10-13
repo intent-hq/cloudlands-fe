@@ -151,7 +151,9 @@ describe('script panel deletion', () => {
       if (success)
         request.success({ ...mockState.scripts.byWorkspaceId['workspace-1'].scripts.check });
       else request.failure(new Error('Save failed'));
-      dispatch(scriptOperationSucceeded('workspace-1', 'check', 'edit', String(request.seq)));
+      dispatch(
+        scriptOperationSucceeded('workspace-1', 'check', 'edit', `${request.type}:${request.seq}`),
+      );
       await pending;
       await waitFor(() =>
         expect(
@@ -184,7 +186,9 @@ describe('script panel deletion', () => {
     );
     const request = updateRequest();
     request.success({ ...mockState.scripts.byWorkspaceId['workspace-1'].scripts.check });
-    dispatch(scriptOperationSucceeded('workspace-1', 'check', 'edit', String(request.seq)));
+    dispatch(
+      scriptOperationSucceeded('workspace-1', 'check', 'edit', `${request.type}:${request.seq}`),
+    );
     await pending;
     dispatch.mockReset();
   });

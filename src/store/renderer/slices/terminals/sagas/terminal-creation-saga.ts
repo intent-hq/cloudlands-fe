@@ -96,15 +96,16 @@ function* createOverlayTerminalWorker(
       return;
     }
 
-    if (yield* isOverlayConsumerCurrent(action)) {
-      const terminals = yield* selectTerminalsForWorkspace.effect(workspaceId);
-      yield* put(
-        addTerminal(
-          workspaceId,
-          result.id,
-          m.terminal_quakeOverlay_terminalNumber_label({ number: terminals.length + 1 }),
-        ),
-      );
+    const consumerCurrent = yield* isOverlayConsumerCurrent(action);
+    const terminals = yield* selectTerminalsForWorkspace.effect(workspaceId);
+    yield* put(
+      addTerminal(
+        workspaceId,
+        result.id,
+        m.terminal_quakeOverlay_terminalNumber_label({ number: terminals.length + 1 }),
+      ),
+    );
+    if (consumerCurrent) {
       if (!(yield* selectIsTerminalOverlayOpenForWorkspace.effect(workspaceId)))
         yield* put(openTerminalOverlay(workspaceId, result.id));
       yield* finishOverlayCreation(action, 'success', result.id);

@@ -394,7 +394,7 @@
     if (
       workspaceId !== pending.ownership ||
       workspaceId !== pending.workspaceId ||
-      selectedScriptId !== pending.scriptId
+      (pending.kind !== 'tab' && selectedScriptId !== pending.scriptId)
     )
       return;
     if (pending.kind === 'name') {
@@ -533,6 +533,7 @@
     ownership: WorkspaceId | undefined,
     value: string,
   ): void {
+    if (pendingMutation) return;
     const requestId = crypto.randomUUID();
     mutationResourceIdStore.set(scriptId);
     pendingMutation = { requestId, workspaceId, scriptId, kind, ownership, value };

@@ -503,6 +503,26 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     expect(screen.getByPlaceholderText('Name')).toBeTruthy();
   });
 
+  it('submits an Enter-plus-blur rename only once and closes from that outcome', async () => {
+    let resolveUpdate!: () => void;
+    let updateCount = 0;
+    asyncUpdate.handler = (action) => {
+      updateCount += 1;
+      resolveUpdate = () => action.success({ id: 'script-1', workspaceId: 'ws-1' });
+    };
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+
+    await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
+    const input = screen.getByPlaceholderText('Name');
+    await fireEvent.input(input, { target: { value: 'renamed once' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await fireEvent.blur(input);
+
+    expect(updateCount).toBe(1);
+    resolveUpdate();
+    await waitFor(() => expect(screen.queryByPlaceholderText('Name')).toBeNull());
+  });
+
   it('reconciles a deferred rename to its captured workspace without closing B editing UI', async () => {
     let resolveUpdate!: () => void;
     asyncUpdate.handler = (action) => {

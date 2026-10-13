@@ -329,7 +329,7 @@ function startWorkflow(
 }
 
 function asyncRequestReservation(action: { type: string }): string {
-  return String((action as { type: string; seq: number }).seq);
+  return `${action.type}:${(action as { type: string; seq: number }).seq}`;
 }
 
 scriptsReducer.with(createScriptDefinitionRequested, (state, { payload }) =>

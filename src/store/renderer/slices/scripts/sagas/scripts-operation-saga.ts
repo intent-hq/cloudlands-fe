@@ -199,7 +199,7 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       : undefined;
   let cleanedUp = false;
   try {
-    if (operation === 'delete' && (!before || isLiveScriptStatus(before.runtime?.status))) return;
+    if (operation === 'delete' && !before) return;
     const request = (() => {
       switch (operation) {
         case 'delete':
@@ -347,7 +347,7 @@ function* updateDefinition(
   action: ReturnType<typeof updateScriptDefinitionRequested>,
 ): SagaGenerator<void> {
   const [workspaceId, scriptId, updates, consumer, selected] = action.payload;
-  const reservationId = String(action.seq);
+  const reservationId = `${action.type}:${action.seq}`;
   let settled = false;
   try {
     const reservation = yield* reserveEdit(workspaceId, scriptId, reservationId);
@@ -436,7 +436,7 @@ function* removeDefinition(
   action: ReturnType<typeof removeScriptDefinitionRequested>,
 ): SagaGenerator<void> {
   const [workspaceId, scriptId, consumer, selected] = action.payload;
-  const reservationId = String(action.seq);
+  const reservationId = `${action.type}:${action.seq}`;
   let settled = false;
   try {
     const reservation = yield* reserveEdit(workspaceId, scriptId, reservationId);
@@ -459,7 +459,7 @@ function* removeDefinition(
       current.id !== scriptId ||
       current.workspaceId !== workspaceId ||
       current.archivedAt ||
-      isLiveScriptStatus(current.runtime?.status)
+      (selected && isLiveScriptStatus(current.runtime?.status))
     ) {
       throw new Error(m.scripts_pendingChange_error());
     }
@@ -626,6 +626,7 @@ function* applyDefinitionChanges(
 ): SagaGenerator<void> {
   const [workspaceId, changes, reviewedDefinitions, consumer] = action.payload;
   const reservationId = crypto.randomUUID();
+  let pendingWrite: Promise<unknown> | undefined;
   let settled = false;
   try {
     yield* reserveInventory(workspaceId, reservationId);
@@ -647,7 +648,7 @@ function* applyDefinitionChanges(
     for (const id of changes.remove) {
       const current = autoById.get(id);
       const reviewed = reviewedById?.get(id);
-      if (!current || (reviewedById && !reviewed)) throw new Error(m.scripts_pendingChange_error());
+      if (!current || (reviewedById && !reviewed)) continue;
       if (
         reviewed &&
         (reviewed.workspaceId !== workspaceId ||
@@ -655,18 +656,22 @@ function* applyDefinitionChanges(
           reviewed.source !== current.source ||
           reviewed.updatedAt !== current.updatedAt)
       )
-        throw new Error(m.scripts_pendingChange_error());
+        continue;
       if (isLiveScriptStatus(current.runtime?.status)) {
         skippedRunning.add(current.name);
         continue;
       }
-      const result = yield* call(() => scriptDefinitionTransport.remove(workspaceId, id));
+      yield* requireAuthority(workspaceId, authority);
+      const request = scriptDefinitionTransport.remove(workspaceId, id);
+      pendingWrite = request;
+      const result = yield* call(() => request);
+      pendingWrite = undefined;
       if (result.success) removed += 1;
     }
     for (const { id, updates } of changes.update) {
       const current = autoById.get(id);
       const reviewed = reviewedById?.get(id);
-      if (!current || (reviewedById && !reviewed)) throw new Error(m.scripts_pendingChange_error());
+      if (!current || (reviewedById && !reviewed)) continue;
       if (
         reviewed &&
         (reviewed.workspaceId !== workspaceId ||
@@ -674,46 +679,50 @@ function* applyDefinitionChanges(
           reviewed.source !== current.source ||
           reviewed.updatedAt !== current.updatedAt)
       )
-        throw new Error(m.scripts_pendingChange_error());
+        continue;
       if (isLiveScriptStatus(current.runtime?.status)) {
         skippedRunning.add(current.name);
         continue;
       }
-      const result = yield* call(() =>
-        scriptDefinitionTransport.upsert(workspaceId, id, {
-          name: updates.name ?? current.name,
-          command: updates.command ?? current.command,
-          mode: updates.mode ?? current.mode,
-          ...((updates.cwd !== undefined ? updates.cwd : current.cwd) !== undefined
-            ? { cwd: updates.cwd !== undefined ? updates.cwd : current.cwd }
-            : {}),
-          ...((updates.env !== undefined ? updates.env : current.env) !== undefined
-            ? { env: updates.env !== undefined ? updates.env : current.env }
-            : {}),
-          ...((updates.category !== undefined ? updates.category : current.category) !== undefined
-            ? { category: updates.category !== undefined ? updates.category : current.category }
-            : {}),
-          ...((updates.autoStart !== undefined ? updates.autoStart : current.autoStart) !==
-          undefined
-            ? { autoStart: updates.autoStart !== undefined ? updates.autoStart : current.autoStart }
-            : {}),
-          ...((updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl) !==
-          undefined
-            ? { healthUrl: updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl }
-            : {}),
-          ...((updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern) !==
-          undefined
-            ? {
-                readyPattern:
-                  updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern,
-              }
-            : {}),
-        }),
-      );
+      yield* requireAuthority(workspaceId, authority);
+      const request = scriptDefinitionTransport.upsert(workspaceId, id, {
+        name: updates.name ?? current.name,
+        command: updates.command ?? current.command,
+        mode: updates.mode ?? current.mode,
+        ...((updates.cwd !== undefined ? updates.cwd : current.cwd) !== undefined
+          ? { cwd: updates.cwd !== undefined ? updates.cwd : current.cwd }
+          : {}),
+        ...((updates.env !== undefined ? updates.env : current.env) !== undefined
+          ? { env: updates.env !== undefined ? updates.env : current.env }
+          : {}),
+        ...((updates.category !== undefined ? updates.category : current.category) !== undefined
+          ? { category: updates.category !== undefined ? updates.category : current.category }
+          : {}),
+        ...((updates.autoStart !== undefined ? updates.autoStart : current.autoStart) !== undefined
+          ? { autoStart: updates.autoStart !== undefined ? updates.autoStart : current.autoStart }
+          : {}),
+        ...((updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl) !== undefined
+          ? { healthUrl: updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl }
+          : {}),
+        ...((updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern) !==
+        undefined
+          ? {
+              readyPattern:
+                updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern,
+            }
+          : {}),
+      });
+      pendingWrite = request;
+      const result = yield* call(() => request);
+      pendingWrite = undefined;
       if (result.success) updated += 1;
     }
     for (const input of changes.add) {
-      const result = yield* call(() => scriptDefinitionTransport.create(workspaceId, input));
+      yield* requireAuthority(workspaceId, authority);
+      const request = scriptDefinitionTransport.create(workspaceId, input);
+      pendingWrite = request;
+      const result = yield* call(() => request);
+      pendingWrite = undefined;
       if (result.success) added += 1;
     }
     yield* requireAuthority(workspaceId, authority);
@@ -735,8 +744,16 @@ function* applyDefinitionChanges(
     yield* finishWorkflow(workspaceId, consumer, 'failure', undefined, message);
     settled = true;
   } finally {
+    const wasCancelled = yield* cancelled();
+    if (wasCancelled && pendingWrite) {
+      try {
+        yield* call(() => pendingWrite);
+      } catch {
+        // Cancellation suppresses the result, but the reservation must outlive the wire request.
+      }
+    }
     yield* releaseInventory(workspaceId, reservationId);
-    if (!settled && (yield* cancelled())) {
+    if (!settled && wasCancelled) {
       yield* put(action.failure(new Error('Applying script changes cancelled')));
       yield* finishWorkflow(workspaceId, consumer, 'cancelled');
     }

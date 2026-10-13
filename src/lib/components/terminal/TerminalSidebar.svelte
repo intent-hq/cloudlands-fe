@@ -314,9 +314,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     // Fallback: old flat array format — deduplicate
     if (Array.isArray(parsed)) {
       const existingKeys = new Set(
-        selectScriptEntries
-          .select(appStore.state, requestWorkspaceId)
-          .map((script) => `${script.name}::${script.command}`),
+        (reviewedDefinitions ?? selectScriptEntries.select(appStore.state, requestWorkspaceId)).map(
+          (script) => `${script.name}::${script.command}`,
+        ),
       );
 
       const add: ScriptDefinitionInput[] = [];
@@ -706,17 +706,15 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       return;
     pendingList = null;
     completeWorkflow(listConsumerId, outcome);
-    if (outcome.status !== 'success' || !Array.isArray(outcome.result)) {
-      detectFlow = 'idle';
-      return;
-    }
-    reviewedAgentDefinitions = {
-      workspaceId: outcome.workspaceId,
-      definitions: outcome.result as ScriptWithState[],
-    };
+    const definitions =
+      outcome.status === 'success' && Array.isArray(outcome.result)
+        ? (outcome.result as ScriptWithState[])
+        : [];
+    reviewedAgentDefinitions =
+      outcome.status === 'success' ? { workspaceId: outcome.workspaceId, definitions } : null;
     const workspace = selectWorkspaceById.select(appStore.state, outcome.workspaceId);
     if (!workspace || !mounted || workspaceId !== outcome.workspaceId) return;
-    const existingScripts = outcome.result.map((script) => ({
+    const existingScripts = definitions.map((script) => ({
       id: script.id,
       name: script.name,
       command: script.command,

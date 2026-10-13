@@ -498,6 +498,54 @@ describe('TerminalSidebar detection flow', () => {
     );
   });
 
+  it('deduplicates legacy agent results against the full fetched inventory', async () => {
+    const offPage = {
+      id: 'off-page',
+      workspaceId: 'ws-1',
+      name: 'test',
+      command: 'pnpm test',
+      mode: 'command',
+      source: 'user',
+      runtime: { status: 'idle' },
+    };
+    vi.mocked(scriptsClient.list).mockResolvedValueOnce({
+      success: true,
+      data: [offPage] as never,
+    });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect with AI' }));
+    await waitFor(() => expect(mockExecute).toHaveBeenCalledOnce());
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify([{ name: 'test', command: 'pnpm test', mode: 'command' }]),
+    );
+
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/applyScriptDefinitionChangesRequested',
+        payload: [
+          'ws-1',
+          expect.objectContaining({ add: [] }),
+          [offPage],
+          expect.any(Object),
+          expect.any(String),
+        ],
+      }),
+    );
+  });
+
+  it('still launches agent detection when the context inventory read fails', async () => {
+    vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: false, error: 'List failed' });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect with AI' }));
+
+    await waitFor(() =>
+      expect(mockExecute).toHaveBeenCalledWith(
+        activeWorkspaceState.value,
+        expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
+      ),
+    );
+  });
+
   it('captures full definitions for detection Undo even when the visible rows are previews', async () => {
     const full = {
       id: 'old',

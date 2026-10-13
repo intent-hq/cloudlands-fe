@@ -131,7 +131,7 @@ describe('terminalCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('settles the compatibility promise without insertion after the consumer releases', async () => {
+  it('keeps a created terminal visible after the requesting overlay releases', async () => {
     let resolveCreate: (value: { success: true; id: string }) => void = () => {};
     mocks.create.mockReturnValue(
       new Promise((resolve) => {
@@ -151,6 +151,7 @@ describe('terminalCreationSaga', () => {
     await expect(request.promise).resolves.toBe('orphaned-pty');
 
     expect(dispatched.map((action) => action.type)).toEqual([
+      'terminals/addTerminal',
       createOverlayTerminalRequested.success.type,
     ]);
     task.cancel();
