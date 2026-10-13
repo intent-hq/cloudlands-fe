@@ -184,12 +184,8 @@ describe('queued question answers across the daemon drain sequence', () => {
 
     pendingGets[0]!(agentLite(agentId, question.id));
     await staleRead;
-    await vi.waitFor(() => expect(pendingGets).toHaveLength(2));
+    expect(pendingGets).toHaveLength(1);
     expect(storedMarker(agentId)).toBe('');
-    expect(pending(agentId)).toBeNull();
-
-    pendingGets[1]!(agentLite(agentId, ''));
-    await vi.waitFor(() => expect(storedMarker(agentId)).toBe(''));
     expect(pending(agentId)).toBeNull();
   });
 

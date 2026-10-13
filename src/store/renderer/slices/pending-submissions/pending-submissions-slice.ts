@@ -317,15 +317,26 @@ pendingSubmissionsReducer.with(
 pendingSubmissionsReducer.with(
   pendingEvidenceObserved,
   (state, { payload: [scope, kind, rows, now] }) =>
-    update(state, scope, (entry) => ({
-      ...observe(entry, kind, rows, now),
-      generation: entry.generation + 1,
-      observationVersion: entry.observationVersion + 1,
-      queueFresh: false,
-      historyFresh: false,
-      refreshNeeded: true,
-      attemptActive: kind === 'processing' || entry.attemptActive,
-    })),
+    update(state, scope, (entry) => {
+      const next = observe(entry, kind, rows, now);
+      // An admitted queue event is a complete snapshot. Missing local contributions
+      // still need delivery evidence, but settled rows need no history reread to
+      // use the snapshot's queue controls. Keep processing ambiguity until its
+      // existing lifecycle/history recovery resolves it.
+      const unresolved =
+        getItems(next.submissions).length > 0 ||
+        getItems(next.seeds).length > 0 ||
+        getItems(next.processing).length > 0;
+      return {
+        ...next,
+        generation: entry.generation + 1,
+        observationVersion: entry.observationVersion + 1,
+        queueFresh: kind === 'queue',
+        historyFresh: false,
+        refreshNeeded: kind !== 'queue' || unresolved,
+        attemptActive: kind === 'processing' || entry.attemptActive,
+      };
+    }),
 );
 pendingSubmissionsReducer.with(pendingLifecycleObserved, (state, { payload: [scope, active] }) =>
   update(state, scope, (entry) => ({

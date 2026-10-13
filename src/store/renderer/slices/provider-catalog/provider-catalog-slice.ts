@@ -18,10 +18,14 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type { WorkspaceEvent } from '$features/events/types';
+import { applyWorkspaceCatalogUpdate } from './workspace-catalog-updates';
 import type {
   ProviderCatalogEntry,
   ProviderCatalogState,
   WorkspaceCatalogSnapshot,
+  WorkspaceCatalogResource,
+  WorkspaceCatalogUpdate,
 } from './provider-catalog-types';
 
 export const initialState: ProviderCatalogState = {
@@ -52,8 +56,30 @@ providerCatalogReducer.with(hostExecutionConnectionChanged, (state) => ({
 export const ensureWorkspaceCatalogRequested = createAction<[workspaceId: string]>(
   'providerCatalog/ensureWorkspaceCatalogRequested',
 );
-export const workspaceCatalogRequested = createAction<[workspaceId: string]>(
-  'providerCatalog/workspaceCatalogRequested',
+export const workspaceCatalogRequested = createAction<
+  [workspaceId: string, resources?: WorkspaceCatalogResource[]]
+>('providerCatalog/workspaceCatalogRequested');
+/** Events admitted by the shared daemon subscription router, never raw socket fan-out. */
+export const workspaceCatalogEventReceived = createAction<[event: WorkspaceEvent]>(
+  'providerCatalog/workspaceCatalogEventReceived',
+);
+export const workspaceCatalogUpdated = createAction<
+  [workspaceId: string, update: WorkspaceCatalogUpdate]
+>('providerCatalog/workspaceCatalogUpdated');
+providerCatalogReducer.with(
+  workspaceCatalogUpdated,
+  (state, { payload: [workspaceId, update] }) => {
+    const snapshot = state.byWorkspaceId?.[workspaceId];
+    return snapshot
+      ? {
+          ...state,
+          byWorkspaceId: {
+            ...state.byWorkspaceId,
+            [workspaceId]: applyWorkspaceCatalogUpdate(snapshot, update),
+          },
+        }
+      : state;
+  },
 );
 /** Each admitted read needs a new successful snapshot, including trailing refreshes. */
 export const workspaceCatalogReadStarted = createAction<[workspaceId: string]>(

@@ -764,7 +764,14 @@ describe('actual main finalization fence and original pool', () => {
     expect(await invoke(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, event, undefined)).toEqual({
       ok: true,
       result: {
-        server: { capabilities: { agentNodes: 1, localNodeIsolation: 0, agentPlatformRouting: 1 } },
+        server: {
+          capabilities: {
+            agentNodes: 1,
+            localNodeIsolation: 0,
+            agentPlatformRouting: 1,
+            workspaceMembershipEvents: 0,
+          },
+        },
       },
     });
     expect(client.getRepositoryConnection()).toBe(original);

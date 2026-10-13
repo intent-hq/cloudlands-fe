@@ -14,14 +14,20 @@
   let { open = false, children }: Props = $props();
 
   let panelRef: HTMLDivElement | undefined = $state();
-  // Opening autofocus must not override a control the user has already chosen.
+  // Opening focus must yield to the user's choice while the panel animates.
   $effect(() => {
     if (!open || !panelRef) return;
     const panel = panelRef;
     const initialFocus = document.activeElement;
-    // Wait for the slide transition to complete (150ms).
-    const timeout = setTimeout(() => {
+    let focusMoved = panel.contains(document.activeElement);
+    const preserveFocus = () => {
+      focusMoved = true;
+    };
+    document.addEventListener('focusin', preserveFocus);
+    const timer = setTimeout(() => {
+      document.removeEventListener('focusin', preserveFocus);
       if (
+        focusMoved ||
         !panel.isConnected ||
         document.activeElement !== initialFocus ||
         panel.contains(document.activeElement)
@@ -33,7 +39,10 @@
       );
       firstInput?.focus();
     }, 180);
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('focusin', preserveFocus);
+    };
   });
 </script>
 

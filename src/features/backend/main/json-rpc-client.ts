@@ -585,6 +585,7 @@ export class JsonRpcClient extends EventEmitter {
       agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
       localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
       agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
+      workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
     });
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,

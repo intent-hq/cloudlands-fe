@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../types';
+import type { WorkspaceEvent } from '$features/events/types';
 
 const mocks = vi.hoisted(() => ({
   catalog: vi.fn(),
@@ -44,6 +45,7 @@ import {
   providerCatalogReducer,
   workspaceCatalogRequested,
   workspaceCatalogReadFailed,
+  workspaceCatalogEventReceived,
 } from './provider-catalog-slice';
 import { workspaceCatalogSaga } from './workspace-catalog-saga';
 import {
@@ -64,7 +66,7 @@ const settle = async () => {
 afterEach(() => vi.resetAllMocks());
 
 describe('workspace catalog ownership', () => {
-  it('sends origin IDs, isolates late responses, and refetches all contexts on an unqualified event', async () => {
+  it('sends origin IDs, isolates late responses, and recovers only settings on incomplete events and projects scoped toggles', async () => {
     let releaseA!: (value: { providers: [] }) => void;
     const a = new Promise<{ providers: [] }>((resolve) => {
       releaseA = resolve;
@@ -121,6 +123,10 @@ describe('workspace catalog ownership', () => {
         };
       },
     };
+    mocks.notification = (notification) =>
+      dispatch(
+        workspaceCatalogEventReceived((notification.params as { event: WorkspaceEvent }).event),
+      );
     const task = runSaga(
       { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
       workspaceCatalogSaga,
@@ -154,7 +160,7 @@ describe('workspace catalog ownership', () => {
         params: { event: { type: 'settings:changed', data: { value: 'unqualified' } } },
       });
       await settle();
-      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B', 'A', 'B']);
+      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B']);
       expect(selectContextDefaultProvider.select(state as StoreState, 'B')).toBe('B');
       mocks.notification?.({
         method: 'events.event',
@@ -170,11 +176,11 @@ describe('workspace catalog ownership', () => {
         },
       });
       await settle();
-      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B', 'A', 'B', 'A', 'B']);
+      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B']);
       dispatch(workspaceCatalogRequested('B'));
       mocks.reconnect?.();
       await settle();
-      expect(state.providerCatalog.workspaceEpoch).toBe(3);
+      expect(state.providerCatalog.workspaceEpoch).toBe(1);
       await settle();
       mocks.catalog.mockRejectedValueOnce(new Error('Catalog unavailable'));
       dispatch(workspaceCatalogRequested('B'));

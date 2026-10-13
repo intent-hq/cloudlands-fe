@@ -65,4 +65,37 @@ describe('DividerPanel delayed focus', () => {
     expect(focus).not.toHaveBeenCalled();
     expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
+
+  it('preserves a focus change that returns to the opening target', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      outside.focus();
+      const view = render(DividerPanel, { open: true, children });
+      await tick();
+      view.getByRole('button', { name: 'Choose repository' }).focus();
+      outside.focus();
+      await vi.advanceTimersByTimeAsync(180);
+      expect(document.activeElement).toBe(outside);
+      expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('preserves an explicit blur of the opening focus target', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      outside.focus();
+      render(DividerPanel, { open: true, children });
+      await tick();
+      outside.blur();
+      await vi.advanceTimersByTimeAsync(180);
+      expect(document.activeElement).toBe(document.body);
+      expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      outside.remove();
+    }
+  });
 });

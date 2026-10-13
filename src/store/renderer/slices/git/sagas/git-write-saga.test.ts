@@ -1,5 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { store } from '$store/renderer/store';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
@@ -99,6 +100,7 @@ function startWrites(onAction?: (action: Action) => void) {
 }
 
 beforeEach(() => {
+  store.init();
   vi.mocked(invoke).mockReset().mockResolvedValue({ success: true });
   vi.mocked(backendRequest)
     .mockReset()
@@ -110,6 +112,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const task of tasks.splice(0)) task.cancel();
+  store.dispose();
   vi.clearAllMocks();
 });
 

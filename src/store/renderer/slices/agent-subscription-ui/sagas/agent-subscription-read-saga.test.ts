@@ -555,3 +555,32 @@ describe('agentSubscriptionReadSaga', () => {
     expect(run.state().entries[makeKey(WS, AGENT)]).toBeUndefined();
   });
 });
+
+it('refreshes only parents watching the changed child, including hidden tracked parents', async () => {
+  mocks.request.mockResolvedValue(empty());
+  const seed = agentSubscriptionUIReducer(
+    initialState,
+    setSubscriptionSnapshot(WS, AGENT, {
+      ...active(),
+      waitingState: 'waiting',
+    }),
+  );
+  const unrelated = agentSubscriptionUIReducer(
+    seed,
+    setSubscriptionSnapshot(WS, 'unrelated', {
+      ...empty(),
+      waitingState: 'idle',
+    }),
+  );
+  const run = harness(unrelated);
+  run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS, undefined, CHILD));
+  await settle();
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(mocks.request).toHaveBeenCalledWith('agent.getSubscriptions', {
+    workspaceId: WS,
+    agentId: AGENT,
+  });
+  expect(run.state().entries[makeKey(WS, AGENT)]?.waitingState).toBe('completed');
+  expect(run.state().entries[makeKey(WS, 'unrelated')]?.waitingState).toBe('idle');
+  run.task.cancel();
+});

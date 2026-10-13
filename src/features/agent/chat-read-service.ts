@@ -2,9 +2,8 @@ import { beginSubmissionRead, submissionHistoryEvidence } from './submission-evi
 import { CHAT_PAGE_SIZE } from '$shared/constants';
 import { claimAgentReadOwnership } from './agent-read-ownership';
 /**
- * Reusable on-demand transcript read seam used by the daemon event router
- * (reconnect / event-driven refetches). `loadChatTranscript(agentId)` fetches
- * the session (`appClient.agents.get`) AND one newest transcript page.
+ * On-demand transcript recovery reads one newest page. Known session metadata
+ * stays owned by its push stream; unknown sessions hydrate via agent.get first.
  * Older pages are owned by the active panel's demand-driven scrollback.
  * The daemon's
  * AgentLite projection (from `agents.get`) returns only message COUNTS, so
@@ -69,12 +68,9 @@ function readCurrentMessages(agentId: string, workspaceId?: string): AgentMessag
 }
 
 /**
- * Fetch a single agent's session AND its FULL transcript from the seam, then
- * hydrate the store with `{ ...session, messages }`. Pages through
- * agent.getConversation to assemble the complete transcript (50 messages per
- * page). Errors are swallowed (logged only) so
- * a failed read never clears an existing transcript. Concurrent calls for the
- * same agent share one fetch.
+ * Recover the newest transcript page, hydrating metadata only for unknown
+ * sessions. Older pages stay demand-driven. A failed read preserves the
+ * current transcript; concurrent requests share one read and a trailing retry.
  */
 export async function loadChatTranscript(agentId: string, workspaceId?: string): Promise<void> {
   // A soft-hidden deletion is pending (undo window still open): the daemon
@@ -154,7 +150,11 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
   // Actually perform the work
   (async () => {
     try {
-      const session = await readAgentSession(agentId, workspaceId);
+      const known = appStore.state.agentSessions?.byAgentId[agentId];
+      const session =
+        known && known.workspaceId === workspaceId
+          ? known
+          : await readAgentSession(agentId, workspaceId);
       if (!session || connection !== connectionGeneration || !ownership.isCurrent()) return;
       ownership.bindWorkspace(session.workspaceId);
       workspaceId ??= session.workspaceId;
@@ -234,7 +234,11 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       // streaming/responding flags. If a chat opens with "Thinking", that is
       // because the daemon snapshot actually reports a turn is in-flight;
       // any orphan/stale healing belongs in the daemon, not the renderer.
-      const sessionWithMessages = { ...session, messages: mergedMessages };
+      const current = appStore.state.agentSessions?.byAgentId[agentId];
+      const sessionWithMessages = {
+        ...(current?.workspaceId === session.workspaceId ? current : session),
+        messages: mergedMessages,
+      };
       submissionRead.complete(submissionHistoryEvidence(allMessages));
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));

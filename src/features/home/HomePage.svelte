@@ -113,7 +113,9 @@
     if (!position) return;
     contextMenu = {
       ...position,
-      returnFocus: position.returnFocus?.closest('[role="option"], button') as HTMLElement | null,
+      returnFocus:
+        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
+        position.returnFocus,
       workspace,
     };
   }
