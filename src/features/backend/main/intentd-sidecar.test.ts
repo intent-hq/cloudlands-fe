@@ -444,6 +444,7 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSpawn.mockReset();
     __resetIntentdSidecarForTesting();
     __resetConnectionModeForTesting();
     // The fake process carries a pid; never touch a real process's priority.
@@ -659,6 +660,7 @@ describe('sidecar scheduling priority (best-effort)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSpawn.mockReset();
     __resetIntentdSidecarForTesting();
     __resetConnectionModeForTesting();
     mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
