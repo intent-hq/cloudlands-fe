@@ -61,6 +61,8 @@ export function installGitContentRecovery(
     syncing = true;
     const factoryLive = factoryCurrent();
     try {
+      // Observe revocation even while demand cannot admit a replacement owner.
+      for (const [key, root] of rootTransports) if (!root.current()) rootTransports.delete(key);
       const wanted = new Set<string>();
       for (const [workspaceId, workspace] of Object.entries(store.getState().git.byWorkspaceId)) {
         const demands = new Set(getItems(workspace.readConsumers).map((row) => row.readKey));

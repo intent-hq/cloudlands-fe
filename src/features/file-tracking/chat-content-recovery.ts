@@ -152,6 +152,8 @@ export function installChatChangesRecovery(
         state.connections.windowBackendId !== backend
       )
         retired = true;
+      // Observe revocation even while demand cannot admit a replacement owner.
+      for (const [key, root] of roots) if (!root.current()) roots.delete(key);
       const wanted = new Set<string>();
       for (const [wsId, workspace] of Object.entries(state.chatChanges.byWorkspaceId))
         for (const consumer of getItems(workspace.consumers)) {
@@ -197,7 +199,7 @@ export function installChatChangesRecovery(
                       return value;
                     })
                     .catch((error) => {
-                      if (gitReadAuthorityDenied(error))
+                      if (rootCurrent() && gitReadAuthorityDenied(error))
                         for (const row of rows.values()) if (row.rootKey === rootKey) row.retire();
                       throw error;
                     }),

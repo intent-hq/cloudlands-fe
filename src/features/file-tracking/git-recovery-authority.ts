@@ -2,7 +2,7 @@ import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { RendererRecoveryScope } from '$features/events/renderer-event-recovery';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import {
-  selectWorkspaceById,
+  selectWorkspaceParticipationContext,
   selectWorkspaceListLoadedForBackend,
 } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { WorktreeRecoveryStore } from './worktree-snapshots-recovery';
@@ -16,6 +16,7 @@ export function captureGitAuthority(
 ) {
   const state = store.getState();
   const principal = selectPrincipalActionContext.select(state);
+  const participation = selectWorkspaceParticipationContext.select(state, workspaceId);
   const backend = state.connections.windowBackendId;
   const deleted = state.workspace.deletionTokens[workspaceId];
   const roots = state.gitRoots.byWorkspaceId[workspaceId]?.gitRoots;
@@ -29,11 +30,12 @@ export function captureGitAuthority(
       !retired &&
       scope.isCurrent() &&
       !!principal &&
+      !!participation &&
       selectPrincipalActionContext.select(next) === principal &&
       next.connections.windowBackendId === backend &&
       next.workspace.deletionTokens[workspaceId] === deleted &&
       selectWorkspaceListLoadedForBackend.select(next, backend) &&
-      !!selectWorkspaceById.select(next, workspaceId) &&
+      selectWorkspaceParticipationContext.select(next, workspaceId) === participation &&
       (!gitRootId ||
         (!!root &&
           !!nextRoot &&

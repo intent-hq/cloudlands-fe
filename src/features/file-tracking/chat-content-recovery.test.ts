@@ -7,6 +7,7 @@ vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: (s: any) => (s.exists ? { id: 'ws' } : undefined) },
+  selectWorkspaceParticipationContext: { select: (s: any) => (s.exists ? s.authority : null) },
   selectWorkspaceListLoadedForBackend: { select: () => true },
 }));
 vi.mock('$store/renderer/slices/chat-changes/chat-changes-selectors', () => ({
@@ -281,3 +282,77 @@ it('updates a live chat cache after an ordinary admitted event without fences', 
   expect(h.request.mock.calls.filter(([m]) => m === 'events.fence')).toHaveLength(0);
   expect(h.request.mock.calls.filter(([m]) => m === 'git.diffs')).toHaveLength(2);
 });
+
+it.each(['replacement', 'remove-readd', 'membership-regrant'] as const)(
+  'old Git root denial cannot retire replacement chat cache (%s)',
+  async (change) => {
+    const h = await setup();
+    h.change({
+      gitRoots: {
+        byWorkspaceId: {
+          ws: {
+            gitRoots: createCollection('id', [{ id: 'root', path: '/old-root', createdAt: 'one' }]),
+          },
+        },
+      },
+    });
+    h.store.dispatch(
+      chatChangesInputChanged('ws', 'live', 'root-request', { ...h.input, gitRootId: 'root' }),
+    );
+    let reject!: (e: unknown) => void;
+    const held = new Promise<any>((_, r) => {
+      reject = r;
+    });
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation((m, p) => (m === 'git.showFile' ? held : normal(m, p)));
+    const old = h.consumer();
+    const lane = captureGitRead(
+      chatContentRecoveryKey('ws', 'live', old.resourceKey, old.requestId),
+    );
+    const pending = lane
+      .run(() =>
+        lane.transport!.request('git.showFile', {
+          workspaceId: 'ws',
+          gitRootId: 'root',
+          ref: 'HEAD',
+          filePath: 'a.ts',
+        }),
+      )
+      .catch(() => undefined);
+    await settle();
+    if (change === 'membership-regrant') {
+      h.change({ exists: false });
+      h.change({ exists: true });
+    } else {
+      if (change === 'remove-readd')
+        h.change({ gitRoots: { byWorkspaceId: { ws: { gitRoots: createCollection('id') } } } });
+      h.change({
+        gitRoots: {
+          byWorkspaceId: {
+            ws: {
+              gitRoots: createCollection('id', [
+                {
+                  id: 'root',
+                  path: change === 'replacement' ? '/new-root' : '/old-root',
+                  createdAt: change === 'replacement' ? 'two' : 'one',
+                },
+              ]),
+            },
+          },
+        },
+      });
+    }
+    const { chatChangesRecovered } =
+      await import('$store/renderer/slices/chat-changes/chat-changes-slice');
+    const now = h.consumer();
+    h.store.dispatch(
+      chatChangesRecovered('ws', 'live', now.requestId, now.resourceKey, [
+        { ...h.input.changes[0], newContent: 'new root content' },
+      ]),
+    );
+    reject({ rpcCode: -32003 });
+    await pending;
+    await settle();
+    expect(h.rows()).toMatchObject([{ newContent: 'new root content' }]);
+  },
+);

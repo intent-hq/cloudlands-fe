@@ -13,6 +13,7 @@ vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: (s: any, id: string) => (s.exists ? { id } : undefined) },
+  selectWorkspaceParticipationContext: { select: (s: any) => (s.exists ? s.authority : null) },
   selectWorkspaceListLoadedForBackend: { select: () => true },
 }));
 import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
