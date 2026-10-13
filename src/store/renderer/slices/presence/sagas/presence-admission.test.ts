@@ -1,3 +1,9 @@
+import { installCollaborationRecovery } from '$features/presence/collaboration-recovery';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import {
+  createEventRecoverySession,
+  type RecoveryNotification,
+} from '$shared/event-recovery/session';
 import type { PresenceRoster } from '$shared/types/presence';
 import { MemberProvider } from '$lib/services/mentions/providers/member-provider';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -124,6 +130,62 @@ describe('presence admission and avatar policy', () => {
     admit(1, hostRole);
     cancel = store.runSaga(presenceSaga);
   }
+  it('recovers a final lost roster and accepted membership without another event', async () => {
+    start();
+    await settle();
+    let emit!: (notification: RecoveryNotification) => void;
+    const request = vi.fn(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe')
+        return { subscriptionId: 'presence-loss', lossRecovery: 1 };
+      if (method === 'events.fence') return params;
+      if (method === 'presence.snapshot') return { workspaceId: 'ws', members: [] };
+      if (method === 'workspace.members.list') return { members: [] };
+      throw Error(method);
+    });
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        dispose: () => {},
+        onNotification: (handler) => {
+          emit = handler;
+          return () => {};
+        },
+        request: async (method, params, observe) => {
+          const value = await request(method, params);
+          observe?.(value);
+          return value;
+        },
+      }),
+    );
+    const off = installCollaborationRecovery(scope, {
+      getState: () => store.state,
+      dispatch: (action) => store.dispatch(action),
+      subscribe: (listener) => store.getReadableState().subscribe(listener),
+    });
+    try {
+      await scope.subscribe(
+        { workspaceId: 'ws', eventTypes: ['presence:changed', 'workspace:updated'] },
+        { recover: true },
+      );
+      emit({
+        method: 'events.lost',
+        params: { subscriptionId: 'presence-loss', generation: '1', scope: { workspaceId: 'ws' } },
+      });
+      await settle();
+      expect(selectWorkspacePresencePeople.select(store.state, 'ws')).toEqual([]);
+      expect(request.mock.calls.filter(([m]) => m === 'presence.snapshot')).toEqual([
+        ['presence.snapshot', { workspaceId: 'ws' }],
+      ]);
+      expect(request.mock.calls.filter(([m]) => m === 'workspace.members.list')).toEqual([
+        ['workspace.members.list', { workspaceId: 'ws' }],
+      ]);
+    } finally {
+      off();
+      rendererEventRecovery.dispose();
+    }
+  });
   it('does not load or report presence while Multiplayer is off', async () => {
     start(false);
     await vi.advanceTimersByTimeAsync(1000);

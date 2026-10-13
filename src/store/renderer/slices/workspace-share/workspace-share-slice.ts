@@ -214,6 +214,10 @@ export const shareDataFailed = createAction<
   [payload: { target: WorkspaceShareTarget; error: string }]
 >('workspaceShare/dataFailed');
 
+/** A completed command whose response was superseded by recovery must not stay busy. */
+export const shareCommandDiscarded = createAction<[target: WorkspaceShareTarget]>(
+  'workspaceShare/commandDiscarded',
+);
 /** Saga: the caller may not manage sharing for `target` (see `withheld`). */
 export const shareAccessWithheld = createAction<[payload: { target: WorkspaceShareTarget }]>(
   'workspaceShare/accessWithheld',
@@ -263,6 +267,11 @@ export const shareActionSettled = createAction<
 /** Hover card: read (or re-read) the roster of `workspaceId`. */
 export const shareRosterRequested = createAction<[payload: { workspaceId: string }]>(
   'workspaceShare/rosterRequested',
+);
+
+/** Retired authority must not leave protected hover rows cached. */
+export const shareRosterRetired = createAction<[payload: { workspaceId: string }]>(
+  'workspaceShare/rosterRetired',
 );
 
 /** Saga: the roster of `workspaceId` arrived. */
@@ -342,6 +351,11 @@ workspaceShareReducer.with(closeShareDialog, (state) => ({
   byWorkspaceId: state.byWorkspaceId,
   session: state.session,
 }));
+workspaceShareReducer.with(shareRosterRetired, (state, { payload: [{ workspaceId }] }) => {
+  const byWorkspaceId = { ...state.byWorkspaceId };
+  delete byWorkspaceId[workspaceId];
+  return { ...state, byWorkspaceId };
+});
 workspaceShareReducer.with(shareRosterRequested, (state, { payload: [{ workspaceId }] }) => {
   const roster = getRosterState(state, workspaceId);
   if (roster.withheld) return state;
@@ -432,6 +446,17 @@ workspaceShareReducer.with(shareDataFailed, (state, { payload: [{ target, error 
   if (!targets(state, target) || state.withheld) return state;
   return { ...state, loadStatus: 'error', loadError: error };
 });
+workspaceShareReducer.with(shareCommandDiscarded, (state, { payload: [target] }) =>
+  targets(state, target)
+    ? {
+        ...state,
+        creating: false,
+        revokingInviteId: null,
+        removingPrincipalId: null,
+        addingPrincipalId: null,
+      }
+    : state,
+);
 workspaceShareReducer.with(shareAccessWithheld, (state, { payload: [{ target }] }) => {
   if (!targets(state, target)) return state;
   return { ...withoutRows(state), withheld: true, loadStatus: 'loaded', loadError: null };

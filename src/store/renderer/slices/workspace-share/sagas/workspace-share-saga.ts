@@ -1,3 +1,14 @@
+import type { Action } from '@redux-saga/types';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import {
+  admitCollaborationCommand,
+  collaborationKey,
+  readCollaboration,
+  collaborationReadBlocked,
+  trackCollaborationFlight,
+} from '$features/presence/collaboration-recovery';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 /**
  * Workspace Share Saga
  *
@@ -92,6 +103,7 @@ import {
   openShareDialog,
   shareAccessWithheld,
   shareActionSettled,
+  shareCommandDiscarded,
   shareDataFailed,
   shareDataLoaded,
   shareDataRequested,
@@ -111,6 +123,10 @@ import {
   shareRosterWithheld,
   type WorkspaceShareTarget,
 } from '../workspace-share-slice';
+
+function* putCommand(receipt: RecoveryLifetime, action: Action): SagaGenerator<void> {
+  yield* put(withRecoveryLifetime(action, receipt));
+}
 
 const logger = createLogger('WorkspaceShareSaga');
 
@@ -234,21 +250,28 @@ function* loadShareData(): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
   const generation = yield* selectShareMutationGeneration.effect();
+  const key = collaborationKey('share-dialog', target.workspaceId);
+  const receipt = rendererEventRecovery.capture(key);
+  if (collaborationReadBlocked(key)) return;
   const read = readShareData(target.workspaceId);
+  trackCollaborationFlight(key, read.settled);
   try {
-    const {
-      members,
-      invites: rows,
-      principals,
-      guestCount,
-      guestLimit,
-    } = yield* call(() => read.result);
+    const data = yield* call(() => read.result);
+    if (!data) return;
+    const { members, invites: rows, principals, guestCount, guestLimit } = data;
     if (!(yield* stillTargets(target))) return;
-    const invites = yield* call(vaultInviteLinks, rows);
-    yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
-    if (principals) yield* put(sharePrincipalsLoaded({ target, principals }));
+    if (!receipt.commit(() => undefined)) return;
+    const invites = vaultInviteLinks(rows);
+    yield* put(
+      withRecoveryLifetime(
+        shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }),
+        receipt,
+      ),
+    );
+    if (principals)
+      yield* put(withRecoveryLifetime(sharePrincipalsLoaded({ target, principals }), receipt));
   } catch (error) {
-    if (yield* stillTargets(target)) {
+    if ((yield* stillTargets(target)) && receipt.commit(() => undefined)) {
       if (isForbiddenErrorResponse(error)) {
         yield* put(shareAccessWithheld({ target }));
       } else {
@@ -256,9 +279,9 @@ function* loadShareData(): SagaGenerator<void> {
         yield* put(shareDataFailed({ target, error: m.workspace_share_loadFailed_error() }));
       }
     }
+  } finally {
+    yield* call(() => read.settled);
   }
-  // Hold the flight until the sibling read settles too, so a burst still coalesces.
-  yield* call(() => read.settled);
 }
 
 /**
@@ -317,6 +340,9 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     );
     return;
   }
+  const receipt = rendererEventRecovery.capture(
+    collaborationKey('share-dialog', target.workspaceId),
+  );
   const outcome = yield* call(workspaceSharingClient.createInvite, target.workspaceId, {
     pinLogin: requestedPin,
     pin:
@@ -325,13 +351,22 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
         : pin,
   });
   if (!(yield* stillTargets(target))) return;
+  const settledReceipt = admitCollaborationCommand(
+    collaborationKey('share-dialog', target.workspaceId),
+    receipt,
+  );
+  if (!settledReceipt) {
+    yield* put(shareCommandDiscarded(target));
+    return;
+  }
   if (!outcome.success) {
     if (outcome.code === 'forbidden') {
-      yield* put(shareAccessWithheld({ target }));
+      yield* putCommand(settledReceipt, shareAccessWithheld({ target }));
       return;
     }
     logFailure('Creating an invite', target.workspaceId, outcome);
-    yield* put(
+    yield* putCommand(
+      settledReceipt,
       shareInviteCreateFailed({
         target,
         request,
@@ -341,8 +376,14 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     return;
   }
   const inviteId = outcome.result.invite.id;
-  yield* call(storeInviteLink, inviteId, outcome.result.url);
-  yield* put(
+  if (
+    !settledReceipt.commit(() => {
+      storeInviteLink(inviteId, outcome.result.url);
+    })
+  )
+    return;
+  yield* putCommand(
+    settledReceipt,
     shareInviteCreated({
       target,
       request,
@@ -353,7 +394,7 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       },
     }),
   );
-  yield* put(shareDataRequested());
+  yield* putCommand(settledReceipt, shareDataRequested());
 }
 
 /**
@@ -367,19 +408,36 @@ function* revokeInvite(action: ReturnType<typeof shareInviteRevokeRequested>): S
   if (!target) return;
   const [inviteId] = action.payload;
   if ((yield* selectShareRevokingInviteId.effect()) !== inviteId) return;
+  const receipt = rendererEventRecovery.capture(
+    collaborationKey('share-dialog', target.workspaceId),
+  );
   const result = yield* call(workspaceSharingClient.revokeInvite, target.workspaceId, inviteId);
   if (!(yield* stillTargets(target))) return;
+  const settledReceipt = admitCollaborationCommand(
+    collaborationKey('share-dialog', target.workspaceId),
+    receipt,
+  );
+  if (!settledReceipt) {
+    yield* put(shareCommandDiscarded(target));
+    return;
+  }
   if (!result.success) {
     if (result.code === 'forbidden') {
-      yield* put(shareAccessWithheld({ target }));
+      yield* putCommand(settledReceipt, shareAccessWithheld({ target }));
       return;
     }
     logFailure('Revoking an invite', target.workspaceId, result);
-    yield* put(shareActionSettled({ target, error: m.workspace_share_revokeFailed_error() }));
+    yield* putCommand(
+      settledReceipt,
+      shareActionSettled({ target, error: m.workspace_share_revokeFailed_error() }),
+    );
     return;
   }
-  yield* put(shareActionSettled({ target, error: null, revokedInviteId: inviteId }));
-  yield* put(shareDataRequested());
+  yield* putCommand(
+    settledReceipt,
+    shareActionSettled({ target, error: null, revokedInviteId: inviteId }),
+  );
+  yield* putCommand(settledReceipt, shareDataRequested());
 }
 
 function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): SagaGenerator<void> {
@@ -394,15 +452,27 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
     yield* put(shareActionSettled({ target, error: m.collaboration_workspace_inherited_error() }));
     return;
   }
+  const receipt = rendererEventRecovery.capture(
+    collaborationKey('share-dialog', target.workspaceId),
+  );
   const result = yield* call(workspaceSharingClient.removeMember, target.workspaceId, principalId);
   if (!(yield* stillTargets(target))) return;
+  const settledReceipt = admitCollaborationCommand(
+    collaborationKey('share-dialog', target.workspaceId),
+    receipt,
+  );
+  if (!settledReceipt) {
+    yield* put(shareCommandDiscarded(target));
+    return;
+  }
   if (!result.success) {
     if (result.code === 'forbidden') {
-      yield* put(shareAccessWithheld({ target }));
+      yield* putCommand(settledReceipt, shareAccessWithheld({ target }));
       return;
     }
     logFailure('Removing a member', target.workspaceId, result);
-    yield* put(
+    yield* putCommand(
+      settledReceipt,
       shareActionSettled({
         target,
         error:
@@ -413,8 +483,8 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
     );
     return;
   }
-  yield* put(shareActionSettled({ target, error: null }));
-  yield* put(shareDataRequested());
+  yield* putCommand(settledReceipt, shareActionSettled({ target, error: null }));
+  yield* putCommand(settledReceipt, shareDataRequested());
 }
 
 /**
@@ -433,18 +503,32 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
   if (!target) return;
   const [principalId] = action.payload;
   if ((yield* selectShareAddingPrincipalId.effect()) !== principalId) return;
+  const receipt = rendererEventRecovery.capture(
+    collaborationKey('share-dialog', target.workspaceId),
+  );
   const result = yield* call(workspaceSharingClient.addMember, target.workspaceId, principalId);
   if (!(yield* stillTargets(target))) return;
+  const settledReceipt = admitCollaborationCommand(
+    collaborationKey('share-dialog', target.workspaceId),
+    receipt,
+  );
+  if (!settledReceipt) {
+    yield* put(shareCommandDiscarded(target));
+    return;
+  }
   if (!result.success) {
     if (result.code === 'forbidden') {
-      yield* put(shareAccessWithheld({ target }));
+      yield* putCommand(settledReceipt, shareAccessWithheld({ target }));
       return;
     }
     logFailure('Adding a member', target.workspaceId, result);
-    yield* put(shareActionSettled({ target, error: addMemberErrorMessage(result.code) }));
+    yield* putCommand(
+      settledReceipt,
+      shareActionSettled({ target, error: addMemberErrorMessage(result.code) }),
+    );
     return;
   }
-  yield* put(shareActionSettled({ target, error: null }));
+  yield* putCommand(settledReceipt, shareActionSettled({ target, error: null }));
   // `added: true` — the daemon commits, then emits `workspace:updated`
   // (`members`) to every client including this one, so
   // `refreshOnMembershipChange` re-reads the roster: no read is issued here.
@@ -452,7 +536,7 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
   // roster does not carry the row yet — it was added by another client and
   // that client's event has not been reconciled — is a read still owed.
   if (!result.result.added && !(yield* selectShareHasMember.effect(principalId))) {
-    yield* put(shareDataRequested());
+    yield* putCommand(settledReceipt, shareDataRequested());
   }
 }
 
@@ -469,10 +553,23 @@ function* clearLinksOnClose(): SagaGenerator<void> {
 
 /** Hover card: `workspace.members.list` for one workspace (Member+ may read). */
 function* loadRoster(workspaceId: string): SagaGenerator<void> {
+  const context = yield* selectPrincipalActionContext.effect();
+  const key = collaborationKey('share-roster', workspaceId);
+  const receipt = rendererEventRecovery.capture(key);
   try {
-    const { members } = yield* call(workspaceSharingClient.listMembers, workspaceId);
-    yield* put(shareRosterLoaded({ workspaceId, members }));
+    const result = yield* call(() =>
+      readCollaboration(key, () => workspaceSharingClient.listMembers(workspaceId)),
+    );
+    if (!result || context !== (yield* selectPrincipalActionContext.effect())) return;
+    yield* put(
+      withRecoveryLifetime(shareRosterLoaded({ workspaceId, members: result.members }), receipt),
+    );
   } catch (error) {
+    if (
+      !receipt.commit(() => undefined) ||
+      context !== (yield* selectPrincipalActionContext.effect())
+    )
+      return;
     if (isForbiddenErrorResponse(error)) {
       yield* put(shareRosterWithheld({ workspaceId }));
       return;
@@ -503,19 +600,29 @@ function* removeRosterMember(
     );
     return;
   }
+  const receipt = rendererEventRecovery.capture(collaborationKey('share-roster', workspaceId));
   const result = yield* call(workspaceSharingClient.removeMember, workspaceId, principalId);
   if (
     !(yield* selectWorkspaceRosterCanManage.effect(workspaceId)) ||
     context !== (yield* selectPrincipalActionContext.effect())
   )
     return;
+  const settledReceipt = admitCollaborationCommand(
+    collaborationKey('share-roster', workspaceId),
+    receipt,
+  );
+  if (!settledReceipt) {
+    yield* put(shareRosterActionSettled({ workspaceId, error: null }));
+    return;
+  }
   if (!result.success) {
     if (result.code === 'forbidden') {
-      yield* put(shareRosterWithheld({ workspaceId }));
+      yield* putCommand(settledReceipt, shareRosterWithheld({ workspaceId }));
       return;
     }
     logFailure('Removing a member', workspaceId, result);
-    yield* put(
+    yield* putCommand(
+      settledReceipt,
       shareRosterActionSettled({
         workspaceId,
         error:
@@ -526,8 +633,8 @@ function* removeRosterMember(
     );
     return;
   }
-  yield* put(shareRosterActionSettled({ workspaceId, error: null }));
-  yield* put(shareRosterRequested({ workspaceId }));
+  yield* putCommand(settledReceipt, shareRosterActionSettled({ workspaceId, error: null }));
+  yield* putCommand(settledReceipt, shareRosterRequested({ workspaceId }));
 }
 
 /**

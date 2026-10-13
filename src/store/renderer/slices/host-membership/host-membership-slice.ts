@@ -82,9 +82,23 @@ export const hostMembershipFailed =
   createAction<[target: HostMembershipTarget, error: string, refresh?: boolean]>(
     'hostMembership/failed',
   );
+export const hostMembershipRecoveryCleared = createAction<[target: HostMembershipTarget]>(
+  'hostMembership/recoveryCleared',
+);
 export const hostMembershipReducer = createReducer(initialState);
 const matches = (state: HostMembershipState, target: HostMembershipTarget) =>
   state.target?.session === target.session && state.target.context === target.context;
+hostMembershipReducer.with(hostMembershipRecoveryCleared, (state, { payload: [target] }) =>
+  matches(state, target)
+    ? {
+        ...initialState,
+        target: state.target,
+        busy: state.busy,
+        creating: state.creating,
+        reloadPending: true,
+      }
+    : state,
+);
 hostMembershipReducer.with(hostMembershipOpened, (_state, { payload: [target] }) => ({
   ...initialState,
   target,
