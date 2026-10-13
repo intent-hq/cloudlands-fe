@@ -88,9 +88,9 @@ import { observeSubmissionTranscript } from '$features/agent/submission-evidence
  * Streaming flags are reconciled from `transcript.isStreaming` (the §7.1
  * snapshot activity-flag overlay / synthetic in-flight message, and the delta
  * stream's terminal `streamingComplete` frame): a rising edge sets
- * isStreaming/isProcessing, a falling edge clears all three responding flags.
- * An authoritative idle snapshot also clears retained flags after reconnect or
- * HMR, except for one snapshot that races a locally observed `chatSendStarted`.
+ * isStreaming/isProcessing, a falling edge settles turn activity. An idle
+ * snapshot also settles retained activity after reconnect or HMR. A newer local
+ * send remains protected until the transcript observes a new assistant identity.
  *
  * SOLE-WRITER INVARIANT: while a standing registration covers an agent (the
  * chat-subscription-registry, marked at install / cleared at close), the
@@ -122,7 +122,8 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import { AgentStatus, type AgentMessage, type AgentSession } from '$shared/types';
+import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
 import { appClient } from '$lib/client';
 import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/live-chat-client';
 import {
@@ -255,8 +256,11 @@ interface SubscriptionCoordinator {
   subscriptions: Map<string, SubscriptionEntry>;
   slots: Map<string, AgentTransitionSlot>;
   events: Channel<ChatSubscriptionEvent>;
-  /** Agents whose next idle snapshot may predate a locally-started turn. */
-  locallyStartedTurns: Set<string>;
+  /** Assistant identities known before a local send; old deliveries cannot settle that send. */
+  locallyStartedTurns: Map<
+    string,
+    { priorMessageIds: Set<string>; assistantMessageId?: string; userAppMessageId?: string }
+  >;
   /** One bounded reveal-gate watcher per agent (see revealGateWatcher). */
   revealGateWatchers: Map<string, Task>;
   /**
@@ -453,14 +457,9 @@ function* applyTranscript(
     // budget re-mints `truncated` after the live-turn merge) keeps rendering
     // as a live turn beside the daemon's real one, and the firehose cannot
     // clear it while this registration is the sole writer.
-    // Trade-off of the `racesLocalStart` exemption: a snapshot pending since
-    // before a local send may predate the turn the renderer just started, so
-    // it must not settle the optimistic in-flight row — but skipping the
-    // settle also spares a frozen PRIOR-turn row, and when that snapshot is
-    // itself `isStreaming: true` the flag reconcile below consumes the
-    // marker, so the frozen row persists until some LATER snapshot arrives
-    // (which a healthy standing registration may never emit). Protecting the
-    // optimistic row matters more than closing that residual window.
+    // A snapshot racing a new local send cannot settle that send's optimistic
+    // rows. Keep this exemption until a new assistant identity appears; repeated
+    // snapshots of the older turn are not evidence of progress on the new turn.
     const retained =
       transcript.fromSnapshot === true && !restoration && !racesLocalStart
         ? storeOnly.map((message) => (claimsLiveness(message) ? settleStreaming(message) : message))
@@ -500,15 +499,74 @@ function* applyTranscript(
   // snapshot that may already have raced (and spared) a new local send.
   const authoritativeIdleSnapshot =
     transcript.fromSnapshot === true && transcript.isStreaming === false && !restoration;
-  const protectsLocalStart = session
-    ? authoritativeIdleSnapshot && coordinator.locallyStartedTurns.delete(agentId)
-    : false;
+  const localStart = coordinator.locallyStartedTurns.get(agentId);
+  // Capture the optimistic user row before its canonical echo replaces it.
+  // A completed assistant after that echo also proves this send reached the
+  // ordered transcript, even when reconnect skipped every streaming chunk.
+  if (localStart && !localStart.userAppMessageId) {
+    localStart.userAppMessageId = session?.messages.find(
+      (message) =>
+        message.role === 'user' &&
+        message.seq === undefined &&
+        message.appMessageId !== undefined &&
+        !localStart.priorMessageIds.has(message.id),
+    )?.appMessageId;
+  }
+  const localUserSeq = localStart?.userAppMessageId
+    ? transcript.messages.find(
+        (message) =>
+          message.role === 'user' && message.appMessageId === localStart.userAppMessageId,
+      )?.seq
+    : undefined;
+  // A late frame (including a repeated active snapshot of the OLD turn) is
+  // not evidence that a new local send has started streaming. Keep protecting
+  // it until the ordered transcript introduces its new assistant identity.
+  const observesLocalTurn =
+    session &&
+    localStart &&
+    !restoration &&
+    !transcript.fromHistory &&
+    transcript.messages.some(
+      (message) =>
+        message.role === 'assistant' &&
+        (localStart.assistantMessageId
+          ? message.id === localStart.assistantMessageId
+          : !localStart.priorMessageIds.has(message.id) &&
+            ((transcript.isStreaming && claimsLiveness(message)) ||
+              (localUserSeq !== undefined &&
+                message.seq !== undefined &&
+                message.seq > localUserSeq))),
+    );
+  if (observesLocalTurn) coordinator.locallyStartedTurns.delete(agentId);
+  const protectsLocalStart =
+    session && !transcript.isStreaming && coordinator.locallyStartedTurns.has(agentId);
+  // Generic activity can announce the next daemon turn before the ordered
+  // chat channel delivers the previous turn's terminal frame. Compare only
+  // daemon timestamps (never the renderer's optimistic send clock). A
+  // persisted seq proves the terminal adopted the daemon timestamp;
+  // best-effort terminals keep the provisional row timestamp instead.
+  const terminal =
+    !transcript.isStreaming && !transcript.fromSnapshot
+      ? transcript.messages.findLast(
+          (message) => message.role === 'assistant' && message.streamingComplete === true,
+        )
+      : undefined;
+  const protectsDaemonStart =
+    !transcript.fromSnapshot &&
+    !transcript.isStreaming &&
+    session?.liveTurnOpen === true &&
+    session.liveTurnOpenedAt !== undefined &&
+    terminal !== undefined &&
+    terminal.seq !== undefined &&
+    typeof terminal.timestamp === 'string' &&
+    Date.parse(terminal.timestamp) < Date.parse(session.liveTurnOpenedAt);
   // Consume the old turn's falling edge even when a newer local send keeps
   // the session active, so replay cannot apply that edge to the new turn.
-  if (protectsLocalStart) entry.wasStreaming = transcript.isStreaming;
-  if (session && transcript.isStreaming) coordinator.locallyStartedTurns.delete(agentId);
+  if (protectsLocalStart || protectsDaemonStart) entry.wasStreaming = transcript.isStreaming;
   const shouldReconcileStreaming =
-    (streamingChanged || authoritativeIdleSnapshot) && !protectsLocalStart;
+    (streamingChanged || authoritativeIdleSnapshot || observesLocalTurn) &&
+    !protectsLocalStart &&
+    !protectsDaemonStart;
   if (session && shouldReconcileStreaming && isCurrentSubscription(coordinator, agentId, entry)) {
     entry.wasStreaming = transcript.isStreaming;
     yield* put(
@@ -516,7 +574,23 @@ function* applyTranscript(
         agentId,
         transcript.isStreaming
           ? { isStreaming: true, isProcessing: true }
-          : { isStreaming: false, isProcessing: false, isResponding: false },
+          : {
+              isStreaming: false,
+              isProcessing: false,
+              isResponding: false,
+              liveTurnOpen: false,
+              liveTurnOpenedAt: undefined,
+              turnInFlight: false,
+              isWaitingOnTool: false,
+              ...(session.lastToolUse?.status?.toLowerCase() === 'running'
+                ? { lastToolUse: undefined }
+                : {}),
+              // The transcript closes the turn, not the agent lifecycle.
+              // Preserve waiting/error/terminal states and peer-wait metadata.
+              ...(isAgentRunningState({ status: session.status })
+                ? { status: AgentStatus.RuntimeIdle }
+                : {}),
+            },
       ),
     );
   }
@@ -1493,8 +1567,16 @@ function* routeLifecycleAction(
     >['payload'];
     yield* setRetainedChatTranscripts(coordinator, ownerId, wsId, agentIds);
   } else if (action.type === chatSendStarted.type) {
-    const { agentId } = action.payload as ReturnType<typeof chatSendStarted>['payload'];
-    if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
+    const { agentId, assistantMessageId } = action.payload as ReturnType<
+      typeof chatSendStarted
+    >['payload'];
+    if (coordinator.slots.has(agentId)) {
+      const session = yield* selectAgentSession.effect(agentId);
+      coordinator.locallyStartedTurns.set(agentId, {
+        priorMessageIds: new Set(session?.messages.map((message) => message.id)),
+        assistantMessageId,
+      });
+    }
   } else if (action.type === markAgentAsViewed.type) {
     const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
     // The reducer armed the switch-back snapshot gate synchronously with this
@@ -1667,7 +1749,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     subscriptions: new Map(),
     slots: new Map(),
     events: createChannel(buffers.expanding<ChatSubscriptionEvent>()),
-    locallyStartedTurns: new Set(),
+    locallyStartedTurns: new Map(),
     revealGateWatchers: new Map(),
     leaseReleases: createChannel(buffers.expanding<string>()),
     pendingSweepCloses: new Set(),

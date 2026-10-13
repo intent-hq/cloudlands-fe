@@ -1,7 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { cleanup, render } from '@testing-library/svelte';
+import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
+import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
+import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
 // records its handler (so tests can push §7.1-shaped reconciled transcripts
@@ -93,6 +97,8 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   selectAgentHistoryMessages,
+  selectAgentIsResponding,
+  selectAgentSessionIsStreaming,
   selectAgentMessages,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -245,6 +251,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   });
   afterAll(() => stopSaga?.());
   afterEach(() => {
+    cleanup();
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearPanelLayout(WS));
     clearPendingAgentDeletions();
@@ -1755,7 +1762,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(session?.isProcessing).toBe(true);
 
     // Rising edge: a live delta says the turn is in flight.
-    sub.handler(transcript([makeMessage('m-1', 'hi there')], true));
+    sub.handler(transcript([makeMessage('m-1', 'hi there', { isStreaming: true })], true));
     session = selectAgentSession.select(appStore.state, agentId);
     expect(session?.isStreaming).toBe(true);
 
@@ -1765,6 +1772,237 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(session?.isStreaming).toBe(false);
     expect(session?.isProcessing).toBe(false);
     expect(session?.isResponding).toBe(false);
+  });
+
+  it.each(['terminal', 'snapshot'] as const)(
+    'settles all chat activity after %s when generic idle delivery is missed',
+    async (delivery) => {
+      const agentId = `agent-completed-${delivery}`;
+      seedSession(agentId, { status: AgentStatus.Active });
+      const sub = openChat(agentId);
+      const partial = makeMessage('answer', 'working', { isStreaming: true });
+      sub.handler(transcript([partial], true));
+      appStore.dispatch(
+        updateSession(agentId, {
+          liveTurnOpen: true,
+          liveTurnOpenedAt: '2026-01-01T00:00:00.000Z',
+          turnInFlight: true,
+          isResponding: true,
+          isWaitingOnTool: true,
+          lastToolUse: { name: 'test-tool', status: 'running' },
+        }),
+      );
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+      const props = () => ({
+        isStreaming: selectAgentSessionIsStreaming.select(appStore.state, agentId),
+        isProcessing: selectAgentIsResponding.select(appStore.state, agentId),
+        onStop: vi.fn(),
+      });
+      const view = render(StreamingStatus, { props: props() });
+      expect(view.getByRole('status')).toBeTruthy();
+      const composerProps = () => ({
+        value: '',
+        workspace: null,
+        isStreaming: selectAgentSessionIsStreaming.select(appStore.state, agentId),
+        isResponding: selectAgentIsResponding.select(appStore.state, agentId),
+      });
+      const composer = render(SimpleRichInput, { props: composerProps() });
+      expect(composer.getByRole('button', { name: /stop/i })).toBeTruthy();
+      const completed = transcript([
+        makeMessage('answer', 'done', { isStreaming: false, streamingComplete: true }),
+      ]);
+      sub.handler(delivery === 'snapshot' ? { ...completed, fromSnapshot: true } : completed);
+
+      // These are the production inputs used by StreamingStatus and the input Stop button.
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+      await view.rerender(props());
+      expect(view.queryByRole('status')).toBeNull();
+      await composer.rerender(composerProps());
+      expect(composer.queryByRole('button', { name: /stop/i })).toBeNull();
+      sub.handler(completed);
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    },
+  );
+
+  it('preserves a newer local turn through late completion, duplicate snapshots, and hydration replay', () => {
+    const agentId = 'agent-new-turn-late-completion';
+    seedSession(agentId, { status: AgentStatus.RuntimeIdle });
+    const sub = openChat(agentId);
+    sub.handler(transcript([makeMessage('old-answer', 'old', { isStreaming: true })], true));
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    sub.handler({
+      ...transcript(
+        [
+          makeMessage('older-history', 'historical answer'),
+          makeMessage('old-answer', 'late old chunk', { isStreaming: true }),
+        ],
+        true,
+      ),
+      fromSnapshot: true,
+    });
+    const oldCompleted = transcript([
+      makeMessage('old-answer', 'done', { isStreaming: false, streamingComplete: true }),
+    ]);
+    sub.handler(oldCompleted);
+    sub.handler({ ...oldCompleted, fromSnapshot: true });
+    sub.handler({ ...oldCompleted, fromSnapshot: true });
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+
+    // A real next-turn stream releases the guard, including a pending tool.
+    sub.handler(transcript([makeMessage('new-answer', 'new', { isStreaming: true })], true));
+    appStore.dispatch(updateSession(agentId, { isWaitingOnTool: true }));
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    sub.handler(
+      transcript([
+        makeMessage('new-answer', 'finished', { isStreaming: false, streamingComplete: true }),
+      ]),
+    );
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+  });
+
+  it('keeps a pending assistant tool active when a finalized user echo arrives', () => {
+    const agentId = 'agent-tool-user-echo';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const reconciler = new ChatTranscriptReconciler(agentId);
+    reconciler.applySnapshot(0, {
+      agentId,
+      messages: [makeMessage('answer', 'working', { isStreaming: true })],
+      truncated: false,
+      totalMessages: 1,
+      turnInFlight: true,
+    });
+    sub.handler({ ...reconciler.transcript(), fromSnapshot: true });
+    appStore.dispatch(updateSession(agentId, { isWaitingOnTool: true, turnInFlight: true }));
+    expect(
+      reconciler.applyDelta(1, {
+        added: [
+          {
+            id: 'user-echo:0',
+            agentId,
+            messageId: 'user-echo',
+            role: 'user',
+            messageSeq: 2,
+            timestamp: '2026-01-01T00:00:02.000Z',
+            streamingComplete: true,
+            block: { id: 'user-echo:0', type: 'text', text: 'next request' },
+          },
+        ],
+        updated: [],
+        removedIds: [],
+      }),
+    ).toBe('applied');
+    sub.handler(reconciler.transcript());
+    expect(
+      selectAgentMessages.select(appStore.state, agentId).find((m) => m.id === 'user-echo')?.role,
+    ).toBe('user');
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentSession.select(appStore.state, agentId)?.isWaitingOnTool).toBe(true);
+  });
+
+  it.each(['before-content', 'after-content'] as const)(
+    'accepts the correlated terminal when generic stream start arrives %s',
+    (ordering) => {
+      const agentId = `agent-correlated-${ordering}`;
+      seedSession(agentId, { status: AgentStatus.RuntimeIdle });
+      const sub = openChat(agentId);
+      if (ordering === 'after-content') {
+        sub.handler(transcript([makeMessage('answer', 'partial', { isStreaming: true })], true));
+      }
+      routeDaemonEventsNotification('events.event', {
+        event: {
+          id: `event-start-${agentId}`,
+          workspaceId: WS,
+          timestamp: '2026-01-01T00:00:00.000Z',
+          type: 'agent:stream:start',
+          actor: { type: 'agent', id: agentId },
+          data: { agentId, messageId: 'answer' },
+        },
+      });
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+      sub.handler(
+        transcript([
+          makeMessage('answer', 'done', { isStreaming: false, streamingComplete: true }),
+        ]),
+      );
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    },
+  );
+
+  it.each([AgentStatus.Waiting, AgentStatus.Error, AgentStatus.Halted, AgentStatus.Completed])(
+    'preserves lifecycle %s and peer-wait information on idle snapshot recovery',
+    (status) => {
+      const agentId = `agent-preserve-${status}`;
+      seedSession(agentId, {
+        status,
+        isWaitingForOtherAgents: true,
+        waitingForAgentIds: ['child'],
+      });
+      const sub = openChat(agentId);
+      sub.handler({ ...transcript([makeMessage('answer', 'done')]), fromSnapshot: true });
+      expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+        status,
+        isWaitingForOtherAgents: true,
+        waitingForAgentIds: ['child'],
+      });
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    },
+  );
+
+  it('does not let an older terminal frame settle a newer daemon-started turn', () => {
+    const agentId = 'agent-daemon-newer-turn';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([makeMessage('old-answer', 'old', { isStreaming: true })], true));
+    appStore.dispatch(
+      updateSession(agentId, {
+        liveTurnOpen: true,
+        liveTurnOpenedAt: '2026-01-01T00:00:02.000Z',
+        turnInFlight: true,
+        isWaitingOnTool: true,
+      }),
+    );
+    sub.handler(
+      transcript([makeMessage('old-answer', 'done', { streamingComplete: true, seq: 1 })]),
+    );
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentSession.select(appStore.state, agentId)?.isWaitingOnTool).toBe(true);
+  });
+
+  it.each([
+    { name: 'equal daemon timestamps', openedAt: '2026-01-01T00:00:01.000Z', seq: 1 },
+    { name: 'missing opening timestamp', openedAt: undefined, seq: 1 },
+    { name: 'invalid opening timestamp', openedAt: 'unknown', seq: 1 },
+    {
+      name: 'unpersisted terminal timestamp',
+      openedAt: '2026-01-01T00:00:02.000Z',
+      seq: undefined,
+    },
+  ])('settles without inferring newer activity from $name', ({ openedAt, seq }) => {
+    const agentId = 'agent-terminal-time-evidence';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([makeMessage('answer', 'working', { isStreaming: true })], true));
+    appStore.dispatch(
+      updateSession(agentId, {
+        liveTurnOpen: true,
+        liveTurnOpenedAt: openedAt,
+        turnInFlight: true,
+      }),
+    );
+    // A best-effort terminal omits seq and timestamp. The reconciler
+    // retains the live row's timestamp, which may come from the renderer clock.
+    sub.handler(transcript([makeMessage('answer', 'done', { streamingComplete: true, seq })]));
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
   });
 
   it('clears retained HMR runtime flags from an authoritative idle seq-0 snapshot', () => {
@@ -2665,11 +2903,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(stale?.isStreaming).toBe(true);
     });
 
-    it('settles the retained row on the next snapshot after the raced one consumed the marker', () => {
-      // Pins the trade-off of the exemption above: sparing the optimistic row
-      // spares the frozen one too, but only until the following snapshot —
-      // the raced `isStreaming: true` page consumes the local-start marker, so
-      // the next page is authoritative about liveness again.
+    it('settles the retained row only after a snapshot observes the new assistant identity', () => {
+      // Repeated old snapshots cannot consume the new-send guard. Once a new
+      // assistant identity appears, the next snapshot can settle retained rows.
       const agentId = 'agent-stale-local-start-then-next';
       seedFrozenPartial(agentId);
       const sub = openChat(agentId);
@@ -2682,6 +2918,12 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       ).toBe(true);
 
       sub.handler(standardWindow([makeMessage(PRIOR, 'turn 2185 answer')], true));
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).find((message) => message.id === STALE)
+          ?.isStreaming,
+      ).toBe(true);
+      sub.handler(standardWindow([newestInFlight()], true));
+      sub.handler(standardWindow([newestInFlight()], true));
 
       const stale = selectAgentMessages
         .select(appStore.state, agentId)
