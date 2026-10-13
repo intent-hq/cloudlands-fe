@@ -54,7 +54,22 @@ export class RecoveryResource<T> {
   private lastRead = -Infinity;
   private retryAt = -Infinity;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private readonly settlementWaiters = new Set<() => void>();
   constructor(private readonly owner: Owner<T>) {}
+  /** Wait for fenced reconciliation or terminal retirement/retry exhaustion. */
+  whenSettled(): Promise<void> {
+    if (this.isSettled()) return Promise.resolve();
+    return new Promise((resolve) => this.settlementWaiters.add(resolve));
+  }
+  private isSettled(): boolean {
+    return this.disposed || (!this.running && !this.draining && (!this.stale || this.suspended));
+  }
+  private notifySettled(): void {
+    if (!this.isSettled()) return;
+    const waiters = [...this.settlementWaiters];
+    this.settlementWaiters.clear();
+    for (const resolve of waiters) resolve();
+  }
   get status() {
     return {
       stale: this.stale,
@@ -139,6 +154,7 @@ export class RecoveryResource<T> {
     this.failures = 0;
     this.suspended = false;
     this.retryAt = -Infinity;
+    this.notifySettled();
   }
   refresh() {
     if (this.disposed) return;
@@ -151,6 +167,7 @@ export class RecoveryResource<T> {
     this.disposed = true;
     this.epoch = {};
     this.cancelTimer();
+    this.notifySettled();
   }
   private cancelTimer() {
     if (this.timer !== undefined) clearTimeout(this.timer);
@@ -233,6 +250,7 @@ export class RecoveryResource<T> {
     } finally {
       this.running = false;
       this.schedule();
+      this.notifySettled();
     }
   }
 }

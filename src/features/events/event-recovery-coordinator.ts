@@ -125,6 +125,7 @@ export class EventRecoveryCoordinator {
       get status() {
         return resource.status;
       },
+      whenSettled: () => resource.whenSettled(),
       setActive: (active: boolean) => resource.setActive(active),
       changeLifetime: () => resource.changeLifetime(),
       refresh: () => resource.refresh(),

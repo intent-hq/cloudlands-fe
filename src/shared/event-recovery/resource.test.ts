@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import corpus from './__fixtures__/contract.json';
 import { RecoveryResource } from './resource';
-import { createEventRecoverySession } from './session';
+import { createEventRecoverySession, RecoveryRequestTimeoutError } from './session';
 
 function held<T>() {
   let resolve!: (value: T) => void;
@@ -560,4 +560,87 @@ describe('timed-out recovery drains the original request', () => {
         h.resource.dispose();
         h.session.dispose();
       });
+});
+
+describe('temporary demand settlement', () => {
+  it('waits through held final fence and trailing invalidation before settling', async () => {
+    const h = setup();
+    const end = held<void>();
+    h.fence.mockImplementationOnce(async (_ids, observe) => {
+      observe();
+    });
+    h.fence.mockImplementationOnce(async (_ids, observe) => {
+      await end.promise;
+      observe();
+    });
+    h.resource.invalidate();
+    await settle();
+    let done = false;
+    void h.resource.whenSettled().then(() => {
+      done = true;
+    });
+    await settle();
+    expect(done).toBe(false);
+    h.resource.invalidate();
+    end.resolve();
+    await settle();
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(done).toBe(true);
+    expect(h.applied).toHaveBeenCalledOnce();
+    expect(h.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('settles clean resources and disposed resources but waits for inactive dirty demand', async () => {
+    const h = setup();
+    await h.resource.whenSettled();
+    h.resource.setActive(false);
+    h.resource.invalidate();
+    let done = false;
+    void h.resource.whenSettled().then(() => {
+      done = true;
+    });
+    await settle();
+    expect(done).toBe(false);
+    h.resource.dispose();
+    await settle();
+    expect(done).toBe(true);
+  });
+
+  it('does not treat a timed-out physical drain as terminal suspension', async () => {
+    const h = setup();
+    const physical = held<{ retired: boolean; errors: unknown[] }>();
+    h.read.mockRejectedValueOnce(new RecoveryRequestTimeoutError(physical.promise));
+    h.resource.invalidate();
+    let done = false;
+    void h.resource.whenSettled().then(() => {
+      done = true;
+    });
+    await settle();
+    expect(h.resource.status.suspended).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(done).toBe(false);
+    expect(h.read).toHaveBeenCalledOnce();
+    physical.resolve({ retired: false, errors: [] });
+    await settle();
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(done).toBe(true);
+    expect(h.applied).toHaveBeenCalledOnce();
+  });
+
+  it('settles exhausted retry budgets without retaining temporary demand forever', async () => {
+    const h = setup();
+    h.read.mockRejectedValue(new Error('offline'));
+    h.resource.invalidate();
+    let done = false;
+    void h.resource.whenSettled().then(() => {
+      done = true;
+    });
+    await settle();
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.read).toHaveBeenCalledTimes(3);
+    expect(done).toBe(true);
+  });
 });
