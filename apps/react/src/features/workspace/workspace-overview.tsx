@@ -9,6 +9,7 @@ import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { WorkspaceStatusIcon } from '@/components/workspace/workspace-status-icon';
 import { ResourceNotFound } from '@/components/common/resource-not-found';
+import { HomeSearch } from '@/features/home/components/home-search';
 import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
 import {
   Screen,
@@ -26,6 +27,7 @@ import { selectCurrentConnectionId } from '@/store/connections/connections-selec
 import {
   selectWorkspaceById,
   selectWorkspaceIds,
+  selectWorkspaceNavigationIds,
   selectWorkspaceListLoadedForBackend,
 } from '@/store/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -65,6 +67,8 @@ function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
       <Link
         to="/workspaces/$workspaceId"
         params={{ workspaceId }}
+        search={{}}
+        data-list-workspace={workspaceId}
         className="flex min-w-0 flex-col gap-1 rounded-md px-3 py-3 hover:bg-muted focus-visible:outline"
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -81,10 +85,12 @@ function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-export function WorkspaceList() {
+export function WorkspaceList({ query = '' }: { query?: string }) {
+  const navigate = useNavigate();
   const backendId = selectCurrentConnectionId();
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
-  const ids = selectWorkspaceIds();
+  const allIds = selectWorkspaceIds();
+  const ids = selectWorkspaceNavigationIds(query);
   return (
     <Screen className="min-h-screen" data-testid="workspace-list">
       <ScreenHeader
@@ -97,11 +103,25 @@ export function WorkspaceList() {
           </Link>
         }
       />
-      <ScreenBody>
+      <ScreenBody className="grid content-start gap-4">
+        <HomeSearch
+          value={query}
+          onchange={(value) =>
+            void navigate({
+              to: '/workspaces',
+              search: value ? { q: value } : {},
+              replace: true,
+              resetScroll: false,
+            })
+          }
+          placeholder={m.layout_activeCard_search_placeholder()}
+        />
         {!loaded.value ? (
           <WorkspaceReadiness />
-        ) : ids.value.length === 0 ? (
+        ) : allIds.value.length === 0 ? (
           <p>No workspaces on this daemon.</p>
+        ) : ids.value.length === 0 ? (
+          <output>{m.ui_dropdown_noResults_label()}</output>
         ) : (
           <ul className="grid gap-1">
             {ids.value.map((id) => (
