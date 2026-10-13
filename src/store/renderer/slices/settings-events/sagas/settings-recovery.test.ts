@@ -1258,3 +1258,99 @@ it('late timed-out MCP denial cannot clear replacement authority', async () => {
   await vi.advanceTimersByTimeAsync(60_000);
   expect(h.request.mock.calls.filter(([method]) => method === 'mcp.servers.list')).toHaveLength(1);
 });
+
+import { setVolume as recoverySetVolume } from '../../user-preferences/user-preferences-slice';
+
+it('recovered notification volume replaces pending pre-loss edit', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  const normal = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) =>
+    method === 'settings.list'
+      ? { revision: 10, settings: [{ path: 'notifications.volume', value: 0.4 }] }
+      : normal(method, params),
+  );
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  formClient.list.mockResolvedValue([{ path: 'notifications.volume', value: 0.2 }]);
+  cleanups.add(store.runSaga(settingsHydrationSaga));
+  await settle();
+  expect(store.state.userPreferences.volume).toBe(0.2);
+  store.dispatch(recoverySetVolume(0.9));
+  h.emit({
+    method: 'events.lost',
+    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: null } },
+  });
+  await settle();
+  expect(store.state.userPreferences.volume).toBe(0.4);
+  expect(store.state.userPreferences.pendingNotificationVolumeEditId).toBeNull();
+});
+
+it('settings authority retirement clears protected notification volume and journal', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  const normal = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'settings.list') throw { rpcCode: -32003, data: { code: 'forbidden' } };
+    return normal(method, params);
+  });
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  const initialVolume = store.state.userPreferences.volume;
+  formClient.list.mockResolvedValue([{ path: 'notifications.volume', value: 0.2 }]);
+  cleanups.add(store.runSaga(settingsHydrationSaga));
+  await settle();
+  expect(store.state.userPreferences.volume).toBe(0.2);
+  store.dispatch(recoverySetVolume(0.9));
+  h.emit({
+    method: 'events.lost',
+    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: null } },
+  });
+  await settle();
+  expect(captureSettingsWork().isCurrent()).toBe(false);
+  expect(store.state.userPreferences.volume).toBe(initialVolume);
+  expect(store.state.userPreferences.pendingNotificationVolumeEditId).toBeNull();
+});
+
+it('known canonical MCP denial clears protected state before unrelated held sibling settles', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  const normal = h.request.getMockImplementation()!;
+  let release!: (value: unknown) => void;
+  const held = new Promise((done) => {
+    release = done;
+  });
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'mcp.servers.list')
+      return {
+        servers: [
+          { id: 'denied', name: 'denied', transport: 'stdio', command: 'x' },
+          { id: 'held', name: 'held', transport: 'stdio', command: 'y' },
+        ],
+      };
+    if (method === 'mcp.servers.getStatus') {
+      if ((params as { serverId: string }).serverId === 'denied')
+        throw { rpcCode: -32003, data: { code: 'forbidden' } };
+      return held;
+    }
+    return normal(method, params);
+  });
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['mcp.servers:status-changed'] }, { recover: true });
+  store.dispatch(setServers([{ id: 'private', name: 'private', type: 'stdio' }]));
+  h.emit({
+    method: 'events.lost',
+    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: null } },
+  });
+  try {
+    await settle();
+    expect(store.state.mcpSettings.servers).toEqual([]);
+    expect(h.request.mock.calls.filter(([method]) => method === 'mcp.servers.list')).toHaveLength(
+      1,
+    );
+  } finally {
+    release({ status: { state: 'running' } });
+    await settle();
+  }
+});

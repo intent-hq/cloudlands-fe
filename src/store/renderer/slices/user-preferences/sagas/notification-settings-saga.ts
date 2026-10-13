@@ -1,3 +1,4 @@
+import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { all, call, delay, put, takeLatest } from 'typed-redux-saga';
 
 import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
@@ -29,6 +30,8 @@ const NOTIFICATION_PATHS = {
 type SettingResponse = { value?: unknown };
 
 export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) return;
   try {
     // Volume is hydrated by the revision-ordered settings snapshot/event saga.
     // A separate settings.get here could complete after a newer live update.
@@ -37,6 +40,7 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
       call(readSetting, NOTIFICATION_PATHS.soundEnabled),
       call(readSetting, NOTIFICATION_PATHS.soundOnlyWhenUnfocused),
     ]);
+    if (!work.isCurrent()) return;
     if (typeof (enabled as SettingResponse).value === 'boolean') {
       const action = setNotificationEnabled((enabled as { value: boolean }).value);
       suppressedActions?.add(action);
@@ -60,7 +64,10 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
 }
 
 export function* persistNotificationSettingsWorker() {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) return;
   yield* delay(100);
+  if (!work.isCurrent()) return;
   const enabled = yield* selectNotificationEnabled.effect();
   const soundEnabled = yield* selectSoundEnabled.effect();
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
@@ -83,7 +90,8 @@ export function* persistNotificationSettingsWorker() {
   }
   // A cancelled older save must not release a newer edit's hydration guard.
   // Success and failure both settle the matching write; cancellation skips this put.
-  if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
+  if (work.isCurrent() && editId != null)
+    yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
 }
 
 /** Unregistered until the S20 middleware cutover. */

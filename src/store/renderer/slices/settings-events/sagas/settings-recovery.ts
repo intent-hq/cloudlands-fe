@@ -45,11 +45,12 @@ import {
 } from '../settings-events-slice';
 
 let retireCurrentOwners: (() => void) | undefined;
-export function retireSettingsAuthority(): void {
+export function retireSettingsAuthority(): undefined {
   retireCurrentOwners?.();
   retireSettingsWork(false);
   resetSettingsConnectionCache();
   store.dispatch(settingsAuthorityRetired());
+  return undefined;
 }
 
 let snapshotRevision = -1;
@@ -77,7 +78,7 @@ export function installSettingsRecovery() {
     });
     retireSettingsWork(true);
     let recovered = false;
-    const owner = scope.registerResource({
+    const owner = scope.registerResource<SettingsSnapshot>({
       key: GLOBAL_SETTINGS_RECOVERY_KEY,
       workspaceId: null,
       eventTypes: ['settings:changed'],
@@ -157,7 +158,23 @@ export function installSettingsRecovery() {
               request<{ status: Parameters<typeof fromWireMcpStatus>[1] }>(
                 'mcp.servers.getStatus',
                 { serverId },
-              ).then(({ status }) => fromWireMcpStatus(serverId, status)),
+              )
+                .then(({ status }) => fromWireMcpStatus(serverId, status))
+                .catch(async (error: unknown) => {
+                  const failures =
+                    error instanceof RecoveryRequestTimeoutError
+                      ? [error, ...(await error.completion).errors]
+                      : [error];
+                  if (failures.some(isSettingsAuthorityError)) {
+                    authority.commit(() => {
+                      store.dispatch(mcpGlobalStateRetired());
+                      return undefined;
+                    });
+                  }
+                  // Clear known denied data immediately, but keep the physical
+                  // read slot until every sibling has settled.
+                  throw error;
+                }),
             ];
           }),
         );

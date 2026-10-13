@@ -14,8 +14,9 @@ export function onSettingsAuthorityFailure(handler: () => void): () => void {
     authorityFailures.delete(handler);
   };
 }
-export function reportSettingsAuthorityFailure(): void {
+export function reportSettingsAuthorityFailure(): undefined {
   for (const handler of [...authorityFailures]) handler();
+  return undefined;
 }
 
 /** Recovery waits for ordinary reads already occupying this resource. */

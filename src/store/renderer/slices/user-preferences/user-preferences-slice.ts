@@ -1,3 +1,8 @@
+import {
+  settingsAuthorityRetired,
+  settingsRecoveryInvalidated,
+  settingsSnapshotReplacing,
+} from '../settings-events/settings-events-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
@@ -655,3 +660,23 @@ userPreferencesReducer.with(resetAllShortcutOverrides, (state) => {
   if (Object.keys(state.shortcutOverrides).length === 0) return state;
   return { ...state, shortcutOverrides: {} };
 });
+
+userPreferencesReducer.with(settingsRecoveryInvalidated, (state) => ({
+  ...state,
+  notificationVolumeHydrationEpoch: state.notificationVolumeHydrationEpoch + 1,
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: null,
+  deferredNotificationVolume: null,
+  notificationVolumeConfirmedRevision: -1,
+}));
+for (const action of [settingsAuthorityRetired, settingsSnapshotReplacing]) {
+  userPreferencesReducer.with(action, (state) => ({
+    ...state,
+    volume: notificationSettingsInitialState.volume,
+    notificationVolumeHydrationEpoch: state.notificationVolumeHydrationEpoch + 1,
+    notificationVolumeEditId: state.notificationVolumeEditId + 1,
+    pendingNotificationVolumeEditId: null,
+    deferredNotificationVolume: null,
+    notificationVolumeConfirmedRevision: -1,
+  }));
+}
