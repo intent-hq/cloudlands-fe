@@ -43,6 +43,7 @@ describe('command palette preview note search', () => {
         }),
       );
       expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.REQUEST, {
+        observeCompletion: true,
         method: 'search.notes',
         params: {
           query: term,
@@ -71,6 +72,7 @@ describe('command palette preview note search', () => {
         }),
       );
       expect(invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+        observeCompletion: true,
         method: 'search.notes',
         params: { query: 'no-matching-context-xyz', limit: 10, includeArchived: false },
       });

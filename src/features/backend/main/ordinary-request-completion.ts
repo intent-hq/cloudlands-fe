@@ -16,6 +16,7 @@ type Outcome = { retired: boolean; errors: ErrorPayload[] };
 const retired = (): Outcome => ({ retired: true, errors: [] });
 const unavailable = () => ({
   ok: false as const,
+  // i18n-ignore (internal receipt diagnostic; renderer converts failed claims to retired outcomes)
   error: { code: 'UNAVAILABLE', message: 'Request completion unavailable' },
 });
 

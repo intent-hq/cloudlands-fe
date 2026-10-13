@@ -4634,6 +4634,7 @@ export function registerBackendHandlers(): void {
       if (!capabilities || !clientId)
         return {
           ok: false,
+          // i18n-ignore (internal identity diagnostic; admission callers reject unconfirmed authority)
           error: { code: 'UNAVAILABLE', message: 'Backend identity is not confirmed' },
         };
       return { ok: true, result: { clientId, server: { capabilities } } };
