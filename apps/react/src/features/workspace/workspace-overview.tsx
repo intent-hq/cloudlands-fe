@@ -1,5 +1,5 @@
 // i18n-ignore (internal unreleased read-only workspace preview)
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useLayoutEffect, useRef } from 'react';
 import { store } from '@/store';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
@@ -8,6 +8,7 @@ import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/wor
 import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-slice';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { WorkspaceStatusIcon } from '@/components/workspace/workspace-status-icon';
+import { ResourceNotFound } from '@/components/common/resource-not-found';
 import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
 import {
   Screen,
@@ -126,6 +127,7 @@ export function WorkspaceOverview({
   filePath?: string;
   line?: number;
 }) {
+  const navigate = useNavigate();
   const backendId = selectCurrentConnectionId();
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
   const workspace = selectWorkspaceById(workspaceId);
@@ -167,7 +169,7 @@ export function WorkspaceOverview({
     >
       <ScreenHeader
         leading={<SidebarTrigger />}
-        title={<h1>{row?.title}</h1>}
+        title={<h1>{row?.title ?? m.workspace_page_workspaceResource_label()}</h1>}
         description="Internal React preview · unreleased · read-only"
         actions={
           <Link to="/workspaces" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
@@ -179,7 +181,13 @@ export function WorkspaceOverview({
         {!loaded.value ? (
           <WorkspaceReadiness />
         ) : !row ? (
-          <p>This workspace is not available on the connected daemon.</p>
+          <ResourceNotFound
+            kind="not_found"
+            resourceLabel={m.workspace_page_workspaceResource_label()}
+            resourceId={workspaceId}
+            headingLevel={2}
+            onNavigateAway={() => void navigate({ to: '/workspaces' })}
+          />
         ) : (
           <>
             {!noteId && !filePath && row.statusMessage && (
