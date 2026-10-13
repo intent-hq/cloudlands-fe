@@ -13,10 +13,10 @@ export function* settingsWorkScope(
   while (true) {
     const result = yield* race({
       work: call(work),
-      retired: take([
-        settingsAuthorityRetired,
-        resource === 'mcp' ? mcpRecoveryInvalidated : settingsRecoveryInvalidated,
-      ]),
+      retired:
+        resource === 'mcp'
+          ? take([settingsAuthorityRetired, mcpRecoveryInvalidated])
+          : take([settingsAuthorityRetired, settingsRecoveryInvalidated]),
     });
     if ('work' in result) return;
   }
