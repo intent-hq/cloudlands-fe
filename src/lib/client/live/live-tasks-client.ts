@@ -253,8 +253,12 @@ export class LiveTasksClient implements TasksClient {
       if (!raw || typeof raw !== 'object') return null;
       return noteToTask(raw as Record<string, unknown>);
     } catch (error) {
-      // A caller deadline is not an empty snapshot or physical completion.
-      if (error instanceof BackendError && error.code === 'TIMEOUT') throw error;
+      // Preserve deadlines and authority failures for the captured read owner.
+      if (
+        error instanceof BackendError &&
+        (error.code === 'TIMEOUT' || error.rpcCode === -32003 || error.rpcCode === -32001)
+      )
+        throw error;
       return null;
     }
   }

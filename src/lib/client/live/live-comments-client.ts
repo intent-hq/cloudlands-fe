@@ -166,8 +166,18 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
     }
     return out;
   } catch (error) {
-    // A caller deadline is not an empty snapshot or physical completion.
-    if (error instanceof BackendError && error.code === 'TIMEOUT') throw error;
+    // Preserve deadlines and authority failures for the captured read owner.
+    if (
+      error instanceof BackendError &&
+      (error.code === 'TIMEOUT' ||
+        error.rpcCode === -32003 ||
+        error.rpcCode === -32001 ||
+        (error.rpcCode === -32602 &&
+          error.data !== null &&
+          typeof error.data === 'object' &&
+          (error.data as { code?: unknown }).code === 'not-found'))
+    )
+      throw error;
     return [];
   }
 }

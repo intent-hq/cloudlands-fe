@@ -56,6 +56,7 @@ function* fetchVersions(workspaceId: string, noteId: string) {
         'ordinary',
         `versions:${noteId}`,
         () => appClient.notes.listVersions(workspaceId, noteId),
+        { retireOnNotFound: false },
       ),
     );
     const versions = response.map(toRuntimeNoteVersion);

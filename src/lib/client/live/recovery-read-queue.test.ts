@@ -234,3 +234,79 @@ describe('physical request accounting', () => {
     expect(await next).toBe('retry');
   });
 });
+
+describe('late completion authority scope', () => {
+  it.each([
+    {
+      rpcCode: -32003,
+      data: undefined,
+      retireOnNotFound: false,
+      retired: false,
+      expectRetire: true,
+    },
+    {
+      rpcCode: -32602,
+      data: { code: 'not-found' },
+      retireOnNotFound: true,
+      retired: false,
+      expectRetire: true,
+    },
+    {
+      rpcCode: -32602,
+      data: { code: 'not-found' },
+      retireOnNotFound: false,
+      retired: false,
+      expectRetire: false,
+    },
+    {
+      rpcCode: -32602,
+      data: undefined,
+      retireOnNotFound: true,
+      retired: false,
+      expectRetire: false,
+    },
+    {
+      rpcCode: -32003,
+      data: undefined,
+      retireOnNotFound: true,
+      retired: true,
+      expectRetire: false,
+    },
+  ])('settles scoped failure $rpcCode (missing=$retireOnNotFound, retired=$retired)', async (c) => {
+    const order: string[] = [];
+    const retire = vi.fn(() => {
+      order.push('retire');
+      return true;
+    });
+    const capture = vi.spyOn(rendererEventRecovery, 'captureRetirement').mockReturnValue(retire);
+    let finish!: (outcome: { errors: unknown[]; retired: boolean }) => void;
+    const physical = new Promise<{ errors: unknown[]; retired: boolean }>((resolve) => {
+      finish = resolve;
+    });
+    const a = authority();
+    const error = { rpcCode: c.rpcCode, data: c.data };
+    const timeout = new RecoveryRequestTimeoutError(physical);
+    const result = runRecoveryRead(
+      'late-scope',
+      a.token,
+      'ordinary',
+      'get:child',
+      async () => {
+        order.push('read');
+        throw timeout;
+      },
+      { retireOnNotFound: c.retireOnNotFound },
+    );
+    await expect(result).rejects.toBe(timeout);
+    const next = runRecoveryRead('late-scope', a.token, 'ordinary', 'get:child', async () => {
+      order.push('next');
+      return 'fresh';
+    });
+    expect(capture).toHaveBeenCalledTimes(2);
+    expect(order).toEqual(['read']);
+    finish({ errors: [error], retired: c.retired });
+    await next;
+    expect(retire).toHaveBeenCalledTimes(c.expectRetire ? 1 : 0);
+    expect(order).toEqual(c.expectRetire ? ['read', 'retire', 'next'] : ['read', 'next']);
+  });
+});

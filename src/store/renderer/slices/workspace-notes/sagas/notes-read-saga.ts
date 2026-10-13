@@ -189,8 +189,13 @@ function* fetchNoteSlot(
     if (!lifetime.commit(() => undefined)) return { note: null };
     const { found, cleanup } = yield* race({
       found: call(() =>
-        runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', `get:${noteId}`, () =>
-          appClient.notes.get(noteId, workspaceId),
+        runRecoveryRead(
+          notesRecoveryKey(workspaceId),
+          lifetime,
+          'ordinary',
+          `get:${noteId}`,
+          () => appClient.notes.get(noteId, workspaceId),
+          { retireOnNotFound: false },
         ),
       ),
       cleanup: take((action: ObservedAction) => isNoteReadCleanup(action, workspaceId, noteId)),
@@ -295,6 +300,7 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
           'ordinary',
           `get:${SPEC_NOTE_ID}:hydrate:${generation}`,
           () => appClient.notes.get(SPEC_NOTE_ID, id),
+          { retireOnNotFound: false },
         ).catch(() => null),
       ]);
     const [response, specNote]: Awaited<ReturnType<typeof fetchSlimListAndSpec>> = yield* call(
@@ -887,8 +893,13 @@ function* processAdmittedNote(
     return;
   }
   const found = yield* call(() =>
-    runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', `get:${noteId}`, () =>
-      appClient.notes.get(noteId, workspaceId),
+    runRecoveryRead(
+      notesRecoveryKey(workspaceId),
+      lifetime,
+      'ordinary',
+      `get:${noteId}`,
+      () => appClient.notes.get(noteId, workspaceId),
+      { retireOnNotFound: false },
     ),
   );
   if (!found || String(found.workspaceId) !== workspaceId || String(found.id) !== noteId) return;

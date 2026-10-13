@@ -29,7 +29,18 @@ export function runRecoveryRead<T>(
   mode: 'ordinary' | 'recovery',
   requestKey: string,
   read: () => Promise<T>,
+  options: { retireOnNotFound?: boolean } = {},
 ): Promise<T> {
+  const retire = rendererEventRecovery.captureRetirement(key);
+  const observeFailure = (error: unknown) => {
+    const failure = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
+    const denied = failure?.rpcCode === -32003 || failure?.rpcCode === -32001;
+    const missing =
+      options.retireOnNotFound !== false &&
+      failure?.rpcCode === -32602 &&
+      failure.data?.code === 'not-found';
+    if (denied || missing) retire(error);
+  };
   const session = rendererEventRecovery.capturePhysicalSessionIdentity();
   const queues = sessions.get(session) ?? new Map<string, ReadQueue>();
   sessions.set(session, queues);
@@ -69,8 +80,13 @@ export function runRecoveryRead<T>(
       : existing
         ? Promise.all([existing.drained, ...(owned.recovery ? [owned.recovery] : [])])
         : owned.recovery;
-  const result = prior ? prior.then(start, start) : start();
-  const drained = runtimeReadDrained(result);
+  const result = (prior ? prior.then(start, start) : start()).catch((error) => {
+    observeFailure(error);
+    throw error;
+  });
+  const drained = runtimeReadDrained(result, (outcome) => {
+    if (!outcome.retired) for (const error of outcome.errors) observeFailure(error);
+  });
   owned.pending.add(drained);
   if (mode === 'ordinary') {
     const row = { lifetime, result, drained, generation, settled: false };
