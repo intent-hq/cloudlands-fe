@@ -1,3 +1,4 @@
+import { principalReceived } from '../../principal/principal-slice';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
   queueBrowserClientEvent,
@@ -9,7 +10,7 @@ import {
 /**
  * Browser Clients Saga (renderer)
  *
- * Wire I/O for the REV-2 browser-client mirror: the own-clientId hello probe
+ * Wire I/O for the REV-2 browser-client mirror: the confirmed own-clientId observation
  * and `client.list` on hydrate, single-flight coalesced `client.list`
  * re-reads on `refreshLiveClientsRequested` (the bridge dispatches it for
  * every `client:connected` / `client:disconnected`, so a reconnect burst
@@ -226,7 +227,7 @@ function* readOwnClientId(connection: { epoch: number }): SagaGenerator<void> {
     )
       yield* put(withRecoveryLifetime(ownClientIdReceived(result.clientId), receipt));
   } catch (error) {
-    logger.warn('own clientId probe failed', {
+    logger.warn('own clientId observation failed', {
       error: error instanceof Error ? error.message : error,
     });
   }
@@ -479,6 +480,21 @@ export function* browserClientsSaga(): SagaGenerator<void> {
       reads: new Map(),
       mounted: new Set(yield* selectMountedWorkspaceIds.effect()),
     };
+    let admittedAuthority = yield* selectPrincipalActionContext.effect();
+    yield* takeEvery(principalReceived, function* () {
+      const authority = yield* selectPrincipalActionContext.effect();
+      if (!authority || authority === admittedAuthority) return;
+      admittedAuthority = authority;
+      if (connection.mounted.size === 0) return;
+      // Reads started before principal admission cannot publish into it. Rebind
+      // the owners and replace those discarded reads once authority is ready.
+      connection.epoch++;
+      invalidateOwnClientId();
+      yield* put(browserConnectionInvalidated());
+      recovery.rebind();
+      yield* put(hydrateBrowserClientsRequested());
+      for (const wsId of connection.mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+    });
     yield* takeEvery(workspaceMounted, function* (action) {
       connection.mounted.add(action.payload[0]);
       recovery.ensure(action.payload[0]);

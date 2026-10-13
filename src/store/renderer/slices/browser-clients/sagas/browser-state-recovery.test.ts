@@ -677,24 +677,29 @@ it('rejects a read across principal invalidation even when the same principal is
   store.dispatch(fetchWorkspaceBrowserClientRequested(WS));
   await settle();
   store.dispatch(principalIdentityChanged(before.boundPrincipalId));
-  store.dispatch(
-    principalReceived(
-      {
-        context: before.context,
-        invalidation: store.state.principal.invalidation,
-        presentationVersion: store.state.principal.presentationVersion,
-      },
-      before.snapshot,
-    ),
+  pin = 'readmitted';
+  rpc.request.mockClear();
+  const readmission = principalReceived(
+    {
+      context: before.context,
+      invalidation: store.state.principal.invalidation,
+      presentationVersion: store.state.principal.presentationVersion,
+    },
+    before.snapshot,
   );
+  store.dispatch(readmission);
   held.resolve({
     browserClient: { source: 'workspace', clientId: 'old-authority', resolved: null },
   });
   await settle();
-  expect(store.state.browserClients.byWorkspaceId[WS]).toBeUndefined();
-  pin = 'readmitted';
-  await attach();
+  expect(view().pinnedClientId).toBe('readmitted');
+  expect(view().eligibleClients).toHaveLength(1);
+  expect(calls('client.list')).toHaveLength(1);
+  expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+  rpc.request.mockClear();
+  store.dispatch(readmission);
   await settle();
+  expect(rpc.request.mock.calls).toEqual([]);
   expect(view().pinnedClientId).toBe('readmitted');
 });
 

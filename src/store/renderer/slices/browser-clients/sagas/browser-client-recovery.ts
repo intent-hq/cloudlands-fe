@@ -123,6 +123,12 @@ export class BrowserClientRecovery {
     this.owners.delete(workspaceId);
     entry?.stop();
   }
+  rebind(): void {
+    for (const workspaceId of [...this.owners.keys()]) {
+      this.remove(workspaceId);
+      this.ensure(workspaceId);
+    }
+  }
   dispose(): void {
     for (const workspaceId of this.owners.keys()) this.remove(workspaceId);
   }
