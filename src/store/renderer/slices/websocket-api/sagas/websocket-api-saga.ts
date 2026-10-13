@@ -95,7 +95,7 @@ function* loadSnapshot(
 ): SagaGenerator<WebSocketApiSnapshot> {
   const previous = yield* selectWebsocketApiSnapshot.effect(request);
   const settings = yield* call([client.settings, client.settings.list]);
-  if (!work.isCurrent()) return previous;
+  if (!(completeMutation ? work.isCurrent() : work.isSameScope())) return previous;
   const value = (path: string) => settings.find((entry) => entry.path === path)?.value;
   const bindAddress = value('server.bindAddress');
   const persistedPort = value('server.wsApi.port');
@@ -121,7 +121,7 @@ function* loadSnapshot(
   yield* put(settingsFormRequestProgressed(request, { ...snapshot }));
   if (snapshot.enabled) {
     const info = yield* call(pairing, client, request, work);
-    if (!work.isCurrent()) return snapshot;
+    if (!(completeMutation ? work.isCurrent() : work.isSameScope())) return snapshot;
     Object.assign(snapshot, {
       port: info.port,
       certFingerprint: info.certFingerprint,
@@ -159,12 +159,17 @@ function* loadMobile(
   request: SettingsFormRequest,
   context: string,
   work: ReturnType<typeof captureSettingsWork>,
+  loading = false,
 ): SagaGenerator<{ enabled: boolean }> {
   const principal = yield* selectPrincipalSnapshot.effect();
   if (!(yield* selectCanAdministerHost.effect()) || !principal)
     throw new Error(m.settings_personalDevices_pairing_error());
   const settings = yield* call([appClient.settings, appClient.settings.list]);
-  if (!work.isCurrent() || !(yield* requestCurrent(request, context))) return { enabled: false };
+  if (
+    !(loading ? work.isSameScope() : work.isCurrent()) ||
+    !(yield* requestCurrent(request, context))
+  )
+    return { enabled: false };
   const enabled = settings.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
   if (typeof enabled !== 'boolean') throw new Error(m.settings_personalDevices_pairing_error());
   yield* put(settingsFormRequestProgressed(request, { enabled }));
@@ -188,7 +193,10 @@ function* loadMobile(
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
   const work = captureSettingsWork();
-  if (!work.isCurrent()) {
+  const loading = intent.kind === 'load' || intent.kind === 'loadMobile';
+  const current = loading ? work.isSameScope : work.isCurrent;
+  const initialForm = yield* selectSettingsForm.effect(request);
+  if (!current()) {
     yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
     return;
   }
@@ -200,7 +208,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
   try {
     if (!work.isCurrent() || !(yield* requestCurrent(request, context))) return;
     if (intent.kind === 'loadMobile') {
-      values = yield* loadMobile(request, intent.context, work);
+      values = yield* loadMobile(request, intent.context, work, true);
     } else if (intent.kind === 'toggle' && context) {
       if (!(yield* selectCanAdministerHost.effect()))
         throw new Error(m.settings_personalDevices_pairing_error());
@@ -401,7 +409,22 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         yield* put(websocketApiQrOpened(request));
       }
     }
-    if (work.isCurrent() && (yield* requestCurrent(request, context))) {
+    if (current() && (yield* requestCurrent(request, context))) {
+      if (loading) {
+        const form = yield* selectSettingsForm.effect(request);
+        for (const key of [
+          'enabled',
+          'persistedPort',
+          'bindAddressSupported',
+          'bindIps',
+          'tunnelSupported',
+          'tunnelEnabled',
+          'tunnelOnly',
+        ]) {
+          const value = form?.values[key];
+          if (value !== undefined && value !== initialForm?.values[key]) values[key] = value;
+        }
+      }
       if (error) yield* call(notify.error, error);
       yield* put(
         settingsFormRequestSettled(request, {
@@ -412,7 +435,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     }
   } catch (cause) {
-    if (work.isCurrent() && (yield* requestCurrent(request, context))) {
+    if (current() && (yield* requestCurrent(request, context))) {
       const message = cause instanceof Error ? cause.message : String(cause);
       error =
         intent.kind === 'loadMobile'
@@ -444,7 +467,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     }
   } finally {
-    if ((yield* cancelled()) || !work.isCurrent())
+    if ((yield* cancelled()) || !current())
       yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
   }
 }

@@ -80,14 +80,16 @@ function* installFollowup(request: SettingsFormRequest, terminalId: string): Sag
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
   const work = captureSettingsWork();
-  if (!work.isCurrent()) {
+  const current = intent.kind === 'load' ? work.isSameScope : work.isCurrent;
+  const initialForm = yield* selectSettingsForm.effect(request);
+  if (!current()) {
     yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
     return;
   }
   let error: string | undefined;
   const values: Record<string, SettingsFormValue> = {};
   try {
-    if (!work.isCurrent() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+    if (!current() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
     if (intent.kind === 'load') {
       try {
         const entry = yield* call([appClient.settings, appClient.settings.get], 'rtk.enabled');
@@ -99,7 +101,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       } catch {
         error = m.settings_rtk_loadError();
       }
-      if (!work.isCurrent() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      if (!current() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
       try {
         values.available = yield* call(availability);
       } catch {
@@ -124,13 +126,19 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         cols: 80,
         rows: 24,
       });
-      if (!work.isCurrent() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      if (!current() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
       if (!result.success || !result.id) throw new Error('Terminal creation failed');
       yield* put(addTerminal(ROOT_WORKSPACE_ID, result.id, m.settings_rtk_installTerminalTitle()));
       yield* put(openTerminalOverlay(ROOT_WORKSPACE_ID, result.id));
       yield* put(rtkInstallStarted(request, result.id));
     }
-    if (work.isCurrent() && (yield* selectSettingsFormRequestCurrent.effect(request))) {
+    if (current() && (yield* selectSettingsFormRequestCurrent.effect(request))) {
+      if (intent.kind === 'load') {
+        const form = yield* selectSettingsForm.effect(request);
+        for (const [key, value] of Object.entries(form?.values ?? {})) {
+          if (value !== initialForm?.values[key]) values[key] = value;
+        }
+      }
       yield* put(
         settingsFormRequestSettled(request, {
           status: error ? 'failed' : 'succeeded',
@@ -140,7 +148,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     }
   } catch {
-    if (work.isCurrent() && (yield* selectSettingsFormRequestCurrent.effect(request))) {
+    if (current() && (yield* selectSettingsFormRequestCurrent.effect(request))) {
       error =
         intent.kind === 'install'
           ? m.terminal_adapter_openFailed_error()
@@ -149,7 +157,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       yield* put(settingsFormRequestSettled(request, { status: 'failed', error }));
     }
   } finally {
-    if ((yield* cancelled()) || !work.isCurrent())
+    if ((yield* cancelled()) || !current())
       yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
   }
 }

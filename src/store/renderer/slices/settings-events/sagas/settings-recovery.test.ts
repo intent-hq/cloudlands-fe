@@ -1107,12 +1107,12 @@ it('unrelated push does not strand RTK initial hydration', async () => {
   installTracked();
   const scope = rendererEventRecovery.attach(h.session);
   await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
-  const stop = store.runSaga(verifierRtkSaga);
+  const stop = store.runSaga(recoveryRtkSaga);
   cleanups.add(stop);
   const identity = { formId: 'rtk-unrelated', sessionId: 'one' };
   let release!: (value: unknown) => void;
   formClient.get.mockResolvedValue({ path: 'rtk.enabled', value: false });
-  verifierIpc.request.mockImplementation(
+  settingsIpc.request.mockImplementation(
     () =>
       new Promise((done) => {
         release = done;
@@ -1120,10 +1120,10 @@ it('unrelated push does not strand RTK initial hydration', async () => {
   );
   store.dispatch(settingsFormOpened(identity, 'rtk'));
   store.dispatch(
-    verifierRtkRequested({ ...identity, requestId: 'initial', resource: 'load' }, { kind: 'load' }),
+    recoveryRtkRequested({ ...identity, requestId: 'initial', resource: 'load' }, { kind: 'load' }),
   );
   await settle();
-  expect(verifierIpc.request).toHaveBeenCalledTimes(1);
+  expect(settingsIpc.request).toHaveBeenCalledTimes(1);
   h.emit({
     method: 'events.event',
     params: {
@@ -1156,11 +1156,11 @@ it('unrelated push does not strand websocket initial hydration', async () => {
   );
   const { appClient } = await import('$lib/client');
   (appClient as unknown as { server: unknown }).server = { pairingInfo };
-  cleanups.add(store.runSaga(verifierApiSaga));
+  cleanups.add(store.runSaga(recoveryApiSaga));
   cleanups.add(
     store.runSaga(function* () {
-      yield* verifierTakeEvery(verifierPublication, function* (action) {
-        yield* verifierPut(action.success(undefined));
+      yield* recoveryTakeEvery(recoveryPublication, function* (action) {
+        yield* recoveryPut(action.success(undefined));
       });
     }),
   );
@@ -1171,7 +1171,7 @@ it('unrelated push does not strand websocket initial hydration', async () => {
   ]);
   store.dispatch(settingsFormOpened(identity, 'websocket-api'));
   store.dispatch(
-    verifierApiRequested(
+    recoveryApiRequested(
       { ...identity, requestId: 'initial', resource: 'load' },
       { kind: 'load', connectionId: 'local' },
     ),
@@ -1190,7 +1190,7 @@ it('unrelated push does not strand websocket initial hydration', async () => {
   });
   release({ enabled: true, port: 5000, token: 'synthetic', localIps: [], certFingerprint: '' });
   await settle();
-  expect(getItem(store.state.settingsEvents.forms, identity.formId)?.values.loaded).toBe(true);
+  expect(getItem(store.state.settingsEvents.forms, identity.formId)?.loaded).toBe(true);
   expect(getItem(store.state.settingsEvents.forms, identity.formId)?.values.persistedPort).toBe(
     5000,
   );
