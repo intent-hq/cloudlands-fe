@@ -28,6 +28,7 @@ const demands = new Set<{ workspaceId: string }>();
 const demandListeners = new Set<() => void>();
 const sessions = new WeakMap<object, Map<string, Promise<void>>>();
 interface ActivityOwner {
+  handle: RendererRecoveryHandle;
   physicalIdentity: object;
   isCurrent(): boolean;
   retire(error: unknown): boolean;
@@ -80,14 +81,22 @@ function acceptsDurableEvent(notification: RecoveryNotification): boolean {
   return !(event.type.startsWith('file:') && event.actor?.type && event.actor.type !== 'agent');
 }
 
-/** A page read owns demand until its captured operation completes. */
+/** A page read retains any admitted recovery until its original resource settles. */
 export function acquireWorkspaceActivityDemand(workspaceId: string): () => void {
   const demand = { workspaceId };
   demands.add(demand);
   for (const listener of demandListeners) listener();
-  return () => {
+  const handle = readOwners.get(workspaceActivityRecoveryKey(workspaceId))?.handle;
+  let released = false;
+  const remove = () => {
     if (!demands.delete(demand)) return;
     for (const listener of demandListeners) listener();
+  };
+  return () => {
+    if (released) return;
+    released = true;
+    if (handle?.status.stale) void handle.whenSettled().then(remove);
+    else remove();
   };
 }
 
@@ -284,6 +293,7 @@ export function installWorkspaceActivityRecovery(
           retire,
         });
         const owner: ActivityOwner = {
+          handle,
           physicalIdentity,
           isCurrent: () => workspaceCurrent(workspaceId),
           retire: registry.captureRetirement(key),

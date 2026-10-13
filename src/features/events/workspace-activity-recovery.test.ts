@@ -715,3 +715,28 @@ it('retiring held activity recovery cannot transfer released demand to its repla
   expect(h.registry.capture(key).isCurrent()).toBe(false);
   expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(1);
 });
+
+it('retains released activity demand until the final recovery fence commits', async () => {
+  const h = await harness(false);
+  const original = h.request.getMockImplementation()!;
+  let fences = 0;
+  let finish!: () => void;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'events.fence' && ++fences === 2)
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireWorkspaceActivityDemand('ws');
+  release();
+  await settle();
+  expect(fences).toBe(2);
+  expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['1']);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(1);
+  finish();
+  await settle();
+  expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['2']);
+  expect(h.registry.capture(key).isCurrent()).toBe(false);
+});

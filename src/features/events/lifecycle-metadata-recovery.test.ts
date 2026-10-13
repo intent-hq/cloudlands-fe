@@ -1066,3 +1066,28 @@ it('retiring a held metadata recovery cannot transfer released demand to its rep
   expect(h.registry.capture(contextRecoveryKey('ws')).isCurrent()).toBe(false);
   expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(1);
 });
+
+it('retains released metadata demand until the final recovery fence commits', async () => {
+  const h = await harness(false);
+  const original = h.request.getMockImplementation()!;
+  let fences = 0;
+  let finish!: () => void;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'events.fence' && ++fences === 2)
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireLifecycleMetadataDemand('ws', 'context');
+  release();
+  await settle();
+  expect(fences).toBe(2);
+  expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual(['old']);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(1);
+  finish();
+  await settle();
+  expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual(['fresh']);
+  expect(h.registry.capture(contextRecoveryKey('ws')).isCurrent()).toBe(false);
+});

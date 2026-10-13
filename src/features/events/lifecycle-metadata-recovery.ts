@@ -41,7 +41,7 @@ const domains: MetadataDomain[] = ['context', 'tokenUsage', 'taskAgentLinks'];
 const demands = new Set<{ workspaceId: string; domain: MetadataDomain }>();
 const demandListeners = new Set<() => void>();
 
-/** A background consumer owns this demand only until its captured operation finishes. */
+/** A background consumer also retains any recovery its demand admits through settlement. */
 export function acquireLifecycleMetadataDemand(
   workspaceId: string,
   domain: MetadataDomain,
@@ -49,9 +49,24 @@ export function acquireLifecycleMetadataDemand(
   const demand = { workspaceId, domain };
   demands.add(demand);
   for (const listener of demandListeners) listener();
-  return () => {
+  const key = {
+    context: contextRecoveryKey,
+    tokenUsage: tokenUsageRecoveryKey,
+    taskAgentLinks: taskAgentLinksRecoveryKey,
+  }[domain](workspaceId);
+  const handle = mutationOwners.get(key)?.handle;
+  let released = false;
+  const remove = () => {
     if (!demands.delete(demand)) return;
     for (const listener of demandListeners) listener();
+  };
+  return () => {
+    if (released) return;
+    released = true;
+    // A stale ordinary receipt cannot commit, but its recovery still needs demand
+    // through the final fence. Keep the original handle across authority changes.
+    if (handle?.status.stale) void handle.whenSettled().then(remove);
+    else remove();
   };
 }
 
