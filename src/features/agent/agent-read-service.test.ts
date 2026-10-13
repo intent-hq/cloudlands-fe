@@ -96,9 +96,10 @@ describe('agentReadService (fake seam, real store)', () => {
 
   it('fences old detail reads across principal invalidation and session re-admission', async () => {
     const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
-    const { principalIdentityChanged } =
+    const { principalIdentityChanged, principalReceived } =
       await import('$store/renderer/slices/principal/principal-slice');
     admitLegacyPrincipal();
+    const principalSnapshot = appStore.state.principal.snapshot!;
     const id = 'principal-fenced-detail';
     appStore.dispatch(bulkUpsertSessions([makeSession({ id, metadata: { provider: 'old' } })]));
     appStore.dispatch(
@@ -118,7 +119,17 @@ describe('agentReadService (fake seam, real store)', () => {
     appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
     appStore.dispatch(removeSession(id));
     expect(appStore.state.agentSessions.projectionVersions?.[id]).toBeUndefined();
-    admitLegacyPrincipal();
+    const principal = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: principal.context!,
+          invalidation: principal.invalidation,
+          presentationVersion: principal.presentationVersion,
+        },
+        principalSnapshot,
+      ),
+    );
     appStore.dispatch(bulkUpsertSessions([makeSession({ id, metadata: { provider: 'new' } })]));
     let resolveFresh!: (value: AgentSession) => void;
     agentsApi.get.mockImplementationOnce(
