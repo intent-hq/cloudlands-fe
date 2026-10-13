@@ -33,6 +33,9 @@
     oncontextmenu: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
   } = $props();
 
+  const displayTitle = $derived(
+    workspace.title.trim() ? workspace.title : m.workspace_links_untitled_label(),
+  );
   const details$ = selectDashboardWorkspaceDetails(untrack(() => workspace.id));
   const agents = $derived($details$.agents.slice(0, 3));
   const attention = $derived($details$.attentionSnippet);
@@ -74,7 +77,7 @@
   variant="outline"
   active={selected}
   aria-pressed={selected}
-  aria-label={workspace.title}
+  aria-label={displayTitle}
   wrapContent={false}
   class="h-full min-w-0 w-full flex-col items-stretch justify-start gap-4 whitespace-normal rounded-xl border-border bg-card p-5 text-left font-normal shadow-xs"
   onclick={(event) => {
@@ -102,9 +105,7 @@
     >
   </span>
   <span class="flex min-w-0 flex-col gap-2">
-    <span class="line-clamp-2 type-body font-medium [overflow-wrap:anywhere]"
-      >{workspace.title}</span
-    >
+    <span class="line-clamp-2 type-body font-medium [overflow-wrap:anywhere]">{displayTitle}</span>
     {#if workspace.statusMessage}
       <span
         class="home-workspace-summary line-clamp-2 type-caption text-muted-foreground [overflow-wrap:anywhere]"

@@ -186,7 +186,11 @@ describe('dashboard visible-card demand', () => {
     } as AgentSession;
     run.send(bulkUpsertSessions([agent]));
     run.send(bulkUpsertSessions([agent]));
-    run.send(updateSession('one-agent-0', { metadata: { pendingQuestionsMessageId: 'q-one' } }));
+    run.send(
+      updateSession('one-agent-0', {
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: 'q-one' } },
+      }),
+    );
     for (let index = 0; index < 5; index++) {
       run.send(
         eventReceived('one', {
@@ -199,7 +203,11 @@ describe('dashboard visible-card demand', () => {
       );
     }
     expect(run.actions).toEqual([pendingQuestionRecoveryRequested('one-agent-0', 'q-one')]);
-    run.send(updateSession('one-agent-0', { metadata: { pendingQuestionsMessageId: 'q-two' } }));
+    run.send(
+      updateSession('one-agent-0', {
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: 'q-two' } },
+      }),
+    );
     expect(run.actions.at(-1)).toEqual(pendingQuestionRecoveryRequested('one-agent-0', 'q-two'));
     run.actions.length = 0;
     run.send(
@@ -209,7 +217,11 @@ describe('dashboard visible-card demand', () => {
     );
     expect(run.actions).toEqual([]);
     run.send(setDashboardVisibleWorkspaces('cards', []));
-    run.send(updateSession('one-agent-0', { metadata: { pendingQuestionsMessageId: 'q-three' } }));
+    run.send(
+      updateSession('one-agent-0', {
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: 'q-three' } },
+      }),
+    );
     expect(run.actions).toEqual([]);
   });
 });

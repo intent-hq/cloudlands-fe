@@ -11,6 +11,7 @@
   } from '$shared/types';
   import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
   import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+  import type { AgentSessionUpdate } from '$store/renderer/slices/agent-session/agent-session-types';
 
   declare global {
     interface Window {
@@ -21,7 +22,7 @@
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
         roundTripSettings: () => void;
         updateWorkspace: (id: string, changes: Partial<Workspace>) => void;
-        updateAgent: (id: string, changes: Partial<AgentSession>) => void;
+        updateAgent: (id: string, changes: AgentSessionUpdate) => void;
         updateTokens: (id: string, outputTokens: number) => void;
       };
       __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
@@ -389,8 +390,6 @@
     bulkUpdateWorkspaceEntities,
     setWorkspaceHasLoaded,
     setWorkspaceError,
-    updateWorkspaceEntity,
-    bulkUpdateWorkspaceEntities,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {

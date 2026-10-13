@@ -1,6 +1,36 @@
 import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
 
+for (const [id, condition] of [
+  ['home-running', 'empty'],
+  ['home-review', 'whitespace-only'],
+] as const) {
+  test(`Dashboard keeps ${condition} titles accessible through a live rename`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const component = await mount(Preview, { props: { scenario: 'untitled' } });
+    await component.getByRole('button', { name: 'Dashboard view', exact: true }).click();
+    const card = component.locator(`[data-home-dashboard] [data-home-workspace="${id}"]`);
+    await expect(card).toHaveAccessibleName('Untitled');
+    await card.focus();
+    await page.keyboard.press('Enter');
+    const detail = component.locator('[data-home-detail]');
+    await expect(detail.getByRole('heading', { level: 2 })).toContainText('Untitled');
+    await page.keyboard.press('Escape');
+    await expect(card).toBeFocused();
+
+    await page.evaluate((workspaceId) => {
+      window.__homeWorkspacePreview!.setTitle(workspaceId, 'Plan the next release');
+    }, id);
+    await expect(card).toHaveAccessibleName('Plan the next release');
+    await expect(card).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(detail.getByRole('heading', { level: 2 })).toContainText('Plan the next release');
+  });
+}
+
 test('Dashboard preserves keyboard focus through live updates and returns focus from preview', async ({
   mount,
   page,
