@@ -210,10 +210,16 @@ describe('DevConsoleCaptureService', () => {
     const timeout = expect(client.request('timeout')).rejects.toThrow('timed out');
     await vi.advanceTimersByTimeAsync(100);
     await timeout;
-    vi.spyOn(socket, 'write').mockImplementationOnce(() => {
+    const write = vi.spyOn(socket, 'write').mockImplementationOnce(() => {
       throw new Error('write failed');
     });
-    await expect(client.request('write')).rejects.toThrow('write failed');
+    const writeFailed = expect(client.request('write')).rejects.toThrow('write failed');
+    // The caller deadline leaves the original wire pending; the next request
+    // can start only after its late reply releases physical occupancy.
+    expect(write).not.toHaveBeenCalled();
+    socket.receive({ id: JSON.parse(socket.writes[0]).id, result: 'late' });
+    await writeFailed;
+    expect(write).toHaveBeenCalledTimes(1);
     const disconnected = expect(client.request('disconnect')).rejects.toThrow('Connection closed');
     socket.emit('close');
     await disconnected;

@@ -1571,6 +1571,7 @@ describe('QueuedMessageList', () => {
       registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
         expect(payload).toEqual({
           method: 'file.getAttachmentInfo',
+          observeCompletion: true,
           params: { attachmentId: 'att-q-1', workspaceId: 'ws-queued' },
         });
         return getAttachmentInfo();
