@@ -1,4 +1,5 @@
-import { trackRuntimeRead } from '$features/events/runtime-read-lane';
+import { runtimeReadDrained, trackRuntimeRead } from '$features/events/runtime-read-lane';
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import {
   acquireAgentMetadataDemand,
   trackAgentMetadataRead,
@@ -294,15 +295,26 @@ function hydrateVisibleWorkspaceAgents(isLive: () => boolean, scope?: RendererRe
     pending.push({ workspaceId, failedSummaryIds: failedSummaryAgentIds(workspace) });
   }
   if (pending.length === 0) return;
-  const busyAgentIds = readBusyAgentIds(scope);
+  let busyAgentIds: Promise<BusyAgentIdsByWorkspaceId> | undefined;
+  const readBusy = () => (busyAgentIds ??= readBusyAgentIds(scope));
+  let admitted = 0;
+  let start!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    start = resolve;
+  });
+  const enter = () => {
+    if (++admitted === pending.length) start();
+    return ready;
+  };
   for (const { workspaceId, failedSummaryIds } of pending) {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
     const hydration = hydrateHudWorkspaceAgents(
       workspaceId,
-      busyAgentIds,
+      readBusy,
       failedSummaryIds,
       isLive,
       scope,
+      enter,
     ).finally(() => {
       if (pendingAgentHydrationByWorkspaceId.get(workspaceId) === hydration) {
         pendingAgentHydrationByWorkspaceId.delete(workspaceId);
@@ -333,6 +345,7 @@ async function readBusyAgentIds(scope?: RendererRecoveryScope): Promise<BusyAgen
       ids.add(stream.agentId);
     }
   } catch (error) {
+    if (error instanceof RecoveryRequestTimeoutError) await error.drained;
     logger.warn('agent.listActive failed for HUD hydration; top-level rows only', { error });
   }
   return byWorkspaceId;
@@ -387,66 +400,81 @@ function failedSummaryAgentIds(workspace: { agentSummary?: unknown }): string[] 
  */
 async function hydrateHudWorkspaceAgents(
   workspaceId: string,
-  busyAgentIds: Promise<BusyAgentIdsByWorkspaceId>,
+  readBusy: () => Promise<BusyAgentIdsByWorkspaceId>,
   failedSummaryIds: readonly string[],
   isLive: () => boolean,
-  scope?: RendererRecoveryScope,
+  scope: RendererRecoveryScope | undefined,
+  enter: () => Promise<void>,
 ): Promise<void> {
   const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
-  try {
-    const [{ agents: topLevel }, busyByWorkspaceId] = await Promise.all([
-      trackAgentMetadataRead(workspaceId, () => {
-        if (!isLive() || !token.commit(() => {})) throw new Error('HUD metadata read superseded');
-        return scope
+  return trackAgentMetadataRead(workspaceId, async () => {
+    const physical: Promise<void>[] = [];
+    const tracked = <T>(read: Promise<T>): Promise<T> => {
+      physical.push(runtimeReadDrained(read));
+      return read;
+    };
+    try {
+      // Reserve every workspace before starting the one shared busy lookup.
+      await enter();
+      if (!isLive() || !token.commit(() => {})) return;
+      const busy = tracked(readBusy());
+      const list = tracked(
+        scope
           ? scope
               .request<{ agents: Record<string, unknown>[] }>('agent.list', {
                 workspaceId,
                 scope: 'topLevel',
               })
               .then((result) => ({ agents: result.agents.map(normalizeAgent) }))
-          : appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' });
-      }),
-      busyAgentIds,
-    ]);
-    if (!isLive() || !token.commit(() => {})) return;
-    const listedIds = new Set(topLevel.map((agent) => String(agent.id)));
-    const pointReadIds = [
-      ...new Set([...(busyByWorkspaceId.get(workspaceId) ?? []), ...failedSummaryIds]),
-    ].filter((agentId) => !listedIds.has(agentId));
-    const pointReadRows = await Promise.all(
-      pointReadIds.map(async (agentId) => {
-        try {
-          return await readHudAgent(
-            agentId,
-            workspaceId,
-            scope,
-            () => isLive() && token.commit(() => {}),
-          );
-        } catch (error) {
-          logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
-            workspaceId,
-            agentId,
-            error,
-          });
-          return null;
-        }
-      }),
-    );
-    if (!isLive()) return;
-    const listed = [...topLevel, ...pointReadRows.filter((row) => row !== null)];
-    const agents = listed
-      .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
-      .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
-    token.commit(() => {
-      appStore.dispatch(setAgentsLoaded(workspaceId, true));
-      if (agents.length === 0) return;
-      appStore.dispatch(setAgents(workspaceId, agents));
-      appStore.dispatch(bulkUpsertSessions(agents, { listProjection: true }));
-      for (const agent of agents) appStore.dispatch(upsertSession(agent));
-    });
-  } catch (error) {
-    logger.warn('agent hydration failed for HUD workspace', { workspaceId, error });
-  }
+          : appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' }),
+      );
+      const [{ agents: topLevel }, busyByWorkspaceId] = await Promise.all([list, busy]);
+      if (!isLive() || !token.commit(() => {})) return;
+      const listedIds = new Set(topLevel.map((agent) => String(agent.id)));
+      const pointReadIds = [
+        ...new Set([...(busyByWorkspaceId.get(workspaceId) ?? []), ...failedSummaryIds]),
+      ].filter((agentId) => !listedIds.has(agentId));
+      const pointReadRows = await Promise.all(
+        pointReadIds.map(async (agentId) => {
+          try {
+            return await tracked(
+              readHudAgent(
+                agentId,
+                workspaceId,
+                scope,
+                () => isLive() && token.commit(() => {}),
+                true,
+              ),
+            );
+          } catch (error) {
+            logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
+              workspaceId,
+              agentId,
+              error,
+            });
+            return null;
+          }
+        }),
+      );
+      if (!isLive()) return;
+      const listed = [...topLevel, ...pointReadRows.filter((row) => row !== null)];
+      const agents = listed
+        .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
+        .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
+      token.commit(() => {
+        appStore.dispatch(setAgentsLoaded(workspaceId, true));
+        if (agents.length === 0) return;
+        appStore.dispatch(setAgents(workspaceId, agents));
+        appStore.dispatch(bulkUpsertSessions(agents, { listProjection: true }));
+        for (const agent of agents) appStore.dispatch(upsertSession(agent));
+      });
+    } catch (error) {
+      logger.warn('agent hydration failed for HUD workspace', { workspaceId, error });
+    } finally {
+      // Promise.all can fail before siblings complete; retain their physical slots.
+      await Promise.all(physical);
+    }
+  });
 }
 
 /**
@@ -594,9 +622,10 @@ async function readHudAgent(
   workspaceId: string,
   scope?: RendererRecoveryScope,
   isLive: () => boolean = () => true,
+  insideMetadataOperation = false,
 ) {
   const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
-  return trackAgentMetadataRead(workspaceId, async () => {
+  const read = async () => {
     if (!isLive() || !token.commit(() => {})) return null;
     if (!scope) return appClient.agents.get(agentId, workspaceId || undefined);
     const result = await scope.request<{ agent?: unknown } | unknown>('agent.get', {
@@ -605,7 +634,8 @@ async function readHudAgent(
     });
     const raw = result && typeof result === 'object' && 'agent' in result ? result.agent : result;
     return raw && typeof raw === 'object' ? normalizeAgent(raw as Record<string, unknown>) : null;
-  });
+  };
+  return insideMetadataOperation ? read() : trackAgentMetadataRead(workspaceId, read);
 }
 
 function hydrateUnknownAgent(

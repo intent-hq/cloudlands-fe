@@ -1865,3 +1865,238 @@ it('drops an ordinary stats retry when its HUD subscription stops', async () => 
   await flush();
   expect(h.request.mock.calls.filter(([method]) => method === 'stats.getUsage')).toHaveLength(1);
 });
+async function hudMetadataBoundaryHarness(
+  firstBusy: () => Promise<unknown>,
+  firstList?: () => Promise<unknown>,
+  pointRead?: () => Promise<unknown>,
+) {
+  appStore.dispose();
+  appStore.init();
+  const backend = installMockBackend();
+  scriptHappyBackend(backend);
+  appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_ID)));
+  const listeners = new Set<(n: RecoveryNotification) => void | Promise<void>>();
+  let busyReads = 0,
+    listReads = 0;
+  const request = vi.fn(async (method: string) => {
+    if (method === 'events.subscribe')
+      return { subscriptionId: 'hud-metadata-verifier', lossRecovery: 1 };
+    if (method === 'stats.getUsage') return usageResult();
+    if (method === 'stats.getRateHistory') return rateHistoryResult();
+    if (method === 'agent.listActive') return ++busyReads === 1 ? firstBusy() : { streams: [] };
+    if (method === 'agent.list')
+      return ++listReads === 1 && firstList ? firstList() : { agents: [], retiredCount: 0 };
+    if (method === 'agent.get' && pointRead) return pointRead();
+    if (method === 'workspace.get') return { workspace: makeHudWorkspace(WS_ID) };
+    return {};
+  });
+  rendererEventRecovery.attach({
+    supported: true,
+    isCurrent: () => true,
+    request: request as EventRecoverySession['request'],
+    fence: async (_ids, observe) => {
+      observe();
+    },
+    dispose: () => {},
+    onRetired: () => () => {},
+    onNotification: (fn) => {
+      listeners.add(fn);
+      return () => {
+        listeners.delete(fn);
+      };
+    },
+  });
+  const { installAgentMetadataRecovery } = await import('$features/agent/agent-metadata-recovery');
+  const off = rendererEventRecovery.onSession((scope) =>
+    installAgentMetadataRecovery(scope, {
+      getState: () => appStore.state,
+      dispatch: (action) => appStore.dispatch(action),
+      subscribe: (fn) => appStore.getReadableState().subscribe(() => fn()),
+    }),
+  );
+  const stop = startHudSubscription();
+  await flush();
+  await flush();
+  return {
+    request,
+    emit: (n: RecoveryNotification) => {
+      for (const f of listeners) void f(n);
+    },
+    stop: () => {
+      stop();
+      off();
+      rendererEventRecovery.dispose();
+      resetMockBackend();
+      appStore.dispose();
+    },
+  };
+}
+it('HUD busy-set read holds the metadata recovery lane until physical completion', async () => {
+  let finish!: (value: any) => void;
+  const h = await hudMetadataBoundaryHarness(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  try {
+    expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
+    expect(h.request.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(1);
+    h.emit({
+      method: 'events.lost',
+      params: {
+        subscriptionId: 'hud-metadata-verifier',
+        generation: '1',
+        scope: { workspaceId: null },
+      },
+    });
+    await flush();
+    await flush();
+    const before = h.request.mock.calls.filter(([m]) => m === 'agent.listActive').length;
+    finish({ streams: [] });
+    await flush();
+    await flush();
+    expect(before).toBe(1);
+    expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(2);
+  } finally {
+    finish({ streams: [] });
+    h.stop();
+  }
+});
+it('HUD retains the original agents receipt across a held list and accepted push', async () => {
+  let finish!: (value: any) => void;
+  const h = await hudMetadataBoundaryHarness(
+    async () => ({ streams: [] }),
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  try {
+    expect(rendererEventRecovery.hasOwner('agents:' + JSON.stringify([WS_ID]))).toBe(true);
+    h.emit({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'hud-metadata-verifier',
+        event: {
+          id: 'agent-live-verifier',
+          type: 'agent:status-changed',
+          workspaceId: WS_ID,
+          timestamp: '2026-10-13T09:00:00Z',
+          data: { agentId: 'old-hud-agent', status: 'idle' },
+        },
+      },
+    });
+    finish({
+      agents: [
+        {
+          id: 'old-hud-agent',
+          workspaceId: WS_ID,
+          name: 'Old',
+          status: 'running',
+          provider: 'claude-code',
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+          metadata: { isBackground: false },
+        },
+      ],
+      retiredCount: 0,
+    });
+    await flush();
+    await flush();
+    expect(appStore.state.agentSessions.byAgentId['old-hud-agent']).toBeUndefined();
+  } finally {
+    finish({ agents: [] });
+    h.stop();
+  }
+});
+
+it.each(['timeout', 'failed sibling'])(
+  'HUD retains a busy read after %s until recovery can safely start',
+  async (failure) => {
+    let finish!: (value: any) => void;
+    const held = new Promise<any>((resolve) => {
+      finish = resolve;
+    });
+    const h = await hudMetadataBoundaryHarness(
+      () => (failure === 'timeout' ? Promise.reject(new RecoveryRequestTimeoutError(held)) : held),
+      failure === 'failed sibling'
+        ? async () => {
+            throw new Error('list failed');
+          }
+        : undefined,
+    );
+    try {
+      h.emit({
+        method: 'events.lost',
+        params: {
+          subscriptionId: 'hud-metadata-verifier',
+          generation: '1',
+          scope: { workspaceId: null },
+        },
+      });
+      await flush();
+      await flush();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
+      finish(failure === 'timeout' ? { retired: false, errors: [] } : { streams: [] });
+      await flush();
+      await flush();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(2);
+    } finally {
+      finish({ retired: false, errors: [], streams: [] });
+      h.stop();
+    }
+  },
+);
+
+it.each(['reply', 'timeout'])(
+  'HUD holds point-read siblings through %s and rejects their stale writes',
+  async (completion) => {
+    let finish!: (value: any) => void;
+    const held = new Promise<any>((resolve) => {
+      finish = resolve;
+    });
+    const h = await hudMetadataBoundaryHarness(
+      async () => ({ streams: [{ workspaceId: WS_ID, agentId: 'held-point-agent' }] }),
+      undefined,
+      () =>
+        completion === 'timeout' ? Promise.reject(new RecoveryRequestTimeoutError(held)) : held,
+    );
+    try {
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.get')).toHaveLength(1);
+      h.emit({
+        method: 'events.lost',
+        params: {
+          subscriptionId: 'hud-metadata-verifier',
+          generation: '1',
+          scope: { workspaceId: null },
+        },
+      });
+      await flush();
+      await flush();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
+      finish(
+        completion === 'timeout'
+          ? { retired: false, errors: [] }
+          : {
+              agent: {
+                id: 'held-point-agent',
+                workspaceId: WS_ID,
+                name: 'Old',
+                status: 'running',
+                provider: 'claude-code',
+                createdAt: '2026-01-01T00:00:00Z',
+                updatedAt: '2026-01-01T00:00:00Z',
+              },
+            },
+      );
+      await flush();
+      await flush();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(2);
+      expect(appStore.state.agentSessions.byAgentId['held-point-agent']).toBeUndefined();
+    } finally {
+      finish({ retired: false, errors: [] });
+      h.stop();
+    }
+  },
+);
