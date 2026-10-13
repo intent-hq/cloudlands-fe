@@ -8,32 +8,35 @@ import TerminalIcon from './TerminalIcon.svelte';
 import VSCodeIcon from './VSCodeIcon.svelte';
 import WarpIcon from './WarpIcon.svelte';
 import XcodeIcon from './XcodeIcon.svelte';
+import {
+  createEditorIconResolver,
+  createEditorFallbackIconResolver,
+} from '$shared/editors/editor-icon-resolver';
 
 export type EditorIconComponent = typeof VSCodeIcon;
 
-const EDITOR_ICONS_BY_ID: Partial<Record<string, EditorIconComponent>> = {
+const resolveCanonicalEditorIcon = createEditorIconResolver<EditorIconComponent>({
   cursor: CursorCodeIcon,
   ghostty: GhosttyIcon,
   terminal: TerminalIcon,
   warp: WarpIcon,
-};
-
-const EDITOR_ICONS_BY_HANDLER: Partial<
-  Record<EditorDefinition['handlerType'], EditorIconComponent>
-> = {
   vscode: VSCodeIcon,
   jetbrains: JetBrainsIcon,
   xcode: XcodeIcon,
-};
+});
 
 export function resolveEditorIcon(
   editor: Pick<EditorDefinition, 'id' | 'handlerType'>,
 ): EditorIconComponent | null {
-  return EDITOR_ICONS_BY_ID[editor.id] ?? EDITOR_ICONS_BY_HANDLER[editor.handlerType] ?? null;
+  return resolveCanonicalEditorIcon(editor);
 }
 
+const resolveCanonicalFallbackIcon = createEditorFallbackIconResolver({
+  code: faCode,
+  folder: faFolder,
+  terminal: faTerminal,
+});
+
 export function resolveEditorFallbackIcon(category?: EditorCategory): IconDefinition {
-  if (category === 'terminal') return faTerminal;
-  if (category === 'finder') return faFolder;
-  return faCode;
+  return resolveCanonicalFallbackIcon(category);
 }

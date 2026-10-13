@@ -1,23 +1,22 @@
 // i18n-ignore (internal unreleased preview controls and brand names)
 import { useState } from 'react';
-import { TerminalIcon } from '@/components/icons/terminal-icon';
-import { WarpIcon } from '@/components/icons/warp-icon';
-import { CursorCodeIcon } from '@/components/icons/cursor-code-icon';
-import { VSCodeIcon } from '@/components/icons/vscode-icon';
-import { JetBrainsIcon } from '@/components/icons/jetbrains-icon';
-import { GhosttyIcon } from '@/components/icons/ghostty-icon';
-import { XcodeIcon } from '@/components/icons/xcode-icon';
+import { resolveEditorIcon, resolveEditorFallbackIcon } from '@/components/icons/editor-icon';
+import { IconDefinitionIcon } from '@/components/icons/icon-definition';
+import { EDITOR_REGISTRY } from '$shared/editors/editor-registry';
 import { Button } from '@/components/ui/button';
 
 const editors = [
-  { name: 'Terminal', Icon: TerminalIcon },
-  { name: 'Warp', Icon: WarpIcon },
-  { name: 'Cursor', Icon: CursorCodeIcon },
-  { name: 'VS Code', Icon: VSCodeIcon },
-  { name: 'JetBrains', Icon: JetBrainsIcon },
-  { name: 'Ghostty', Icon: GhosttyIcon },
-  { name: 'Xcode', Icon: XcodeIcon },
-];
+  'terminal',
+  'warp',
+  'cursor',
+  'vscode',
+  'intellij',
+  'ghostty',
+  'xcode',
+  'finder',
+  'zed',
+  'iterm',
+].flatMap((id) => EDITOR_REGISTRY.filter((editor) => editor.id === id));
 
 export function EditorIconExamples() {
   const [selected, setSelected] = useState('Terminal');
@@ -31,21 +30,28 @@ export function EditorIconExamples() {
         <p className="type-caption text-muted-foreground">Internal React preview · unreleased</p>
       </header>
       <div className="flex flex-wrap gap-3" aria-label="Editor examples">
-        {editors.map(({ name, Icon }) => (
-          <Button
-            key={name}
-            variant="outline"
-            aria-pressed={selected === name}
-            onClick={() => setSelected(name)}
-            leadingIcon={
-              <span aria-hidden="true">
-                <Icon />
-              </span>
-            }
-          >
-            {name}
-          </Button>
-        ))}
+        {editors.map((editor) => {
+          const Icon = resolveEditorIcon(editor);
+          return (
+            <Button
+              key={editor.id}
+              variant="outline"
+              aria-pressed={selected === editor.shortLabel}
+              onClick={() => setSelected(editor.shortLabel)}
+              leadingIcon={
+                <span aria-hidden="true">
+                  {Icon ? (
+                    <Icon />
+                  ) : (
+                    <IconDefinitionIcon icon={resolveEditorFallbackIcon(editor.category)} />
+                  )}
+                </span>
+              }
+            >
+              {editor.shortLabel}
+            </Button>
+          );
+        })}
       </div>
       <output className="type-caption text-muted-foreground">Selected: {selected}</output>
     </section>
