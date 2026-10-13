@@ -197,7 +197,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 12,
-          "height": 51.5,
+          "height": 48,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -211,7 +211,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 12,
-          "height": 51.5,
+          "height": 48,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -219,13 +219,13 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 248.5
+          "y": 245
         },
         "data-slot=list-row#3": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 12,
-          "height": 51.5,
+          "height": 48,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -233,13 +233,13 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 356
+          "y": 349
         },
         "data-slot=list-row#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 12,
-          "height": 51.5,
+          "height": 48,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -247,13 +247,13 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 463.5
+          "y": 453
         },
         "data-slot=list-row#5": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 12,
-          "height": 51.5,
+          "height": 48,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -261,13 +261,13 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 515
+          "y": 501
         },
         "data-slot=list-row#6": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 12,
-          "height": 51.5,
+          "height": 48,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -275,7 +275,7 @@
           "paddingRight": 12,
           "width": 1114,
           "x": 269,
-          "y": 566.5
+          "y": 549
         }
       },
       "root": {

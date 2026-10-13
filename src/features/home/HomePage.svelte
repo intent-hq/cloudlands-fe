@@ -922,7 +922,7 @@
                                   ><Tooltip.Trigger
                                     >{#snippet child({ props: homeTooltipProps })}<span
                                         {...homeTooltipProps}
-                                        class="block min-w-0 truncate"
+                                        class="home-row-repository truncate type-caption text-muted-foreground"
                                         data-home-workspace-repository>{repositoryLabel}</span
                                       >{/snippet}</Tooltip.Trigger
                                   ><Tooltip.Content>{repositoryLabel}</Tooltip.Content
@@ -931,11 +931,8 @@
                               >
                             {/snippet}
                             <ListRow
-                              class="home-list-row min-h-12 items-center border-b border-border px-3 py-1"
+                              class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
-                              description={!selectedRepository && repositoryLabel
-                                ? workspaceRepository
-                                : undefined}
                               onclick={(event) => openModifiedWorkspace(event, item.id)}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
@@ -1018,6 +1015,9 @@
                                       ></Tooltip.Provider
                                     >
                                   </span>
+                                  {#if !selectedRepository && repositoryLabel}
+                                    {@render workspaceRepository()}
+                                  {/if}
                                 </span>
                               {/snippet}
                               {#snippet trailing()}<span
