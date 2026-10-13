@@ -67,35 +67,43 @@ async function harness() {
   client.start();
   socket.emit('connect');
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  const listeners = new Map<string, (value: unknown) => void>();
-  let counter = 0;
-  const frame = {
-    send: (channel: string, value: unknown) => {
-      if (channel === IPC_CHANNELS.BACKEND.EVENT_RECOVERY.FRAME)
-        for (const fn of [...listeners.values()]) fn(value);
-    },
-  };
-  const sender = Object.assign(new EventEmitter(), { mainFrame: frame, isDestroyed: () => false });
-  const window = Object.assign(new EventEmitter(), {
-    webContents: sender,
-    isDestroyed: () => false,
-  });
-  windows.set(sender, window);
-  stampWindowWithBackend(window as unknown as BrowserWindow, 'A');
-  const event = { sender, senderFrame: frame } as unknown as IpcMainInvokeEvent;
-  const bridge = {
-    on: (_channel: string, fn: (value: unknown) => void) => {
-      const id = String(++counter);
-      listeners.set(id, fn);
-      return id;
-    },
-    offById: (_channel: string, id: string) => listeners.delete(id),
-    invoke: vi.fn((channel: string, payload: unknown) =>
-      Promise.resolve(handlers.get(channel)!(event, payload)),
-    ),
-  };
-  const capture = createEventRecoveryTransport(() => bridge as unknown as Window['electronAPI']);
-  return { socket, client, capture, window, bridge, handlers, event };
+  function createSender() {
+    const listeners = new Map<string, (value: unknown) => void>();
+    let counter = 0;
+    const delivered: unknown[] = [];
+    const frame = {
+      send: (channel: string, value: unknown) => {
+        delivered.push(value);
+        if (channel === IPC_CHANNELS.BACKEND.EVENT_RECOVERY.FRAME)
+          for (const fn of [...listeners.values()]) fn(value);
+      },
+    };
+    const sender = Object.assign(new EventEmitter(), {
+      mainFrame: frame,
+      isDestroyed: () => false,
+    });
+    const window = Object.assign(new EventEmitter(), {
+      webContents: sender,
+      isDestroyed: () => false,
+    });
+    windows.set(sender, window);
+    stampWindowWithBackend(window as unknown as BrowserWindow, 'A');
+    const event = { sender, senderFrame: frame } as unknown as IpcMainInvokeEvent;
+    const bridge = {
+      on: (_channel: string, fn: (value: unknown) => void) => {
+        const id = String(++counter);
+        listeners.set(id, fn);
+        return id;
+      },
+      offById: (_channel: string, id: string) => listeners.delete(id),
+      invoke: vi.fn((channel: string, payload: unknown) =>
+        Promise.resolve(handlers.get(channel)!(event, payload)),
+      ),
+    };
+    const capture = createEventRecoveryTransport(() => bridge as unknown as Window['electronAPI']);
+    return { capture, window, bridge, event, delivered };
+  }
+  return { socket, client, handlers, createSender, ...createSender() };
 }
 
 describe('Electron recovery IPC through real JSON-RPC decode', () => {
@@ -104,6 +112,13 @@ describe('Electron recovery IPC through real JSON-RPC decode', () => {
       session = await h.capture();
     cleanup.push(() => session.dispose());
     expect(session.supported).toBe(true);
+    const subscribed = session.request('events.subscribe', {
+      eventTypes: ['file:*'],
+      lossRecovery: 1,
+    });
+    h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'a', lossRecovery: 1 });
+    await subscribed;
+    for (let i = 0; i < 20; i++) await Promise.resolve();
     let release!: () => void;
     const order: string[] = [];
     session.onNotification((n) =>
@@ -255,5 +270,167 @@ describe('Electron recovery IPC through real JSON-RPC decode', () => {
     cleanup.push(() => session.dispose());
     await h.client.request('client.hello', {});
     expect(session.isCurrent()).toBe(false);
+  });
+});
+
+describe('recovery renderer authority', () => {
+  it('never forwards private repository authority frames to either same-backend sender', async () => {
+    const h = await harness();
+    const other = h.createSender();
+    const a = await h.capture();
+    const b = await other.capture();
+    cleanup.push(() => {
+      a.dispose();
+      b.dispose();
+    });
+    const receivedA = vi.fn(),
+      receivedB = vi.fn();
+    a.onNotification(receivedA);
+    b.onNotification(receivedB);
+    for (const method of [
+      'workspace.repositoryContext.retired',
+      'sourceControl.read.retired',
+      'workspace.repositorySelection.retired',
+      'accept-changes.retired',
+    ]) {
+      h.socket.batch([{ method, params: { selectionIds: ['sender-A-private-authority'] } }]);
+    }
+    expect(receivedA).not.toHaveBeenCalled();
+    expect(receivedB).not.toHaveBeenCalled();
+    expect(h.delivered).toEqual([]);
+    expect(other.delivered).toEqual([]);
+  });
+  it.each([
+    ['sourceControl.read.capture', {}],
+    ['sourceControl.read.status', {}],
+    ['sourceControl.checkout.capture', {}],
+    ['sourceControl.checkout.prepare', {}],
+    ['workspace.repositoryContext', {}],
+    ['workspace.repositoryContext.capture', {}],
+    ['workspace.repositoryContext.release', {}],
+    ['workspace.repositorySelection.capture', {}],
+    ['workspace.repositorySelection.save', {}],
+    ['workspace.repositorySelection.reset', {}],
+    ['workspace.repositorySelection.reconcile', {}],
+    ['workspace.repositorySelection.release', {}],
+    ['accept-changes.reconcile', {}],
+    ['accept-changes.release', {}],
+    ['accept-changes.prepare', { review: null }],
+    ['accept-changes.execute', { review: {} }],
+    ['workspace.create', { repositoryCheckout: null }],
+  ])('rejects protected %s without dispatching to the daemon', async (method, params) => {
+    const h = await harness();
+    const session = await h.capture();
+    cleanup.push(() => session.dispose());
+    const before = h.socket.frames.length;
+    const result = session.request(method as string, params).then(
+      () => 'allowed',
+      () => 'denied',
+    );
+    const calls = h.socket.frames.slice(before);
+    for (const call of calls) h.socket.reply(call.id, {});
+    expect(await result).toBe('denied');
+    expect(calls).toEqual([]);
+  });
+  it('rejects foreign frames and same-backend senders using another recovery handle', async () => {
+    const h = await harness();
+    const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
+    const captured = (await h.handlers.get(channels.CAPTURE)!(h.event, {})) as {
+      result: { id: string };
+    };
+    const other = h.createSender();
+    const before = h.socket.frames.length;
+    for (const event of [
+      other.event,
+      { ...h.event, senderFrame: {} },
+      { sender: {}, senderFrame: {} },
+    ]) {
+      const result = await h.handlers.get(channels.REQUEST)!(event as IpcMainInvokeEvent, {
+        id: captured.result.id,
+        method: 'git.status',
+        params: {},
+      });
+      expect(result).toMatchObject({ ok: false });
+    }
+    expect(h.socket.frames).toHaveLength(before);
+  });
+});
+
+it('isolates subscription notifications, replacement groups and controls between same-backend windows', async () => {
+  const h = await harness();
+  const other = h.createSender();
+  const a = await h.capture(),
+    b = await other.capture();
+  cleanup.push(() => {
+    a.dispose();
+    b.dispose();
+  });
+  const receivedA = vi.fn(),
+    receivedB = vi.fn();
+  a.onNotification(receivedA);
+  b.onNotification(receivedB);
+  const params = { eventTypes: ['file:*'], replaceGroup: 'files', lossRecovery: 1 };
+  const subscribingA = a.request('events.subscribe', params);
+  const requestA = h.socket.frames.at(-1)!;
+  const subscribingB = b.request('events.subscribe', params);
+  const requestB = h.socket.frames.at(-1)!;
+  const loss = (subscriptionId: string) => ({
+    method: 'events.lost',
+    params: {
+      subscriptionId,
+      generation: '1',
+      scope: { workspaceId: null },
+    },
+  });
+  h.socket.batch([
+    loss('a'),
+    loss('b'),
+    { id: requestB.id, result: { subscriptionId: 'b', lossRecovery: 1 } },
+    { id: requestA.id, result: { subscriptionId: 'a', lossRecovery: 1 } },
+  ]);
+  await Promise.all([subscribingA, subscribingB]);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(receivedA).toHaveBeenCalledExactlyOnceWith(loss('a'));
+  expect(receivedB).toHaveBeenCalledExactlyOnceWith(loss('b'));
+  expect((requestA.params as { replaceGroup: string }).replaceGroup).not.toBe(
+    (requestB.params as { replaceGroup: string }).replaceGroup,
+  );
+  const before = h.socket.frames.length;
+  await expect(b.request('events.unsubscribe', { subscriptionId: 'a' })).rejects.toThrow();
+  await expect(b.fence(['a'], vi.fn())).rejects.toThrow();
+  expect(h.socket.frames).toHaveLength(before);
+});
+
+it.each(['git.status', 'file.read'])('preserves captured %s reads', async (method) => {
+  const h = await harness();
+  const session = await h.capture();
+  cleanup.push(() => session.dispose());
+  const read = session.request(method, { workspaceId: 'ws-a' });
+  const request = h.socket.frames.at(-1)!;
+  expect(request.method).toBe(method);
+  h.socket.reply(request.id, { value: 'current' });
+  await expect(read).resolves.toEqual({ value: 'current' });
+});
+
+it('retires a capture when pre-ack staging overflows and cleans up its late subscription', async () => {
+  const h = await harness();
+  const session = await h.capture();
+  cleanup.push(() => session.dispose());
+  const subscribing = session.request('events.subscribe', { eventTypes: ['file:*'] });
+  const rejected = expect(subscribing).rejects.toThrow();
+  const request = h.socket.frames.at(-1)!;
+  h.socket.batch(
+    Array.from({ length: 65 }, (_, i) => ({
+      method: 'events.lost',
+      params: { subscriptionId: 'early-' + i },
+    })),
+  );
+  await rejected;
+  expect(session.isCurrent()).toBe(false);
+  h.socket.reply(request.id, { subscriptionId: 'late' });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(h.socket.frames.at(-1)).toMatchObject({
+    method: 'events.unsubscribe',
+    params: { subscriptionId: 'late' },
   });
 });

@@ -8,6 +8,9 @@ import {
 } from '../../../main/window-backend';
 import type { JsonRpcClient, RepositoryConnection } from './json-rpc-client';
 
+import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
+
+const MAX_EARLY_NOTIFICATIONS = 64;
 const MAX_SESSIONS = 64;
 const MAX_REQUESTS_PER_SESSION = 64;
 const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
@@ -38,6 +41,8 @@ export function registerEventRecoveryHandlers(
     stop: () => void;
     leases: Set<string>;
     requests: number;
+    subscribing: number;
+    early: Array<{ method: string; params?: unknown }>;
   }
   const entries = new Map<string, Entry>();
   let disposed = false;
@@ -67,6 +72,7 @@ export function registerEventRecoveryHandlers(
         .requestOnCapturedConnection(entry.connection, 'events.unsubscribe', { subscriptionId })
         .catch(() => {});
     entry.leases.clear();
+    entry.early = [];
   }
   function admitted(event: IpcMainInvokeEvent, id: string) {
     const entry = entries.get(id);
@@ -94,6 +100,8 @@ export function registerEventRecoveryHandlers(
       stop: () => {},
       leases: new Set(),
       requests: 0,
+      subscribing: 0,
+      early: [],
     };
     entries.set(id, entry);
     const retire = () => drop(id);
@@ -103,8 +111,22 @@ export function registerEventRecoveryHandlers(
         return;
       }
       if (source.type === 'notification' && source.incarnation === connection.incarnation) {
+        const notification = source.notification;
+        // The source feed also carries private repository authority IDs. None of
+        // those frames may escape through this generic subscription-only route.
+        if (notification.method !== 'events.event' && notification.method !== 'events.lost') return;
+        const subscriptionId = (notification.params as { subscriptionId?: unknown } | null)
+          ?.subscriptionId;
+        if (typeof subscriptionId !== 'string') return;
+        if (!entry.leases.has(subscriptionId)) {
+          if (entry.subscribing) {
+            if (entry.early.length >= MAX_EARLY_NOTIFICATIONS) drop(id);
+            else entry.early.push(notification);
+          }
+          return;
+        }
         try {
-          send(entry, { id, kind: 'notification', notification: source.notification });
+          send(entry, { id, kind: 'notification', notification });
         } catch {
           drop(id);
         }
@@ -135,23 +157,65 @@ export function registerEventRecoveryHandlers(
       !entry ||
       entry.requests >= MAX_REQUESTS_PER_SESSION ||
       method === 'client.hello' ||
+      requiresRepositoryRoute(method, params) ||
+      isRepositoryCheckoutCreate(method, params) ||
+      (method === 'events.subscribe' && !replyId) ||
       (method === 'events.fence' && (!replyId || !entry.connection.eventStreamRecovery))
     )
       return unavailable();
+    const controls = params as { subscriptionId?: unknown; subscriptionIds?: unknown } | null;
+    if (
+      method === 'events.unsubscribe' &&
+      (typeof controls?.subscriptionId !== 'string' || !entry.leases.has(controls.subscriptionId))
+    )
+      return unavailable();
+    if (
+      method === 'events.fence' &&
+      (!Array.isArray(controls?.subscriptionIds) ||
+        !controls.subscriptionIds.length ||
+        controls.subscriptionIds.length > 64 ||
+        new Set(controls.subscriptionIds).size !== controls.subscriptionIds.length ||
+        controls.subscriptionIds.some(
+          (lease) => typeof lease !== 'string' || !entry.leases.has(lease),
+        ))
+    )
+      return unavailable();
+    const subscription = params as { replaceGroup?: unknown } | null;
+    // Replace-group names are connection-wide on the daemon, but renderer owners
+    // are narrower. Never let one captured sender replace another sender's lease.
+    const routedParams =
+      method === 'events.subscribe' && typeof subscription?.replaceGroup === 'string'
+        ? { ...subscription, replaceGroup: `${id}:${subscription.replaceGroup}` }
+        : params;
     entry.requests++;
+    if (method === 'events.subscribe') entry.subscribing++;
     try {
       const result = await entry.client.requestOnCapturedConnection(
         entry.connection,
         method,
-        params,
+        routedParams,
         {
           timeoutMs: method === 'events.fence' ? 5000 : 30000,
-          observe: replyId
-            ? (result) => {
-                if (current(entry) && entries.get(id) === entry)
-                  send(entry, { id, kind: 'reply', replyId, result });
-              }
-            : undefined,
+          observe: (result) => {
+            if (!current(entry) || entries.get(id) !== entry) return;
+            const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
+            // Ownership must be recorded at decode, before any following frame.
+            if (method === 'events.subscribe' && typeof subscriptionId === 'string')
+              entry.leases.add(subscriptionId);
+            if (method === 'events.unsubscribe' && typeof controls?.subscriptionId === 'string')
+              entry.leases.delete(controls.subscriptionId);
+            if (replyId) send(entry, { id, kind: 'reply', replyId, result });
+            if (method === 'events.subscribe' && typeof subscriptionId === 'string') {
+              const ready = entry.early.filter(
+                (n) =>
+                  (n.params as { subscriptionId?: unknown } | null)?.subscriptionId ===
+                  subscriptionId,
+              );
+              entry.early = entry.early.filter((n) => !ready.includes(n));
+              for (const notification of ready)
+                send(entry, { id, kind: 'notification', notification });
+            }
+          },
         },
       );
       if (method === 'events.subscribe') {
@@ -163,18 +227,9 @@ export function registerEventRecoveryHandlers(
                 subscriptionId,
               })
               .catch(() => {});
-          else entry.leases.add(subscriptionId);
         }
       }
       if (!current(entry) || entries.get(id) !== entry) return unavailable();
-      if (
-        method === 'events.unsubscribe' &&
-        params &&
-        typeof params === 'object' &&
-        'subscriptionId' in params &&
-        typeof params.subscriptionId === 'string'
-      )
-        entry.leases.delete(params.subscriptionId);
       return { ok: true, result };
     } catch (error) {
       const failure = error as { message?: string; code?: unknown; toErrorPayload?: () => unknown };
@@ -187,6 +242,7 @@ export function registerEventRecoveryHandlers(
       };
     } finally {
       entry.requests--;
+      if (method === 'events.subscribe' && --entry.subscribing === 0) entry.early = [];
     }
   });
   ipc.handle(channels.RELEASE, (event, payload: unknown) => {

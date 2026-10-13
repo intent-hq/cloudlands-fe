@@ -1,3 +1,4 @@
+import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
 import { registerEventRecoveryHandlers } from './event-recovery-ipc';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
@@ -4325,36 +4326,14 @@ export function registerBackendHandlers(): void {
       if (typeof method !== 'string' || method.length === 0) {
         return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
       }
-      if (
-        method.startsWith('sourceControl.read.') ||
-        method.startsWith('sourceControl.checkout.') ||
-        method === 'workspace.repositoryContext' ||
-        method === 'workspace.repositoryContext.capture' ||
-        method === 'workspace.repositoryContext.release' ||
-        method === 'workspace.repositorySelection.capture' ||
-        method === 'workspace.repositorySelection.save' ||
-        method === 'workspace.repositorySelection.reset' ||
-        method === 'workspace.repositorySelection.reconcile' ||
-        method === 'workspace.repositorySelection.release' ||
-        method === 'accept-changes.reconcile' ||
-        method === 'accept-changes.release' ||
-        ((method === 'accept-changes.prepare' || method === 'accept-changes.execute') &&
-          payload.params !== null &&
-          typeof payload.params === 'object' &&
-          Object.prototype.hasOwnProperty.call(payload.params, 'review'))
-      ) {
+      if (requiresRepositoryRoute(method, payload.params)) {
         return {
           ok: false,
           // i18n-ignore (internal route diagnostic; facade emits a typed unavailable state)
           error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: 'Repository route required' },
         };
       }
-      if (
-        method === 'workspace.create' &&
-        payload.params !== null &&
-        typeof payload.params === 'object' &&
-        Object.prototype.hasOwnProperty.call(payload.params, 'repositoryCheckout')
-      ) {
+      if (isRepositoryCheckoutCreate(method, payload.params)) {
         if (payload.localMachine === true || !checkoutRoutes)
           return {
             ok: false,
