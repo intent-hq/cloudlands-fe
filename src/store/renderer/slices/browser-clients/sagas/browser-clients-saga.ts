@@ -189,12 +189,21 @@ function* readLiveClients(
         getRecoveryLifetime(action) ??
         rendererEventRecovery.capture(browserClientRecoveryKey(wsId));
       const presenceChange = yield* selectLiveClientsLoaded.effect(wsId);
-      const read = yield* untilWorkspaceCleanup(
-        wsId,
-        call([appClient.clients, appClient.clients.list], wsId),
-      );
+      // A workspace lane must process teardown before releasing its trailing
+      // trigger. Only a global refresh needs to abandon individual workspace
+      // reads here, since its lane survives those workspace removals.
+      const read = action.payload[0]
+        ? yield* race({
+            result: call([appClient.clients, appClient.clients.list], wsId),
+            cleanup: take(browserConnectionInvalidated),
+          })
+        : yield* untilWorkspaceCleanup(
+            wsId,
+            call([appClient.clients, appClient.clients.list], wsId),
+          );
       if (
         read.cleanup ||
+        read.result === undefined ||
         epoch !== connection.epoch ||
         connection.reads.get(wsId) !== version ||
         !receipt.commit(() => undefined)

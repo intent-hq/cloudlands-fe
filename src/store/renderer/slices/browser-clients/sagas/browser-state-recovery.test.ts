@@ -1255,3 +1255,57 @@ it.each([undefined, WS])(
     } else expect(selectLiveClients.select(store.state)).toEqual([]);
   },
 );
+
+it.each(['unmount', 'dispose'])(
+  'settles active and queued receipts on %s without starting a trailing read',
+  async (ending) => {
+    const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+    const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const roster = deferred<unknown>(),
+      selection = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'client.list'
+        ? roster.promise
+        : method === 'workspace.getBrowserClient'
+          ? selection.promise
+          : normal(method, params),
+    );
+    rpc.request.mockClear();
+    const key = browserClientRecoveryKey(WS);
+    rendererEventRecovery.push(key);
+    const activeDone = vi.fn();
+    const active = dispatchBrowserClientEvent(WS, rendererEventRecovery.capture(key)).then(
+      activeDone,
+    );
+    await settle();
+    rendererEventRecovery.push(key);
+    const queuedDone = vi.fn();
+    const queued = dispatchBrowserClientEvent(WS, rendererEventRecovery.capture(key)).then(
+      queuedDone,
+    );
+    await settle();
+    expect(activeDone).not.toHaveBeenCalled();
+    expect(queuedDone).not.toHaveBeenCalled();
+    if (ending === 'unmount') store.dispatch(workspaceUnmounted(WS));
+    else cancel();
+    await settle();
+    expect(activeDone).toHaveBeenCalledOnce();
+    expect(queuedDone).toHaveBeenCalledOnce();
+    expect(calls('client.list')).toHaveLength(1);
+    expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+    const afterRetirement = JSON.stringify(store.state.browserClients);
+    roster.resolve({ clients: [{ ...client, clientId: 'obsolete-client' }] });
+    selection.resolve({
+      browserClient: { source: 'workspace', clientId: 'obsolete-pin', resolved: null },
+    });
+    await Promise.all([active, queued]);
+    await settle();
+    expect(JSON.stringify(store.state.browserClients)).toBe(afterRetirement);
+    expect(calls('client.list')).toHaveLength(1);
+    expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+  },
+);
