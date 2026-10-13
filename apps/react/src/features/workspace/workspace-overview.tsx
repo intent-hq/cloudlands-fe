@@ -10,6 +10,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { WorkspaceStatusIcon } from '@/components/workspace/workspace-status-icon';
 import { ResourceNotFound } from '@/components/common/resource-not-found';
 import { HomeSearch } from '@/features/home/components/home-search';
+import { HomeLoading } from '@/features/home/components/home-loading';
 import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
 import {
   Screen,
@@ -43,7 +44,7 @@ import {
 
 let nextHydrationGeneration = 0;
 
-function WorkspaceReadiness() {
+function WorkspaceReadiness({ list = false }: { list?: boolean }) {
   const health = selectDaemonHealth();
   const connectedBefore = selectHasEverConnected();
   if (health.value === 'down' && connectedBefore.value)
@@ -56,7 +57,7 @@ function WorkspaceReadiness() {
         data-testid="workspace-connection-lost"
       />
     );
-  return <LoadingState label="Waiting for the daemon workspace list" />;
+  return list ? <HomeLoading /> : <LoadingState label="Waiting for the daemon workspace list" />;
 }
 
 function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
@@ -117,7 +118,7 @@ export function WorkspaceList({ query = '' }: { query?: string }) {
           placeholder={m.layout_activeCard_search_placeholder()}
         />
         {!loaded.value ? (
-          <WorkspaceReadiness />
+          <WorkspaceReadiness list />
         ) : allIds.value.length === 0 ? (
           <p>No workspaces on this daemon.</p>
         ) : ids.value.length === 0 ? (

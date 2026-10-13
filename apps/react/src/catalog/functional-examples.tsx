@@ -22,6 +22,7 @@ import { ChatCommandExamples } from './chat-command-examples';
 import { CommandPaletteExamples } from './command-palette-examples';
 import { EditorIconExamples } from './editor-icon-examples';
 import { DeviceIconExamples } from './device-icon-examples';
+import { HomeLoadingExamples } from './home-loading-examples';
 import { BrowserDeviceFrameExamples } from './browser-device-frame-examples';
 import { ChatReferenceExamples } from './chat-reference-examples';
 import { ChatInlineExamples } from './chat-inline-examples';
@@ -499,6 +500,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'command-palette' && <CommandPaletteExamples />}
       {slug === 'editor-icons' && <EditorIconExamples />}
       {slug === 'device-icons' && <DeviceIconExamples />}
+      {slug === 'home-loading' && <HomeLoadingExamples />}
       {slug === 'browser-device-frame' && <BrowserDeviceFrameExamples />}
       {slug === 'chat-reference' && <ChatReferenceExamples />}
       {slug === 'chat-inline' && <ChatInlineExamples />}
@@ -593,6 +595,7 @@ export function hasFunctionalExample(slug: string) {
     'command-palette',
     'editor-icons',
     'device-icons',
+    'home-loading',
     'browser-device-frame',
     'chat-reference',
     'chat-inline',
