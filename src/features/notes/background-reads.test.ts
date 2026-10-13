@@ -385,6 +385,69 @@ describe('background reads through the real store, sagas, clients and event brid
     expect(reads('note.get')).toHaveLength(1);
   });
 
+  it.each(['slim', 'uncached'] as const)(
+    'loads a hidden %s note body when opened after a task metadata push',
+    async (cached) => {
+      const slim = { ...note(''), rev: 1, contentLength: 42, contentPreview: 'Preview' };
+      store.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: cached === 'slim' ? [slim] : [] }));
+      const { content: _body, ...metadata } = {
+        ...note(),
+        rev: 2,
+        metadata: { task: { status: 'complete' } },
+      };
+      event('task:status-changed', { noteId: 'task-note', newStatus: 'complete', note: metadata });
+      await settle();
+      expect(reads('note.get')).toEqual([]);
+      expect(reads('task.list')).toEqual([]);
+      expect(reads('workspace.get')).toEqual([]);
+      expect(
+        store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].metadata?.task?.status,
+      ).toBe('complete');
+      backend.onRequest('note.get', () => ({ note: { ...metadata, content: 'Actual body' } }));
+      store.dispatch(noteContentViewRequested('opening', '1', WS, 'task-note'));
+      await settle();
+      expect(reads('note.get')).toHaveLength(1);
+      expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
+        'Actual body',
+      );
+    },
+  );
+
+  it.each([3, 2])(
+    'rejects delayed legacy task status alongside metadata revision %i',
+    async (rev) => {
+      const current = { ...note(), rev: 3, metadata: { task: { status: 'complete' } } };
+      store.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [current] }));
+      backend.onRequest('task.list', () => ({
+        tasks: [{ id: 'task-note', title: 'Task', status: 'complete', rev: 3 }],
+        stats: { total: 1, completed: 1, inProgress: 0 },
+      }));
+      store.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      const readsBefore = [...backend.requests];
+      const { content: _body, ...metadata } = {
+        ...current,
+        rev,
+        metadata: { task: { status: rev === 3 ? 'complete' : 'in_progress' } },
+      };
+      event('task:status-changed', {
+        noteId: 'task-note',
+        newStatus: 'in_progress',
+        note: metadata,
+      });
+      await settle();
+      expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note']).toMatchObject({
+        rev: 3,
+        content: 'fresh',
+        metadata: { task: { status: 'complete' } },
+      });
+      expect(selectWorkspaceTasks.select(store.state, WS)).toEqual([
+        { id: 'task-note', title: 'Task', status: 'complete', rev: 3 },
+      ]);
+      expect(backend.requests).toEqual(readsBefore);
+    },
+  );
+
   it('updates full task metadata without fetching even when its body is displayed', async () => {
     store.dispatch(noteContentViewRequested('view', '1', WS, 'task-note'));
     await settle();
@@ -448,6 +511,46 @@ describe('background reads through the real store, sagas, clients and event brid
     store.dispatch(noteContentViewReleased(WS, 'view-a'));
     store.dispatch(noteContentViewReleased(WS, 'view-b'));
   });
+
+  it.each([true, false])(
+    'refreshes an older joined read after hide/update/show only while visible=%s',
+    async (visible) => {
+      const pending = deferred<{ note: ReturnType<typeof note> }>();
+      store.dispatch(
+        loadWorkspaceNotesSucceeded([WS], { [WS]: [{ ...note('body one'), rev: 1 }] }),
+      );
+      let calls = 0;
+      backend.onRequest('note.get', () =>
+        ++calls === 1 ? pending.promise : { note: { ...note('body three'), rev: 3 } },
+      );
+      store.dispatch(noteContentViewRequested('view-a', '1', WS, 'task-note'));
+      await settle();
+      const { content: _body, ...metadata } = note();
+      event('note:updated', { noteId: 'task-note', note: { ...metadata, rev: 2 } });
+      await settle();
+      expect(reads('note.get')).toHaveLength(1);
+      store.dispatch(noteContentViewReleased(WS, 'view-a'));
+      event('note:updated', { noteId: 'task-note', note: { ...metadata, rev: 3 } });
+      await settle();
+      store.dispatch(noteContentViewRequested('view-a', '2', WS, 'task-note'));
+      store.dispatch(noteContentViewRequested('view-b', '1', WS, 'task-note'));
+      await settle();
+      if (!visible) {
+        store.dispatch(noteContentViewReleased(WS, 'view-a'));
+        store.dispatch(noteContentViewReleased(WS, 'view-b'));
+      }
+      pending.resolve({ note: { ...note('body two'), rev: 2 } });
+      await settle();
+      expect(reads('note.get')).toHaveLength(visible ? 2 : 1);
+      expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
+        visible ? 'body three' : 'body one',
+      );
+      if (visible)
+        expect(
+          store.state.workspaceNotes.byWorkspaceId[WS].staleContentByNoteId['task-note'],
+        ).toBeUndefined();
+    },
+  );
 
   it('preserves one trailing event read when a genuine note event arrives during content demand', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();

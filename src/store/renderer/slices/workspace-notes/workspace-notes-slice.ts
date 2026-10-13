@@ -499,11 +499,22 @@ workspaceNotesReducer.with(noteMetadataPushed, (state, { payload: [workspaceId, 
   const existing = getItem(ws.notes, note.id);
   if (existing?.rev !== undefined && note.rev !== undefined && note.rev < existing.rev)
     return state;
-  const next = { ...note, content: existing?.content ?? '' };
+  const next = {
+    ...note,
+    content: existing?.content ?? '',
+    ...(existing && {
+      contentLength: existing.contentLength,
+      contentPreview: existing.contentPreview,
+    }),
+  };
   return setWorkspaceState(state, workspaceId, {
     ...ws,
     notes: existing ? replaceItem(ws.notes, note.id, next) : addItem(ws.notes, next),
     notesVersion: ws.notesVersion + 1,
+    // Metadata cannot establish that a newly discovered note has an empty body.
+    staleContentByNoteId: existing
+      ? ws.staleContentByNoteId
+      : { ...ws.staleContentByNoteId, [note.id]: 1 },
   });
 });
 workspaceNotesReducer.with(noteContentInvalidated, (state, { payload: [workspaceId, noteId] }) => {

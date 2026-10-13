@@ -73,6 +73,33 @@ describe('workspaceNotesReducer', () => {
     ]);
   });
 
+  it('retains slim body markers when applying task metadata', () => {
+    const original = mockNote('n', WS_1, {
+      content: '',
+      contentLength: 42,
+      contentPreview: 'Preview',
+      rev: 1,
+    });
+    let state = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [original] }),
+    );
+    const { content: _body, ...metadata } = mockNote('n', WS_1, { rev: 2 });
+    state = workspaceNotesReducer(state, noteMetadataPushed(WS_1, metadata));
+    expect(getItem(state.byWorkspaceId[WS_1].notes, original.id)).toMatchObject({
+      content: '',
+      contentLength: 42,
+      contentPreview: 'Preview',
+      rev: 2,
+    });
+  });
+
+  it('marks a newly pushed metadata-only note as needing its first body read', () => {
+    const { content: _body, ...metadata } = mockNote('n');
+    const state = workspaceNotesReducer(initialState, noteMetadataPushed(WS_1, metadata));
+    expect(state.byWorkspaceId[WS_1].staleContentByNoteId.n).toBe(1);
+  });
+
   it('updates note task metadata directly from task pushes and clears removed task-ness', () => {
     const original = mockNote('n', WS_1, {
       metadata: { task: { status: 'in_progress', acceptanceCriteria: ['Keep this'] } },

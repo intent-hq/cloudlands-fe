@@ -2119,16 +2119,9 @@ function handleNoteEvent(
 }
 
 /**
- * `task:status-changed` (§6.5) carries the self-sufficient payload
- * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
- * mints the FE-canonical status word (`not_started` | `in_progress` |
- * `complete` | ...) via `status_word` in `intent-services`, so no mapping is
- * needed. Each reducer's own guard makes this a no-op if its workspace is not
- * initialized or the task/status is unknown/unchanged. The workspace-notes
- * dispatch mirrors the local write path in `tasks-write-service` — the
- * context sidebar renders its row icon from `note.metadata.task.status`, so
- * without it a status change from another client/agent stayed stale until
- * the note was opened (intent#4362).
+ * Current task metadata is authoritative over the legacy transition fields,
+ * which may describe an earlier commit than the attached note projection.
+ * Task rows converge through task:updated; older daemons use the status fallback.
  */
 function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -2139,6 +2132,7 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   const note = data.note as Omit<Note, 'content'> | undefined;
   if (note && String(note.id) === noteId && String(note.workspaceId) === workspaceId) {
     appStore.dispatch(noteMetadataPushed(workspaceId, note));
+    return;
   }
   appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));

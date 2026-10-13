@@ -549,20 +549,37 @@ function* routeLineAttributionUpdated(payload: LineAttributionUpdatedPayload) {
 function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoadedRequested>) {
   const [workspaceId, noteId] = action.payload;
   try {
-    const cached = yield* selectNoteById.effect(workspaceId, noteId);
-    if (!cached) {
-      yield* put(action.success(false));
-      return;
+    const authority = yield* selectPrincipalConnectionContext.effect();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const cached = yield* selectNoteById.effect(workspaceId, noteId);
+      const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
+      if (!cached) {
+        yield* put(action.success(false));
+        return;
+      }
+      if (!isNoteContentStale(cached) && !ws.staleContentByNoteId[noteId]) {
+        yield* put(action.success(true));
+        return;
+      }
+      // Reopening can join a read started before a hidden invalidation. Recheck
+      // the applied cache, and share one fresh read only while still displayed.
+      if (attempt > 0 && !(yield* selectHasVisibleNoteContent.effect(workspaceId, noteId))) {
+        yield* put(action.success(false));
+        return;
+      }
+      const request = readNoteRequested(workspaceId, noteId);
+      yield* put(request);
+      const note = yield* call(() => request.promise);
+      if (!note || authority !== (yield* selectPrincipalConnectionContext.effect())) {
+        yield* put(action.success(false));
+        return;
+      }
     }
+    const current = yield* selectNoteById.effect(workspaceId, noteId);
     const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
-    if (!isNoteContentStale(cached) && !ws.staleContentByNoteId[noteId]) {
-      yield* put(action.success(true));
-      return;
-    }
-    const request = readNoteRequested(workspaceId, noteId);
-    yield* put(request);
-    const note = yield* call(() => request.promise);
-    yield* put(action.success(note !== null && !isNoteContentStale(note)));
+    yield* put(
+      action.success(!!current && !isNoteContentStale(current) && !ws.staleContentByNoteId[noteId]),
+    );
   } catch (error) {
     logger.error('Failed to load full note content', error);
     yield* put(action.success(false));
