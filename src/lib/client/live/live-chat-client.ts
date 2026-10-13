@@ -592,8 +592,12 @@ export class ChatTranscriptReconciler {
       const entity = parseDeltaEntity(raw, this.incremental);
       if (!entity) continue;
       this.upsertBlock(entity);
-      sawUpsert = true;
-      if (entity.streamingComplete) sawTerminal = true;
+      // Persisted user/system/tool rows also carry streamingComplete (§7.1),
+      // but only assistant entities describe turn activity.
+      if (entity.role === undefined || entity.role === 'assistant') {
+        sawUpsert = true;
+        if (entity.streamingComplete) sawTerminal = true;
+      }
     }
     if (delta.removedIds.length > 0) {
       const removed = new Set(delta.removedIds);
@@ -606,13 +610,13 @@ export class ChatTranscriptReconciler {
         };
       });
     }
-    // Terminal frame: the turn is done; a live (non-terminal) upsert always
-    // means a turn is in flight. Terminal-wins assumes a §7.1 delta batch
-    // never mixes one turn's terminal frame with another turn's live blocks:
-    // deltas are emitted per agent-event, and each event belongs to exactly
-    // one in-flight turn (an agent runs at most one turn at a time).
-    if (sawTerminal) this.streaming = false;
-    else if (sawUpsert) this.streaming = true;
+    // A terminal settles its own assistant row. A newer assistant may already
+    // be streaming when the old terminal arrives; preserve that live work.
+    if (sawTerminal) {
+      this.streaming = this.messages.some(
+        (message) => message.role === 'assistant' && message.isStreaming === true,
+      );
+    } else if (sawUpsert) this.streaming = true;
     this.expectedSeq = seq + 1;
     return 'applied';
   }
