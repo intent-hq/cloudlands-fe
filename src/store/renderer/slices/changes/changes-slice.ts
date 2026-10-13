@@ -179,6 +179,11 @@ export const updateAgentStats = createAction(
   (agentId: string, stats: LineChangeStats) => ({ agentId, stats }),
 );
 
+export const clearAgentLineStats = createAction(
+  'changes/clearAgentLineStats',
+  (agentId: string) => ({ agentId }),
+);
+
 /** Saga trigger: request line-change stats for a single agent */
 export const requestAgentLineStats = createAction(
   'changes/requestAgentLineStats',
@@ -344,6 +349,14 @@ fileTrackingReducer.with(updateAgentStats, (state, { payload }) => ({
     [payload.agentId]: payload.stats,
   },
 }));
+fileTrackingReducer.with(clearAgentLineStats, (state, { payload: { agentId } }) => {
+  if (!(agentId in state.agentStats) && !(agentId in state.agentLineStatsRequests)) return state;
+  const agentStats = { ...state.agentStats };
+  const agentLineStatsRequests = { ...state.agentLineStatsRequests };
+  delete agentStats[agentId];
+  delete agentLineStatsRequests[agentId];
+  return { ...state, agentStats, agentLineStatsRequests };
+});
 fileTrackingReducer.with(agentLineStatsRequestStarted, (state, { payload }) => ({
   ...state,
   agentLineStatsRequests: {

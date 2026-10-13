@@ -1,3 +1,9 @@
+import {
+  updateAgentStats,
+  clearAgentLineStats,
+  agentLineStatsRequestSucceeded,
+} from '$store/renderer/slices/changes/changes-slice';
+import type { Metrics } from '$features/line-changes/line-changes.client';
 import { trackAgentMetadataRead } from './agent-metadata-read-lane';
 export { trackAgentMetadataRead } from './agent-metadata-read-lane';
 import type {
@@ -48,7 +54,25 @@ import {
   agentMetadataDemandListeners as listeners,
 } from './agent-metadata-demand';
 export { acquireAgentMetadataDemand } from './agent-metadata-demand';
+function lineStatsIdsFor(workspaceId: string, store: AgentRecoveryStore): string[] {
+  const state = store.getState();
+  return [
+    ...new Set(
+      [
+        ...Object.keys(state.changes?.agentStats ?? {}),
+        ...Object.keys(state.changes?.agentLineStatsRequests ?? {}),
+      ]
+        .filter((id) => state.agentSessions.byAgentId[id]?.workspaceId === workspaceId)
+        .concat(
+          [...(demands.get(workspaceId) ?? [])].flatMap((d) =>
+            d.lineStats && d.agentId ? [d.agentId] : [],
+          ),
+        ),
+    ),
+  ];
+}
 interface MetadataSnapshot extends AgentListResult {
+  lineStats: Array<{ agentId: string; metrics: Metrics | null }>;
   details: AgentSession[];
   orphanIds?: string[];
   staleRuntimeFlagClearAgentIds: string[];
@@ -179,6 +203,24 @@ async function readMetadata(
     (a) =>
       a.workspaceId === workspaceId && !a.pendingDeleteAt && !isAgentDeletionPending(String(a.id)),
   );
+  const lineStats: MetadataSnapshot['lineStats'] = [];
+  for (const agentId of lineStatsIdsFor(workspaceId, store)) {
+    if (removedIds.includes(agentId) || isAgentDeletionPending(agentId)) {
+      lineStats.push({ agentId, metrics: null });
+      continue;
+    }
+    try {
+      const metrics = await reader.request<Metrics | null>('metrics.getAgentStats', {
+        workspaceId,
+        agentId,
+      });
+      lineStats.push({ agentId, metrics });
+    } catch (error) {
+      const e = error as { rpcCode?: number; data?: { code?: string } };
+      if (e.rpcCode !== -32602 || e.data?.code !== 'not-found') throw error;
+      lineStats.push({ agentId, metrics: null });
+    }
+  }
   const staleRuntimeFlagClearAgentIds = [...agents, ...details].flatMap((agent) => {
     const prior = state.agentSessions.byAgentId[String(agent.id)];
     return staleRuntimeFlagClearUpsertOptions(
@@ -188,7 +230,16 @@ async function readMetadata(
       ? [String(agent.id)]
       : [];
   });
-  return { ...top, agents, details, orphanIds, staleRuntimeFlagClearAgentIds, removedIds, loaded };
+  return {
+    ...top,
+    agents,
+    details,
+    orphanIds,
+    staleRuntimeFlagClearAgentIds,
+    removedIds,
+    loaded,
+    lineStats,
+  };
 }
 
 export function installAgentMetadataRecovery(
@@ -196,7 +247,10 @@ export function installAgentMetadataRecovery(
   store: AgentRecoveryStore,
 ): () => void {
   const context = selectPrincipalActionContext.select(store.getState());
-  const owners = new Map<string, { handle: RendererRecoveryHandle; signature: string }>();
+  const owners = new Map<
+    string,
+    { handle: RendererRecoveryHandle; signature: string; lineStatsIds: Set<string> }
+  >();
   let disposed = false,
     syncing = false,
     applying = false;
@@ -208,6 +262,7 @@ export function installAgentMetadataRecovery(
       bin?.retiredAgentsLoaded,
       bin?.loadedDelegatedParentIds,
       bin?.orphanedDelegatedAgentsLoaded,
+      lineStatsIdsFor(workspaceId, store).sort(),
       [...new Set([...(demands.get(workspaceId) ?? [])].map((d) => JSON.stringify(d)))].sort(),
     ]);
   };
@@ -233,10 +288,11 @@ export function installAgentMetadataRecovery(
         const signature = signatureFor(workspaceId);
         let owner = owners.get(workspaceId);
         if (!owner) {
+          const lineStatsIds = new Set(lineStatsIdsFor(workspaceId, store));
           const handle = scope.registerResource({
             key: agentMetadataRecoveryKey(workspaceId),
             workspaceId,
-            eventTypes: ['agent:*'],
+            eventTypes: ['agent:*', 'changes:metrics-changed'],
             active: mounted.has(workspaceId) || demands.has(workspaceId),
             isCurrent: () =>
               !disposed && context === selectPrincipalActionContext.select(store.getState()),
@@ -301,6 +357,20 @@ export function installAgentMetadataRecovery(
                       staleRuntimeFlagClearAgentIds: snapshot.staleRuntimeFlagClearAgentIds,
                     }),
                   );
+                for (const { agentId, metrics } of snapshot.lineStats) {
+                  lineStatsIds.add(agentId);
+                  const timestamp = new Date().toISOString();
+                  if (metrics)
+                    store.dispatch(
+                      updateAgentStats(agentId, {
+                        additions: typeof metrics.additions === 'number' ? metrics.additions : 0,
+                        deletions: typeof metrics.deletions === 'number' ? metrics.deletions : 0,
+                        timestamp,
+                      }),
+                    );
+                  else store.dispatch(clearAgentLineStats(agentId));
+                  store.dispatch(agentLineStatsRequestSucceeded(agentId, timestamp));
+                }
                 reconcileAgentFailureSnapshot([...agents, ...snapshot.details]);
               } finally {
                 applying = false;
@@ -316,6 +386,11 @@ export function installAgentMetadataRecovery(
                   store.dispatch(setAgentBackgroundPending(agentId, false));
             },
             retire: () => {
+              for (const agentId of lineStatsIds) {
+                const current = store.getState().agentSessions.byAgentId[agentId];
+                if (!current || current.workspaceId === workspaceId)
+                  store.dispatch(clearAgentLineStats(agentId));
+              }
               for (const entry of listPendingAgentDeletions())
                 if (entry.wsId === workspaceId) removePendingAgentDeletion(entry.agentId);
               for (const session of Object.values(store.getState().agentSessions.byAgentId))
@@ -326,12 +401,13 @@ export function installAgentMetadataRecovery(
               store.dispatch(removeWorkspaceAgentState(workspaceId));
             },
           });
-          owner = { handle, signature };
+          owner = { handle, signature, lineStatsIds };
           owners.set(workspaceId, owner);
         } else if (owner.signature !== signature) {
           owner.signature = signature;
           if (owner.handle.status.stale) owner.handle.invalidate();
         }
+        for (const agentId of lineStatsIdsFor(workspaceId, store)) owner.lineStatsIds.add(agentId);
         owner.handle.setActive(mounted.has(workspaceId) || demands.has(workspaceId));
       }
       for (const [workspaceId, owner] of owners)

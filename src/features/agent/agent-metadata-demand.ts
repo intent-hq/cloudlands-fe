@@ -1,5 +1,6 @@
 export interface AgentMetadataDemand {
   hud?: boolean;
+  lineStats?: boolean;
   agentId?: string;
   bin?: 'topLevel' | 'delegated' | 'background' | 'retired';
   parentAgentId?: string;

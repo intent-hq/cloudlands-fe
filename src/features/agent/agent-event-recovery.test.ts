@@ -1,3 +1,8 @@
+import {
+  fileTrackingReducer,
+  updateAgentStats,
+  agentLineStatsRequestStarted,
+} from '$store/renderer/slices/changes/changes-slice';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { RendererEventRecovery } from '$features/events/renderer-event-recovery';
@@ -172,6 +177,7 @@ function integration() {
     workspaceAgents: workspaceAgentsReducer(undefined, setAgents('ws', [agent])),
     agentSessions: agentSessionReducer(undefined, bulkUpsertSessions([agent])),
     agentQueue: h.state,
+    changes: fileTrackingReducer(undefined, { type: '@@init' }),
     agentSubscriptionUI: agentSubscriptionUIReducer(undefined, { type: '@@init' }),
     permission: permissionReducer(
       undefined,
@@ -198,6 +204,7 @@ function integration() {
       state = {
         ...state,
         principal: principalReducer(state.principal, action),
+        changes: fileTrackingReducer(state.changes, action),
         permission: permissionReducer(state.permission, action),
         agentSessions: agentSessionReducer(state.agentSessions, action),
         workspaceAgents: workspaceAgentsReducer(state.workspaceAgents, action),
@@ -600,6 +607,181 @@ it('removes only a missing agent detail while retaining its workspace and siblin
           method === 'agent.get' && (params as { agentId: string }).agentId === 'gone',
       ),
     ).toHaveLength(1);
+  } finally {
+    release();
+    h.stop();
+    h.registry.dispose();
+  }
+});
+
+describe('agent line statistics recovery', () => {
+  it('recovers the lost final metrics update without extra metadata reads or transcripts', async () => {
+    const h = integration();
+    h.store.dispatch(updateAgentStats('a', { additions: 1, deletions: 2, timestamp: 'old' }));
+    h.store.dispatch(agentLineStatsRequestStarted('a', 'old'));
+    const release = acquireAgentMetadataDemand('ws', { agentId: 'a' });
+    const fallback = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params) =>
+      method === 'metrics.getAgentStats'
+        ? { additions: 9, deletions: 4, filesChanged: 1 }
+        : fallback(method, params),
+    );
+    await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['changes:*'] }, { recover: true });
+    h.emit(loss);
+    h.emit(loss);
+    await settle();
+    expect(h.state.changes.agentStats.a).toMatchObject({ additions: 9, deletions: 4 });
+    expect(h.state.changes.agentLineStatsRequests.a.isLoading).toBe(false);
+    expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toEqual([
+      ['metrics.getAgentStats', { workspaceId: 'ws', agentId: 'a' }],
+    ]);
+    expect(h.request.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(1);
+    expect(h.fence).toHaveBeenCalledTimes(2);
+    expect(h.request.mock.calls.some(([m]) => /conversation|history/i.test(m))).toBe(false);
+    release();
+    h.stop();
+    h.registry.dispose();
+  });
+});
+
+it.each(['null', 'not-found'])(
+  'clears stale line statistics for %s without retiring sibling agents',
+  async (kind) => {
+    const h = integration();
+    h.store.dispatch(updateAgentStats('a', { additions: 99, deletions: 99, timestamp: 'old' }));
+    h.store.dispatch(
+      updateAgentStats('other-workspace', { additions: 3, deletions: 2, timestamp: 'other' }),
+    );
+    const release = acquireAgentMetadataDemand('ws', { agentId: 'a', lineStats: true });
+    try {
+      const base = h.request.getMockImplementation()!;
+      h.request.mockImplementation(async (method, params) => {
+        if (method !== 'metrics.getAgentStats') return base(method, params);
+        if (kind === 'not-found')
+          throw Object.assign(new Error('gone'), { rpcCode: -32602, data: { code: 'not-found' } });
+        return null;
+      });
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['changes:*'] }, { recover: true });
+      h.emit(loss);
+      await settle();
+      expect(h.state.changes.agentStats.a).toBeUndefined();
+      expect(h.state.changes.agentStats['other-workspace'].additions).toBe(3);
+      expect(h.state.agentSessions.byAgentId.a).toBeDefined();
+      expect(h.state.changes.agentLineStatsRequests.a.isLoading).toBe(false);
+      expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(1);
+      expect(h.fence).toHaveBeenCalledTimes(2);
+    } finally {
+      release();
+      h.stop();
+      h.registry.dispose();
+    }
+  },
+);
+
+it.each(['principal', 'workspace'])(
+  'retires line statistics before a held reply on %s replacement',
+  async (kind) => {
+    const h = integration();
+    h.store.dispatch(updateAgentStats('a', { additions: 1, deletions: 2, timestamp: 'old' }));
+    h.store.dispatch(agentLineStatsRequestStarted('a', 'old'));
+    const release = acquireAgentMetadataDemand('ws', { agentId: 'a', lineStats: true });
+    try {
+      const base = h.request.getMockImplementation()!;
+      let finish!: (value: unknown) => void;
+      h.request.mockImplementation((method, params) =>
+        method === 'metrics.getAgentStats'
+          ? new Promise((resolve) => {
+              finish = resolve;
+            })
+          : base(method, params),
+      );
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['changes:*'] }, { recover: true });
+      h.emit(loss);
+      await settle();
+      expect(finish).toBeDefined();
+      if (kind === 'workspace') h.registry.retireWorkspace('ws');
+      else h.store.dispatch(principalContextChanged('replacement-principal'));
+      expect(h.state.changes.agentStats.a).toBeUndefined();
+      expect(h.state.changes.agentLineStatsRequests.a).toBeUndefined();
+      finish({ additions: 99, deletions: 99, filesChanged: 1 });
+      await settle();
+      expect(h.state.changes.agentStats.a).toBeUndefined();
+      expect(h.state.changes.agentLineStatsRequests.a).toBeUndefined();
+      expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(1);
+      expect(h.fence).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      h.stop();
+      h.registry.dispose();
+    }
+  },
+);
+
+it('defers line statistics recovery until demand and shares the ordinary read barrier', async () => {
+  const h = integration();
+  h.store.dispatch(updateAgentStats('a', { additions: 1, deletions: 2, timestamp: 'old' }));
+  let release = () => {};
+  try {
+    const base = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params) =>
+      method === 'metrics.getAgentStats'
+        ? { additions: 9, deletions: 4, filesChanged: 1 }
+        : base(method, params),
+    );
+    await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['changes:*'] }, { recover: true });
+    const receipt = h.registry.capture('agents:["ws"]');
+    let finish!: () => void;
+    const ordinary = trackAgentMetadataRead('ws', async () => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      receipt.commit(() => {
+        h.store.dispatch(
+          updateAgentStats('a', { additions: 77, deletions: 77, timestamp: 'stale' }),
+        );
+        return undefined;
+      });
+    });
+    h.emit(loss);
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(0);
+    release = acquireAgentMetadataDemand('ws', { agentId: 'a', lineStats: true });
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(0);
+    finish();
+    await ordinary;
+    await settle();
+    expect(h.state.changes.agentStats.a).toMatchObject({ additions: 9, deletions: 4 });
+    expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(1);
+    expect(h.fence).toHaveBeenCalledTimes(2);
+  } finally {
+    release();
+    h.stop();
+    h.registry.dispose();
+  }
+});
+
+it('only reads line statistics with cached or explicit demand', async () => {
+  const h = integration();
+  let release = acquireAgentMetadataDemand('ws', { agentId: 'a' });
+  try {
+    const base = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params) =>
+      method === 'metrics.getAgentStats'
+        ? { additions: 9, deletions: 4, filesChanged: 1 }
+        : base(method, params),
+    );
+    await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['changes:*'] }, { recover: true });
+    h.emit(loss);
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(0);
+    release();
+    release = acquireAgentMetadataDemand('ws', { agentId: 'a', lineStats: true });
+    h.emit({ ...loss, params: { ...loss.params, generation: '2' } });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await settle();
+    expect(h.state.changes.agentStats.a).toMatchObject({ additions: 9, deletions: 4 });
+    expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(1);
   } finally {
     release();
     h.stop();
