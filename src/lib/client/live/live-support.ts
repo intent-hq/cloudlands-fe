@@ -756,6 +756,17 @@ export function captureNoteWorkspaceCacheLifetime(): RecoveryLifetime {
   };
 }
 
+/** Capture all original owners before a resolver can discover the target workspace. */
+export function captureNoteMutationAuthority(): (workspaceId: string) => boolean {
+  const cache = captureNoteWorkspaceCacheLifetime();
+  const selectAuthority = rendererEventRecovery.captureAuthoritySelector();
+  return (workspaceId) =>
+    cache.isCurrent() &&
+    ['notes', 'tasks'].every((domain) =>
+      selectAuthority(`${domain}:${JSON.stringify([workspaceId])}`).isCurrent(),
+    );
+}
+
 export function rememberNoteWorkspace(
   noteId: string,
   workspaceId: string,

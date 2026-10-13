@@ -1161,3 +1161,153 @@ describe('inactive resolver cache recovery', () => {
     }
   });
 });
+
+describe('task mutation dispatch after workspace resolution', () => {
+  const mutations = [
+    [
+      'task.updateStatus',
+      (client: import('./live-tasks-client').LiveTasksClient) =>
+        client.updateStatus('t1', 'Task', 'done'),
+    ],
+    [
+      'task.update',
+      (client: import('./live-tasks-client').LiveTasksClient) =>
+        client.update('t1', 1, { text: 'new' }),
+    ],
+    [
+      'task.updateNoteStatus',
+      (client: import('./live-tasks-client').LiveTasksClient) =>
+        client.updateNoteStatus('t1', 'complete'),
+    ],
+    [
+      'task.markAsTask',
+      (client: import('./live-tasks-client').LiveTasksClient) =>
+        client.markAsTask('t1', 'complete'),
+    ],
+    [
+      'task.setRelations',
+      (client: import('./live-tasks-client').LiveTasksClient) =>
+        client.setRelations('t1', { dependsOn: [] }),
+    ],
+    [
+      'task.assignAgent',
+      (client: import('./live-tasks-client').LiveTasksClient) => client.assignAgent('t1', 'agent'),
+    ],
+    [
+      'task.createPrerequisite',
+      (client: import('./live-tasks-client').LiveTasksClient) =>
+        client.createPrerequisite('t1', 'First'),
+    ],
+  ] as const;
+  for (const [method, mutate] of mutations) {
+    it.each(['retained', 'retired', 'replaced', 'notes', 'tasks'] as const)(
+      `${method} keeps original authority across resolver await: %s`,
+      async (change) => {
+        __resetLiveSupportCachesForTests();
+        const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+        const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+        const { LiveTasksClient } = await import('./live-tasks-client');
+        const { backendRequest } = await import('./backend-transport');
+        const session = () =>
+          createEventRecoverySession({
+            supported: true,
+            isCurrent: () => true,
+            onRetired: () => () => {},
+            onNotification: () => () => {},
+            request: async () => ({}),
+            dispose: () => {},
+          });
+        const scope = rendererEventRecovery.attach(session());
+        const owner = {
+          key: `${change}:${JSON.stringify(['ws'])}`,
+          workspaceId: 'ws',
+          eventTypes: ['task:*'],
+          isCurrent: () => true,
+          read: async () => null,
+          apply: () => undefined,
+          invalidate: () => undefined,
+          retire: () => undefined,
+        };
+        const handle =
+          change === 'notes' || change === 'tasks' ? scope.registerResource(owner) : undefined;
+        rememberNoteWorkspace('t1', 'ws');
+        vi.mocked(backendRequest).mockClear();
+        try {
+          const pending = mutate(new LiveTasksClient());
+          if (change === 'retired') rendererEventRecovery.dispose();
+          if (change === 'replaced') rendererEventRecovery.attach(session());
+          if (handle) {
+            handle.dispose();
+            scope.registerResource(owner);
+          }
+          const result = await pending;
+          expect(
+            vi.mocked(backendRequest).mock.calls.filter(([name]) => name === method),
+          ).toHaveLength(change === 'retained' ? 1 : 0);
+          expect(result.success).toBe(change === 'retained');
+        } finally {
+          rendererEventRecovery.dispose();
+          __resetLiveSupportCachesForTests();
+          vi.clearAllMocks();
+        }
+      },
+    );
+  }
+});
+
+describe('uncached task mutation dispatch ownership', () => {
+  it('rejects workspace owner replacement while resolving an uncached note', async () => {
+    __resetLiveSupportCachesForTests();
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { LiveTasksClient } = await import('./live-tasks-client');
+    const { backendRequest } = await import('./backend-transport');
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        request: async () => ({}),
+        dispose: () => {},
+      }),
+    );
+    const owner = {
+      key: `tasks:${JSON.stringify(['ws'])}`,
+      workspaceId: 'ws',
+      eventTypes: ['task:*'],
+      isCurrent: () => true,
+      read: async () => null,
+      apply: () => undefined,
+      invalidate: () => undefined,
+      retire: () => undefined,
+    };
+    const old = scope.registerResource(owner);
+    listWorkspaceIdsImpl = async () => ({ workspaces: [{ id: 'ws' }] });
+    let finish!: (value: unknown) => void;
+    noteListImpl = () =>
+      new Promise((done) => {
+        finish = done;
+      });
+    vi.mocked(backendRequest).mockClear();
+    try {
+      const pending = new LiveTasksClient().updateNoteStatus('uncached', 'complete');
+      await flush();
+      old.dispose();
+      scope.registerResource(owner);
+      finish({ notes: [{ id: 'uncached' }] });
+      expect((await pending).success).toBe(false);
+      expect(
+        vi
+          .mocked(backendRequest)
+          .mock.calls.filter(([method]) => method === 'task.updateNoteStatus'),
+      ).toHaveLength(0);
+    } finally {
+      rendererEventRecovery.dispose();
+      __resetLiveSupportCachesForTests();
+      vi.clearAllMocks();
+      listWorkspaceIdsImpl = async () => ({ workspaces: [] });
+      noteListImpl = async () => ({ notes: [] });
+    }
+  });
+});

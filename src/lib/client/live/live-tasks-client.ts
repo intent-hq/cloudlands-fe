@@ -32,6 +32,7 @@ import {
   newIdempotencyKey,
   rememberNoteWorkspace,
   captureNoteWorkspaceCacheLifetime,
+  captureNoteMutationAuthority,
   resolveNoteWorkspaceId,
   runMutationWithId,
   subscribeWorkspaceIds,
@@ -349,10 +350,12 @@ export class LiveTasksClient implements TasksClient {
     title: string,
     options?: CreatePrerequisiteOptions,
   ): Promise<MutationResult> {
+    const authority = captureNoteMutationAuthority();
     const workspaceId = await resolveNoteWorkspaceId(dependentNoteId);
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${dependentNoteId}` };
     }
+    if (!authority(workspaceId)) return { success: false, error: 'Task command authority expired' };
     return runMutationWithId('task.createPrerequisite', {
       workspaceId,
       dependentNoteId,
@@ -444,10 +447,12 @@ export class LiveTasksClient implements TasksClient {
     params: Record<string, unknown>,
     expectedVersion?: number,
   ): Promise<MutationResult> {
+    const authority = captureNoteMutationAuthority();
     const workspaceId = await resolveNoteWorkspaceId(noteId);
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }
+    if (!authority(workspaceId)) return { success: false, error: 'Task command authority expired' };
     const result = await runMutationWithId(method, {
       workspaceId,
       noteId,
