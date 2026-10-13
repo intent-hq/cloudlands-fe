@@ -485,13 +485,13 @@ export function* browserClientsSaga(): SagaGenerator<void> {
       const authority = yield* selectPrincipalActionContext.effect();
       if (!authority || authority === admittedAuthority) return;
       admittedAuthority = authority;
-      if (connection.mounted.size === 0) return;
       // Reads started before principal admission cannot publish into it. Rebind
       // the owners and replace those discarded reads once authority is ready.
       connection.epoch++;
       invalidateOwnClientId();
       yield* put(browserConnectionInvalidated());
       recovery.rebind();
+      if (connection.mounted.size === 0) return;
       yield* put(hydrateBrowserClientsRequested());
       for (const wsId of connection.mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
     });

@@ -1154,3 +1154,41 @@ it('does not recover browser state for a settings-only loss', async () => {
   expect(view()).toEqual(previous);
   expect(rpc.request.mock.calls).toEqual([]);
 });
+
+it('refreshes the unmounted global roster on its next demand after principal readmission', async () => {
+  const { admitLegacyPrincipal } = await import('../../../../../test/fixtures/principal-state');
+  const { principalIdentityChanged, principalReceived } =
+    await import('../../principal/principal-slice');
+  const { refreshLiveClientsRequested } = await import('../browser-clients-slice');
+  admitLegacyPrincipal();
+  await attach();
+  store.dispatch(refreshLiveClientsRequested());
+  await settle();
+  expect(selectLiveClients.select(store.state).map((row) => row.clientId)).toEqual(['desktop']);
+  const before = store.state.principal;
+  if (!before.snapshot || !before.context || !before.boundPrincipalId)
+    throw new Error('Fixture not admitted');
+  rpc.request.mockClear();
+  store.dispatch(principalIdentityChanged(before.boundPrincipalId));
+  store.dispatch(
+    principalReceived(
+      {
+        context: before.context,
+        invalidation: store.state.principal.invalidation,
+        presentationVersion: store.state.principal.presentationVersion,
+      },
+      before.snapshot,
+    ),
+  );
+  await settle();
+  expect(rpc.request.mock.calls).toEqual([]);
+  clients = [{ ...client, clientId: 'current-global-client' }];
+  rpc.request.mockClear();
+  store.dispatch(refreshLiveClientsRequested());
+  await settle();
+  expect(calls('client.list')).toHaveLength(1);
+  expect(calls('workspace.getBrowserClient')).toHaveLength(0);
+  expect(selectLiveClients.select(store.state).map((row) => row.clientId)).toEqual([
+    'current-global-client',
+  ]);
+});
