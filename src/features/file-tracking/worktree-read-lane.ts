@@ -1,4 +1,4 @@
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 /** Independent ordinary scopes may overlap; recovery owns an exclusive snapshot. */
 type SnapshotLane = { active: Set<Promise<void>>; barrier?: Promise<void> };
 const lanes = new Map<string, SnapshotLane>();
@@ -26,7 +26,9 @@ export function trackWorktreeSnapshotRead<T>(
   const result = previous ? previous.then(invoke) : invoke();
   const settled = result.then(
     () => undefined,
-    (error) => (error instanceof RecoveryRequestTimeoutError ? error.drained : undefined),
+    async (error) => {
+      await getPhysicalRequestCompletion(error);
+    },
   );
   lane.active.add(settled);
   if (mode === 'recovery') lane.barrier = settled;

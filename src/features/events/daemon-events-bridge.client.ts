@@ -1,6 +1,6 @@
 import { retainTaskEventCompletion } from './task-event-completion';
 import { trackAgentRecoveryRead } from '$features/agent/agent-recovery-read-lane';
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import {
   dispatchNoteRecoveryEvent,
   dispatchNoteAttributionRecoveryEvent,
@@ -4996,7 +4996,10 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
             await backendRequest('agent.get', { agentId, workspaceId });
             return;
           } catch (error) {
-            if (error instanceof RecoveryRequestTimeoutError) await error.drained;
+            const completion = await getPhysicalRequestCompletion(error);
+            if (completion?.retired) return;
+            const missing = completion?.errors.find(isStructuredAgentNotFoundError);
+            if (missing) error = missing;
             if (!isStructuredAgentNotFoundError(error)) {
               logger.warn(
                 'agent.get failed during failure-registry reconciliation — keeping entry',

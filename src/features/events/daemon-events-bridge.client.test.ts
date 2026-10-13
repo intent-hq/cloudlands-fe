@@ -11876,7 +11876,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     const agentGetCalls = () =>
       backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.get');
 
-    it.each(['pending', 'timeout'] as const)(
+    it.each(['pending', 'timeout', 'ordinary-timeout'] as const)(
       'holds the whole reconnect failure batch through %s physical completion',
       async (mode) => {
         const { rendererEventRecovery } = await import('./renderer-event-recovery');
@@ -11895,7 +11895,14 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
           return mode === 'pending'
             ? held
             : Promise.reject(
-                new RecoveryRequestTimeoutError(held.then(() => ({ retired: false, errors: [] }))),
+                mode === 'timeout'
+                  ? new RecoveryRequestTimeoutError(
+                      held.then(() => ({ retired: false, errors: [] })),
+                    )
+                  : Object.assign(new Error('ordinary timeout'), {
+                      code: 'TIMEOUT',
+                      completion: held.then(() => ({ retired: false, errors: [] })),
+                    }),
               );
         });
         const pending = refreshDaemonEventsAfterReconnect(null);
@@ -11916,6 +11923,28 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
           await next;
         }
         expect(read).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([false, true])(
+      'handles late not-found completion only for the original connection (retired=%s)',
+      async (retired) => {
+        recordAgentFailure({ agentId: 'late-missing', workspaceId: WS, error: 'failed' });
+        backendRequestSpy.mockImplementation((method) =>
+          method === 'agent.get'
+            ? Promise.reject(
+                Object.assign(new Error('ordinary timeout'), {
+                  code: 'TIMEOUT',
+                  completion: Promise.resolve({ retired, errors: [agentNotFound()] }),
+                }),
+              )
+            : Promise.resolve({}),
+        );
+        await refreshDaemonEventsAfterReconnect(null);
+        expect(listAgentFailureEntries().map((row) => row.agentId)).toEqual(
+          retired ? ['late-missing'] : [],
+        );
+        expect(agentGetCalls()).toHaveLength(1);
       },
     );
 
