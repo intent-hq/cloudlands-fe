@@ -749,6 +749,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     socket.drop();
     expect(events).toContainEqual({
       status: 'disconnected',
+      startup: null,
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
     });
 
@@ -760,6 +761,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     await completeHello(reconnectSocket);
     expect(events).toContainEqual({
       status: 'connected',
+      startup: null,
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
     });
     // Mirrors backend.ipc.ts: the 2nd+ connect also carries the
