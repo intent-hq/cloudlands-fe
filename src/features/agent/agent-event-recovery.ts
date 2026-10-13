@@ -178,6 +178,27 @@ export function installAgentEventRecovery(
         workspaceId,
     );
   };
+  const ensureWorkspaceAuthority = (workspaceId: string) => {
+    if (!workspaceHandles.has(workspaceId)) {
+      workspaceHandles.set(
+        workspaceId,
+        scope.registerResource({
+          key: `agent-workspace-authority:${JSON.stringify([workspaceId])}`,
+          workspaceId,
+          eventTypes: [],
+          active: false,
+          isCurrent: current,
+          read: async () => null,
+          apply: () => {},
+          invalidate: () => {},
+          retire: () => {
+            retireWorkspace(workspaceId);
+          },
+        }),
+      );
+    }
+    return workspaceHandles.get(workspaceId);
+  };
   const acceptsEvent = (notification: { params?: unknown }) => {
     const workspaceId = (notification.params as { event?: { workspaceId?: string } })?.event
       ?.workspaceId;
@@ -248,6 +269,7 @@ export function installAgentEventRecovery(
               .filter((target) => workspaceAuthority.current(target.workspaceId))
               .map(async ({ agentId, workspaceId }) => {
                 const entry = getAgentFailureEntry(agentId);
+                const authority = ensureWorkspaceAuthority(workspaceId);
                 try {
                   const result = await request<{ agent: Record<string, unknown> }>('agent.get', {
                     agentId,
@@ -258,7 +280,8 @@ export function installAgentEventRecovery(
                   const clearDenied = (failure: unknown) => {
                     if (
                       !current() ||
-                      !lifetime.isCurrent() ||
+                      !workspaceAuthority.current(workspaceId) ||
+                      workspaceHandles.get(workspaceId) !== authority ||
                       getAgentFailureEntry(agentId) !== entry
                     )
                       return false;
@@ -356,25 +379,7 @@ export function installAgentEventRecovery(
           request.workspaceId ? [request.workspaceId] : [],
         ),
       ]);
-      for (const workspaceId of knownWorkspaces) {
-        if (workspaceHandles.has(workspaceId)) continue;
-        workspaceHandles.set(
-          workspaceId,
-          scope.registerResource({
-            key: `agent-workspace-authority:${JSON.stringify([workspaceId])}`,
-            workspaceId,
-            eventTypes: [],
-            active: false,
-            isCurrent: current,
-            read: async () => null,
-            apply: () => {},
-            invalidate: () => {},
-            retire: () => {
-              retireWorkspace(workspaceId);
-            },
-          }),
-        );
-      }
+      for (const workspaceId of knownWorkspaces) ensureWorkspaceAuthority(workspaceId);
       const permissionScope = selectPermissionRecoveryScope.select(state);
       if (permissionScope !== permissionContext) {
         handles.get(AGENT_PERMISSIONS_RECOVERY_KEY)?.dispose();

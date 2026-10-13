@@ -2053,3 +2053,108 @@ it.each(['push', 'loss', 'retired'] as const)(
     }
   },
 );
+
+it.each([false, true])(
+  'real UI Stop preserves current authority and rejects retired=%s during recovery',
+  async (retired) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { agentMetadataRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+    appStore.init();
+    mocks.stop.mockClear();
+    mocks.stop.mockResolvedValue({ success: true });
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: () => () => {},
+      request: async () => ({}),
+      fence: async (_ids: unknown, observe: () => void) => observe(),
+    } as never);
+    scope.registerResource({
+      key: agentMetadataRecoveryKey(WS),
+      workspaceId: WS,
+      eventTypes: ['agent:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    const h = start(undefined, { live: true });
+    try {
+      rendererEventRecovery.invalidate(agentMetadataRecoveryKey(WS));
+      if (retired) rendererEventRecovery.retireWorkspace(WS);
+      h.dispatch(
+        agentMutationUiRequested(WS, 'card', 'stop-during-recovery', A1, { kind: 'stop' }),
+      );
+      await settle();
+      await settle();
+      if (retired) expect(mocks.stop).not.toHaveBeenCalled();
+      else expect(mocks.stop).toHaveBeenCalledExactlyOnceWith(A1, WS);
+      expect(selectAgentMutationUi.select(h.getState() as never, WS, 'card')).toMatchObject({
+        status: retired ? 'failed' : 'succeeded',
+      });
+    } finally {
+      await stop(h.task);
+      rendererEventRecovery.dispose();
+    }
+  },
+);
+
+it.each(['rename', 'restore', 'delete'] as const)(
+  'admits %s during metadata recovery without replaying protected writes',
+  async (kind) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { agentMetadataRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+    appStore.init();
+    clearPendingAgentDeletions();
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: () => () => {},
+      request: async () => ({}),
+      fence: async (_ids: unknown, observe: () => void) => observe(),
+    } as never);
+    scope.registerResource({
+      key: agentMetadataRecoveryKey(WS),
+      workspaceId: WS,
+      eventTypes: ['agent:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    const h = start(
+      { [A1]: session(A1, { name: 'Recovered', retiredAt: 'current-retirement' }) },
+      { live: true },
+    );
+    const rpc =
+      kind === 'rename' ? mocks.rename : kind === 'restore' ? mocks.restore : mocks.deleteAgent;
+    rpc.mockClear();
+    rpc.mockResolvedValue({ success: true });
+    try {
+      rendererEventRecovery.invalidate(agentMetadataRecoveryKey(WS));
+      const action =
+        kind === 'rename'
+          ? renameAgentSessionRequested(WS, A1, 'New name')
+          : kind === 'restore'
+            ? restoreRetiredAgentRequested(WS, A1)
+            : deleteAgentSessionRequested(WS, A1);
+      h.channel.put(action);
+      await expect(action.promise).resolves.toBeUndefined();
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(selectAgentSession.select(h.getState() as never, A1)).toMatchObject({
+        name: 'Recovered',
+        retiredAt: 'current-retirement',
+      });
+    } finally {
+      await stop(h.task);
+      rendererEventRecovery.dispose();
+      clearPendingAgentDeletions();
+    }
+  },
+);

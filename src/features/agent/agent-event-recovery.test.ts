@@ -1105,3 +1105,67 @@ it('admits subscription child updates across workspaces only for watching parent
   h.stop();
   h.registry.dispose();
 });
+
+it.each([false, true])(
+  'current workspace denials clear independently while replacement=%s and a sibling is held',
+  async (replaceSecond) => {
+    const { recordAgentFailure } = await import('$features/agent/agent-failure-registry');
+    const h = integration();
+    recordAgentFailure({
+      agentId: 'denied-first',
+      workspaceId: 'ws',
+      error: 'first private failure',
+    });
+    recordAgentFailure({
+      agentId: 'denied-second',
+      workspaceId: 'ws-second',
+      error: 'second private failure',
+    });
+    recordAgentFailure({
+      agentId: 'held-third',
+      workspaceId: 'ws-third',
+      error: 'still authorized',
+    });
+    const normal = h.request.getMockImplementation()!;
+    let finish!: (v: unknown) => void;
+    h.request.mockImplementation(async (method, params: any) => {
+      if (method === 'workspace.list') return { workspaces: [] };
+      if (method === 'agent.get' && params.agentId.startsWith('denied-')) {
+        if (replaceSecond && params.agentId === 'denied-second')
+          recordAgentFailure({
+            agentId: 'denied-second',
+            workspaceId: 'ws-second',
+            error: 'replacement failure',
+          });
+        throw Object.assign(new Error('current workspace denied'), { rpcCode: -32003 });
+      }
+      if (method === 'agent.get' && params.agentId === 'held-third')
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return normal(method, params);
+    });
+    try {
+      await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+      h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+      await settle();
+      expect(finish).toBeTypeOf('function');
+      expect.soft(getAgentFailureEntry('denied-first')).toBeUndefined();
+      if (replaceSecond)
+        expect(getAgentFailureEntry('denied-second')?.error).toBe('replacement failure');
+      else expect(getAgentFailureEntry('denied-second')).toBeUndefined();
+      expect(getAgentFailureEntry('held-third')?.error).toBe('still authorized');
+      expect(
+        h.request.mock.calls.filter(
+          ([m, p]) => m === 'agent.get' && (p as any).agentId === 'held-third',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      finish?.({ agent: { id: 'held-third', workspaceId: 'ws-third', status: 'idle' } });
+      await settle();
+      h.stop();
+      h.registry.dispose();
+      clearAgentFailureRegistry();
+    }
+  },
+);
