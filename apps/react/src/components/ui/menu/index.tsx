@@ -24,7 +24,12 @@ import { resolveSubmenuSide } from '$lib/components/ui/menu/submenu-placement';
 import { menuItem, menuOverlay, menuSubmenuAlignOffset } from './menu-recipes';
 import { ListHighlight } from './list-highlight';
 import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
-import { getAdjacentTabStop, getInlineTabStop, handleMenuNavigationKey } from './menu-keyboard';
+import {
+  getAdjacentTabStop,
+  getInlineTabStop,
+  handleMenuNavigationKey,
+  useMenuTypeahead,
+} from './menu-keyboard';
 export {
   menuItem,
   menuOverlay,
@@ -298,6 +303,7 @@ export function Content({
   ...props
 }: ContentProps) {
   const root = React.useContext(RootContext);
+  const handleTypeahead = useMenuTypeahead(root.open);
   const isStatic = staticPosition ?? root.staticPosition;
   const surface = clampSurface(useSurface() + 2);
   const onContentNode = root.onContentNode;
@@ -380,7 +386,8 @@ export function Content({
         onKeyDownCapture?.(event);
         if (
           !event.defaultPrevented &&
-          handleMenuNavigationKey(event.currentTarget, event.nativeEvent, loop)
+          (handleMenuNavigationKey(event.currentTarget, event.nativeEvent, loop) ||
+            handleTypeahead(event.currentTarget, event.nativeEvent))
         )
           event.preventDefault();
       }}
@@ -469,6 +476,7 @@ export function SubContent({
 }: SubContentProps) {
   const root = React.useContext(RootContext);
   const trigger = React.useContext(SubContext);
+  const handleTypeahead = useMenuTypeahead(trigger?.open ?? false);
   const inheritedClass = React.useContext(SubClassContext);
   const isStatic = staticPosition ?? root.staticPosition;
   const surface = clampSurface(useSurface() + 2);
@@ -608,7 +616,8 @@ export function SubContent({
         onKeyDownCapture?.(event);
         if (
           !event.defaultPrevented &&
-          handleMenuNavigationKey(event.currentTarget, event.nativeEvent, loop)
+          (handleMenuNavigationKey(event.currentTarget, event.nativeEvent, loop) ||
+            handleTypeahead(event.currentTarget, event.nativeEvent))
         )
           event.preventDefault();
       }}

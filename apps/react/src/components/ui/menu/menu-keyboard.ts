@@ -1,6 +1,46 @@
 // Source: Bits internal/tabbable and MenuContentState.handleTabKeyDown.
 import { focusable, isFocusable, isTabbable, tabbable } from 'tabbable';
 import { setMenuTabStop } from '$lib/components/ui/menu/menu-roving-focus';
+import { useLayoutEffect, useRef } from 'react';
+
+export function useMenuTypeahead(open: boolean) {
+  const search = useRef({ value: '', time: 0 });
+  useLayoutEffect(() => {
+    search.current = { value: '', time: 0 };
+  }, [open]);
+  return (content: HTMLElement, event: KeyboardEvent) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+    if (event.key.length !== 1 || event.code === 'Space') return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target.closest('[role="menu"]') !== content) return;
+    if (target !== content && !target.matches('[data-menu-item]')) return;
+    const items = Array.from(content.querySelectorAll<HTMLElement>('[data-menu-item]')).filter(
+      (item) =>
+        item.closest('[role="menu"]') === content &&
+        !item.hasAttribute('data-disabled') &&
+        item.getAttribute('aria-disabled') !== 'true',
+    );
+    const value =
+      (event.timeStamp - search.current.time < 1000 ? search.current.value : '') + event.key;
+    search.current = { value, time: event.timeStamp };
+    const query = Array.from(value).every((key) => key === value[0]) ? value[0] : value;
+    const currentLabel = target === content ? '' : target.textContent?.trim();
+    const current = items.findIndex((item) => item.textContent?.trim() === currentLabel);
+    const start = Math.max(current, 0);
+    const ordered = [...items.slice(start), ...items.slice(0, start)];
+    const match = ordered.find(
+      (item) =>
+        (query.length !== 1 || item.textContent?.trim() !== currentLabel) &&
+        item.textContent?.trim().toLowerCase().startsWith(query.toLowerCase()),
+    );
+    event.preventDefault();
+    if (match) {
+      setMenuTabStop(content, match);
+      match.focus();
+    }
+    return true;
+  };
+}
 
 export function handleMenuNavigationKey(content: HTMLElement, event: KeyboardEvent, loop: boolean) {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
