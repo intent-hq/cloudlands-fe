@@ -2,6 +2,7 @@ import { Link, Outlet, useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Logo } from '@/components/logo';
 import { SidebarExpandableSearch } from '@/components/workspace/sidebar/sidebar-expandable-search';
+import { WorkspaceStatusIcon } from '@/components/workspace/workspace-status-icon';
 import * as Sidebar from '@/components/ui/sidebar';
 import { selectCurrentConnectionId } from '@/store/connections/connections-selectors';
 import {
@@ -10,6 +11,7 @@ import {
   selectWorkspaceListLoadedForBackend,
 } from '@/store/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
+import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
 
 function WorkspaceNavigationRow({ workspaceId, active }: { workspaceId: string; active: boolean }) {
   const workspace = selectWorkspaceById(workspaceId);
@@ -34,6 +36,7 @@ function WorkspaceNavigationRow({ workspaceId, active }: { workspaceId: string; 
               sidebar.setOpenMobile(false);
           }}
         >
+          <WorkspaceStatusIcon status={resolveWorkspaceStatusState(workspace.value)} />
           <span className="min-w-0 truncate">{workspace.value.title}</span>
         </Link>
       </Sidebar.MenuButton>
