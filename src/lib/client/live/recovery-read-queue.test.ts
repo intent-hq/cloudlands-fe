@@ -310,3 +310,46 @@ describe('late completion authority scope', () => {
     expect(order).toEqual(c.expectRetire ? ['read', 'retire', 'next'] : ['read', 'next']);
   });
 });
+
+describe('point reads sharing a collection lane', () => {
+  it.each([false, true])(
+    'reports point denial without retiring collection (late=%s)',
+    async (late) => {
+      const retire = vi.fn(() => true);
+      vi.spyOn(rendererEventRecovery, 'captureRetirement').mockReturnValue(retire);
+      const a = authority();
+      const failure = { rpcCode: -32003 };
+      const observed: unknown[] = [];
+      let complete!: (value: { errors: unknown[]; retired: boolean }) => void;
+      const physical = new Promise<{ errors: unknown[]; retired: boolean }>((resolve) => {
+        complete = resolve;
+      });
+      const rejection = late ? new RecoveryRequestTimeoutError(physical) : failure;
+      const result = runRecoveryRead(
+        'collection-point',
+        a.token,
+        'ordinary',
+        'get:one',
+        async () => {
+          throw rejection;
+        },
+        {
+          retireOnDenied: false,
+          retireOnNotFound: false,
+          onFailure: (error) => {
+            observed.push(error);
+          },
+        },
+      );
+      await expect(result).rejects.toBe(rejection);
+      const next = runRecoveryRead('collection-point', a.token, 'ordinary', 'get:one', async () => {
+        expect(observed).toContain(failure);
+        return 'sibling remains available';
+      });
+      if (late) complete({ errors: [failure], retired: false });
+      expect(await next).toBe('sibling remains available');
+      expect(retire).not.toHaveBeenCalled();
+      expect(observed.filter((error) => error === failure)).toHaveLength(1);
+    },
+  );
+});

@@ -201,7 +201,10 @@ export class LiveNotesClient implements NotesClient {
       // Preserve deadlines and authority failures for the captured read owner.
       if (
         error instanceof BackendError &&
-        (error.code === 'TIMEOUT' || error.rpcCode === -32003 || error.rpcCode === -32001)
+        (error.completion !== undefined ||
+          error.code === 'TIMEOUT' ||
+          error.rpcCode === -32003 ||
+          error.rpcCode === -32001)
       )
         throw error;
       return null;

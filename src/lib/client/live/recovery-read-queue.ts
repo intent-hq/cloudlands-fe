@@ -29,12 +29,19 @@ export function runRecoveryRead<T>(
   mode: 'ordinary' | 'recovery',
   requestKey: string,
   read: () => Promise<T>,
-  options: { retireOnNotFound?: boolean } = {},
+  options: {
+    retireOnDenied?: boolean;
+    retireOnNotFound?: boolean;
+    onFailure?: (error: unknown) => void;
+  } = {},
 ): Promise<T> {
   const retire = rendererEventRecovery.captureRetirement(key);
   const observeFailure = (error: unknown) => {
+    options.onFailure?.(error);
     const failure = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
-    const denied = failure?.rpcCode === -32003 || failure?.rpcCode === -32001;
+    const denied =
+      options.retireOnDenied !== false &&
+      (failure?.rpcCode === -32003 || failure?.rpcCode === -32001);
     const missing =
       options.retireOnNotFound !== false &&
       failure?.rpcCode === -32602 &&
