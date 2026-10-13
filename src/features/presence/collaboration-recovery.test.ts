@@ -1,3 +1,5 @@
+import { hostMembershipSaga } from '$store/renderer/slices/host-membership/sagas/host-membership-saga';
+import { hostMembershipRequested } from '$store/renderer/slices/host-membership/host-membership-slice';
 import { runSaga, stdChannel, type Saga } from 'redux-saga';
 import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
 import { workspaceShareSaga } from '$store/renderer/slices/workspace-share/sagas/workspace-share-saga';
@@ -40,6 +42,8 @@ import {
   installCollaborationRecovery,
   readCollaboration,
 } from './collaboration-recovery';
+
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { success: vi.fn() } }));
 
 const wire = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: wire.request }));
@@ -559,4 +563,103 @@ describe('collaboration loss recovery', () => {
       ['client.list', undefined],
     ]);
   });
+});
+
+it('host recovery does not settle a still-running invite command', async () => {
+  const h = harness();
+  h.run(hostMembershipSaga);
+  const created = deferred<unknown>();
+  wire.request.mockReset().mockImplementation(async (method) => {
+    if (method === 'host.members.list') return { members: [], revision: 1 };
+    if (method === 'host.invite.list') return { invites: [] };
+    if (method === 'host.invite.create') return created.promise;
+    throw Error(method);
+  });
+  const target = { session: 'host', context: h.context };
+  h.dispatch(hostMembershipOpened(target));
+  await settle();
+  await h.subscribe(['*'], '');
+  const command = {
+    kind: 'create' as const,
+    input: { pinLogin: 'test', pinProvider: 'github' as const, pinHost: 'github.com' },
+  };
+  h.dispatch(hostMembershipRequested(target, command));
+  await settle();
+  expect(h.state().hostMembership.busy).toBe(true);
+  h.loss('lease-1', '1', null);
+  await settle();
+  const whilePending = h.state().hostMembership.busy;
+  h.dispatch(hostMembershipRequested(target, command));
+  await settle();
+  const starts = wire.request.mock.calls.filter(([m]) => m === 'host.invite.create').length;
+  created.resolve({ invite: { id: 'test' }, url: 'secret' });
+  await settle();
+  expect({ busyWhileOriginalCommandPending: whilePending, physicalCommandStarts: starts }).toEqual({
+    busyWhileOriginalCommandPending: true,
+    physicalCommandStarts: 1,
+  });
+});
+
+it('does not let an old command settle a sibling in a reopened host view', async () => {
+  const h = harness();
+  h.run(hostMembershipSaga);
+  const first = deferred<unknown>();
+  const second = deferred<unknown>();
+  let starts = 0;
+  wire.request.mockReset().mockImplementation(async (method) => {
+    if (method === 'host.members.list') return { members: [], revision: 1 };
+    if (method === 'host.invite.list') return { invites: [] };
+    if (method === 'host.invite.create') return ++starts === 1 ? first.promise : second.promise;
+    throw Error(method);
+  });
+  const target = { session: 'host', context: h.context };
+  const command = {
+    kind: 'create' as const,
+    input: { pinLogin: 'test', pinProvider: 'github' as const, pinHost: 'github.com' },
+  };
+  h.dispatch(hostMembershipOpened(target));
+  await settle();
+  await h.subscribe(['*'], '');
+  h.dispatch(hostMembershipRequested(target, command));
+  await settle();
+  h.loss('lease-1', '1', null);
+  await settle();
+  h.dispatch(hostMembershipOpened(target));
+  await settle();
+  h.dispatch(hostMembershipRequested(target, command));
+  await settle();
+  expect(starts).toBe(2);
+  first.resolve({ invite: { id: 'old' }, url: 'old-secret' });
+  await settle();
+  expect(h.state().hostMembership).toMatchObject({ busy: true, creating: true });
+  second.resolve({ invite: { id: 'new' }, url: 'new-secret' });
+  await settle();
+  expect(h.state().hostMembership).toMatchObject({ busy: false, creating: false });
+});
+
+it('newer presence push supersedes held membership recovery snapshot', async () => {
+  const h = harness();
+  await h.subscribe(['workspace:updated']);
+  const members = deferred<unknown>();
+  const original = h.request.getMockImplementation()!;
+  h.request.mockImplementation((method, params) =>
+    method === 'workspace.members.list' ? members.promise : original(method, params),
+  );
+  h.loss();
+  await settle();
+  const key = collaborationKey('presence-roster', 'ws');
+  expect(rendererEventRecovery.push(key)).toBe(true);
+  const { presenceRosterReceived } = await import('$store/renderer/slices/presence/presence-slice');
+  rendererEventRecovery.capture(key).commit(() => {
+    h.dispatch(
+      presenceRosterReceived({
+        ...roster,
+        members: [{ ...roster.members[0], displayName: 'fresh' }],
+      }),
+    );
+  });
+  expect(getItems(h.state().presence.members.ws)[0].displayName).toBe('fresh');
+  members.resolve({ members: [{ ...member, displayName: 'old' }] });
+  await settle();
+  expect(getItems(h.state().presence.members.ws)[0].displayName).toBe('fresh');
 });

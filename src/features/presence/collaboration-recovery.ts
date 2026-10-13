@@ -235,10 +235,18 @@ export function installCollaborationRecovery(
               workspaceId,
               eventTypes: ['workspace:updated'],
               isCurrent: current,
-              read: ({ request }) =>
-                request<WorkspaceMembersListResult>('workspace.members.list', { workspaceId }),
-              apply: ({ members }) => {
-                store.dispatch(presenceMembersReceived(workspaceId, members));
+              read: async ({ request }) => {
+                const startedProfileRevision = store.getState().presence.profileRevision;
+                const { members } = await request<WorkspaceMembersListResult>(
+                  'workspace.members.list',
+                  { workspaceId },
+                );
+                return { members, startedProfileRevision };
+              },
+              apply: ({ members, startedProfileRevision }) => {
+                store.dispatch(
+                  presenceMembersReceived(workspaceId, members, startedProfileRevision),
+                );
               },
               invalidate: () => {},
               retire: () => {

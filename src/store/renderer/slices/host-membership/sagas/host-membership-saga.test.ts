@@ -173,7 +173,9 @@ describe('owner host membership wire and authority', () => {
         await settle();
         expect(h.state().hostMembership.error).toBeTruthy();
         expect(h.state().hostMembership.busy).toBe(false);
-        expect(h.actions.at(-1)).toMatchObject({ type: 'hostMembership/failed' });
+        expect(h.actions.at(-2)).toMatchObject({ type: 'hostMembership/failed' });
+        expect(h.actions.at(-1)).toMatchObject({ type: 'hostMembership/finished' });
+        expect(h.state().hostMembership.operationId).toBeNull();
         writeText.mockResolvedValue(undefined);
         h.dispatch(hostMembershipRequested(h.target, { kind: 'copy', inviteId: 'invite' }));
         await settle();

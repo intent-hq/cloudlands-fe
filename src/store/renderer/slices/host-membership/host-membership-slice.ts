@@ -31,6 +31,8 @@ export interface HostMembershipState {
   loaded: boolean;
   withheld: boolean;
   busy: boolean;
+  /** The command flight owns busy state independently of recovery snapshots. */
+  operationId: number | null;
   creating: boolean;
   reloadPending: boolean;
   error: string | null;
@@ -46,6 +48,7 @@ export const initialState: HostMembershipState = {
   loaded: false,
   withheld: false,
   busy: false,
+  operationId: null,
   creating: false,
   reloadPending: false,
   error: null,
@@ -64,7 +67,9 @@ export const hostMembershipRequested = createAction<
   [target: HostMembershipTarget, command: HostMembershipCommand]
 >('hostMembership/requested');
 export const hostMembershipStarted =
-  createAction<[target: HostMembershipTarget, creating?: boolean]>('hostMembership/started');
+  createAction<[target: HostMembershipTarget, creating?: boolean, operationId?: number]>(
+    'hostMembership/started',
+  );
 export const hostMembershipLoaded =
   createAction<
     [target: HostMembershipTarget, members: HostMember[], invites: HostInvite[], revision: number]
@@ -77,7 +82,7 @@ export const hostMembershipCreated =
 export const hostMembershipDenied =
   createAction<[target: HostMembershipTarget, error: string]>('hostMembership/denied');
 export const hostMembershipFinished =
-  createAction<[target: HostMembershipTarget]>('hostMembership/finished');
+  createAction<[target: HostMembershipTarget, operationId?: number]>('hostMembership/finished');
 export const hostMembershipFailed =
   createAction<[target: HostMembershipTarget, error: string, refresh?: boolean]>(
     'hostMembership/failed',
@@ -94,6 +99,7 @@ hostMembershipReducer.with(hostMembershipRecoveryCleared, (state, { payload: [ta
         ...initialState,
         target: state.target,
         busy: state.busy,
+        operationId: state.operationId,
         creating: state.creating,
         reloadPending: true,
       }
@@ -108,9 +114,16 @@ hostMembershipReducer.with(hostMembershipClosed, (state, { payload: [target] }) 
 );
 hostMembershipReducer.with(
   hostMembershipStarted,
-  (state, { payload: [target, creating = false] }) =>
+  (state, { payload: [target, creating = false, operationId] }) =>
     matches(state, target)
-      ? { ...state, busy: true, creating, reloadPending: false, error: state.refreshError }
+      ? {
+          ...state,
+          busy: true,
+          creating,
+          operationId: operationId ?? null,
+          reloadPending: false,
+          error: state.refreshError,
+        }
       : state,
 );
 hostMembershipReducer.with(
@@ -119,8 +132,8 @@ hostMembershipReducer.with(
     matches(state, target)
       ? {
           ...state,
-          busy: false,
-          creating: false,
+          busy: state.operationId !== null && state.busy,
+          creating: state.operationId !== null && state.creating,
           loaded: true,
           error: null,
           refreshError: null,
@@ -142,9 +155,15 @@ hostMembershipReducer.with(hostMembershipFailed, (state, { payload: [target, err
     : state,
 );
 
-hostMembershipReducer.with(hostMembershipFinished, (state, { payload: [target] }) =>
-  matches(state, target)
-    ? { ...state, busy: false, creating: false, error: state.refreshError }
+hostMembershipReducer.with(hostMembershipFinished, (state, { payload: [target, operationId] }) =>
+  matches(state, target) && state.operationId === (operationId ?? null)
+    ? {
+        ...state,
+        busy: false,
+        creating: false,
+        operationId: null,
+        error: operationId !== undefined && !state.busy ? state.error : state.refreshError,
+      }
     : state,
 );
 

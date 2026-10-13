@@ -110,12 +110,15 @@ function safeInvite(row: HostInviteRow): HostInvite {
   };
 }
 
+let nextOperationId = 0;
+
 function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGenerator<void> {
   let [target, command] = action.payload;
   if (!(yield* current(target)) || (yield* selectHostMembershipState.effect()).busy) return;
   const authority = yield* selectPrincipalState.effect();
   let commandReceipt = rendererEventRecovery.capture('host-membership');
-  yield* put(hostMembershipStarted(target, command.kind === 'create'));
+  const operationId = ++nextOperationId;
+  yield* put(hostMembershipStarted(target, command.kind === 'create', operationId));
   let refreshing = false;
   let created: { id: string; url: string } | undefined;
   try {
@@ -126,7 +129,6 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       const settled = yield* commandTarget(target, authority);
       if (settled) {
         target = settled;
-        yield* put(hostMembershipFinished(target));
         yield* call(notify.success, m.workspace_share_linkCopied_toast());
       }
       return;
@@ -258,8 +260,8 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
     const state = yield* selectHostMembershipState.effect();
     // A same-owner revision rebind keeps this flight busy until it settles.
     // Never settle a response into another presentation session.
-    if (state.target?.session === target.session) {
-      if (state.busy) yield* put(hostMembershipFinished(state.target));
+    if (state.target?.session === target.session && state.operationId === operationId) {
+      yield* put(hostMembershipFinished(state.target, operationId));
       if (state.reloadPending && (yield* current(state.target)))
         yield* put(hostMembershipRequested(state.target, { kind: 'load' }));
     }
