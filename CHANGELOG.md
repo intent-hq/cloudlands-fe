@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.216.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.7...v2.216.0) (2026-10-13)
+
+
+### 🚀 Features
+
+* **scripts:** load active summaries and selected details ([#3366](https://github.com/intent-hq/cloudlands-fe/issues/3366)) ([25ad290](https://github.com/intent-hq/cloudlands-fe/commit/25ad290f4c2ff0b778ce7f38725c3ca8ac8c0009))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.44 ([#3375](https://github.com/intent-hq/cloudlands-fe/issues/3375)) ([87e7d30](https://github.com/intent-hq/cloudlands-fe/commit/87e7d30281bf80b02675c0f28e06c898695d2303))
+* fit Kanban columns and preserve workspace menu focus ([#3297](https://github.com/intent-hq/cloudlands-fe/issues/3297)) ([84d75f3](https://github.com/intent-hq/cloudlands-fe/commit/84d75f315cdc94ec790736315fecb2054d916687))
+* standardize dropdown icon size and alignment ([#3370](https://github.com/intent-hq/cloudlands-fe/issues/3370)) ([d4e69b2](https://github.com/intent-hq/cloudlands-fe/commit/d4e69b2042f6100bd068fe78df672996228f293a))
+
+
+### ⚡ Performance
+
+* consume pushed workspace state without redundant RPC reads ([#3365](https://github.com/intent-hq/cloudlands-fe/issues/3365)) ([2cda0cf](https://github.com/intent-hq/cloudlands-fe/commit/2cda0cfeff7a4d23953f2288777551926710cd51))
+
 ## [2.215.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.6...v2.215.7) (2026-10-12)
 
 
