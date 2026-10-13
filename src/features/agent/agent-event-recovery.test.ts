@@ -788,3 +788,271 @@ it('only reads line statistics with cached or explicit demand', async () => {
     h.registry.dispose();
   }
 });
+
+it('failure snapshot retry must drain a held sibling read before retrying', async () => {
+  vi.useFakeTimers();
+  const h = integration();
+  let resolveHeld!: (v: unknown) => void;
+  const held = new Promise((done) => {
+    resolveHeld = done;
+  });
+  const normal = h.request.getMockImplementation()!;
+  let heldCalls = 0;
+  h.request.mockImplementation(async (method, params: any) => {
+    if (method === 'workspace.list')
+      return {
+        workspaces: [
+          {
+            id: 'ws',
+            agentSummary: {
+              agents: [
+                { id: 'early', status: 'error' },
+                { id: 'held', status: 'error' },
+              ],
+            },
+          },
+        ],
+      };
+    if (method === 'agent.get' && params.agentId === 'early')
+      throw new Error('ordinary read failure');
+    if (method === 'agent.get' && params.agentId === 'held') {
+      heldCalls++;
+      return held;
+    }
+    return normal(method, params);
+  });
+  try {
+    await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+    h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+    await settle();
+    expect(heldCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(heldCalls).toBe(1);
+  } finally {
+    resolveHeld({ agent: { id: 'held', workspaceId: 'ws', status: 'idle' } });
+    await settle();
+    h.stop();
+    h.registry.dispose();
+    clearAgentFailureRegistry();
+    vi.useRealTimers();
+  }
+});
+
+it('workspace retirement clears global failure and active-stream mirrors for that workspace', async () => {
+  const { recordAgentFailure } = await import('./agent-failure-registry');
+  const h = integration();
+  try {
+    recordAgentFailure({ agentId: 'a', workspaceId: 'ws', error: 'private failure' });
+    recordAgentFailure({ agentId: 'other', workspaceId: 'other-ws', error: 'retained failure' });
+    activeStreamsTracker.replaceSnapshot([
+      { agentId: 'a', workspaceId: 'ws', sessionId: 'a', startTime: 0 },
+      { agentId: 'other', workspaceId: 'other-ws', sessionId: 'other', startTime: 0 },
+    ]);
+    h.registry.retireWorkspace('ws');
+    expect(h.state.agentSessions.byAgentId.a).toBeUndefined();
+    expect(getAgentFailureEntry('other')).toBeDefined();
+    expect(activeStreamsTracker.isAgentStreaming('other')).toBe(true);
+    expect.soft(getAgentFailureEntry('a')).toBeUndefined();
+    expect.soft(activeStreamsTracker.isAgentStreaming('a')).toBe(false);
+    expect.soft(getItems(h.state.permission.requests)).toEqual([]);
+  } finally {
+    h.stop();
+    h.registry.dispose();
+    clearAgentFailureRegistry();
+    activeStreamsTracker.replaceSnapshot([]);
+  }
+});
+
+it('held global snapshots cannot restore a workspace after its authority retires', async () => {
+  const h = integration();
+  const normal = h.request.getMockImplementation()!;
+  let finishFailure!: (v: unknown) => void, finishActive!: (v: unknown) => void;
+  h.request.mockImplementation((method, params: any) => {
+    if (method === 'agent.get')
+      return new Promise((done) => {
+        finishFailure = done;
+      });
+    if (method === 'agent.listActive')
+      return new Promise((done) => {
+        finishActive = done;
+      });
+    return normal(method, params);
+  });
+  try {
+    await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+    h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+    await settle();
+    expect(finishFailure).toBeTypeOf('function');
+    expect(finishActive).toBeTypeOf('function');
+    h.registry.retireWorkspace('ws');
+    expect(h.state.agentSessions.byAgentId.a).toBeUndefined();
+    finishFailure({
+      agent: {
+        id: 'failed-new',
+        workspaceId: 'ws',
+        status: 'error',
+        stopReason: 'late private failure',
+      },
+    });
+    finishActive({ streams: [{ agentId: 'a', workspaceId: 'ws', sessionId: 'a', startTime: 0 }] });
+    await settle();
+    expect.soft(getAgentFailureEntry('failed-new')).toBeUndefined();
+    expect.soft(activeStreamsTracker.isAgentStreaming('a')).toBe(false);
+  } finally {
+    h.stop();
+    h.registry.dispose();
+    clearAgentFailureRegistry();
+    activeStreamsTracker.replaceSnapshot([]);
+  }
+});
+
+it.each(['not-found', 'denied'])(
+  'clears current %s failure authority before a held sibling finishes',
+  async (kind) => {
+    const { recordAgentFailure } = await import('./agent-failure-registry');
+    const h = integration();
+    const original = recordAgentFailure({ agentId: 'early', workspaceId: 'ws', error: 'private' });
+    let finish!: (v: unknown) => void;
+    const held = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params: any) => {
+      if (method === 'workspace.list')
+        return {
+          workspaces: [
+            {
+              id: 'ws',
+              agentSummary: {
+                agents: [
+                  { id: 'early', status: 'error' },
+                  { id: 'held', status: 'error' },
+                ],
+              },
+            },
+          ],
+        };
+      if (method === 'agent.get' && params.agentId === 'early')
+        throw Object.assign(
+          new Error('gone'),
+          kind === 'denied'
+            ? { rpcCode: -32003 }
+            : { rpcCode: -32602, data: { code: 'not-found' } },
+        );
+      if (method === 'agent.get' && params.agentId === 'held') return held;
+      return normal(method, params);
+    });
+    try {
+      await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+      h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+      await settle();
+      expect(getAgentFailureEntry('early')).toBeUndefined();
+      expect(original.error).toBe('private');
+      expect(
+        h.request.mock.calls.filter(([m, p]) => m === 'agent.get' && (p as any).agentId === 'held'),
+      ).toHaveLength(1);
+    } finally {
+      finish({ agent: { id: 'held', workspaceId: 'ws', status: 'idle' } });
+      await settle();
+      h.stop();
+      h.registry.dispose();
+      clearAgentFailureRegistry();
+    }
+  },
+);
+
+it('does not let a held canonical denial clear a replacement failure', async () => {
+  const { recordAgentFailure } = await import('./agent-failure-registry');
+  const h = integration();
+  recordAgentFailure({ agentId: 'early', workspaceId: 'ws', error: 'old' });
+  let reject!: (error: unknown) => void;
+  const held = new Promise((_, fail) => {
+    reject = fail;
+  });
+  const normal = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params: any) => {
+    if (method === 'workspace.list') return { workspaces: [] };
+    if (method === 'agent.get' && params.agentId === 'early') return held;
+    return normal(method, params);
+  });
+  try {
+    await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+    h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+    await settle();
+    const replacement = recordAgentFailure({
+      agentId: 'early',
+      workspaceId: 'ws',
+      error: 'replacement',
+    });
+    reject(Object.assign(new Error('old denial'), { rpcCode: -32003 }));
+    await settle();
+    expect(getAgentFailureEntry('early')).toBe(replacement);
+    expect(h.state.agentSessions.byAgentId.a).toBeDefined();
+  } finally {
+    h.stop();
+    h.registry.dispose();
+    clearAgentFailureRegistry();
+  }
+});
+
+it.each([
+  ['agent-permissions', 'agent.pendingPermissions'],
+  ['agent-active-streams', 'agent.listActive'],
+  ['agent-subscriptions:["ws","a"]', 'agent.getSubscriptions'],
+])('shares ordinary and recovery physical reads for %s', async (key, method) => {
+  const { trackAgentRecoveryRead } = await import('./agent-recovery-read-lane');
+  const { setSubscriptionSnapshot } =
+    await import('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice');
+  const h = integration();
+  h.store.dispatch(
+    setSubscriptionSnapshot('ws', 'a', {
+      subscriptions: [],
+      delegationGroups: [],
+      waitingState: 'waiting',
+    }),
+  );
+  activeStreamsTracker.replaceSnapshot([
+    { agentId: 'a', workspaceId: 'ws', sessionId: 'a', startTime: 0 },
+  ]);
+  const normal = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (m, params) =>
+    m === 'agent.getSubscriptions'
+      ? { subscriptions: [], delegationGroups: [] }
+      : normal(m, params),
+  );
+  let finish!: () => void;
+  try {
+    await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+    const receipt = h.registry.capture(key);
+    const ordinary = trackAgentRecoveryRead(
+      key,
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      receipt,
+    );
+    h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === method)).toHaveLength(0);
+    finish();
+    await ordinary;
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === method)).toHaveLength(1);
+    if (method === 'agent.pendingPermissions')
+      expect(getItems(h.state.permission.requests)).toEqual([]);
+    if (method === 'agent.listActive')
+      expect(activeStreamsTracker.isAgentStreaming('a')).toBe(false);
+    if (method === 'agent.getSubscriptions')
+      expect(
+        h.state.agentSubscriptionUI.entries['ws:a']?.waitingState ??
+          Object.values(h.state.agentSubscriptionUI.entries)[0]?.waitingState,
+      ).toBe('idle');
+  } finally {
+    finish?.();
+    h.stop();
+    h.registry.dispose();
+    clearAgentFailureRegistry();
+    activeStreamsTracker.replaceSnapshot([]);
+  }
+});

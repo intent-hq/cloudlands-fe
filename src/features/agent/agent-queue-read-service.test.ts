@@ -405,3 +405,66 @@ it('rejects an in-flight queue reply after the recovery authority retires', asyn
   expect(entryOf(AGENT)).toBeUndefined();
   expect(getQueueMock).toHaveBeenCalledTimes(1);
 });
+
+it.each(['before', 'after'])(
+  'held ordinary queue hydration and loss share one physical read owner with subscription %s',
+  async (subscription) => {
+    const { registerAgentQueueRecovery } = await import('./agent-event-recovery');
+    let receive!: (n: any) => void;
+    let resolveQueue!: (v: QueuedMessage[]) => void;
+    const ordinary = new Promise<QueuedMessage[]>((done) => {
+      resolveQueue = done;
+    });
+    let recoveryReads = 0;
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: (f: any) => {
+        receive = f;
+        return () => {};
+      },
+      request: async (method: string) => {
+        if (method === 'events.subscribe')
+          return { subscriptionId: 'queue-probe', lossRecovery: 1 };
+        if (method === 'agent.getQueue') {
+          recoveryReads++;
+          return { queue: [] };
+        }
+        throw new Error(method);
+      },
+      fence: async (_ids: any, observe: any) => {
+        observe();
+      },
+    } as any);
+    registerAgentQueueRecovery(scope, 'ws-1', AGENT, {
+      isCurrent: () => true,
+      dispatch: (action) => appStore.dispatch(action),
+    });
+    if (subscription === 'before')
+      await scope.subscribe({ workspaceId: 'ws-1', eventTypes: ['agent:*'] }, { recover: true });
+    getQueueMock.mockReturnValueOnce(ordinary);
+    const run = hydrateAgentQueue(AGENT, 'ws-1');
+    if (subscription === 'after')
+      await scope.subscribe({ workspaceId: 'ws-1', eventTypes: ['agent:*'] }, { recover: true });
+    try {
+      expect(getQueueMock).toHaveBeenCalledTimes(1);
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'queue-probe', generation: '1', scope: { workspaceId: 'ws-1' } },
+      });
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      expect(recoveryReads).toBe(0);
+      resolveQueue([queued('stale-before-loss', 0)]);
+      await run;
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      expect(recoveryReads).toBe(1);
+      expect(messagesOf(AGENT)).toEqual([]);
+    } finally {
+      resolveQueue([]);
+      await run;
+      rendererEventRecovery.dispose();
+    }
+  },
+);

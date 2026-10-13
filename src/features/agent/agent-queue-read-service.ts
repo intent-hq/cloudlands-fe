@@ -1,3 +1,4 @@
+import { trackAgentRecoveryRead } from './agent-recovery-read-lane';
 import { agentQueueRecoveryKey } from './agent-recovery-keys';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { beginSubmissionRead } from './submission-evidence';
@@ -122,7 +123,21 @@ async function runHydrateAgentQueueFetch(
   const submissionScope = appStore.state.pendingSubmissions?.byAgentId[agentId]?.scope;
   const submissionRead = beginSubmissionRead(agentId, workspaceId, 'queue');
   try {
-    const queue = await appClient.agents.getQueue(agentId, workspaceId);
+    const queue = await trackAgentRecoveryRead(
+      agentQueueRecoveryKey(workspaceId, agentId),
+      () => {
+        if (
+          connection !== connectionGeneration ||
+          !ownership.isCurrent() ||
+          !recovery.commit(() => undefined)
+        )
+          throw new Error('Queue read authority retired');
+        return appClient.agents.getQueue(agentId, workspaceId);
+      },
+      rendererEventRecovery.hasOwner(agentQueueRecoveryKey(workspaceId, agentId))
+        ? recovery
+        : undefined,
+    );
     if (
       connection !== connectionGeneration ||
       !ownership.isCurrent() ||

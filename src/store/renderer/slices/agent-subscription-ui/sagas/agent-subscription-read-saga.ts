@@ -1,3 +1,4 @@
+import { trackAgentRecoveryRead } from '$features/agent/agent-recovery-read-lane';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import {
   agentSubscriptionsRecoveryKey,
@@ -116,10 +117,22 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
   if (!recovery.commit(() => undefined)) return;
   try {
     const beforeRead = yield* selectAgentSessionsById.effect();
-    const fresh: WireResult = yield* call(backendRequest<WireResult>, 'agent.getSubscriptions', {
-      workspaceId: wsId,
-      agentId,
-    });
+    const fresh: WireResult = yield* call(() =>
+      trackAgentRecoveryRead(
+        agentSubscriptionsRecoveryKey(wsId, agentId),
+        () => {
+          if (!recovery.commit(() => undefined))
+            throw new Error('Subscription read authority retired');
+          return backendRequest<WireResult>('agent.getSubscriptions', {
+            workspaceId: wsId,
+            agentId,
+          });
+        },
+        rendererEventRecovery.hasOwner(agentSubscriptionsRecoveryKey(wsId, agentId))
+          ? recovery
+          : undefined,
+      ),
+    );
     if (!recovery.commit(() => undefined)) return;
     yield* ingestBundledAgents(fresh, beforeRead, metadata);
     const mapped = mapResult(fresh);
@@ -157,10 +170,22 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
   try {
     const previous: WaitingState = yield* selectWaitingState.effect(wsId, agentId);
     const beforeRead = yield* selectAgentSessionsById.effect();
-    const result: WireResult = yield* call(backendRequest<WireResult>, 'agent.getSubscriptions', {
-      workspaceId: wsId,
-      agentId,
-    });
+    const result: WireResult = yield* call(() =>
+      trackAgentRecoveryRead(
+        agentSubscriptionsRecoveryKey(wsId, agentId),
+        () => {
+          if (!recovery.commit(() => undefined))
+            throw new Error('Subscription read authority retired');
+          return backendRequest<WireResult>('agent.getSubscriptions', {
+            workspaceId: wsId,
+            agentId,
+          });
+        },
+        rendererEventRecovery.hasOwner(agentSubscriptionsRecoveryKey(wsId, agentId))
+          ? recovery
+          : undefined,
+      ),
+    );
     if (!recovery.commit(() => undefined)) return;
     yield* ingestBundledAgents(result, beforeRead, metadata);
     const mapped = mapResult(result);
