@@ -137,7 +137,12 @@ export function installFileEventRecovery(
   const treeDemands = new Map<string, string>();
   const owners = new Map<
     string,
-    { handle: RendererRecoveryHandle; identity: string; alive: boolean }
+    {
+      handle: RendererRecoveryHandle;
+      identity: string;
+      alive: boolean;
+      rootCurrent?: () => boolean;
+    }
   >();
   const principal = getPrincipalActionContext(store.getState());
   let disposed = false,
@@ -155,6 +160,17 @@ export function installFileEventRecovery(
     if (syncing || disposed) return;
     syncing = true;
     try {
+      // Observe removal even if the same root id/path is registered again before
+      // a pending read completes. Retire only that captured root incarnation.
+      for (const [key, row] of owners) {
+        if (row.rootCurrent && !row.rootCurrent()) {
+          row.handle.captureLifetime().isCurrent();
+          row.alive = false;
+          row.handle.dispose();
+          owners.delete(key);
+          fileReadDemands.delete(key);
+        }
+      }
       const needed = new Set<string>();
       const own = (
         key: string,
@@ -162,6 +178,7 @@ export function installFileEventRecovery(
         identity: string,
         create: (isCurrent: () => boolean) => RendererRecoveryHandle,
         active = true,
+        rootCurrent?: () => boolean,
       ) => {
         const authority = selectWorkspaceParticipationContext.select(store.getState(), workspaceId);
         const deletionToken = store.getState().workspace.deletionTokens[workspaceId];
@@ -185,11 +202,13 @@ export function installFileEventRecovery(
           const next = {
             identity,
             alive: true,
+            rootCurrent,
             handle: undefined as unknown as RendererRecoveryHandle,
           };
           next.handle = create(
             () =>
               next.alive &&
+              (!rootCurrent || rootCurrent()) &&
               current() &&
               selectWorkspaceParticipationContext.select(store.getState(), workspaceId) ===
                 authority &&
@@ -199,6 +218,7 @@ export function installFileEventRecovery(
           row = next;
         }
         row.handle.setActive(active);
+        if (rootCurrent && !rootCurrent()) row.handle.captureLifetime().isCurrent();
       };
       const state = store.getState();
       const activeWorkspace = (workspaceId: string) => state.tabState?.currentTabId === workspaceId;
@@ -208,6 +228,22 @@ export function installFileEventRecovery(
           const absolutePath = file.absolutePath;
           const key = fileContentRecoveryKey(workspaceId, file.path);
           const options = fileReadDemands.get(key);
+          const rootId = options?.gitRoot?.id;
+          const roots = state.gitRoots?.byWorkspaceId[workspaceId]?.gitRoots;
+          const root = rootId && roots ? getItem(roots, rootId) : undefined;
+          const rootCurrent = rootId
+            ? () => {
+                const currentRoots =
+                  store.getState().gitRoots?.byWorkspaceId[workspaceId]?.gitRoots;
+                const currentRoot = currentRoots && getItem(currentRoots, rootId);
+                return (
+                  !!root &&
+                  !!currentRoot &&
+                  currentRoot.path === root.path &&
+                  currentRoot.createdAt === root.createdAt
+                );
+              }
+            : undefined;
           own(
             key,
             workspaceId,
@@ -310,6 +346,7 @@ export function installFileEventRecovery(
                 },
               }),
             activeWorkspace(workspaceId),
+            rootCurrent,
           );
         }
       }

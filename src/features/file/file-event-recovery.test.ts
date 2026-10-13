@@ -2,6 +2,9 @@ import { fileExplorerSaga } from '$store/renderer/slices/file-explorer/sagas/fil
 import { runSaga, stdChannel } from 'redux-saga';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
+import { filesReadSaga } from '$store/renderer/slices/files/sagas/files-read-saga';
+import { gitRootsReducer, gitRootsUpdated } from '$store/renderer/slices/git-roots/git-roots-slice';
+import type { GitRootRow } from '$features/git-roots/git-roots-service';
 import { filesWriteSaga } from '$store/renderer/slices/files/sagas/files-write-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -18,6 +21,7 @@ import {
 import {
   filesReducer,
   loadFileContentSucceeded,
+  loadFileContentRequested,
   saveFileContentRequested,
   updateFileContent,
   removeFileContentEntry,
@@ -59,12 +63,14 @@ function setup(recoverable = true, registry = new RendererEventRecovery()) {
   vi.setSystemTime(0);
   let emit!: (n: RecoveryNotification) => void;
   let files = filesReducer(undefined, { type: 'init' }),
-    fileExplorer = fileExplorerReducer(undefined, { type: 'init' });
+    fileExplorer = fileExplorerReducer(undefined, { type: 'init' }),
+    gitRoots = gitRootsReducer(undefined, { type: 'init' });
   const listeners = new Set<() => void>();
   const channel = stdChannel();
   let workspaceVisible = true;
   const dispatch = (action: { type: string; payload?: unknown }) => {
     files = filesReducer(files, action);
+    gitRoots = gitRootsReducer(gitRoots, action);
     fileExplorer = fileExplorerReducer(fileExplorer, action);
     for (const listener of listeners) listener();
     channel.put(action);
@@ -75,6 +81,7 @@ function setup(recoverable = true, registry = new RendererEventRecovery()) {
   const state = () =>
     ({
       files,
+      gitRoots,
       fileExplorer,
       workspace: {
         workspaces: createCollection(
@@ -157,6 +164,192 @@ function setup(recoverable = true, registry = new RendererEventRecovery()) {
 }
 afterEach(() => vi.useRealTimers());
 describe('file projections after lost final events', () => {
+  const root: GitRootRow = {
+    id: 'root',
+    workspaceId: 'ws',
+    path: '/repo/sub',
+    source: 'agent',
+    createdAt: 'first',
+    updatedAt: 'first',
+  };
+  const otherRoot: GitRootRow = { ...root, id: 'other', path: '/repo/other' };
+
+  it('does not start an ordinary file read for an unregistered secondary root', async () => {
+    const h = setup(true, rendererEventRecovery);
+    const read = vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
+    const task = runSaga(
+      { channel: h.channel, getState: h.state, dispatch: h.dispatch },
+      filesReadSaga,
+    );
+    try {
+      h.dispatch(
+        loadFileContentRequested('ws', 'a.ts', '/repo/sub/a.ts', {
+          gitRoot: { id: root.id, relativePath: 'a.ts' },
+        }),
+      );
+      await flush();
+      expect(read).not.toHaveBeenCalled();
+      expect(h.entry()).toBeUndefined();
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      h.close();
+      read.mockRestore();
+    }
+  });
+
+  describe.each(['ordinary', 'recovery'] as const)('%s secondary-root file reads', (mode) => {
+    it.each(['remove', 'remove-readd', 'path-replacement', 'incarnation-replacement'] as const)(
+      'rejects late data after root %s and preserves unrelated drafts',
+      async (change) => {
+        const h = setup(true, rendererEventRecovery);
+        const held = deferred<any>();
+        const normal = h.request.getMockImplementation()!;
+        const read = vi.spyOn(appClient.files, 'read').mockReturnValue(held.promise);
+        const task = runSaga(
+          { channel: h.channel, getState: h.state, dispatch: h.dispatch },
+          filesReadSaga,
+        );
+        h.dispatch(gitRootsUpdated('ws', [root, otherRoot]));
+        demandFileRead('ws', 'a.ts', { gitRoot: { id: root.id, relativePath: 'a.ts' } });
+        h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/sub/a.ts', text('private root')));
+        demandFileRead('ws', 'b.ts', { gitRoot: { id: otherRoot.id, relativePath: 'b.ts' } });
+        h.dispatch(loadFileContentSucceeded('ws', 'b.ts', '/repo/other/b.ts', text('other base')));
+        h.dispatch(updateFileContent('ws', 'b.ts', text('other draft'), { autoSave: false }));
+        try {
+          if (mode === 'recovery') {
+            h.request.mockImplementation((method, params) =>
+              method === 'file.read' && (params as { gitRootId?: string }).gitRootId === root.id
+                ? held.promise
+                : normal(method, params),
+            );
+            await h.scope.subscribe(
+              { workspaceId: 'ws', eventTypes: ['file:*'] },
+              { recover: true },
+            );
+            h.emit(lost());
+          } else {
+            h.dispatch(
+              loadFileContentRequested('ws', 'a.ts', '/repo/sub/a.ts', {
+                gitRoot: { id: root.id, relativePath: 'a.ts' },
+              }),
+            );
+          }
+          await flush();
+          if (mode === 'ordinary') expect(read).toHaveBeenCalledTimes(1);
+          else
+            expect(h.request).toHaveBeenCalledWith('file.read', {
+              workspaceId: 'ws',
+              path: 'a.ts',
+              gitRootId: root.id,
+            });
+          if (change === 'remove' || change === 'remove-readd')
+            h.dispatch(gitRootsUpdated('ws', [otherRoot]));
+          else
+            h.dispatch(
+              gitRootsUpdated('ws', [
+                otherRoot,
+                {
+                  ...root,
+                  ...(change === 'path-replacement'
+                    ? { path: '/replacement' }
+                    : { createdAt: 'second' }),
+                },
+              ]),
+            );
+          expect(h.entry()).toBeUndefined();
+          if (change === 'remove-readd') {
+            h.dispatch(gitRootsUpdated('ws', [root, otherRoot]));
+            demandFileRead('ws', 'a.ts', { gitRoot: { id: root.id, relativePath: 'a.ts' } });
+            h.dispatch(
+              loadFileContentSucceeded('ws', 'a.ts', '/repo/sub/a.ts', text('new incarnation')),
+            );
+            h.dispatch(
+              updateFileContent('ws', 'a.ts', text('new incarnation draft'), { autoSave: false }),
+            );
+          }
+          held.resolve(
+            mode === 'ordinary'
+              ? {
+                  kind: 'editable-text',
+                  originalContent: 'old removed-root reply',
+                  truncated: false,
+                }
+              : 'old removed-root reply',
+          );
+          await flush();
+          if (change !== 'remove-readd') expect(h.entry()).toBeUndefined();
+          expect(getItem(h.state().files.byWorkspaceId.ws.files, 'b.ts')?.localContent).toBe(
+            'other draft',
+          );
+          if (change === 'remove-readd') {
+            const receipt = h.registry.capture(fileContentRecoveryKey('ws', 'a.ts'));
+            expect(receipt.commit(() => undefined)).toBe(true);
+            expect(h.entry()).toMatchObject({
+              originalContent: 'new incarnation',
+              localContent: 'new incarnation draft',
+            });
+          }
+        } finally {
+          held.resolve(null);
+          await flush();
+          task.cancel();
+          await task.toPromise();
+          h.close();
+          read.mockRestore();
+        }
+      },
+    );
+
+    it('keeps current-root reads and drafts across other-root removal and branch updates', async () => {
+      const h = setup(true, rendererEventRecovery);
+      const held = deferred<any>();
+      const normal = h.request.getMockImplementation()!;
+      const read = vi.spyOn(appClient.files, 'read').mockReturnValue(held.promise);
+      const task = runSaga(
+        { channel: h.channel, getState: h.state, dispatch: h.dispatch },
+        filesReadSaga,
+      );
+      h.dispatch(gitRootsUpdated('ws', [root, otherRoot]));
+      demandFileRead('ws', 'a.ts', { gitRoot: { id: root.id, relativePath: 'a.ts' } });
+      h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/sub/a.ts', text('base')));
+      try {
+        if (mode === 'recovery') {
+          h.request.mockImplementation((method, params) =>
+            method === 'file.read' ? held.promise : normal(method, params),
+          );
+          await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+          h.emit(lost());
+        } else
+          h.dispatch(
+            loadFileContentRequested('ws', 'a.ts', '/repo/sub/a.ts', {
+              gitRoot: { id: root.id, relativePath: 'a.ts' },
+            }),
+          );
+        await flush();
+        h.dispatch(updateFileContent('ws', 'a.ts', text('new draft'), { autoSave: false }));
+        h.dispatch(gitRootsUpdated('ws', [{ ...root, branch: 'another', updatedAt: 'later' }]));
+        held.resolve(
+          mode === 'ordinary'
+            ? { kind: 'editable-text', originalContent: 'current disk', truncated: false }
+            : 'current disk',
+        );
+        await flush();
+        expect(h.entry()).toMatchObject({
+          originalContent: 'current disk',
+          localContent: 'new draft',
+        });
+      } finally {
+        held.resolve(null);
+        await flush();
+        task.cancel();
+        await task.toPromise();
+        h.close();
+        read.mockRestore();
+      }
+    });
+  });
+
   it('preserves file edit badge physical siblings after a transient failure', async () => {
     const h = setup();
     h.dispatch(setFileExplorerWorkspacePath('ws', '/repo'));
@@ -699,6 +892,7 @@ describe('file projections after lost final events', () => {
   });
   it('uses git-root routing and does not add loss recovery on a legacy subscription', async () => {
     const h = setup(false);
+    h.dispatch(gitRootsUpdated('ws', [root]));
     h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/external/a.ts', text('base')));
     demandFileRead('ws', 'a.ts', { gitRoot: { id: 'root', relativePath: 'actual.ts' } });
     await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
@@ -709,6 +903,7 @@ describe('file projections after lost final events', () => {
     ]);
     h.close();
     const modern = setup();
+    modern.dispatch(gitRootsUpdated('ws', [root]));
     modern.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/external/a.ts', text('base')));
     demandFileRead('ws', 'a.ts', { gitRoot: { id: 'root', relativePath: 'actual.ts' } });
     await modern.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
