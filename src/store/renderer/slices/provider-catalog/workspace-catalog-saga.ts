@@ -1,9 +1,26 @@
+import { withRecoveryLifetime } from '../../middlewares/event-recovery';
+import { invalidateSettingsReadCache } from '$lib/client/live/live-settings-client';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryHandle,
+} from '$features/events/renderer-event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { store } from '../../store';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import {
+  readRecoveryCatalog,
+  settleCatalogReads,
+  workspaceCatalogRecoveryKey,
+} from './workspace-catalog-recovery';
 import { eventChannel, buffers } from 'redux-saga';
 import { createChannelFromSelector } from '@themislib/themis/saga';
 import { call, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { backendRequest, onBackendReconnected } from '$lib/client/live/backend-transport';
-import { getProviderAuthVerdicts } from '$features/providers/provider-auth-status.client';
+import {
+  getProviderAuthVerdicts,
+  invalidateProviderAuthStatus,
+} from '$features/providers/provider-auth-status.client';
 import { createLogger } from '$lib/utils/client-logger';
 import { takeSingleFlightInContext } from '../../utils/context-saga-effects';
 import { selectMountedWorkspaceIds } from '../workspace-lifecycle/workspace-lifecycle-selectors';
@@ -14,6 +31,7 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   workspaceCatalogRequested,
+  workspaceCatalogRetired,
   workspaceCatalogReadStarted,
   workspaceCatalogReadFailed,
   ensureWorkspaceCatalogRequested,
@@ -57,6 +75,10 @@ const ALL_RESOURCES: WorkspaceCatalogResource[] = [
 type Reads = {
   queued: Map<string, Set<WorkspaceCatalogResource>>;
   pending: Map<string, WorkspaceCatalogUpdate[]>;
+  receipts: Map<string, RecoveryLifetime>;
+  recovery: Map<string, () => void>;
+  inflight: Map<string, Promise<unknown>>;
+  handles: Map<string, RendererRecoveryHandle>;
 };
 type CatalogAction =
   | ReturnType<typeof workspaceCatalogRequested>
@@ -64,22 +86,93 @@ type CatalogAction =
   | ReturnType<typeof workspaceDeleted>
   | ReturnType<typeof removeWorkspaceEntity>;
 
-function* publishDisabled(workspaceId: string, snapshot: WorkspaceCatalogSnapshot) {
-  yield* put(
-    setWorkspaceDisabledMcpServers(
-      workspaceId,
-      Object.fromEntries(
-        (snapshot.mcpServers ?? []).flatMap((server) =>
-          server.workspaceDisabled ? [[getMcpServerKey(server), true as const]] : [],
-        ),
+function* publishDisabled(
+  workspaceId: string,
+  snapshot: WorkspaceCatalogSnapshot,
+  receipt?: RecoveryLifetime,
+) {
+  const action = setWorkspaceDisabledMcpServers(
+    workspaceId,
+    Object.fromEntries(
+      (snapshot.mcpServers ?? []).flatMap((server) =>
+        server.workspaceDisabled ? [[getMcpServerKey(server), true as const]] : [],
       ),
     ),
   );
+  yield* put(receipt ? withRecoveryLifetime(action, receipt) : action);
+}
+
+function ensureRecovery(reads: Reads, workspaceId: string) {
+  if (reads.recovery.has(workspaceId)) return;
+  const stop = rendererEventRecovery.onSession((scope) => {
+    const authority = selectPrincipalActionContext.select(store.state);
+    const owner = scope.registerResource({
+      key: workspaceCatalogRecoveryKey(workspaceId),
+      workspaceId,
+      eventTypes: [
+        'settings:changed',
+        'specialists:changed',
+        'skills:changed',
+        'mcp.servers:status-changed',
+        'workspace:updated',
+        'provider:auth-changed',
+      ],
+      isCurrent: () =>
+        reads.recovery.has(workspaceId) &&
+        authority === selectPrincipalActionContext.select(store.state),
+      read: async (reader) => {
+        await reads.inflight.get(workspaceId)?.catch(() => undefined);
+        return readRecoveryCatalog(workspaceId, reader);
+      },
+      apply: (snapshot) => {
+        store.dispatch(
+          workspaceCatalogReceived(
+            workspaceId,
+            snapshot,
+            selectWorkspaceCatalogEpoch.select(store.state),
+          ),
+        );
+        store.dispatch(
+          setWorkspaceDisabledMcpServers(
+            workspaceId,
+            Object.fromEntries(
+              (snapshot.mcpServers ?? []).flatMap((server) =>
+                server.workspaceDisabled ? [[getMcpServerKey(server), true as const]] : [],
+              ),
+            ),
+          ),
+        );
+      },
+      invalidate: () => {
+        invalidateSettingsReadCache();
+        invalidateProviderAuthStatus();
+        reads.pending.get(workspaceId)?.splice(0);
+        store.dispatch(workspaceCatalogReadStarted(workspaceId));
+      },
+      retire: () => {
+        invalidateSettingsReadCache();
+        invalidateProviderAuthStatus();
+        reads.pending.get(workspaceId)?.splice(0);
+        store.dispatch(workspaceCatalogRetired(workspaceId));
+        store.dispatch(setWorkspaceDisabledMcpServers(workspaceId, {}));
+      },
+    });
+    reads.handles.set(workspaceId, owner);
+    return () => {
+      reads.handles.delete(workspaceId);
+      owner.dispose();
+    };
+  });
+  reads.recovery.set(workspaceId, stop);
 }
 
 function* readCatalog(reads: Reads, action: CatalogAction) {
   if (action.type !== workspaceCatalogRequested.type) return;
   const [workspaceId] = action.payload;
+  ensureRecovery(reads, workspaceId);
+  if (reads.handles.get(workspaceId)?.status.stale) return;
+  const receipt = rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId));
+  reads.receipts.set(workspaceId, receipt);
   const epoch = yield* selectWorkspaceCatalogEpoch.effect();
   const previous = yield* selectWorkspaceCatalog.effect(workspaceId);
   const resources = previous
@@ -94,89 +187,103 @@ function* readCatalog(reads: Reads, action: CatalogAction) {
     const { patch } = yield* race({
       invalidated: take([workspaceCatalogInvalidated, hostExecutionConnectionChanged]),
       patch: call(async (): Promise<Partial<WorkspaceCatalogSnapshot>> => {
-        const result: Partial<WorkspaceCatalogSnapshot> = {};
-        await Promise.all([
-          resources.has('catalog') &&
-            appClient.providers.catalog(workspaceId).then((catalog) => {
-              result.catalog = catalog;
-            }),
-          resources.has('settings') &&
-            appClient.settings.list(workspaceId).then((settings) => {
-              result.settings = settings;
-            }),
-          resources.has('specialists') &&
-            (appClient.specialists.listCatalog
-              ? appClient.specialists.listCatalog(undefined, workspaceId, { includeProject: true })
-              : appClient.specialists
-                  .list(undefined, workspaceId)
-                  .then((specialists) => ({ specialists, importDiagnostics: undefined }))
-            ).then(({ specialists, importDiagnostics }) => {
-              result.specialists = specialists;
-              result.importDiagnostics = importDiagnostics;
-            }),
-          resources.has('readiness') &&
-            Promise.all([
-              backendRequest<{
-                providers: Array<{
-                  id: string;
-                  installed: boolean;
-                  gatedOff?: string | null;
-                  hasNpxFallback?: boolean;
-                }>;
-              }>('host.providerDiscovery', { workspaceId }),
-              getProviderAuthVerdicts({ workspaceId }),
-            ]).then(([discovery, auth]) => {
-              result.readiness = Object.fromEntries(
-                discovery.providers.map((p) => [
-                  p.id,
-                  {
-                    available: p.installed && !p.gatedOff,
-                    ...auth[p.id],
-                    hasNpxFallback: p.hasNpxFallback,
-                  },
-                ]),
-              );
-            }),
-          resources.has('mcp') &&
-            appClient.settings.getMcpServers(workspaceId).then(async (servers) => {
-              if (!active) return;
-              result.mcpServers = servers.map(copyServerForState);
-              const known = new Set([
-                ...(resources.has('catalog') ? [] : (previous?.mcpStatuses ?? [])).map(
-                  (status) => status.serverId,
-                ),
-                ...updates.flatMap((update) =>
-                  update.kind === 'status' ? [update.status.serverId] : [],
-                ),
-              ]);
-              const ids = servers.flatMap((server) =>
-                server.id && !known.has(server.id) ? [server.id] : [],
-              );
-              const statuses = ids.length
-                ? await appClient.settings.getMcpServerStatuses(ids, workspaceId)
-                : [];
-              result.mcpStatuses = [
-                ...(previous?.mcpStatuses ?? []).filter(
-                  (status) =>
-                    servers.some((server) => server.id === status.serverId) &&
-                    !statuses.some((fresh) => fresh.serverId === status.serverId),
-                ),
-                ...statuses,
-              ];
-            }),
-        ]);
-        return result;
+        const work = (async () => {
+          const result: Partial<WorkspaceCatalogSnapshot> = {};
+          await settleCatalogReads([
+            resources.has('catalog') &&
+              appClient.providers.catalog(workspaceId).then((catalog) => {
+                result.catalog = catalog;
+              }),
+            resources.has('settings') &&
+              appClient.settings.list(workspaceId).then((settings) => {
+                result.settings = settings;
+              }),
+            resources.has('specialists') &&
+              (appClient.specialists.listCatalog
+                ? appClient.specialists.listCatalog(undefined, workspaceId, {
+                    includeProject: true,
+                  })
+                : appClient.specialists
+                    .list(undefined, workspaceId)
+                    .then((specialists) => ({ specialists, importDiagnostics: undefined }))
+              ).then(({ specialists, importDiagnostics }) => {
+                result.specialists = specialists;
+                result.importDiagnostics = importDiagnostics;
+              }),
+            resources.has('readiness') &&
+              settleCatalogReads([
+                backendRequest<{
+                  providers: Array<{
+                    id: string;
+                    installed: boolean;
+                    gatedOff?: string | null;
+                    hasNpxFallback?: boolean;
+                  }>;
+                }>('host.providerDiscovery', { workspaceId }),
+                getProviderAuthVerdicts({ workspaceId }),
+              ]).then(([discovery, auth]) => {
+                result.readiness = Object.fromEntries(
+                  discovery.providers.map((p) => [
+                    p.id,
+                    {
+                      available: p.installed && !p.gatedOff,
+                      ...auth[p.id],
+                      hasNpxFallback: p.hasNpxFallback,
+                    },
+                  ]),
+                );
+              }),
+            resources.has('mcp') &&
+              appClient.settings.getMcpServers(workspaceId).then(async (servers) => {
+                if (!active || !receipt.isCurrent()) return;
+                result.mcpServers = servers.map(copyServerForState);
+                const known = new Set([
+                  ...(resources.has('catalog') ? [] : (previous?.mcpStatuses ?? [])).map(
+                    (status) => status.serverId,
+                  ),
+                  ...updates.flatMap((update) =>
+                    update.kind === 'status' ? [update.status.serverId] : [],
+                  ),
+                ]);
+                const ids = servers.flatMap((server) =>
+                  server.id && !known.has(server.id) ? [server.id] : [],
+                );
+                const statuses = ids.length
+                  ? await appClient.settings.getMcpServerStatuses(ids, workspaceId)
+                  : [];
+                result.mcpStatuses = [
+                  ...(previous?.mcpStatuses ?? []).filter(
+                    (status) =>
+                      servers.some((server) => server.id === status.serverId) &&
+                      !statuses.some((fresh) => fresh.serverId === status.serverId),
+                  ),
+                  ...statuses,
+                ];
+              }),
+          ]);
+          return result;
+        })();
+        reads.inflight.set(workspaceId, work);
+        try {
+          return await work;
+        } finally {
+          if (reads.inflight.get(workspaceId) === work) reads.inflight.delete(workspaceId);
+        }
       }),
     });
     if (!patch) return;
-    // A push is newer than every point read already in flight. Replay it even on
-    // first hydration, where there was no cached snapshot to update immediately.
+    // Preserve the ordinary pre-loss journal during hydration. Loss invalidation
+    // clears it and retires this read receipt; recovery never replays this journal.
     const current = yield* selectWorkspaceCatalog.effect(workspaceId);
     let snapshot = { ...current, ...patch } as WorkspaceCatalogSnapshot;
     for (const update of updates) snapshot = applyWorkspaceCatalogUpdate(snapshot, update);
-    yield* put(workspaceCatalogReceived(workspaceId, snapshot, epoch));
+    const commitReceipt = reads.receipts.get(workspaceId);
+    if (!commitReceipt?.commit(() => undefined)) return;
+    yield* put(
+      withRecoveryLifetime(workspaceCatalogReceived(workspaceId, snapshot, epoch), commitReceipt),
+    );
     if (epoch === (yield* selectWorkspaceCatalogEpoch.effect()) && resources.has('mcp')) {
-      yield* publishDisabled(workspaceId, snapshot);
+      yield* publishDisabled(workspaceId, snapshot, reads.receipts.get(workspaceId));
     }
   } catch (error) {
     const queued = reads.queued.get(workspaceId) ?? new Set<WorkspaceCatalogResource>();
@@ -187,6 +294,7 @@ function* readCatalog(reads: Reads, action: CatalogAction) {
   } finally {
     active = false;
     reads.pending.delete(workspaceId);
+    reads.receipts.delete(workspaceId);
   }
 }
 
@@ -226,11 +334,18 @@ function* watchProviderReadiness() {
 }
 
 function* applyPush(reads: Reads, workspaceId: string, update: WorkspaceCatalogUpdate) {
+  if (!rendererEventRecovery.push(workspaceCatalogRecoveryKey(workspaceId))) return;
+  if (reads.pending.has(workspaceId))
+    reads.receipts.set(
+      workspaceId,
+      rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId)),
+    );
   reads.pending.get(workspaceId)?.push(update);
-  yield* put(workspaceCatalogUpdated(workspaceId, update));
+  const token = rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId));
+  yield* put(withRecoveryLifetime(workspaceCatalogUpdated(workspaceId, update), token));
   if (update.kind === 'toggle') {
     const snapshot = yield* selectWorkspaceCatalog.effect(workspaceId);
-    if (snapshot) yield* publishDisabled(workspaceId, snapshot);
+    if (snapshot) yield* publishDisabled(workspaceId, snapshot, token);
   }
 }
 
@@ -375,7 +490,14 @@ function* watchReconnects(seen: Set<string>) {
 }
 
 export function* workspaceCatalogSaga() {
-  const reads: Reads = { queued: new Map(), pending: new Map() };
+  const reads: Reads = {
+    queued: new Map(),
+    pending: new Map(),
+    receipts: new Map(),
+    recovery: new Map(),
+    inflight: new Map(),
+    handles: new Map(),
+  };
   const seen = new Set<string>();
   yield* takeSingleFlightInContext(
     [workspaceCatalogRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
@@ -383,6 +505,9 @@ export function* workspaceCatalogSaga() {
       const [workspaceId] = action.payload;
       if (action.type !== workspaceCatalogRequested.type) {
         reads.queued.delete(workspaceId);
+        const stop = reads.recovery.get(workspaceId);
+        reads.recovery.delete(workspaceId);
+        stop?.();
         return { context: workspaceId, cancel: true as const };
       }
       const resources = reads.queued.get(workspaceId) ?? new Set<WorkspaceCatalogResource>();
@@ -404,4 +529,10 @@ export function* workspaceCatalogSaga() {
   yield* takeEvery(setWorkspaceMcpServerDisabled, onConfirmedToggle, reads);
   yield* fork(watchReconnects, seen);
   yield* fork(watchProviderReadiness);
+  try {
+    yield* take(() => false);
+  } finally {
+    for (const stop of reads.recovery.values()) stop();
+    reads.recovery.clear();
+  }
 }

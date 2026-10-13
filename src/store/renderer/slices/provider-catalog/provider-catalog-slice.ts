@@ -152,3 +152,11 @@ providerCatalogReducer.with(workspaceDeleted, (state, { payload: [id] }) =>
 providerCatalogReducer.with(removeWorkspaceEntity, (state, { payload: [id] }) =>
   clearWorkspaceCatalog(state, id),
 );
+
+/** Authority retirement clears the catalog without inventing workspace lifecycle events. */
+export const workspaceCatalogRetired = createAction<[workspaceId: string]>(
+  'providerCatalog/workspaceCatalogRetired',
+);
+providerCatalogReducer.with(workspaceCatalogRetired, (state, { payload: [id] }) =>
+  clearWorkspaceCatalog(state, id),
+);
