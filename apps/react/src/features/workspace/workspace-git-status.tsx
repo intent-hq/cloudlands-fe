@@ -1,5 +1,6 @@
 import { m } from '$shared/paraglide/messages.js';
 import { Link } from '@tanstack/react-router';
+import { useLayoutEffect, useRef } from 'react';
 import { ListRow, ListView } from '@/components/patterns/collection';
 import { LoadingState } from '@/components/patterns/screen';
 import { ChangesRefreshAction } from '@/components/workspace/sidebar/changes-refresh-action';
@@ -15,20 +16,32 @@ export function WorkspaceGitStatus({
   workspaceId: string;
   query?: string;
 }) {
+  const header = useRef<HTMLElement>(null);
+  const restoreRefreshFocus = useRef(false);
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const state = selectGitWorkspaceState(workspaceId);
   const connection = authority.value;
-  if (!connection) return null;
   const { status, loading, error } = state.value;
+  useLayoutEffect(() => {
+    if (loading || !restoreRefreshFocus.current) return;
+    restoreRefreshFocus.current = false;
+    if (document.activeElement === document.body)
+      header.current?.querySelector<HTMLButtonElement>('[data-changes-refresh]')?.focus();
+  }, [loading]);
+  if (!connection) return null;
   return (
     <section className="grid min-w-0 gap-3" data-testid="workspace-git-status">
-      <header className="flex items-center gap-3">
+      <header ref={header} className="flex items-center gap-3">
         <h2 tabIndex={-1} className="type-heading-sm flex-1">
           {m.workspace_sidebarChanges_rootChangedFiles_label()}
         </h2>
         <ChangesRefreshAction
           disabled={loading}
-          onClick={() => store.dispatch(loadGitStatus(workspaceId, true))}
+          onClick={() => {
+            restoreRefreshFocus.current =
+              document.activeElement === header.current?.querySelector('[data-changes-refresh]');
+            store.dispatch(loadGitStatus(workspaceId, true));
+          }}
         />
       </header>
       <ListView
