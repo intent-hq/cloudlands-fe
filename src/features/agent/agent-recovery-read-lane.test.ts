@@ -87,3 +87,97 @@ it('keeps one physical lane through authority refresh and separates a new sessio
   replacementBinding();
   rendererEventRecovery.dispose();
 });
+
+it('preserves the ordinary deadline while retaining physical ownership until completion', async () => {
+  const completion = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+  const timeout = Object.assign(new Error('Request timed out'), {
+    code: 'TIMEOUT',
+    completion: completion.promise,
+  });
+  const first = trackAgentRecoveryRead(
+    'ordinary-timeout',
+    async () => {
+      throw timeout;
+    },
+    lifetime(),
+  );
+  await expect(first).rejects.toBe(timeout);
+  let starts = 0;
+  const next = trackAgentRecoveryRead(
+    'ordinary-timeout',
+    async () => {
+      starts++;
+      return 'fresh';
+    },
+    lifetime(),
+  );
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(starts).toBe(0);
+  completion.resolve({ errors: [], retired: false });
+  expect(await next).toBe('fresh');
+  expect(starts).toBe(1);
+});
+
+it.each(['current', 'replacement', 'retired'] as const)(
+  'retains original authority for an ordinary late denial: %s',
+  async (transition) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { agentQueueReducer, replaceAgentQueue, clearAgentQueue } =
+      await import('$store/renderer/slices/agent-queue/agent-queue-slice');
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: () => () => {},
+      request: async () => ({}),
+      fence: async (_ids: unknown, observe: () => void) => observe(),
+    } as never);
+    let state = agentQueueReducer(
+      undefined,
+      replaceAgentQueue('a', [{ id: 'q', content: 'private', queuedAt: '', position: 0 }], 'ws'),
+    );
+    const key = 'agent-queue:["ws","a"]';
+    const register = () =>
+      scope.registerResource({
+        key,
+        workspaceId: 'ws',
+        eventTypes: ['agent:*'],
+        isCurrent: () => true,
+        read: async () => [],
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {
+          state = agentQueueReducer(state, clearAgentQueue('a'));
+        },
+      });
+    const originalOwner = register();
+    const completion = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'deadline' }, completion.promise);
+    try {
+      const result = trackAgentRecoveryRead(
+        key,
+        async () => {
+          throw timeout;
+        },
+        rendererEventRecovery.capture(key),
+      );
+      await expect(result).rejects.toBe(timeout);
+      if (transition === 'replacement') {
+        originalOwner.dispose();
+        register();
+      }
+      completion.resolve({
+        errors: [Object.assign(new Error('denied'), { rpcCode: -32003 })],
+        retired: transition === 'retired',
+      });
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      if (transition === 'current') expect(state.byAgentId.a).toBeUndefined();
+      else expect(state.byAgentId.a).toBeDefined();
+    } finally {
+      completion.resolve({ errors: [], retired: true });
+      rendererEventRecovery.dispose();
+    }
+  },
+);

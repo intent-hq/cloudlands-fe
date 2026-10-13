@@ -1169,3 +1169,61 @@ it.each([false, true])(
     }
   },
 );
+
+it.each(['current', 'replacement', 'retired'] as const)(
+  'consumes ordinary failure-read completion under original authority: %s',
+  async (transition) => {
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    const { recordAgentFailure } = await import('./agent-failure-registry');
+    const h = integration();
+    recordAgentFailure({ agentId: 'late-denied', workspaceId: 'ws', error: 'private failure' });
+    recordAgentFailure({
+      agentId: 'held-sibling',
+      workspaceId: 'other',
+      error: 'authorized sibling',
+    });
+    const completion = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+    const held = Promise.withResolvers<unknown>();
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params: any) => {
+      if (method === 'workspace.list') return { workspaces: [] };
+      if (method === 'agent.get' && params.agentId === 'late-denied')
+        throw new BackendError(
+          { code: 'TIMEOUT', message: 'ordinary deadline' },
+          completion.promise,
+        );
+      if (method === 'agent.get' && params.agentId === 'held-sibling') return held.promise;
+      return normal(method, params);
+    });
+    try {
+      await h.scope.subscribe({ eventTypes: ['agent:*'] }, { recover: true });
+      h.emit({ ...loss, params: { ...loss.params, scope: { workspaceId: null } } });
+      await settle();
+      if (transition === 'replacement')
+        recordAgentFailure({ agentId: 'late-denied', workspaceId: 'ws', error: 'replacement' });
+      completion.resolve({
+        errors: [Object.assign(new Error('denied'), { rpcCode: -32003 })],
+        retired: transition === 'retired',
+      });
+      await settle();
+      if (transition === 'current') expect(getAgentFailureEntry('late-denied')).toBeUndefined();
+      else
+        expect(getAgentFailureEntry('late-denied')?.error).toBe(
+          transition === 'replacement' ? 'replacement' : 'private failure',
+        );
+      expect(getAgentFailureEntry('held-sibling')?.error).toBe('authorized sibling');
+      expect(
+        h.request.mock.calls.filter(
+          ([m, p]) => m === 'agent.get' && (p as any).agentId === 'held-sibling',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      completion.resolve({ errors: [], retired: true });
+      held.resolve({ agent: { id: 'held-sibling', workspaceId: 'other', status: 'idle' } });
+      await settle();
+      h.stop();
+      h.registry.dispose();
+      clearAgentFailureRegistry();
+    }
+  },
+);

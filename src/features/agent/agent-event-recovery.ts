@@ -1,6 +1,10 @@
-import { bindAgentRecoveryReadOwner, trackAgentRecoveryRead } from './agent-recovery-read-lane';
+import {
+  bindAgentRecoveryReadOwner,
+  trackAgentRecoveryRead,
+  isAgentReadAuthorityError,
+} from './agent-recovery-read-lane';
 import { installAgentRecoveryWorkspaceScope } from './agent-recovery-workspace-scope';
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import { installAgentMetadataRecovery } from './agent-metadata-recovery';
 type UnknownAction = { type: string; payload?: unknown };
 import type { RendererRecoveryScope } from '$features/events/renderer-event-recovery';
@@ -306,9 +310,16 @@ export function installAgentEventRecovery(
                     (code.rpcCode === -32602 && code.data?.code === 'not-found')
                   )
                     return { agentId, entry, session: null, workspaceId };
-                  if (error instanceof RecoveryRequestTimeoutError) {
-                    const completion = await error.completion;
-                    for (const failure of completion.errors) clearDenied(failure);
+                  const physical = getPhysicalRequestCompletion(error);
+                  if (physical) {
+                    const completion = await physical;
+                    if (!completion.retired) {
+                      for (const failure of completion.errors) clearDenied(failure);
+                      // Point denials belong to this entry/workspace. Do not
+                      // propagate them as authority loss for the global mirror.
+                      if (completion.errors.some((failure) => isAgentReadAuthorityError(failure)))
+                        return { agentId, entry, session: null, workspaceId };
+                    }
                   }
                   throw error;
                 }

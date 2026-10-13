@@ -100,3 +100,99 @@ it('allows a new physical session without waiting for an old workspace read', as
   expect(await other).toBe('new session');
   rendererEventRecovery.dispose();
 });
+
+it.each(['ordinary', 'recovery'] as const)(
+  'retains a %s read after an ordinary transport deadline',
+  async (mode) => {
+    const completion = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+    const timeout = Object.assign(new Error('Request timed out'), {
+      code: 'TIMEOUT',
+      completion: completion.promise,
+    });
+    const first = trackAgentMetadataRead(
+      `ordinary-wire-${mode}`,
+      async () => {
+        throw timeout;
+      },
+      mode,
+    );
+    await expect(first).rejects.toBe(timeout);
+    const read = vi.fn(async () => 'fresh');
+    const next = trackAgentMetadataRead(
+      `ordinary-wire-${mode}`,
+      read,
+      mode === 'ordinary' ? 'recovery' : 'ordinary',
+    );
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(read).not.toHaveBeenCalled();
+    completion.resolve({ errors: [], retired: false });
+    expect(await next).toBe('fresh');
+    expect(read).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each(['current', 'replacement', 'retired', 'not-found'] as const)(
+  'guards metadata cleanup after an ordinary deadline: %s',
+  async (transition) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { agentSessionReducer, bulkUpsertSessions, removeSession } =
+      await import('$store/renderer/slices/agent-session/agent-session-slice');
+    const { normalizeAgent } = await import('$lib/client/live/live-agents-client');
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: () => () => {},
+      request: async () => ({}),
+      fence: async (_ids: unknown, observe: () => void) => observe(),
+    } as never);
+    let state = agentSessionReducer(
+      undefined,
+      bulkUpsertSessions([
+        normalizeAgent({ id: 'a', workspaceId: 'metadata-denial', name: 'private' }),
+        normalizeAgent({ id: 'other', workspaceId: 'other', name: 'authorized' }),
+      ]),
+    );
+    const register = () =>
+      scope.registerResource({
+        key: 'agents:["metadata-denial"]',
+        workspaceId: 'metadata-denial',
+        eventTypes: ['agent:*'],
+        isCurrent: () => true,
+        read: async () => [],
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {
+          state = agentSessionReducer(state, removeSession('a'));
+        },
+      });
+    const original = register();
+    const completion = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'deadline' }, completion.promise);
+    try {
+      await expect(
+        trackAgentMetadataRead('metadata-denial', async () => {
+          throw timeout;
+        }),
+      ).rejects.toBe(timeout);
+      if (transition === 'replacement') {
+        original.dispose();
+        register();
+      }
+      const denied =
+        transition === 'not-found'
+          ? { rpcCode: -32602, data: { code: 'not-found' } }
+          : { rpcCode: -32003 };
+      completion.resolve({ errors: [denied], retired: transition === 'retired' });
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      if (transition === 'current') expect(state.byAgentId.a).toBeUndefined();
+      else expect(state.byAgentId.a?.name).toBe('private');
+      expect(state.byAgentId.other?.name).toBe('authorized');
+    } finally {
+      completion.resolve({ errors: [], retired: true });
+      rendererEventRecovery.dispose();
+    }
+  },
+);
