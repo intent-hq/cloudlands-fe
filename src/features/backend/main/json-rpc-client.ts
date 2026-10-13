@@ -39,6 +39,7 @@ export interface RepositoryConnection {
   readonly incarnation: object;
   readonly identity: object;
   readonly repositoryContext: boolean;
+  readonly eventStreamRecovery?: boolean;
   readonly repositoryResourceRead?: boolean;
   readonly gitlabCheckout?: boolean;
   readonly gitlabCheckoutOwnerAvatar?: boolean;
@@ -518,7 +519,7 @@ export class JsonRpcClient extends EventEmitter {
     captured: object,
     method: string,
     params?: unknown,
-    options?: { timeoutMs?: number },
+    options?: { timeoutMs?: number; observe?: (result: unknown) => void },
     parent?: object,
   ): Promise<T> {
     const refused = this.refuseIndependent(parent);
@@ -532,7 +533,7 @@ export class JsonRpcClient extends EventEmitter {
     connection: object,
     method: string,
     params?: unknown,
-    options?: { timeoutMs?: number },
+    options?: { timeoutMs?: number; observe?: (result: unknown) => void },
   ): Promise<T> {
     if (!connection || connection !== this.getRepositoryConnection() || method === HELLO_METHOD) {
       return Promise.reject(new Error('Captured repository connection is unavailable'));
@@ -542,7 +543,7 @@ export class JsonRpcClient extends EventEmitter {
       typeof override === 'number' && Number.isFinite(override) && override > 0
         ? override
         : this.requestTimeoutMs;
-    return this.sendNow<T>(method, params, timeout);
+    return this.sendNow<T>(method, params, timeout, options?.observe);
   }
 
   private beginHello(): object {
@@ -571,6 +572,7 @@ export class JsonRpcClient extends EventEmitter {
     });
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
+      eventStreamRecovery: capabilities?.eventStreamRecovery === 1,
       identity: Object.freeze({}),
       repositorySelection:
         (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
@@ -829,7 +831,12 @@ export class JsonRpcClient extends EventEmitter {
    * after the call is correlated correctly. Callers must ensure the socket is
    * usable: either `status === 'connected'` or the §5.17 handshake window.
    */
-  private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
+  private sendNow<T = unknown>(
+    method: string,
+    params: unknown,
+    timeoutMs: number,
+    observe?: (result: unknown) => void,
+  ): Promise<T> {
     const socket = this.socket;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
@@ -853,6 +860,12 @@ export class JsonRpcClient extends EventEmitter {
           if (method === HELLO_METHOD && this.socket === socket) {
             this.protocolVersion = (result as { protocolVersion?: unknown } | null)
               ?.protocolVersion;
+          }
+          try {
+            observe?.(result);
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+            return;
           }
           resolve(result as T);
         },

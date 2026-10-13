@@ -103,13 +103,26 @@ function helloResult(clientId = 'browser-1') {
 }
 
 /** Complete the real connect handshake for tests exercising unrelated RPC behavior. */
-async function connect(socket: FakeWebSocket): Promise<void> {
+async function connect(socket: FakeWebSocket, recovery = false): Promise<void> {
   socket.open();
   await flush();
   const hello = socket.lastFrame();
   expect(hello).toMatchObject({ method: 'client.hello' });
   socket.sent.pop();
-  socket.receive({ jsonrpc: '2.0', id: hello.id, result: helloResult() });
+  const result = helloResult();
+  socket.receive({
+    jsonrpc: '2.0',
+    id: hello.id,
+    result: recovery
+      ? {
+          ...result,
+          server: {
+            ...result.server,
+            capabilities: { ...result.server.capabilities, eventStreamRecovery: 1 },
+          },
+        }
+      : result,
+  });
   await flush();
 }
 
@@ -941,6 +954,7 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
+          eventStreamRecovery: 0,
         },
       },
     });
@@ -976,6 +990,7 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          eventStreamRecovery: 0,
         },
       },
     });
@@ -1012,6 +1027,7 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          eventStreamRecovery: 0,
         },
       },
     });
@@ -1052,4 +1068,71 @@ describe('binary file reads through browser transport normalization', () => {
       request.mockRestore();
     }
   });
+});
+
+describe('captured generic recovery transport', () => {
+  it('propagates losses and orders fences through async owner processing', async () => {
+    const h = createHarness();
+    const boot = h.transport.request('ping');
+    await connect(h.socket(), true);
+    h.socket().receive({ jsonrpc: '2.0', id: h.socket().lastFrame().id, result: {} });
+    await boot;
+    const session = await h.transport.captureEventRecovery();
+    let release!: () => void;
+    const order: string[] = [];
+    session.onNotification(
+      (n) =>
+        new Promise<void>((resolve) => {
+          release = () => {
+            order.push(n.method);
+            resolve();
+          };
+        }),
+    );
+    const fence = session.fence(['a'], () => {
+      order.push('fence');
+    });
+    const wire = h.socket().lastFrame();
+    expect(wire).toMatchObject({ method: 'events.fence', params: { subscriptionIds: ['a'] } });
+    h.socket().receive({
+      jsonrpc: '2.0',
+      method: 'events.lost',
+      params: { subscriptionId: 'a', generation: '1', scope: { workspaceId: null } },
+    });
+    h.socket().receive({ jsonrpc: '2.0', id: wire.id, result: { subscriptionIds: ['a'] } });
+    expect(order).toEqual([]);
+    release();
+    await fence;
+    expect(order).toEqual(['events.lost', 'fence']);
+    h.socket().drop();
+    expect(session.isCurrent()).toBe(false);
+    await expect(session.request('file.read', {})).rejects.toThrow();
+    session.dispose();
+    h.transport.dispose();
+  });
+});
+
+it('cleans up a captured recovery lease whose ack arrives after disposal', async () => {
+  const h = createHarness();
+  const boot = h.transport.request('ping');
+  await connect(h.socket(), true);
+  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+  await boot;
+  const session = await h.transport.captureEventRecovery();
+  const subscribe = session.request('events.subscribe', {
+    eventTypes: ['file:*'],
+    workspaceId: 'ws-a',
+    lossRecovery: 1,
+  });
+  const failed = expect(subscribe).rejects.toThrow();
+  const request = h.socket().lastFrame();
+  session.dispose();
+  await failed;
+  h.socket().receive({ id: request.id, result: { subscriptionId: 'late', lossRecovery: 1 } });
+  await flush();
+  expect(h.socket().lastFrame()).toMatchObject({
+    method: 'events.unsubscribe',
+    params: { subscriptionId: 'late' },
+  });
+  h.transport.dispose();
 });

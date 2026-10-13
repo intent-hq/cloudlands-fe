@@ -963,6 +963,12 @@ export const IPC_CHANNELS = {
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
     NODE_CAPABILITIES: 'backend:node-capabilities',
+    EVENT_RECOVERY: {
+      CAPTURE: 'backend:event-recovery:capture',
+      REQUEST: 'backend:event-recovery:request',
+      RELEASE: 'backend:event-recovery:release',
+      FRAME: 'backend:event-recovery:frame',
+    },
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
@@ -1269,6 +1275,7 @@ export const EVENT_CHANNELS = [
   // and connection-status changes pushed from the main-process client.
   'dev-console:changed',
   'backend:notification',
+  'backend:event-recovery:frame',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)
   'hardware-console:clear-lighting',

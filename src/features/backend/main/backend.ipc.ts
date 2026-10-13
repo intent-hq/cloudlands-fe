@@ -1,3 +1,4 @@
+import { registerEventRecoveryHandlers } from './event-recovery-ipc';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
@@ -411,6 +412,7 @@ const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createReposit
 const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
 let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
+let eventRecoveryRoutes: ReturnType<typeof registerEventRecoveryHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
   ReturnType<typeof createRepositorySelectionFeed>
@@ -815,6 +817,7 @@ function retireOriginalMember(
   try {
     repositoryRoutes?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
+    eventRecoveryRoutes?.retireBackend(member.id);
     checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
@@ -1000,6 +1003,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
+        eventRecoveryRoutes?.dispose();
         checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
@@ -1630,6 +1634,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
+  eventRecoveryRoutes?.retireBackend(id);
   checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
@@ -4291,6 +4296,9 @@ export function registerBackendHandlers(): void {
     },
     errorPayload: toErrorPayload,
   });
+  eventRecoveryRoutes = registerEventRecoveryHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+  });
   resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, workspaceId) => {
@@ -5409,6 +5417,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
+  eventRecoveryRoutes?.dispose();
   checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();

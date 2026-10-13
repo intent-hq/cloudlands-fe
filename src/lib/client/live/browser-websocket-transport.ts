@@ -1,3 +1,7 @@
+import {
+  createEventRecoverySession,
+  type EventRecoverySession,
+} from '$shared/event-recovery/session';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -252,6 +256,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private helloConfirmed = false;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
+  private readonly recoveryRetired = new Set<() => void>();
   private protocolVersion: unknown;
   private helloError: Error = new BackendError({
     code: 'UNAVAILABLE',
@@ -291,6 +296,66 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return { server: { capabilities: this.nodeCapabilities } };
   }
 
+  async captureEventRecovery(): Promise<EventRecoverySession> {
+    const socket = await this.ensureConnected();
+    const generation = this.capabilityHelloGeneration;
+    const leases = new Set<string>();
+    let released = false;
+    const current = () =>
+      !this.disposed &&
+      this.connected &&
+      this.socket === socket &&
+      this.capabilityHelloGeneration === generation;
+    if (!current()) throw new Error('Event recovery connection unavailable');
+    return createEventRecoverySession({
+      supported: this.nodeCapabilities?.eventStreamRecovery === 1,
+      isCurrent: () => !released && current(),
+      onRetired: (handler) => {
+        this.recoveryRetired.add(handler);
+        return () => {
+          this.recoveryRetired.delete(handler);
+        };
+      },
+      onNotification: (handler) => this.onNotification(handler),
+      request: (method, params, observe) => {
+        if (!current() || method === 'client.hello')
+          return Promise.reject(new Error('Event recovery connection retired'));
+        return this.requestOnSocket(method, params, undefined, socket, observe).then((result) => {
+          if (method === 'events.subscribe') {
+            const id = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
+            if (typeof id === 'string') {
+              if (released && current())
+                void this.requestOnSocket(
+                  'events.unsubscribe',
+                  { subscriptionId: id },
+                  undefined,
+                  socket,
+                ).catch(() => {});
+              else leases.add(id);
+            }
+          } else if (method === 'events.unsubscribe') {
+            const id = (params as { subscriptionId?: unknown } | null)?.subscriptionId;
+            if (typeof id === 'string') leases.delete(id);
+          }
+          return result;
+        });
+      },
+      dispose: () => {
+        if (released) return;
+        released = true;
+        if (current())
+          for (const subscriptionId of leases)
+            void this.requestOnSocket(
+              'events.unsubscribe',
+              { subscriptionId },
+              undefined,
+              socket,
+            ).catch(() => {});
+        leases.clear();
+      },
+    });
+  }
+
   request<T = unknown>(
     method: string,
     params?: unknown,
@@ -304,6 +369,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     params?: unknown,
     options?: BackendRequestOptions,
     handshakeSocket?: BrowserWebSocketLike,
+    observe?: (result: unknown) => void,
   ): Promise<T> {
     if (options?.localMachine) {
       return Promise.reject(
@@ -370,7 +436,10 @@ export class BrowserWebSocketTransport implements BackendTransport {
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
         const capabilityGeneration =
           method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
-        if (method === 'client.hello') this.nodeCapabilities = null;
+        if (method === 'client.hello') {
+          this.nodeCapabilities = null;
+          for (const retire of [...this.recoveryRetired]) retire();
+        }
         this.pending.set(id, {
           method,
           timeout,
@@ -391,12 +460,14 @@ export class BrowserWebSocketTransport implements BackendTransport {
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
                   agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
                   workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
+                  eventStreamRecovery: capabilities?.eventStreamRecovery === 1 ? 1 : 0,
                 });
               }
               this.helloConfirmed = true;
               this.protocolVersion = (result as { protocolVersion?: unknown } | null)
                 ?.protocolVersion;
             }
+            observe?.(result);
             resolve(result as T);
           },
           reject,
@@ -684,6 +755,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private teardownSocket(): void {
+    for (const retire of [...this.recoveryRetired]) retire();
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
     this.protocolVersion = undefined;

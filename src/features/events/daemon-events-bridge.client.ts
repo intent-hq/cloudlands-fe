@@ -1,3 +1,4 @@
+import type { EventRecoveryCoordinator } from './event-recovery-coordinator';
 import { workspaceCatalogEventReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import {
@@ -3640,6 +3641,8 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 }
 
 export interface DaemonEventsRoutingOverrides {
+  /** Adopted leases route through the captured, ordered recovery ingress only. */
+  recovery?: Pick<EventRecoveryCoordinator, 'ownsSubscription'>;
   onSettingsChanges?: (changes: AppliedSettingChange[], revision?: number) => void;
 }
 
@@ -3657,6 +3660,8 @@ export function routeDaemonEventsNotification(
   // bare string is still accepted for back-compat with older call sites.
   // Flat/legacy envelopes (no `subscriptionId` on params) always pass.
   const envelopeSubscriptionId = extractSubscriptionId(params);
+  if (envelopeSubscriptionId && overrides?.recovery?.ownsSubscription(envelopeSubscriptionId))
+    return;
   if (envelopeSubscriptionId !== undefined) {
     const expected =
       typeof expectedSubscriptionIds === 'string'

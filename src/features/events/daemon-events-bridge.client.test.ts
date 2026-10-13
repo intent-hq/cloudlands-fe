@@ -4344,6 +4344,34 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     dispatch.mockRestore();
   });
 
+  it('leaves adopted leases to ordered recovery ingress and never routes a loss as activity', async () => {
+    await primeBridge();
+    const envelope = notificationWithSub(
+      'agent:stream:chunk',
+      {
+        agentId: AGENT,
+        content: 'once',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      },
+      'sub-1',
+    );
+    routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1'], {
+      recovery: { ownsSubscription: (id) => id === 'sub-1' },
+    });
+    routeDaemonEventsNotification(
+      'events.lost',
+      { subscriptionId: 'sub-1', generation: '1', scope: { workspaceId: null } },
+      ['sub-1'],
+    );
+    expect(capturedStreamUpdates).toHaveLength(0);
+    routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1']);
+    expect(capturedStreamUpdates).toHaveLength(1);
+  });
+
   it('still applies legacy/flat envelopes with no subscriptionId (back-compat)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
