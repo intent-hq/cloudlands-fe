@@ -63,9 +63,6 @@ it('shares one lease/read across terminals, replaces metadata, and leaves bytes 
   expect(state).toMatchObject({
     terminalId: 'one',
     isConnected: true,
-    cwd: undefined,
-    title: undefined,
-    isExecuting: undefined,
   });
   expect(request.mock.calls.filter(([method]) => method === 'terminal.list')).toHaveLength(1);
   expect(request.mock.calls.filter(([method]) => method === 'events.subscribe')).toHaveLength(1);
@@ -73,7 +70,7 @@ it('shares one lease/read across terminals, replaces metadata, and leaves bytes 
     subscriptionId: 'lease',
     event: { type: 'terminal:cwd', workspaceId: 'ws', data: { terminalId: 'one', cwd: '/old' } },
   });
-  expect(handlers.onCwd).not.toHaveBeenCalled();
+  expect(handlers.onCwd).toHaveBeenCalledExactlyOnceWith({ terminalId: 'one', cwd: '/old' });
   h.emit('events.event', {
     subscriptionId: 'lease',
     event: {
@@ -96,6 +93,8 @@ it('shares one lease/read across terminals, replaces metadata, and leaves bytes 
     metadataAllowed: false,
   });
   expect(handlers.onExit).not.toHaveBeenCalled();
+  await settle();
+  expect(request.mock.calls.filter(([method]) => method === 'terminal.list')).toHaveLength(1);
 });
 it('rejects a held recovery response after retirement without replaying exits', async () => {
   let finish!: (value: unknown) => void;
@@ -109,6 +108,7 @@ it('rejects a held recovery response after retirement without replaying exits', 
   const h = session(request as EventRecoverySession['request']);
   let state: unknown;
   const onExit = vi.fn();
+  const onCwd = vi.fn();
   cleanups.push(
     subscribeTerminalRuntime(
       'ws',
@@ -118,6 +118,7 @@ it('rejects a held recovery response after retirement without replaying exits', 
           state = value;
         },
         onExit,
+        onCwd,
       },
       () => {},
     ).dispose,
@@ -126,10 +127,19 @@ it('rejects a held recovery response after retirement without replaying exits', 
   h.emit('events.lost', { subscriptionId: 'lease', generation: '1', scope: { workspaceId: 'ws' } });
   await settle();
   rendererEventRecovery.retireWorkspace('ws');
-  expect(state).toEqual({ terminalId: 'one', isConnected: false });
+  h.emit('events.event', {
+    subscriptionId: 'lease',
+    event: {
+      type: 'terminal:cwd',
+      workspaceId: 'ws',
+      data: { terminalId: 'one', cwd: '/retired' },
+    },
+  });
+  expect(onCwd).not.toHaveBeenCalled();
+  expect(state).toEqual({ terminalId: 'one', isConnected: false, clearTransient: true });
   finish({ terminals: [{ id: 'one', cwd: '/stale' }] });
   await settle();
-  expect(state).toEqual({ terminalId: 'one', isConnected: false });
+  expect(state).toEqual({ terminalId: 'one', isConnected: false, clearTransient: true });
   expect(onExit).not.toHaveBeenCalled();
 });
 
@@ -168,7 +178,7 @@ it('coalesces repeated losses and output bursts and refreshes late unversioned m
     });
   pending.shift()!({ terminals: [{ id: 'one', cwd: '/stale' }] });
   await settle();
-  expect(state).toEqual({ terminalId: 'one' });
+  expect(state).toEqual({ terminalId: 'one', clearTransient: true });
   expect(pending).toHaveLength(0);
   await vi.advanceTimersByTimeAsync(250);
   expect(pending).toHaveLength(1);
@@ -179,9 +189,9 @@ it('coalesces repeated losses and output bursts and refreshes late unversioned m
     h.emit('events.event', {
       subscriptionId: 'lease',
       event: {
-        type: 'terminal:cwd',
+        type: 'terminal:exit',
         workspaceId: 'ws',
-        data: { terminalId: 'one', cwd: '/unversioned' },
+        data: { terminalId: 'one', exitCode: 0 },
       },
     });
   expect(pending).toHaveLength(0);
@@ -189,7 +199,7 @@ it('coalesces repeated losses and output bursts and refreshes late unversioned m
   expect(pending).toHaveLength(1);
   pending.shift()!({ terminals: [] });
   await settle();
-  expect(state).toEqual({ terminalId: 'one', isConnected: false });
+  expect(state).toEqual({ terminalId: 'one', isConnected: false, clearTransient: true });
   expect(request.mock.calls.filter(([m]) => m === 'terminal.list')).toHaveLength(3);
 });
 
@@ -303,11 +313,11 @@ it('includes overlapping legacy leases in coverage and resumes after they retire
     ).dispose,
   );
   await settle();
-  await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['terminal:cwd'] }, { recover: false });
+  await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['terminal:exit'] }, { recover: false });
   h.emit('events.lost', { subscriptionId: 'lease', generation: '1', scope: { workspaceId: 'ws' } });
   await settle();
   expect(request.mock.calls.filter(([m]) => m === 'terminal.list')).toHaveLength(0);
-  expect(state).toEqual({ terminalId: 'one' });
+  expect(state).toEqual({ terminalId: 'one', clearTransient: true });
   await h.scope.unsubscribe('legacy');
   await settle();
   expect(state).toMatchObject({ isConnected: true });
@@ -343,8 +353,6 @@ it('restores legacy connection state on reconnect using a pre-envelope terminal 
   expect(state).toMatchObject({
     terminalId: 'one',
     isConnected: true,
-    cwd: undefined,
-    title: undefined,
   });
   expect(request.mock.calls.filter(([m]) => m === 'terminal.list')).toHaveLength(1);
 });

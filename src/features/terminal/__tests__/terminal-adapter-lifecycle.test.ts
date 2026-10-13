@@ -949,7 +949,7 @@ describe('TerminalAdapter code-font preference wiring', () => {
   });
 });
 
-it('applies recovered terminal metadata without replaying exits or OSC metadata from live bytes', () => {
+it('clears lost terminal indicators without replaying exits or bytes', () => {
   const terminals = fakeTerminalsClient();
   let handlers: any;
   terminals.subscribeEvents = vi.fn((_id, sink) => {
@@ -973,27 +973,69 @@ it('applies recovered terminal metadata without replaying exits or OSC metadata 
   internal.setupIpcEventHandlers();
   handlers.onCwd({ terminalId: 'term-1', cwd: '/last-known' });
   handlers.onTitle({ terminalId: 'term-1', title: 'Last known' });
-  handlers.onMetadata({ terminalId: 'term-1' });
+  handlers.onMetadata({ terminalId: 'term-1', clearTransient: true });
   expect(internal.lastCwd).toBeUndefined();
   expect(internal.lastTitle).toBeUndefined();
   expect(internal.stateMachine.getState()).toBe('connected');
   handlers.onMetadata({ terminalId: 'term-1', isConnected: true });
   handlers.onData({
     terminalId: 'term-1',
-    chunk: '\x1b]7;file://host/stale\x07',
+    chunk: 'live bytes',
     metadataAllowed: false,
   });
   expect(internal.lastCwd).toBeUndefined();
-  expect(internal.xterm.write).toHaveBeenCalledWith('\x1b]7;file://host/stale\x07');
-  handlers.onMetadata({ terminalId: 'term-1', isConnected: false });
+  expect(internal.xterm.write).toHaveBeenCalledWith('live bytes');
+  handlers.onMetadata({ terminalId: 'term-1', isConnected: false, clearTransient: true });
   expect(internal.stateMachine.getState()).toBe('disconnected');
   expect(internal.lastCwd).toBeUndefined();
   expect(terminals.create).not.toHaveBeenCalled();
   expect(onExit).not.toHaveBeenCalled();
   const old = handlers;
   internal.setupIpcEventHandlers();
-  old.onMetadata({ terminalId: 'term-1', isConnected: true, cwd: '/stale' });
+  old.onCwd({ terminalId: 'term-1', cwd: '/stale' });
   expect(internal.lastCwd).toBeUndefined();
+  adapter.dispose();
+});
+
+it('repopulates transient cwd and title from later live events without replaying command effects', () => {
+  const terminals = fakeTerminalsClient();
+  let handlers: any;
+  terminals.subscribeEvents = vi.fn((_id, sink) => {
+    handlers = sink;
+    return () => {};
+  });
+  const onCommandStart = vi.fn();
+  const onCommandFinished = vi.fn();
+  const onExit = vi.fn();
+  const adapter = new TerminalAdapter({
+    workspaceId: 'ws-1',
+    terminalId: 'term-1',
+    container: document.createElement('div'),
+    appClient: { terminals },
+    onCommandStart,
+    onCommandFinished,
+    onExit,
+  });
+  const internal = adapter as any;
+  internal.stateMachine.transition('initialize');
+  internal.stateMachine.transition('connect');
+  internal.stateMachine.transition('connected');
+  internal.setupIpcEventHandlers();
+  handlers.onCwd({ terminalId: 'term-1', cwd: '/before-loss' });
+  handlers.onMetadata({ terminalId: 'term-1', clearTransient: true });
+  expect(internal.lastCwd).toBeUndefined();
+  handlers.onData({
+    terminalId: 'term-1',
+    chunk: '\x1b]7;file://host/live\x07\x1b]133;A\x07',
+    metadataAllowed: false,
+  });
+  handlers.onTitle({ terminalId: 'term-1', title: 'Live title' });
+  handlers.onMetadata({ terminalId: 'term-1', isConnected: true });
+  expect(internal.lastCwd).toBe('/live');
+  expect(internal.lastTitle).toBe('Live title');
+  expect(onCommandStart).not.toHaveBeenCalled();
+  expect(onCommandFinished).not.toHaveBeenCalled();
+  expect(onExit).not.toHaveBeenCalled();
   adapter.dispose();
 });
 
@@ -1023,7 +1065,8 @@ it('ignores a held health response after metadata recovery and does not create a
   internal.stateMachine.transition('connected');
   internal.setupIpcEventHandlers();
   const check = internal.performHealthCheck();
-  handlers.onMetadata({ terminalId: 'term-1', isConnected: true, cwd: '/current' });
+  handlers.onCwd({ terminalId: 'term-1', cwd: '/current' });
+  handlers.onMetadata({ terminalId: 'term-1', isConnected: true });
   finish({ terminals: [], daemonBootId: 'boot' });
   await check;
   expect(internal.stateMachine.getState()).toBe('connected');

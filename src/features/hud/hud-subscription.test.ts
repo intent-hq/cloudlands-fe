@@ -186,6 +186,7 @@ describe('HUD subscription (mock backend, real store)', () => {
         new Promise<void>((resolve) => {
           release = resolve;
         }),
+      'recovery',
     );
     try {
       stop = startHudSubscription();
@@ -1106,10 +1107,10 @@ describe('HUD subscription (mock backend, real store)', () => {
         });
       }
       await flush();
-      // The shared metadata lane holds subsequent point reads behind the first.
+      // Ordinary point reads retain concurrency; recovery exclusively blocks them.
       // Nothing may take over while the mute state is still unknown.
       expect(received).toEqual([]);
-      expect(getCalls()).toEqual([MUTED_CHILD_ID]);
+      expect(getCalls().sort()).toEqual([GONE_ID, LOUD_CHILD_ID, MUTED_CHILD_ID].sort());
 
       releaseGet?.();
       await flush();

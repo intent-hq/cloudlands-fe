@@ -685,6 +685,7 @@ export class TerminalAdapter {
           if (!this.stateMachine.canAcceptInput()) return;
           this.xterm.write(chunk);
           if (metadataAllowed !== false) this.parseTerminalOutput(chunk);
+          else this.parseTransientIndicators(chunk);
         },
         onExit: ({ exitCode, metadataAllowed }) => {
           if (handlerDisabled || this.isDisposed) return;
@@ -709,12 +710,14 @@ export class TerminalAdapter {
           this.metadataEpoch++;
           this.lastTitle = title;
         },
-        onMetadata: ({ isConnected, cwd, title, isExecuting }) => {
+        onMetadata: ({ isConnected, clearTransient }) => {
           if (handlerDisabled || this.isDisposed) return;
           this.metadataEpoch++;
-          this.lastCwd = cwd;
-          this.lastTitle = title;
-          this.isExecuting = isExecuting ?? false;
+          if (clearTransient) {
+            this.lastCwd = undefined;
+            this.lastTitle = undefined;
+            this.isExecuting = false;
+          }
           if (isConnected === undefined) return;
           // Reconciliation never replays exit/command effects or creates a PTY.
           this.cancelAutoReconnect();
@@ -1094,11 +1097,16 @@ export class TerminalAdapter {
       }
     }
 
-    // Check for CWD changes
+    this.parseTransientIndicators(data);
+  }
+
+  /** Live cwd observations do not reconstruct commands or command-history effects. */
+  private parseTransientIndicators(data: string): void {
     const cwdMatch = data.match(/\x1b\]7;file:\/\/[^/]*([^\x07]*)\x07/);
     if (cwdMatch) {
       const cwd = decodeURIComponent(cwdMatch[1]);
       if (cwd !== this.lastCwd) {
+        this.metadataEpoch++;
         this.lastCwd = cwd;
         this.callbacks.onCwdChanged?.(cwd);
       }

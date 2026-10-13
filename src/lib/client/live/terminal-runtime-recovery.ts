@@ -100,12 +100,6 @@ export function subscribeTerminalRuntime(
       for (const row of owned.consumers) row.adopted();
       const emitSnapshot = (row: Consumer, value: TerminalMetadataEvent) => {
         row.handlers.onMetadata?.(value);
-        if (!row.handlers.onMetadata) {
-          if (value.cwd !== undefined)
-            row.handlers.onCwd?.({ terminalId: row.terminalId, cwd: value.cwd });
-          if (value.title !== undefined)
-            row.handlers.onTitle?.({ terminalId: row.terminalId, title: value.title });
-        }
       };
       const readSnapshot = async (request: RendererRecoveryScope['request']) => {
         type TerminalRow = { id?: string; terminalId?: string; isExecutingCommand?: boolean };
@@ -123,19 +117,16 @@ export function subscribeTerminalRuntime(
           emitSnapshot(row, {
             terminalId: row.terminalId,
             isConnected: !!current && current.isExecutingCommand !== false,
-            // terminal.list exposes spawn cwd/name and child liveness, not OSC
-            // cwd/title or the shell command inferred from output. Loss makes
-            // those transient indicators unknown; never restore spawn values.
-            cwd: undefined,
-            title: undefined,
-            isExecuting: undefined,
+            // Spawn cwd/name are not current shell metadata. A live snapshot
+            // preserves transient observations received after invalidation.
+            ...(!current || current.isExecutingCommand === false ? { clearTransient: true } : {}),
           });
         }
       };
       const owner = scope.registerResource({
         key: terminalRuntimeKey(workspaceId),
         workspaceId,
-        eventTypes: ['terminal:cwd', 'terminal:title', 'terminal:exit'],
+        eventTypes: ['terminal:exit'],
         isCurrent: () => live && owned.scope === scope && groups.get(workspaceId) === owned,
         read: (reader) => trackTerminalRuntimeRead(workspaceId, () => readSnapshot(reader.request)),
         apply: (result) => {
@@ -143,30 +134,19 @@ export function subscribeTerminalRuntime(
           applySnapshot(result);
         },
         invalidate: () => {
-          for (const row of owned.consumers) emitSnapshot(row, { terminalId: row.terminalId });
+          for (const row of owned.consumers)
+            emitSnapshot(row, { terminalId: row.terminalId, clearTransient: true });
         },
         retire: () => {
           live = false;
           abort.abort();
           if (leaseId) void scope.unsubscribe(leaseId);
           for (const row of owned.consumers)
-            emitSnapshot(row, { terminalId: row.terminalId, isConnected: false });
-        },
-        onEvent: (notification, lifetime) => {
-          const params = notification.params as {
-            subscriptionId?: string;
-            event?: { type?: string; data?: { terminalId?: string; cwd?: string; title?: string } };
-          };
-          if (params.subscriptionId !== leaseId) return;
-          const event = params.event;
-          for (const row of owned.consumers)
-            if (event?.data?.terminalId === row.terminalId)
-              lifetime.commit(() => {
-                if (event.type === 'terminal:cwd' && typeof event.data?.cwd === 'string')
-                  row.handlers.onCwd?.({ terminalId: row.terminalId, cwd: event.data.cwd });
-                if (event.type === 'terminal:title' && typeof event.data?.title === 'string')
-                  row.handlers.onTitle?.({ terminalId: row.terminalId, title: event.data.title });
-              });
+            emitSnapshot(row, {
+              terminalId: row.terminalId,
+              isConnected: false,
+              clearTransient: true,
+            });
         },
       });
       owned.refresh = () => {
@@ -178,7 +158,13 @@ export function subscribeTerminalRuntime(
           subscriptionId?: string;
           event?: {
             type?: string;
-            data?: { terminalId?: string; chunk?: unknown; exitCode?: number };
+            data?: {
+              terminalId?: string;
+              chunk?: unknown;
+              exitCode?: number;
+              cwd?: string;
+              title?: string;
+            };
           };
         };
         if (!leaseId || params.subscriptionId !== leaseId) return;
@@ -186,6 +172,11 @@ export function subscribeTerminalRuntime(
         const metadataAllowed = !recovered && !owner.status.stale;
         for (const row of owned.consumers)
           if (event?.data?.terminalId === row.terminalId) {
+            // Cwd/title are live observations, not authoritative list fields.
+            if (event.type === 'terminal:cwd' && typeof event.data.cwd === 'string')
+              row.handlers.onCwd?.({ terminalId: row.terminalId, cwd: event.data.cwd });
+            if (event.type === 'terminal:title' && typeof event.data.title === 'string')
+              row.handlers.onTitle?.({ terminalId: row.terminalId, title: event.data.title });
             if (event.type === 'terminal:data')
               row.handlers.onData?.({
                 terminalId: row.terminalId,
