@@ -306,3 +306,57 @@ test('direct note links reload and recover from a missing note', async ({ page }
     contentType: 'application/json',
   });
 });
+
+test('note filtering survives opening a note and supports clear and Escape', async ({
+  page,
+}, info) => {
+  const baseUrl = process.env.REACT_BASE_URL;
+  const workspaceId = process.env.REACT_WORKSPACE_ID;
+  const noteId = process.env.REACT_NOTE_ID;
+  if (!baseUrl || !workspaceId || !noteId)
+    throw new Error('Set the real daemon workspace journey environment');
+  const errors = await observeErrors(page);
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(`${baseUrl}/workspaces/${encodeURIComponent(workspaceId)}`);
+  const notes = page.getByTestId('workspace-notes');
+  const target = notes.locator(`a[data-note-id="${noteId}"]`);
+  await expect(target).toBeVisible({ timeout: 60_000 });
+  const allCount = await notes.locator('a[data-note-id]').count();
+  const trigger = notes.getByRole('button', { name: 'Filter notes', exact: true });
+  await trigger.click();
+  const input = notes.getByRole('searchbox', { name: 'Filter notes', exact: true });
+  await expect(input).toBeFocused();
+  await input.fill(noteId);
+  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(noteId);
+  await expect(target).toBeVisible();
+  await expect.poll(() => notes.locator('a[data-note-id]').count()).toBeLessThan(allCount);
+  await target.click();
+  await expect(page.getByTestId('workspace-note')).toHaveAttribute('data-note-id', noteId);
+  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(noteId);
+  await page.getByRole('link', { name: 'All notes', exact: true }).click();
+  await expect(input).toHaveValue(noteId);
+  await expect(target).toBeFocused();
+  await page.reload();
+  await expect(input).toHaveValue(noteId, { timeout: 60_000 });
+  await expect(target).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: info.outputPath('filtered-notes.png') });
+  await info.attach('filtered-notes', {
+    path: info.outputPath('filtered-notes.png'),
+    contentType: 'image/png',
+  });
+  await input.fill(`absent-${crypto.randomUUID()}`);
+  await expect(notes.locator('a[data-note-id]')).toHaveCount(0);
+  await expect(notes.getByRole('status')).toBeVisible();
+  await notes.getByRole('button', { name: 'Clear search', exact: true }).click();
+  await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
+  await expect(notes.locator('a[data-note-id]')).toHaveCount(allCount);
+  await input.fill(noteId);
+  await page.keyboard.press('Escape');
+  await expect(input).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull();
+  await expect(notes.locator('a[data-note-id]')).toHaveCount(allCount);
+  expect(errors).toEqual([]);
+});

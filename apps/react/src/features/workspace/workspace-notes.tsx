@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { MarkdownViewer } from '@/components/markdown/markdown-viewer';
 import { Button } from '@/components/ui/button';
+import { SidebarExpandableSearch } from '@/components/workspace/sidebar/sidebar-expandable-search';
 import { LoadingState } from '@/components/patterns/screen';
 import { NoteContentSurface } from '@/features/layout/tab-types/note-content-surface';
 import { store } from '@/store';
@@ -24,10 +25,20 @@ import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/wor
 import { parseIntentLink } from '$shared/utils/intent-link-parser';
 import type { LinkHandlerOptions } from '$shared/utils/link-helpers';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import { filterContextNotes } from '$lib/components/workspace/sidebar/sidebar-search';
+import { m } from '$shared/paraglide/messages.js';
 
 let nextHydrationGeneration = 0;
 
-function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: string }) {
+function NoteContent({
+  workspaceId,
+  noteId,
+  query,
+}: {
+  workspaceId: string;
+  noteId: string;
+  query: string;
+}) {
   const consumerId = useId();
   const title = useRef<HTMLHeadingElement>(null);
   const navigate = useNavigate();
@@ -55,7 +66,10 @@ function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: str
     void navigate({
       to: '/workspaces/$workspaceId',
       params: { workspaceId: targetWorkspaceId },
-      search: { note: targetNoteId },
+      search: {
+        note: targetNoteId,
+        q: targetWorkspaceId === workspaceId ? query || undefined : undefined,
+      },
     });
   }
   function unsupportedLink() {
@@ -143,10 +157,20 @@ function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: str
   );
 }
 
-export function WorkspaceNotes({ workspaceId, noteId }: { workspaceId: string; noteId?: string }) {
+export function WorkspaceNotes({
+  workspaceId,
+  noteId,
+  query = '',
+}: {
+  workspaceId: string;
+  noteId?: string;
+  query?: string;
+}) {
+  const navigate = useNavigate();
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const state = selectWorkspaceNotesState(workspaceId);
   const notes = selectAllNotes(workspaceId);
+  const filteredNotes = filterContextNotes(notes.value, query);
   const list = useRef<HTMLUListElement>(null);
   const previousNoteId = useRef(noteId);
   const connection = authority.value;
@@ -177,23 +201,43 @@ export function WorkspaceNotes({ workspaceId, noteId }: { workspaceId: string; n
           <Link
             to="/workspaces/$workspaceId"
             params={{ workspaceId }}
-            search={{}}
+            search={{ q: query || undefined }}
             className="w-fit text-muted-foreground hover:text-foreground"
           >
             All notes
           </Link>
-          <NoteContent key={noteId} workspaceId={workspaceId} noteId={noteId} />
+          <NoteContent key={noteId} workspaceId={workspaceId} noteId={noteId} query={query} />
         </>
       ) : (
         <>
-          <h2 className="type-heading-sm">Notes</h2>
+          <header className="flex min-w-0 items-center gap-4">
+            <h2 className="type-heading-sm flex-1">Notes</h2>
+            <SidebarExpandableSearch
+              query={query}
+              onQueryChange={(value) => {
+                void navigate({
+                  to: '/workspaces/$workspaceId',
+                  params: { workspaceId },
+                  search: { q: value || undefined },
+                  replace: true,
+                });
+              }}
+              placeholder="Filter notes"
+              scope="context"
+            />
+          </header>
+          {filteredNotes.length === 0 && (
+            <output className="text-muted-foreground">
+              {m.onboarding_dirPicker_noSearchResults_description()}
+            </output>
+          )}
           <ul ref={list} className="grid gap-1">
-            {notes.value.map((note) => (
+            {filteredNotes.map((note) => (
               <li key={note.id}>
                 <Link
                   to="/workspaces/$workspaceId"
                   params={{ workspaceId }}
-                  search={{ note: String(note.id) }}
+                  search={{ note: String(note.id), q: query || undefined }}
                   className="block rounded-md px-3 py-3 hover:bg-muted focus-visible:outline"
                   data-note-id={note.id}
                 >

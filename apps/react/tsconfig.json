@@ -18,6 +18,7 @@
       "$features/auto-update/types": ["../../src/features/auto-update/types.ts"],
       "$features/workspace-sharing/types": ["../../src/features/workspace-sharing/types.ts"],
       "$features/events/types": ["../../src/features/events/types.ts"],
+      "$features/context/types": ["../../src/features/context/types.ts"],
       "$store/renderer/slices/guest-sessions/guest-sessions-types": [
         "../../src/store/renderer/slices/guest-sessions/guest-sessions-types.ts"
       ],

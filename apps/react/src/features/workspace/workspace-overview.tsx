@@ -69,9 +69,11 @@ export function WorkspaceList() {
 export function WorkspaceOverview({
   workspaceId,
   noteId,
+  query,
 }: {
   workspaceId: string;
   noteId?: string;
+  query?: string;
 }) {
   const backendId = selectCurrentConnectionId();
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
@@ -119,7 +121,7 @@ export function WorkspaceOverview({
                 <dd data-testid="workspace-status">{row.status}</dd>
               </div>
             </dl>
-            <WorkspaceNotes workspaceId={workspaceId} noteId={noteId} />
+            <WorkspaceNotes workspaceId={workspaceId} noteId={noteId} query={query} />
           </>
         )}
       </ScreenBody>
