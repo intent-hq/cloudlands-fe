@@ -38,6 +38,7 @@ function NoteContent({
 }) {
   const consumerId = useId();
   const title = useRef<HTMLHeadingElement>(null);
+  const retry = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
   const [showSource, setShowSource] = useState(false);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
@@ -58,7 +59,8 @@ function NoteContent({
   const failed = current?.status === 'error' && current.authority === connection;
   useLayoutEffect(() => {
     if (ready) title.current?.focus();
-  }, [ready]);
+    else if (failed) retry.current?.focus();
+  }, [ready, failed]);
   function openNote(targetWorkspaceId: string, targetNoteId: string) {
     void navigate({
       to: '/workspaces/$workspaceId',
@@ -121,7 +123,20 @@ function NoteContent({
   return (
     <NoteContentSurface state={failed ? 'error' : !ready ? 'loading' : 'read-only'}>
       {failed ? (
-        <p role="alert">{current.error}</p>
+        <div className="grid justify-items-start gap-4">
+          <p role="alert">{current.error}</p>
+          <Button
+            ref={retry}
+            variant="outline"
+            onClick={() =>
+              store.dispatch(
+                noteContentViewRequested(consumerId, crypto.randomUUID(), workspaceId, noteId),
+              )
+            }
+          >
+            {m.ui_combobox_retry_label()}
+          </Button>
+        </div>
       ) : !ready ? (
         <LoadingState label="Loading note content" />
       ) : (
@@ -177,10 +192,12 @@ export function WorkspaceNotes({
   workspaceId,
   noteId,
   query = '',
+  onRetry,
 }: {
   workspaceId: string;
   noteId?: string;
   query?: string;
+  onRetry: () => void;
 }) {
   const navigate = useNavigate();
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
@@ -189,8 +206,12 @@ export function WorkspaceNotes({
   const filteredNotes = filterContextNotes(notes.value, query);
   const list = useRef<HTMLUListElement>(null);
   const filterHeader = useRef<HTMLElement>(null);
+  const retry = useRef<HTMLButtonElement>(null);
   const previousNoteId = useRef(noteId);
   const connection = authority.value;
+  useLayoutEffect(() => {
+    if (state.value.error) retry.current?.focus();
+  }, [state.value.error]);
   useLayoutEffect(() => {
     const previous = previousNoteId.current;
     previousNoteId.current = noteId;
@@ -202,7 +223,15 @@ export function WorkspaceNotes({
     }
   }, [noteId]);
   if (!connection) return <p>Notes are not available for the current connection.</p>;
-  if (state.value.error) return <p role="alert">{state.value.error}</p>;
+  if (state.value.error)
+    return (
+      <div className="grid justify-items-start gap-4">
+        <p role="alert">{state.value.error}</p>
+        <Button ref={retry} variant="outline" onClick={onRetry}>
+          {m.ui_combobox_retry_label()}
+        </Button>
+      </div>
+    );
   if (!state.value.initialized) return <LoadingState label="Loading notes" />;
   if (notes.value.length === 0) return <p>This workspace has no notes.</p>;
   return (

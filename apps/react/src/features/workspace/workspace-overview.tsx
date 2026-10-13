@@ -182,7 +182,20 @@ export function WorkspaceOverview({
               ) : (
                 <>
                   {!noteId && <WorkspaceGitStatus workspaceId={workspaceId} query={query} />}
-                  <WorkspaceNotes workspaceId={workspaceId} noteId={noteId} query={query} />
+                  <WorkspaceNotes
+                    workspaceId={workspaceId}
+                    noteId={noteId}
+                    query={query}
+                    onRetry={() =>
+                      store.dispatch(
+                        workspaceNotesHydrationRequested(
+                          workspaceId,
+                          ++nextHydrationGeneration,
+                          true,
+                        ),
+                      )
+                    }
+                  />
                 </>
               )}
             </div>
