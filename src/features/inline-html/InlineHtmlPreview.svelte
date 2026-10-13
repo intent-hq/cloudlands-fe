@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Skeleton } from '$lib/components/ui/skeleton';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import * as m from '$shared/paraglide/messages.js';
   import {
@@ -46,6 +47,7 @@
               ? 'ready'
               : 'loading',
   );
+  const loading = $derived(isStreaming || (runnable && !ready && !runtimeError));
 
   function sendTheme() {
     if (!frame?.contentWindow || !channel) return;
@@ -129,6 +131,7 @@
   bind:this={root}
   data-inline-html
   data-inline-html-status={status}
+  aria-busy={loading}
   class="my-3 min-w-0 overflow-hidden rounded-lg bg-background text-foreground"
 >
   <div class="flex min-w-0 items-center justify-end gap-1 p-1">
@@ -154,23 +157,21 @@
       {m.inlineHtml_preview_reload_label()}
     </Button>
   </div>
-  {#if !runnable}
+  {#if loading}
+    <p class="sr-only" role="status">
+      {isStreaming ? m.inlineHtml_preview_building_label() : m.inlineHtml_preview_loading_label()}
+    </p>
+  {:else if !runnable}
     <p class="type-body m-0 px-4 py-3 text-muted-foreground" role="status">
-      {isStreaming
-        ? m.inlineHtml_preview_building_label()
-        : !isComplete
-          ? m.inlineHtml_preview_incomplete_description()
-          : m.inlineHtml_preview_empty_description()}
+      {!isComplete
+        ? m.inlineHtml_preview_incomplete_description()
+        : m.inlineHtml_preview_empty_description()}
     </p>
   {:else if runtimeError}
     <div class="type-body px-4 py-2 text-danger" role="status">
       <p class="m-0">{m.inlineHtml_preview_runtime_error()}</p>
       <p class="type-code m-0 break-words">{runtimeError}</p>
     </div>
-  {:else if !ready}
-    <p class="type-body m-0 px-4 py-2 text-muted-foreground" role="status">
-      {m.inlineHtml_preview_loading_label()}
-    </p>
   {/if}
   <div class="relative min-w-0">
     {#if runnable && documentHtml}
@@ -181,19 +182,32 @@
         referrerpolicy="no-referrer"
         srcdoc={documentHtml}
         class="block w-full border-0"
-        class:source-open={showSource}
-        aria-hidden={showSource}
+        class:preview-hidden={showSource || loading}
+        aria-hidden={showSource || loading}
         style:height={`${height}px`}
       ></iframe>
     {/if}
     {#if showSource}
       <CodeBlock code={source} language="html" noBorder noMargin maxHeight={heightLimit} />
+    {:else if loading}
+      <div class="space-y-4 p-4" aria-hidden="true">
+        <div class="space-y-2">
+          <Skeleton class="h-4 w-32 max-w-1/2" />
+          <Skeleton class="h-3 w-2/3" />
+        </div>
+        <Skeleton class="aspect-video max-h-60 w-full rounded-lg" />
+        <div class="flex items-center gap-4">
+          <Skeleton class="h-3 w-16" />
+          <Skeleton class="h-2 min-w-0 flex-1" />
+          <Skeleton class="h-3 w-10" />
+        </div>
+      </div>
     {/if}
   </div>
 </div>
 
 <style>
-  .source-open {
+  .preview-hidden {
     position: absolute;
     inset: 0 auto auto 0;
     visibility: hidden;

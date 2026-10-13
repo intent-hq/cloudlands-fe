@@ -179,14 +179,41 @@ test('keeps unfinished and empty blocks inert and renders after a matching close
   const unfinished = `~~~ws-block:html\n${inlineHtmlDemo}`;
   await openChat(page, { message: unfinished, isStreaming: true });
   await expect(preview(page)).toBeVisible();
+  await expect(preview(page)).toHaveAttribute('aria-busy', 'true');
   await expect(preview(page).locator('iframe')).toHaveCount(0);
-  await capture(page, testInfo, 'unfinished');
+  await capture(page, testInfo, 'loading-light');
+  await preview(page)
+    .getByRole('button', { name: /source/i })
+    .click();
+  await expect(preview(page).locator('pre')).toContainText('updateFit');
+  await capture(page, testInfo, 'loading-source');
+  await preview(page)
+    .getByRole('button', { name: /preview|hide source/i })
+    .click();
+  await expect(preview(page).locator('iframe')).toHaveCount(0);
+  await page.evaluate(() => (document.documentElement.className = 'dark'));
+  await page.waitForFunction(
+    () =>
+      !document
+        .getAnimations()
+        .some((a) => a instanceof CSSTransition && a.playState === 'running'),
+  );
+  await capture(page, testInfo, 'loading-dark');
+  await page.setViewportSize({ width: 360, height: 840 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+  ).toBeLessThanOrEqual(1);
+  await capture(page, testInfo, 'loading-narrow-dark');
+  await page.setViewportSize({ width: 1024, height: 840 });
+  await page.evaluate(() => (document.documentElement.className = 'light'));
   await updateHost(page, { isStreaming: false });
   await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'incomplete');
+  await expect(preview(page)).toHaveAttribute('aria-busy', 'false');
   await expect(preview(page).locator('iframe')).toHaveCount(0);
   await capture(page, testInfo, 'incomplete');
   await updateHost(page, { message: `${unfinished}\n~~~` });
   await expect(frame(page).getByRole('slider')).toBeVisible();
+  await expect(preview(page)).toHaveAttribute('aria-busy', 'false');
   await updateHost(page, { message: '```ws-block:html\n\n```' });
   await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'empty');
   await expect(preview(page).locator('iframe')).toHaveCount(0);
