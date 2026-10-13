@@ -57,7 +57,7 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
   vi.useRealTimers();
 });
-async function harness(mounted = true) {
+async function harness(mounted = true, afterDispatch?: () => void) {
   vi.useFakeTimers();
   vi.setSystemTime(0);
   let state = {
@@ -97,6 +97,7 @@ async function harness(mounted = true) {
       ),
     };
     notify();
+    afterDispatch?.();
     return action;
   };
   let receive!: (event: RecoveryNotification) => void;
@@ -1090,4 +1091,40 @@ it('retains released metadata demand until the final recovery fence commits', as
   await settle();
   expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual(['fresh']);
   expect(h.registry.capture(contextRecoveryKey('ws')).isCurrent()).toBe(false);
+});
+
+it('retains metadata demand released after apply until the running cycle settles', async () => {
+  let afterApply = () => {};
+  const h = await harness(false, () => afterApply());
+  const original = h.request.getMockImplementation()!;
+  let reads = 0;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'workspace.getContext')
+      return { items: [item(++reads === 1 ? 'fresh' : 'latest')] };
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireLifecycleMetadataDemand('ws', 'context');
+  let freshBeforeRelease = false;
+  let currentAfterRelease = false;
+  afterApply = () => {
+    afterApply = () => {};
+    void Promise.resolve().then(() => {
+      const receipt = h.registry.capture(contextRecoveryKey('ws'));
+      freshBeforeRelease = receipt.commit(() => undefined);
+      release();
+      currentAfterRelease = receipt.isCurrent();
+      h.loss('2');
+    });
+  };
+  await settle();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual(['latest']);
+  expect(reads).toBe(2);
+  expect(freshBeforeRelease).toBe(true);
+  expect(currentAfterRelease).toBe(true);
+  expect(h.registry.capture(contextRecoveryKey('ws')).isCurrent()).toBe(false);
+  h.loss('3');
+  await vi.advanceTimersByTimeAsync(250);
+  expect(reads).toBe(2);
 });

@@ -65,7 +65,8 @@ export function acquireLifecycleMetadataDemand(
     released = true;
     // A stale ordinary receipt cannot commit, but its recovery still needs demand
     // through the final fence. Keep the original handle across authority changes.
-    if (handle?.status.stale) void handle.whenSettled().then(remove);
+    if (handle && (handle.status.stale || handle.status.running))
+      void handle.whenSettled().then(remove);
     else remove();
   };
 }

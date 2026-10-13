@@ -43,7 +43,12 @@ afterEach(() => {
   vi.useRealTimers();
 });
 const key = workspaceActivityRecoveryKey('ws');
-async function harness(mounted = true, initial = [event(1)], expanded = false) {
+async function harness(
+  mounted = true,
+  initial = [event(1)],
+  expanded = false,
+  afterDispatch?: () => void,
+) {
   vi.useFakeTimers();
   vi.setSystemTime(0);
   let state = {
@@ -86,6 +91,7 @@ async function harness(mounted = true, initial = [event(1)], expanded = false) {
       workspaceEvents: workspaceEventsReducer(state.workspaceEvents, action as never),
     };
     notify();
+    afterDispatch?.();
     return action;
   };
   let receive!: (event: RecoveryNotification) => void;
@@ -739,4 +745,39 @@ it('retains released activity demand until the final recovery fence commits', as
   await settle();
   expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['2']);
   expect(h.registry.capture(key).isCurrent()).toBe(false);
+});
+
+it('retains activity demand released after apply until the running cycle settles', async () => {
+  let afterApply = () => {};
+  const h = await harness(false, [event(1)], false, () => afterApply());
+  const original = h.request.getMockImplementation()!;
+  let reads = 0;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'event.query') return { items: [event(++reads + 1)], nextToken: null };
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireWorkspaceActivityDemand('ws');
+  let freshBeforeRelease = false;
+  let currentAfterRelease = false;
+  afterApply = () => {
+    afterApply = () => {};
+    void Promise.resolve().then(() => {
+      const receipt = h.registry.capture(key);
+      freshBeforeRelease = receipt.commit(() => undefined);
+      release();
+      currentAfterRelease = receipt.isCurrent();
+      h.loss('2');
+    });
+  };
+  await settle();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['3']);
+  expect(reads).toBe(2);
+  expect(freshBeforeRelease).toBe(true);
+  expect(currentAfterRelease).toBe(true);
+  expect(h.registry.capture(key).isCurrent()).toBe(false);
+  h.loss('3');
+  await vi.advanceTimersByTimeAsync(250);
+  expect(reads).toBe(2);
 });

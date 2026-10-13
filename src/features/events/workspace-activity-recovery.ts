@@ -95,7 +95,8 @@ export function acquireWorkspaceActivityDemand(workspaceId: string): () => void 
   return () => {
     if (released) return;
     released = true;
-    if (handle?.status.stale) void handle.whenSettled().then(remove);
+    if (handle && (handle.status.stale || handle.status.running))
+      void handle.whenSettled().then(remove);
     else remove();
   };
 }
