@@ -125,13 +125,19 @@ async function attachSocket() {
 }
 describe('ordinary client wire deadlines and recovery capacity', () => {
   it.each(
-    cases.flatMap((c) =>
-      (['ordinary', 'recovery'] as const).flatMap((mode) => [
-        { ...c, deadline: true, remount: false, mode },
-        ...(mode === 'recovery' ? [{ ...c, deadline: false, remount: false, mode }] : []),
-        { ...c, deadline: true, remount: true, mode },
-      ]),
-    ),
+    // Every client must preserve timeout completion through its own wrapper. The
+    // comments route also covers the shared queue's remaining scheduling choices.
+    cases.flatMap((c) => [
+      { ...c, deadline: true, remount: false, mode: 'ordinary' as const },
+      ...(c.name === 'comments'
+        ? [
+            { ...c, deadline: true, remount: true, mode: 'ordinary' as const },
+            { ...c, deadline: true, remount: false, mode: 'recovery' as const },
+            { ...c, deadline: false, remount: false, mode: 'recovery' as const },
+            { ...c, deadline: true, remount: true, mode: 'recovery' as const },
+          ]
+        : []),
+    ]),
   )(
     '$name retains capacity until original wire reply (deadline=$deadline, remount=$remount, next=$mode)',
     async (c) => {
@@ -162,6 +168,7 @@ describe('ordinary client wire deadlines and recovery capacity', () => {
       await flush();
       expect(socket.frames.filter((f) => f.method === c.method)).toHaveLength(1);
       const first = socket.frames.at(-1)!;
+      expect(first).toMatchObject({ method: c.method, params: c.params });
       if (c.deadline) {
         await vi.advanceTimersByTimeAsync(51);
         expect(await original).toMatchObject({ e: { code: 'TIMEOUT' } });
@@ -194,6 +201,7 @@ describe('ordinary client wire deadlines and recovery capacity', () => {
       await original;
       await flush();
       expect(socket.frames.filter((f) => f.method === c.method)).toHaveLength(2);
+      expect(socket.frames.at(-1)).toMatchObject({ method: c.method, params: c.params });
       socket.receive({ id: socket.frames.at(-1)!.id, result: c.result });
       await next;
     },

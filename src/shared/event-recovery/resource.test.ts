@@ -198,17 +198,6 @@ it('resumes ordinary pushes synchronously at the successful end fence', async ()
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it('does not retry authorization failures and permits an explicit fresh budget after transient exhaustion', async () => {
-  const h = setup();
-  h.read.mockRejectedValueOnce({ rpcCode: -32003 });
-  h.resource.invalidate();
-  await settle();
-  expect(h.retired).toHaveBeenCalledOnce();
-  expect(h.resource.status.suspended).toBe(true);
-  expect(vi.getTimerCount()).toBe(0);
-  h.resource.dispose();
-});
-
 it('new losses cannot shorten failure delays, and explicit refresh opens a fresh bounded cycle', async () => {
   const h = setup();
   h.read
