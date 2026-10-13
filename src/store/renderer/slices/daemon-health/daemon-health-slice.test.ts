@@ -43,6 +43,7 @@ import type {
 describe('daemonHealthReducer', () => {
   it('has the correct initial state', () => {
     expect(initialState).toEqual({
+      startup: null,
       health: 'down',
       stats: null,
       lastUpdated: null,
@@ -1382,5 +1383,41 @@ describe('daemonHealthReducer', () => {
       const late = daemonHealthReducer(closed, agentMemoryUsageSucceeded(usage));
       expect(late.agentMemoryUsage).toBeNull();
     });
+  });
+});
+
+describe('startup state lifecycle', () => {
+  it('clears previous attempts and backend progress and only becomes healthy on connected', () => {
+    const snapshot = {
+      startupStatus: 1 as const,
+      attemptId: 'a',
+      phase: 'indexing' as const,
+      elapsedMs: 1000,
+      phaseElapsedMs: 1000,
+      progressAgeMs: 0,
+      retryAfterMs: 1000,
+    };
+    let state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged('connecting', undefined, { startup: { snapshot, available: true } }),
+    );
+    expect(state.health).toBe('down');
+    state = daemonHealthReducer(
+      state,
+      connectionStatusChanged('connecting', undefined, {
+        startup: { snapshot: { ...snapshot, attemptId: 'b', elapsedMs: 0 }, available: true },
+      }),
+    );
+    expect(state.startup?.snapshot?.elapsedMs).toBe(0);
+    expect(state.startup?.snapshot?.attemptId).toBe('b');
+    state = daemonHealthReducer(
+      state,
+      connectionStatusChanged('connecting', { mode: 'external-ws', target: 'new-host' }),
+    );
+    expect(state.startup).toBeNull();
+    expect(state.health).toBe('down');
+    state = daemonHealthReducer(state, connectionStatusChanged('connected'));
+    expect(state.health).toBe('healthy');
+    expect(state.startup).toBeNull();
   });
 });

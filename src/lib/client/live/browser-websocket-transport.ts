@@ -1,3 +1,5 @@
+import { StartupMonitor } from '$shared/startup-monitor';
+import { isStartupError } from '$shared/startup-status';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -238,6 +240,10 @@ export class BrowserWebSocketTransport implements BackendTransport {
 
   private socket: BrowserWebSocketLike | null = null;
   private connected = false;
+  private readonly startup = new StartupMonitor(() => this.notifyStatusChange(true));
+  getStartupState() {
+    return this.startup.state;
+  }
   private connecting = false;
   private disposed = false;
   private requestId = 0;
@@ -316,6 +322,17 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.disposed) {
       return Promise.reject(
         new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' }),
+      );
+    }
+    if (!handshakeSocket && this.startup.state && this.socket) {
+      return Promise.reject(
+        new BackendError({
+          code: 'daemon-not-ready',
+          rpcCode: -32012,
+          // i18n-ignore (JSON-RPC protocol error, localized by startup UI)
+          message: 'Daemon not ready',
+          data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000 },
+        }),
       );
     }
     const id = ++this.requestId;
@@ -557,11 +574,22 @@ export class BrowserWebSocketTransport implements BackendTransport {
       );
     } catch (error) {
       if (this.disposed || this.socket !== socket) return;
+      if (isStartupError(error)) {
+        this.failWaiters(toTransportError(error));
+        this.startup.start(
+          error,
+          () =>
+            this.requestOnSocket('system.startupStatus', undefined, { timeoutMs: 5000 }, socket),
+          () => this.onConnectionFailure(new Error('Startup complete; reconnect')),
+        );
+        return;
+      }
       // Unrelated RPCs keep their legacy fallback; presence requires a confirmed hello.
       this.helloError = toTransportError(error);
     }
     if (this.disposed || this.socket !== socket) return;
     this.connecting = false;
+    this.startup.stop(true);
     this.connected = true;
     this.currentReconnectDelay = this.reconnectDelayMs;
     const wasReconnect = this.hasBeenConnected || this.hasConnectionFailed;
@@ -580,8 +608,10 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.clearConnectTimer();
     if (this.disposed) return;
     this.hasConnectionFailed = true;
+    this.connecting = false;
     this.connected = false;
-    this.notifyStatusChange();
+    this.startup.stop();
+    this.notifyStatusChange(true);
     this.teardownSocket();
     this.failPending(error);
     // Reject in-flight connection waiters so pending request() calls fail fast
@@ -591,9 +621,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   /** Deliver the derived status to statusHandlers when it transitions. */
-  private notifyStatusChange(): void {
+  private notifyStatusChange(force = false): void {
     const status = this.getConnectionStatus();
-    if (status === this.lastNotifiedStatus) return;
+    if (!force && status === this.lastNotifiedStatus) return;
     this.lastNotifiedStatus = status;
     for (const handler of [...this.statusHandlers]) handler(status);
   }
@@ -684,6 +714,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private teardownSocket(): void {
+    this.startup.stop();
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
     this.protocolVersion = undefined;

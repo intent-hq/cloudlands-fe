@@ -7501,5 +7501,18 @@
   "chat_failureRecovery_action_label": "Needs attention",
   "chat_failureRecovery_queued_description": "A message is queued. Use its controls below to manage it.",
   "chat_failureRecovery_action_description": "The response stopped before it finished.",
-  "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host."
+  "providers_cliVersionWarning_message": "{provider} CLI version {version} is below the supported minimum {minimumVersion}. Update the CLI on the daemon host.",
+  "daemonStartup_preparing_label": "Starting intentd",
+  "daemonStartup_indexing_label": "Rebuilding note indexes",
+  "daemonStartup_finalizing_label": "Finishing startup",
+  "daemonStartup_failed_label": "Daemon startup failed",
+  "daemonStartup_unavailable_label": "Startup status unavailable",
+  "daemonStartup_elapsed_label": "Elapsed: {duration}",
+  "daemonStartup_notes_label": "Notes indexed: {completed} of {total}",
+  "daemonStartup_remaining_label": "About {duration} remaining for indexing",
+  "daemonStartup_estimating_label": "Estimating remaining time",
+  "daemonStartup_unchanged_description": "Still indexing; completed-note count unchanged",
+  "daemonStartup_finalizing_description": "Finishing database work and starting services. The app will open automatically when ready.",
+  "daemonStartup_failed_description": "Check the daemon logs for details.",
+  "daemonStartup_unavailable_description": "The latest startup status could not be received. Reconnecting…"
 }

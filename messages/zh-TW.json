@@ -7501,5 +7501,18 @@
   "chat_failureRecovery_action_label": "需要處理",
   "chat_failureRecovery_queued_description": "有一則訊息正在佇列中。請使用下方控制項進行管理。",
   "chat_failureRecovery_action_description": "回覆在完成前停止了。",
-  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低於支援的最低版本 {minimumVersion}。請在守護程序主機上更新 CLI。"
+  "providers_cliVersionWarning_message": "{provider} CLI 版本 {version} 低於支援的最低版本 {minimumVersion}。請在守護程序主機上更新 CLI。",
+  "daemonStartup_preparing_label": "正在啟動 intentd",
+  "daemonStartup_indexing_label": "正在重建筆記索引",
+  "daemonStartup_finalizing_label": "正在完成啟動",
+  "daemonStartup_failed_label": "守護程序啟動失敗",
+  "daemonStartup_unavailable_label": "無法取得啟動狀態",
+  "daemonStartup_elapsed_label": "已用時間：{duration}",
+  "daemonStartup_notes_label": "已建立索引的筆記：{completed} / {total}",
+  "daemonStartup_remaining_label": "建立索引預計還需約 {duration}",
+  "daemonStartup_estimating_label": "正在估算剩餘時間",
+  "daemonStartup_unchanged_description": "仍在建立索引；已完成筆記數未變更",
+  "daemonStartup_finalizing_description": "正在完成資料庫作業並啟動服務。準備就緒後，應用程式將自動開啟。",
+  "daemonStartup_failed_description": "請查看守護程序記錄以瞭解詳情。",
+  "daemonStartup_unavailable_description": "未能收到最新啟動狀態。正在重新連線…"
 }

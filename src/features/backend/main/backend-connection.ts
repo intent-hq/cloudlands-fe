@@ -485,6 +485,12 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
       duplex.destroy(new AuthRejectedError(statusCode));
       return;
     }
+    // Bootstrap admission uses Retry-After: 1 for credentials that need the
+    // store. It conveys no progress or auth verdict; keep ordinary retry UI.
+    if (statusCode === 503 && response.headers['retry-after'] === '1') {
+      duplex.destroy(new Error('Service temporarily unavailable'));
+      return;
+    }
     if (statusCode === 503) {
       duplex.destroy(new ConnectionLimitError(parseRetryAfterMs(response.headers['retry-after'])));
       return;

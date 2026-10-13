@@ -1,3 +1,4 @@
+import type { StartupState } from '$shared/startup-status';
 /**
  * Daemon Health Types
  *
@@ -254,6 +255,7 @@ export interface DaemonHealthStats {
  * Daemon health slice state.
  */
 export interface DaemonHealthState {
+  startup: StartupState | null;
   /** Tri-state health value. */
   health: DaemonHealth;
   /** Stats from last successful system.status poll, or null if never fetched. */

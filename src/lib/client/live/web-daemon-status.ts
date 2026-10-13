@@ -1,3 +1,4 @@
+import type { StartupState } from '$shared/startup-status';
 /**
  * Web-platform daemon connection status registry.
  *
@@ -16,6 +17,7 @@ type WebDaemonConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** Live daemon-connection status surface exposed to the browser mock. */
 export interface WebDaemonStatusSource {
+  getStartupState?(): StartupState | null;
   getStatus(): WebDaemonConnectionStatus;
   /** Sanitized daemon target (WS URL without userinfo/query — no secrets). */
   getTarget(): string;

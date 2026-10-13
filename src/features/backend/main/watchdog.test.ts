@@ -57,6 +57,32 @@ describe('healthCheckProbe', () => {
     vi.useRealTimers();
   });
 
+  it('does not call a structured startup response ready', async () => {
+    const response =
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: -32012,
+          message: 'Daemon not ready',
+          data: { code: 'daemon-not-ready' },
+        },
+      }) + '\n';
+    const socket = {
+      write: vi.fn(),
+      destroy: vi.fn(),
+      on: vi.fn((event, handler) => {
+        if (event === 'connect') setTimeout(handler, 0);
+        if (event === 'data') setTimeout(() => handler(Buffer.from(response)), 10);
+      }),
+    };
+    mockConnect.mockReturnValue(socket as never);
+    const probe = healthCheckProbe('/test.sock');
+    await vi.advanceTimersByTimeAsync(20);
+    expect(await probe).toBe(false);
+    expect(JSON.parse(socket.write.mock.calls[0][0])).toMatchObject({ method: 'system.status' });
+  });
+
   it('returns true when daemon responds within timeout', async () => {
     const mockSocket = {
       write: vi.fn(),
@@ -68,7 +94,8 @@ describe('healthCheckProbe', () => {
         } else if (event === 'data') {
           // Simulate daemon response after a short delay
           setTimeout(
-            () => handler(Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"status":"running"}}')),
+            () =>
+              handler(Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"status":"running"}}' + '\n')),
             100,
           );
         }
@@ -158,7 +185,7 @@ describe('healthCheckProbe', () => {
         if (event === 'connect') {
           setTimeout(() => handler(), 0);
         } else if (event === 'data') {
-          setTimeout(() => handler(Buffer.from('{}')), 50);
+          setTimeout(() => handler(Buffer.from('{}' + '\n')), 50);
         }
       }),
     };
@@ -212,7 +239,7 @@ describe('Watchdog N-strikes policy', () => {
         if (event === 'connect') {
           setTimeout(() => handler(), 0);
         } else if (event === 'data') {
-          setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+          setTimeout(() => handler(Buffer.from('{"result":{}}' + '\n')), 10);
         }
       }),
     };
@@ -315,7 +342,7 @@ describe('Watchdog N-strikes policy', () => {
           if (event === 'connect') setTimeout(() => handler(), 0);
           // Third probe succeeds, others fail
           if (event === 'data' && probeCount === 3) {
-            setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+            setTimeout(() => handler(Buffer.from('{"result":{}}' + '\n')), 10);
           }
         }),
       } as any;
@@ -471,7 +498,7 @@ describe('Watchdog startup readiness budget', () => {
         on: vi.fn((event: string, handler: any) => {
           if (event === 'connect') setTimeout(() => handler(), 0);
           if (event === 'data' && succeed) {
-            setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+            setTimeout(() => handler(Buffer.from('{"result":{}}' + '\n')), 10);
           }
         }),
       } as any;
@@ -594,6 +621,41 @@ describe('Watchdog startup readiness budget', () => {
     expect(crashedProcess.kill).not.toHaveBeenCalled();
   });
 
+  it('keeps a responding startup alive beyond the readiness budget, but detects lost status', async () => {
+    vi.useFakeTimers();
+    const proc = mockAliveProcess();
+    __setSidecarProcessForTesting(proc);
+    let responding = true;
+    mockConnect.mockImplementation(
+      () =>
+        ({
+          write: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event, handler) => {
+            if (event === 'connect') setTimeout(handler, 0);
+            if (event === 'data' && responding)
+              setTimeout(
+                () =>
+                  handler(
+                    Buffer.from(
+                      JSON.stringify({
+                        error: { code: -32012, data: { code: 'daemon-not-ready' } },
+                      }) + '\n',
+                    ),
+                  ),
+                10,
+              );
+          }),
+        }) as never,
+    );
+    __startWatchdogForTesting('/test.sock', 0);
+    await vi.advanceTimersByTimeAsync(150000);
+    expect(proc.kill).not.toHaveBeenCalled();
+    responding = false;
+    await vi.advanceTimersByTimeAsync(70000);
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
   it('switches to the 3-strikes steady-state regime after the first response', async () => {
     vi.useFakeTimers();
     // First probe succeeds, every later probe fails.
@@ -607,7 +669,7 @@ describe('Watchdog startup readiness budget', () => {
         on: vi.fn((event: string, handler: any) => {
           if (event === 'connect') setTimeout(() => handler(), 0);
           if (event === 'data' && succeed) {
-            setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+            setTimeout(() => handler(Buffer.from('{"result":{}}' + '\n')), 10);
           }
         }),
       } as any;

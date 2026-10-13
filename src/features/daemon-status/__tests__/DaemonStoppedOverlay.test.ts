@@ -233,6 +233,38 @@ describe('DaemonStoppedOverlay', () => {
     vi.unstubAllGlobals();
   });
 
+  it('holds recovery actions during fresh startup and restores them when status is lost', async () => {
+    render(DaemonStoppedOverlay);
+    const snapshot = {
+      startupStatus: 1 as const,
+      attemptId: 'boot-a',
+      phase: 'indexing' as const,
+      elapsedMs: 3000,
+      phaseElapsedMs: 3000,
+      progressAgeMs: 0,
+      retryAfterMs: 1000,
+      progress: {
+        completedNotes: 5,
+        totalNotes: 12,
+        processedSourceBytes: 1000,
+        totalSourceBytes: 5000,
+      },
+    };
+    const transport = { mode: 'external-uds' as const, target: '/tmp/boot-test.sock' };
+    dispatchAndFlush(
+      connectionStatusChanged('connecting', transport, { startup: { available: true, snapshot } }),
+    );
+    expect(screen.queryByTestId('daemon-startup-progress')).not.toBeNull();
+    expect(screen.queryByTestId('daemon-stopped-spawn')).toBeNull();
+    dispatchAndFlush(
+      connectionStatusChanged('connecting', transport, { startup: { available: false, snapshot } }),
+    );
+    expect(screen.getByTestId('daemon-startup-progress').textContent).not.toContain('5 of 12');
+    expect(screen.getByRole('button', { name: /Start local intentd/i })).toBeTruthy();
+    dispatchAndFlush(connectionStatusChanged('connected', transport));
+    expect(overlay()).toBeNull();
+  });
+
   it('stays hidden while the daemon is healthy', async () => {
     render(DaemonStoppedOverlay);
     appStore.dispatch(connectionStatusChanged('connected', sidecarTransport));

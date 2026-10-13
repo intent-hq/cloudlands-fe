@@ -1,3 +1,4 @@
+import { isStartupError } from '$shared/startup-status';
 /**
  * Sidecar manager: spawns and supervises the intentd daemon in the Electron
  * main process.
@@ -488,6 +489,7 @@ export function resolveSocketPath(
 /** Result of a version-aware daemon probe (see [[probeDaemonVersion]]). */
 export interface DaemonVersionProbeResult {
   alive: boolean;
+  starting?: boolean;
   version?: string;
   buildCommit?: string;
   protocolVersion?: string;
@@ -543,10 +545,12 @@ export async function probeDaemonVersion(
       if (newlineIndex === -1) return;
       try {
         const parsed = JSON.parse(buffer.slice(0, newlineIndex)) as {
+          error?: unknown;
           result?: { version?: unknown; buildCommit?: unknown; protocolVersion?: unknown };
         };
         finish({
           alive: true,
+          ...(isStartupError(parsed.error) ? { starting: true } : {}),
           version: typeof parsed.result?.version === 'string' ? parsed.result.version : undefined,
           buildCommit:
             typeof parsed.result?.buildCommit === 'string' ? parsed.result.buildCommit : undefined,
@@ -580,12 +584,20 @@ export async function probeDaemonVersion(
  * @param timeoutMs - Timeout in milliseconds (default: 3000)
  */
 export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Promise<boolean> {
+  return (await probeDaemonHealth(socketPath, timeoutMs)) === true;
+}
+
+async function probeDaemonHealth(
+  socketPath: string,
+  timeoutMs: number,
+): Promise<boolean | 'starting'> {
   // See probeDaemonVersion: pipe paths are not filesystem entries.
   if (!isWindowsPipePath(socketPath) && !fs.existsSync(socketPath)) return false;
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean | 'starting'>((resolve) => {
     const client = net.connect({ path: socketPath });
     let resolved = false;
+    let buffer = '';
 
     const timeout = setTimeout(() => {
       if (!resolved) {
@@ -607,13 +619,30 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
       client.write(JSON.stringify(rpcRequest) + '\n');
     });
 
-    client.on('data', (_chunk: Buffer) => {
+    client.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      const newline = buffer.indexOf('\n');
+      if (newline === -1) return;
+      let starting = false;
+      try {
+        const error = JSON.parse(buffer.slice(0, newline)).error;
+        starting = isStartupError(error);
+        if (starting && error.data?.code === 'daemon-startup-failed') {
+          resolved = true;
+          clearTimeout(timeout);
+          client.destroy();
+          resolve(false);
+          return;
+        }
+      } catch {
+        /* Legacy liveness response. */
+      }
       // Got a response - daemon is alive
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         client.destroy();
-        resolve(true);
+        resolve(starting ? 'starting' : true);
       }
     });
 
@@ -741,7 +770,7 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
       readyDeadlineAt = readyStartedAt + SIDECAR_READY_BUDGET_MS;
     }
 
-    const isHealthy = await healthCheckProbe(socketPath, SIDECAR_PROBE_TIMEOUT_MS);
+    const isHealthy = await probeDaemonHealth(socketPath, SIDECAR_PROBE_TIMEOUT_MS);
 
     // The process may have exited (crashed) while the probe was in flight: its
     // exit handler already cleared this timer and consulted the restart policy.
@@ -756,6 +785,14 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
         armedGeneration,
         currentGeneration: sidecarGeneration,
       });
+      return;
+    }
+
+    if (isHealthy === 'starting') {
+      // A fresh authenticated response extends liveness, never declares readiness.
+      readyDeadlineAt = Date.now() + SIDECAR_READY_BUDGET_MS;
+      consecutiveFailures = 0;
+      startHealthWatchdog(socketPath, SIDECAR_READY_PROBE_INTERVAL_MS);
       return;
     }
 
@@ -1087,7 +1124,7 @@ export async function startIntentdSidecar(
     // so the renderer can offer kill-and-restart recovery. Detection fails
     // safe (any doubt → null), and only packaged builds have a meaningful
     // resourcesPath to compare against.
-    const orphan = isPackaged ? detectOrphanedSidecar(env, resourcesPath) : null;
+    const orphan = isPackaged && !probe.starting ? detectOrphanedSidecar(env, resourcesPath) : null;
     setOrphanedSidecarInfo(orphan);
     const details = {
       socketPath,

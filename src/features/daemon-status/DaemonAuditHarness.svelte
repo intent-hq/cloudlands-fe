@@ -13,6 +13,41 @@
   let { state = 'external', children }: { state?: string; children?: Snippet } = $props();
   onMount(() => {
     store.dispatch(connectionStatusChanged('connected'));
+    if (state.startsWith('index-')) {
+      const phase = state === 'index-finalizing' ? 'finalizing' : 'indexing';
+      store.dispatch(
+        connectionStatusChanged(
+          'connecting',
+          { mode: 'external-uds', target: '/tmp/startup-preview.sock' },
+          {
+            startup: {
+              available: state !== 'index-unavailable',
+              snapshot: {
+                startupStatus: 1,
+                attemptId: 'preview',
+                phase,
+                elapsedMs: 74000,
+                phaseElapsedMs: 70000,
+                progressAgeMs: state === 'index-unchanged' ? 31000 : 0,
+                retryAfterMs: 1000,
+                progress: {
+                  completedNotes: phase === 'finalizing' ? 1824 : 420,
+                  totalNotes: 1824,
+                  processedSourceBytes: 40000000,
+                  totalSourceBytes: 116000000,
+                },
+                ...(phase === 'finalizing'
+                  ? { finalizingStep: 'committing' as const }
+                  : state === 'index-estimate'
+                    ? { estimatedRemainingMs: 142000 }
+                    : {}),
+              },
+            },
+          },
+        ),
+      );
+      return () => store.dispatch(connectionStatusChanged('connected'));
+    }
     if (state.startsWith('guest-') || state.startsWith('auth-')) {
       const connection = {
         id: 'audit-host',

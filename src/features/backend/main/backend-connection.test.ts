@@ -1172,6 +1172,22 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
   // upgrade with 503 when its guest connection cap is spent. Transient, so it
   // is neither an auth rejection (which stops retrying) nor a generic
   // transport error (which hides the reason).
+  it('keeps the bootstrap short-retry refusal generic without erasing credentials or claiming a cap', async () => {
+    daemon.statusCode = 503;
+    daemon.retryAfter = '1';
+    const client = makeClient();
+    try {
+      const error = await client.request('system.status').catch((error) => error);
+      expect(error).not.toBeInstanceOf(AuthRejectedError);
+      expect(error).not.toBeInstanceOf(ConnectionLimitError);
+      expect(client.getStartupState()).toBeNull();
+      expect(client.isConnectionLimited()).toBe(false);
+    } finally {
+      client.dispose();
+      daemon.retryAfter = null;
+    }
+  });
+
   it('surfaces a 503 upgrade rejection as a ConnectionLimitError and flags the client limited', async () => {
     daemon.statusCode = 503;
     const client = makeClient();

@@ -1691,6 +1691,7 @@ function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void 
           rebuilt.getConnectedVia(),
         ),
         reconnectAttempts: rebuilt.getReconnectAttempts(),
+        startup: rebuilt.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -2000,6 +2001,7 @@ function createAdditionalBackendClient(
                     instance.getConnectedVia(),
                   ),
                   reconnectAttempts: instance.getReconnectAttempts(),
+                  startup: instance.getStartupState?.() ?? null,
                   ...daemonUpdateMarker(id),
                 },
                 id,
@@ -2079,6 +2081,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         connectionLimited: instance.isConnectionLimited(),
         connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
         ...daemonUpdateMarker(id),
@@ -2087,6 +2090,22 @@ function createAdditionalBackendClient(
     );
     backendStatusForwarder.emit('status', id, status);
     refreshConnectionsForStatusChange();
+  });
+  instance.on('startup', () => {
+    if (backendClients.get(id) !== instance) return;
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: instance.getStatus(),
+        startup: instance.getStartupState(),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
+      },
+      id,
+    );
   });
   instance.on('reconnected', () => {
     if (backendClients.get(id) !== instance) return;
@@ -2102,6 +2121,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -3059,6 +3079,7 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
               client.getConnectedVia(),
             ),
             reconnectAttempts: client.getReconnectAttempts(),
+            startup: client.getStartupState?.() ?? null,
             ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
           },
           LOCAL_CONNECTION_ID,
@@ -4046,6 +4067,7 @@ async function performSpawnSidecar(): Promise<{
             client.getConnectedVia(),
           ),
           reconnectAttempts: client.getReconnectAttempts(),
+          startup: client.getStartupState?.() ?? null,
           ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
         },
         LOCAL_CONNECTION_ID,
@@ -4131,6 +4153,7 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
           client.getConnectedVia(),
         ),
         reconnectAttempts: client.getReconnectAttempts(),
+        startup: client.getStartupState?.() ?? null,
       });
     }
     return result;
@@ -4454,6 +4477,7 @@ export function registerBackendHandlers(): void {
         status: client.getStatus(),
         transport,
         reconnectAttempts: client.getReconnectAttempts(),
+        startup: client.getStartupState?.() ?? null,
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
         ...daemonUpdateMarker(backendId),
@@ -4463,6 +4487,7 @@ export function registerBackendHandlers(): void {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      startup: client.getStartupState?.() ?? null,
       connectionLimited: client.isConnectionLimited(),
       connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs(),
       ...daemonUpdateMarker(backendId),
@@ -4511,6 +4536,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
@@ -4540,6 +4566,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,

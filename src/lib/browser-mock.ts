@@ -371,6 +371,7 @@ function mockBackendInvoke(channel: string, data?: any): any {
     if (source) {
       return {
         status: source.getStatus(),
+        startup: source.getStartupState?.() ?? null,
         transport: { mode: 'external-ws', target: source.getTarget() },
       };
     }
@@ -676,6 +677,7 @@ function installWebDaemonStatusBridge(): void {
     unsubscribeStatus = source.onStatusChange((status) => {
       emitBrowserMockEvent('backend:status', {
         status,
+        startup: source.getStartupState?.() ?? null,
         transport: { mode: 'external-ws', target: source.getTarget() },
       });
     });

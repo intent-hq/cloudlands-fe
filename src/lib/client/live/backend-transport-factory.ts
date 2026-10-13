@@ -30,6 +30,7 @@ function pickTransport(): BackendTransport {
     // serves backend:get-status / backend:status from the live transport
     // instead of a hardcoded 'disconnected' (false dev:web stopped-overlay).
     registerWebDaemonStatusSource({
+      getStartupState: () => transport.getStartupState(),
       getStatus: () => transport.getConnectionStatus(),
       getTarget: () => sanitizeWsUrlForDisplay(wsUrl),
       onStatusChange: (handler) => transport.onConnectionStatusChange(handler),

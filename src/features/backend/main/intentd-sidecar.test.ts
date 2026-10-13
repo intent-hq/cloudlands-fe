@@ -285,7 +285,10 @@ describe('resolveSocketPath', () => {
 function startMockDaemon(
   socketPath: string,
   behavior:
-    { kind: 'result'; result: Record<string, unknown> } | { kind: 'garbage' } | { kind: 'silent' },
+    | { kind: 'result'; result: Record<string, unknown> }
+    | { kind: 'error'; error: Record<string, unknown> }
+    | { kind: 'garbage' }
+    | { kind: 'silent' },
 ): Promise<net.Server> {
   const server = net.createServer((conn) => {
     conn.on('data', () => {
@@ -294,7 +297,13 @@ function startMockDaemon(
         conn.write('not json\n');
         return;
       }
-      conn.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: behavior.result }) + '\n');
+      conn.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          ...(behavior.kind === 'error' ? { error: behavior.error } : { result: behavior.result }),
+        }) + '\n',
+      );
     });
   });
   return new Promise((resolve, reject) => {
@@ -320,6 +329,23 @@ describe('probeDaemonVersion', () => {
     }
     actualFs.rmSync(tmpDir, { recursive: true, force: true });
     vi.clearAllMocks();
+  });
+
+  it('recognizes a protected startup listener as alive without inventing version readiness', async () => {
+    const socketPath = path.join(tmpDir, 'i.sock');
+    server = await startMockDaemon(socketPath, {
+      kind: 'error',
+      error: {
+        code: -32012,
+        message: 'Daemon not ready',
+        data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000 },
+      },
+    });
+    expect(await probeDaemonVersion(socketPath)).toMatchObject({
+      alive: true,
+      starting: true,
+      version: undefined,
+    });
   });
 
   it('returns alive with version, buildCommit, and protocolVersion from system.status', async () => {

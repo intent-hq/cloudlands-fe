@@ -4,6 +4,11 @@ import { expect, test } from '../../test/ct-test';
 import Harness from './DaemonAuditHarness.svelte';
 
 for (const state of [
+  'index-estimate',
+  'index-unknown',
+  'index-unchanged',
+  'index-finalizing',
+  'index-unavailable',
   'external',
   'long-host',
   'startup',
