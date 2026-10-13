@@ -561,4 +561,78 @@ describe('principal discovery through browser startup', () => {
       expect(frames.filter((frame) => frame.method === method)).toHaveLength(2);
     },
   );
+
+  it.each([false, true])(
+    'inactive agent metrics recover on ordinary demand after final loss (held control=%s)',
+    async (heldControl) => {
+      const { store, row, workspaceId } = await bootLifecycle();
+      const { normalizeAgent } = await import('$lib/client/live/live-agents-client');
+      const { bulkUpsertSessions } =
+        await import('$store/renderer/slices/agent-session/agent-session-slice');
+      const { setAgents } =
+        await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
+      const { updateAgentStats, requestAgentLineStats } =
+        await import('$store/renderer/slices/changes/changes-slice');
+      const { acquireAgentMetadataDemand } = await import('$features/agent/agent-metadata-demand');
+      const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+      const { agentMetadataRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+      const agentId = 'inactive-metrics-agent';
+      const agent = { id: agentId, workspaceId, name: 'Recovered agent', status: 'idle' };
+      const replies: Record<string, unknown> = {
+        'workspace.list': { workspaces: [row] },
+        'workspace.get': { workspace: row },
+        'agent.list': {
+          agents: [agent],
+          retiredCount: 0,
+          scopeCounts: { topLevel: 1, delegated: 0, background: 0 },
+        },
+        'agent.get': { agent },
+        'metrics.getAgentStats': { additions: 8, deletions: 3, filesChanged: 1 },
+      };
+      wireReply = (frame) => replies[frame.method];
+      const old = normalizeAgent({
+        ...agent,
+        name: 'Old agent',
+        messages: [
+          {
+            id: 'retained',
+            role: 'user',
+            content: 'Retained conversation',
+            timestamp: '2026-01-01T00:00:00Z',
+          },
+        ],
+      });
+      store.dispatch(setAgents(workspaceId, [old]));
+      store.dispatch(bulkUpsertSessions([old]));
+      store.dispatch(
+        updateAgentStats(agentId, {
+          additions: 1,
+          deletions: 1,
+          timestamp: '2026-01-01T00:00:00Z',
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(rendererEventRecovery.hasOwner(agentMetadataRecoveryKey(workspaceId))).toBe(true),
+      );
+      await globalLoss();
+      expect(frames.filter((frame) => frame.method === 'metrics.getAgentStats')).toHaveLength(0);
+      const fences = frames.filter((frame) => frame.method === 'events.fence').length;
+      if (heldControl)
+        cancel.push(acquireAgentMetadataDemand(workspaceId, { agentId, lineStats: true }));
+      store.dispatch(requestAgentLineStats(agentId, true));
+      await vi.waitFor(() =>
+        expect(store.state.changes.agentStats[agentId]).toMatchObject({
+          additions: 8,
+          deletions: 3,
+        }),
+      );
+      expect(store.state.agentSessions.byAgentId[agentId].name).toBe('Recovered agent');
+      expect(store.state.agentSessions.byAgentId[agentId].messages).toEqual(old.messages);
+      expect(frames.filter((frame) => frame.method === 'metrics.getAgentStats')).toHaveLength(1);
+      expect(frames.filter((frame) => frame.method === 'agent.list')).toHaveLength(1);
+      expect(frames.filter((frame) => frame.method === 'events.fence')).toHaveLength(fences + 2);
+      expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(1);
+      expect(frames.some((frame) => /Conversation|^chat\./.test(frame.method))).toBe(false);
+    },
+  );
 });
