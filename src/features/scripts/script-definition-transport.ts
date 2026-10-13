@@ -6,6 +6,8 @@ import type { ScriptArchiveFilter } from './types';
 import type { ScriptRuntimeState, ScriptWithState, WorkspaceScript } from './types';
 import { detectScriptCandidates } from './detect-scripts';
 
+type ScriptDefinitionCreateInput = ScriptCreateInput & { source?: string };
+
 /** Narrow wire/file seam used by scriptsOperationSaga. No Redux or facade dependency. */
 export const scriptDefinitionTransport = {
   list(
@@ -19,8 +21,19 @@ export const scriptDefinitionTransport = {
     return appClient.scripts.get(workspaceId, scriptId);
   },
 
-  create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult> {
-    return appClient.scripts.create(workspaceId, input);
+  async create(
+    workspaceId: string,
+    input: ScriptDefinitionCreateInput,
+  ): Promise<ScriptCreateResult> {
+    try {
+      const script = await backendRequest<WorkspaceScript>('script.create', {
+        workspaceId,
+        ...input,
+      });
+      return { success: true, script };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   },
 
   async upsert(

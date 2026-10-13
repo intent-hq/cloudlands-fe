@@ -116,6 +116,7 @@ it('restores full detection Undo data including readiness settings', async () =>
       command: full.command,
       cwd: full.cwd,
       env: full.env,
+      source: full.source,
       healthUrl: full.healthUrl,
       readyPattern: full.readyPattern,
     }),

@@ -36,6 +36,7 @@
     ScriptDefinitionUpdate,
     ScriptDetectionOutcome,
     ScriptWorkflowConsumer,
+    ScriptWithState,
   } from '$store/renderer/slices/scripts/scripts-types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
@@ -189,6 +190,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let pendingCreate = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingDetect = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingList = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let reviewedAgentDefinitions = $state<{
+    workspaceId: string;
+    definitions: ScriptWithState[];
+  } | null>(null);
   let pendingRestore = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingSave = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingUpdate = $state<{ requestId: string; workspaceId: string } | null>(null);
@@ -233,6 +238,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       pendingCreate = null;
       pendingDetect = null;
       pendingList = null;
+      reviewedAgentDefinitions = null;
       pendingRestore = null;
       pendingSave = null;
       pendingUpdate = null;
@@ -243,6 +249,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function handleDetectionResult(parsed: any): void {
     const requestWorkspaceId = workspaceId;
+    const reviewedDefinitions: ScriptWithState[] | undefined =
+      reviewedAgentDefinitions?.workspaceId === requestWorkspaceId
+        ? reviewedAgentDefinitions.definitions
+        : undefined;
+    reviewedAgentDefinitions = null;
     if (
       parsed &&
       typeof parsed === 'object' &&
@@ -293,6 +304,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         applyScriptDefinitionChangesRequested(
           requestWorkspaceId,
           changes,
+          reviewedDefinitions,
           consumer(applyConsumerId, requestId, 'agent-detection'),
         ),
       );
@@ -331,6 +343,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         applyScriptDefinitionChangesRequested(
           requestWorkspaceId,
           { add, update: [], remove: [] },
+          reviewedDefinitions,
           consumer(applyConsumerId, requestId, 'agent-detection'),
         ),
       );
@@ -697,6 +710,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       detectFlow = 'idle';
       return;
     }
+    reviewedAgentDefinitions = {
+      workspaceId: outcome.workspaceId,
+      definitions: outcome.result as ScriptWithState[],
+    };
     const workspace = selectWorkspaceById.select(appStore.state, outcome.workspaceId);
     if (!workspace || !mounted || workspaceId !== outcome.workspaceId) return;
     const existingScripts = outcome.result.map((script) => ({
@@ -834,6 +851,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
     showAgentAssist = false;
     detectFlow = 'agent';
+    reviewedAgentDefinitions = null;
 
     const requestId = crypto.randomUUID();
     pendingList = { requestId, workspaceId: workspace.id };

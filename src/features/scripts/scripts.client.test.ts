@@ -353,6 +353,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
       purpose: 'saved',
       mode: 'service',
       category: 'dev',
+      source: 'auto-detected',
     });
     expect(scriptsCreate).toHaveBeenNthCalledWith(2, 'ws-1', {
       name: 'test',
@@ -360,6 +361,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
       purpose: 'saved',
       mode: 'command',
       category: 'test',
+      source: 'auto-detected',
     });
     expect(scriptsRemove).not.toHaveBeenCalled();
     expect(result).toEqual({

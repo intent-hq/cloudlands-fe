@@ -159,13 +159,14 @@ type ApplyScriptDefinitionChangesArgs = [
   wsId: string,
   changes: ScriptDefinitionChanges,
   definitionsOrConsumer?: ScriptWithState[] | ScriptWorkflowConsumer,
-  legacyConsumerId?: string,
+  consumerOrLegacyId?: ScriptWorkflowConsumer | string,
 ];
 type ApplyScriptDefinitionChangesPayload = [
   wsId: string,
   changes: ScriptDefinitionChanges,
+  definitions?: ScriptWithState[],
   consumer?: ScriptWorkflowConsumer,
-  legacyConsumerId?: string,
+  lifetimeConsumerId?: string,
 ];
 export const applyScriptDefinitionChangesRequested = createAsyncAction<
   ApplyScriptDefinitionChangesArgs,
@@ -174,12 +175,18 @@ export const applyScriptDefinitionChangesRequested = createAsyncAction<
 >(
   'scripts/applyScriptDefinitionChanges',
   'scripts/applyScriptDefinitionChangesRequested',
-  (wsId, changes, definitionsOrConsumer, legacyConsumerId) => [
-    wsId,
-    changes,
-    Array.isArray(definitionsOrConsumer) ? undefined : definitionsOrConsumer,
-    Array.isArray(definitionsOrConsumer) ? legacyConsumerId : undefined,
-  ],
+  (wsId, changes, definitionsOrConsumer, consumerOrLegacyId) => {
+    const definitions = Array.isArray(definitionsOrConsumer) ? definitionsOrConsumer : undefined;
+    const consumer = Array.isArray(definitionsOrConsumer)
+      ? typeof consumerOrLegacyId === 'object'
+        ? consumerOrLegacyId
+        : undefined
+      : (definitionsOrConsumer ??
+        (typeof consumerOrLegacyId === 'object' ? consumerOrLegacyId : undefined));
+    const lifetimeConsumerId =
+      typeof consumerOrLegacyId === 'string' ? consumerOrLegacyId : consumer?.consumerId;
+    return [wsId, changes, definitions, consumer, lifetimeConsumerId];
+  },
 );
 
 export const listScriptDefinitionsRequested = createAsyncAction<
@@ -352,7 +359,7 @@ scriptsReducer.with(detectScriptDefinitionsRequested, (state, { payload }) =>
   startWorkflow(state, payload[0], payload[1]),
 );
 scriptsReducer.with(applyScriptDefinitionChangesRequested, (state, { payload }) =>
-  startWorkflow(state, payload[0], payload[2]),
+  startWorkflow(state, payload[0], payload[3]),
 );
 scriptsReducer.with(listScriptDefinitionsRequested, (state, { payload }) =>
   startWorkflow(state, payload[0], payload[2]),

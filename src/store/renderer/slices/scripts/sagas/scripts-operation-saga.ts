@@ -38,10 +38,12 @@ import {
   saveScriptDefinitionsToRepoRequested,
   scriptDetectionFinished,
   scriptDetectionRequested,
+  scriptDefinitionChangesReleased,
   scriptOperationFailed,
   scriptOperationSucceeded,
   scriptReadFinished,
   scriptWorkflowFinished,
+  scriptWorkflowReleased,
   startScriptRequested,
   stopScriptRequested,
   updateRuntimeState,
@@ -351,14 +353,11 @@ function* updateDefinition(
     const reservation = yield* reserveEdit(workspaceId, scriptId, reservationId);
     const authority = yield* requireAuthority(workspaceId);
     const cached = yield* selectScriptById.effect(workspaceId, scriptId);
-    if (!selected && !cached) {
-      throw new Error(m.scripts_client_notFound_error({ scriptId }));
-    }
     const current = yield* readDefinition(workspaceId, scriptId);
     if ((yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId] !== reservation) {
       throw new Error(m.scripts_pendingChange_error());
     }
-    if (!selected && cached !== (yield* selectScriptById.effect(workspaceId, scriptId))) {
+    if (cached && !selected && cached !== (yield* selectScriptById.effect(workspaceId, scriptId))) {
       throw new Error(m.scripts_pendingChange_error());
     }
     if (
@@ -382,19 +381,27 @@ function* updateDefinition(
         name: updates.name ?? current.name,
         command: updates.command ?? current.command,
         mode: updates.mode ?? current.mode,
-        ...((updates.cwd ?? current.cwd) ? { cwd: updates.cwd ?? current.cwd } : {}),
-        ...((updates.env ?? current.env) ? { env: updates.env ?? current.env } : {}),
-        ...((updates.category ?? current.category)
-          ? { category: updates.category ?? current.category }
+        ...((updates.cwd !== undefined ? updates.cwd : current.cwd) !== undefined
+          ? { cwd: updates.cwd !== undefined ? updates.cwd : current.cwd }
           : {}),
-        ...((updates.autoStart ?? current.autoStart !== undefined)
-          ? { autoStart: updates.autoStart ?? current.autoStart }
+        ...((updates.env !== undefined ? updates.env : current.env) !== undefined
+          ? { env: updates.env !== undefined ? updates.env : current.env }
           : {}),
-        ...((updates.healthUrl ?? current.healthUrl)
-          ? { healthUrl: updates.healthUrl ?? current.healthUrl }
+        ...((updates.category !== undefined ? updates.category : current.category) !== undefined
+          ? { category: updates.category !== undefined ? updates.category : current.category }
           : {}),
-        ...((updates.readyPattern ?? current.readyPattern)
-          ? { readyPattern: updates.readyPattern ?? current.readyPattern }
+        ...((updates.autoStart !== undefined ? updates.autoStart : current.autoStart) !== undefined
+          ? { autoStart: updates.autoStart !== undefined ? updates.autoStart : current.autoStart }
+          : {}),
+        ...((updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl) !== undefined
+          ? { healthUrl: updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl }
+          : {}),
+        ...((updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern) !==
+        undefined
+          ? {
+              readyPattern:
+                updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern,
+            }
           : {}),
       }),
     );
@@ -404,7 +411,12 @@ function* updateDefinition(
       (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId] === reservation;
     if (canPublish) yield* put(refreshScripts(workspaceId));
     yield* put(action.success(result.script));
-    if (canPublish) yield* finishWorkflow(workspaceId, consumer, 'success', result.script);
+    yield* finishWorkflow(
+      workspaceId,
+      consumer,
+      canPublish ? 'success' : 'cancelled',
+      canPublish ? result.script : undefined,
+    );
     settled = true;
   } catch (error) {
     const message = errorMessage(error);
@@ -458,7 +470,7 @@ function* removeDefinition(
       (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId] === reservation;
     if (canPublish) yield* put(removeScript(workspaceId, scriptId));
     yield* put(action.success(undefined));
-    if (canPublish) yield* finishWorkflow(workspaceId, consumer, 'success');
+    yield* finishWorkflow(workspaceId, consumer, canPublish ? 'success' : 'cancelled');
     settled = true;
   } catch (error) {
     const message = errorMessage(error);
@@ -542,6 +554,7 @@ function* detectDefinitions(
             mode: candidate.mode,
             category: candidate.category,
             purpose: 'saved',
+            source: 'auto-detected',
           }),
         );
         if (result.success) added += 1;
@@ -611,7 +624,7 @@ function* detectDefinitions(
 function* applyDefinitionChanges(
   action: ReturnType<typeof applyScriptDefinitionChangesRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, changes, consumer] = action.payload;
+  const [workspaceId, changes, reviewedDefinitions, consumer] = action.payload;
   const reservationId = crypto.randomUUID();
   let settled = false;
   try {
@@ -624,13 +637,25 @@ function* applyDefinitionChanges(
     const autoById = new Map(
       inventory.filter((s) => s.source === 'auto-detected').map((s) => [s.id, s]),
     );
+    const reviewedById = reviewedDefinitions
+      ? new Map(reviewedDefinitions.map((script) => [script.id, script]))
+      : undefined;
     const skippedRunning = new Set<string>();
     let added = 0;
     let updated = 0;
     let removed = 0;
     for (const id of changes.remove) {
       const current = autoById.get(id);
-      if (!current) continue;
+      const reviewed = reviewedById?.get(id);
+      if (!current || (reviewedById && !reviewed)) throw new Error(m.scripts_pendingChange_error());
+      if (
+        reviewed &&
+        (reviewed.workspaceId !== workspaceId ||
+          reviewed.archivedAt ||
+          reviewed.source !== current.source ||
+          reviewed.updatedAt !== current.updatedAt)
+      )
+        throw new Error(m.scripts_pendingChange_error());
       if (isLiveScriptStatus(current.runtime?.status)) {
         skippedRunning.add(current.name);
         continue;
@@ -640,7 +665,16 @@ function* applyDefinitionChanges(
     }
     for (const { id, updates } of changes.update) {
       const current = autoById.get(id);
-      if (!current) continue;
+      const reviewed = reviewedById?.get(id);
+      if (!current || (reviewedById && !reviewed)) throw new Error(m.scripts_pendingChange_error());
+      if (
+        reviewed &&
+        (reviewed.workspaceId !== workspaceId ||
+          reviewed.archivedAt ||
+          reviewed.source !== current.source ||
+          reviewed.updatedAt !== current.updatedAt)
+      )
+        throw new Error(m.scripts_pendingChange_error());
       if (isLiveScriptStatus(current.runtime?.status)) {
         skippedRunning.add(current.name);
         continue;
@@ -650,19 +684,29 @@ function* applyDefinitionChanges(
           name: updates.name ?? current.name,
           command: updates.command ?? current.command,
           mode: updates.mode ?? current.mode,
-          ...((updates.cwd ?? current.cwd) ? { cwd: updates.cwd ?? current.cwd } : {}),
-          ...((updates.env ?? current.env) ? { env: updates.env ?? current.env } : {}),
-          ...((updates.category ?? current.category)
-            ? { category: updates.category ?? current.category }
+          ...((updates.cwd !== undefined ? updates.cwd : current.cwd) !== undefined
+            ? { cwd: updates.cwd !== undefined ? updates.cwd : current.cwd }
             : {}),
-          ...((updates.autoStart ?? current.autoStart !== undefined)
-            ? { autoStart: updates.autoStart ?? current.autoStart }
+          ...((updates.env !== undefined ? updates.env : current.env) !== undefined
+            ? { env: updates.env !== undefined ? updates.env : current.env }
             : {}),
-          ...((updates.healthUrl ?? current.healthUrl)
-            ? { healthUrl: updates.healthUrl ?? current.healthUrl }
+          ...((updates.category !== undefined ? updates.category : current.category) !== undefined
+            ? { category: updates.category !== undefined ? updates.category : current.category }
             : {}),
-          ...((updates.readyPattern ?? current.readyPattern)
-            ? { readyPattern: updates.readyPattern ?? current.readyPattern }
+          ...((updates.autoStart !== undefined ? updates.autoStart : current.autoStart) !==
+          undefined
+            ? { autoStart: updates.autoStart !== undefined ? updates.autoStart : current.autoStart }
+            : {}),
+          ...((updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl) !==
+          undefined
+            ? { healthUrl: updates.healthUrl !== undefined ? updates.healthUrl : current.healthUrl }
+            : {}),
+          ...((updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern) !==
+          undefined
+            ? {
+                readyPattern:
+                  updates.readyPattern !== undefined ? updates.readyPattern : current.readyPattern,
+              }
             : {}),
         }),
       );
@@ -697,6 +741,31 @@ function* applyDefinitionChanges(
       yield* finishWorkflow(workspaceId, consumer, 'cancelled');
     }
   }
+}
+
+function* waitForDefinitionChangesRelease(
+  workspaceId: string,
+  consumerId: string,
+): SagaGenerator<void> {
+  for (;;) {
+    const action = yield* take([scriptDefinitionChangesReleased, scriptWorkflowReleased]);
+    if (action.payload[0] === workspaceId && action.payload[1] === consumerId) return;
+  }
+}
+
+function* runDefinitionChanges(
+  action: ReturnType<typeof applyScriptDefinitionChangesRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, , , , lifetimeConsumerId] = action.payload;
+  if (!lifetimeConsumerId) {
+    yield* call(applyDefinitionChanges, action);
+    return;
+  }
+  yield* race({
+    operation: call(applyDefinitionChanges, action),
+    released: call(waitForDefinitionChangesRelease, workspaceId, lifetimeConsumerId),
+    cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+  });
 }
 
 function* listDefinitions(
@@ -753,6 +822,7 @@ function* restoreDefinitions(
           command: definition.command,
           mode: definition.mode,
           purpose: definition.purpose ?? 'saved',
+          source: definition.source || 'user',
           ...(definition.category ? { category: definition.category } : {}),
           ...(definition.cwd ? { cwd: definition.cwd } : {}),
           ...(definition.env ? { env: definition.env } : {}),
@@ -814,7 +884,7 @@ export function* scriptsOperationSaga(): SagaGenerator<void> {
     takeEvery(updateScriptDefinitionRequested, updateDefinition),
     takeEvery(removeScriptDefinitionRequested, removeDefinition),
     takeEvery(detectScriptDefinitionsRequested, detectDefinitions),
-    takeEvery(applyScriptDefinitionChangesRequested, applyDefinitionChanges),
+    takeEvery(applyScriptDefinitionChangesRequested, runDefinitionChanges),
     takeEvery(listScriptDefinitionsRequested, listDefinitions),
     takeEvery(getScriptDefinitionRequested, getDefinition),
     takeEvery(restoreScriptDefinitionsRequested, restoreDefinitions),

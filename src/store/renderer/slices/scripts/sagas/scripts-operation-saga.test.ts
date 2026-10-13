@@ -29,6 +29,8 @@ import {
   detectScriptDefinitionsRequested,
   removeScriptDefinitionRequested,
   refreshScripts,
+  restoreScriptDefinitionsRequested,
+  scriptWorkflowReleased,
   scriptsReducer,
   setScriptsData,
   updateScriptDefinitionRequested,
@@ -131,6 +133,47 @@ describe('scriptsOperationSaga definition ownership', () => {
     await stop(run.task);
   });
 
+  it('updates an off-page definition without requiring a cached row', async () => {
+    transport.get.mockResolvedValueOnce(definition);
+    transport.upsert.mockResolvedValueOnce({ success: true, script: definition });
+    const run = start();
+    const request = updateScriptDefinitionRequested(WS, definition.id, { name: 'Renamed' });
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toEqual(definition);
+    expect(transport.get).toHaveBeenCalledWith(WS, definition.id);
+    expect(transport.upsert).toHaveBeenCalledOnce();
+    await stop(run.task);
+  });
+
+  it('forwards explicit empty update fields while retaining readiness settings', async () => {
+    const current = {
+      ...definition,
+      cwd: 'app',
+      env: { PORT: '3000' },
+      healthUrl: 'http://localhost:3100/health',
+      readyPattern: 'READY',
+    };
+    transport.get.mockResolvedValueOnce(current);
+    transport.upsert.mockResolvedValueOnce({ success: true, script: current });
+    const run = start();
+    const request = updateScriptDefinitionRequested(WS, definition.id, { cwd: '', env: {} });
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toEqual(current);
+    expect(transport.upsert).toHaveBeenCalledWith(
+      WS,
+      definition.id,
+      expect.objectContaining({
+        cwd: '',
+        env: {},
+        healthUrl: current.healthUrl,
+        readyPattern: current.readyPattern,
+      }),
+    );
+    await stop(run.task);
+  });
+
   it('rejects an overlapping edit without releasing the first reservation', async () => {
     let resolveRead!: (value: typeof definition) => void;
     transport.get.mockReturnValueOnce(
@@ -200,6 +243,72 @@ describe('scriptsOperationSaga definition ownership', () => {
       WS,
       definition.id,
       expect.objectContaining({ healthUrl: current.healthUrl, readyPattern: current.readyPattern }),
+    );
+    await stop(run.task);
+  });
+
+  it('rejects an apply when the reviewed definition changed before the batch', async () => {
+    const reviewed = { ...definition, updatedAt: 'reviewed' };
+    transport.list.mockResolvedValueOnce([{ ...definition, updatedAt: 'newer' }]);
+    const run = start();
+    const request = applyScriptDefinitionChangesRequested(
+      WS,
+      { add: [], remove: [], update: [{ id: definition.id, updates: { name: 'Renamed' } }] },
+      [reviewed],
+      'consumer-1',
+    );
+    run.channel.put(request);
+
+    await expect(request.promise).rejects.toThrow('pending change');
+    expect(transport.upsert).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
+
+  it('stops an apply batch when its workflow consumer releases', async () => {
+    let resolveUpdate!: (value: { success: true; script: typeof definition }) => void;
+    transport.list.mockResolvedValueOnce([definition]);
+    transport.upsert.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+    const run = start();
+    const consumer = {
+      consumerId: 'consumer-1',
+      requestId: 'request-1',
+      resourceId: 'agent-detection',
+    };
+    const request = applyScriptDefinitionChangesRequested(
+      WS,
+      {
+        add: [{ name: 'Later', command: 'pnpm later', mode: 'command' }],
+        remove: [],
+        update: [{ id: definition.id, updates: { command: 'pnpm verify' } }],
+      },
+      [definition],
+      consumer,
+    );
+    run.channel.put(request);
+    await vi.waitFor(() => expect(transport.upsert).toHaveBeenCalledOnce());
+    run.dispatch(scriptWorkflowReleased(WS, consumer.consumerId));
+
+    await expect(request.promise).rejects.toThrow('cancelled');
+    resolveUpdate({ success: true, script: definition });
+    expect(transport.create).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
+
+  it('restores source provenance with the full definition snapshot', async () => {
+    transport.list.mockResolvedValueOnce([]);
+    transport.create.mockResolvedValueOnce({ success: true, script: definition });
+    const run = start();
+    const request = restoreScriptDefinitionsRequested(WS, [definition]);
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toBeUndefined();
+    expect(transport.create).toHaveBeenCalledWith(
+      WS,
+      expect.objectContaining({ source: 'auto-detected' }),
     );
     await stop(run.task);
   });

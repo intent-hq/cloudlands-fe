@@ -17,11 +17,13 @@ import {
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
   clearScriptOperations,
+  applyScriptDefinitionChangesRequested,
   emptyWorkspaceState,
   removeScriptDefinitionRequested,
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
+  scriptWorkflowFinished,
   scriptsReducer,
   setScriptsData,
   startScriptRequested,
@@ -44,6 +46,7 @@ import {
   selectWorkspaceScriptEntries,
   selectWorkspaceScriptOperations,
   selectWorkspaceScriptRuntime,
+  selectScriptWorkflowOutcome,
   selectWorkspaceScriptsInitialized,
 } from './scripts-selectors';
 
@@ -233,6 +236,40 @@ describe('scriptsReducer', () => {
       expect(state.byWorkspaceId[WS].operations['script-1']).toBeUndefined();
     },
   );
+
+  it('retains pending definition reservations but invalidates their publication identity', () => {
+    const request = updateScriptDefinitionRequested(WS, 'script-1', { name: 'Renamed' });
+    let state = scriptsReducer(undefined, request);
+    const reservation = state.byWorkspaceId[WS].operations['script-1'];
+
+    state = scriptsReducer(state, clearScriptOperations(WS));
+
+    expect(state.byWorkspaceId[WS].operations['script-1']).toEqual(reservation);
+    expect(state.byWorkspaceId[WS].operations['script-1']).not.toBe(reservation);
+  });
+
+  it('correlates workflow outcomes by consumer, workspace, and resource', () => {
+    const consumer = { consumerId: 'consumer-1', requestId: 'request-1', resourceId: 'resource-1' };
+    const request = applyScriptDefinitionChangesRequested(
+      WS,
+      { add: [], update: [], remove: [] },
+      [],
+      consumer,
+    );
+    let state = scriptsReducer(undefined, request);
+    state = scriptsReducer(state, scriptWorkflowFinished(WS, consumer, 'cancelled'));
+    const root = { scripts: state } as never;
+
+    expect(
+      selectScriptWorkflowOutcome.select(root, consumer.consumerId, WS, consumer.resourceId),
+    ).toMatchObject({ status: 'cancelled', requestId: consumer.requestId });
+    expect(
+      selectScriptWorkflowOutcome.select(root, consumer.consumerId, 'ws-2', consumer.resourceId),
+    ).toBeUndefined();
+    expect(
+      selectScriptWorkflowOutcome.select(root, consumer.consumerId, WS, 'other-resource'),
+    ).toBeUndefined();
+  });
 
   it('appends raw chunks verbatim — no line splitting, no injected newlines', () => {
     let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
