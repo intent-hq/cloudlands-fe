@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.216.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.1...v2.216.2) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.46 ([#3384](https://github.com/intent-hq/cloudlands-fe/issues/3384)) ([7152870](https://github.com/intent-hq/cloudlands-fe/commit/7152870b047289b5d6150d8df98eb806de85f56d))
+* keep Home PR counts stable during detail loading ([#3380](https://github.com/intent-hq/cloudlands-fe/issues/3380)) ([66c3497](https://github.com/intent-hq/cloudlands-fe/commit/66c34974284b549384e8d83f4d901b8321369dc8))
+* render Mermaid diagrams in Markdown file previews ([#3372](https://github.com/intent-hq/cloudlands-fe/issues/3372)) ([d88949b](https://github.com/intent-hq/cloudlands-fe/commit/d88949b8f9ea586c79e6f69a96ee7d5152b445c0))
+
 ## [2.216.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.0...v2.216.1) (2026-10-13)
 
 
