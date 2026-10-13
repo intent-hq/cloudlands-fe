@@ -1,0 +1,696 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import {
+  createEventRecoverySession,
+  type RecoveryNotification,
+} from '$shared/event-recovery/session';
+import type { LiveClient } from '$shared/types/browser-clients';
+
+const rpc = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: rpc.request,
+  onBackendReconnected: () => () => {},
+}));
+vi.mock('$lib/client', async () => {
+  const { LiveClientsClient } = await import('$lib/client/live/live-clients-client');
+  const { LiveBrowserClient } = await import('$lib/client/live/live-browser-client');
+  const { LiveWorkspacesClient } = await import('$lib/client/live/live-workspaces-client');
+  return {
+    appClient: {
+      browser: new LiveBrowserClient(),
+      clients: new LiveClientsClient(),
+      workspaces: new LiveWorkspacesClient(),
+    },
+  };
+});
+import { store } from '../../../store';
+import { __resetOwnClientIdForTesting } from '$lib/client/live/live-clients-client';
+import { browserTabRegistrySaga } from '../../panel-layout/sagas/browser-tab-registry-saga';
+import { initializeLayout, setRestoreStatus } from '../../panel-layout/panel-layout-slice';
+import { ownClientIdReceived } from '../browser-clients-slice';
+import { collectBrowserTabs } from '../../panel-layout/panel-layout-selectors';
+import type { BrowserTabListing } from '$shared/types/browser-clients';
+import { browserClientsSaga } from './browser-clients-saga';
+import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  fetchWorkspaceBrowserClientRequested,
+  setWorkspaceBrowserClientRequested,
+} from '../browser-clients-slice';
+
+const WS = 'browser-recovery';
+const client: LiveClient = {
+  clientId: 'desktop',
+  capabilities: { browserExec: true },
+  connections: 1,
+  transports: ['wss'],
+  connectedAt: '2026-10-13',
+};
+const settle = async () => {
+  for (let i = 0; i < 80; i++) await Promise.resolve();
+};
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { resolve, promise };
+}
+let dispose: () => void;
+let cancel: () => void;
+let clients = [client];
+let pin: string | null = null;
+let receive: (event: RecoveryNotification) => void;
+let scope: ReturnType<typeof rendererEventRecovery.attach>;
+let seq = 0;
+const view = () => selectWorkspaceDrivingClient.select(store.state, WS);
+const lose = (generation = '1', id = 'browser-1') =>
+  receive({
+    method: 'events.lost',
+    params: { subscriptionId: id, generation, scope: { workspaceId: null } },
+  });
+const calls = (method: string) => rpc.request.mock.calls.filter(([name]) => name === method);
+
+async function attach(supported = true) {
+  scope = rendererEventRecovery.attach(
+    createEventRecoverySession({
+      supported,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: (handler) => {
+        receive = handler;
+        return () => {};
+      },
+      request: async (method, params, observe) => {
+        const value = await rpc.request(method, params);
+        observe?.(value);
+        return value;
+      },
+    }),
+  );
+  await scope.subscribe(
+    { eventTypes: ['client:*', 'workspace:updated', 'settings:changed'] },
+    { recover: true },
+  );
+}
+beforeEach(async () => {
+  vi.useFakeTimers();
+  seq = 0;
+  clients = [client];
+  pin = null;
+  rpc.request
+    .mockReset()
+    .mockImplementation(async (method: string, params?: { lossRecovery?: number }) => {
+      if (method === 'client.hello') return { clientId: client.clientId };
+      if (method === 'client.list') return { clients };
+      if (method === 'workspace.getBrowserClient')
+        return {
+          browserClient: pin
+            ? { source: 'workspace', clientId: pin, resolved: null }
+            : { source: 'default', resolved: { clientId: client.clientId } },
+        };
+      if (method === 'events.subscribe')
+        return {
+          subscriptionId: `browser-${++seq}`,
+          ...(params?.lossRecovery ? { lossRecovery: 1 } : {}),
+        };
+      if (method === 'events.fence' || method === 'events.unsubscribe') return params;
+      throw new Error(`Unexpected command ${method}`);
+    });
+  dispose = store.init();
+  cancel = store.runSaga(browserClientsSaga);
+});
+afterEach(() => {
+  cancel();
+  rendererEventRecovery.dispose();
+  dispose();
+  __resetOwnClientIdForTesting();
+  vi.useRealTimers();
+});
+
+describe('browser clients generic-loss recovery', () => {
+  it('restores a lost final roster and pin with one snapshot and no browser commands', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    expect(view().eligibleClients).toHaveLength(1);
+    rpc.request.mockClear();
+    clients = [];
+    pin = 'offline-host';
+    lose();
+    await settle();
+    expect(view().eligibleClients).toEqual([]);
+    expect(view().pinnedClientId).toBe('offline-host');
+    expect(calls('client.list')).toHaveLength(1);
+    expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+    expect(calls('events.fence')).toHaveLength(2);
+    expect(rpc.request.mock.calls.map(([m]) => m)).toEqual([
+      'events.fence',
+      'client.list',
+      'workspace.getBrowserClient',
+      'events.fence',
+    ]);
+  });
+  it('rejects an ordinary read started before loss after the recovery snapshot commits', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const old = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementationOnce(() => old.promise);
+    store.dispatch(fetchWorkspaceBrowserClientRequested(WS));
+    await settle();
+    pin = 'current';
+    lose();
+    await settle();
+    old.resolve({ browserClient: { source: 'workspace', clientId: 'obsolete', resolved: null } });
+    await settle();
+    expect(view().pinnedClientId).toBe('current');
+    rpc.request.mockImplementation(normal);
+  });
+  it('does not resurrect a removed workspace from held recovery, including remount ABA', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const held = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'workspace.getBrowserClient' ? held.promise : normal(method, params),
+    );
+    lose();
+    await settle();
+    store.dispatch(workspaceUnmounted(WS));
+    rpc.request.mockImplementation(normal);
+    pin = 'new-mount';
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    held.resolve({ browserClient: { source: 'workspace', clientId: 'old-mount', resolved: null } });
+    await settle();
+    expect(view().pinnedClientId).toBe('new-mount');
+  });
+  it('reconciles a pin mutation settling after loss without applying its stale echo', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const held = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'workspace.setBrowserClient' ? held.promise : normal(method, params),
+    );
+    store.dispatch(setWorkspaceBrowserClientRequested(WS, 'requested'));
+    await settle();
+    lose();
+    await settle();
+    pin = 'canonical';
+    held.resolve({
+      browserClient: { source: 'workspace', clientId: 'stale-echo', resolved: null },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    expect(view().pinnedClientId).toBe('canonical');
+    expect(calls('workspace.setBrowserClient')).toHaveLength(1);
+  });
+  it('does not add ordinary reads or fences for a legacy lease', async () => {
+    await attach(false);
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    expect(calls('client.list')).toHaveLength(1);
+    expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+    expect(calls('events.fence')).toHaveLength(0);
+  });
+});
+
+const row = (tabId: string, url = 'https://old.test/'): BrowserTabListing => ({
+  tabId,
+  url,
+  workspaceId: WS,
+  hostClientId: 'remote',
+  visibility: 'visible',
+  hostConnected: true,
+  createdAt: '2026-10-13',
+  updatedAt: '2026-10-13',
+});
+const tabs = () =>
+  collectBrowserTabs(store.state.panelLayout.byWorkspaceId[WS]).map(({ tab }) => tab);
+async function startTabs(rows: BrowserTabListing[]) {
+  cancel();
+  const normal = rpc.request.getMockImplementation()!;
+  rpc.request.mockImplementation((method, params) =>
+    method === 'browser.listTabs' ? Promise.resolve({ tabs: rows }) : normal(method, params),
+  );
+  store.dispatch(ownClientIdReceived('desktop'));
+  store.dispatch(
+    initializeLayout(WS, {
+      root: { type: 'panel', panelId: 'p' },
+      panels: {
+        p: {
+          id: 'p',
+          tabs: rows.map((r) => ({
+            id: r.tabId,
+            type: 'browser',
+            title: '',
+            closable: true,
+            browserUrl: r.url,
+            hostClientId: r.hostClientId,
+          })),
+          activeTabId: rows[0]?.tabId ?? null,
+        },
+      },
+      focusedPanelId: 'p',
+    }),
+  );
+  cancel = store.runSaga(browserTabRegistrySaga);
+  await attach();
+  await scope.subscribe({ workspaceId: WS, eventTypes: ['browser:tab-*'] }, { recover: true });
+  store.dispatch(setRestoreStatus(WS, 'restored'));
+  await settle();
+}
+const loseTabs = () =>
+  receive({
+    method: 'events.lost',
+    params: { subscriptionId: 'browser-2', generation: '1', scope: { workspaceId: WS } },
+  });
+describe('browser tab snapshot recovery', () => {
+  it('replaces stale tab state and removes a lost final closed tab without sending commands', async () => {
+    await startTabs([row('old'), row('keep')]);
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'browser.listTabs'
+        ? Promise.resolve({ tabs: [row('keep', 'https://current.test/'), row('added')] })
+        : normal(method, params),
+    );
+    rpc.request.mockClear();
+    loseTabs();
+    await settle();
+    expect(tabs().map((t) => [t.id, t.browserUrl])).toEqual([
+      ['keep', 'https://current.test/'],
+      ['added', 'https://old.test/'],
+    ]);
+    await vi.advanceTimersByTimeAsync(100);
+    await settle();
+    expect(rpc.request.mock.calls.map(([m]) => m)).toEqual([
+      'events.fence',
+      'browser.listTabs',
+      'events.fence',
+    ]);
+  });
+});
+
+describe('browser recovery authority and bounded reads', () => {
+  it('reads no inactive workspace and rehydrates it only after remount', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    store.dispatch(workspaceUnmounted(WS));
+    rpc.request.mockClear();
+    lose();
+    await settle();
+    expect(calls('client.list')).toHaveLength(0);
+    expect(calls('workspace.getBrowserClient')).toHaveLength(0);
+    pin = 'remounted';
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    expect(view().pinnedClientId).toBe('remounted');
+    expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+  });
+  it('coalesces a loss storm during a held read to one bounded trailing snapshot', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    rpc.request.mockClear();
+    const held = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    let once = true;
+    rpc.request.mockImplementation((method, params) => {
+      if (method === 'workspace.getBrowserClient' && once) {
+        once = false;
+        return held.promise;
+      }
+      return normal(method, params);
+    });
+    lose();
+    await settle();
+    for (let i = 2; i < 50; i++) lose(String(i));
+    await settle();
+    expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+    pin = 'latest';
+    held.resolve({
+      browserClient: { source: 'workspace', clientId: 'before-storm', resolved: null },
+    });
+    await settle();
+    expect(view().pinnedClientId).not.toBe('before-storm');
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    expect(view().pinnedClientId).toBe('latest');
+    expect(calls('workspace.getBrowserClient')).toHaveLength(2);
+  });
+  it('rejects unversioned old pushes after recovery and refreshes from authority', async () => {
+    const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    pin = 'current';
+    lose();
+    await settle();
+    rpc.request.mockClear();
+    expect(rendererEventRecovery.push(browserClientRecoveryKey(WS))).toBe(false);
+    pin = 'newer';
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    expect(view().pinnedClientId).toBe('newer');
+    expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+  });
+  it('retires old session reads across backend/principal replacement and restores current state', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const held = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    let once = true;
+    rpc.request.mockImplementation((method, params) => {
+      if (method === 'workspace.getBrowserClient' && once) {
+        once = false;
+        return held.promise;
+      }
+      return normal(method, params);
+    });
+    store.dispatch(fetchWorkspaceBrowserClientRequested(WS));
+    await settle();
+    pin = 'replacement';
+    await attach();
+    await settle();
+    held.resolve({ browserClient: { source: 'workspace', clientId: 'retired', resolved: null } });
+    await settle();
+    expect(view().pinnedClientId).toBe('replacement');
+  });
+  it('does not let an old lease complete recovery after subscription replacement', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const held = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    let once = true;
+    rpc.request.mockImplementation((method, params) => {
+      if (method === 'workspace.getBrowserClient' && once) {
+        once = false;
+        return held.promise;
+      }
+      return normal(method, params);
+    });
+    lose();
+    await settle();
+    await scope.unsubscribe('browser-1');
+    await scope.subscribe(
+      { eventTypes: ['client:*', 'workspace:updated', 'settings:changed'] },
+      { recover: true },
+    );
+    pin = 'new-lease';
+    held.resolve({ browserClient: { source: 'workspace', clientId: 'old-lease', resolved: null } });
+    await settle();
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    expect(view().pinnedClientId).toBe('new-lease');
+  });
+  it('bounds repeated read failures and clears state on an authorization denial', async () => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    rpc.request.mockClear();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'workspace.getBrowserClient'
+        ? Promise.reject(new Error('offline'))
+        : normal(method, params),
+    );
+    lose();
+    await settle();
+    await vi.advanceTimersByTimeAsync(6000);
+    await settle();
+    expect(calls('workspace.getBrowserClient')).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(calls('workspace.getBrowserClient')).toHaveLength(3);
+    await attach();
+    rpc.request.mockImplementation((method, params) =>
+      method === 'workspace.getBrowserClient'
+        ? Promise.reject(Object.assign(new Error('denied'), { rpcCode: -32003 }))
+        : normal(method, params),
+    );
+    await settle();
+    expect(store.state.browserClients.byWorkspaceId[WS]).toBeUndefined();
+  });
+});
+
+describe('browser tab lifetime and side-effect boundaries', () => {
+  it('does not revive a removed layout from a held snapshot', async () => {
+    const { clearPanelLayout } = await import('../../panel-layout/panel-layout-slice');
+    await startTabs([row('old')]);
+    const held = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'browser.listTabs' ? held.promise : normal(method, params),
+    );
+    loseTabs();
+    await settle();
+    store.dispatch(clearPanelLayout(WS));
+    held.resolve({ tabs: [row('retired')] });
+    await settle();
+    expect(store.state.panelLayout.byWorkspaceId[WS]).toBeUndefined();
+  });
+  it('keeps host navigation local while accepting current tab ownership and dropping tombstones', async () => {
+    const hosted = { ...row('hosted'), hostClientId: 'desktop' };
+    await startTabs([hosted, row('removed')]);
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'browser.listTabs'
+        ? Promise.resolve({
+            tabs: [{ ...hosted, url: 'https://stale-echo.test/', ownerAgentId: 'agent-new' }],
+          })
+        : normal(method, params),
+    );
+    rpc.request.mockClear();
+    loseTabs();
+    await settle();
+    expect(tabs()).toMatchObject([
+      { id: 'hosted', browserUrl: 'https://old.test/', ownerAgentId: 'agent-new' },
+    ]);
+    expect(store.state.panelLayout.byWorkspaceId[WS].recentlyClosed).toEqual([]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(calls('browser.upsertTab')).toHaveLength(0);
+    expect(calls('browser.removeTab')).toHaveLength(0);
+  });
+  it('rejects a delayed old tab push after recovery without admitting it twice', async () => {
+    const { browserTabRecoveryKey } = await import('../../panel-layout/sagas/browser-tab-recovery');
+    const { browserTabUpserted } = await import('../browser-clients-slice');
+    const { dispatchBrowserTabEvent } =
+      await import('../../panel-layout/sagas/browser-tab-event-receipt');
+    await startTabs([row('keep')]);
+    const token = rendererEventRecovery.capture(browserTabRecoveryKey(WS));
+    loseTabs();
+    await settle();
+    await dispatchBrowserTabEvent(browserTabUpserted(WS, row('stale')), token);
+    expect(tabs().map((t) => t.id)).toEqual(['keep']);
+  });
+  it('event receipt waits for actual routing placement before resolving', async () => {
+    const { browserTabRecoveryKey } = await import('../../panel-layout/sagas/browser-tab-recovery');
+    const { browserTabUpserted } = await import('../browser-clients-slice');
+    const { registryLoading, registryApplied } =
+      await import('../../browser-tab-registry/browser-tab-registry-slice');
+    const { openTabInRightmostColumnRequested, openTabInRightmostColumn } =
+      await import('../../panel-layout/panel-layout-slice');
+    const { take, put } = await import('typed-redux-saga');
+    const { getRecoveryLifetime, withRecoveryLifetime } =
+      await import('../../../middlewares/event-recovery');
+    const { dispatchBrowserTabEvent } =
+      await import('../../panel-layout/sagas/browser-tab-event-receipt');
+    await startTabs([row('keep')]);
+    store.dispatch(registryLoading(WS));
+    store.dispatch(
+      registryApplied(WS, store.state.browserTabRegistry.byWorkspaceId[WS].generation, {}),
+    );
+    let placed!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      placed = resolve;
+    });
+    const { call } = await import('typed-redux-saga');
+    const stopRouter = store.runSaga(function* () {
+      const action = yield* take(openTabInRightmostColumnRequested);
+      yield* call(() => hold);
+      yield* put(
+        withRecoveryLifetime(
+          openTabInRightmostColumn(WS, action.payload.tab, {
+            newTabId: action.payload.newTabId,
+            allowDuplicate: action.payload.allowDuplicate,
+          }),
+          getRecoveryLifetime(action)!,
+        ),
+      );
+    });
+    const done = vi.fn();
+    expect(rendererEventRecovery.push(browserTabRecoveryKey(WS))).toBe(true);
+    const receipt = dispatchBrowserTabEvent(
+      browserTabUpserted(WS, row('placed')),
+      rendererEventRecovery.capture(browserTabRecoveryKey(WS)),
+    ).then(done);
+    await settle();
+    expect(done).not.toHaveBeenCalled();
+    expect(tabs().map((t) => t.id)).toEqual(['keep']);
+    placed();
+    await receipt;
+    expect(tabs().map((t) => t.id)).toEqual(['keep', 'placed']);
+    stopRouter();
+  });
+});
+
+it('client event receipts cover both async reads and settle superseded burst triggers', async () => {
+  const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+  const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+  await attach();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  rpc.request.mockClear();
+  const roster = deferred<unknown>(),
+    selection = deferred<unknown>();
+  const normal = rpc.request.getMockImplementation()!;
+  let firstRoster = true,
+    firstSelection = true;
+  rpc.request.mockImplementation((method, params) => {
+    if (method === 'client.list' && firstRoster) {
+      firstRoster = false;
+      return roster.promise;
+    }
+    if (method === 'workspace.getBrowserClient' && firstSelection) {
+      firstSelection = false;
+      return selection.promise;
+    }
+    return normal(method, params);
+  });
+  const done = vi.fn();
+  rendererEventRecovery.push(browserClientRecoveryKey(WS));
+  const first = dispatchBrowserClientEvent(
+    WS,
+    rendererEventRecovery.capture(browserClientRecoveryKey(WS)),
+  ).then(done);
+  await settle();
+  expect(done).not.toHaveBeenCalled();
+  const pending = [];
+  for (let i = 0; i < 5; i++) {
+    rendererEventRecovery.push(browserClientRecoveryKey(WS));
+    pending.push(
+      dispatchBrowserClientEvent(WS, rendererEventRecovery.capture(browserClientRecoveryKey(WS))),
+    );
+  }
+  roster.resolve({ clients: [] });
+  await settle();
+  expect(done).not.toHaveBeenCalled();
+  pin = 'final-event';
+  selection.resolve({ browserClient: { source: 'default', resolved: null } });
+  await Promise.all([first, ...pending]);
+  expect(view().pinnedClientId).toBe('final-event');
+  expect(calls('client.list')).toHaveLength(2);
+  expect(calls('workspace.getBrowserClient')).toHaveLength(2);
+});
+
+it('drops an ordinary tab listing that completes after the recovered snapshot', async () => {
+  const { connectionStatusChanged } = await import('../../daemon-health/daemon-health-slice');
+  await startTabs([row('old')]);
+  store.dispatch(connectionStatusChanged('connected'));
+  const held = deferred<unknown>();
+  const normal = rpc.request.getMockImplementation()!;
+  let first = true;
+  rpc.request.mockImplementation((method, params) => {
+    if (method === 'browser.listTabs') {
+      if (first) {
+        first = false;
+        return held.promise;
+      }
+      return Promise.resolve({ tabs: [row('current')] });
+    }
+    return normal(method, params);
+  });
+  store.dispatch(setRestoreStatus(WS, 'restored'));
+  await settle();
+  loseTabs();
+  await settle();
+  held.resolve({ tabs: [row('obsolete')] });
+  await settle();
+  expect(tabs().map((tab) => tab.id)).toEqual(['current']);
+});
+
+it('still reports a user navigation after recovery without replaying it', async () => {
+  const { connectionStatusChanged } = await import('../../daemon-health/daemon-health-slice');
+  const { updateTabBrowserUrl } = await import('../../panel-layout/panel-layout-slice');
+  let server = { ...row('hosted'), hostClientId: 'desktop', displayed: true };
+  await startTabs([server]);
+  store.dispatch(connectionStatusChanged('connected'));
+  await settle();
+  loseTabs();
+  await settle();
+  const normal = rpc.request.getMockImplementation()!;
+  rpc.request.mockImplementation((method, params) => {
+    if (method === 'browser.listTabs') return Promise.resolve({ tabs: [server] });
+    if (method === 'browser.upsertTab') {
+      server = { ...server, ...params.tab };
+      return Promise.resolve({ tab: server });
+    }
+    return normal(method, params);
+  });
+  rpc.request.mockClear();
+  store.dispatch(updateTabBrowserUrl(WS, 'hosted', 'https://user.test/'));
+  await vi.advanceTimersByTimeAsync(300);
+  await settle();
+  expect(tabs()[0].browserUrl).toBe('https://user.test/');
+  expect(server.url).toBe('https://user.test/');
+  expect(calls('browser.upsertTab')).toHaveLength(1);
+  expect(calls('browser.navigateTab')).toHaveLength(0);
+  expect(calls('browser.closeTab')).toHaveLength(0);
+});
+
+it('rejects a read across principal invalidation even when the same principal is readmitted', async () => {
+  const { admitLegacyPrincipal } = await import('../../../../../test/fixtures/principal-state');
+  const { principalIdentityChanged, principalReceived } =
+    await import('../../principal/principal-slice');
+  admitLegacyPrincipal();
+  await attach();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  const before = store.state.principal;
+  if (!before.snapshot || !before.context || !before.boundPrincipalId)
+    throw new Error('Expected admitted fixture');
+  const held = deferred<unknown>();
+  const normal = rpc.request.getMockImplementation()!;
+  let first = true;
+  rpc.request.mockImplementation((method, params) => {
+    if (method === 'workspace.getBrowserClient' && first) {
+      first = false;
+      return held.promise;
+    }
+    return normal(method, params);
+  });
+  store.dispatch(fetchWorkspaceBrowserClientRequested(WS));
+  await settle();
+  store.dispatch(principalIdentityChanged(before.boundPrincipalId));
+  store.dispatch(
+    principalReceived(
+      {
+        context: before.context,
+        invalidation: store.state.principal.invalidation,
+        presentationVersion: store.state.principal.presentationVersion,
+      },
+      before.snapshot,
+    ),
+  );
+  held.resolve({
+    browserClient: { source: 'workspace', clientId: 'old-authority', resolved: null },
+  });
+  await settle();
+  expect(store.state.browserClients.byWorkspaceId[WS]).toBeUndefined();
+  pin = 'readmitted';
+  await attach();
+  await settle();
+  expect(view().pinnedClientId).toBe('readmitted');
+});
