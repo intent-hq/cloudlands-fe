@@ -17,6 +17,7 @@ import {
 } from './git-recovery-authority';
 import {
   bindGitReadTransport,
+  observeGitReadFailure,
   gitRootTransportKeys,
   gitContentRecoveryKey,
   serializeGitRead,
@@ -121,34 +122,40 @@ export function installGitContentRecovery(
             store.dispatch(gitReadStarted(workspaceId, entry.readKey, generation));
             store.dispatch(gitReadCompleted(workspaceId, entry.readKey, generation, result, null));
           };
+          const retireDenied = (error: unknown) => {
+            if (!current() || !gitReadAuthorityDenied(error)) return;
+            live = false;
+            owner.dispose();
+            clear();
+          };
           const ordinary = (lifetime: import('$shared/event-recovery/resource').RecoveryLifetime) =>
-            trackGitRead(
-              capturedRoot.transport,
-              serializeGitRead(
-                key,
-                () => current() && lifetime.commit(() => undefined),
-                () =>
-                  readGitContent(
-                    workspaceId,
-                    freshRequest,
-                    capturedRoot.transport,
-                    controller.signal,
-                    () => current() && lifetime.commit(() => undefined),
-                  ),
+            observeGitReadFailure(
+              trackGitRead(
+                capturedRoot.transport,
+                serializeGitRead(
+                  key,
+                  () => current() && lifetime.commit(() => undefined),
+                  () =>
+                    readGitContent(
+                      workspaceId,
+                      freshRequest,
+                      capturedRoot.transport,
+                      controller.signal,
+                      () => current() && lifetime.commit(() => undefined),
+                    ),
+                ),
               ),
+              (error) => {
+                if (lifetime.isCurrent()) retireDenied(error);
+              },
             )
               .then((result) => {
                 lifetime.commit(() => {
                   apply(result);
                 });
               })
-              .catch((error) => {
-                if (gitReadAuthorityDenied(error))
-                  lifetime.commit(() => {
-                    live = false;
-                    owner.dispose();
-                    clear();
-                  });
+              .catch(() => {
+                /* Keep ordinary cache on transient failures; the observer retires canonical denials. */
               });
           const owner = scope.registerResource({
             key,
@@ -199,7 +206,7 @@ export function installGitContentRecovery(
             },
             onEvent: (_notification, lifetime) => ordinary(lifetime),
           });
-          const unbind = bindGitReadTransport(key, rootTransport.transport);
+          const unbind = bindGitReadTransport(key, rootTransport.transport, retireDenied);
           rows.set(key, {
             owner,
             current: authority,

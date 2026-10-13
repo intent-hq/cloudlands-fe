@@ -1,3 +1,4 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('$store/renderer/store', () => ({
   store: { createSelector: (fn: any) => ({ select: fn }), state: {}, dispatch: vi.fn() },
@@ -354,5 +355,49 @@ it.each(['replacement', 'remove-readd', 'membership-regrant'] as const)(
     await pending;
     await settle();
     expect(h.rows()).toMatchObject([{ newContent: 'new root content' }]);
+  },
+);
+
+it.each([false, true])(
+  'retains eventual ordinary chat denial under its original authority (obsolete=%s)',
+  async (obsolete) => {
+    const h = await setup();
+    let finish!: (v: { retired: boolean; errors: unknown[] }) => void;
+    const completion = new Promise<{ retired: boolean; errors: unknown[] }>((resolve) => {
+      finish = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'ordinary deadline' }, completion);
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation((m, p) =>
+      m === 'git.showFile' ? Promise.reject(timeout) : normal(m, p),
+    );
+    const consumer = h.consumer();
+    const lane = captureGitRead(
+      chatContentRecoveryKey('ws', 'live', consumer.resourceKey, consumer.requestId),
+    );
+    await expect(
+      lane.run(() =>
+        lane.transport!.request('git.showFile', {
+          workspaceId: 'ws',
+          ref: 'HEAD',
+          filePath: 'a.ts',
+        }),
+      ),
+    ).rejects.toBe(timeout);
+    if (obsolete) {
+      h.change({ exists: false });
+      h.change({ exists: true });
+      const { chatChangesRecovered } =
+        await import('$store/renderer/slices/chat-changes/chat-changes-slice');
+      const now = h.consumer();
+      h.store.dispatch(
+        chatChangesRecovered('ws', 'live', now.requestId, now.resourceKey, [
+          { ...h.input.changes[0], newContent: 'replacement' },
+        ]),
+      );
+    }
+    finish({ retired: false, errors: [{ rpcCode: -32003 }] });
+    await settle();
+    expect(h.rows()).toMatchObject(obsolete ? [{ newContent: 'replacement' }] : []);
   },
 );

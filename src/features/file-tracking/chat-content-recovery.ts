@@ -25,6 +25,7 @@ import {
 import { batchedGitDiff, type GitReadTransport } from './components/diff/diff-ipc-batcher';
 import {
   bindGitReadTransport,
+  observeGitReadFailure,
   gitRootTransportKeys,
   chatContentRecoveryKey,
   trackGitRead,
@@ -190,19 +191,19 @@ export function installChatChangesRecovery(
               key: keys.ordinary,
               request: <T>(method: string, params?: unknown) => {
                 if (!rootCurrent()) return Promise.reject(new Error('Chat Git authority retired'));
+                const consumers = [...rows.values()].filter((row) => row.rootKey === rootKey);
                 return trackGitRead(
                   transport,
-                  scope
-                    .request<T>(method, params)
-                    .then((value) => {
+                  observeGitReadFailure(
+                    scope.request<T>(method, params).then((value) => {
                       if (!rootCurrent()) throw new Error('Chat Git authority retired');
                       return value;
-                    })
-                    .catch((error) => {
-                      if (rootCurrent() && gitReadAuthorityDenied(error))
-                        for (const row of rows.values()) if (row.rootKey === rootKey) row.retire();
-                      throw error;
                     }),
+                    (error) => {
+                      if (rootCurrent() && gitReadAuthorityDenied(error))
+                        for (const row of consumers) if (row.current()) row.retire();
+                    },
+                  ),
                 );
               },
             };

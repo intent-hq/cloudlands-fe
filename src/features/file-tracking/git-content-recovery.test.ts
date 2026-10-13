@@ -1,3 +1,4 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectCurrentWorkspaceTabId: { select: (s: any) => s.selected },
@@ -672,5 +673,59 @@ it.each(['recovery', 'ordinary', 'late', 'obsolete'] as const)(
       await ordinary;
       await settle();
     }
+  },
+);
+
+it.each([false, true])(
+  'retains eventual ordinary Git denial under its original authority (obsolete=%s)',
+  async (obsolete) => {
+    const h = await setup(true);
+    const completion = deferred<{ retired: boolean; errors: unknown[] }>();
+    const timeout = new BackendError(
+      { code: 'TIMEOUT', message: 'ordinary deadline' },
+      completion.promise,
+    );
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation((m, p) =>
+      m === 'git.showFile' ? Promise.reject(timeout) : normal(m, p),
+    );
+    const lane = captureGitRead(gitContentRecoveryKey('ws', h.key));
+    await expect(
+      lane.run(() =>
+        readGitContent('ws', h.read, lane.transport!, new AbortController().signal, () => true),
+      ),
+    ).rejects.toBe(timeout);
+    if (obsolete) {
+      h.request.mockImplementation((method, params) =>
+        method === 'git.showFile'
+          ? Promise.resolve({ content: 'replacement' })
+          : normal(method, params),
+      );
+      h.change({
+        gitRoots: {
+          byWorkspaceId: {
+            ws: {
+              gitRoots: createCollection('id', [{ id: 'root', path: '/new', createdAt: 'new' }]),
+            },
+          },
+        },
+      });
+      await settle();
+      h.dispatch(gitReadStarted('ws', h.key, 'replacement'));
+      h.dispatch(
+        gitReadCompleted(
+          'ws',
+          h.key,
+          'replacement',
+          { kind: 'showFile', content: 'replacement' },
+          null,
+        ),
+      );
+    }
+    completion.resolve({ retired: false, errors: [{ rpcCode: -32003 }] });
+    await settle();
+    expect(h.entry().result).toEqual(
+      obsolete ? { kind: 'showFile', content: 'replacement' } : null,
+    );
   },
 );

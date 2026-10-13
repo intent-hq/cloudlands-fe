@@ -1,3 +1,4 @@
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import { gitReadDrained, gitReadFailureDrained } from '../../git-recovery-read-lane';
 /**
  * Request coalescer / deduper for the diff viewers' git reads.
@@ -272,7 +273,11 @@ async function readWorkingTreeContent(
           : '';
     return { success: true, data: content };
   } catch (error) {
-    if ((transport || gitRootId) && !isMissingWorkingTreeFile(error)) throw error;
+    if (
+      getPhysicalRequestCompletion(error) ||
+      ((transport || gitRootId) && !isMissingWorkingTreeFile(error))
+    )
+      throw error;
     logger.debug('file.read failed for working-tree diff side (file deleted?)', {
       workspaceId,
       filePath,
@@ -488,7 +493,7 @@ async function flushDiffGroup(key: string) {
           matches.set(path, findChunkForPath(recoveryChunks, path));
         }
       } catch (recoveryErr) {
-        if (pending.transport) throw recoveryErr;
+        if (pending.transport || getPhysicalRequestCompletion(recoveryErr)) throw recoveryErr;
         logger.warn('git.diffs full-tree recovery read failed; resolving undefined', {
           workspaceId: wsId,
           staged,
@@ -727,8 +732,9 @@ function showKey(workspaceId: string, ref: string, filePath: string, gitRootId?:
  * path, gitRootId)` share a single in-flight request; `opts.gitRootId`
  * scopes the read to a registered secondary git root and is omitted
  * from the wire call when unset, keeping the primary-root request
- * byte-identical. Daemon/transport errors fold into
- * `{ success: false, error }`, preserving the legacy handler's envelope; the
+ * byte-identical. Deadline failures carrying physical completion propagate so
+ * callers retain outstanding work. Other unscoped daemon/transport errors fold
+ * into `{ success: false, error }`, preserving the legacy handler's envelope; the
  * typed `not-a-file` rejection (gitlink/directory entry, #1739) additionally
  * sets `notAFile: true` so callers can route it instead of treating it as a
  * failure.
@@ -760,7 +766,8 @@ export function dedupedShowFile(
       data: typeof result?.content === 'string' ? result.content : '',
     }))
     .catch((error): ShowFileResponse => {
-      if (opts?.transport && !isNotAFileError(error)) throw error;
+      if (getPhysicalRequestCompletion(error) || (opts?.transport && !isNotAFileError(error)))
+        throw error;
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),

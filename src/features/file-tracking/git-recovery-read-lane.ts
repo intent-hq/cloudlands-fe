@@ -1,4 +1,4 @@
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { GitReadTransport } from './components/diff/diff-ipc-batcher';
@@ -13,8 +13,9 @@ const failures = new Map<string, (error: unknown) => void>();
 
 /** Logical rejection does not release physical ownership, including nested deadlines. */
 export async function gitReadFailureDrained(error: unknown): Promise<void> {
-  if (!(error instanceof RecoveryRequestTimeoutError)) return;
-  const completion = await error.completion;
+  const physical = getPhysicalRequestCompletion(error);
+  if (!physical) return;
+  const completion = await physical;
   if (!completion.retired) await Promise.all(completion.errors.map(gitReadFailureDrained));
 }
 export function gitReadDrained(result: Promise<unknown>, release?: () => void): Promise<void> {
@@ -23,7 +24,7 @@ export function gitReadDrained(result: Promise<unknown>, release?: () => void): 
       release?.();
     },
     (error) => {
-      if (error instanceof RecoveryRequestTimeoutError)
+      if (getPhysicalRequestCompletion(error))
         return gitReadFailureDrained(error).then(() => {
           release?.();
         });
@@ -37,8 +38,9 @@ export function observeGitReadFailure<T>(
 ): Promise<T> {
   const observe = (error: unknown) => {
     failed?.(error);
-    if (error instanceof RecoveryRequestTimeoutError)
-      void error.completion.then((completion) => {
+    const physical = getPhysicalRequestCompletion(error);
+    if (physical)
+      void physical.then((completion) => {
         if (!completion.retired) for (const late of completion.errors) observe(late);
       });
   };
@@ -88,6 +90,7 @@ export function serializeGitRead<T>(
   current: () => boolean,
   read: () => Promise<T>,
   wait = true,
+  physicalReads?: Set<Promise<void>>,
 ): Promise<T> {
   const start = () => {
     if (!current()) throw new Error('Git read authority expired before dispatch');
@@ -100,13 +103,21 @@ export function serializeGitRead<T>(
   } catch (error) {
     result = Promise.reject(error);
   }
-  const drained = gitReadDrained(result);
+  const drained = drainCapturedGitRead(result, physicalReads);
   tails.set(key, drained);
   const done = () => {
     if (tails.get(key) === drained) tails.delete(key);
   };
   void drained.then(done, done);
   return result;
+}
+function drainCapturedGitRead(result: Promise<unknown>, physicalReads?: Set<Promise<void>>) {
+  const drained = gitReadDrained(result);
+  return physicalReads
+    ? drained.then(async () => {
+        await Promise.all([...physicalReads]);
+      })
+    : drained;
 }
 export function captureGitRead(key: string): {
   receipt: RecoveryLifetime;
@@ -116,8 +127,22 @@ export function captureGitRead(key: string): {
   const receipt = rendererEventRecovery.capture(key);
   const bound = transports.get(key);
   const failed = failures.get(key);
+  const physicalReads = new Set<Promise<void>>();
   const transport = bound && {
     ...bound,
+    request: <T>(method: string, params?: unknown): Promise<T> => {
+      if (!receipt.isCurrent())
+        return Promise.reject(new Error('Git read authority expired before request'));
+      const result = observeGitReadFailure(bound.request<T>(method, params), (error) => {
+        if (receipt.isCurrent()) failed?.(error);
+      });
+      const drained = gitReadDrained(result);
+      physicalReads.add(drained);
+      void drained.then(() => {
+        physicalReads.delete(drained);
+      });
+      return result;
+    },
     onFailure: (error: unknown) => {
       if (receipt.isCurrent()) failed?.(error);
     },
@@ -133,8 +158,9 @@ export function captureGitRead(key: string): {
         () => receipt.commit(() => undefined),
         read,
         !!transport,
+        physicalReads,
       );
-      if (transport) trackGitRead(transport, result);
+      if (transport) trackGitRead(transport, drainCapturedGitRead(result, physicalReads));
       return result;
     },
   };
