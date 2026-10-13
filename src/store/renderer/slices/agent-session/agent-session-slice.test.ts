@@ -1061,6 +1061,58 @@ describe('agent-session-slice reducer', () => {
   });
 
   describe('updateSession', () => {
+    describe.each(['__proto__', 'constructor', 'toString'])('metadata extension key %s', (key) => {
+      it.each(['written', null, { resolution: 'applied' as const }])(
+        'stores %j as an own serializable value and counts repeated operations',
+        (value) => {
+          let state = agentSessionReducer(
+            initialState,
+            upsertSession({
+              ...makeSession('a1'),
+              metadata: { untouched: 'kept' },
+            }),
+          );
+          for (const revision of [1, 2]) {
+            state = agentSessionReducer(
+              state,
+              updateSession('a1', {
+                metadataPatch: { [key]: { op: 'set', value } },
+              }),
+            );
+            const metadata = state.byAgentId.a1.metadata!;
+            const versions = state.projectionVersions!.a1.metadata;
+            expect(Object.getPrototypeOf(metadata)).toBe(Object.prototype);
+            expect(Object.hasOwn(metadata, key)).toBe(true);
+            expect(metadata[key]).toEqual(value);
+            expect(JSON.parse(JSON.stringify(metadata))).toEqual({
+              untouched: 'kept',
+              [key]: value,
+            });
+            expect(Object.getPrototypeOf(versions)).toBe(Object.prototype);
+            expect(Object.hasOwn(versions, key)).toBe(true);
+            expect(versions[key]).toBe(revision);
+            expect(Object.hasOwn(versions, 'untouched')).toBe(false);
+          }
+          const versions = state.projectionVersions!.a1.metadata;
+          state = agentSessionReducer(state, updateSession('a1', { metadataPatch: {} }));
+          expect(state.projectionVersions!.a1.metadata).toBe(versions);
+          for (const revision of [3, 4]) {
+            state = agentSessionReducer(
+              state,
+              updateSession('a1', { metadataPatch: { [key]: { op: 'clear' } } }),
+            );
+            expect(Object.getPrototypeOf(state.byAgentId.a1.metadata)).toBe(Object.prototype);
+            expect(Object.hasOwn(state.byAgentId.a1.metadata!, key)).toBe(false);
+            expect(state.byAgentId.a1.metadata).toEqual({ untouched: 'kept' });
+            expect(state.projectionVersions!.a1.metadata[key]).toBe(revision);
+            expect(JSON.parse(JSON.stringify(state.projectionVersions!.a1.metadata))).toEqual({
+              [key]: revision,
+            });
+          }
+        },
+      );
+    });
+
     it('applies explicit metadata operations without claiming untouched keys', () => {
       let state = agentSessionReducer(
         initialState,

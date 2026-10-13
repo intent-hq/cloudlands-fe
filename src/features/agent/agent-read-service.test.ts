@@ -828,3 +828,59 @@ it('preserves a pushed idle transition over an older metadata read without a tra
   });
   expect(agentsApi.get).toHaveBeenCalledTimes(1);
 });
+
+it.each(['__proto__', 'constructor', 'toString'])(
+  'preserves explicit set and clear of extension key %s through stale reads',
+  async (key) => {
+    appStore.init();
+    agentsApi.get.mockClear();
+    const agentId = `extension-key-${key}`;
+    const unrelatedKey = key === '__proto__' ? 'constructor' : '__proto__';
+    const value = { resolution: 'applied' as const };
+    const seed = makeSession({ id: agentId, metadata: { [key]: value, [unrelatedKey]: 'before' } });
+    appStore.dispatch(bulkUpsertSessions([seed]));
+    for (const operation of ['set', 'clear'] as const) {
+      let finish!: (session: AgentSession) => void;
+      agentsApi.get.mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const read = readAgentSession(agentId, WS);
+      for (let repeat = 0; repeat < 2; repeat++) {
+        appStore.dispatch(
+          updateSession(agentId, {
+            metadataPatch: {
+              [key]: operation === 'set' ? { op: 'set', value } : { op: 'clear' },
+            },
+          }),
+        );
+      }
+      finish(
+        makeSession({
+          id: agentId,
+          metadata: { [key]: 'stale', [unrelatedKey]: 'fetched', fetched: 'kept' },
+        }),
+      );
+      const resolved = await read;
+      expect(resolved).not.toBeNull();
+      const metadata = resolved!.metadata!;
+      expect(Object.getPrototypeOf(metadata)).toBe(Object.prototype);
+      expect(Object.hasOwn(metadata, key)).toBe(operation === 'set');
+      expect(metadata).toEqual({
+        ...(operation === 'set' ? { [key]: value } : {}),
+        [unrelatedKey]: 'fetched',
+        fetched: 'kept',
+      });
+      expect(JSON.parse(JSON.stringify(metadata))).toEqual(metadata);
+      expect(appStore.state.agentSessions.projectionVersions?.[agentId].metadata).toEqual({
+        [key]: operation === 'set' ? 2 : 4,
+      });
+    }
+    expect(agentsApi.get.mock.calls).toEqual([
+      [agentId, WS],
+      [agentId, WS],
+    ]);
+  },
+);

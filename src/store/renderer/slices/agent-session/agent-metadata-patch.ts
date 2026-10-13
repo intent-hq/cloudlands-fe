@@ -10,8 +10,15 @@ export function applyAgentMetadataPatch(
   if (!operations.length) return metadata;
   const next = { ...metadata };
   for (const [key, operation] of operations) {
-    if (operation?.op === 'set') next[key] = operation.value;
-    else delete next[key];
+    if (operation?.op === 'set') {
+      // Assignment would invoke Object.prototype.__proto__ rather than store a key.
+      Object.defineProperty(next, key, {
+        value: operation.value,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    } else delete next[key];
   }
   return next;
 }

@@ -498,9 +498,16 @@ function recordSessionProjection(
   if (!fieldKeys.length && !metadataKeys.length) return state;
   const prior = state.projectionVersions?.[agentId];
   const fields = { ...prior?.fields };
-  const metadata = { ...prior?.metadata };
+  const metadata = {
+    ...prior?.metadata,
+    ...Object.fromEntries(
+      metadataKeys.map((key) => [
+        key,
+        (prior?.metadata && Object.hasOwn(prior.metadata, key) ? prior.metadata[key] : 0) + 1,
+      ]),
+    ),
+  };
   for (const key of fieldKeys) fields[key] = (fields[key] ?? 0) + 1;
-  for (const key of metadataKeys) metadata[key] = (metadata[key] ?? 0) + 1;
   return {
     ...state,
     projectionVersions: { ...state.projectionVersions, [agentId]: { fields, metadata } },
