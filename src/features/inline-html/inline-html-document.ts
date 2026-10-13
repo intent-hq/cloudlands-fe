@@ -42,6 +42,7 @@ interface InlineHtmlTheme {
 
 export const INLINE_HTML_MIN_HEIGHT = 96;
 export const INLINE_HTML_MAX_HEIGHT = 720;
+export const INLINE_HTML_MAX_SCROLL_DELTA = 512;
 
 const INLINE_HTML_CSP = [
   "default-src 'none'",
@@ -71,7 +72,14 @@ export function readInlineHtmlTheme(element: Element): InlineHtmlTheme {
 }
 
 /** Runs before any generated script; do not capture values from this module. */
-function installPreviewBridge(channel: string, initialTheme: InlineHtmlTheme) {
+function installPreviewBridge(
+  channel: string,
+  initialTheme: InlineHtmlTheme,
+  maxScrollDelta: number,
+) {
+  const scroll = new MessageChannel();
+  const postScroll = MessagePort.prototype.postMessage.bind(scroll.port1);
+  window.parent.postMessage({ channel, type: 'scroll-port' }, '*', [scroll.port2]);
   const send = (type: string, payload: Record<string, unknown> = {}) => {
     window.parent.postMessage({ channel, type, ...payload }, '*');
   };
@@ -105,6 +113,55 @@ function installPreviewBridge(channel: string, initialTheme: InlineHtmlTheme) {
     if (event.source !== window.parent || !event.data || event.data.channel !== channel) return;
     if (event.data.type === 'theme') applyTheme(event.data.theme);
   });
+  const handleWheel = (event: WheelEvent) => {
+    if (
+      event.defaultPrevented ||
+      !event.isTrusted ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      !event.deltaY ||
+      Math.abs(event.deltaX) > Math.abs(event.deltaY)
+    )
+      return;
+    const canScroll = (element: Element) => {
+      const styles = getComputedStyle(element);
+      if (
+        element !== document.scrollingElement &&
+        !/^(auto|scroll|overlay)$/.test(styles.overflowY)
+      )
+        return false;
+      if (/^(hidden|clip)$/.test(styles.overflowY)) return false;
+      const maximum = element.scrollHeight - element.clientHeight;
+      return (
+        maximum > 1 && (event.deltaY < 0 ? element.scrollTop > 1 : element.scrollTop < maximum - 1)
+      );
+    };
+    if (
+      event.composedPath().some((target) => target instanceof Element && canScroll(target)) ||
+      (document.scrollingElement && canScroll(document.scrollingElement))
+    )
+      return;
+    const unit =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? parseFloat(getComputedStyle(document.body).lineHeight) || 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? innerHeight
+          : 1;
+    const deltaY = Math.max(-maxScrollDelta, Math.min(maxScrollDelta, event.deltaY * unit));
+    if (!Number.isFinite(deltaY)) return;
+    event.preventDefault();
+    postScroll({ deltaY });
+  };
+  window.addEventListener(
+    'wheel',
+    () => {
+      // Run after the visual's handlers, including handlers added later.
+      window.removeEventListener('wheel', handleWheel);
+      window.addEventListener('wheel', handleWheel, { passive: false });
+    },
+    { capture: true, passive: false },
+  );
   window.addEventListener('error', (event: ErrorEvent) => {
     if (event.message) send('error', { message: event.message.slice(0, 300) });
   });
@@ -149,12 +206,29 @@ function installPreviewBridge(channel: string, initialTheme: InlineHtmlTheme) {
 }
 
 /** Trusted shell: authored scripts never run in the document owning this CSP. */
-function installPreviewShell(channel: string, childDocument: string, frameTitle: string) {
+function installPreviewShell(
+  channel: string,
+  childDocument: string,
+  frameTitle: string,
+  maxScrollDelta: number,
+) {
   const child = document.createElement('iframe');
   child.setAttribute('sandbox', 'allow-scripts');
   child.setAttribute('referrerpolicy', 'no-referrer');
   child.title = frameTitle;
   child.style.cssText = 'display:block;width:100%;height:100%;border:0;';
+  let scrollPort: MessagePort | undefined;
+  const handleScroll = (event: MessageEvent) => {
+    const deltaY = event.data?.deltaY;
+    if (
+      typeof deltaY === 'number' &&
+      Number.isFinite(deltaY) &&
+      deltaY !== 0 &&
+      Math.abs(deltaY) <= maxScrollDelta
+    ) {
+      window.parent.postMessage({ channel, type: 'wheel', deltaY }, '*');
+    }
+  };
   window.addEventListener('message', (event: MessageEvent) => {
     const data = event.data;
     if (!data || typeof data !== 'object' || data.channel !== channel) return;
@@ -163,6 +237,12 @@ function installPreviewShell(channel: string, childDocument: string, frameTitle:
       return;
     }
     if (event.source !== child.contentWindow || event.origin !== 'null') return;
+    if (data.type === 'scroll-port' && !scrollPort && event.ports.length === 1) {
+      // The trusted bootstrap sends this port before any authored script runs.
+      scrollPort = event.ports[0];
+      scrollPort.onmessage = handleScroll;
+      return;
+    }
     if (
       data.type === 'resize' &&
       typeof data.height === 'number' &&
@@ -245,7 +325,10 @@ export function buildInlineHtmlDocument(
     :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
   `;
   const bridge = doc.createElement('script');
-  const json = JSON.stringify([channel, theme]).replace(/</g, '\\u003c');
+  const json = JSON.stringify([channel, theme, INLINE_HTML_MAX_SCROLL_DELTA]).replace(
+    /</g,
+    '\\u003c',
+  );
   bridge.textContent = `(${installPreviewBridge.toString()})(...${json});`;
   doc.head.prepend(policy, charset, style, bridge);
   const childDocument = `<!doctype html>${doc.documentElement.outerHTML}`;
@@ -261,7 +344,12 @@ export function buildInlineHtmlDocument(
   const shellStyle = shell.createElement('style');
   shellStyle.textContent = 'html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }';
   const shellBridge = shell.createElement('script');
-  const shellJson = JSON.stringify([channel, childDocument, frameTitle]).replace(/</g, '\\u003c');
+  const shellJson = JSON.stringify([
+    channel,
+    childDocument,
+    frameTitle,
+    INLINE_HTML_MAX_SCROLL_DELTA,
+  ]).replace(/</g, '\\u003c');
   shellBridge.textContent = `(${installPreviewShell.toString()})(...${shellJson});`;
   shell.head.prepend(shellPolicy, shellCharset, shellStyle, shellBridge);
   return `<!doctype html>${shell.documentElement.outerHTML}`;

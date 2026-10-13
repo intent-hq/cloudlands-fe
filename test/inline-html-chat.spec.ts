@@ -1,7 +1,7 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { test } from './root-browser-fixtures';
 import { createServer, type ViteDevServer } from 'vite';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -12,6 +12,9 @@ type HostProps = {
   isStreaming?: boolean;
   renderer?: 'static' | 'streaming' | 'before';
   role?: 'assistant' | 'user';
+  scrollable?: boolean;
+  follow?: boolean;
+  tailHeight?: number;
 };
 
 let server: ViteDevServer | undefined;
@@ -94,6 +97,258 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   await copyFile(path, resolve(artifactDirectory, `${name}.png`));
   await testInfo.attach(name, { path, contentType: 'image/png' });
 }
+
+async function settleWheel(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      }),
+  );
+}
+
+async function saveScrollReceipt(testInfo: TestInfo, name: string, observations: unknown) {
+  const body = JSON.stringify(observations, null, 2);
+  const directory = resolve(artifactDirectory, 'scroll');
+  await mkdir(directory, { recursive: true });
+  await writeFile(resolve(directory, `${name}.json`), body);
+  await testInfo.attach(`${name}.json`, { body, contentType: 'application/json' });
+}
+
+for (const renderer of ['static', 'streaming'] as const) {
+  test(`continues wheel scrolling through a fitted visual in ${renderer} chat`, async ({
+    page,
+  }, testInfo) => {
+    await openChat(page, { renderer, scrollable: true }, renderer === 'static' ? 'light' : 'dark');
+    const chat = page.getByTestId('inline-html-scroll-container');
+    const scrollTop = () => chat.evaluate((element) => element.scrollTop);
+    await expect(frame(page).getByRole('slider')).toBeVisible();
+    await frame(page).getByRole('slider').focus();
+    await page.keyboard.press('End');
+    await chat.evaluate((element) => {
+      const visual = element.querySelector('[data-inline-html]')!;
+      element.scrollTop += visual.getBoundingClientRect().top - 120;
+    });
+    await frame(page).locator('svg').hover();
+    const before = await scrollTop();
+    if (renderer === 'static') await capture(page, testInfo, 'scroll-start');
+    await page.mouse.wheel(0, 180);
+    await expect.poll(async () => Math.abs((await scrollTop()) - before - 180)).toBeLessThan(2);
+    const down = await scrollTop();
+    if (renderer === 'static') await capture(page, testInfo, 'scroll-chat-moved');
+    await page.mouse.wheel(0, -120);
+    await expect.poll(async () => Math.abs((await scrollTop()) - down + 120)).toBeLessThan(2);
+    const up = await scrollTop();
+    await frame(page).locator('svg').hover();
+    const horizontalStart = await scrollTop();
+    await page.mouse.wheel(160, 0);
+    await settleWheel(page);
+    const horizontalEnd = await scrollTop();
+    expect(horizontalEnd).toBe(horizontalStart);
+    await expect(frame(page).locator('#thickness-value')).toHaveText('80 mm');
+
+    await updateHost(page, { tailHeight: 100, follow: true });
+    await expect(chat).toHaveAttribute('data-following', 'true');
+    await frame(page).locator('svg').hover();
+    const followingStart = await scrollTop();
+    await page.mouse.wheel(0, -160);
+    await expect(chat).toHaveAttribute('data-following', 'false');
+    await expect.poll(() => scrollTop()).toBeLessThan(followingStart - 100);
+    const readingPosition = await scrollTop();
+    await updateHost(page, {
+      message: `${inlineHtmlMessage()}\n\nNew explanation arrives while you read.`,
+      isStreaming: renderer === 'streaming',
+    });
+    await settleWheel(page);
+    expect(await scrollTop()).toBe(readingPosition);
+    await expect(frame(page).locator('#thickness-value')).toHaveText('80 mm');
+    await saveScrollReceipt(testInfo, `fitted-${renderer}`, {
+      before,
+      down,
+      up,
+      horizontalStart,
+      horizontalEnd,
+      followingStart,
+      readingPosition,
+      afterNewText: await scrollTop(),
+      retainedThickness: 80,
+    });
+  });
+}
+
+test('hands wheel scrolling from nested and tall content back to chat at either boundary', async ({
+  page,
+}, testInfo) => {
+  const source = `<h2>Scroll inside the visual</h2>
+    <div id="nested" style="height:180px;overflow:auto"><div style="height:900px">Nested content</div></div>
+    <div id="pan" style="height:80px">Local gesture: <output id="gestures">0</output></div>
+    <script>window.addEventListener('wheel', event => {
+      if (event.target.closest('#pan')) {
+        event.preventDefault();
+        document.getElementById('gestures').textContent = Number(document.getElementById('gestures').textContent) + 1;
+      }
+    }, { passive: false });</script>`;
+  await openChat(page, { message: inlineHtmlMessage(source), scrollable: true });
+  const chat = page.getByTestId('inline-html-scroll-container');
+  const scrollTop = () => chat.evaluate((element) => element.scrollTop);
+  await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'ready');
+  await chat.evaluate((element) => {
+    element.scrollTop +=
+      element.querySelector('[data-inline-html]')!.getBoundingClientRect().top - 120;
+  });
+  const nested = frame(page).locator('#nested');
+  await nested.hover();
+  const before = await scrollTop();
+  await page.mouse.wheel(0, 160);
+  await expect.poll(() => nested.evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
+  expect(await scrollTop()).toBe(before);
+  const nestedScroll = await nested.evaluate((element) => element.scrollTop);
+  await nested.evaluate((element) => (element.scrollTop = element.scrollHeight));
+  await page.mouse.wheel(0, 120);
+  await expect.poll(async () => Math.abs((await scrollTop()) - before - 120)).toBeLessThan(2);
+  const nestedBottom = await scrollTop();
+  await nested.evaluate((element) => (element.scrollTop = 0));
+  await nested.hover();
+  const reverseStart = await scrollTop();
+  await page.mouse.wheel(0, -100);
+  await expect.poll(async () => Math.abs((await scrollTop()) - reverseStart + 100)).toBeLessThan(2);
+  const nestedTop = await scrollTop();
+  await frame(page).locator('#pan').hover();
+  const gestureStart = await scrollTop();
+  await page.mouse.wheel(0, 120);
+  await expect(frame(page).locator('#gestures')).toHaveText('1');
+  await settleWheel(page);
+  const gestureEnd = await scrollTop();
+  expect(gestureEnd).toBe(gestureStart);
+
+  await updateHost(page, {
+    message: inlineHtmlMessage('<div style="height:3000px"><p>Tall content</p></div>'),
+  });
+  await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'ready');
+  await chat.evaluate((element) => {
+    element.scrollTop +=
+      element.querySelector('[data-inline-html]')!.getBoundingClientRect().top - 70;
+  });
+  const outer = await preview(page).locator('iframe').boundingBox();
+  await page.mouse.move(outer!.x + 100, outer!.y + 100);
+  const tallStart = await scrollTop();
+  await page.mouse.wheel(0, 200);
+  const innerScroll = () =>
+    frame(page)
+      .locator('body')
+      .evaluate((body) => body.ownerDocument.scrollingElement!.scrollTop);
+  await expect.poll(() => innerScroll()).toBeGreaterThan(100);
+  expect(await scrollTop()).toBe(tallStart);
+  const tallScroll = await innerScroll();
+  await frame(page)
+    .locator('body')
+    .evaluate((body) => {
+      const root = body.ownerDocument.scrollingElement!;
+      root.scrollTop = root.scrollHeight;
+    });
+  await page.mouse.wheel(0, 100);
+  await expect.poll(async () => Math.abs((await scrollTop()) - tallStart - 100)).toBeLessThan(2);
+  const tallBottom = await scrollTop();
+  await capture(page, testInfo, 'scroll-tall-handoff');
+  await frame(page)
+    .locator('body')
+    .evaluate((body) => {
+      body.ownerDocument.scrollingElement!.scrollTop = 0;
+    });
+  await page.mouse.wheel(0, -100);
+  await expect.poll(async () => Math.abs((await scrollTop()) - tallBottom + 100)).toBeLessThan(2);
+  await saveScrollReceipt(testInfo, 'nested-and-tall', {
+    before,
+    nestedScroll,
+    nestedBottom,
+    nestedTop,
+    gestureStart,
+    gestureEnd,
+    tallStart,
+    tallScroll,
+    tallBottom,
+    tallTop: await scrollTop(),
+  });
+});
+
+test('keeps scroll input private and preserves modified wheel gestures', async ({
+  page,
+}, testInfo) => {
+  const source = `<div id="surface" style="height:220px">Scroll input stays isolated</div>
+    <script>window.addEventListener('message', event => {
+      if (event.ports.length) window.stolenScrollPort = event.ports[0];
+    }, true);
+    const channel = document.head.querySelector('script').textContent.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/)[0];
+    const forged = new MessageChannel();
+    window.forgedScrollPort = forged.port1;
+    parent.postMessage({ channel, type: 'scroll-port' }, '*', [forged.port2]);
+    forged.port1.postMessage({ deltaY: 120 });
+    </script>`;
+  await openChat(page, { message: inlineHtmlMessage(source), scrollable: true });
+  const chat = page.getByTestId('inline-html-scroll-container');
+  const scrollTop = () => chat.evaluate((element) => element.scrollTop);
+  await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'ready');
+  await frame(page).locator('#surface').hover();
+  await settleWheel(page);
+  const before = await scrollTop();
+  const stolenPort = await frame(page)
+    .locator('body')
+    .evaluate((body) => {
+      const local = body.ownerDocument.defaultView!;
+      const channel = body.ownerDocument.head
+        .querySelector('script')!
+        .textContent!.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/)![0];
+      (local as unknown as { forgedScrollPort: MessagePort }).forgedScrollPort.postMessage({
+        deltaY: 120,
+      });
+      for (const deltaY of [120, NaN, Infinity, 999999, '120']) {
+        local.parent.postMessage({ channel, type: 'wheel', deltaY }, '*');
+        local.top!.postMessage({ channel, type: 'wheel', deltaY }, '*');
+      }
+      body.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true }));
+      return 'stolenScrollPort' in local;
+    });
+  await page.evaluate(() => {
+    const source = document.querySelector<HTMLIFrameElement>('[data-inline-html] iframe')!.srcdoc;
+    const channel = source.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/)![0];
+    window.postMessage({ channel, type: 'wheel', deltaY: 120 }, '*');
+  });
+  await settleWheel(page);
+  const afterForged = await scrollTop();
+  expect(stolenPort).toBe(false);
+  expect(afterForged).toBe(before);
+  await page.evaluate(() => {
+    const local = window as unknown as { forwardedWheel: number[] };
+    local.forwardedWheel = [];
+    const shell = document.querySelector<HTMLIFrameElement>('[data-inline-html] iframe')!;
+    window.addEventListener('message', (event) => {
+      if (event.source === shell.contentWindow && event.data?.type === 'wheel') {
+        local.forwardedWheel.push(event.data.deltaY);
+      }
+    });
+  });
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, 120);
+  await page.keyboard.up('Control');
+  await settleWheel(page);
+  const afterZoom = await scrollTop();
+  const modifiedForwarding = await page.evaluate(
+    () => (window as unknown as { forwardedWheel: number[] }).forwardedWheel,
+  );
+  expect(modifiedForwarding).toEqual([]);
+  await page.mouse.wheel(0, -120);
+  await expect.poll(() => scrollTop()).toBeLessThan(afterZoom - 100);
+  await saveScrollReceipt(testInfo, 'private-input', {
+    before,
+    afterForged,
+    afterZoom,
+    modifiedForwarding,
+    stolenPort,
+    afterTrustedWheel: await scrollTop(),
+  });
+});
 
 for (const renderer of ['static', 'streaming'] as const) {
   test(`runs the interactive visual in ${renderer} chat`, async ({ page }, testInfo) => {

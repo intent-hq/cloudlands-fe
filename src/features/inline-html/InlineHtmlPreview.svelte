@@ -7,6 +7,7 @@
   import {
     buildInlineHtmlDocument,
     INLINE_HTML_MAX_HEIGHT,
+    INLINE_HTML_MAX_SCROLL_DELTA,
     INLINE_HTML_MIN_HEIGHT,
     readInlineHtmlTheme,
   } from './inline-html-document';
@@ -61,6 +62,24 @@
     );
   }
 
+  function scrollChat(deltaY: number) {
+    let container = root.parentElement;
+    while (container) {
+      const styles = getComputedStyle(container);
+      const maximum = container.scrollHeight - container.clientHeight;
+      if (/^(auto|scroll|overlay)$/.test(styles.overflowY) && maximum > 1) {
+        if (deltaY < 0 ? container.scrollTop > 0 : container.scrollTop < maximum) {
+          container.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true }));
+          container.scrollTop += deltaY;
+          return;
+        }
+        if (/^(contain|none)$/.test(styles.overscrollBehaviorY)) return;
+      }
+      container = container.parentElement;
+    }
+    window.scrollBy({ top: deltaY, behavior: 'instant' });
+  }
+
   $effect(() => {
     if (!mounted) return;
     const currentSource = source;
@@ -100,6 +119,18 @@
         sendTheme();
       } else if (data.type === 'error' && typeof data.message === 'string') {
         runtimeError = data.message.slice(0, 300);
+      } else if (
+        data.type === 'wheel' &&
+        ready &&
+        runnable &&
+        !showSource &&
+        !loading &&
+        typeof data.deltaY === 'number' &&
+        Number.isFinite(data.deltaY) &&
+        data.deltaY !== 0 &&
+        Math.abs(data.deltaY) <= INLINE_HTML_MAX_SCROLL_DELTA
+      ) {
+        scrollChat(data.deltaY);
       }
     };
     const resize = () => {
