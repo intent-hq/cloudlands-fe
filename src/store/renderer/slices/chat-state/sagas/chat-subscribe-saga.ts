@@ -556,7 +556,9 @@ function* applyTranscript(
   const authoritativeIdleSnapshot =
     transcript.fromSnapshot === true && transcript.isStreaming === false && !restoration;
   const localStart = coordinator.locallyStartedTurns.get(agentId);
-  // Capture the optimistic user row before its canonical echo replaces it.
+  // Legacy callers can omit the send's appMessageId; capture their optimistic
+  // user row before its canonical echo replaces it. Supported submissions carry
+  // the identity on chatSendStarted because they have no optimistic session row.
   // A completed assistant after that echo also proves this send reached the
   // ordered transcript, even when reconnect skipped every streaming chunk.
   if (localStart && !localStart.userAppMessageId) {
@@ -1724,14 +1726,28 @@ function* routeLifecycleAction(
     >['payload'];
     yield* setRetainedChatTranscripts(coordinator, ownerId, wsId, agentIds);
   } else if (action.type === chatSendStarted.type) {
-    const { agentId, assistantMessageId } = action.payload as ReturnType<
+    const { agentId, assistantMessageId, userAppMessageId } = action.payload as ReturnType<
       typeof chatSendStarted
     >['payload'];
     if (coordinator.slots.has(agentId)) {
+      const localStart = coordinator.locallyStartedTurns.get(agentId);
+      // A delayed start for a known prior assistant must not replace the
+      // newer send's protection. Same-turn starts may arrive after content,
+      // so compare against the send's original boundary, not today's rows.
+      if (assistantMessageId && localStart) {
+        if (
+          localStart.priorMessageIds.has(assistantMessageId) &&
+          localStart.assistantMessageId !== assistantMessageId
+        )
+          return;
+        coordinator.locallyStartedTurns.set(agentId, { ...localStart, assistantMessageId });
+        return;
+      }
       const session = yield* selectAgentSession.effect(agentId);
       coordinator.locallyStartedTurns.set(agentId, {
         priorMessageIds: new Set(session?.messages.map((message) => message.id)),
         assistantMessageId,
+        userAppMessageId,
       });
     }
   } else if (action.type === markAgentAsViewed.type) {

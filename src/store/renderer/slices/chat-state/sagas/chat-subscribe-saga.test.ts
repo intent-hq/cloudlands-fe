@@ -70,6 +70,7 @@ import { takeEvery } from 'typed-redux-saga';
 import { store as appStore } from '$store/renderer/store';
 import {
   chatSendStarted,
+  sendMessage,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   olderHistoryPageRequested,
@@ -108,6 +109,11 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { chatSubscribeSaga, SWITCH_BACK_REVEAL_WAIT_MS } from './chat-subscribe-saga';
+import { chatSendSaga } from './chat-send-saga';
+import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
+
+vi.mock('$features/agent/agent-send', () => ({ sendMessage: vi.fn(async () => undefined) }));
+
 import { chatScrollbackSaga } from './chat-scrollback-saga';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
@@ -260,6 +266,212 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
   });
+
+  it.each(['snapshot', 'terminal'] as const)(
+    'submission recovery: a delayed prior-turn start cannot clear a newer local send through %s',
+    async (delivery) => {
+      const agentId = `recovery-delayed-prior-start-${delivery}`;
+      seedSession(agentId, { status: AgentStatus.RuntimeIdle });
+      const sub = openChat(agentId);
+      const old = makeMessage('old-answer', 'previous completed answer', {
+        seq: 1,
+        isStreaming: false,
+        streamingComplete: true,
+      });
+      sub.handler({ ...transcript([old]), fromSnapshot: true });
+      appStore.dispatch(chatSendStarted(agentId, WS));
+      appStore.dispatch(
+        addMessage(
+          agentId,
+          makeMessage('local-new', 'new request', {
+            role: 'user',
+            appMessageId: 'new-send',
+          }),
+        ),
+      );
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+      routeDaemonEventsNotification('events.event', {
+        event: {
+          id: `late-old-start-${delivery}`,
+          workspaceId: WS,
+          timestamp: '2026-01-01T00:00:00.000Z',
+          type: 'agent:stream:start',
+          actor: { type: 'agent', id: agentId },
+          data: { agentId, messageId: 'old-answer' },
+        },
+      });
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+      const finished = transcript([old]);
+      sub.handler(delivery === 'snapshot' ? { ...finished, fromSnapshot: true } : finished);
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+      sub.handler({ ...finished, fromSnapshot: true });
+      await flushConfirmation();
+      expect(appClient.agents.get).not.toHaveBeenCalled();
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+      routeDaemonEventsNotification('events.event', {
+        event: {
+          id: `current-start-${delivery}`,
+          workspaceId: WS,
+          timestamp: '2026-01-01T00:00:02.000Z',
+          type: 'agent:stream:start',
+          actor: { type: 'agent', id: agentId },
+          data: { agentId, messageId: 'new-answer' },
+        },
+      });
+      sub.handler(
+        transcript([
+          old,
+          makeMessage('new-answer', 'new answer done', {
+            seq: 3,
+            streamingComplete: true,
+            timestamp: '2026-01-01T00:00:03.000Z',
+          }),
+        ]),
+      );
+      expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(false);
+      expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    },
+  );
+
+  it('submission recovery: the control without the delayed prior-turn start preserves a newer send', () => {
+    const agentId = 'recovery-control-local-send';
+    seedSession(agentId, { status: AgentStatus.RuntimeIdle });
+    const sub = openChat(agentId);
+    const old = makeMessage('old-answer', 'previous completed answer', {
+      seq: 1,
+      isStreaming: false,
+      streamingComplete: true,
+    });
+    sub.handler({ ...transcript([old]), fromSnapshot: true });
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    appStore.dispatch(
+      addMessage(
+        agentId,
+        makeMessage('local-new', 'new request', {
+          role: 'user',
+          appMessageId: 'new-send',
+        }),
+      ),
+    );
+    sub.handler({ ...transcript([old]), fromSnapshot: true });
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+  });
+
+  it.each(['completed reply', 'no-content completion'] as const)(
+    'submission recovery: correlated submissions settle %s without a legacy optimistic session row',
+    async (outcome) => {
+      const id = `recovery-correlated-submission-${outcome}`;
+      seedSession(id, { status: AgentStatus.RuntimeIdle });
+      appStore.dispatch(setWorkspaceEntity({ id: WS, myRole: 'owner' } as Workspace));
+      const { admitAgentSubmission } =
+        await import('$store/renderer/slices/pending-submissions/pending-submissions-admission');
+      const admission = admitAgentSubmission(appStore, id, WS, 1, {
+        content: 'new prompt',
+        appMessageId: `app-${id}`,
+        destination: 'conversation',
+      });
+      expect(admission).not.toBeNull();
+      expect(selectPendingSubmissionEntry.select(appStore.state, admission!.scope)?.supported).toBe(
+        true,
+      );
+      const sub = openChat(id);
+      const r = new ChatTranscriptReconciler(id);
+      r.applySnapshot(0, { agentId: id, messages: [], truncated: false, totalMessages: 0 });
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationSettled(id));
+      const stopSend = appStore.runSaga(chatSendSaga);
+      appStore.dispatch(
+        sendMessage(id, {
+          wsId: WS,
+          text: 'new prompt',
+          submission: { scope: admission!.scope, id: admission!.submission.id },
+          userAppMessageId: admission!.submission.appMessageId,
+        }),
+      );
+      await flushConfirmation();
+      stopSend();
+      expect(sendAgentMessage).toHaveBeenCalledWith(
+        id,
+        'new prompt',
+        expect.anything(),
+        expect.objectContaining({ userAppMessageId: admission!.submission.appMessageId }),
+      );
+      // agent-send.ts adds an optimistic session row only when correlation is unsupported.
+      expect(selectAgentMessages.select(appStore.state, id)).toHaveLength(0);
+      expect(selectAgentSessionIsStreaming.select(appStore.state, id)).toBe(true);
+      // An unrelated canonical echo cannot release this send or trigger confirmation.
+      r.applyDelta(
+        1,
+        terminalDelta(
+          id,
+          'unrelated-user',
+          1,
+          '2026-01-01T00:00:00.000Z',
+          'user',
+          'unrelated-app-id',
+        ),
+      );
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      await flushConfirmation();
+      expect(selectAgentIsResponding.select(appStore.state, id)).toBe(true);
+      expect(appClient.agents.get).not.toHaveBeenCalled();
+      r.applyDelta(
+        2,
+        terminalDelta(
+          id,
+          'canonical-user',
+          2,
+          '2026-01-01T00:00:01.000Z',
+          'user',
+          admission!.submission.appMessageId,
+        ),
+      );
+      sub.handler(r.transcript());
+      expect(
+        selectAgentMessages.select(appStore.state, id).find((m) => m.id === 'canonical-user'),
+      ).toMatchObject({
+        seq: 2,
+        appMessageId: admission!.submission.appMessageId,
+      });
+      if (outcome === 'no-content completion')
+        vi.mocked(appClient.agents.get).mockResolvedValueOnce(
+          makeSession(id, {
+            isResponding: false,
+            turnInFlight: false,
+            isWaitingOnTool: false,
+          }),
+        );
+      // Recovery can truncate away the already-observed canonical user echo.
+      const rows: AgentMessage[] = [];
+      if (outcome === 'completed reply')
+        rows.push(
+          makeMessage('canonical-answer', 'finished', {
+            seq: 3,
+            streamingComplete: true,
+            timestamp: '2026-01-01T00:00:02.000Z',
+          }),
+        );
+      r.applySnapshot(0, {
+        agentId: id,
+        messages: rows,
+        truncated: true,
+        totalMessages: rows.length + 2,
+        isResponding: false,
+        turnInFlight: false,
+      });
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      sub.handler({ ...r.transcript(), fromSnapshot: true });
+      await flushConfirmation();
+      expect(appClient.agents.get).toHaveBeenCalledTimes(
+        outcome === 'no-content completion' ? 1 : 0,
+      );
+      expect(selectAgentSessionIsStreaming.select(appStore.state, id)).toBe(false);
+      expect(selectAgentIsResponding.select(appStore.state, id)).toBe(false);
+      appStore.dispatch(pendingScopeReleased(admission!.scope));
+    },
+  );
 
   it('reconciles trusted pending history once at completion and preserves a newer local send', () => {
     const agentId = 'progressive-pending';
@@ -2458,6 +2670,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       const agentId = `agent-correlated-${ordering}`;
       seedSession(agentId, { status: AgentStatus.RuntimeIdle });
       const sub = openChat(agentId);
+      appStore.dispatch(chatSendStarted(agentId, WS));
       if (ordering === 'after-content') {
         sub.handler(transcript([makeMessage('answer', 'partial', { isStreaming: true })], true));
       }

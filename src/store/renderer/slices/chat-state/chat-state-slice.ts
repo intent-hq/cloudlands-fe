@@ -581,10 +581,17 @@ export const chatInitFailed =
 /** Begin a turn; daemon stream starts additionally identify the assistant row. */
 export const chatSendStarted = createAction(
   'chatState/sendStarted',
-  (agentId: string, wsId?: string, timestamp = Date.now(), assistantMessageId?: string) => ({
+  (
+    agentId: string,
+    wsId?: string,
+    timestamp = Date.now(),
+    assistantMessageId?: string,
+    userAppMessageId?: string,
+  ) => ({
     agentId,
     wsId,
     ...(assistantMessageId ? { assistantMessageId } : {}),
+    ...(userAppMessageId ? { userAppMessageId } : {}),
     timestamp,
     timestampIso: new Date(timestamp).toISOString(),
   }),
