@@ -6,7 +6,7 @@ signed="${2:?Expected true or false}"
 case "$arch" in x64|arm64) ;; *) exit 1 ;; esac
 case "$signed" in true|false) ;; *) exit 1 ;; esac
 shopt -s nullglob
-apps=(dist-electron/mac*/Intent.app)
+apps=(dist-electron/mac*/Intent.app dist-electron/mac*/"Intent GitLab Test.app")
 dmgs=(dist-electron/*-"$arch".dmg)
 zips=(dist-electron/*-"$arch"-mac.zip)
 if [ "${#apps[@]}" -ne 1 ] || [ "${#dmgs[@]}" -ne 1 ] || [ "${#zips[@]}" -ne 1 ]; then

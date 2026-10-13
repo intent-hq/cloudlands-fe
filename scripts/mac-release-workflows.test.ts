@@ -393,6 +393,36 @@ describe('packaged Mac verification invoked by native workflows', () => {
       shell(dir, 'bash scripts/verify-macos-build.sh x64 true', { FAIL_TOOL: tool }).status,
     ).toBe(42);
   });
+  it.each(['', 'codesign', 'spctl', 'xcrun'])(
+    'checks the isolated app and retains signing failures (%s)',
+    (tool) => {
+      const dir = temp();
+      const ordinary = appFixture(dir, 'arm64');
+      const app = join(dirname(ordinary), 'Intent GitLab Test.app');
+      renameSync(ordinary, app);
+      rmSync(join(app, 'Contents/Resources/keychain-helper'), { recursive: true });
+      writeFileSync(
+        join(app, 'Contents/Info.plist'),
+        JSON.stringify({
+          CFBundleIdentifier: 'app.cloudlands.intent.gitlab-test',
+          IntentIsolatedTestBuild: 'manual-123-1',
+          IntentIsolatedTestBackend: 'a'.repeat(40),
+        }),
+      );
+      stub(dir, 'plutil', 'cat "${@: -1}"');
+      const result = shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', {
+        FAIL_TOOL: tool,
+      });
+      expect(result.status, result.stderr).toBe(tool ? 42 : 0);
+      if (!tool)
+        expect(readFileSync(join(dir, 'verification'), 'utf8').trim().split('\n')).toEqual([
+          'codesign',
+          'codesign',
+          'spctl',
+          'xcrun',
+        ]);
+    },
+  );
   it('verifies native payloads for unsigned manual builds without requiring signing tools', () => {
     const dir = temp();
     const app = appFixture(dir, 'x64');
