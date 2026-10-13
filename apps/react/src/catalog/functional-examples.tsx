@@ -19,6 +19,7 @@ import { ChatTranscriptExamples } from './chat-transcript-examples';
 import { ChatDisclosureExamples } from './chat-disclosure-examples';
 import { ChatMetadataExamples } from './chat-metadata-examples';
 import { ChatCommandExamples } from './chat-command-examples';
+import { CommandPaletteExamples } from './command-palette-examples';
 import { ChatReferenceExamples } from './chat-reference-examples';
 import { ChatInlineExamples } from './chat-inline-examples';
 import { ChatPreviewExamples } from './chat-preview-examples';
@@ -492,6 +493,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'chat-disclosure' && <ChatDisclosureExamples />}
       {slug === 'chat-metadata' && <ChatMetadataExamples />}
       {slug === 'chat-command' && <ChatCommandExamples />}
+      {slug === 'command-palette' && <CommandPaletteExamples />}
       {slug === 'chat-reference' && <ChatReferenceExamples />}
       {slug === 'chat-inline' && <ChatInlineExamples />}
       {slug === 'chat-preview' && <ChatPreviewExamples />}
@@ -582,6 +584,7 @@ export function hasFunctionalExample(slug: string) {
     'chat-disclosure',
     'chat-metadata',
     'chat-command',
+    'command-palette',
     'chat-reference',
     'chat-inline',
     'chat-preview',
