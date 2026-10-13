@@ -1354,3 +1354,183 @@ it('known canonical MCP denial clears protected state before unrelated held sibl
     await settle();
   }
 });
+
+import { persistNotificationSettingsWorker as recoveryPersistNotificationSettingsWorker } from '../../user-preferences/sagas/notification-settings-saga';
+
+it('unrelated settings push preserves a pending notification save debounce', async () => {
+  vi.useFakeTimers();
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  settingsTransport.request.mockReset().mockResolvedValue({ revision: 20, applied: [] });
+  store.dispatch(recoverySetVolume(0.9));
+  cleanups.add(store.runSaga(recoveryPersistNotificationSettingsWorker));
+  h.emit({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'global',
+      event: {
+        type: 'settings:changed',
+        data: { revision: 4, changes: [{ path: 'providers.enabled', value: { codex: true } }] },
+      },
+    },
+  });
+  await vi.advanceTimersByTimeAsync(100);
+  await settle();
+  expect(
+    settingsTransport.request.mock.calls.filter(([method]) => method === 'settings.update'),
+  ).toHaveLength(1);
+  expect(store.state.userPreferences.pendingNotificationVolumeEditId).toBeNull();
+});
+
+it('unrelated settings push cannot strand a held notification save journal', async () => {
+  vi.useFakeTimers();
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  let release!: (value: unknown) => void;
+  const held = new Promise((done) => {
+    release = done;
+  });
+  settingsTransport.request.mockReset().mockReturnValue(held);
+  store.dispatch(recoverySetVolume(0.9));
+  cleanups.add(store.runSaga(recoveryPersistNotificationSettingsWorker));
+  await vi.advanceTimersByTimeAsync(100);
+  expect(
+    settingsTransport.request.mock.calls.filter(([method]) => method === 'settings.update'),
+  ).toHaveLength(1);
+  h.emit({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'global',
+      event: {
+        type: 'settings:changed',
+        data: { revision: 4, changes: [{ path: 'providers.enabled', value: { codex: true } }] },
+      },
+    },
+  });
+  await settle();
+  release({ revision: 20, applied: [] });
+  await settle();
+  expect(store.state.userPreferences.pendingNotificationVolumeEditId).toBeNull();
+  expect(store.state.userPreferences.volume).toBe(0.9);
+});
+
+import { hydrateNotificationSettingsWorker as recoveryHydrateNotificationSettingsWorker } from '../../user-preferences/sagas/notification-settings-saga';
+
+it.each([false, true])(
+  'notification initial hydration preserves unrelated push=%s',
+  async (sendPush) => {
+    admitLegacyPrincipal();
+    const h = recoveryHarness();
+    installTracked();
+    const scope = rendererEventRecovery.attach(h.session);
+    await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+    let release!: () => void;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    settingsTransport.request.mockReset().mockImplementation(async (method, params) => {
+      if (method !== 'settings.get') throw new Error(method);
+      await held;
+      return {
+        definition: { path: params.path },
+        value: params.path === 'notifications.soundOnlyWhenUnfocused',
+      };
+    });
+    cleanups.add(store.runSaga(recoveryHydrateNotificationSettingsWorker));
+    await settle();
+    expect(
+      settingsTransport.request.mock.calls.filter(([method]) => method === 'settings.get'),
+    ).toHaveLength(3);
+    if (sendPush)
+      h.emit({
+        method: 'events.event',
+        params: {
+          subscriptionId: 'global',
+          event: {
+            type: 'settings:changed',
+            data: { revision: 4, changes: [{ path: 'providers.enabled', value: { codex: true } }] },
+          },
+        },
+      });
+    await settle();
+    release();
+    await settle();
+    expect(store.state.userPreferences.enabled).toBe(false);
+    expect(store.state.userPreferences.soundEnabled).toBe(false);
+    expect(store.state.userPreferences.soundOnlyWhenUnfocused).toBe(true);
+  },
+);
+
+import { setSoundEnabled as recoverySetSoundEnabled } from '../../user-preferences/user-preferences-slice';
+
+it.each(['newer edit', 'newer daemon revision'] as const)(
+  'notification save settlement preserves %s',
+  async (mode) => {
+    vi.useFakeTimers();
+    admitLegacyPrincipal();
+    const h = recoveryHarness();
+    installTracked();
+    const scope = rendererEventRecovery.attach(h.session);
+    await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+    let release!: (value: unknown) => void;
+    settingsTransport.request.mockReset().mockReturnValue(
+      new Promise((done) => {
+        release = done;
+      }),
+    );
+    store.dispatch(recoverySetVolume(0.9));
+    cleanups.add(store.runSaga(recoveryPersistNotificationSettingsWorker));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(settingsTransport.request).toHaveBeenCalledTimes(1);
+    if (mode === 'newer edit') store.dispatch(recoverySetVolume(0.6));
+    else
+      h.emit({
+        method: 'events.event',
+        params: {
+          subscriptionId: 'global',
+          event: {
+            type: 'settings:changed',
+            data: { revision: 30, changes: [{ path: 'notifications.volume', value: 0.4 }] },
+          },
+        },
+      });
+    await settle();
+    const editId = store.state.userPreferences.pendingNotificationVolumeEditId;
+    release({ revision: 20, applied: [] });
+    await settle();
+    expect(store.state.userPreferences.volume).toBe(mode === 'newer edit' ? 0.6 : 0.4);
+    expect(store.state.userPreferences.pendingNotificationVolumeEditId).toBe(
+      mode === 'newer edit' ? editId : null,
+    );
+    expect(settingsTransport.request).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('notification hydration preserves a newer local field edit', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  let release!: () => void;
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  settingsTransport.request.mockReset().mockImplementation(async (_method, params) => {
+    await held;
+    return { definition: { path: params.path }, value: true };
+  });
+  cleanups.add(store.runSaga(recoveryHydrateNotificationSettingsWorker));
+  await settle();
+  store.dispatch(recoverySetSoundEnabled(false));
+  release();
+  await settle();
+  expect(store.state.userPreferences.soundEnabled).toBe(false);
+  expect(settingsTransport.request).toHaveBeenCalledTimes(3);
+});

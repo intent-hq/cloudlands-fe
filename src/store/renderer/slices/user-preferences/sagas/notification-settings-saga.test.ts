@@ -12,6 +12,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 
 import {
+  initialState,
   notificationVolumeWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
@@ -67,7 +68,7 @@ describe('notificationSettingsSaga', () => {
     );
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
       hydrateNotificationSettingsWorker,
     ).toPromise();
 
@@ -96,13 +97,13 @@ describe('notificationSettingsSaga', () => {
       }),
     );
     await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
       hydrateNotificationSettingsWorker,
     ).toPromise();
     mocks.backendRequest.mockReset().mockRejectedValue(new Error('offline'));
     __resetSettingsReadCacheForTests();
     await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
       hydrateNotificationSettingsWorker,
     ).toPromise();
 
