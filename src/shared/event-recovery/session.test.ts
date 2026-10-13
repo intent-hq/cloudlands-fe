@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createEventRecoverySession, type RecoveryNotification } from './session';
+import {
+  createEventRecoverySession,
+  RecoveryRequestTimeoutError,
+  type RecoveryNotification,
+} from './session';
 
 describe('ordered recovery ingress', () => {
   it('waits for the owner callback and commits at the end boundary before later frames', async () => {
@@ -218,3 +222,31 @@ it('releases timeout drain waiters on retirement without accepting a late reply'
     vi.useRealTimers();
   }
 });
+
+for (const retired of [false, true])
+  it(`exposes eventual timeout failures only within the original session (retired=${retired})`, async () => {
+    vi.useFakeTimers();
+    try {
+      const wire = Promise.withResolvers<unknown>();
+      const session = createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        request: () => wire.promise,
+        dispose: () => {},
+      });
+      const failed = session.request('data.read').catch((error) => error);
+      await vi.advanceTimersByTimeAsync(30_000);
+      const timeout = (await failed) as RecoveryRequestTimeoutError;
+      expect(timeout.completion).toBeInstanceOf(Promise);
+      if (retired) session.dispose();
+      const error = { rpcCode: -32003 };
+      wire.reject(error);
+      expect(await timeout.completion).toEqual({ retired, errors: retired ? [] : [error] });
+      await timeout.drained;
+      session.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });

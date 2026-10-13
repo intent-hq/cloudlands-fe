@@ -24,6 +24,18 @@ interface Owner<T> {
   retire(error: unknown): undefined;
 }
 
+function authorityLost(error: unknown): boolean {
+  const code = (error as { rpcCode?: unknown } | null)?.rpcCode;
+  const data = (error as { data?: unknown } | null)?.data;
+  // Protocol §9: invalid-params alone is never proof of deletion.
+  const absent =
+    code === -32602 &&
+    data !== null &&
+    typeof data === 'object' &&
+    (data as { code?: unknown }).code === 'not-found';
+  return absent || code === -32003 || code === -32001;
+}
+
 /** One owner per authoritative read key. Timers and promises are not domain state. */
 export class RecoveryResource<T> {
   private leases: readonly LeaseIdentity[] = [];
@@ -202,23 +214,15 @@ export class RecoveryResource<T> {
         if (current()) this.mutation++;
         this.draining = true;
         try {
-          await error.drained;
+          const outcome = await error.completion;
+          if (!outcome.retired) error = outcome.errors.find(authorityLost) ?? error;
         } finally {
           this.draining = false;
         }
       }
       if (!current()) return;
       this.failures++;
-      const code = (error as { rpcCode?: unknown } | null)?.rpcCode;
-      const data = (error as { data?: unknown } | null)?.data;
-      // Protocol §9: -32602 alone is invalid-params, never proof of deletion.
-      // Only the structured not-found pair may clear an absent/invisible entity.
-      const absent =
-        code === -32602 &&
-        data !== null &&
-        typeof data === 'object' &&
-        (data as { code?: unknown }).code === 'not-found';
-      if (absent || code === -32003 || code === -32001) {
+      if (authorityLost(error)) {
         this.suspended = true;
         this.stale = false;
         this.dispose();

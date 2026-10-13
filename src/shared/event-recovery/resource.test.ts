@@ -397,16 +397,26 @@ describe('timed-out recovery drains the original request', () => {
       dispose: () => {},
     });
     const applied = vi.fn();
+    const retired = vi.fn();
     const resource = new RecoveryResource({
       read: () => session.request('data.read'),
       fence: (ids, observe) => session.fence(ids, observe),
       apply: applied,
       invalidate: () => {},
-      retire: () => {},
+      retire: retired,
     });
     resource.setLeases([{ id: 'a', lifetime: {} }]);
     session.onRetired(() => resource.dispose());
-    return { resource, session, applied, request, pending, retireSession, stalledRequests };
+    return {
+      resource,
+      session,
+      applied,
+      retired,
+      request,
+      pending,
+      retireSession,
+      stalledRequests,
+    };
   }
 
   for (const phase of ['begin', 'read', 'end'] as const)
@@ -441,6 +451,48 @@ describe('timed-out recovery drains the original request', () => {
         h.resource.dispose();
         h.session.dispose();
       });
+
+  for (const phase of ['begin', 'read', 'end'] as const)
+    for (const [rpcCode, code] of [
+      [-32003, 'forbidden'],
+      [-32001, 'unauthorized'],
+      [-32602, 'not-found'],
+    ] as const)
+      it(`retires on eventual ${code} after ${phase} times out`, async () => {
+        const h = setupTimeout(phase);
+        h.resource.invalidate();
+        await settle();
+        await vi.advanceTimersByTimeAsync(60_000);
+        const before = h.request.mock.calls.length;
+        const denied = new BackendError({ rpcCode, code, data: { code }, message: 'Unavailable' });
+        h.pending.reject(denied);
+        await settle();
+        expect(h.retired).toHaveBeenCalledExactlyOnceWith(denied);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(h.request).toHaveBeenCalledTimes(before);
+        expect(h.applied).not.toHaveBeenCalled();
+        expect(h.resource.status).toMatchObject({ stale: false, suspended: true, running: false });
+        h.session.dispose();
+      });
+
+  it('does not retire a successor lifetime for an eventual stale denial', async () => {
+    const h = setupTimeout('read');
+    h.resource.invalidate();
+    await settle();
+    await vi.advanceTimersByTimeAsync(60_000);
+    h.resource.changeLifetime();
+    h.resource.changeLifetime();
+    h.resource.invalidate();
+    h.pending.reject(
+      new BackendError({ rpcCode: -32003, code: 'forbidden', message: 'Unavailable' }),
+    );
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.retired).not.toHaveBeenCalled();
+    expect(h.applied).toHaveBeenCalledExactlyOnceWith('fresh');
+    h.resource.dispose();
+    h.session.dispose();
+  });
 
   it('exhausts a finite failure budget after timed-out reads drain', async () => {
     const h = setupTimeout('read', true);

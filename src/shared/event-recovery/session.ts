@@ -85,9 +85,15 @@ const READ_TIMEOUT_MS = 30_000;
  * Adapters must preserve actual completion or retire the capture: a lower
  * transport's logical timeout is not proof that its wire request drained.
  */
+interface RecoveryRequestCompletion {
+  readonly errors: readonly unknown[];
+  readonly retired: boolean;
+}
 export class RecoveryRequestTimeoutError extends Error {
-  constructor(readonly drained: Promise<void>) {
+  readonly drained: Promise<void>;
+  constructor(readonly completion: Promise<RecoveryRequestCompletion>) {
     super('Event recovery request timed out');
+    this.drained = completion.then(() => {});
   }
 }
 
@@ -106,6 +112,7 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
     for (const reject of [...pending]) reject(unavailable());
     for (const handler of [...listeners]) handler();
     for (const drain of [...drains]) drain();
+    drains.clear();
     listeners.clear();
     handlers.clear();
   };
@@ -159,16 +166,22 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
       };
       const fail = (error: Error) => finish(error);
       const timer = setTimeout(() => {
-        const drained = new Promise<void>((resolveDrain) => {
-          const finishDrain = () => {
-            drains.delete(finishDrain);
-            resolveDrain();
-          };
-          drains.add(finishDrain);
+        const completion = new Promise<RecoveryRequestCompletion>((resolveCompletion) => {
+          const retiredCompletion = () => resolveCompletion({ retired: true, errors: [] });
+          drains.add(retiredCompletion);
           // No later observer work can enter once fail() invalidates alive().
-          void Promise.allSettled([...work]).then(finishDrain);
+          // Preserve eventual authority errors without reviving the timed-out result.
+          void Promise.allSettled([...work]).then((outcomes) => {
+            drains.delete(retiredCompletion);
+            resolveCompletion({
+              retired: false,
+              errors: outcomes.flatMap((outcome) =>
+                outcome.status === 'rejected' ? [outcome.reason] : [],
+              ),
+            });
+          });
         });
-        fail(new RecoveryRequestTimeoutError(drained));
+        fail(new RecoveryRequestTimeoutError(completion));
       }, timeout);
       pending.add(fail);
       try {

@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { RecoveryResource } from '$shared/event-recovery/resource';
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
@@ -821,5 +822,32 @@ it('bounds outstanding recovery wire requests across captures without deadline c
   expect(await next).toBe('expired');
   a.dispose();
   b.dispose();
+  shutdown();
+});
+
+it('preserves a canonical physical denial after the recovery read deadline', async () => {
+  vi.useFakeTimers();
+  const h = await harness();
+  const session = await h.capture();
+  const lastFrame = () => h.socket.frames.at(-1)!;
+  const reply = (frame: unknown) => h.socket.batch([frame]);
+  const shutdown = () => {};
+  const pending = session.request('data.read').catch((error) => error);
+  const frame = lastFrame();
+  await vi.advanceTimersByTimeAsync(60_000);
+  const timeout = (await pending) as RecoveryRequestTimeoutError;
+  expect(timeout).toBeInstanceOf(RecoveryRequestTimeoutError);
+  reply({
+    id: frame.id,
+    error: { code: -32003, message: 'Unavailable', data: { code: 'forbidden' } },
+  });
+  expect(await timeout.completion).toEqual({
+    retired: false,
+    errors: [
+      expect.objectContaining({ rpcCode: -32003, code: 'forbidden', data: { code: 'forbidden' } }),
+    ],
+  });
+  await timeout.drained;
+  session.dispose();
   shutdown();
 });

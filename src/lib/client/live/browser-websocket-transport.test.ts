@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { RecoveryResource } from '$shared/event-recovery/resource';
 /**
  * Unit tests for the browser WebSocket `BackendTransport`.
@@ -1335,5 +1336,36 @@ it('bounds outstanding recovery wire requests across captures without deadline c
   expect(await next).toBe('expired');
   a.dispose();
   b.dispose();
+  shutdown();
+});
+
+it('preserves a canonical physical denial after the recovery read deadline', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const boot = h.transport.request('ping');
+  await connect(h.socket(), true);
+  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+  await boot;
+  const session = await h.transport.captureEventRecovery();
+  const lastFrame = () => h.socket().lastFrame();
+  const reply = (frame: unknown) => h.socket().receive(frame);
+  const shutdown = () => h.transport.dispose();
+  const pending = session.request('data.read').catch((error) => error);
+  const frame = lastFrame();
+  await vi.advanceTimersByTimeAsync(60_000);
+  const timeout = (await pending) as RecoveryRequestTimeoutError;
+  expect(timeout).toBeInstanceOf(RecoveryRequestTimeoutError);
+  reply({
+    id: frame.id,
+    error: { code: -32003, message: 'Unavailable', data: { code: 'forbidden' } },
+  });
+  expect(await timeout.completion).toEqual({
+    retired: false,
+    errors: [
+      expect.objectContaining({ rpcCode: -32003, code: 'forbidden', data: { code: 'forbidden' } }),
+    ],
+  });
+  await timeout.drained;
+  session.dispose();
   shutdown();
 });
