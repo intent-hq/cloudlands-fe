@@ -108,3 +108,32 @@ it('never commits a fence whose callback is released after its finite timeout', 
   session.dispose();
   vi.useRealTimers();
 });
+
+it('retires a stalled ingress rather than retaining an event-sized unbounded queue', async () => {
+  let receive!: (n: RecoveryNotification) => void, release!: () => void;
+  const retired = vi.fn();
+  const session = createEventRecoverySession({
+    supported: true,
+    isCurrent: () => true,
+    onRetired: () => () => {},
+    onNotification: (fn) => {
+      receive = fn;
+      return () => {};
+    },
+    request: async () => ({}),
+    dispose: () => {},
+  });
+  session.onRetired(retired);
+  session.onNotification(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  for (let i = 0; i < 1025; i++) receive({ method: 'events.event' });
+  expect(retired).toHaveBeenCalledOnce();
+  expect(session.isCurrent()).toBe(false);
+  release();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  session.dispose();
+});

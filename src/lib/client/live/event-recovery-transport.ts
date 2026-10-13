@@ -15,7 +15,7 @@ const frameSchema = z.discriminatedUnion('kind', [
     kind: z.literal('notification'),
     notification: z.object({ method: z.string(), params: z.unknown().optional() }),
   }),
-  z.object({ id: z.string(), kind: z.literal('fence'), fenceId: z.string(), result: z.unknown() }),
+  z.object({ id: z.string(), kind: z.literal('reply'), replyId: z.string(), result: z.unknown() }),
 ]);
 type Frame = z.infer<typeof frameSchema>;
 const resultSchema = z.object({ ok: z.literal(true), result: z.unknown() });
@@ -68,8 +68,8 @@ export function createEventRecoveryTransport(getBridge: () => Window['electronAP
       if (frame.kind === 'retired') retire();
       else if (!retired && frame.kind === 'notification')
         for (const fn of notifications) fn(frame.notification);
-      else if (!retired && frame.kind === 'fence')
-        pending.get(frame.fenceId)?.receive(frame.result);
+      else if (!retired && frame.kind === 'reply')
+        pending.get(frame.replyId)?.receive(frame.result);
     };
     const listener = bridge.on(channels.FRAME, (value: unknown) => {
       const parsed = frameSchema.safeParse(value);
@@ -118,19 +118,19 @@ export function createEventRecoveryTransport(getBridge: () => Window['electronAP
         request: (method, params, observe) => {
           if (!current()) return Promise.reject(new Error('Event recovery retired'));
           if (!observe) return bridge.invoke(channels.REQUEST, { id, method, params }).then(unwrap);
-          const fenceId = String(++sequence);
+          const replyId = String(++sequence);
           return new Promise((resolve, reject) => {
             const finish = (error?: Error, result?: unknown) => {
               clearTimeout(timer);
-              pending.delete(fenceId);
+              pending.delete(replyId);
               if (error) reject(error);
               else resolve(result);
             };
             const timer = setTimeout(
               () => finish(new Error('Event recovery fence timed out')),
-              5000,
+              method === 'events.fence' ? 5000 : 30000,
             );
-            pending.set(fenceId, {
+            pending.set(replyId, {
               receive: (result) => {
                 try {
                   observe(result);
@@ -141,7 +141,7 @@ export function createEventRecoveryTransport(getBridge: () => Window['electronAP
               },
               reject: (error) => finish(error),
             });
-            void bridge.invoke(channels.REQUEST, { id, method, params, fenceId }).then(
+            void bridge.invoke(channels.REQUEST, { id, method, params, replyId }).then(
               (value) => {
                 try {
                   unwrap(value);

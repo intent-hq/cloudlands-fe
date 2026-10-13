@@ -134,6 +134,29 @@ describe('Electron recovery IPC through real JSON-RPC decode', () => {
     for (let i = 0; i < 10; i++) await Promise.resolve();
     expect(order).toEqual(['loss', 'fence', 'later']);
   });
+  it('admits the subscription before delivering same-chunk domain notifications', async () => {
+    const h = await harness(),
+      session = await h.capture();
+    cleanup.push(() => session.dispose());
+    let admitted = false;
+    const observations: boolean[] = [];
+    session.onNotification(() => {
+      observations.push(admitted);
+    });
+    const subscribing = (async () => {
+      await session.request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 });
+      admitted = true;
+    })();
+    const request = h.socket.frames.at(-1)!;
+    h.socket.batch([
+      { id: request.id, result: { subscriptionId: 'a', lossRecovery: 1 } },
+      { method: 'events.event', params: { subscriptionId: 'a', event: { type: 'file:changed' } } },
+    ]);
+    await subscribing;
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(observations).toEqual([true]);
+  });
+
   it('retires on backend ABA and rejects old in-flight read replies', async () => {
     const h = await harness(),
       session = await h.capture();

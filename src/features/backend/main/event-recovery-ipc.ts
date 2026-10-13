@@ -16,7 +16,7 @@ const request = reference
   .extend({
     method: z.string().min(1),
     params: z.unknown().optional(),
-    fenceId: z.string().min(1).max(128).optional(),
+    replyId: z.string().min(1).max(128).optional(),
   })
   .strict();
 const unavailable = () => ({
@@ -129,13 +129,13 @@ export function registerEventRecoveryHandlers(
   ipc.handle(channels.REQUEST, async (event, payload: unknown) => {
     const parsed = request.safeParse(payload);
     if (!parsed.success) return unavailable();
-    const { id, method, params, fenceId } = parsed.data;
+    const { id, method, params, replyId } = parsed.data;
     const entry = admitted(event, id);
     if (
       !entry ||
       entry.requests >= MAX_REQUESTS_PER_SESSION ||
       method === 'client.hello' ||
-      (method === 'events.fence' && (!fenceId || !entry.connection.eventStreamRecovery))
+      (method === 'events.fence' && (!replyId || !entry.connection.eventStreamRecovery))
     )
       return unavailable();
     entry.requests++;
@@ -146,13 +146,12 @@ export function registerEventRecoveryHandlers(
         params,
         {
           timeoutMs: method === 'events.fence' ? 5000 : 30000,
-          observe:
-            method === 'events.fence'
-              ? (result) => {
-                  if (current(entry) && entries.get(id) === entry)
-                    send(entry, { id, kind: 'fence', fenceId, result });
-                }
-              : undefined,
+          observe: replyId
+            ? (result) => {
+                if (current(entry) && entries.get(id) === entry)
+                  send(entry, { id, kind: 'reply', replyId, result });
+              }
+            : undefined,
         },
       );
       if (method === 'events.subscribe') {

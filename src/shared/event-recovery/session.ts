@@ -15,12 +15,20 @@ export interface EventRecoverySession {
 }
 
 /** Serial observation without deferring synchronous consumers. Fail closed on callback error. */
+const MAX_PENDING_INGRESS = 1_024;
+
 class RecoveryIngress {
+  private pending = 0;
   private tail: Promise<void> | undefined;
   private retired = false;
   constructor(private readonly failed: () => void) {}
   dispatch(work: () => void | Promise<void>): Promise<void> {
     if (this.retired) return Promise.reject(new Error('Recovery ingress retired'));
+    if (this.pending >= MAX_PENDING_INGRESS) {
+      this.retire();
+      this.failed();
+      return Promise.reject(new Error('Recovery ingress overflow'));
+    }
     const run = () => {
       if (this.retired) throw new Error('Recovery ingress retired');
       return work();
@@ -34,11 +42,18 @@ class RecoveryIngress {
       return Promise.reject(error);
     }
     if (!result) return Promise.resolve();
-    const tracked = Promise.resolve(result).catch((error) => {
-      this.retire();
-      this.failed();
-      throw error;
-    });
+    this.pending++;
+    const tracked = Promise.resolve(result).then(
+      () => {
+        this.pending--;
+      },
+      (error) => {
+        this.pending--;
+        this.retire();
+        this.failed();
+        throw error;
+      },
+    );
     this.tail = tracked;
     void tracked.then(
       () => {
@@ -154,11 +169,27 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
       };
     },
     request<T>(method: string, params?: unknown): Promise<T> {
-      return bounded(READ_TIMEOUT_MS, (resolve, reject) => {
-        driver.request(method, params).then((value) => {
-          if (current()) resolve(value as T);
-          else reject(unavailable());
-        }, reject);
+      return bounded(READ_TIMEOUT_MS, (resolve, reject, alive) => {
+        if (method === 'events.subscribe') {
+          // Admission's await continuation must finish before following domain callbacks.
+          // Merely resolving an IPC invoke promise does not establish this ordering.
+          driver
+            .request(method, params, (value) => {
+              if (!alive() || !current()) return;
+              void ingress
+                .dispatch(() => {
+                  if (!alive() || !current()) return;
+                  resolve(value as T);
+                  return new Promise<void>((release) => queueMicrotask(release));
+                })
+                .catch(reject);
+            })
+            .catch(reject);
+        } else
+          driver.request(method, params).then((value) => {
+            if (current()) resolve(value as T);
+            else reject(unavailable());
+          }, reject);
       });
     },
     fence(ids, observe) {
