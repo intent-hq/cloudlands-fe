@@ -426,3 +426,41 @@ it('keeps physical accounting identity through authority refresh and retirement'
   expect(registry.capturePhysicalSessionIdentity()).not.toBe(physical);
   registry.dispose();
 });
+
+describe('data receipts selected after asynchronous child discovery', () => {
+  it.each(['retained', 'push', 'loss', 'replaced', 'added', 'retired', 'authority'] as const)(
+    'retains original data admission after %s',
+    (change) => {
+      const registry = new RendererEventRecovery();
+      const scope = registry.attach(harness().session);
+      const owner = {
+        key: 'agents:child',
+        workspaceId: 'ws',
+        eventTypes: ['agent:*'],
+        isCurrent: () => true,
+        read: async () => null,
+        apply: () => undefined,
+        invalidate: () => undefined,
+        retire: () => undefined,
+      };
+      const handle = change === 'added' ? undefined : scope.registerResource(owner);
+      const select = registry.captureSelector();
+      if (change === 'push') registry.push(owner.key);
+      if (change === 'loss') registry.invalidate(owner.key);
+      if (change === 'replaced') {
+        handle?.dispose();
+        scope.registerResource(owner);
+      }
+      if (change === 'added') scope.registerResource(owner);
+      if (change === 'retired') registry.retireWorkspace('ws');
+      if (change === 'authority') {
+        registry.refreshAuthority();
+        registry.refreshAuthority();
+      }
+      const apply = vi.fn();
+      expect(select(owner.key).commit(apply)).toBe(change === 'retained');
+      expect(apply).toHaveBeenCalledTimes(change === 'retained' ? 1 : 0);
+      registry.dispose();
+    },
+  );
+});

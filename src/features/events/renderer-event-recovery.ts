@@ -296,6 +296,14 @@ export class RendererEventRecovery {
     };
   }
 
+  /** Snapshot data receipts before asynchronous discovery reveals a child key. */
+  captureSelector(): (key: string) => RecoveryLifetime {
+    const fallback = this.captureAuthoritySelector();
+    const receipts = new Map<string, RecoveryLifetime>();
+    for (const key of this.entries.keys()) receipts.set(key, this.capture(key));
+    return (key) => receipts.get(key) ?? fallback(key);
+  }
+
   capture(key: string): RecoveryLifetime {
     const epoch = this.epoch;
     const row = this.entries.get(key);
