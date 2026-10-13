@@ -1,7 +1,7 @@
 // i18n-ignore (internal unreleased component preview)
 import { useState } from 'react';
 import { BrowserDeviceFrame } from '@/components/browser/browser-device-frame';
-import { BrowserViewportDialog } from '@/components/browser/browser-viewport-dialog';
+import { BrowserViewportMenu } from '@/components/browser/browser-viewport-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
@@ -13,8 +13,6 @@ export function BrowserDeviceFrameExamples() {
     height: 360,
   });
   const [visible, setVisible] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [returnFocus, setReturnFocus] = useState<HTMLButtonElement | null>(null);
   return (
     <section
       className="grid w-2xl min-w-0 max-w-[calc(100vw-var(--spacing)*12)] gap-6"
@@ -26,23 +24,7 @@ export function BrowserDeviceFrameExamples() {
         <p className="type-caption text-muted-foreground">Internal React preview · unreleased</p>
       </header>
       <div className="flex flex-wrap gap-3">
-        <Button
-          variant="outline"
-          aria-pressed={viewport.mode === 'fit'}
-          onClick={() => setViewport({ mode: 'fit' })}
-        >
-          Fit
-        </Button>
-        <Button
-          variant="outline"
-          aria-pressed={viewport.mode === 'custom'}
-          onClick={(event) => {
-            setReturnFocus(event.currentTarget);
-            setDialogOpen(true);
-          }}
-        >
-          Custom
-        </Button>
+        <BrowserViewportMenu viewport={viewport} onViewportChange={setViewport} />
         <Button variant="ghost" onClick={() => setVisible(!visible)}>
           {visible ? 'Hide frame' : 'Show frame'}
         </Button>
@@ -57,13 +39,6 @@ export function BrowserDeviceFrameExamples() {
           </BrowserDeviceFrame>
         )}
       </div>
-      <BrowserViewportDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        viewport={viewport}
-        onViewportChange={setViewport}
-        returnFocus={returnFocus}
-      />
     </section>
   );
 }

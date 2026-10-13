@@ -24,7 +24,7 @@ import { resolveSubmenuSide } from '$lib/components/ui/menu/submenu-placement';
 import { menuItem, menuOverlay, menuSubmenuAlignOffset } from './menu-recipes';
 import { ListHighlight } from './list-highlight';
 import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
-import { getAdjacentTabStop, getInlineTabStop } from './menu-keyboard';
+import { getAdjacentTabStop, getInlineTabStop, handleMenuNavigationKey } from './menu-keyboard';
 export {
   menuItem,
   menuOverlay,
@@ -287,6 +287,7 @@ export function Content({
   className,
   style,
   onKeyDown,
+  onKeyDownCapture,
   onFocus,
   onFocusOutside,
   onInteractOutside,
@@ -375,6 +376,14 @@ export function Content({
       )}
       // Let the canonical focus-visible recipe apply instead of Radix's inline suppression.
       style={{ outline: undefined, maxHeight, ...style }}
+      onKeyDownCapture={(event) => {
+        onKeyDownCapture?.(event);
+        if (
+          !event.defaultPrevented &&
+          handleMenuNavigationKey(event.currentTarget, event.nativeEvent, loop)
+        )
+          event.preventDefault();
+      }}
       onKeyDown={(event) => {
         onKeyDown?.(event);
         if (
@@ -454,6 +463,7 @@ export function SubContent({
   style,
   children,
   onKeyDown,
+  onKeyDownCapture,
   onFocus,
   ...props
 }: SubContentProps) {
@@ -594,6 +604,14 @@ export function SubContent({
         className,
       )}
       style={{ maxHeight, ...style }}
+      onKeyDownCapture={(event) => {
+        onKeyDownCapture?.(event);
+        if (
+          !event.defaultPrevented &&
+          handleMenuNavigationKey(event.currentTarget, event.nativeEvent, loop)
+        )
+          event.preventDefault();
+      }}
       onKeyDown={(event) => {
         onKeyDown?.(event);
         if (!event.defaultPrevented) {

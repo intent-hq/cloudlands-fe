@@ -1,4 +1,4 @@
-import type { BrowserTabViewport } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
 
 export type BrowserViewportPresetCategory = 'phone' | 'tablet' | 'desktop';
 

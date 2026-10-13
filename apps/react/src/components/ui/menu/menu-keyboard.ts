@@ -1,5 +1,37 @@
 // Source: Bits internal/tabbable and MenuContentState.handleTabKeyDown.
 import { focusable, isFocusable, isTabbable, tabbable } from 'tabbable';
+import { setMenuTabStop } from '$lib/components/ui/menu/menu-roving-focus';
+
+export function handleMenuNavigationKey(content: HTMLElement, event: KeyboardEvent, loop: boolean) {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (!['Home', 'End', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || target.closest('[role="menu"]') !== content) return;
+  if (target !== content && !target.matches('[data-menu-item]')) return;
+  const items = Array.from(content.querySelectorAll<HTMLElement>('[data-menu-item]')).filter(
+    (item) =>
+      item.closest('[role="menu"]') === content &&
+      !item.hasAttribute('data-disabled') &&
+      item.getAttribute('aria-disabled') !== 'true',
+  );
+  if (!items.length) return;
+  const current = items.indexOf(target);
+  let next: number;
+  if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = items.length - 1;
+  else if (current === -1) next = event.key === 'ArrowDown' ? 0 : items.length - 1;
+  else {
+    next = current + (event.key === 'ArrowDown' ? 1 : -1);
+    next = loop
+      ? (next + items.length) % items.length
+      : Math.max(0, Math.min(next, items.length - 1));
+  }
+  // Radix defers roving focus; the next native key must reach the new row immediately.
+  event.preventDefault();
+  setMenuTabStop(content, items[next]);
+  items[next].focus();
+  return true;
+}
 
 export function getAdjacentTabStop(current: HTMLElement, backwards: boolean) {
   const options = { getShadowRoot: true };
