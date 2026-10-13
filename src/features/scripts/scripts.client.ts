@@ -1,3 +1,4 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 /**
  * Scripts client — renderer-side script operations.
  *
@@ -288,9 +289,17 @@ export const scriptsClient = {
       [scriptId],
       async () => {
         const remove = async (canPublish: () => boolean = () => true) => {
+          const key = 'scripts:' + JSON.stringify([workspaceId]);
+          const lifetime = rendererEventRecovery.capture(key);
           const result = await removeDefinition(workspaceId, scriptId);
+          if (
+            result.success &&
+            !lifetime.commit(() => {
+              if (canPublish()) store.dispatch(removeScript(workspaceId, scriptId));
+            })
+          )
+            rendererEventRecovery.invalidate(key);
           if (!canPublish()) return { success: false, error: m.scripts_pendingChange_error() };
-          if (result.success) store.dispatch(removeScript(workspaceId, scriptId));
           return toCommandResponse(result);
         };
         if (!selectedDefinition) return remove();
@@ -323,12 +332,19 @@ export const scriptsClient = {
     snapshot: WorkspaceScript[],
   ): Promise<CommandResponse<void>> {
     return withScriptDefinitionEdits(workspaceId, 'workspace', async () => {
+      const key = 'scripts:' + JSON.stringify([workspaceId]);
+      const lifetime = rendererEventRecovery.capture(key);
       try {
         const current = await appClient.scripts.list(workspaceId);
         for (const script of current) {
           const result = await removeDefinition(workspaceId, script.id);
           if (!result.success) return toCommandResponse(result);
-          store.dispatch(removeScript(workspaceId, script.id));
+          if (
+            !lifetime.commit(() => {
+              store.dispatch(removeScript(workspaceId, script.id));
+            })
+          )
+            rendererEventRecovery.invalidate(key);
         }
         for (const script of snapshot) {
           const result = await scriptsClient.create(workspaceId, {

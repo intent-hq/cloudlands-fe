@@ -181,7 +181,7 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       if (failureMessage) yield* call([notify, notify.error], message);
       return;
     }
-    if (!lifetime.isCurrent()) {
+    if (!lifetime.commit(() => {})) {
       rendererEventRecovery.invalidate(recoveryKey);
       return;
     }
