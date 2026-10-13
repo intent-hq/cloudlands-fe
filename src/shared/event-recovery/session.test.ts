@@ -137,3 +137,84 @@ it('retires a stalled ingress rather than retaining an event-sized unbounded que
   for (let i = 0; i < 10; i++) await Promise.resolve();
   session.dispose();
 });
+
+it('reports timeout immediately but drains both the wire reply and preceding owner work', async () => {
+  vi.useFakeTimers();
+  try {
+    let receive!: (n: RecoveryNotification) => void;
+    let observe!: (result: unknown) => void;
+    const wire = Promise.withResolvers<unknown>();
+    const owner = Promise.withResolvers<void>();
+    const session = createEventRecoverySession({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      onNotification: (handler) => {
+        receive = handler;
+        return () => {};
+      },
+      request: (_method, _params, callback) => {
+        observe = callback!;
+        return wire.promise;
+      },
+      dispose: () => {},
+    });
+    session.onNotification(() => owner.promise);
+    receive({ method: 'held' });
+    const apply = vi.fn();
+    const failure = session.fence(['a'], apply).catch((error: unknown) => error);
+    observe({ subscriptionIds: ['a'] });
+    await vi.advanceTimersByTimeAsync(5000);
+    const error = (await failure) as { message: string; drained: Promise<void> };
+    expect(error).toMatchObject({
+      message: 'Event recovery request timed out',
+      drained: expect.any(Promise),
+    });
+    const drained = vi.fn();
+    void error.drained.then(drained);
+    wire.resolve({ subscriptionIds: ['a'] });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(drained).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    owner.resolve();
+    await error.drained;
+    expect(drained).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+    session.dispose();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('releases timeout drain waiters on retirement without accepting a late reply', async () => {
+  vi.useFakeTimers();
+  try {
+    const wire = Promise.withResolvers<unknown>();
+    let retire = () => {};
+    const session = createEventRecoverySession({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: (handler) => {
+        retire = handler;
+        return () => {};
+      },
+      onNotification: () => () => {},
+      request: () => wire.promise,
+      dispose: () => {},
+    });
+    const failure = session.request('data.read').catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const error = (await failure) as { drained: Promise<void> };
+    expect(error.drained).toBeInstanceOf(Promise);
+    retire();
+    await error.drained;
+    expect(session.isCurrent()).toBe(false);
+    wire.resolve('expired');
+    await expect(session.request('data.read')).rejects.toThrow('retired');
+    expect(vi.getTimerCount()).toBe(0);
+    session.dispose();
+  } finally {
+    vi.useRealTimers();
+  }
+});

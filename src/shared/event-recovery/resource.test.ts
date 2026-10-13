@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import corpus from './__fixtures__/contract.json';
 import { RecoveryResource } from './resource';
+import { createEventRecoverySession } from './session';
 
 function held<T>() {
   let resolve!: (value: T) => void;
@@ -355,4 +356,156 @@ it('rejects an older mutation receipt after an accepted ordinary push without st
   expect(h.read).not.toHaveBeenCalled();
   expect(h.fence).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+describe('timed-out recovery drains the original request', () => {
+  function setupTimeout(phase: 'begin' | 'read' | 'end', repeat = false) {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const pending = Promise.withResolvers<void>();
+    const stalledRequests: (typeof pending)[] = [];
+    let fences = 0;
+    let reads = 0;
+    let retireSession = () => {};
+    const request = vi.fn(
+      async (method: string, _params?: unknown, observe?: (value: unknown) => void) => {
+        const isRead = method === 'data.read';
+        const count = isRead ? ++reads : ++fences;
+        const stalled =
+          phase === 'read'
+            ? isRead && (repeat || count === 1)
+            : !isRead && count === (phase === 'begin' ? 1 : 2);
+        if (stalled) {
+          const wait = stalledRequests.length ? Promise.withResolvers<void>() : pending;
+          stalledRequests.push(wait);
+          await wait.promise;
+        }
+        const value = isRead ? (stalled ? 'expired' : 'fresh') : { subscriptionIds: ['a'] };
+        observe?.(value);
+        return value;
+      },
+    );
+    const session = createEventRecoverySession({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: (handler) => {
+        retireSession = handler;
+        return () => {};
+      },
+      onNotification: () => () => {},
+      request,
+      dispose: () => {},
+    });
+    const applied = vi.fn();
+    const resource = new RecoveryResource({
+      read: () => session.request('data.read'),
+      fence: (ids, observe) => session.fence(ids, observe),
+      apply: applied,
+      invalidate: () => {},
+      retire: () => {},
+    });
+    resource.setLeases([{ id: 'a', lifetime: {} }]);
+    session.onRetired(() => resource.dispose());
+    return { resource, session, applied, request, pending, retireSession, stalledRequests };
+  }
+
+  for (const phase of ['begin', 'read', 'end'] as const)
+    for (const settlement of ['resolve', 'reject'] as const)
+      it(`holds the ${phase} request through 60s and retries only after ${settlement}`, async () => {
+        const h = setupTimeout(phase);
+        const before = phase === 'begin' ? 1 : phase === 'read' ? 2 : 3;
+        h.resource.invalidate();
+        await settle();
+        const lifetime = h.resource.captureLifetime();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(h.request).toHaveBeenCalledTimes(before);
+        expect(h.resource.status).toMatchObject({ stale: true, suspended: true, running: true });
+        expect(lifetime.isCurrent()).toBe(false);
+        expect(lifetime.commit(() => undefined)).toBe(false);
+        h.resource.refresh();
+        for (let i = 0; i < 100; i++) h.resource.invalidate();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(h.request).toHaveBeenCalledTimes(before);
+        expect(vi.getTimerCount()).toBe(0);
+        if (settlement === 'resolve') h.pending.resolve();
+        else h.pending.reject(Error('late failure'));
+        await settle();
+        expect(h.applied).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(999);
+        expect(h.request).toHaveBeenCalledTimes(before);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(h.request).toHaveBeenCalledTimes(before + 3);
+        expect(h.applied).toHaveBeenCalledExactlyOnceWith('fresh');
+        expect(h.resource.status).toMatchObject({ stale: false, suspended: false, running: false });
+        expect(vi.getTimerCount()).toBe(0);
+        h.resource.dispose();
+        h.session.dispose();
+      });
+
+  it('exhausts a finite failure budget after timed-out reads drain', async () => {
+    const h = setupTimeout('read', true);
+    h.resource.invalidate();
+    await settle();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(h.request).toHaveBeenCalledTimes((attempt + 1) * 2);
+      expect(vi.getTimerCount()).toBe(0);
+      h.stalledRequests[attempt].resolve();
+      await settle();
+      expect(h.applied).not.toHaveBeenCalled();
+      if (attempt < 2) await vi.advanceTimersByTimeAsync(attempt === 0 ? 1000 : 4000);
+    }
+    for (let i = 0; i < 100; i++) h.resource.invalidate();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.request).toHaveBeenCalledTimes(6);
+    expect(h.resource.status).toMatchObject({
+      stale: true,
+      suspended: true,
+      failures: 3,
+      running: false,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    h.resource.dispose();
+    h.session.dispose();
+  });
+
+  for (const transition of [
+    'workspace-ABA',
+    'lease-ABA',
+    'active-ABA',
+    'dispose',
+    'session-retire',
+  ] as const)
+    for (const transitionAt of [1000, 30_000])
+      it(`fences the timed-out request across ${transition} at ${transitionAt}ms`, async () => {
+        const h = setupTimeout('read');
+        h.resource.invalidate();
+        await settle();
+        await vi.advanceTimersByTimeAsync(transitionAt);
+        if (transition === 'workspace-ABA') {
+          h.resource.changeLifetime();
+          h.resource.changeLifetime();
+          h.resource.invalidate();
+        } else if (transition === 'lease-ABA') {
+          h.resource.setLeases([{ id: 'b', lifetime: {} }]);
+          h.resource.setLeases([{ id: 'a', lifetime: {} }]);
+        } else if (transition === 'active-ABA') {
+          h.resource.setActive(false);
+          h.resource.setActive(true);
+        } else if (transition === 'dispose') h.resource.dispose();
+        else h.retireSession();
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(h.request).toHaveBeenCalledTimes(2);
+        h.pending.resolve();
+        await settle();
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(h.applied.mock.calls.flat()).not.toContain('expired');
+        if (transition === 'dispose' || transition === 'session-retire') {
+          expect(h.applied).not.toHaveBeenCalled();
+          expect(h.request).toHaveBeenCalledTimes(2);
+        } else expect(h.applied).toHaveBeenCalledExactlyOnceWith('fresh');
+        expect(vi.getTimerCount()).toBe(0);
+        h.resource.dispose();
+        h.session.dispose();
+      });
 });

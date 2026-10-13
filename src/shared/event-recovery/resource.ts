@@ -1,3 +1,5 @@
+import { RecoveryRequestTimeoutError } from './session';
+
 /** Entire begin/read/end cycles share this budget; successful data alone never resets it. */
 const MIN_READ_INTERVAL_MS = 250;
 const FAILURE_RETRY_DELAYS_MS = [1_000, 4_000] as const;
@@ -33,6 +35,7 @@ export class RecoveryResource<T> {
   private stale = false;
   private active = true;
   private running = false;
+  private draining = false;
   private disposed = false;
   private failures = 0;
   private suspended = false;
@@ -43,7 +46,7 @@ export class RecoveryResource<T> {
   get status() {
     return {
       stale: this.stale,
-      suspended: this.suspended,
+      suspended: this.suspended || this.draining,
       failures: this.failures,
       running: this.running,
     };
@@ -193,6 +196,17 @@ export class RecoveryResource<T> {
         this.retryAt = -Infinity;
       });
     } catch (error) {
+      if (error instanceof RecoveryRequestTimeoutError) {
+        // Keep the single-flight slot until the original driver and ingress work
+        // drain. A deadline alone is not proof that another request is safe.
+        if (current()) this.mutation++;
+        this.draining = true;
+        try {
+          await error.drained;
+        } finally {
+          this.draining = false;
+        }
+      }
       if (!current()) return;
       this.failures++;
       const code = (error as { rpcCode?: unknown } | null)?.rpcCode;

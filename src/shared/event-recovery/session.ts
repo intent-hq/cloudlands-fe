@@ -80,12 +80,24 @@ interface Driver {
 const FENCE_TIMEOUT_MS = 5_000;
 const READ_TIMEOUT_MS = 30_000;
 
+/**
+ * A deadline rejects the result, not the outstanding driver/owner work.
+ * Adapters must preserve actual completion or retire the capture: a lower
+ * transport's logical timeout is not proof that its wire request drained.
+ */
+export class RecoveryRequestTimeoutError extends Error {
+  constructor(readonly drained: Promise<void>) {
+    super('Event recovery request timed out');
+  }
+}
+
 /** Shared browser/Electron processing boundary, including asynchronous saga acknowledgements. */
 export function createEventRecoverySession(driver: Driver): EventRecoverySession {
   let retired = false;
   const listeners = new Set<() => void>();
   const handlers = new Set<(n: RecoveryNotification) => void | Promise<void>>();
   const pending = new Set<(error: Error) => void>();
+  const drains = new Set<() => void>();
   const unavailable = () => new Error('Event recovery connection retired');
   const retire = () => {
     if (retired) return;
@@ -93,6 +105,7 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
     ingress.retire();
     for (const reject of [...pending]) reject(unavailable());
     for (const handler of [...listeners]) handler();
+    for (const drain of [...drains]) drain();
     listeners.clear();
     handlers.clear();
   };
@@ -121,11 +134,21 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
       resolve: (value: T) => void,
       reject: (error: Error) => void,
       alive: () => boolean,
+      track: <V>(work: Promise<V>) => Promise<V>,
     ) => void,
   ): Promise<T> {
     if (!current()) return Promise.reject(unavailable());
     return new Promise<T>((resolve, reject) => {
       let settled = false;
+      const work = new Set<Promise<unknown>>();
+      const track = <V>(promise: Promise<V>): Promise<V> => {
+        work.add(promise);
+        void promise.then(
+          () => work.delete(promise),
+          () => work.delete(promise),
+        );
+        return promise;
+      };
       const finish = (error?: Error, value?: T) => {
         if (settled) return;
         settled = true;
@@ -135,13 +158,25 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
         else resolve(value as T);
       };
       const fail = (error: Error) => finish(error);
-      const timer = setTimeout(() => fail(new Error('Event recovery request timed out')), timeout);
+      const timer = setTimeout(() => {
+        const drained = new Promise<void>((resolveDrain) => {
+          const finishDrain = () => {
+            drains.delete(finishDrain);
+            resolveDrain();
+          };
+          drains.add(finishDrain);
+          // No later observer work can enter once fail() invalidates alive().
+          void Promise.allSettled([...work]).then(finishDrain);
+        });
+        fail(new RecoveryRequestTimeoutError(drained));
+      }, timeout);
       pending.add(fail);
       try {
         run(
           (value) => finish(undefined, value),
           fail,
           () => !settled,
+          track,
         );
       } catch (error) {
         fail(error instanceof Error ? error : new Error(String(error)));
@@ -169,24 +204,24 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
       };
     },
     request<T>(method: string, params?: unknown): Promise<T> {
-      return bounded(READ_TIMEOUT_MS, (resolve, reject, alive) => {
+      return bounded(READ_TIMEOUT_MS, (resolve, reject, alive, track) => {
         if (method === 'events.subscribe') {
           // Admission's await continuation must finish before following domain callbacks.
           // Merely resolving an IPC invoke promise does not establish this ordering.
-          driver
-            .request(method, params, (value) => {
+          track(
+            driver.request(method, params, (value) => {
               if (!alive() || !current()) return;
-              void ingress
-                .dispatch(() => {
+              void track(
+                ingress.dispatch(() => {
                   if (!alive() || !current()) return;
                   resolve(value as T);
                   return new Promise<void>((release) => queueMicrotask(release));
-                })
-                .catch(reject);
-            })
-            .catch(reject);
+                }),
+              ).catch(reject);
+            }),
+          ).catch(reject);
         } else
-          driver.request(method, params).then((value) => {
+          track(driver.request(method, params)).then((value) => {
             if (current()) resolve(value as T);
             else reject(unavailable());
           }, reject);
@@ -201,17 +236,17 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
         ids.some((id) => !id)
       )
         return Promise.reject(new Error('Invalid recovery subscription set'));
-      return bounded<void>(FENCE_TIMEOUT_MS, (resolve, reject, alive) => {
+      return bounded<void>(FENCE_TIMEOUT_MS, (resolve, reject, alive, track) => {
         let done = false;
         const fail = (error: Error) => {
           done = true;
           reject(error);
         };
-        driver
-          .request('events.fence', { subscriptionIds: [...ids] }, (result) => {
+        track(
+          driver.request('events.fence', { subscriptionIds: [...ids] }, (result) => {
             if (done || !alive() || !current()) return;
-            void ingress
-              .dispatch(() => {
+            void track(
+              ingress.dispatch(() => {
                 if (done || !alive() || !current()) return;
                 const echoed = (result as { subscriptionIds?: unknown } | null)?.subscriptionIds;
                 if (
@@ -223,10 +258,10 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
                 observe();
                 done = true;
                 resolve();
-              })
-              .catch(fail);
-          })
-          .catch(fail);
+              }),
+            ).catch(fail);
+          }),
+        ).catch(fail);
       });
     },
     dispose() {
