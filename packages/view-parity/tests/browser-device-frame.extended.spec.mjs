@@ -55,15 +55,48 @@ for (const scenario of [
     const screenshot = info.outputPath(`device-frame-${scenario.width}.png`);
     await host.screenshot({ path: screenshot });
     await info.attach('device-frame', { path: screenshot, contentType: 'image/png' });
+    const custom = host.getByRole('button', { name: 'Custom', exact: true });
+    const dialog = page.getByRole('dialog');
+    const width = dialog.getByRole('spinbutton', { name: 'Width', exact: true });
+    const height = dialog.getByRole('spinbutton', { name: 'Height', exact: true });
+    await custom.click();
+    await expect(width).toBeFocused();
+    await expect(width).toHaveValue(String(scenario.expected.width));
+    await expect(height).toHaveValue(String(scenario.expected.height));
+    await width.fill('900');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(custom).toBeFocused();
+    await expect
+      .poll(async () => JSON.parse(await host.getAttribute('data-viewport')))
+      .toEqual(scenario.expected);
     const fit = host.getByRole('button', { name: 'Fit', exact: true });
     await fit.click();
     await expect(handle).toHaveCount(0);
     await expect(input).toHaveValue('Retained draft');
     await expect(fit).toBeFocused();
     await page.keyboard.press('Tab');
-    const custom = host.getByRole('button', { name: 'Custom', exact: true });
     await expect(custom).toBeFocused();
     await page.keyboard.press('Enter');
+    await expect(width).toBeFocused();
+    await width.fill('319');
+    await expect(width).toHaveAttribute('aria-invalid', 'true');
+    const apply = dialog.getByRole('button', { name: 'Apply', exact: true });
+    await expect(apply).toBeDisabled();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect
+      .poll(async () => JSON.parse(await host.getAttribute('data-viewport')))
+      .toEqual({ mode: 'fit' });
+    await width.fill('480');
+    await height.fill('360');
+    await expect(apply).toBeEnabled();
+    const dialogScreenshot = info.outputPath(`viewport-dialog-${scenario.width}.png`);
+    await dialog.screenshot({ path: dialogScreenshot });
+    await info.attach('viewport-dialog', { path: dialogScreenshot, contentType: 'image/png' });
+    await page.keyboard.press('Enter');
+    await expect(dialog).toHaveCount(0);
+    await expect(custom).toBeFocused();
     await expect(handle).toBeVisible();
     await expect(input).toHaveValue('Retained draft');
     await host.getByRole('button', { name: 'Hide frame', exact: true }).click();
