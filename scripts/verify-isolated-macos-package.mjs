@@ -10,6 +10,7 @@ import { _electron as electron } from '@playwright/test';
 import { evaluatePackageMain as evaluateMain } from './evaluate-package-main.mjs';
 import { createPackageProbe } from './isolated-package-probe.mjs';
 import { createPackageDiagnostics } from './isolated-package-diagnostics.mjs';
+import { createIsolatedCliFixture } from './isolated-cli-fixture.mjs';
 
 const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
 assert.equal(process.platform, 'darwin');
@@ -39,6 +40,7 @@ let diagnostics;
 const diagnosticDisposers = [];
 let mounted = false;
 let normalServer;
+let cliFixture;
 let normalConnections = 0;
 const ownedPids = new Set();
 const normalData = path.join(os.homedir(), 'Library/Application Support/intentd');
@@ -238,6 +240,7 @@ try {
   const expectedRoot = path.join(os.homedir(), '.intent-tests', plist.IntentIsolatedTestBuild);
   assert.equal(fs.existsSync(expectedRoot), false);
   diagnostics = createPackageDiagnostics(output, expectedRoot);
+  cliFixture = createIsolatedCliFixture(os.homedir(), work, process.execPath);
   const launchEnv = {
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
     HOME: os.homedir(),
@@ -247,6 +250,8 @@ try {
     INTENTD_CONFIG: path.join(normalData, 'config.toml'),
     INTENTD_BIN: '/normal/forbidden',
     GH_TOKEN: 'disposable-sentinel-not-a-credential',
+    CLAUDE_CONFIG_DIR: '/normal/forbidden-claude-config',
+    ANTHROPIC_API_KEY: 'disposable-sentinel-not-a-credential',
   };
   const launch = async () => {
     const launched = await probe.run(
@@ -274,6 +279,44 @@ try {
     Number(fs.readFileSync(path.join(initial.data, 'intentd.pid'), 'utf8').trim());
   ownedPids.add(daemonPid());
   evidence.phases.push({ phase: 'startup', ...initial });
+  const discovery = await evaluatePackageMain(
+    application,
+    async ({ app }, expected) => {
+      const { pathToFileURL } = await import('node:url');
+      const { execFileSync } = await import('node:child_process');
+      const { getBackendClient } = await import(
+        pathToFileURL(`${app.getAppPath()}/dist/features/backend/main/backend.ipc.js`).href
+      );
+      const snapshot = await getBackendClient().request('host.providerDiscovery', {});
+      const claude = snapshot.providers.find((provider) => provider.id === 'claude-code');
+      const probes = [expected.claude, expected.npx].map((file) =>
+        JSON.parse(
+          execFileSync(file, ['--intent-isolation-probe'], { encoding: 'utf8', timeout: 5000 }),
+        ),
+      );
+      return { claude, probes, npx: snapshot.npx };
+    },
+    { claude: cliFixture.claude, npx: cliFixture.npx },
+  );
+  assert.equal(discovery.claude?.installed, true);
+  assert.equal(discovery.claude.npxOnly, true);
+  assert.equal(discovery.claude.resolvedPath, cliFixture.npx);
+  assert.equal(discovery.claude.secondaryCommand, 'claude');
+  assert.equal(discovery.claude.secondaryResolved, true);
+  assert.equal(discovery.claude.secondaryResolvedPath, cliFixture.claude);
+  assert.equal(discovery.npx.resolvedPath, cliFixture.npx);
+  assert.equal(discovery.npx.version, '10.30.3');
+  assert.equal(discovery.npx.versionOk, true);
+  assert.deepEqual(
+    discovery.probes,
+    ['claude', 'npx'].map((fixture) => ({
+      fixture,
+      home: initial.home,
+      configAbsent: true,
+      credentialAbsent: true,
+    })),
+  );
+  evidence.phases.push({ phase: 'executable-discovery-fixture', ...discovery });
   const privateConfig = path.join(initial.data, 'config.toml');
   const configBeforePreferences = hash(privateConfig);
   const settings = await inspectSettings(application, true);
@@ -456,6 +499,15 @@ try {
   }
   diagnostics?.capture();
   for (const dispose of diagnosticDisposers) dispose();
+  if (cliFixture) {
+    try {
+      cliFixture.cleanup();
+    } catch (error) {
+      evidence.cliFixtureCleanupError = String(error);
+      evidence.passed = false;
+      process.exitCode = 1;
+    }
+  }
   probe.finish();
   // Never relabel forced cleanup as a pass. This VM is retired by GitHub after the job.
   console.log(JSON.stringify({ passed: evidence.passed, output, error: evidence.error }));
